@@ -1,0 +1,17 @@
+# Secrets
+.env.local
+.env
+GymSyncApp/GymSync/Config/Secrets.swift
+
+# Xcode
+*.xcuserstate
+xcuserdata/
+DerivedData/
+.build/
+
+# Node (Supabase CLI is a dev dependency)
+node_modules/
+
+# Supabase local artifacts
+supabase/.temp/
+supabase/.branches/
