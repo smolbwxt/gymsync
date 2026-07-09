@@ -1,8 +1,9 @@
-# GymSync — Design Document
+# Gym Sync — Design Document
 
-**Date:** 2026-06-28
-**Status:** Draft for review
-**Working name:** GymSync (placeholder — final name TBD; an App Store search shows several apps with similar names, so the production name will likely need invention)
+**Original date:** 2026-06-28
+**Revised:** 2026-07-09 — added 6 features (heart rate broadcast, cumulative volume, schedule-based streaks, seasonal campaigns, local venue hubs with QR matchmaking, Google Calendar sync)
+**Status:** Draft, ready for handoff to Fable for implementation planning
+**Name:** Gym Sync (locked)
 
 ---
 
@@ -43,6 +44,12 @@ This document specifies **v1** of GymSync. It targets **iPhone first** (native S
 - Per-session and per-exercise notes
 - Body weight log
 - Plate-math helper
+- **Live heart rate broadcast during sessions** (opt-in per user, sourced from Apple Watch via HealthKit; ephemeral broadcast, never persisted)
+- **Global cumulative volume lifted metric** — lifetime `Σ (reps × weight)` per user, exposed on profile, Home dashboard, and as a fourth sortable metric on all public workout leaderboards; separate "Top Lifters" global leaderboard
+- **Schedule-based streaks (individual + group)** — your streak is defined by your own scheduled cadence; missing a planned session breaks it, unscheduled solo lifts are bonus
+- **Seasonal community campaigns** — team-curated time-bounded events ("Spring Break Prep", "Murph on Memorial Day", "Summer Cut Challenge") with curated workout lists, community progress bars, and per-campaign leaderboards
+- **Local venue hubs with QR-code matchmaking (18+ feature)** — physical gyms have QR codes that open a Gym Hub showing local leaderboard, open crews looking for members, and local activity; requires phone verification + age gate
+- **Google Calendar sync (one-way)** — scheduled sessions sync to Google Calendar in addition to iOS Calendar via OAuth
 
 **Deferred to v2:** Achievements/badges system, supersets/circuits, search across ledger, progress photos, warm-up vs. working set distinction, auto-suggested groups from recurring participants, live audio/group call during sessions.
 
@@ -169,12 +176,17 @@ Postgres schema. Loose DDL syntax; exact types and constraints finalized in migr
 ```sql
 -- Supabase Auth manages `auth.users` (Apple ID, email) automatically.
 profiles (
-  id                  uuid PRIMARY KEY REFERENCES auth.users(id),
-  username            text UNIQUE NOT NULL,           -- chosen at first launch
-  display_name        text,
-  avatar_url          text,
-  created_at          timestamptz DEFAULT now(),
-  show_solo_workouts  boolean DEFAULT false           -- opt-in solo visibility
+  id                       uuid PRIMARY KEY REFERENCES auth.users(id),
+  username                 text UNIQUE NOT NULL,        -- chosen at first launch
+  display_name             text,
+  avatar_url               text,
+  created_at               timestamptz DEFAULT now(),
+  show_solo_workouts       boolean DEFAULT false,       -- opt-in solo visibility
+  share_heart_rate         boolean DEFAULT false,       -- opt-in HR broadcast in sessions
+  phone_number             text,                        -- E.164 format, for Local Hub
+  phone_verified_at        timestamptz,                 -- verified via SMS
+  age_verified_18plus_at   timestamptz,                 -- self-attested 18+ gate
+  lifetime_volume_lifted   numeric(14,2) DEFAULT 0      -- Σ (reps × weight); trigger-maintained
 )
 
 friendships (
@@ -209,6 +221,11 @@ group_members (
   joined_at           timestamptz DEFAULT now(),
   PRIMARY KEY (group_id, user_id)
 )
+
+-- Recruitment flag lives on groups; extends the existing table:
+-- ALTER TABLE groups ADD COLUMN open_to_venue_id uuid REFERENCES venues(id);
+-- ALTER TABLE groups ADD COLUMN recruitment_blurb text;
+-- ALTER TABLE groups ADD COLUMN accepting_new_members boolean DEFAULT false;
 ```
 
 ### Geography (for check-in)
@@ -484,6 +501,142 @@ user_reports (
   created_at          timestamptz DEFAULT now(),
   status              text DEFAULT 'open'              -- 'open','dismissed','actioned'
 )
+
+blocked_users (
+  blocker_id          uuid REFERENCES profiles(id),
+  blocked_id          uuid REFERENCES profiles(id),
+  blocked_at          timestamptz DEFAULT now(),
+  PRIMARY KEY (blocker_id, blocked_id)
+)
+```
+
+### Local Venue Hubs (18+ feature)
+
+```sql
+venues (
+  id                  uuid PRIMARY KEY,
+  name                text NOT NULL,                   -- "Gold's Gym Venice"
+  latitude            double precision,
+  longitude           double precision,
+  radius_meters       integer DEFAULT 200,             -- venue-scoped geofence
+  qr_code_token       text UNIQUE NOT NULL,            -- opaque token in the QR URL
+  created_by          uuid REFERENCES profiles(id),    -- claimer; can be reassigned
+  is_verified         boolean DEFAULT false,           -- true if gym-partnership deal
+  claimed_at          timestamptz DEFAULT now(),
+  banner_url          text
+)
+
+venue_users (
+  venue_id            uuid REFERENCES venues(id) ON DELETE CASCADE,
+  user_id             uuid REFERENCES profiles(id),
+  is_visible_on_hub   boolean DEFAULT false,           -- opt-in to appear in hub
+  joined_at           timestamptz DEFAULT now(),
+  last_seen_at        timestamptz,
+  PRIMARY KEY (venue_id, user_id)
+)
+
+-- QR scan → looks up venue by qr_code_token → checks geofence match →
+-- adds venue_users row on first scan → opens the Gym Hub view.
+
+venue_join_requests (
+  id                  uuid PRIMARY KEY,
+  venue_id            uuid REFERENCES venues(id),
+  requester_id        uuid REFERENCES profiles(id),
+  group_id            uuid REFERENCES groups(id),      -- crew being requested
+  message             text,
+  status              text CHECK (status IN
+                      ('pending','accepted','declined','withdrawn')) DEFAULT 'pending',
+  created_at          timestamptz DEFAULT now()
+)
+```
+
+### Streaks (schedule-based)
+
+```sql
+-- Cached for fast Home tab reads. Recomputed by trigger on session state
+-- transitions. Definition: streak counts consecutive *planned* sessions
+-- (individual or group) that were completed without a no_show for you (or
+-- everyone, for group streaks). Unscheduled solo lifts are bonus, not streak.
+
+user_streaks (
+  user_id             uuid PRIMARY KEY REFERENCES profiles(id),
+  current_streak      integer DEFAULT 0,               -- consecutive planned sessions completed
+  longest_streak      integer DEFAULT 0,
+  last_streak_session_id uuid REFERENCES sessions(id), -- most recent streak-contributing session
+  broken_at           timestamptz,                     -- when it last broke (or NULL if unbroken)
+  broken_by_session_id uuid REFERENCES sessions(id)    -- which session broke it (or NULL)
+)
+
+group_streaks (
+  group_id            uuid PRIMARY KEY REFERENCES groups(id),
+  current_streak      integer DEFAULT 0,               -- consecutive planned group sessions
+                                                        -- where everyone was ready
+  longest_streak      integer DEFAULT 0,
+  last_streak_session_id uuid REFERENCES sessions(id),
+  broken_at           timestamptz,
+  broken_by_session_id uuid REFERENCES sessions(id)
+)
+```
+
+### Seasonal Campaigns
+
+```sql
+campaigns (
+  id                  uuid PRIMARY KEY,
+  name                text NOT NULL,                   -- "Spring Break Prep 2026"
+  description         text,
+  starts_at           timestamptz NOT NULL,
+  ends_at             timestamptz NOT NULL,
+  banner_url          text,
+  global_target       jsonb,                           -- {"metric":"total_volume","target":100000000}
+  individual_target   jsonb,                           -- {"sessions":12} or {"workouts_completed":4}
+  curated_routine_ids uuid[],                          -- workouts featured in this campaign
+  is_featured         boolean DEFAULT false,
+  created_at          timestamptz DEFAULT now()
+)
+
+campaign_participants (
+  campaign_id         uuid REFERENCES campaigns(id) ON DELETE CASCADE,
+  user_id             uuid REFERENCES profiles(id),
+  joined_at           timestamptz DEFAULT now(),
+  PRIMARY KEY (campaign_id, user_id)
+)
+
+campaign_progress (
+  campaign_id         uuid REFERENCES campaigns(id) ON DELETE CASCADE,
+  user_id             uuid REFERENCES profiles(id),
+  sessions_completed  integer DEFAULT 0,
+  workouts_completed  integer DEFAULT 0,               -- from curated_routine_ids
+  volume_lifted       numeric(12,2) DEFAULT 0,
+  updated_at          timestamptz DEFAULT now(),
+  PRIMARY KEY (campaign_id, user_id)
+)
+```
+
+### Connected Accounts (Google Calendar)
+
+```sql
+connected_accounts (
+  id                  uuid PRIMARY KEY,
+  user_id             uuid REFERENCES profiles(id),
+  provider            text CHECK (provider IN ('google_calendar')),  -- extensible for future providers
+  provider_account_id text,
+  access_token        text NOT NULL,                   -- encrypted at rest
+  refresh_token       text NOT NULL,                   -- encrypted at rest
+  scopes              text[],
+  expires_at          timestamptz,
+  created_at          timestamptz DEFAULT now(),
+  UNIQUE (user_id, provider)
+)
+
+-- Session → external calendar mapping (for updates/deletes to sync properly)
+session_calendar_syncs (
+  session_id          uuid REFERENCES sessions(id) ON DELETE CASCADE,
+  provider            text,
+  external_event_id   text NOT NULL,
+  synced_at           timestamptz DEFAULT now(),
+  PRIMARY KEY (session_id, provider)
+)
 ```
 
 ### Row Level Security (RLS) — security model
@@ -507,6 +660,17 @@ Every table has RLS enabled. Policies in plain English:
 - **`soundboard_sounds`** — global read.
 - **`chat_messages`** + **`chat_message_reactions`** + **`chat_read_state`** — readable by group members only. The `deleted_at` soft-delete is respected by the read policy (deleted rows return as `[deleted message]`).
 - **`user_reports`** — writable by anyone; readable by reporter + users with the `app_admin` role. The `app_admin` role is granted manually via SQL for v1 (just you); a proper moderation queue UI is deferred to v2 (see §8).
+- **`blocked_users`** — readable + writable only by the blocker. Blocks are enforced at the query level: chat messages from blocked users are filtered out; friend requests from blocked users are rejected; venue hub views exclude blocked users' presence.
+- **`venues`** — global read (anyone can see a venue exists); writable by creator or `app_admin`. Verified venues (gym partnerships) can only be edited by `app_admin`.
+- **`venue_users`** — readable by other users at the same venue *only if* `is_visible_on_hub = true` for that row. Writable only by the row's owner.
+- **`venue_join_requests`** — readable by requester + admins of the target group. Writable by requester (create/withdraw) + group admins (accept/decline).
+- **`user_streaks`** — readable by the user + their friends (streak is a mild flex, and hiding it defeats the point). Writable only by the trigger function.
+- **`group_streaks`** — readable by group members. Writable only by the trigger function.
+- **`campaigns`** — global read. Writable by `app_admin` only (v1 team curation).
+- **`campaign_participants`** — readable by the campaign's participants + `app_admin` (so leaderboards can render). Writable by user themselves (join/leave).
+- **`campaign_progress`** — readable by the campaign's participants (needed for the leaderboard). Writable only by trigger.
+- **`connected_accounts`** — owner only, both read and write. Access + refresh tokens are stored encrypted (Supabase Vault or column-level encryption).
+- **`session_calendar_syncs`** — owner (session organizer) + `app_admin`.
 
 ---
 
@@ -523,9 +687,9 @@ Five top-level tabs in the iPhone app:
 ```
 
 - **Home** — dashboard: today's scheduled session, upcoming sessions, recent group chat, quick actions (Start Solo Workout, Schedule Session). Glanceable, not a content destination.
-- **Library** — three sub-tabs: **Routines** (your saved templates), **Exercises** (curated library with demo videos), **Discover** (public workout repository with leaderboards). The "lean-back, plan workouts at home" surface.
-- **Social** — friends + groups + chat in one tab. List of groups (with unread badges) and direct friends; tapping a group opens chat + sessions + stats sub-views.
-- **Stats** — personal ledger: recent activity feed, per-exercise trend charts, PRs hall of fame, body weight trend.
+- **Library** — four sub-tabs: **Routines** (your saved templates), **Exercises** (curated library with demo videos), **Discover** (public workout repository with leaderboards), **Campaigns** (active seasonal campaigns you can join). The "lean-back, plan workouts at home" surface.
+- **Social** — friends + groups + chat + Local Hub in one tab. List of groups (with unread badges), direct friends, and a **Local** section that surfaces venues you've scanned into (18+ users only). Tapping a group opens chat + sessions + stats sub-views.
+- **Stats** — personal ledger: recent activity feed, per-exercise trend charts, PRs hall of fame, body weight trend, **lifetime cumulative volume lifted**, current streak, longest streak.
 - **You** — profile, settings, home gym management, notification preferences, blocked users, Apple Health sync toggle, sign out.
 
 ### Flow 1 — First launch / onboarding
@@ -671,6 +835,116 @@ Session is in_progress with no activity for:
 - On save: `duration_was_edited=true`, `edited_by` set; HealthKit re-write; `session_duration_edits` audit row inserted.
 - **Leaderboard time is locked to original.** If the session was a public-workout attempt, `leaderboard_entries.time_seconds` does NOT update; an "✏️ edited" indicator appears next to the entry (link explains: "duration corrected by participant after session"). Other metrics (volume, top sets) update normally since they derive from set logs.
 
+### Flow 7 — Streak lifecycle (schedule-based)
+
+Streaks in Gym Sync are tied to *your own scheduled cadence*, not a fixed daily/weekly rule. This rewards commitment to *your* plan rather than imposing an app-defined frequency.
+
+**Individual streak rules:**
+- **What counts as a streak-contributing session:** any `sessions` row where you are a participant (solo or group), was `state='scheduled'` at any point (i.e., pre-planned via the schedule flow), and reached `state='completed'` with your `check_in_state='ready'` at end.
+- **What increments the streak:** each streak-contributing session in the order they were scheduled.
+- **What breaks the streak:** the next scheduled session in your calendar reaches its `scheduled_for` time and you were `no_show` OR the session ended `abandoned` without you having checked in.
+- **Ad-hoc / unscheduled solo lifts:** don't count *toward* or *against* your streak. They still count for volume, PRs, and Apple Health — they just don't touch the streak.
+- **Sessions you weren't invited to:** don't count against your streak.
+
+**Group streak rules:**
+- Group streak increments when a `group_id`-linked session completes with **every invited participant** having `check_in_state='ready'` (no no_shows).
+- Breaks when any group session ends with a no_show.
+
+**Update timing:**
+- Streak values are cached in `user_streaks` / `group_streaks`.
+- A Postgres trigger fires on `sessions.state` transitions to `completed` and `abandoned` (and on `session_participants.check_in_state` flips to `no_show`) — recomputes the affected streak(s).
+
+**Notifications:**
+- On streak break: silent (nobody wants "you failed" pushes).
+- On streak milestone (7, 14, 30, 90, 365): celebratory push + system message in group chat if applicable.
+- On streak at risk (day of a scheduled session, within 30 minutes of `scheduled_for`, you haven't checked in): friendly push — "🔥 Your 12-session streak needs you. Push Day starts soon."
+
+### Flow 8 — Seasonal Campaign participation
+
+**Discovery:**
+- Library → Campaigns sub-tab shows all active campaigns + a countdown to upcoming ones.
+- Home tab surfaces a "Campaigns you might like" carousel when one is starting soon.
+- Campaign detail page: description, dates, curated workout list, current community progress bar, individual target, per-campaign leaderboard.
+
+**Joining:**
+- "Join Campaign" button → creates `campaign_participants` row.
+- No commitment beyond opt-in — you can leave anytime.
+
+**Progress accrual:**
+- A trigger on `sessions.state → completed` checks: (a) is the completed session's routine in any active campaign's `curated_routine_ids`, and (b) is the user a participant of that campaign? If yes, `campaign_progress` for that (campaign, user) pair increments the relevant counters.
+- Volume and workouts-completed metrics are re-derived from set_logs when relevant.
+
+**Community progress bar:**
+- Aggregate metric across all `campaign_progress` rows.
+- Updated live via `postgres_changes` subscription on the Campaigns detail page.
+- Small, satisfying UI: "Together we've moved 47.3M lbs of the 100M lb goal."
+
+**Completion:**
+- When individual_target is met, user gets a completion badge and a chat system message ("🌊 Tommy just completed Spring Break Prep — 12/12 sessions!").
+- Campaign ends at `ends_at`; leaderboard is frozen; final community total is displayed as historical fact.
+
+### Flow 9 — Local Hub / QR-code venue scan (18+)
+
+**Scan flow (first-time user at a venue):**
+
+```
+User taps "Scan Gym QR" from Social → Local sub-tab
+   → iPhone camera opens (AVCaptureSession + Vision text detection)
+   → QR code detected; contains URL like gymsync.app/v/{qr_code_token}
+   → App parses token → looks up venue → verifies user is within venue.radius_meters
+       (via LocationProvider; if not, show "You need to be at [Venue Name] to check in")
+   → If user's profile.age_verified_18plus_at IS NULL:
+       → Age gate modal: "This feature is 18+. Please confirm your age of 18 or older."
+       → User taps Confirm → sets age_verified_18plus_at = now()
+   → If user's phone_verified_at IS NULL:
+       → Phone verification modal: enter phone → SMS code via Twilio Edge Function
+       → On verified, phone_verified_at = now()
+   → Add venue_users row for this (venue_id, user_id); is_visible_on_hub defaults FALSE
+   → Show Gym Hub view (see below)
+```
+
+**Gym Hub view:**
+- Header: venue name, banner, current member count (people visible on hub right now).
+- **Visibility toggle:** "I'm here — show me on the hub" (updates `venue_users.is_visible_on_hub`).
+- **Local leaderboard:** top total-volume lifters at this venue this month (only counts opted-in users).
+- **Open crews:** list of groups where `open_to_venue_id = this_venue AND accepting_new_members = true`. Each row shows crew name, blurb, session cadence, member count. Tap to view detail + "Request to Join" button.
+- **Recent activity:** anonymized "3 lifters PR'd here today, 12 sessions completed" (no names shown here).
+
+**Request to join a crew:**
+- User taps "Request to Join" on an open crew → creates `venue_join_requests` row.
+- Group admin receives push + in-app notification.
+- Admin can Accept (adds `group_members` row) or Decline.
+- Accepted requester gets a welcome push + auto-added to group chat.
+
+**Safety measures (mandatory before shipping):**
+- Age gate (self-attested 18+; not verified against government ID in v1).
+- Phone verification via SMS before any Gym Hub interaction (prevents throwaway-account abuse).
+- Block/report available from every user profile; blocked users are excluded from all Local Hub views for the blocker.
+- "Meet in a public area" advisory modal shown before accepting a group's join invite from Local Hub.
+- Location privacy: users are only visible on a hub if they've explicitly opted in AND are currently within the venue geofence. No persistent "where is X" surface.
+- Rate limits: max 3 venue check-ins per hour per user; max 5 join requests per day per user.
+
+### Flow 10 — Google Calendar sync (one-way)
+
+**Connection:**
+- You tab → Connected Accounts → "Connect Google Calendar"
+- OAuth 2.0 flow to Google (via ASWebAuthenticationSession) with `calendar.events` scope
+- Access + refresh tokens stored encrypted in `connected_accounts`
+
+**Session created / rescheduled:**
+- Edge Function on `sessions` INSERT + UPDATE (where scheduled_for changed): if the participant has a Google Calendar connected, create/update an event via Google Calendar API. Event details include:
+  - Title: "Gym Sync: {routine name}" (e.g., "Gym Sync: Push Day")
+  - Time: scheduled_for → estimated end (default 60 min, configurable per routine)
+  - Description: participants list, routine summary, deep link to Gym Sync
+  - Reminders: 30 min + 15 min before
+- Mapping stored in `session_calendar_syncs` for future updates/deletes.
+
+**Session deleted or moved to abandoned:**
+- Google Calendar event is deleted.
+
+**Refresh token expiry / revoked access:**
+- Edge Function catches 401 → marks connection as `expired` → non-blocking banner in You tab "Reconnect Google Calendar".
+
 ---
 
 ## 5. Realtime Layer
@@ -688,10 +962,13 @@ Session is in_progress with no activity for:
 ```
 lobby:{session_id}                ← Presence
 session:{session_id}              ← Broadcast (soundboard, reactions, pings)
+session:{session_id}:hr           ← Broadcast (heart rate updates — opt-in per user)
 session:{session_id}:db           ← postgres_changes (session-related rows)
 chat:{group_id}                   ← postgres_changes (chat_messages, reactions)
 chat:{group_id}:typing            ← Presence (typing indicators)
 discover:leaderboard:{routine_id} ← postgres_changes (leaderboard updates)
+campaign:{campaign_id}            ← postgres_changes (campaign_progress updates)
+venue:{venue_id}                  ← Presence + postgres_changes (Gym Hub)
 user:{user_id}                    ← postgres_changes (friend requests, invites)
 ```
 
@@ -752,6 +1029,30 @@ Standard `postgres_changes` on `routine_proposals` + `routine_proposal_votes`. W
 **Typing indicators** (`chat:{group_id}:typing`)
 
 Presence-based. `track()` self with `{typing: true}` on input; `untrack()` on stop or 5s timeout.
+
+**Heart rate broadcast** (`session:{session_id}:hr`)
+
+Opt-in per user (`profiles.share_heart_rate`). When enabled AND session is `in_progress` AND user has an Apple Watch paired:
+
+```json
+{
+  "type": "broadcast",
+  "event": "heart_rate",
+  "payload": { "user_id": "...", "bpm": 172, "zone": "hard", "ts": 1741800000123 }
+}
+```
+
+Sample rate: one broadcast per 5 seconds per user. Any faster is imperceptible smoothing artifact; any slower feels stale. Source: `HKAnchoredObjectQuery` on `HKQuantityType.heartRate` on the Apple Watch, forwarded to the iPhone via `WatchConnectivity`. iPhone-only users (no paired Watch) never broadcast — they see "—" for themselves too. **Never persisted** — biometric data lives only in the ephemeral broadcast channel.
+
+Zone mapping (client-side computation): `zone = "warmup" | "moderate" | "hard" | "max"` derived from user's max-HR estimate (either from HealthKit if available, or the standard `220 - age` formula). Rendered as color on the HR pill.
+
+**Campaign progress updates** (`campaign:{campaign_id}`)
+
+`postgres_changes` on `campaign_progress WHERE campaign_id = ?`. When any participant's progress ticks up, the community progress bar animates. Individual leaderboards re-sort.
+
+**Venue Hub presence + activity** (`venue:{venue_id}`)
+
+Two channels folded together. Presence tracks who's currently at the venue with `is_visible_on_hub=true`; postgres_changes tracks new venue_users rows (someone new checked in) and new venue_join_requests.
 
 ### Disconnection and reconnection
 
@@ -901,7 +1202,55 @@ The app is **offline-first for write operations on your own data**, online-requi
 
 **Conflict resolution:** All writes have client-generated UUID PKs → INSERTs are idempotent on retry. Updates to your own routines (the only offline-editable thing) use last-write-wins on `updated_at`.
 
-### 6.5 Error handling philosophy
+### 6.5 HealthKit heart rate authorization + Watch integration
+
+Heart rate broadcast requires two things at runtime: HealthKit read permission for `HKQuantityTypeIdentifier.heartRate`, and a paired Apple Watch actively running the Gym Sync watchOS app during the session.
+
+**Permission flow:**
+- First time a user enters a session with `share_heart_rate = true`, iOS prompts for HealthKit read permission for heart rate.
+- If denied, we do NOT re-prompt — instead show a "Heart rate sharing paused" state in Settings with a deep-link to iOS Settings → Health.
+
+**Watch side:**
+- The watchOS app runs an `HKAnchoredObjectQuery` on `HKQuantityType.heartRate` for the duration of the session.
+- Every new sample from the Watch's sensor is sent to the paired iPhone via `WCSession.sendMessage`.
+- iPhone throttles to one broadcast per 5s per user (dedupes samples in-window).
+- On Watch disconnect (dead battery, out of range), broadcast pauses; other participants see the user's HR pill go to "—" with a small unpaired-watch icon.
+
+**Compliance note:** Heart rate is biometric data. Ephemeral broadcast + zero persistence keeps us out of most compliance frameworks (HIPAA does not apply because we aren't a covered entity, but we still choose ephemeral to minimize risk). Broadcast channels are TLS-encrypted end-to-end via Supabase Realtime's WSS layer.
+
+### 6.6 Google Calendar OAuth
+
+- OAuth 2.0 flow via `ASWebAuthenticationSession` — presents Google's consent screen in an iOS-native web view.
+- Scopes requested: `https://www.googleapis.com/auth/calendar.events` (create/read/update/delete events on user's calendars, no calendar list mutation).
+- Access + refresh tokens stored in `connected_accounts` with column-level encryption (Supabase Vault).
+- Refresh flow handled server-side by an Edge Function — client never sees refresh tokens after initial exchange.
+- Revocation: user can disconnect anytime via Settings → Connected Accounts. Disconnect calls `revoke` on Google's endpoint and marks the connection deleted locally.
+
+### 6.7 Age gate + phone verification (Local Hub only)
+
+The Local Hub feature (venue QR scan, crew matchmaking) requires two additional gates before use:
+
+**Age gate (self-attested 18+):**
+- Modal shown on first Local Hub interaction: "This feature is 18+. By tapping Confirm, you attest that you are 18 or older."
+- On confirm: `profiles.age_verified_18plus_at = now()`.
+- Not verified against government ID in v1 — this is honor-system self-attestation, which is standard for the App Store's "17+" content rating.
+- Users who tap Decline are shown a friendly "This feature isn't available for your account" screen and can continue using the rest of the app.
+
+**Phone verification (SMS via Twilio):**
+- Required for first-time venue check-in.
+- User enters phone number in E.164 format → Edge Function requests a Twilio Verify SMS with a 6-digit code.
+- User enters code → verification succeeds → `profiles.phone_verified_at = now()`.
+- Purpose: prevents throwaway/burner accounts from spamming the Local Hub and using it to harass real users. Phone numbers are stored one-way hashed after verification (we don't need to call anyone).
+- Not shared publicly. Never displayed on any surface.
+
+**Safety guardrails for the Local Hub (design-level):**
+- Every user profile viewed from a Local Hub context includes prominent Block and Report buttons.
+- "Meet in a public area" advisory modal shown before the first in-person meetup (accepted crew invite → advisory).
+- Blocked users are excluded from every Local Hub view (leaderboard, presence, crew lists).
+- Rate limits: 3 venue check-ins/hour/user, 5 join requests/day/user (server-enforced).
+- Reports involving Local Hub interactions get priority triage.
+
+### 6.8 Error handling philosophy
 
 1. **Network failures are normal, not exceptional.** Every Supabase call goes through a wrapper that distinguishes recoverable from terminal errors. No generic "Something went wrong" — every error path has a specific human-readable message and, where applicable, a Retry action.
 2. **Optimistic UI for user-initiated writes.** Tap "Log Set" → set appears immediately with faint "syncing" indicator. If write fails server-side, inline retry (not a modal that breaks flow).
@@ -943,6 +1292,12 @@ The app is **offline-first for write operations on your own data**, online-requi
 - Plate math (target weight + bar weight → plate stack).
 - Offline write queue (enqueue → drain → conflict resolution).
 - Audio session config assertion (regression guard from §6.1).
+- Heart rate zone classification (given BPM + max-HR estimate, returns correct zone).
+- Streak computation (given a sequence of planned + completed sessions, computes correct current_streak and longest_streak; edge cases: streak breaks, unscheduled solo lifts don't affect streak, group streak requires all-ready).
+- Cumulative volume calculation (given set_logs, sums `reps × weight` excluding penalty/failed).
+- Age gate flow (unverified user cannot access Local Hub views; verified user can).
+- QR code URL parsing (valid tokens accepted; malformed rejected; expired tokens error).
+- Campaign progress accrual (given a completed session + active campaigns, correct campaign_progress increments).
 
 ### Integration (Postgres + Supabase Realtime, no iOS)
 
@@ -954,6 +1309,13 @@ The app is **offline-first for write operations on your own data**, online-requi
 - Edge Function tests: push-dispatcher fired with mock event → assert correct APNs payload.
 - Idle detection cron: simulate session with last activity at T-31min → assert organizer push generated.
 - Realtime fanout: two clients subscribed to session channel; insert set log; assert both receive.
+- Streak trigger: transition a scheduled session to `completed` → assert user_streaks and group_streaks updated correctly. Transition to `abandoned` with no_shows → assert streaks broken.
+- Cumulative volume trigger: insert a set_log → assert `profiles.lifetime_volume_lifted` incremented by `reps × weight`.
+- Campaign progress trigger: complete a session tied to a curated campaign routine → assert campaign_progress updated for opted-in participants; NOT updated for non-participants.
+- Venue geofence enforcement: check_in from within radius succeeds; from outside fails.
+- Phone verification: SMS code delivery via Twilio mock; correct code accepted; incorrect code rejected; expired code rejected.
+- Google Calendar sync: mock Google API; assert event created on session INSERT, updated on scheduled_for change, deleted on session DELETE.
+- Block enforcement: user A blocks user B → assert B's chat messages filtered out of A's view; B cannot appear in A's venue hub view; A's join requests to B's group are rejected.
 
 ### E2E (XCUITest hitting dedicated staging Supabase project)
 
@@ -966,6 +1328,10 @@ The six user flows from §4, each as one test (onboarding, scheduled session wit
 - **Geofence accuracy:** check in from inside saved home gym → success; from a coffee shop → fails with traveling-override prompt. Both indoor (poor GPS) and outdoor.
 - **Push notification action buttons:** receive `session_idle_30min` on lock screen, tap "Wrap Up" → verify session state transitions without opening app.
 - **Sign in with Apple flow:** including "Hide My Email" and "Use Different Apple ID" paths.
+- **Heart rate broadcast end-to-end:** two-user session, both with Apple Watch, both opted-in; verify HR pills update on both phones with ~5s cadence; disconnect one Watch → verify that user's HR pill goes to "—" gracefully.
+- **QR scan flow:** physical printed QR code → scan from within venue geofence → hub loads; scan from outside geofence → correct error message.
+- **Phone verification via SMS:** enter real number → receive Twilio SMS → enter correct code → verified.
+- **Google Calendar sync:** schedule a session with Google connected → event appears in the user's actual Google Calendar with correct title/time/participants; move the session → event moves; delete the session → event deletes.
 
 ### High-risk areas (silent failure-prone)
 
@@ -997,15 +1363,22 @@ These are tunable parameters and items deliberately deferred. Listed here so the
 - **Burpees per minute late** — default to 5. Group-configurable.
 - **No-show threshold** — default 15 min late → `check_in_state=no_show`. Group-configurable.
 - **Idle detection thresholds** — 30 min (organizer push), 60 min (all participants), 6 hours (auto-abandon).
-- **Geofence radius** — default 200 m. Per-gym configurable.
+- **Geofence radius** — default 200 m for personal gyms; 200 m for venues. Per-gym / per-venue configurable.
 - **Group size cap** — 25 in v1.
 - **Soundboard rate limit** — 1 sound per second per user (client-side).
 - **Offline cache window** — 90 days of past sessions and set_logs in SwiftData.
 - **Set log fields** — reps, weight, RPE (1–10), optional note. No tempo, no drop sets in v1.
+- **Heart rate broadcast rate** — 1 broadcast per 5 seconds per user.
+- **Heart rate zones** — thresholds derived from `220 - age` if no HealthKit max-HR; otherwise use HealthKit. Warmup < 60%, Moderate 60-75%, Hard 75-90%, Max > 90%.
+- **Streak milestones** — celebratory pushes at 7, 14, 30, 60, 90, 180, 365 consecutive planned sessions.
+- **Streak-at-risk push timing** — 30 minutes before `scheduled_for` if user hasn't checked in yet.
+- **Campaign frequency** — 1–2 active seasonal campaigns at a time, curated by the Gym Sync team.
+- **Local Hub rate limits** — 3 venue check-ins per hour per user, 5 join requests per day per user.
+- **Phone verification code** — 6-digit numeric, 10-minute expiry (Twilio Verify defaults).
 
 ### Deferred to v2
 
-- Achievements / badges system
+- Achievements / badges system (streak milestones will render simple in-line, not full badges)
 - Supersets / circuits (breaks the round-robin chess clock; needs design work)
 - Search across ledger
 - Progress photos
@@ -1016,14 +1389,25 @@ These are tunable parameters and items deliberately deferred. Listed here so the
 - Web client / Android client
 - Public profile pages / user-discoverable feed
 - Server-authoritative session state machine (if client-side proves insufficient at scale)
+- User-submitted seasonal campaigns (v1 = team-curated only; v2 lets verified creators publish)
+- Streak repair / streak freeze purchases (Duolingo-style monetization, if we ever monetize)
+- Government-ID age verification (v1 = self-attested honor-system 18+)
+- Persistent heart rate storage / HR-based analytics (v1 = ephemeral broadcast only)
+- Two-way Google Calendar sync (v1 = one-way out only)
+- Additional connected accounts: Outlook Calendar, Fitbit, Whoop, Garmin
 
 ### Future considerations
 
-- **App Store name.** "GymSync" is a working title; a quick App Store search shows several apps with similar names. Production name TBD.
+- **App Store name uniqueness check.** "Gym Sync" needs an App Store search to verify uniqueness before submission. If contested, back to naming.
 - **Moderation queue UI.** v1 grants the `app_admin` role manually via SQL and reads `user_reports` directly through a Postgres client. A real moderation queue UI is deferred to v2 (or later — depends on actual report volume).
 - **Curated exercise library content.** ~150–300 records with metadata + demo videos. Seedable from Free Exercise DB (public source). Not engineering work — content work.
 - **Soundboard sound library.** Curated set of fun, gym-appropriate sounds (airhorn, "LET'S GO", etc.). Licensing/sourcing TBD.
 - **Featured public workouts.** Initial seed set ("The Murph", strength program templates, hypertrophy splits). Content work.
+- **Initial seasonal campaigns.** Team-curated calendar of 6–12 campaigns spanning a year (New Year Kickoff, Spring Break Prep, Murph on Memorial Day, Summer Cut, Fall Bulk, Holiday Grind, etc.). Content + operational work.
+- **Twilio Verify account and cost.** Phone verification uses Twilio Verify (~$0.05 per verification). Set up before Local Hub ships.
+- **Google Cloud project + OAuth consent.** Google Calendar OAuth requires a verified Google Cloud project with the OAuth consent screen approved by Google. Straightforward but takes lead time (~1-2 weeks).
+- **Gym partnership strategy for Local Hub.** How do we seed the initial venues? Options: (a) claim-first, verify-later (anyone can create a venue), (b) partner with 5-10 gyms for launch, (c) both. Product/business call.
+- **Phone number handling & privacy policy.** Storing phone numbers (even hashed) triggers a privacy-policy update and possibly state-level obligations (e.g., California CCPA). Legal review recommended before Local Hub ships.
 
 ---
 
