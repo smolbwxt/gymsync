@@ -48,8 +48,9 @@ jobs:
       - name: Build and test
         working-directory: GymSyncApp
         run: |
+          # NOTE: do not disable code signing — unsigned simulator bundles lack
+          # keychain entitlements and supabase-swift silently loses its session.
           xcodebuild test \
             -project GymSync.xcodeproj \
             -scheme GymSync \
-            -destination 'platform=iOS Simulator,name=iPhone 16' \
-            CODE_SIGNING_ALLOWED=NO
+            -destination 'platform=iOS Simulator,name=iPhone 16'
