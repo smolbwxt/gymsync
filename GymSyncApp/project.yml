@@ -11,12 +11,20 @@ settings:
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
 
+packages:
+  Supabase:
+    url: https://github.com/supabase/supabase-swift
+    from: 2.5.0
+
 targets:
   GymSync:
     type: application
     platform: iOS
     sources:
       - GymSync
+    dependencies:
+      - package: Supabase
+        product: Supabase
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.gymsync.ios
