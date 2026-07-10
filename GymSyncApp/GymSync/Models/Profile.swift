@@ -7,6 +7,7 @@ struct Profile: Codable, Identifiable, Sendable, Equatable {
     let displayName: String?
     let avatarURL: URL?
     let createdAt: Date
+    let lifetimeVolumeLifted: Decimal
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -14,6 +15,7 @@ struct Profile: Codable, Identifiable, Sendable, Equatable {
         case displayName = "display_name"
         case avatarURL = "avatar_url"
         case createdAt = "created_at"
+        case lifetimeVolumeLifted = "lifetime_volume_lifted"
     }
 }
 
@@ -57,6 +59,10 @@ enum ProfileRepository {
             .execute()
             .value
         return inserted
+    }
+
+    static func refresh(userID: UUID) async throws -> Profile? {
+        try await fetch(userID: userID)
     }
 
     static func usernameAvailable(_ username: String) async throws -> Bool {
