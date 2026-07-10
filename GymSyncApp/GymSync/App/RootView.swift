@@ -11,9 +11,14 @@ struct RootView: View {
                 ProgressView().controlSize(.large)
             case .signedOut:
                 SignInView()
-            case .signedIn:
-                MainTabView()
-                    .environment(appState)
+            case .signedIn(let userID):
+                if appState.currentProfile == nil {
+                    OnboardingCoordinator(userID: userID)
+                        .environment(appState)
+                } else {
+                    MainTabView()
+                        .environment(appState)
+                }
             }
         }
     }
