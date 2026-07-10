@@ -23,7 +23,3 @@ struct LibraryTabView: View {
         }
     }
 }
-
-struct RoutinesListView: View {
-    var body: some View { Text("Routines coming in Task 18").foregroundStyle(.secondary) }
-}
