@@ -82,7 +82,7 @@ enum ProfileRepository {
             let row: Profile = try await SupabaseService.shared.client
                 .from("profiles")
                 .select()
-                .eq("username", value: username)
+                .eq("username", value: username.lowercased())
                 .single()
                 .execute()
                 .value
