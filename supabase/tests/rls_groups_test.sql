@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(9);
+SELECT plan(11);
 
 INSERT INTO auth.users (id, email) VALUES
   ('00000000-0000-0000-0000-0000000000a1', 'ga@t.com'),
@@ -10,6 +10,22 @@ INSERT INTO profiles (id, username) VALUES
   ('00000000-0000-0000-0000-0000000000a1', 'gr_user_a'),
   ('00000000-0000-0000-0000-0000000000b1', 'gr_user_b'),
   ('00000000-0000-0000-0000-0000000000c1', 'gr_user_c');
+
+-- Cap-test fixture: a group already at 25 members
+INSERT INTO auth.users (id, email)
+SELECT ('00000000-0000-0000-00cc-' || lpad(g::text, 12, '0'))::uuid, 'cap' || g || '@t.com'
+FROM generate_series(1, 25) g;
+INSERT INTO profiles (id, username)
+SELECT ('00000000-0000-0000-00cc-' || lpad(g::text, 12, '0'))::uuid, 'cap_user_' || g
+FROM generate_series(1, 25) g;
+INSERT INTO groups (id, name, created_by) VALUES
+  ('20000000-0000-0000-0000-000000000002', 'Full Crew',
+   '00000000-0000-0000-00cc-000000000001');
+INSERT INTO group_members (group_id, user_id, role)
+SELECT '20000000-0000-0000-0000-000000000002',
+       ('00000000-0000-0000-00cc-' || lpad(g::text, 12, '0'))::uuid,
+       CASE WHEN g = 1 THEN 'admin' ELSE 'member' END
+FROM generate_series(1, 25) g;
 
 SET LOCAL role authenticated;
 SET LOCAL request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
@@ -60,6 +76,16 @@ SELECT results_eq(
   ARRAY[0], 'non-admin cannot update group'
 );
 
+-- Negative: non-admin cannot escalate their own role (RLS-filtered UPDATE = 0 rows)
+SELECT results_eq(
+  $$WITH upd AS (
+      UPDATE group_members SET role='admin'
+      WHERE group_id='20000000-0000-0000-0000-000000000001'
+        AND user_id='00000000-0000-0000-0000-0000000000b1'
+      RETURNING 1)
+    SELECT count(*)::int FROM upd$$,
+  ARRAY[0], 'non-admin cannot change roles');
+
 -- Positive: member B can leave (delete own membership)
 SELECT results_eq(
   $$WITH del AS (
@@ -83,6 +109,16 @@ SELECT results_eq(
   $$SELECT count(*)::int FROM group_members$$,
   ARRAY[0], 'outsider cannot read group members'
 );
+
+-- Switch to full group's admin to test size cap
+SET LOCAL request.jwt.claim.sub = '00000000-0000-0000-00cc-000000000001';
+
+-- Negative: 26th member is rejected by the size-cap trigger (23514 = check_violation)
+SELECT throws_ok(
+  $$INSERT INTO group_members (group_id, user_id) VALUES
+    ('20000000-0000-0000-0000-000000000002',
+     '00000000-0000-0000-0000-0000000000c1')$$,
+  '23514', NULL, '26th member is rejected by size cap');
 
 SELECT * FROM finish();
 ROLLBACK;
