@@ -54,3 +54,62 @@ jobs:
             -project GymSync.xcodeproj \
             -scheme GymSync \
             -destination 'platform=iOS Simulator,name=iPhone 16'
+
+  deploy-testflight:
+    runs-on: macos-15
+    timeout-minutes: 45
+    needs: build-test
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      # Must run BEFORE xcodegen (source list fixed at generate time).
+      # TestSecrets stub keeps the project generatable; test target isn't built for archive.
+      - name: Write Secrets.swift
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          printf 'import Foundation\n\nenum Secrets {\n    static let supabaseURL = URL(string: "%s")!\n    static let supabaseAnonKey = "%s"\n}\n' \
+            "$SUPABASE_URL" "$SUPABASE_PUBLISHABLE_KEY" > GymSyncApp/GymSync/Config/Secrets.swift
+          cp GymSyncApp/GymSyncTests/TestSecrets.swift.template GymSyncApp/GymSyncTests/TestSecrets.swift
+
+      - name: Generate Xcode project from project.yml
+        run: xcodegen generate --spec GymSyncApp/project.yml --project GymSyncApp
+
+      - name: Write App Store Connect API key
+        env:
+          ASC_API_KEY: ${{ secrets.ASC_API_KEY }}
+        run: |
+          mkdir -p ~/private_keys
+          printf '%s' "$ASC_API_KEY" > ~/private_keys/AuthKey_RVND9TW64Y.p8
+
+      - name: Archive (automatic signing via ASC API key)
+        working-directory: GymSyncApp
+        run: |
+          xcodebuild archive \
+            -project GymSync.xcodeproj \
+            -scheme GymSync \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/GymSync.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$HOME/private_keys/AuthKey_RVND9TW64Y.p8" \
+            -authenticationKeyID RVND9TW64Y \
+            -authenticationKeyIssuerID d0ee236a-ef18-498e-8d99-26b47c70d4f0 \
+            CODE_SIGN_STYLE=Automatic \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }}
+
+      # ExportOptions.plist has destination:upload — this step also uploads to TestFlight.
+      - name: Export and upload to TestFlight
+        run: |
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/GymSync.xcarchive" \
+            -exportOptionsPlist GymSyncApp/ExportOptions.plist \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$HOME/private_keys/AuthKey_RVND9TW64Y.p8" \
+            -authenticationKeyID RVND9TW64Y \
+            -authenticationKeyIssuerID d0ee236a-ef18-498e-8d99-26b47c70d4f0
