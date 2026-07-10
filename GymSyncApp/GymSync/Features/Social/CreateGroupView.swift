@@ -62,20 +62,35 @@ struct CreateGroupView: View {
     private func create() async {
         isCreating = true
         defer { isCreating = false }
+        let group: GymGroup
         do {
-            let group = try await GroupRepository.create(
+            group = try await GroupRepository.create(
                 name: name.trimmingCharacters(in: .whitespaces))
-            let selectedProfiles = friends.filter { selected.contains($0.id) }
-            for profile in selectedProfiles {
-                try await GroupRepository.addMember(groupID: group.id,
-                                                    username: profile.username)
-            }
-            onCreated(group)
-            dismiss()
         } catch let error as GymSyncError {
             errorText = error.errorDescription
+            return
         } catch {
             errorText = error.localizedDescription
+            return
+        }
+
+        var failedUsernames: [String] = []
+        for profile in friends.filter({ selected.contains($0.id) }) {
+            do {
+                try await GroupRepository.addMember(groupID: group.id,
+                                                    username: profile.username)
+            } catch {
+                failedUsernames.append(profile.username)
+            }
+        }
+
+        onCreated(group)
+        if failedUsernames.isEmpty {
+            dismiss()
+        } else {
+            errorText = "Group created, but couldn't add: "
+                + failedUsernames.joined(separator: ", ")
+                + ". You can add them from the group's Members tab."
         }
     }
 }

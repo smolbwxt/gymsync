@@ -81,9 +81,17 @@ struct SocialTabView: View {
             groups = try await GroupRepository.myGroups()
             friendCount = try await FriendRepository.friends().count
             pendingCount = try await FriendRepository.incomingRequests().count
+            let currentGroups = groups
             var unreadIDs: Set<UUID> = []
-            for group in groups where (try? await ChatRepository.hasUnread(groupID: group.id)) == true {
-                unreadIDs.insert(group.id)
+            await withTaskGroup(of: (UUID, Bool).self) { taskGroup in
+                for group in currentGroups {
+                    taskGroup.addTask {
+                        (group.id, (try? await ChatRepository.hasUnread(groupID: group.id)) == true)
+                    }
+                }
+                for await (id, hasUnread) in taskGroup where hasUnread {
+                    unreadIDs.insert(id)
+                }
             }
             unread = unreadIDs
             errorText = nil
