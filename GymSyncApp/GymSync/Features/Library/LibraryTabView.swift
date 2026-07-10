@@ -1,0 +1,33 @@
+import SwiftUI
+
+struct LibraryTabView: View {
+    enum SubTab: Hashable { case routines, exercises }
+    @State private var selection: SubTab = .routines
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                Picker("", selection: $selection) {
+                    Text("Routines").tag(SubTab.routines)
+                    Text("Exercises").tag(SubTab.exercises)
+                }
+                .pickerStyle(.segmented)
+                .padding()
+                Divider()
+                switch selection {
+                case .routines:  RoutinesListView()
+                case .exercises: ExercisesListView()
+                }
+            }
+            .navigationTitle("Library")
+        }
+    }
+}
+
+// Placeholders — real implementations come in later tasks.
+struct RoutinesListView: View {
+    var body: some View { Text("Routines coming soon").foregroundStyle(.secondary) }
+}
+struct ExercisesListView: View {
+    var body: some View { Text("Exercises coming soon").foregroundStyle(.secondary) }
+}
