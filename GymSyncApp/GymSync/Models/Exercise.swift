@@ -1,4 +1,5 @@
 import Foundation
+import Supabase
 
 struct Exercise: Codable, Identifiable, Sendable, Hashable {
     let id: UUID
