@@ -24,10 +24,6 @@ struct LibraryTabView: View {
     }
 }
 
-// Placeholders — real implementations come in later tasks.
 struct RoutinesListView: View {
-    var body: some View { Text("Routines coming soon").foregroundStyle(.secondary) }
-}
-struct ExercisesListView: View {
-    var body: some View { Text("Exercises coming soon").foregroundStyle(.secondary) }
+    var body: some View { Text("Routines coming in Task 18").foregroundStyle(.secondary) }
 }
