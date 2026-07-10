@@ -20,14 +20,15 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
-      - name: Generate Xcode project from project.yml
-        run: xcodegen generate --spec GymSyncApp/project.yml --project GymSyncApp
-
+      # Must run BEFORE xcodegen: generated project only includes files that exist at generate time
       - name: Create Secrets.swift from template (placeholders; unit tests are offline)
         run: |
           if [ -f GymSyncApp/GymSync/Config/Secrets.swift.template ]; then
             cp GymSyncApp/GymSync/Config/Secrets.swift.template GymSyncApp/GymSync/Config/Secrets.swift
           fi
+
+      - name: Generate Xcode project from project.yml
+        run: xcodegen generate --spec GymSyncApp/project.yml --project GymSyncApp
 
       - name: Build and test
         working-directory: GymSyncApp
