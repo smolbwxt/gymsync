@@ -1,0 +1,54 @@
+name: GymSync
+options:
+  bundleIdPrefix: app.gymsync
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+
+targets:
+  GymSync:
+    type: application
+    platform: iOS
+    sources:
+      - GymSync
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.gymsync.ios
+        TARGETED_DEVICE_FAMILY: "1"
+    info:
+      path: GymSync/Info.plist
+      properties:
+        UILaunchScreen: {}
+        CFBundleDisplayName: "Gym Sync"
+        NSHealthShareUsageDescription: "Gym Sync writes your completed workouts to Apple Health so they appear in your Activity ring."
+        NSHealthUpdateUsageDescription: "Gym Sync writes your completed workouts to Apple Health so they appear in your Activity ring."
+        NSLocationWhenInUseUsageDescription: "Gym Sync uses your location to confirm you're at your home gym during check-in."
+    entitlements:
+      path: GymSync/GymSync.entitlements
+      properties:
+        com.apple.developer.applesignin: [Default]
+        com.apple.developer.healthkit: true
+
+  GymSyncTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - GymSyncTests
+    dependencies:
+      - target: GymSync
+
+schemes:
+  GymSync:
+    build:
+      targets:
+        GymSync: all
+        GymSyncTests: [test]
+    test:
+      targets:
+        - GymSyncTests
