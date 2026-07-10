@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(3);
+SELECT plan(5);
 
 INSERT INTO auth.users (id, email) VALUES
   ('00000000-0000-0000-0000-0000000000a3', 'pa@t.com');
@@ -53,6 +53,26 @@ SELECT results_eq(
   $$SELECT count(*)::int FROM chat_messages
     WHERE group_id='50000000-0000-0000-0000-000000000001' AND kind='system_pr'$$,
   ARRAY[1], 'lower weight does not announce');
+
+-- Tie: equal weight is NOT a PR (strict improvement required)
+INSERT INTO set_logs (id, session_id, user_id, exercise_id, set_index, reps, weight)
+SELECT '70000000-0000-0000-0000-000000000003',
+       '60000000-0000-0000-0000-000000000001',
+       '00000000-0000-0000-0000-0000000000a3',
+       e.id, 3, 5, 100
+FROM exercises e WHERE e.slug = 'bench-press';
+
+SELECT results_eq(
+  $$SELECT count(*)::int FROM chat_messages
+    WHERE group_id='50000000-0000-0000-0000-000000000001' AND kind='system_pr'$$,
+  ARRAY[1], 'tie weight does not announce');
+
+-- Body renders whole-number weights without a trailing dot
+SELECT results_eq(
+  $$SELECT body FROM chat_messages
+    WHERE group_id='50000000-0000-0000-0000-000000000001' AND kind='system_pr'$$,
+  ARRAY['🔥 pr_user_a hit a PR on Bench Press: 100 lbs'],
+  'body formats whole-number weight cleanly');
 
 SELECT * FROM finish();
 ROLLBACK;
