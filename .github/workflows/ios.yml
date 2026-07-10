@@ -85,7 +85,7 @@ jobs:
           ASC_API_KEY: ${{ secrets.ASC_API_KEY }}
         run: |
           mkdir -p ~/private_keys
-          printf '%s' "$ASC_API_KEY" > ~/private_keys/AuthKey_RVND9TW64Y.p8
+          printf '%s' "$ASC_API_KEY" > ~/private_keys/AuthKey_57G3DK86PA.p8
 
       - name: Archive (automatic signing via ASC API key)
         working-directory: GymSyncApp
@@ -96,8 +96,8 @@ jobs:
             -destination 'generic/platform=iOS' \
             -archivePath "$RUNNER_TEMP/GymSync.xcarchive" \
             -allowProvisioningUpdates \
-            -authenticationKeyPath "$HOME/private_keys/AuthKey_RVND9TW64Y.p8" \
-            -authenticationKeyID RVND9TW64Y \
+            -authenticationKeyPath "$HOME/private_keys/AuthKey_57G3DK86PA.p8" \
+            -authenticationKeyID 57G3DK86PA \
             -authenticationKeyIssuerID d0ee236a-ef18-498e-8d99-26b47c70d4f0 \
             CODE_SIGN_STYLE=Automatic \
             CURRENT_PROJECT_VERSION=${{ github.run_number }}
@@ -110,6 +110,6 @@ jobs:
             -exportOptionsPlist GymSyncApp/ExportOptions.plist \
             -exportPath "$RUNNER_TEMP/export" \
             -allowProvisioningUpdates \
-            -authenticationKeyPath "$HOME/private_keys/AuthKey_RVND9TW64Y.p8" \
-            -authenticationKeyID RVND9TW64Y \
+            -authenticationKeyPath "$HOME/private_keys/AuthKey_57G3DK86PA.p8" \
+            -authenticationKeyID 57G3DK86PA \
             -authenticationKeyIssuerID d0ee236a-ef18-498e-8d99-26b47c70d4f0
