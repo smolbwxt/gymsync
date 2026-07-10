@@ -58,7 +58,7 @@ enum ChatRepository {
                 .select()
                 .eq("group_id", value: groupID.uuidString)
             if let before {
-                query = query.lt("created_at", value: before.ISO8601Format())
+                query = query.lt("created_at", value: before.ISO8601Format(.iso8601(timeZone: TimeZone(secondsFromGMT: 0)!, includingFractionalSeconds: true)))
             }
             let rows: [ChatMessage] = try await query
                 .order("created_at", ascending: false)
