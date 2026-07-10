@@ -48,6 +48,9 @@ targets:
     platform: iOS
     sources:
       - GymSyncTests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
     dependencies:
       - target: GymSync
 
