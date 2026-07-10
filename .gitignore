@@ -2,6 +2,7 @@
 .env.local
 .env
 GymSyncApp/GymSync/Config/Secrets.swift
+GymSyncApp/GymSyncTests/TestSecrets.swift
 
 # Xcode
 *.xcuserstate

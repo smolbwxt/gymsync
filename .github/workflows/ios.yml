@@ -20,11 +20,26 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
-      # Must run BEFORE xcodegen: generated project only includes files that exist at generate time
-      - name: Create Secrets.swift from template (placeholders; unit tests are offline)
+      # Must run BEFORE xcodegen: generated project only includes files that exist at generate time.
+      # Real values come from repo secrets (absent on fork PRs -> template placeholders, network tests skip).
+      - name: Write Secrets.swift and TestSecrets.swift
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+          TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+          TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
         run: |
-          if [ -f GymSyncApp/GymSync/Config/Secrets.swift.template ]; then
+          if [ -n "$SUPABASE_URL" ]; then
+            printf 'import Foundation\n\nenum Secrets {\n    static let supabaseURL = URL(string: "%s")!\n    static let supabaseAnonKey = "%s"\n}\n' \
+              "$SUPABASE_URL" "$SUPABASE_PUBLISHABLE_KEY" > GymSyncApp/GymSync/Config/Secrets.swift
+          else
             cp GymSyncApp/GymSync/Config/Secrets.swift.template GymSyncApp/GymSync/Config/Secrets.swift
+          fi
+          if [ -n "$TEST_USER_EMAIL" ]; then
+            printf 'import Foundation\n\nenum TestSecrets {\n    static let testUserEmail = "%s"\n    static let testUserPassword = "%s"\n}\n' \
+              "$TEST_USER_EMAIL" "$TEST_USER_PASSWORD" > GymSyncApp/GymSyncTests/TestSecrets.swift
+          else
+            cp GymSyncApp/GymSyncTests/TestSecrets.swift.template GymSyncApp/GymSyncTests/TestSecrets.swift
           fi
 
       - name: Generate Xcode project from project.yml
