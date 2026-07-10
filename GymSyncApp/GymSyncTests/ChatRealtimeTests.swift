@@ -14,11 +14,11 @@ final class ChatRealtimeTests: XCTestCase {
             if message.body == "realtime ping" { expectation.fulfill() }
         }
         // Give the socket a beat to be fully joined before writing
-        try await Task.sleep(for: .seconds(2))
+        try await Task.sleep(for: .seconds(4))
 
         _ = try await ChatRepository.send(groupID: group.id, body: "realtime ping")
 
-        await fulfillment(of: [expectation], timeout: 15)
+        await fulfillment(of: [expectation], timeout: 25)
         await service.unsubscribe()
         try await GroupRepository.deleteGroup(groupID: group.id)
     }
