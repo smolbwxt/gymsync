@@ -1,0 +1,36 @@
+name: iOS
+
+on:
+  push:
+    paths:
+      - "GymSyncApp/**"
+      - ".github/workflows/ios.yml"
+  pull_request:
+    paths:
+      - "GymSyncApp/**"
+      - ".github/workflows/ios.yml"
+
+jobs:
+  build-test:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project from project.yml
+        run: xcodegen generate --spec GymSyncApp/project.yml --project GymSyncApp
+
+      - name: Create Secrets.swift from template (placeholders; unit tests are offline)
+        run: cp GymSyncApp/GymSync/Config/Secrets.swift.template GymSyncApp/GymSync/Config/Secrets.swift
+
+      - name: Build and test
+        working-directory: GymSyncApp
+        run: |
+          xcodebuild test \
+            -project GymSync.xcodeproj \
+            -scheme GymSync \
+            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            CODE_SIGNING_ALLOWED=NO
