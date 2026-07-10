@@ -35,6 +35,7 @@ targets:
       properties:
         UILaunchScreen: {}
         CFBundleDisplayName: "Gym Sync"
+        ITSAppUsesNonExemptEncryption: false
         NSHealthShareUsageDescription: "Gym Sync writes your completed workouts to Apple Health so they appear in your Activity ring."
         NSHealthUpdateUsageDescription: "Gym Sync writes your completed workouts to Apple Health so they appear in your Activity ring."
         NSLocationWhenInUseUsageDescription: "Gym Sync uses your location to confirm you're at your home gym during check-in."
