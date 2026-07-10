@@ -1,0 +1,67 @@
+name: GymSync
+options:
+  bundleIdPrefix: app.gymsync
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: "299EBDGH62"
+
+packages:
+  Supabase:
+    url: https://github.com/supabase/supabase-swift
+    from: 2.5.0
+
+targets:
+  GymSync:
+    type: application
+    platform: iOS
+    sources:
+      - GymSync
+    dependencies:
+      - package: Supabase
+        product: Supabase
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.gymsync.ios
+        TARGETED_DEVICE_FAMILY: "1"
+    info:
+      path: GymSync/Info.plist
+      properties:
+        UILaunchScreen: {}
+        CFBundleDisplayName: "Gym Sync"
+        ITSAppUsesNonExemptEncryption: false
+        NSHealthShareUsageDescription: "Gym Sync writes your completed workouts to Apple Health so they appear in your Activity ring."
+        NSHealthUpdateUsageDescription: "Gym Sync writes your completed workouts to Apple Health so they appear in your Activity ring."
+        NSLocationWhenInUseUsageDescription: "Gym Sync uses your location to confirm you're at your home gym during check-in."
+    entitlements:
+      path: GymSync/GymSync.entitlements
+      properties:
+        com.apple.developer.applesignin: [Default]
+        com.apple.developer.healthkit: true
+
+  GymSyncTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - GymSyncTests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: GymSync
+
+schemes:
+  GymSync:
+    build:
+      targets:
+        GymSync: all
+        GymSyncTests: [test]
+    test:
+      targets:
+        - GymSyncTests
