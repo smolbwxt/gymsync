@@ -22,9 +22,7 @@ struct RoutinesListView: View {
                 List {
                     ForEach(routines) { routine in
                         NavigationLink {
-                            RoutineBuilderView(editing: routine) { updated in
-                                Task { await load() }
-                            }
+                            RoutineDetailChoice(routine: routine, onEdited: { Task { await load() } })
                         } label: {
                             VStack(alignment: .leading) {
                                 Text(routine.name)
@@ -73,5 +71,55 @@ struct RoutinesListView: View {
             }
             await load()
         }
+    }
+}
+
+private struct RoutineDetailChoice: View {
+    let routine: Routine
+    let onEdited: () -> Void
+
+    @State private var exercises: [Exercise] = []
+    @State private var routineExercises: [RoutineExercise] = []
+    @State private var loading = false
+    @State private var errorText: String?
+
+    var body: some View {
+        VStack(spacing: 20) {
+            if loading { ProgressView() }
+            else if let errorText { Text(errorText).foregroundStyle(.red) }
+            else {
+                Text(routine.name).font(.title.bold())
+                Text("\(routineExercises.count) exercises")
+                    .foregroundStyle(.secondary)
+                NavigationLink {
+                    WorkoutSessionView(routine: routine,
+                                        routineExercises: routineExercises,
+                                        allExercises: exercises)
+                } label: {
+                    Text("Start Workout")
+                        .frame(maxWidth: .infinity, minHeight: 50)
+                }
+                .buttonStyle(.borderedProminent)
+                NavigationLink {
+                    RoutineBuilderView(editing: routine) { _ in onEdited() }
+                } label: {
+                    Text("Edit routine")
+                }
+            }
+        }
+        .padding()
+        .task { await load() }
+    }
+
+    @MainActor
+    private func load() async {
+        loading = true
+        defer { loading = false }
+        do {
+            exercises = try await ExerciseRepository.fetchAll()
+            if let (_, exs) = try await RoutineRepository.fetch(id: routine.id) {
+                routineExercises = exs
+            }
+        } catch { errorText = ErrorMapping.map(error).errorDescription }
     }
 }
