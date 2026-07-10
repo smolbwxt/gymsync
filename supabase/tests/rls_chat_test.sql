@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(10);
+SELECT plan(14);
 
 INSERT INTO auth.users (id, email) VALUES
   ('00000000-0000-0000-0000-0000000000a2', 'ca@t.com'),
@@ -28,6 +28,13 @@ SELECT lives_ok(
      '00000000-0000-0000-0000-0000000000a2', 'text', 'first!')$$,
   'member can send text message'
 );
+
+SELECT lives_ok(
+  $$INSERT INTO chat_read_state (group_id, user_id, last_read_message_id) VALUES
+    ('30000000-0000-0000-0000-000000000001',
+     '00000000-0000-0000-0000-0000000000a2',
+     '40000000-0000-0000-0000-000000000001')$$,
+  'member can write own read state');
 
 -- Negative: cannot send as another author (42501)
 SELECT throws_ok(
@@ -72,6 +79,23 @@ SELECT lives_ok(
      '40000000-0000-0000-0000-000000000001')$$,
   'member can write own read state');
 
+-- Negative: member cannot spoof another user's read state (42501)
+SELECT throws_ok(
+  $$INSERT INTO chat_read_state (group_id, user_id, last_read_message_id) VALUES
+    ('30000000-0000-0000-0000-000000000001',
+     '00000000-0000-0000-0000-0000000000a2',
+     '40000000-0000-0000-0000-000000000001')$$,
+  '42501', NULL, 'cannot write another users read state');
+
+-- Negative: member cannot update another user's read state (RLS-filtered = 0 rows)
+SELECT results_eq(
+  $$WITH upd AS (
+      UPDATE chat_read_state SET last_read_message_id = NULL
+      WHERE user_id = '00000000-0000-0000-0000-0000000000a2'
+      RETURNING 1)
+    SELECT count(*)::int FROM upd$$,
+  ARRAY[0], 'cannot update another users read state');
+
 -- Negative: B cannot edit A's message (RLS-filtered UPDATE = 0 rows)
 SELECT results_eq(
   $$WITH upd AS (
@@ -92,6 +116,14 @@ SELECT throws_ok(
     ('40000000-0000-0000-0000-000000000001',
      '00000000-0000-0000-0000-0000000000c2', '👀')$$,
   '42501', NULL, 'outsider cannot react');
+
+-- Negative: outsider cannot insert read state for a group they're not in (42501)
+SELECT throws_ok(
+  $$INSERT INTO chat_read_state (group_id, user_id, last_read_message_id) VALUES
+    ('30000000-0000-0000-0000-000000000001',
+     '00000000-0000-0000-0000-0000000000c2',
+     '40000000-0000-0000-0000-000000000001')$$,
+  '42501', NULL, 'outsider cannot insert read state');
 
 SELECT * FROM finish();
 ROLLBACK;
