@@ -38,7 +38,7 @@ private struct MainTabView: View {
                 .tabItem { Label("Library", systemImage: "books.vertical.fill") }
                 .tag(AppState.Tab.library)
 
-            Text("Social — Phase 2")  // placeholder in Phase 1
+            SocialTabView()
                 .tabItem { Label("Social", systemImage: "person.2.fill") }
                 .tag(AppState.Tab.social)
 
