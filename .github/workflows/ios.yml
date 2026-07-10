@@ -24,7 +24,10 @@ jobs:
         run: xcodegen generate --spec GymSyncApp/project.yml --project GymSyncApp
 
       - name: Create Secrets.swift from template (placeholders; unit tests are offline)
-        run: cp GymSyncApp/GymSync/Config/Secrets.swift.template GymSyncApp/GymSync/Config/Secrets.swift
+        run: |
+          if [ -f GymSyncApp/GymSync/Config/Secrets.swift.template ]; then
+            cp GymSyncApp/GymSync/Config/Secrets.swift.template GymSyncApp/GymSync/Config/Secrets.swift
+          fi
 
       - name: Build and test
         working-directory: GymSyncApp
