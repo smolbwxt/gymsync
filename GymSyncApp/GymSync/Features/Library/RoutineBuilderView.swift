@@ -49,7 +49,7 @@ struct RoutineBuilderView: View {
         }
         .navigationTitle(editing == nil ? "New Routine" : "Edit Routine")
         .toolbar {
-            EditButton()
+            ToolbarItem(placement: .topBarLeading) { EditButton() }
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Save") { Task { await save() } }
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
