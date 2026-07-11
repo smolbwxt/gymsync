@@ -122,11 +122,13 @@ struct ChatView: View {
             await refreshReactions()
             await resolveUsernames()
             await resolveImageURLs()
-            await realtime.subscribe(groupID: group.id) { message in
+            await realtime.subscribe(groupID: group.id, onInsert: { message in
                 guard !messages.contains(where: { $0.id == message.id }) else { return }
                 messages.append(message)
                 Task { await resolveUsernames(); await resolveImageURLs() }
-            }
+            }, onReaction: {
+                Task { await refreshReactions() }
+            })
             errorText = nil
         } catch let error as GymSyncError {
             errorText = error.errorDescription

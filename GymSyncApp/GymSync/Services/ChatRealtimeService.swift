@@ -5,6 +5,7 @@ import Supabase
 final class ChatRealtimeService {
     private var channel: RealtimeChannelV2?
     private var streamTask: Task<Void, Never>?
+    private var reactionTask: Task<Void, Never>?
 
     // Postgrest timestamps: "2026-07-10T19:00:00.123456+00:00" (fractional) or without.
     nonisolated static let postgresDecoder: JSONDecoder = {
@@ -26,7 +27,8 @@ final class ChatRealtimeService {
     }()
 
     func subscribe(groupID: UUID,
-                   onInsert: @escaping @MainActor (ChatMessage) -> Void) async {
+                   onInsert: @escaping @MainActor (ChatMessage) -> Void,
+                   onReaction: (@MainActor () -> Void)? = nil) async {
         await unsubscribe()
         let channel = SupabaseService.shared.client
             .channel("chat:\(groupID.uuidString)")
@@ -35,6 +37,14 @@ final class ChatRealtimeService {
             schema: "public",
             table: "chat_messages",
             filter: "group_id=eq.\(groupID.uuidString)"
+        )
+        // Reactions have no group_id column; RLS (WALRUS) already limits INSERT
+        // events to messages the subscriber can read, and the callback only
+        // refreshes the currently open chat.
+        let reactionInserts = channel.postgresChange(
+            InsertAction.self,
+            schema: "public",
+            table: "chat_message_reactions"
         )
         self.channel = channel
         await channel.subscribe()
@@ -49,11 +59,20 @@ final class ChatRealtimeService {
                 }
             }
         }
+        if let onReaction {
+            reactionTask = Task {
+                for await _ in reactionInserts {
+                    onReaction()
+                }
+            }
+        }
     }
 
     func unsubscribe() async {
         streamTask?.cancel()
         streamTask = nil
+        reactionTask?.cancel()
+        reactionTask = nil
         if let channel {
             await SupabaseService.shared.client.removeChannel(channel)
         }
