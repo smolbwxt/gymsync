@@ -11,6 +11,8 @@ struct ChatView: View {
     @State private var draft = ""
     @State private var realtime = ChatRealtimeService()
     @State private var errorText: String?
+    @State private var typingUsers: Set<String> = []
+    @State private var typingDebounce: Task<Void, Never>?
     @State private var pickerItem: PhotosPickerItem?
     @State private var imageURLs: [UUID: URL] = [:]
     @State private var isSendingImage = false
@@ -42,6 +44,14 @@ struct ChatView: View {
                 Text(errorText).foregroundStyle(.red).font(.footnote)
             }
 
+            if !typingUsers.isEmpty {
+                Text("\(typingUsers.sorted().joined(separator: ", ")) typing…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+            }
+
             HStack {
                 PhotosPicker(selection: $pickerItem, matching: .images) {
                     Image(systemName: "photo").font(.title3)
@@ -65,6 +75,17 @@ struct ChatView: View {
             }
         }
         .task { await load() }
+        .onChange(of: draft) {
+            typingDebounce?.cancel()
+            let isEmpty = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            Task { await realtime.setTyping(!isEmpty) }
+            guard !isEmpty else { return }
+            typingDebounce = Task {
+                try? await Task.sleep(for: .seconds(4))
+                guard !Task.isCancelled else { return }
+                await realtime.setTyping(false)
+            }
+        }
         .onDisappear { Task { await realtime.unsubscribe() } }
     }
 
@@ -129,6 +150,12 @@ struct ChatView: View {
             }, onReaction: {
                 Task { await refreshReactions() }
             })
+            if let username = appState.currentProfile?.username {
+                await realtime.subscribeTyping(groupID: group.id,
+                                               selfUsername: username) { names in
+                    typingUsers = names
+                }
+            }
             errorText = nil
         } catch let error as GymSyncError {
             errorText = error.errorDescription
@@ -140,6 +167,8 @@ struct ChatView: View {
     private func send() async {
         let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         draft = ""
+        typingDebounce?.cancel()
+        Task { await realtime.setTyping(false) }
         do {
             let sent = try await ChatRepository.send(groupID: group.id, body: body)
             if !messages.contains(where: { $0.id == sent.id }) {
