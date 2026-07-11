@@ -7,7 +7,7 @@ enum SessionRepository {
     // MARK: - Room-code alphabet (no ambiguous chars: 0/O, 1/I/L)
     private static let roomCodeAlphabet = Array("ABCDEFGHJKMNPQRSTUVWXYZ23456789")
 
-    private static func generateRoomCode() -> String {
+    private static func makeRoomCode() -> String {
         String((0..<6).map { _ in roomCodeAlphabet.randomElement()! })
     }
 
@@ -138,7 +138,7 @@ enum SessionRepository {
             ]
             if let gid = groupID { row["group_id"] = gid.uuidString }
             if let rid = routineID { row["routine_id"] = rid.uuidString }
-            if generateRoomCode { row["room_code"] = generateRoomCode() }
+            if generateRoomCode { row["room_code"] = makeRoomCode() }
 
             let inserted: WorkoutSession = try await client
                 .from("sessions")
