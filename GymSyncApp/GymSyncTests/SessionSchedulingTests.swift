@@ -45,8 +45,9 @@ final class SessionSchedulingTests: XCTestCase {
         try await SessionRepository.checkIn(sessionID: session.id, method: "traveling_override")
 
         // 5. Verify own participant row shows ready
+        let myID = await SupabaseService.shared.currentUserID()
         let parts = try await SessionRepository.participants(sessionID: session.id)
-        guard let myPart = await parts.first(where: { $0.profile.id == SupabaseService.shared.currentUserID() }) else {
+        guard let myPart = parts.first(where: { $0.profile.id == myID }) else {
             XCTFail("own participant row not found"); return
         }
         XCTAssertEqual(myPart.participant.checkInState, "ready")
