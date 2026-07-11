@@ -266,6 +266,24 @@ enum SessionRepository {
         } catch { throw ErrorMapping.map(error) }
     }
 
+    /// All sessions for a group (upcoming + past), server-side filtered by group_id.
+    /// Participant-only RLS automatically scopes results.
+    static func groupSessions(groupID: UUID, pastLimit: Int = 10) async throws -> [WorkoutSession] {
+        do {
+            let rows: [WorkoutSession] = try await client
+                .from("sessions")
+                .select()
+                .eq("group_id", value: groupID.uuidString)
+                .order("scheduled_for", ascending: false)
+                .limit(pastLimit + 20)
+                .execute()
+                .value
+            return rows
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
+
     /// Start: evaluate lateness (organizer-only RPC) then transition state → in_progress.
     static func start(sessionID: UUID) async throws {
         guard await SupabaseService.shared.currentUserID() != nil else {
