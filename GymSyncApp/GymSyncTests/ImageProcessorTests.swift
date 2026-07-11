@@ -4,7 +4,11 @@ import UIKit
 
 final class ImageProcessorTests: XCTestCase {
     private func makeImageData(width: CGFloat, height: CGFloat) -> Data {
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: width, height: height))
+        // Force scale=1 so pixel dimensions equal point dimensions; otherwise the
+        // simulator's 3x display scale inflates the pixel count 9x, making the
+        // "small image not upscaled" assertion fail (900 != 300).
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: width, height: height),
+                                               format: .init(for: .init(displayScale: 1)))
         let img = renderer.image { ctx in
             UIColor.systemGreen.setFill()
             ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
