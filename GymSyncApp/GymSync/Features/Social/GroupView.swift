@@ -5,8 +5,9 @@ struct GroupView: View {
     let group: GymGroup
 
     private enum SubTab: String, CaseIterable {
-        case chat = "Chat"
-        case members = "Members"
+        case chat     = "Chat"
+        case members  = "Members"
+        case sessions = "Sessions"
     }
 
     @Environment(\.dismiss) private var dismiss
@@ -16,6 +17,9 @@ struct GroupView: View {
     @State private var errorText: String?
     @State private var avatarItem: PhotosPickerItem?
     @State private var avatarURL: URL?
+
+    // Sessions sub-tab
+    @State private var groupSessions: [WorkoutSession] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -32,12 +36,24 @@ struct GroupView: View {
                 ChatView(group: group)
             case .members:
                 membersList
+            case .sessions:
+                sessionsList
             }
         }
         .navigationTitle(group.name)
         .navigationBarTitleDisplayMode(.inline)
-        .task { members = (try? await GroupRepository.members(groupID: group.id)) ?? [] }
+        .task {
+            members = (try? await GroupRepository.members(groupID: group.id)) ?? []
+            await loadGroupSessions()
+        }
+        .onChange(of: subTab) {
+            if subTab == .sessions {
+                Task { await loadGroupSessions() }
+            }
+        }
     }
+
+    // MARK: - Members List
 
     private var membersList: some View {
         List {
@@ -114,6 +130,46 @@ struct GroupView: View {
         }
     }
 
+    // MARK: - Sessions List
+
+    private var sessionsList: some View {
+        List {
+            if groupSessions.isEmpty {
+                Section {
+                    Text("No upcoming sessions — schedule one from Home.")
+                        .foregroundStyle(.secondary)
+                        .font(.subheadline)
+                }
+            } else {
+                ForEach(groupSessions) { session in
+                    NavigationLink {
+                        LobbyView(session: session)
+                    } label: {
+                        sessionRow(session)
+                    }
+                }
+            }
+        }
+        .refreshable { await loadGroupSessions() }
+    }
+
+    @ViewBuilder
+    private func sessionRow(_ session: WorkoutSession) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text("Workout")
+                .fontWeight(.semibold)
+            if let scheduledFor = session.scheduledFor {
+                Text(scheduledFor, style: .date)
+                    + Text(" at ") + Text(scheduledFor, style: .time)
+            }
+            Text(session.state.replacingOccurrences(of: "_", with: " ").capitalized)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - Actions
+
     private func addMember() async {
         do {
             try await GroupRepository.addMember(
@@ -126,6 +182,15 @@ struct GroupView: View {
             errorText = error.errorDescription
         } catch {
             errorText = error.localizedDescription
+        }
+    }
+
+    private func loadGroupSessions() async {
+        do {
+            let all = try await SessionRepository.upcoming()
+            groupSessions = all.filter { $0.groupID == group.id }
+        } catch {
+            // Best-effort; existing data preserved on error
         }
     }
 }

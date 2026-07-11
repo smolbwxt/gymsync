@@ -77,14 +77,14 @@ struct LobbyView: View {
             proposalComposerSheet
         }
         .confirmationDialog(
-            "Location out of range",
+            "Check In Anyway?",
             isPresented: $showTravelDialog,
             titleVisibility: .visible
         ) {
             Button("I'm traveling") { Task { await checkIn(method: "traveling_override") } }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("You don't appear to be at your home gym. Check in as traveling?")
+            Text("Couldn't verify you're at your gym. Check in as traveling?")
         }
         .confirmationDialog(
             notReadyDialogTitle,
@@ -383,10 +383,16 @@ struct LobbyView: View {
         errorText = nil
         do {
             if let gym = try await CheckInService.primaryGym() {
-                let location = try await CheckInService.requestLocation()
-                if CheckInService.distanceCheck(gym: gym, location: location) {
-                    await checkIn(method: "geofence")
-                } else {
+                do {
+                    let location = try await CheckInService.requestLocation()
+                    if CheckInService.distanceCheck(gym: gym, location: location) {
+                        await checkIn(method: "geofence")
+                    } else {
+                        // Out of range — offer traveling override
+                        showTravelDialog = true
+                    }
+                } catch {
+                    // Location unavailable / denied — always offer override so check-in is reachable
                     showTravelDialog = true
                 }
             } else {
