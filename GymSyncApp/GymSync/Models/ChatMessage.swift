@@ -8,6 +8,7 @@ struct ChatMessage: Codable, Identifiable, Sendable, Equatable {
     let authorID: UUID?      // nil = system message
     let kind: Kind
     let body: String?
+    let storagePath: String?
     let replyToID: UUID?
     let createdAt: Date
     let editedAt: Date?
@@ -30,6 +31,7 @@ struct ChatMessage: Codable, Identifiable, Sendable, Equatable {
         case sessionID = "session_id"
         case authorID = "author_id"
         case kind, body
+        case storagePath = "storage_path"
         case replyToID = "reply_to_id"
         case createdAt = "created_at"
         case editedAt = "edited_at"
@@ -83,6 +85,34 @@ enum ChatRepository {
                          "author_id": me.uuidString,
                          "kind": "text",
                          "body": body])
+                .select()
+                .single()
+                .execute()
+                .value
+            return row
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
+
+    static func sendImage(groupID: UUID, imageData: Data) async throws -> ChatMessage {
+        guard let me = await SupabaseService.shared.currentUserID() else {
+            throw GymSyncError.unauthorized
+        }
+        guard let jpeg = ImageProcessor.jpegForUpload(from: imageData) else {
+            throw GymSyncError.validation("That image couldn't be processed.")
+        }
+        let messageID = UUID()
+        let path = try await StorageService.uploadChatImage(
+            groupID: groupID, messageID: messageID, jpegData: jpeg)
+        do {
+            let row: ChatMessage = try await SupabaseService.shared.client
+                .from("chat_messages")
+                .insert(["id": messageID.uuidString,
+                         "group_id": groupID.uuidString,
+                         "author_id": me.uuidString,
+                         "kind": "image",
+                         "storage_path": path])
                 .select()
                 .single()
                 .execute()
