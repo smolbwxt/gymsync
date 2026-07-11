@@ -14,11 +14,10 @@ struct LobbyView: View {
 
     @State private var participants: [(participant: SessionParticipant, profile: Profile)] = []
     @State private var proposals: [RoutineProposal] = []
-    @State private var proposalVotes: [UUID: [ProposalVote]] = [:]  // proposalID → votes
+    @State private var proposalVotes: [UUID: [ProposalVote]] = [:]
     @State private var proposerUsernames: [UUID: String] = [:]
     @State private var routineInfo: (name: String, exercises: [RoutineExercise])? = nil
     @State private var presenceSet: Set<UUID> = []
-
     @State private var realtime = LobbyRealtimeService()
 
     @State private var errorText: String?
@@ -27,8 +26,6 @@ struct LobbyView: View {
     @State private var isStarting = false
     @State private var showStartDialog = false
     @State private var navigateToInProgress = false
-
-    // Proposal composer
     @State private var showProposalComposer = false
     @State private var allExercises: [Exercise] = []
 
@@ -42,7 +39,8 @@ struct LobbyView: View {
     }
 
     private var allReady: Bool {
-        !participants.isEmpty && participants.allSatisfy { $0.participant.checkInState == "ready" }
+        !participants.isEmpty
+            && participants.allSatisfy { $0.participant.checkInState == "ready" }
     }
 
     private var notReadyCount: Int {
@@ -51,80 +49,21 @@ struct LobbyView: View {
 
     private var isCheckedIn: Bool { ownParticipant?.checkInState == "ready" }
 
+    private var notReadyDialogTitle: String {
+        notReadyCount == 1
+            ? "1 person hasn't checked in"
+            : "\(notReadyCount) people haven't checked in"
+    }
+
     // MARK: - Body
 
     var body: some View {
         List {
-            // Room-code banner
-            if let code = session.roomCode {
-                Section {
-                    Button {
-                        UIPasteboard.general.string = code
-                    } label: {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Room Code").font(.caption).foregroundStyle(.secondary)
-                                Text(code)
-                                    .font(.title2.monospaced()).fontWeight(.bold)
-                            }
-                            Spacer()
-                            Image(systemName: "doc.on.doc")
-                                .foregroundStyle(.accentColor)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-
-            // Routine summary
-            Section("Routine") {
-                if let info = routineInfo {
-                    Text(info.name).fontWeight(.semibold)
-                    ForEach(info.exercises) { ex in
-                        routineExerciseRow(ex)
-                    }
-                } else {
-                    Text("No routine — propose one below.")
-                        .foregroundStyle(.secondary)
-                }
-                Button {
-                    showProposalComposer = true
-                } label: {
-                    Label("Edit Routine", systemImage: "pencil.and.list.clipboard")
-                }
-            }
-
-            // Participants
-            Section("Participants") {
-                ForEach(participants, id: \.participant.userID) { item in
-                    participantRow(item)
-                }
-            }
-
-            // Proposals
-            if !proposals.isEmpty {
-                Section("Routine Proposals") {
-                    ForEach(proposals) { proposal in
-                        ProposalCardView(
-                            proposal: proposal,
-                            votes: proposalVotes[proposal.id] ?? [],
-                            usernames: proposerUsernames,
-                            myID: selfID,
-                            onApprove: { await castVote(proposalID: proposal.id, approve: true) },
-                            onVeto:    { await castVote(proposalID: proposal.id, approve: false) }
-                        )
-                    }
-                }
-            }
-
-            // Error
-            if let errorText {
-                Section {
-                    Text(errorText).foregroundStyle(.red).font(.footnote)
-                }
-            }
-
-            // Actions
+            roomCodeSection
+            routineSection
+            participantsSection
+            proposalsSection
+            errorSection
             actionSection
         }
         .navigationTitle("Lobby")
@@ -135,34 +74,24 @@ struct LobbyView: View {
         }
         .onDisappear { Task { await realtime.unsubscribe() } }
         .sheet(isPresented: $showProposalComposer) {
-            ProposalComposerView(
-                session: session,
-                allExercises: allExercises,
-                onProposed: { _ in Task { await reload() } }
-            )
+            proposalComposerSheet
         }
         .confirmationDialog(
             "Location out of range",
             isPresented: $showTravelDialog,
             titleVisibility: .visible
         ) {
-            Button("I'm traveling") {
-                Task { await checkIn(method: "traveling_override") }
-            }
+            Button("I'm traveling") { Task { await checkIn(method: "traveling_override") } }
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("You don't appear to be at your home gym. Check in as traveling?")
         }
         .confirmationDialog(
-            notReadyCount == 1
-                ? "1 person hasn't checked in"
-                : "\(notReadyCount) people haven't checked in",
+            notReadyDialogTitle,
             isPresented: $showStartDialog,
             titleVisibility: .visible
         ) {
-            Button("Start Anyway", role: .destructive) {
-                Task { await startSession() }
-            }
+            Button("Start Anyway", role: .destructive) { Task { await startSession() } }
             Button("Wait", role: .cancel) {}
         } message: {
             Text("They'll be marked late and may owe burpees.")
@@ -172,14 +101,150 @@ struct LobbyView: View {
         }
     }
 
-    // MARK: - Sub-views
+    // MARK: - Sections
 
     @ViewBuilder
+    private var roomCodeSection: some View {
+        if let code = session.roomCode {
+            Section {
+                Button {
+                    UIPasteboard.general.string = code
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Room Code").font(.caption).foregroundStyle(.secondary)
+                            Text(code)
+                                .font(.title2.monospaced())
+                                .fontWeight(.bold)
+                        }
+                        Spacer()
+                        Image(systemName: "doc.on.doc").foregroundStyle(Color.accentColor)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var routineSection: some View {
+        Section("Routine") {
+            routineContent
+            Button {
+                showProposalComposer = true
+            } label: {
+                Label("Edit Routine", systemImage: "pencil.and.list.clipboard")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var routineContent: some View {
+        if let info = routineInfo {
+            Text(info.name).fontWeight(.semibold)
+            ForEach(info.exercises) { ex in
+                routineExerciseRow(ex)
+            }
+        } else {
+            Text("No routine — propose one below.")
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var participantsSection: some View {
+        Section("Participants") {
+            ForEach(participants, id: \.participant.userID) { item in
+                participantRow(item)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var proposalsSection: some View {
+        if !proposals.isEmpty {
+            Section("Routine Proposals") {
+                ForEach(proposals) { proposal in
+                    ProposalCardView(
+                        proposal: proposal,
+                        votes: proposalVotes[proposal.id] ?? [],
+                        usernames: proposerUsernames,
+                        myID: selfID,
+                        onApprove: { await castVote(proposalID: proposal.id, approve: true) },
+                        onVeto:    { await castVote(proposalID: proposal.id, approve: false) }
+                    )
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var errorSection: some View {
+        if let errorText {
+            Section {
+                Text(errorText).foregroundStyle(.red).font(.footnote)
+            }
+        }
+    }
+
+    private var actionSection: some View {
+        Section {
+            checkInRow
+            startRow
+        }
+    }
+
+    @ViewBuilder
+    private var checkInRow: some View {
+        if !isCheckedIn {
+            Button {
+                Task { await initiateCheckIn() }
+            } label: {
+                if isCheckingIn {
+                    HStack {
+                        ProgressView().controlSize(.small)
+                        Text("Checking in…")
+                    }
+                } else {
+                    Label("Check In", systemImage: "location.circle.fill")
+                }
+            }
+            .disabled(isCheckingIn)
+        }
+    }
+
+    @ViewBuilder
+    private var startRow: some View {
+        if isOrganizer {
+            Button {
+                if allReady {
+                    Task { await startSession() }
+                } else {
+                    showStartDialog = true
+                }
+            } label: {
+                if isStarting {
+                    HStack {
+                        ProgressView().controlSize(.small)
+                        Text("Starting…")
+                    }
+                } else {
+                    Label("Start Session", systemImage: "play.circle.fill")
+                }
+            }
+            .disabled(isStarting)
+        } else if isCheckedIn {
+            HStack {
+                ProgressView().controlSize(.small)
+                Text("Waiting for organizer to start…").foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    // MARK: - Row helpers
+
     private func routineExerciseRow(_ ex: RoutineExercise) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Exercise")   // we only have IDs here; names resolved elsewhere
-                    .font(.footnote)
+                Text("Exercise").font(.footnote)
                 HStack(spacing: 8) {
                     if let sets = ex.targetSets {
                         Text("\(sets)×").font(.caption2).foregroundStyle(.secondary)
@@ -193,31 +258,25 @@ struct LobbyView: View {
         }
     }
 
-    @ViewBuilder
-    private func participantRow(_ item: (participant: SessionParticipant, profile: Profile)) -> some View {
+    private func participantRow(
+        _ item: (participant: SessionParticipant, profile: Profile)
+    ) -> some View {
         HStack(spacing: 10) {
-            // Presence dot
             Circle()
-                .fill(presenceSet.contains(item.participant.userID) ? Color.green : Color(.systemGray4))
+                .fill(
+                    presenceSet.contains(item.participant.userID)
+                        ? Color.green
+                        : Color(.systemGray4)
+                )
                 .frame(width: 8, height: 8)
 
             Text(item.profile.username)
-
             Spacer()
 
-            // Check-in state icon
-            switch item.participant.checkInState {
-            case "ready":
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-            case "invited":
-                Image(systemName: "clock").foregroundStyle(.secondary)
-            default:
-                Image(systemName: "clock.badge.exclamationmark").foregroundStyle(.orange)
-            }
+            checkInIcon(for: item.participant.checkInState)
 
-            // Burpees badge
             if item.participant.burpeesOwed > 0 {
-                Text("\(item.participant.burpeesOwed)🍌")
+                Text("\(item.participant.burpeesOwed) burpees")
                     .font(.caption2)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 2)
@@ -228,115 +287,81 @@ struct LobbyView: View {
     }
 
     @ViewBuilder
-    private var actionSection: some View {
-        Section {
-            // Check In — hidden once ready
-            if !isCheckedIn {
-                Button {
-                    Task { await initiateCheckIn() }
-                } label: {
-                    if isCheckingIn {
-                        HStack {
-                            ProgressView().controlSize(.small)
-                            Text("Checking in…")
-                        }
-                    } else {
-                        Label("Check In", systemImage: "location.circle.fill")
-                    }
-                }
-                .disabled(isCheckingIn)
-            }
-
-            // Start (organizer) or waiting label (non-organizer who's ready)
-            if isOrganizer {
-                Button {
-                    if allReady {
-                        Task { await startSession() }
-                    } else {
-                        showStartDialog = true
-                    }
-                } label: {
-                    if isStarting {
-                        HStack {
-                            ProgressView().controlSize(.small)
-                            Text("Starting…")
-                        }
-                    } else {
-                        Label("Start Session", systemImage: "play.circle.fill")
-                    }
-                }
-                .disabled(isStarting)
-            } else if isCheckedIn {
-                HStack {
-                    ProgressView().controlSize(.small)
-                    Text("Waiting for organizer to start…")
-                        .foregroundStyle(.secondary)
-                }
-            }
+    private func checkInIcon(for state: String?) -> some View {
+        switch state {
+        case "ready":
+            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+        case "invited":
+            Image(systemName: "clock").foregroundStyle(.secondary)
+        default:
+            Image(systemName: "clock.badge.exclamationmark").foregroundStyle(.orange)
         }
+    }
+
+    // MARK: - Proposal Composer Sheet
+
+    private var proposalComposerSheet: some View {
+        ProposalComposerView(
+            session: session,
+            allExercises: allExercises,
+            onProposed: { _ in Task { await reload() } }
+        )
     }
 
     // MARK: - Data Loading
 
     @MainActor
     private func openAndLoad() async {
-        // Open lobby if still scheduled (idempotent)
         if session.state == "scheduled" {
             do {
                 try await SessionRepository.openLobby(sessionID: session.id)
             } catch {
-                AppLogger.db.error("openLobby failed: \(error.localizedDescription, privacy: .public)")
+                AppLogger.db.error(
+                    "openLobby failed: \(error.localizedDescription, privacy: .public)")
             }
         }
 
         await reload()
 
-        // Subscribe to real-time updates
         guard let selfID, let username = appState.currentProfile?.username else { return }
         await realtime.subscribe(
             sessionID: session.id,
             selfID: selfID,
             username: username,
-            onPresence: { [self] set in
-                presenceSet = set
-            },
-            onChange: { [self] in
-                Task { await reload() }
-            }
+            onPresence: { [self] set in presenceSet = set },
+            onChange:   { [self] in Task { await reload() } }
         )
     }
 
     @MainActor
     private func reload() async {
         do {
-            async let pFetch = SessionRepository.participants(sessionID: session.id)
+            async let pFetch    = SessionRepository.participants(sessionID: session.id)
             async let propFetch = ProposalRepository.open(sessionID: session.id)
-
             let (fetchedParticipants, fetchedProposals) = try await (pFetch, propFetch)
             participants = fetchedParticipants
+            proposals    = fetchedProposals
 
-            proposals = fetchedProposals
             if !fetchedProposals.isEmpty {
-                let votes = try await ProposalRepository.votes(proposalIDs: fetchedProposals.map(\.id))
+                let votes = try await ProposalRepository.votes(
+                    proposalIDs: fetchedProposals.map(\.id))
                 proposalVotes = Dictionary(grouping: votes, by: \.proposalID)
 
-                // Resolve proposer usernames
                 let unknownIDs = Set(fetchedProposals.map(\.proposerID))
                     .subtracting(proposerUsernames.keys)
                 if !unknownIDs.isEmpty {
-                    let profiles = (try? await ProfileRepository.fetchMany(ids: Array(unknownIDs))) ?? []
+                    let profiles = (try? await ProfileRepository.fetchMany(
+                        ids: Array(unknownIDs))) ?? []
                     for p in profiles { proposerUsernames[p.id] = p.username }
                 }
             }
 
-            // Routine summary
             if let routineID = session.routineID {
                 if let (routine, exercises) = try await RoutineRepository.fetch(id: routineID) {
                     routineInfo = (name: routine.name, exercises: exercises)
                 }
             }
 
-            // Exercise list for proposal composer
             if allExercises.isEmpty {
                 allExercises = (try? await ExerciseRepository.fetchAll()) ?? []
             }
@@ -349,31 +374,26 @@ struct LobbyView: View {
         }
     }
 
-    // MARK: - Check-In Flow
+    // MARK: - Check-In
 
     @MainActor
     private func initiateCheckIn() async {
         isCheckingIn = true
         defer { isCheckingIn = false }
         errorText = nil
-
         do {
             if let gym = try await CheckInService.primaryGym() {
-                // Geofence check
                 let location = try await CheckInService.requestLocation()
                 if CheckInService.distanceCheck(gym: gym, location: location) {
                     await checkIn(method: "geofence")
                 } else {
-                    // Out of range — offer traveling override via dialog
                     showTravelDialog = true
                 }
             } else {
-                // No gym configured — offer traveling override
                 showTravelDialog = true
             }
         } catch let error as GymSyncError {
             if case .validation = error {
-                // Location denied/unavailable — still offer travel
                 showTravelDialog = true
             } else {
                 errorText = error.errorDescription
@@ -397,7 +417,7 @@ struct LobbyView: View {
         }
     }
 
-    // MARK: - Start Session
+    // MARK: - Start
 
     @MainActor
     private func startSession() async {
@@ -414,7 +434,7 @@ struct LobbyView: View {
         }
     }
 
-    // MARK: - Proposal Voting
+    // MARK: - Proposals
 
     @MainActor
     private func castVote(proposalID: UUID, approve: Bool) async {
@@ -429,10 +449,9 @@ struct LobbyView: View {
     }
 }
 
-// MARK: - ProposalComposerView (add-exercise only)
+// MARK: - ProposalComposerView
 
 /// Inline sheet for proposing a new exercise to the session's routine.
-/// Reuses the exercise-picker pattern from RoutineBuilderView.
 private struct ProposalComposerView: View {
     let session: WorkoutSession
     let allExercises: [Exercise]
@@ -451,46 +470,8 @@ private struct ProposalComposerView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Exercise") {
-                    if let ex = selectedExercise {
-                        VStack(alignment: .leading) {
-                            Text(ex.name).fontWeight(.semibold)
-                            Text(ex.primaryMuscle.capitalized)
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    Button {
-                        showExercisePicker = true
-                    } label: {
-                        Label(
-                            selectedExercise == nil ? "Pick an exercise" : "Change exercise",
-                            systemImage: "magnifyingglass"
-                        )
-                    }
-                }
-
-                Section("Targets") {
-                    HStack {
-                        Text("Sets")
-                        Spacer()
-                        TextField("3", text: $targetSets)
-                            .keyboardType(.numberPad)
-                            .multilineTextAlignment(.trailing)
-                    }
-                    HStack {
-                        Text("Reps")
-                        Spacer()
-                        TextField("8-12", text: $targetReps)
-                            .multilineTextAlignment(.trailing)
-                    }
-                    HStack {
-                        Text("Weight (optional)")
-                        Spacer()
-                        TextField("e.g. BW", text: $targetWeight)
-                            .multilineTextAlignment(.trailing)
-                    }
-                }
-
+                exercisePickSection
+                targetsSection
                 if let errorText {
                     Section {
                         Text(errorText).foregroundStyle(.red).font(.footnote)
@@ -508,26 +489,74 @@ private struct ProposalComposerView: View {
                 }
             }
             .sheet(isPresented: $showExercisePicker) {
-                NavigationStack {
-                    List(allExercises) { ex in
-                        Button {
-                            selectedExercise = ex
-                            showExercisePicker = false
-                        } label: {
-                            VStack(alignment: .leading) {
-                                Text(ex.name)
-                                Text(ex.primaryMuscle.capitalized)
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
-                        .foregroundStyle(.primary)
+                exercisePickerSheet
+            }
+        }
+    }
+
+    private var exercisePickSection: some View {
+        Section("Exercise") {
+            if let ex = selectedExercise {
+                VStack(alignment: .leading) {
+                    Text(ex.name).fontWeight(.semibold)
+                    Text(ex.primaryMuscle.capitalized)
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Button {
+                showExercisePicker = true
+            } label: {
+                Label(
+                    selectedExercise == nil ? "Pick an exercise" : "Change exercise",
+                    systemImage: "magnifyingglass"
+                )
+            }
+        }
+    }
+
+    private var targetsSection: some View {
+        Section("Targets") {
+            HStack {
+                Text("Sets")
+                Spacer()
+                TextField("3", text: $targetSets)
+                    .keyboardType(.numberPad)
+                    .multilineTextAlignment(.trailing)
+            }
+            HStack {
+                Text("Reps")
+                Spacer()
+                TextField("8-12", text: $targetReps)
+                    .multilineTextAlignment(.trailing)
+            }
+            HStack {
+                Text("Weight (optional)")
+                Spacer()
+                TextField("e.g. BW", text: $targetWeight)
+                    .multilineTextAlignment(.trailing)
+            }
+        }
+    }
+
+    private var exercisePickerSheet: some View {
+        NavigationStack {
+            List(allExercises, id: \.id) { ex in
+                Button {
+                    selectedExercise = ex
+                    showExercisePicker = false
+                } label: {
+                    VStack(alignment: .leading) {
+                        Text(ex.name)
+                        Text(ex.primaryMuscle.capitalized)
+                            .font(.caption).foregroundStyle(.secondary)
                     }
-                    .navigationTitle("Add exercise")
-                    .toolbar {
-                        ToolbarItem(placement: .topBarLeading) {
-                            Button("Cancel") { showExercisePicker = false }
-                        }
-                    }
+                }
+                .foregroundStyle(.primary)
+            }
+            .navigationTitle("Add exercise")
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { showExercisePicker = false }
                 }
             }
         }

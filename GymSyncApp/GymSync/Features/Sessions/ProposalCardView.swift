@@ -77,7 +77,7 @@ struct ProposalCardView: View {
             Text("Open")
                 .font(.caption2).padding(.horizontal, 6).padding(.vertical, 2)
                 .background(Color.accentColor.opacity(0.15), in: Capsule())
-                .foregroundStyle(.accentColor)
+                .foregroundStyle(Color.accentColor)
         case .approved:
             Text("Approved")
                 .font(.caption2).padding(.horizontal, 6).padding(.vertical, 2)
