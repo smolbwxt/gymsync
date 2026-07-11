@@ -75,15 +75,18 @@ git checkout -b feature/phase-2p5-social-completion
 
 ---
 
-### Task 1: Security follow-ups (read-state gate + lowercase usernames)
+### Task 1: Security follow-ups (read-state gate + case-insensitive usernames)
+
+> **REVISED after user decision (2026-07-11):** usernames are CASE-PRESERVING for display ("Smola" stays "Smola") with CASE-INSENSITIVE uniqueness and lookup. The original lowercase CHECK constraint is replaced by a unique functional index on `lower(username)`, and `ProfileRepository.fetchByUsername` switches from `.eq` on lowercased input to an escaped `.ilike` exact match.
 
 **Files:**
 - Create: `supabase/migrations/20260711000001_security_followups.sql`
-- Test: `supabase/tests/security_followups_test.sql`
+- Modify: `GymSyncApp/GymSync/Models/Profile.swift` (fetchByUsername → ilike)
+- Test: `supabase/tests/security_followups_test.sql`; extend `GymSyncApp/GymSyncTests/ProfileRepositoryTests.swift`
 
 **Interfaces:**
 - Consumes: `chat_read_state` policies (from `20260710000003`), `profiles`.
-- Produces: hardened `chat_read_state` UPDATE policy (membership re-checked); DB-level guarantee `username = lower(username)` that `ProfileRepository.fetchByUsername`'s `.lowercased()` relies on.
+- Produces: hardened `chat_read_state` UPDATE policy (membership re-checked); unique index `profiles_username_lower_idx ON profiles (lower(username))`; `fetchByUsername` matches any casing (so FriendRepository/GroupRepository add-by-username work against mixed-case handles transitively).
 
 - [ ] **Step 1: Write the failing pgTAP test**
 
@@ -145,17 +148,17 @@ SELECT results_eq(
     SELECT count(*)::int FROM upd$$,
   ARRAY[1], 'member updates own read state');
 
--- Negative: uppercase username violates DB constraint (23514)
+-- Negative: username differing only in case collides (unique lower index, 23505)
 SELECT throws_ok(
-  $$INSERT INTO profiles (id, username) VALUES
-    ('00000000-0000-0000-0000-0000000000a4', 'SF_USER_UPPER')$$,
-  '23514', NULL, 'uppercase username rejected by CHECK');
+  $$INSERT INTO profiles (id, username)
+    SELECT '00000000-0000-0000-0000-0000000000c4', 'SF_User_A'$$,
+  '23505', NULL, 'case-variant username rejected by unique lower index');
 
 SELECT * FROM finish();
 ROLLBACK;
 ```
 
-(Note: the last INSERT reuses an existing profile id — the CHECK fires before the PK conflict because CHECK constraints are validated first; if the test instead reports 23505, add a third auth.users fixture and use its fresh id.)
+(Add a third auth.users fixture row with id `...c4` to the setup block so the FK is satisfiable — the insert must fail on the INDEX, not the FK.)
 
 - [ ] **Step 2: Run to verify it fails**
 
@@ -176,9 +179,36 @@ CREATE POLICY "user updates own read-state"
   WITH CHECK (user_id = auth.uid()
               AND public.is_group_member(chat_read_state.group_id, auth.uid()));
 
--- Follow-up 2: fetchByUsername lowercases its lookups; guarantee the invariant at the DB.
-ALTER TABLE public.profiles
-  ADD CONSTRAINT profiles_username_lowercase CHECK (username = lower(username));
+-- Follow-up 2 (REVISED): usernames are case-preserving for display but must be
+-- case-insensitively unique, and lookups match any casing.
+CREATE UNIQUE INDEX profiles_username_lower_idx
+  ON public.profiles (lower(username));
+```
+
+Then in `GymSyncApp/GymSync/Models/Profile.swift`, replace `fetchByUsername`'s query line
+
+```swift
+                .eq("username", value: username.lowercased())
+```
+
+with an escaped case-insensitive exact match (`_` and `%` are ILIKE wildcards):
+
+```swift
+                .ilike("username", pattern: username
+                    .replacingOccurrences(of: "\\", with: "\\\\")
+                    .replacingOccurrences(of: "%", with: "\\%")
+                    .replacingOccurrences(of: "_", with: "\\_"))
+```
+
+And add to `GymSyncApp/GymSyncTests/ProfileRepositoryTests.swift`:
+
+```swift
+    func testFetchByUsernameIsCaseInsensitive() async throws {
+        try await TestAuth.signInIfConfigured()
+        let profile = try await ProfileRepository.fetchByUsername("CI_TEST_USER_2")
+        XCTAssertEqual(profile?.username, "ci_test_user_2",
+                       "lookup must match any casing but return the stored casing")
+    }
 ```
 
 - [ ] **Step 4: Push + full suite**
@@ -188,14 +218,16 @@ export $(grep -v '^#' .env.local | xargs)
 npx supabase db push --db-url "$SUPABASE_DB_URL" --yes
 node scripts/run_pgtap.js
 ```
-Expected: ALL TESTS PASSED. (If the ALTER TABLE fails on existing rows, STOP and report — it means a non-lowercase username exists in prod data and needs manual review.)
+Expected: ALL TESTS PASSED. (If CREATE UNIQUE INDEX fails, two existing usernames collide case-insensitively — STOP and report the offending rows; known-good as of 2026-07-11: `Smola`, `ci_test_user`, `ci_test_user_2`.)
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Commit, push, verify CI** (this task now touches Swift)
 
 ```bash
-git add supabase/migrations/20260711000001_security_followups.sql supabase/tests/security_followups_test.sql
-git commit -m "fix(db): read-state membership gate + lowercase username constraint"
+git add supabase/migrations/20260711000001_security_followups.sql supabase/tests/security_followups_test.sql GymSyncApp/GymSync/Models/Profile.swift GymSyncApp/GymSyncTests/ProfileRepositoryTests.swift
+git commit -m "fix: read-state membership gate + case-insensitive unique usernames"
+git push -u origin feature/phase-2p5-social-completion
 ```
+CI loop → `build-test` PASS.
 
 ---
 
