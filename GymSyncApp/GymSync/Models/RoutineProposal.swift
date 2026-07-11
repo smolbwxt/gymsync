@@ -66,10 +66,10 @@ extension RoutineProposal {
         restSeconds: Int? = nil
     ) -> [String: AnyJSON] {
         var d: [String: AnyJSON] = ["exercise_id": .string(exerciseID.uuidString)]
-        if let v = targetSets   { d["target_sets"]   = AnyJSON.number(Double(v)) }
+        if let v = targetSets   { d["target_sets"]   = AnyJSON.double(Double(v)) }
         if let v = targetReps   { d["target_reps"]   = AnyJSON.string(v) }
         if let v = targetWeight { d["target_weight"] = AnyJSON.string(v) }
-        if let v = restSeconds  { d["rest_seconds"]  = AnyJSON.number(Double(v)) }
+        if let v = restSeconds  { d["rest_seconds"]  = AnyJSON.double(Double(v)) }
         return d
     }
 
@@ -85,10 +85,10 @@ extension RoutineProposal {
         restSeconds: Int? = nil
     ) -> [String: AnyJSON] {
         var d: [String: AnyJSON] = ["routine_exercise_id": .string(routineExerciseID.uuidString)]
-        if let v = targetSets   { d["target_sets"]   = AnyJSON.number(Double(v)) }
+        if let v = targetSets   { d["target_sets"]   = AnyJSON.double(Double(v)) }
         if let v = targetReps   { d["target_reps"]   = AnyJSON.string(v) }
         if let v = targetWeight { d["target_weight"] = AnyJSON.string(v) }
-        if let v = restSeconds  { d["rest_seconds"]  = AnyJSON.number(Double(v)) }
+        if let v = restSeconds  { d["rest_seconds"]  = AnyJSON.double(Double(v)) }
         return d
     }
 
