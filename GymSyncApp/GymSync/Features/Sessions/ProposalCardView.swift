@@ -1,4 +1,5 @@
 import SwiftUI
+import Supabase
 
 /// Presentational card for a single routine proposal.
 /// Receives all data and callbacks; owns no async work itself.
