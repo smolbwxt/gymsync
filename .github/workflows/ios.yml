@@ -50,10 +50,20 @@ jobs:
         run: |
           # NOTE: do not disable code signing — unsigned simulator bundles lack
           # keychain entitlements and supabase-swift silently loses its session.
+          # Pick the first available iPhone simulator; fall back to any simulator.
+          # simctl output: "    iPhone 16 (UDID) (Shutdown)"
+          # We extract the first UUID-looking group (8-4-4-4-12 hex chars).
+          DEST=$(xcrun simctl list devices available | grep -E 'iPhone' | head -1 \
+            | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' | head -1)
+          if [ -z "$DEST" ]; then
+            DEST=$(xcrun simctl list devices available | grep -v '^==' | grep '(' | head -1 \
+              | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' | head -1)
+          fi
+          echo "Using simulator UDID: $DEST"
           xcodebuild test \
             -project GymSync.xcodeproj \
             -scheme GymSync \
-            -destination 'platform=iOS Simulator,name=iPhone 16'
+            -destination "id=$DEST"
 
   deploy-testflight:
     runs-on: macos-15
