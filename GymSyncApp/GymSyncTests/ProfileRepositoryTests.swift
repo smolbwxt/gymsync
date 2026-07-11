@@ -17,4 +17,11 @@ final class ProfileRepositoryTests: XCTestCase {
         let profile = try await ProfileRepository.fetch(userID: randomID)
         XCTAssertNil(profile)
     }
+
+    func testFetchByUsernameFindsSecondCIUser() async throws {
+        try await TestAuth.signInIfConfigured()
+        let profile = try await ProfileRepository.fetchByUsername("ci_test_user_2")
+        XCTAssertNotNil(profile, "seeded counterpart account must exist (run scripts/create_second_test_user.js)")
+        XCTAssertEqual(profile?.username, "ci_test_user_2")
+    }
 }

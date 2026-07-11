@@ -76,4 +76,36 @@ enum ProfileRepository {
             .value
         return existing.isEmpty
     }
+
+    static func fetchByUsername(_ username: String) async throws -> Profile? {
+        do {
+            let row: Profile = try await SupabaseService.shared.client
+                .from("profiles")
+                .select()
+                .eq("username", value: username.lowercased())
+                .single()
+                .execute()
+                .value
+            return row
+        } catch let error as PostgrestError where error.code == "PGRST116" {
+            return nil
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
+
+    static func fetchMany(ids: [UUID]) async throws -> [Profile] {
+        guard !ids.isEmpty else { return [] }
+        do {
+            let rows: [Profile] = try await SupabaseService.shared.client
+                .from("profiles")
+                .select()
+                .in("id", values: ids.map(\.uuidString))
+                .execute()
+                .value
+            return rows
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
 }
