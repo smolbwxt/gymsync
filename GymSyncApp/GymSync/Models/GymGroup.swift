@@ -147,4 +147,21 @@ enum GroupRepository {
             throw ErrorMapping.map(error)
         }
     }
+
+    static func setAvatar(groupID: UUID, imageData: Data) async throws -> URL {
+        guard let jpeg = ImageProcessor.jpegForUpload(from: imageData, maxDimension: 512) else {
+            throw GymSyncError.validation("That image couldn't be processed.")
+        }
+        let url = try await StorageService.uploadGroupAvatar(groupID: groupID, jpegData: jpeg)
+        do {
+            try await SupabaseService.shared.client
+                .from("groups")
+                .update(["avatar_url": url.absoluteString])
+                .eq("id", value: groupID.uuidString)
+                .execute()
+            return url
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
 }

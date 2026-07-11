@@ -41,7 +41,17 @@ struct SocialTabView: View {
                             GroupView(group: group)
                         } label: {
                             HStack {
-                                InitialsAvatar(name: group.name)
+                                if let url = group.avatarURL {
+                                    AsyncImage(url: url) { image in
+                                        image.resizable().scaledToFill()
+                                    } placeholder: {
+                                        InitialsAvatar(name: group.name)
+                                    }
+                                    .frame(width: 34, height: 34)
+                                    .clipShape(Circle())
+                                } else {
+                                    InitialsAvatar(name: group.name)
+                                }
                                 Text(group.name)
                                 Spacer()
                                 if unread.contains(group.id) {
