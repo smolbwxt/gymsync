@@ -50,10 +50,21 @@ jobs:
         run: |
           # NOTE: do not disable code signing — unsigned simulator bundles lack
           # keychain entitlements and supabase-swift silently loses its session.
+          # Use xcrun simctl to pick the first booted/available simulator so
+          # the job is not brittle to runner-specific simulator availability.
+          SIM_ID=$(xcrun simctl list devices available -j \
+            | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+devs=[dev for runtime,devs in d.get('devices',{}).items() for dev in devs if dev.get('isAvailable')]
+iphones=[dev for dev in devs if 'iPhone' in dev.get('name','')]
+print(iphones[0]['udid'] if iphones else devs[0]['udid'])
+")
+          echo "Selected simulator: $SIM_ID"
           xcodebuild test \
             -project GymSync.xcodeproj \
             -scheme GymSync \
-            -destination 'platform=iOS Simulator,name=iPhone 16'
+            -destination "id=$SIM_ID"
 
   deploy-testflight:
     runs-on: macos-15
