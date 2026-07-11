@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 struct ChatView: View {
     let group: GymGroup
@@ -10,6 +11,11 @@ struct ChatView: View {
     @State private var draft = ""
     @State private var realtime = ChatRealtimeService()
     @State private var errorText: String?
+    @State private var typingUsers: Set<String> = []
+    @State private var typingDebounce: Task<Void, Never>?
+    @State private var pickerItem: PhotosPickerItem?
+    @State private var imageURLs: [UUID: URL] = [:]
+    @State private var isSendingImage = false
 
     private static let reactionChoices = ["👍", "🔥", "💪", "😂"]
 
@@ -38,7 +44,19 @@ struct ChatView: View {
                 Text(errorText).foregroundStyle(.red).font(.footnote)
             }
 
+            if !typingUsers.isEmpty {
+                Text("\(typingUsers.sorted().joined(separator: ", ")) typing…")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+            }
+
             HStack {
+                PhotosPicker(selection: $pickerItem, matching: .images) {
+                    Image(systemName: "photo").font(.title3)
+                }
+                .disabled(isSendingImage)
                 TextField("Message", text: $draft, axis: .vertical)
                     .textFieldStyle(.roundedBorder)
                     .lineLimit(1...4)
@@ -50,8 +68,24 @@ struct ChatView: View {
                 .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             .padding()
+            .onChange(of: pickerItem) {
+                guard let item = pickerItem else { return }
+                pickerItem = nil
+                Task { await sendImage(item) }
+            }
         }
         .task { await load() }
+        .onChange(of: draft) {
+            typingDebounce?.cancel()
+            let isEmpty = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            Task { await realtime.setTyping(!isEmpty) }
+            guard !isEmpty else { return }
+            typingDebounce = Task {
+                try? await Task.sleep(for: .seconds(4))
+                guard !Task.isCancelled else { return }
+                await realtime.setTyping(false)
+            }
+        }
         .onDisappear { Task { await realtime.unsubscribe() } }
     }
 
@@ -70,12 +104,7 @@ struct ChatView: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
-                Text(message.deletedAt != nil ? "[deleted message]" : (message.body ?? ""))
-                    .italic(message.deletedAt != nil)
-                    .padding(10)
-                    .background(mine ? Color.accentColor.opacity(0.25)
-                                     : Color(.secondarySystemBackground),
-                                in: RoundedRectangle(cornerRadius: 14))
+                messageContent(message)
                     .contextMenu {
                         ForEach(Self.reactionChoices, id: \.self) { emoji in
                             Button(emoji) {
@@ -113,10 +142,19 @@ struct ChatView: View {
             messages = page.reversed()
             await refreshReactions()
             await resolveUsernames()
-            await realtime.subscribe(groupID: group.id) { message in
+            await resolveImageURLs()
+            await realtime.subscribe(groupID: group.id, onInsert: { message in
                 guard !messages.contains(where: { $0.id == message.id }) else { return }
                 messages.append(message)
-                Task { await resolveUsernames() }
+                Task { await resolveUsernames(); await resolveImageURLs() }
+            }, onReaction: {
+                Task { await refreshReactions() }
+            })
+            if let username = appState.currentProfile?.username {
+                await realtime.subscribeTyping(groupID: group.id,
+                                               selfUsername: username) { names in
+                    typingUsers = names
+                }
             }
             errorText = nil
         } catch let error as GymSyncError {
@@ -129,6 +167,8 @@ struct ChatView: View {
     private func send() async {
         let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         draft = ""
+        typingDebounce?.cancel()
+        Task { await realtime.setTyping(false) }
         do {
             let sent = try await ChatRepository.send(groupID: group.id, body: body)
             if !messages.contains(where: { $0.id == sent.id }) {
@@ -153,6 +193,65 @@ struct ChatView: View {
         let profiles = (try? await ProfileRepository.fetchMany(ids: Array(unknown))) ?? []
         for profile in profiles {
             usernames[profile.id] = profile.username
+        }
+    }
+
+    @ViewBuilder
+    private func messageContent(_ message: ChatMessage) -> some View {
+        if message.deletedAt != nil {
+            Text("[deleted message]").italic()
+                .padding(10)
+                .background(Color(.secondarySystemBackground),
+                            in: RoundedRectangle(cornerRadius: 14))
+        } else if message.kind == .image {
+            AsyncImage(url: imageURLs[message.id]) { phase in
+                switch phase {
+                case .success(let image):
+                    image.resizable().scaledToFit()
+                case .failure:
+                    Label("Image unavailable", systemImage: "photo.badge.exclamationmark")
+                        .font(.footnote).foregroundStyle(.secondary).padding(10)
+                default:
+                    ProgressView().frame(width: 120, height: 120)
+                }
+            }
+            .frame(maxWidth: 240, maxHeight: 320)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+        } else {
+            Text(message.body ?? "")
+                .padding(10)
+                .background(message.authorID == appState.currentProfile?.id
+                                ? Color.accentColor.opacity(0.25)
+                                : Color(.secondarySystemBackground),
+                            in: RoundedRectangle(cornerRadius: 14))
+        }
+    }
+
+    private func sendImage(_ item: PhotosPickerItem) async {
+        isSendingImage = true
+        defer { isSendingImage = false }
+        do {
+            guard let data = try await item.loadTransferable(type: Data.self) else {
+                errorText = "That image couldn't be loaded."
+                return
+            }
+            let sent = try await ChatRepository.sendImage(groupID: group.id, imageData: data)
+            if !messages.contains(where: { $0.id == sent.id }) {
+                messages.append(sent)
+            }
+            await resolveImageURLs()
+        } catch let error as GymSyncError {
+            errorText = error.errorDescription
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    private func resolveImageURLs() async {
+        for message in messages where message.kind == .image {
+            guard imageURLs[message.id] == nil,
+                  let path = message.storagePath else { continue }
+            imageURLs[message.id] = try? await StorageService.signedChatImageURL(path: path)
         }
     }
 }

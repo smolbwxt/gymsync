@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 struct GroupView: View {
     let group: GymGroup
@@ -13,6 +14,8 @@ struct GroupView: View {
     @State private var members: [(member: GroupMember, profile: Profile)] = []
     @State private var addUsername = ""
     @State private var errorText: String?
+    @State private var avatarItem: PhotosPickerItem?
+    @State private var avatarURL: URL?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -38,6 +41,24 @@ struct GroupView: View {
 
     private var membersList: some View {
         List {
+            Section {
+                HStack(spacing: 12) {
+                    if let url = avatarURL ?? group.avatarURL {
+                        AsyncImage(url: url) { image in
+                            image.resizable().scaledToFill()
+                        } placeholder: {
+                            InitialsAvatar(name: group.name)
+                        }
+                        .frame(width: 56, height: 56)
+                        .clipShape(Circle())
+                    } else {
+                        InitialsAvatar(name: group.name)
+                    }
+                    PhotosPicker(selection: $avatarItem, matching: .images) {
+                        Text("Change Group Photo")
+                    }
+                }
+            }
             Section {
                 HStack {
                     TextField("add by username", text: $addUsername)
@@ -69,6 +90,25 @@ struct GroupView: View {
                         try? await GroupRepository.leave(groupID: group.id)
                         dismiss()
                     }
+                }
+            }
+        }
+        .onChange(of: avatarItem) {
+            guard let item = avatarItem else { return }
+            avatarItem = nil
+            Task {
+                do {
+                    guard let data = try await item.loadTransferable(type: Data.self) else {
+                        errorText = "That image couldn't be loaded."
+                        return
+                    }
+                    avatarURL = try await GroupRepository.setAvatar(
+                        groupID: group.id, imageData: data)
+                    errorText = nil
+                } catch let error as GymSyncError {
+                    errorText = error.errorDescription
+                } catch {
+                    errorText = error.localizedDescription
                 }
             }
         }

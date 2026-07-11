@@ -82,7 +82,10 @@ enum ProfileRepository {
             let row: Profile = try await SupabaseService.shared.client
                 .from("profiles")
                 .select()
-                .eq("username", value: username.lowercased())
+                .ilike("username", pattern: username
+                    .replacingOccurrences(of: "\\", with: "\\\\")
+                    .replacingOccurrences(of: "%", with: "\\%")
+                    .replacingOccurrences(of: "_", with: "\\_"))
                 .single()
                 .execute()
                 .value

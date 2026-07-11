@@ -24,4 +24,11 @@ final class ProfileRepositoryTests: XCTestCase {
         XCTAssertNotNil(profile, "seeded counterpart account must exist (run scripts/create_second_test_user.js)")
         XCTAssertEqual(profile?.username, "ci_test_user_2")
     }
+
+    func testFetchByUsernameIsCaseInsensitive() async throws {
+        try await TestAuth.signInIfConfigured()
+        let profile = try await ProfileRepository.fetchByUsername("CI_TEST_USER_2")
+        XCTAssertEqual(profile?.username, "ci_test_user_2",
+                       "lookup must match any casing but return the stored casing")
+    }
 }

@@ -7,6 +7,7 @@ struct SocialTabView: View {
     @State private var pendingCount = 0
     @State private var showCreateGroup = false
     @State private var errorText: String?
+    @State private var friendRealtime = FriendRealtimeService()
 
     var body: some View {
         NavigationStack {
@@ -41,7 +42,17 @@ struct SocialTabView: View {
                             GroupView(group: group)
                         } label: {
                             HStack {
-                                InitialsAvatar(name: group.name)
+                                if let url = group.avatarURL {
+                                    AsyncImage(url: url) { image in
+                                        image.resizable().scaledToFill()
+                                    } placeholder: {
+                                        InitialsAvatar(name: group.name)
+                                    }
+                                    .frame(width: 34, height: 34)
+                                    .clipShape(Circle())
+                                } else {
+                                    InitialsAvatar(name: group.name)
+                                }
                                 Text(group.name)
                                 Spacer()
                                 if unread.contains(group.id) {
@@ -71,7 +82,15 @@ struct SocialTabView: View {
                     groups.insert(newGroup, at: 0)
                 }
             }
-            .task { await refresh() }
+            .task {
+                await refresh()
+                if let me = await SupabaseService.shared.currentUserID() {
+                    await friendRealtime.subscribe(userID: me) {
+                        Task { await refresh() }
+                    }
+                }
+            }
+            .onDisappear { Task { await friendRealtime.unsubscribe() } }
             .refreshable { await refresh() }
         }
     }
