@@ -12,6 +12,8 @@ struct WorkoutSession: Codable, Identifiable, Sendable {
     let groupID: UUID?
     let roomCode: String?
     let scheduledFor: Date?
+    // Phase 4 additions (recurring series)
+    let seriesID: UUID?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -24,6 +26,7 @@ struct WorkoutSession: Codable, Identifiable, Sendable {
         case groupID = "group_id"
         case roomCode = "room_code"
         case scheduledFor = "scheduled_for"
+        case seriesID = "series_id"
     }
 }
 

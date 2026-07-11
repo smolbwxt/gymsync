@@ -33,7 +33,8 @@ enum SessionRepository {
                 createdAt: Date(),
                 groupID: nil,
                 roomCode: nil,
-                scheduledFor: nil
+                scheduledFor: nil,
+                seriesID: nil
             )
             let inserted: WorkoutSession = try await client
                 .from("sessions")
