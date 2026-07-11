@@ -15,7 +15,7 @@ struct SessionInProgressView: View {
 
             Image(systemName: "figure.strengthtraining.traditional")
                 .font(.system(size: 64))
-                .foregroundStyle(.accentColor)
+                .foregroundStyle(Color.accentColor)
 
             Text("Session Live")
                 .font(.title).fontWeight(.bold)

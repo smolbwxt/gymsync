@@ -19,16 +19,16 @@ struct ScheduleSessionView: View {
 
     // Group mode
     @State private var groups: [GymGroup] = []
-    @State private var selectedGroup: GymGroup?
+    @State private var selectedGroupID: UUID?
     @State private var groupMemberIDs: [UUID] = []  // excludes self
 
     // Friends mode
     @State private var friends: [Profile] = []
     @State private var selectedFriendIDs: Set<UUID> = []
 
-    // MARK: - What (routine)
+    // MARK: - What (routine) — use UUID selection to avoid Hashable requirement on Routine
     @State private var routines: [Routine] = []
-    @State private var selectedRoutine: Routine?
+    @State private var selectedRoutineID: UUID?
 
     // MARK: - When
     @State private var scheduledFor: Date = Self.nextFullHour()
@@ -36,6 +36,16 @@ struct ScheduleSessionView: View {
     // MARK: - State
     @State private var isScheduling = false
     @State private var errorText: String?
+
+    // MARK: - Computed
+
+    private var selectedGroup: GymGroup? {
+        groups.first { $0.id == selectedGroupID }
+    }
+
+    private var selectedRoutine: Routine? {
+        routines.first { $0.id == selectedRoutineID }
+    }
 
     var body: some View {
         NavigationStack {
@@ -60,7 +70,7 @@ struct ScheduleSessionView: View {
                 }
             }
             .task { await loadData() }
-            .onChange(of: selectedGroup) {
+            .onChange(of: selectedGroupID) {
                 Task { await loadGroupMembers() }
             }
         }
@@ -77,12 +87,11 @@ struct ScheduleSessionView: View {
             }
             .pickerStyle(.segmented)
 
-            switch whoMode {
-            case .group:
-                groupPicker
-            case .friends:
-                friendsMultiSelect
-            case .code:
+            if whoMode == .group {
+                groupPickerContent
+            } else if whoMode == .friends {
+                friendsMultiSelectContent
+            } else {
                 Text("A room code will be generated — share it so others can join.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -91,27 +100,27 @@ struct ScheduleSessionView: View {
     }
 
     @ViewBuilder
-    private var groupPicker: some View {
+    private var groupPickerContent: some View {
         if groups.isEmpty {
             Text("You have no groups yet.")
                 .foregroundStyle(.secondary)
         } else {
-            Picker("Group", selection: $selectedGroup) {
-                Text("Select a group").tag(Optional<GymGroup>.none)
+            Picker("Group", selection: $selectedGroupID) {
+                Text("Select a group").tag(Optional<UUID>.none)
                 ForEach(groups) { group in
-                    Text(group.name).tag(Optional(group))
+                    Text(group.name).tag(Optional(group.id))
                 }
             }
         }
     }
 
     @ViewBuilder
-    private var friendsMultiSelect: some View {
+    private var friendsMultiSelectContent: some View {
         if friends.isEmpty {
             Text("No friends to invite yet.")
                 .foregroundStyle(.secondary)
         } else {
-            ForEach(friends) { friend in
+            ForEach(friends, id: \.id) { friend in
                 Button {
                     if selectedFriendIDs.contains(friend.id) {
                         selectedFriendIDs.remove(friend.id)
@@ -123,7 +132,7 @@ struct ScheduleSessionView: View {
                         Text(friend.username).foregroundStyle(.primary)
                         Spacer()
                         if selectedFriendIDs.contains(friend.id) {
-                            Image(systemName: "checkmark").foregroundStyle(.accentColor)
+                            Image(systemName: "checkmark").foregroundStyle(Color.accentColor)
                         }
                     }
                 }
@@ -135,10 +144,10 @@ struct ScheduleSessionView: View {
 
     private var whatSection: some View {
         Section("Routine (optional)") {
-            Picker("Routine", selection: $selectedRoutine) {
-                Text("None").tag(Optional<Routine>.none)
-                ForEach(routines) { routine in
-                    Text(routine.name).tag(Optional(routine))
+            Picker("Routine", selection: $selectedRoutineID) {
+                Text("None").tag(Optional<UUID>.none)
+                ForEach(routines, id: \.id) { routine in
+                    Text(routine.name).tag(Optional(routine.id))
                 }
             }
         }
@@ -161,8 +170,8 @@ struct ScheduleSessionView: View {
 
     private var isScheduleButtonDisabled: Bool {
         switch whoMode {
-        case .group:    return selectedGroup == nil
-        case .friends:  return false  // zero invitees is allowed — solo slot with friends-mode
+        case .group:    return selectedGroupID == nil
+        case .friends:  return false
         case .code:     return false
         }
     }
@@ -172,15 +181,15 @@ struct ScheduleSessionView: View {
     @MainActor
     private func loadData() async {
         guard let ownerID = appState.currentProfile?.id else { return }
-        async let fetchGroups  = GroupRepository.myGroups()
-        async let fetchFriends = FriendRepository.friends()
+        async let fetchGroups   = GroupRepository.myGroups()
+        async let fetchFriends  = FriendRepository.friends()
         async let fetchRoutines = RoutineRepository.fetchAll(ownerID: ownerID)
         do {
             let (g, f, r) = try await (fetchGroups, fetchFriends, fetchRoutines)
             groups = g
             friends = f
             routines = r
-            if selectedGroup == nil { selectedGroup = g.first }
+            if selectedGroupID == nil { selectedGroupID = g.first?.id }
         } catch {
             errorText = ErrorMapping.map(error).errorDescription
         }
@@ -188,13 +197,13 @@ struct ScheduleSessionView: View {
 
     @MainActor
     private func loadGroupMembers() async {
-        guard let group = selectedGroup else {
+        guard let groupID = selectedGroupID else {
             groupMemberIDs = []
             return
         }
         guard let selfID = appState.currentProfile?.id else { return }
         do {
-            let members = try await GroupRepository.members(groupID: group.id)
+            let members = try await GroupRepository.members(groupID: groupID)
             groupMemberIDs = members
                 .map(\.member.userID)
                 .filter { $0 != selfID }
@@ -215,11 +224,11 @@ struct ScheduleSessionView: View {
 
         switch whoMode {
         case .group:
-            guard let group = selectedGroup else {
+            guard let gid = selectedGroupID else {
                 errorText = "Please select a group."
                 return
             }
-            groupID = group.id
+            groupID = gid
             inviteeIDs = groupMemberIDs
             generateRoomCode = false
         case .friends:
@@ -236,7 +245,7 @@ struct ScheduleSessionView: View {
             let session = try await SessionRepository.schedule(
                 groupID: groupID,
                 inviteeIDs: inviteeIDs,
-                routineID: selectedRoutine?.id,
+                routineID: selectedRoutineID,
                 scheduledFor: scheduledFor,
                 generateRoomCode: generateRoomCode
             )
