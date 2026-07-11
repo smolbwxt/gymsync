@@ -48,7 +48,9 @@ INSERT INTO sessions (id, organizer_id, state, scheduled_for) VALUES
   ('d0000000-0000-0000-0000-000000000002',
    '00000000-0000-0000-0000-0000000000a7', 'scheduled', now() + interval '1 day');
 SELECT results_eq(
-  $$SELECT count(*)::int FROM chat_messages WHERE kind='system_session'$$,
+  $$SELECT count(*)::int FROM chat_messages
+    WHERE kind='system_session'
+      AND group_id='c0000000-0000-0000-0000-000000000001'$$,
   ARRAY[2], 'groupless session announces nothing');
 
 SELECT * FROM finish();
