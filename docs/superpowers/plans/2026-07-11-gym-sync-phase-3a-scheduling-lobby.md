@@ -75,6 +75,50 @@ GymSyncApp/GymSyncTests/
 
 ---
 
+### Task 0.5: Refetch-on-foreground (Phase 2.5 QA finding)
+
+**Files:**
+- Modify: `GymSyncApp/GymSync/Features/Social/ChatView.swift`
+- Modify: `GymSyncApp/GymSync/Features/Social/SocialTabView.swift`
+
+**Why:** Device QA proved that backgrounding drops the realtime socket and missed events never render until the view reloads (spec §5 reconnect: "on reconnect, re-subscribe and REST-fetch current state"). The lobby (Task 9) inherits this pattern.
+
+**Interfaces:**
+- Produces: the scenePhase-refetch pattern Task 9's LobbyView must copy.
+
+- [ ] **Step 1:** In `ChatView`, add `@Environment(\.scenePhase) private var scenePhase` to the properties, and alongside the existing view modifiers add:
+
+```swift
+        .onChange(of: scenePhase) {
+            guard scenePhase == .active else { return }
+            Task { await load() }
+        }
+```
+
+(`load()` is already idempotent: `realtime.subscribe` tears down the old channel first, and the message fetch replaces state. The dedup guard prevents doubled rows.)
+
+- [ ] **Step 2:** In `SocialTabView`, add the same `@Environment(\.scenePhase)` property and:
+
+```swift
+            .onChange(of: scenePhase) {
+                guard scenePhase == .active else { return }
+                Task {
+                    await refresh()
+                    if let me = await SupabaseService.shared.currentUserID() {
+                        await friendRealtime.subscribe(userID: me) {
+                            Task { await refresh() }
+                        }
+                    }
+                }
+            }
+```
+
+(`FriendRealtimeService.subscribe` self-cleans via `unsubscribe()` first — re-subscribe is safe.)
+
+- [ ] **Step 3:** Commit `fix: refetch + resubscribe realtime on return to foreground`, push (`git push -u origin feature/phase-3a-scheduling-lobby`), CI loop → `build-test` PASS.
+
+---
+
 ### Task 1: Sessions Phase-3 columns + participant check-in fields
 
 **Files:**
