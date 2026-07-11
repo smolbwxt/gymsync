@@ -5,6 +5,7 @@ struct ChatView: View {
     let group: GymGroup
 
     @Environment(AppState.self) private var appState
+    @Environment(\.scenePhase) private var scenePhase
     @State private var messages: [ChatMessage] = []   // oldest-first for rendering
     @State private var reactions: [UUID: [ChatReaction]] = [:]
     @State private var usernames: [UUID: String] = [:]
@@ -85,6 +86,10 @@ struct ChatView: View {
                 guard !Task.isCancelled else { return }
                 await realtime.setTyping(false)
             }
+        }
+        .onChange(of: scenePhase) {
+            guard scenePhase == .active else { return }
+            Task { await load() }
         }
         .onDisappear { Task { await realtime.unsubscribe() } }
     }
