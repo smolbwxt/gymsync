@@ -134,13 +134,16 @@ enum ProposalRepository {
             throw GymSyncError.unauthorized
         }
         do {
+            // position is trigger-assigned (MAX+1) — strip to avoid UNIQUE collisions
+            var cleanedPayload = payload
+            if type == .addExercise { cleanedPayload.removeValue(forKey: "position") }
             let row = ProposalInsert(
                 id: UUID(),
                 sessionID: sessionID,
                 proposerID: me,
                 proposalType: type.rawValue,
                 affectsExerciseID: affectsExerciseID,
-                payload: payload
+                payload: cleanedPayload
             )
             let result: RoutineProposal = try await client
                 .from("routine_proposals")
