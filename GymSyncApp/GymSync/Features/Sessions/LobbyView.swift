@@ -28,6 +28,7 @@ struct LobbyView: View {
     @State private var navigateToInProgress = false
     @State private var showProposalComposer = false
     @State private var allExercises: [Exercise] = []
+    @State private var currentSession: WorkoutSession?
 
     // MARK: - Computed helpers
 
@@ -336,6 +337,8 @@ struct LobbyView: View {
     @MainActor
     private func reload() async {
         do {
+            currentSession = try? await SessionRepository.session(id: session.id)
+
             async let pFetch    = SessionRepository.participants(sessionID: session.id)
             async let propFetch = ProposalRepository.open(sessionID: session.id)
             let (fetchedParticipants, fetchedProposals) = try await (pFetch, propFetch)
@@ -356,7 +359,8 @@ struct LobbyView: View {
                 }
             }
 
-            if let routineID = session.routineID {
+            let effectiveRoutineID = (currentSession ?? session).routineID
+            if let routineID = effectiveRoutineID {
                 if let (routine, exercises) = try await RoutineRepository.fetch(id: routineID) {
                     routineInfo = (name: routine.name, exercises: exercises)
                 }

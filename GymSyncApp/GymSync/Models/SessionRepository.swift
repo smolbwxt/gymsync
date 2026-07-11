@@ -284,6 +284,24 @@ enum SessionRepository {
         }
     }
 
+    /// Fetch a single session row by ID. Returns nil if not found (PGRST116).
+    static func session(id: UUID) async throws -> WorkoutSession? {
+        do {
+            let row: WorkoutSession = try await client
+                .from("sessions")
+                .select()
+                .eq("id", value: id.uuidString)
+                .single()
+                .execute()
+                .value
+            return row
+        } catch let error as PostgrestError where error.code == "PGRST116" {
+            return nil
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
+
     /// Start: evaluate lateness (organizer-only RPC) then transition state → in_progress.
     static func start(sessionID: UUID) async throws {
         guard await SupabaseService.shared.currentUserID() != nil else {
