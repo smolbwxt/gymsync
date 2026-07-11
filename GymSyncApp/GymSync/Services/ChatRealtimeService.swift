@@ -73,6 +73,10 @@ final class ChatRealtimeService {
         }
     }
 
+    // SDK drift note: supabase-swift 2.51 has no presenceState() method.
+    // presenceChange() yields PresenceAction with .joins/.leaves diffs keyed by presence key.
+    // We maintain a local [key: username] map and recompute the set on every diff.
+    // track(state:) takes a labeled `state:` parameter of type JSONObject ([String: AnyJSON]).
     func subscribeTyping(groupID: UUID, selfUsername: String,
                          onChange: @escaping @MainActor (Set<String>) -> Void) async {
         let channel = SupabaseService.shared.client
@@ -82,17 +86,18 @@ final class ChatRealtimeService {
         typingUsername = selfUsername
         await channel.subscribe()
         typingTask = Task {
-            for await _ in presence {
-                let states = await channel.presenceState()
-                var names: Set<String> = []
-                for entry in states {
-                    for presenceItem in entry.presences {
-                        if let name = presenceItem.state["username"]?.stringValue,
-                           name != selfUsername {
-                            names.insert(name)
-                        }
+            // Local map from presence key → username; mutated on each diff.
+            var tracked: [String: String] = [:]
+            for await action in presence {
+                for (key, pv) in action.joins {
+                    if let name = pv.state["username"]?.stringValue {
+                        tracked[key] = name
                     }
                 }
+                for key in action.leaves.keys {
+                    tracked.removeValue(forKey: key)
+                }
+                let names = Set(tracked.values).subtracting([selfUsername])
                 onChange(names)
             }
         }
@@ -101,7 +106,7 @@ final class ChatRealtimeService {
     func setTyping(_ typing: Bool) async {
         guard let typingChannel, let typingUsername else { return }
         if typing && !isTracked {
-            try? await typingChannel.track(["username": .string(typingUsername)])
+            await typingChannel.track(state: ["username": .string(typingUsername)])
             isTracked = true
         } else if !typing && isTracked {
             await typingChannel.untrack()
