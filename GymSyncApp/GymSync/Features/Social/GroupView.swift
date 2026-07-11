@@ -134,7 +134,7 @@ struct GroupView: View {
     // MARK: - Sessions List
 
     private static let upcomingStates: Set<String> = [
-        "scheduled", "lobby_open", "editing", "voting", "locked"
+        "scheduled", "lobby_open", "editing", "voting", "locked", "in_progress"
     ]
     private static let pastStates: Set<String> = ["completed", "abandoned"]
 
