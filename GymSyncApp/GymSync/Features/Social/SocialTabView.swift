@@ -7,6 +7,7 @@ struct SocialTabView: View {
     @State private var pendingCount = 0
     @State private var showCreateGroup = false
     @State private var errorText: String?
+    @State private var friendRealtime = FriendRealtimeService()
 
     var body: some View {
         NavigationStack {
@@ -81,7 +82,15 @@ struct SocialTabView: View {
                     groups.insert(newGroup, at: 0)
                 }
             }
-            .task { await refresh() }
+            .task {
+                await refresh()
+                if let me = await SupabaseService.shared.currentUserID() {
+                    await friendRealtime.subscribe(userID: me) {
+                        Task { await refresh() }
+                    }
+                }
+            }
+            .onDisappear { Task { await friendRealtime.unsubscribe() } }
             .refreshable { await refresh() }
         }
     }
