@@ -343,36 +343,67 @@ struct HomeView: View {
     // MARK: - Actions
 
     private func refresh() async {
-        async let sessionsFetch = SessionRepository.upcoming()
-        async let groupsFetch   = GroupRepository.myGroups()
-        do {
-            let (sessions, fetchedGroups) = try await (sessionsFetch, groupsFetch)
-            upcomingSessions = sessions
-            groups = fetchedGroups
-        } catch {
-            // Best-effort: leave existing data; errors are non-blocking for home
+        let userID = appState.currentProfile?.id
+
+        // Single parallel batch: all 8 fetches are declared up front so they
+        // all start together (cost = max of all 8, not wave1 + wave2). Each
+        // fetch keeps the same best-effort isolation as before — failures
+        // are swallowed independently and stale data is left in place.
+        async let sessionsFetch  = SessionRepository.upcoming()
+        async let groupsFetch    = GroupRepository.myGroups()
+        async let historyFetch   = fetchHistory(userID: userID)
+        async let routinesFetch  = fetchOwnedRoutines(userID: userID)
+        async let exercisesFetch = fetchAllExercises(userID: userID)
+        async let prsFetch       = fetchRecentPRs(userID: userID)
+        async let prCountFetch   = fetchPRCountThisMonth(userID: userID)
+        async let profileFetch   = fetchProfile(userID: userID)
+
+        if let sessions = try? await sessionsFetch { upcomingSessions = sessions }
+        if let fetchedGroups = try? await groupsFetch { groups = fetchedGroups }
+        if let history = await historyFetch { historySessions = history }
+        if let routines = await routinesFetch { ownedRoutines = routines }
+        if let exercises = await exercisesFetch { allExercises = exercises }
+        if let prs = await prsFetch { recentPRs = prs }
+        if let prCount = await prCountFetch { prsThisMonth = prCount }
+        if let refreshedProfile = await profileFetch { profile = refreshedProfile }
+
+        // Matches the previous early-return guard: the Task 5 additions (and
+        // the routine lookup that depends on them) only ran when signed in.
+        if userID != nil {
+            await loadTodaysRoutine()
         }
+    }
 
-        guard let userID = appState.currentProfile?.id else { return }
+    // MARK: - Task 5 fetch helpers (userID-gated, best-effort)
 
-        // Task 5 additions — same best-effort, swallow-errors-leave-stale-data
-        // pattern as above, kicked off in parallel and awaited individually so
-        // one failure doesn't discard the others.
-        async let historyFetch   = SessionRepository.history(userID: userID, limit: 20)
-        async let routinesFetch  = RoutineRepository.fetchAll(ownerID: userID)
-        async let exercisesFetch = ExerciseRepository.fetchAll()
-        async let prsFetch       = PersonalRecordRepository.recent(userID: userID, limit: 1)
-        async let prCountFetch   = PersonalRecordRepository.countSince(userID: userID, date: StatMath.startOfMonth())
-        async let profileFetch   = ProfileRepository.refresh(userID: userID)
+    private func fetchHistory(userID: UUID?) async -> [WorkoutSession]? {
+        guard let userID else { return nil }
+        return try? await SessionRepository.history(userID: userID, limit: 20)
+    }
 
-        if let history = try? await historyFetch { historySessions = history }
-        if let routines = try? await routinesFetch { ownedRoutines = routines }
-        if let exercises = try? await exercisesFetch { allExercises = exercises }
-        if let prs = try? await prsFetch { recentPRs = prs }
-        if let prCount = try? await prCountFetch { prsThisMonth = prCount }
-        if let refreshedProfile = try? await profileFetch { profile = refreshedProfile }
+    private func fetchOwnedRoutines(userID: UUID?) async -> [Routine]? {
+        guard let userID else { return nil }
+        return try? await RoutineRepository.fetchAll(ownerID: userID)
+    }
 
-        await loadTodaysRoutine()
+    private func fetchAllExercises(userID: UUID?) async -> [Exercise]? {
+        guard userID != nil else { return nil }
+        return try? await ExerciseRepository.fetchAll()
+    }
+
+    private func fetchRecentPRs(userID: UUID?) async -> [PersonalRecord]? {
+        guard let userID else { return nil }
+        return try? await PersonalRecordRepository.recent(userID: userID, limit: 1)
+    }
+
+    private func fetchPRCountThisMonth(userID: UUID?) async -> Int? {
+        guard let userID else { return nil }
+        return try? await PersonalRecordRepository.countSince(userID: userID, date: StatMath.startOfMonth())
+    }
+
+    private func fetchProfile(userID: UUID?) async -> Profile? {
+        guard let userID else { return nil }
+        return try? await ProfileRepository.refresh(userID: userID)
     }
 
     @MainActor

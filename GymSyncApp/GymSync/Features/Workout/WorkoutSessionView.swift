@@ -54,6 +54,8 @@ struct WorkoutSessionView: View {
 
                     } else if completed {
                         completionCard
+                    } else if session != nil && routineExercises.isEmpty {
+                        freeformEmptyState
                     } else {
                         HStack { Spacer(); ProgressView().tint(theme.accent); Spacer() }
                             .padding(.top, 40)
@@ -278,6 +280,24 @@ struct WorkoutSessionView: View {
                 .buttonStyle(GSPrimaryButtonStyle())
                 .padding(.horizontal, 16)
         }
+    }
+
+    // Canvas: "No routine" (freeform) session — no set-logging UI exists yet.
+    // Replaces the indefinite spinner (which read as broken, per Task 5
+    // review) with an explanation once the session has actually loaded.
+    // Only the loaded-but-empty state renders this; the genuinely-loading
+    // state (session == nil) still shows the spinner above.
+    private var freeformEmptyState: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Freeform session")
+                .font(GSFont.bold(16, relativeTo: .headline))
+                .foregroundStyle(theme.text)
+            Text("Set logging for freeform workouts is coming soon. Tap End to finish this session.")
+                .font(GSFont.body(13, relativeTo: .caption))
+                .foregroundStyle(theme.neutral700)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
     }
 
     private func summaryStatCell(value: String, label: String) -> some View {
