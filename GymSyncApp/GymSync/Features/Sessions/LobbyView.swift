@@ -30,10 +30,29 @@ struct LobbyView: View {
     @State private var allExercises: [Exercise] = []
     @State private var currentSession: WorkoutSession?
 
+    // MARK: - Manage menu state
+
+    @State private var showChangeTimeSheet = false
+    @State private var changeTimeDate: Date = Date()
+
+    @State private var showCancelOccurrenceDialog = false
+    @State private var showCancelSeriesDialog = false
+    @State private var upcomingOccurrenceCount: Int = 0
+
+    @State private var showSeriesEditor = false
+
     // MARK: - Computed helpers
 
     private var selfID: UUID? { appState.currentProfile?.id }
-    private var isOrganizer: Bool { session.organizerID == selfID }
+    private var isOrganizer: Bool { (currentSession ?? session).organizerID == selfID }
+
+    private var effectiveSession: WorkoutSession { currentSession ?? session }
+    private var effectiveSeriesID: UUID? { effectiveSession.seriesID }
+
+    private var isManageVisible: Bool {
+        let state = effectiveSession.state
+        return isOrganizer && (state == "scheduled" || state == "lobby_open")
+    }
 
     private var ownParticipant: SessionParticipant? {
         participants.first(where: { $0.participant.userID == selfID })?.participant
@@ -68,15 +87,36 @@ struct LobbyView: View {
             actionSection
         }
         .navigationTitle("Lobby")
+        .toolbar {
+            if isManageVisible {
+                ToolbarItem(placement: .topBarTrailing) {
+                    manageMenu
+                }
+            }
+        }
         .task { await openAndLoad() }
         .onChange(of: scenePhase) {
             guard scenePhase == .active else { return }
             Task { await reload() }
         }
         .onDisappear { Task { await realtime.unsubscribe() } }
+        // Proposal composer sheet
         .sheet(isPresented: $showProposalComposer) {
             proposalComposerSheet
         }
+        // Change time sheet
+        .sheet(isPresented: $showChangeTimeSheet) {
+            changeTimeSheet
+        }
+        // Series editor sheet
+        .sheet(isPresented: $showSeriesEditor) {
+            if let sid = effectiveSeriesID {
+                SeriesEditorView(seriesID: sid) {
+                    Task { await reload() }
+                }
+            }
+        }
+        // Check-in dialog
         .confirmationDialog(
             "Check In Anyway?",
             isPresented: $showTravelDialog,
@@ -87,6 +127,7 @@ struct LobbyView: View {
         } message: {
             Text("Couldn't verify you're at your gym. Check in as traveling?")
         }
+        // Start-anyway dialog
         .confirmationDialog(
             notReadyDialogTitle,
             isPresented: $showStartDialog,
@@ -97,8 +138,113 @@ struct LobbyView: View {
         } message: {
             Text("They'll be marked late and may owe burpees.")
         }
+        // Cancel single occurrence dialog
+        .confirmationDialog(
+            "Cancel this session?",
+            isPresented: $showCancelOccurrenceDialog,
+            titleVisibility: .visible
+        ) {
+            Button("Cancel session", role: .destructive) {
+                Task { await cancelOccurrence() }
+            }
+            Button("Keep it", role: .cancel) {}
+        } message: {
+            Text("This session will be deleted. Other sessions in the series are unaffected.")
+        }
+        // Cancel series forward dialog
+        .confirmationDialog(
+            "Cancel rest of series?",
+            isPresented: $showCancelSeriesDialog,
+            titleVisibility: .visible
+        ) {
+            Button("Cancel \(upcomingOccurrenceCount) remaining sessions", role: .destructive) {
+                Task { await cancelSeriesForward() }
+            }
+            Button("Keep series", role: .cancel) {}
+        } message: {
+            Text("All \(upcomingOccurrenceCount) upcoming sessions in this series will be deleted.")
+        }
         .navigationDestination(isPresented: $navigateToInProgress) {
             SessionInProgressView(session: session, participants: participants)
+        }
+    }
+
+    // MARK: - Manage Menu
+
+    @ViewBuilder
+    private var manageMenu: some View {
+        Menu("Manage") {
+            if effectiveSeriesID != nil {
+                // Series session menu items
+                Button {
+                    changeTimeDate = effectiveSession.scheduledFor ?? Date()
+                    showChangeTimeSheet = true
+                } label: {
+                    Label("Change time", systemImage: "clock")
+                }
+
+                Button {
+                    showSeriesEditor = true
+                } label: {
+                    Label("Edit series…", systemImage: "repeat")
+                }
+
+                Divider()
+
+                Button(role: .destructive) {
+                    showCancelOccurrenceDialog = true
+                } label: {
+                    Label("Cancel this session", systemImage: "xmark.circle")
+                }
+
+                Button(role: .destructive) {
+                    Task { await loadUpcomingCount() }
+                    showCancelSeriesDialog = true
+                } label: {
+                    Label("Cancel rest of series", systemImage: "xmark.circle.fill")
+                }
+            } else {
+                // Non-series session menu items
+                Button {
+                    changeTimeDate = effectiveSession.scheduledFor ?? Date()
+                    showChangeTimeSheet = true
+                } label: {
+                    Label("Change time", systemImage: "clock")
+                }
+
+                Button(role: .destructive) {
+                    showCancelOccurrenceDialog = true
+                } label: {
+                    Label("Cancel session", systemImage: "xmark.circle")
+                }
+            }
+        }
+    }
+
+    // MARK: - Change Time Sheet
+
+    private var changeTimeSheet: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    DatePicker(
+                        "New time",
+                        selection: $changeTimeDate,
+                        in: Date()...,
+                        displayedComponents: [.date, .hourAndMinute]
+                    )
+                }
+            }
+            .navigationTitle("Change Time")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { showChangeTimeSheet = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { Task { await applyReschedule() } }
+                }
+            }
         }
     }
 
@@ -451,6 +597,58 @@ struct LobbyView: View {
         do {
             try await ProposalRepository.vote(proposalID: proposalID, approve: approve)
             await reload()
+        } catch let error as GymSyncError {
+            errorText = error.errorDescription
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    // MARK: - Manage actions
+
+    @MainActor
+    private func applyReschedule() async {
+        showChangeTimeSheet = false
+        do {
+            try await SessionRepository.reschedule(sessionID: session.id, to: changeTimeDate)
+            await reload()
+        } catch let error as GymSyncError {
+            errorText = error.errorDescription
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func cancelOccurrence() async {
+        isCancellingOccurrence = true
+        defer { isCancellingOccurrence = false }
+        do {
+            try await SeriesRepository.cancelOccurrence(sessionID: session.id)
+            dismiss()
+        } catch let error as GymSyncError {
+            errorText = error.errorDescription
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func loadUpcomingCount() async {
+        guard let sid = effectiveSeriesID else { return }
+        let all = (try? await SeriesRepository.occurrences(seriesID: sid)) ?? []
+        let now = Date()
+        upcomingOccurrenceCount = all.filter { session in
+            session.state == "scheduled" && (session.scheduledFor ?? .distantPast) > now
+        }.count
+    }
+
+    @MainActor
+    private func cancelSeriesForward() async {
+        guard let sid = effectiveSeriesID else { return }
+        do {
+            try await SeriesRepository.cancelSeriesForward(seriesID: sid)
+            dismiss()
         } catch let error as GymSyncError {
             errorText = error.errorDescription
         } catch {

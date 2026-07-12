@@ -181,6 +181,11 @@ struct GroupView: View {
                 }
                 Text("Workout")
                     .fontWeight(.semibold)
+                if session.seriesID != nil {
+                    Image(systemName: "repeat")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             if let scheduledFor = session.scheduledFor {
                 Text(scheduledFor, style: .date)

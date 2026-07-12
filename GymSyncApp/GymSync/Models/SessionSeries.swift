@@ -64,16 +64,7 @@ struct SeriesDay: Codable, Sendable, Hashable {
 }
 
 // MARK: - WorkoutSession series extension
-
-extension WorkoutSession {
-    /// Series ID decoded from `series_id` column (nil if not a recurring session).
-    /// `WorkoutSession` already conforms to Codable; this computed property reads
-    /// back-decoded storage without modifying the original struct (binary compat).
-    // NOTE: series_id is NOT currently in WorkoutSession.CodingKeys.
-    // Tasks 5/6 that need seriesID on WorkoutSession should add it to Session.swift.
-    // For Task 4, we never need seriesID on the session object — occurrences() returns
-    // [WorkoutSession] filtered by series FK, so callers can use session.id directly.
-}
+// seriesID is decoded in WorkoutSession.CodingKeys (see Session.swift).
 
 // MARK: - Repository
 
@@ -375,6 +366,8 @@ enum SeriesRepository {
     }
 
     /// Replace day rules and future occurrences with new schedule, then finalize again.
+    // NOTE: Non-transactional re-run hazard — retry after partial failure may duplicate
+    // future occurrences (delete succeeds but re-insert runs twice). v1 documented limitation.
     static func editSeriesForward(
         seriesID: UUID,
         days: [SeriesDayInput],
