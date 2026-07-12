@@ -209,7 +209,7 @@ final class SessionBroadcastService {
         authorID: UUID,
         slug: String
     ) async {
-        let displayName = await resolveDisplayName(userID: authorID)
+        let soundDisplayName = await SoundboardPlayer.shared.displayName(for: slug)
 
         struct EchoInsert: Encodable {
             let id: UUID
@@ -232,7 +232,7 @@ final class SessionBroadcastService {
             groupID: groupID,
             authorID: authorID,
             kind: "soundboard_echo",
-            body: "🔊 \(displayName)",
+            body: "🔊 \(soundDisplayName)",
             payload: ["sound_slug": .string(slug)]
         )
 
@@ -244,28 +244,6 @@ final class SessionBroadcastService {
         } catch {
             AppLogger.soundboard.error(
                 "soundboard_echo insert failed: \(error, privacy: .public)")
-        }
-    }
-
-    /// Fetch display_name from profiles.  Returns "Someone" on any error.
-    private func resolveDisplayName(userID: UUID) async -> String {
-        struct ProfileRow: Decodable {
-            let displayName: String?
-            enum CodingKeys: String, CodingKey {
-                case displayName = "display_name"
-            }
-        }
-        do {
-            let rows: [ProfileRow] = try await SupabaseService.shared.client
-                .from("profiles")
-                .select("display_name")
-                .eq("id", value: userID.uuidString)
-                .limit(1)
-                .execute()
-                .value
-            return rows.first?.displayName ?? "Someone"
-        } catch {
-            return "Someone"
         }
     }
 }

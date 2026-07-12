@@ -66,6 +66,17 @@ final class SoundboardPlayer {
         }
     }
 
+    /// Return the display_name for a sound slug from the cached catalog.
+    /// Returns the slug itself if not found or catalog is unavailable.
+    func displayName(for slug: String) async -> String {
+        do {
+            try await ensureCatalog()
+            return catalog[slug]?.displayName ?? slug
+        } catch {
+            return slug
+        }
+    }
+
     // MARK: - Internal helpers
 
     /// Load the catalog once; subsequent callers await the in-flight task.
