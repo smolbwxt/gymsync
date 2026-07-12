@@ -221,18 +221,14 @@ enum SessionRepository {
             throw GymSyncError.unauthorized
         }
         do {
-            // Two-step: my participant rows → sessions .in(ids)
-            let participations: [SessionParticipant] = try await client
-                .from("session_participants")
-                .select()
-                .eq("user_id", value: userID.uuidString)
-                .execute().value
-            guard !participations.isEmpty else { return [] }
-            let sessionIDs = participations.map(\.sessionID.uuidString)
+            // Server-side inner join on my participant rows. The previous
+            // two-step (fetch ALL participations, then sessions .in(ids))
+            // fanned every historical session ID into the request URL and
+            // returned 400 once a user accumulated a few hundred sessions.
             let sessions: [WorkoutSession] = try await client
                 .from("sessions")
-                .select()
-                .in("id", values: sessionIDs)
+                .select("*, session_participants!inner(user_id)")
+                .eq("session_participants.user_id", value: userID.uuidString)
                 .in("state", values: ["scheduled", "lobby_open", "editing", "voting", "locked"])
                 .order("scheduled_for", ascending: true)
                 .execute().value
@@ -312,12 +308,18 @@ enum SessionRepository {
     static func sessions(ids: [UUID]) async throws -> [WorkoutSession] {
         guard !ids.isEmpty else { return [] }
         do {
-            let rows: [WorkoutSession] = try await client
-                .from("sessions")
-                .select()
-                .in("id", values: ids.map(\.uuidString))
-                .execute()
-                .value
+            // Chunked: .in(ids) rides the request URL, which caps out around
+            // a couple hundred UUIDs (see upcoming()'s 400 regression).
+            var rows: [WorkoutSession] = []
+            for chunk in stride(from: 0, to: ids.count, by: 100).map({ Array(ids[$0..<min($0 + 100, ids.count)]) }) {
+                let batch: [WorkoutSession] = try await client
+                    .from("sessions")
+                    .select()
+                    .in("id", values: chunk.map(\.uuidString))
+                    .execute()
+                    .value
+                rows.append(contentsOf: batch)
+            }
             return rows
         } catch { throw ErrorMapping.map(error) }
     }
