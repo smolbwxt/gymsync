@@ -40,8 +40,23 @@ struct GroupView: View {
             }
         }
         .background(theme.bg)
-        .navigationTitle(group.name)
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                HStack(spacing: 8) {
+                    GSInitialsAvatar(name: group.name, size: 30)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(group.name)
+                            .font(GSFont.bold(15, relativeTo: .headline))
+                            .foregroundStyle(theme.text)
+                        Text("\(members.count) member\(members.count == 1 ? "" : "s")")
+                            .font(GSFont.body(11, relativeTo: .caption))
+                            .foregroundStyle(theme.neutral500)
+                    }
+                }
+            }
+        }
         .task {
             members = (try? await GroupRepository.members(groupID: group.id)) ?? []
             await loadGroupSessions()
@@ -82,6 +97,7 @@ struct GroupView: View {
     // MARK: - Members List
 
     private var membersList: some View {
+        VStack(spacing: 0) {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
 
@@ -163,9 +179,7 @@ struct GroupView: View {
                         HStack(spacing: 10) {
                             GSInitialsAvatar(name: entry.profile.username, size: 36)
 
-                            Text(entry.profile.username)
-                                .font(GSFont.bodyMedium(14, relativeTo: .body))
-                                .foregroundStyle(theme.text)
+                            nameBlock(entry.profile)
 
                             Spacer()
 
@@ -185,22 +199,7 @@ struct GroupView: View {
                     }
                 }
 
-                GSDivider()
-                    .padding(.horizontal, 16)
-                    .padding(.top, 16)
-
-                Button("Leave Group", role: .destructive) {
-                    Task {
-                        try? await GroupRepository.leave(groupID: group.id)
-                        dismiss()
-                    }
-                }
-                .font(GSFont.bodyMedium(14, relativeTo: .body))
-                .foregroundStyle(.red)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
-
-                Spacer(minLength: 32)
+                Spacer(minLength: 16)
             }
         }
         .background(theme.bg)
@@ -222,6 +221,45 @@ struct GroupView: View {
                     errorText = error.localizedDescription
                 }
             }
+        }
+
+        // Sticky footer — bordered box, accent text, pinned below a divider
+        GSDivider()
+        Button("Leave Group", role: .destructive) {
+            Task {
+                try? await GroupRepository.leave(groupID: group.id)
+                dismiss()
+            }
+        }
+        .font(GSFont.bodyMedium(14, relativeTo: .body))
+        .foregroundStyle(theme.accent)
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .contentShape(Rectangle())
+        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(theme.bg)
+        }
+    }
+
+    // Two-line "Display Name" / "@username" block — matches the proof's
+    // name treatment (fallback: username-only, single line, when no
+    // displayName is set).
+    @ViewBuilder
+    private func nameBlock(_ profile: Profile) -> some View {
+        if let displayName = profile.displayName, !displayName.isEmpty {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(displayName)
+                    .font(GSFont.bodyMedium(14, relativeTo: .body))
+                    .foregroundStyle(theme.text)
+                Text("@\(profile.username)")
+                    .font(GSFont.body(11, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+            }
+        } else {
+            Text(profile.username)
+                .font(GSFont.bodyMedium(14, relativeTo: .body))
+                .foregroundStyle(theme.text)
         }
     }
 

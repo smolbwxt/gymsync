@@ -66,6 +66,7 @@ struct LogSetSheet: View {
                     // Canvas: Reps + Weight stepper row side by side
                     HStack(spacing: 10) {
                         stepperCell(
+                            theme: theme,
                             label: "Reps",
                             value: $reps,
                             borderColor: theme.divider,
@@ -76,6 +77,7 @@ struct LogSetSheet: View {
                         )
 
                         stepperCell(
+                            theme: theme,
                             label: "Weight (\(exercise.defaultUnit))",
                             value: $weight,
                             borderColor: theme.accent,        // Canvas: accent border on weight
@@ -168,78 +170,6 @@ struct LogSetSheet: View {
 
     // MARK: - Sub-views
 
-    // Canvas: stepper cell — label kicker / "−  value  +" row with borders
-    private func stepperCell(
-        label: String,
-        value: Binding<String>,
-        borderColor: Color,
-        valueColor: Color,
-        keyboard: UIKeyboardType,
-        onDecrement: @escaping () -> Void,
-        onIncrement: @escaping () -> Void
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(label)
-                .font(GSFont.body(11, relativeTo: .caption))
-                .foregroundStyle(theme.neutral500)
-
-            // Canvas: bordered row — minus button | value | plus button, height 48
-            HStack(spacing: 0) {
-                Button(action: onDecrement) {
-                    Text("−")
-                        .font(.system(size: 22, weight: .light))
-                        .foregroundStyle(theme.neutral700)
-                        .frame(width: 40, height: 48)
-                        .contentShape(Rectangle())
-                }
-                .overlay(alignment: .trailing) {
-                    Rectangle().fill(borderColor.opacity(0.6)).frame(width: 1)
-                }
-
-                TextField("", text: value)
-                    .keyboardType(keyboard)
-                    .multilineTextAlignment(.center)
-                    .font(GSFont.heading(22, relativeTo: .title2))
-                    .foregroundStyle(valueColor)
-                    .frame(maxWidth: .infinity, minHeight: 48)
-
-                Button(action: onIncrement) {
-                    Text("+")
-                        .font(.system(size: 22, weight: .light))
-                        .foregroundStyle(theme.accent)
-                        .frame(width: 40, height: 48)
-                        .contentShape(Rectangle())
-                }
-                .overlay(alignment: .leading) {
-                    Rectangle().fill(borderColor.opacity(0.6)).frame(width: 1)
-                }
-            }
-            .overlay(Rectangle().strokeBorder(borderColor, lineWidth: 1))
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    // MARK: - Stepper arithmetic (integers & decimals)
-
-    private func decrementInt(_ s: inout String) {
-        let v = max(0, (Int(s) ?? 0) - 1)
-        s = "\(v)"
-    }
-    private func incrementInt(_ s: inout String) {
-        let v = (Int(s) ?? 0) + 1
-        s = "\(v)"
-    }
-    private func decrementDecimal(_ s: inout String) {
-        let v = max(0, (Double(s) ?? 0) - 2.5)
-        s = v.truncatingRemainder(dividingBy: 1) == 0
-               ? "\(Int(v))" : String(format: "%.1f", v)
-    }
-    private func incrementDecimal(_ s: inout String) {
-        let v = (Double(s) ?? 0) + 2.5
-        s = v.truncatingRemainder(dividingBy: 1) == 0
-               ? "\(Int(v))" : String(format: "%.1f", v)
-    }
-
     private func commitLog() {
         onLog(
             Int(reps),
@@ -252,11 +182,91 @@ struct LogSetSheet: View {
     }
 }
 
+// MARK: - Shared stepper cell (Reps/Weight)
+// Canvas: stepper cell — label kicker / "−  value  +" row with borders. Shared (internal,
+// not file-private) so both LogSetSheet's own reps/weight row and GroupSessionLiveView's
+// inline "LOG THIS SET" card can use the same implementation instead of copy-pasting it.
+
+func stepperCell(
+    theme: GSTheme,
+    label: String,
+    value: Binding<String>,
+    borderColor: Color,
+    valueColor: Color,
+    keyboard: UIKeyboardType,
+    onDecrement: @escaping () -> Void,
+    onIncrement: @escaping () -> Void
+) -> some View {
+    VStack(alignment: .leading, spacing: 5) {
+        Text(label)
+            .font(GSFont.body(11, relativeTo: .caption))
+            .foregroundStyle(theme.neutral500)
+
+        // Canvas: bordered row — minus button | value | plus button, height 48
+        HStack(spacing: 0) {
+            Button(action: onDecrement) {
+                Text("−")
+                    .font(.system(size: 22, weight: .light))
+                    .foregroundStyle(theme.neutral700)
+                    .frame(width: 40, height: 48)
+                    .contentShape(Rectangle())
+            }
+            .overlay(alignment: .trailing) {
+                Rectangle().fill(borderColor.opacity(0.6)).frame(width: 1)
+            }
+
+            TextField("", text: value)
+                .keyboardType(keyboard)
+                .multilineTextAlignment(.center)
+                .font(GSFont.heading(22, relativeTo: .title2))
+                .foregroundStyle(valueColor)
+                .frame(maxWidth: .infinity, minHeight: 48)
+
+            Button(action: onIncrement) {
+                Text("+")
+                    .font(.system(size: 22, weight: .light))
+                    .foregroundStyle(theme.accent)
+                    .frame(width: 40, height: 48)
+                    .contentShape(Rectangle())
+            }
+            .overlay(alignment: .leading) {
+                Rectangle().fill(borderColor.opacity(0.6)).frame(width: 1)
+            }
+        }
+        .overlay(Rectangle().strokeBorder(borderColor, lineWidth: 1))
+    }
+    .frame(maxWidth: .infinity)
+}
+
+// MARK: - Shared stepper arithmetic (integers & decimals)
+// Shared (internal) so GroupSessionLiveView's inline log card doesn't need its own copies.
+
+func decrementInt(_ s: inout String) {
+    let v = max(0, (Int(s) ?? 0) - 1)
+    s = "\(v)"
+}
+func incrementInt(_ s: inout String) {
+    let v = (Int(s) ?? 0) + 1
+    s = "\(v)"
+}
+func decrementDecimal(_ s: inout String) {
+    let v = max(0, (Double(s) ?? 0) - 2.5)
+    s = v.truncatingRemainder(dividingBy: 1) == 0
+           ? "\(Int(v))" : String(format: "%.1f", v)
+}
+func incrementDecimal(_ s: inout String) {
+    let v = (Double(s) ?? 0) + 2.5
+    s = v.truncatingRemainder(dividingBy: 1) == 0
+           ? "\(Int(v))" : String(format: "%.1f", v)
+}
+
 // MARK: - RPE Segment Bar
 // Canvas: 10 horizontal equal segments — accent200 fill up to (not including) selected,
 // accent fill on selected cell with bg-colored number label, surface+divider for unvisited.
+// Shared (internal, not file-private) so GroupSessionLiveView's inline "LOG THIS SET" card
+// reuses this instead of a copy-pasted InlineRPEBar.
 
-private struct RPESegmentBar: View {
+struct RPESegmentBar: View {
     @Binding var value: Double
     let theme: GSTheme
 

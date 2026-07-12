@@ -107,4 +107,55 @@ enum StatMath {
         }
         return String(format: "%.1f", rounded)
     }
+
+    // MARK: - Estimated 1RM (Exercise History stat tile + trend chart)
+
+    /// Epley-formula estimated one-rep max: `weight × (1 + reps/30)`.
+    static func estimatedOneRepMax(weight: Decimal, reps: Int) -> Decimal {
+        guard reps > 0 else { return weight }
+        return weight * (1 + Decimal(reps) / 30)
+    }
+
+    // MARK: - Routine duration estimate (Home / Library / Routine Builder)
+
+    /// Rough duration estimate for a routine card's "~X min" meta suffix.
+    /// Flat ~15 min/exercise (warmup + working sets + rest) — a single shared
+    /// heuristic so Home, Library, and the Routine Builder header all agree.
+    static func estimatedMinutes(exerciseCount: Int) -> Int {
+        max(0, exerciseCount) * 15
+    }
+
+    // MARK: - Month-over-month volume trend (Stats Lifetime Volume card)
+
+    /// Percent change in lifted volume between the calendar month containing
+    /// `now` (so far) and the immediately preceding calendar month.
+    /// Returns `nil` when there's no prior-month volume to compare against
+    /// (division by zero / no baseline — the caller should hide the trend).
+    static func monthOverMonthVolumeChangePercent(
+        logs: [SetLog],
+        now: Date = .now,
+        calendar: Calendar = .current
+    ) -> Double? {
+        let components = calendar.dateComponents([.year, .month], from: now)
+        guard let currentMonthStart = calendar.date(from: components),
+              let lastMonthStart = calendar.date(byAdding: .month, value: -1, to: currentMonthStart)
+        else { return nil }
+
+        var thisMonthVolume = Decimal(0)
+        var lastMonthVolume = Decimal(0)
+        for log in logs {
+            guard !log.isFailed, !log.isPenalty,
+                  let reps = log.reps, let weight = log.weight else { continue }
+            let volume = Decimal(reps) * weight
+            if log.loggedAt >= currentMonthStart {
+                thisMonthVolume += volume
+            } else if log.loggedAt >= lastMonthStart {
+                lastMonthVolume += volume
+            }
+        }
+
+        guard lastMonthVolume > 0 else { return nil }
+        let delta = NSDecimalNumber(decimal: (thisMonthVolume - lastMonthVolume) / lastMonthVolume).doubleValue
+        return delta * 100
+    }
 }

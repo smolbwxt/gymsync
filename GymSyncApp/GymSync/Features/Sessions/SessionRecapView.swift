@@ -15,6 +15,12 @@ struct SessionRecapView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.gsTheme) private var theme
+    @Environment(AppState.self) private var appState
+
+    @State private var groupName: String?
+    @State private var routineName: String?
+    @State private var sessionPRs: [PersonalRecord] = []
+    @State private var prExerciseNames: [UUID: String] = [:]
 
     // MARK: - Computed stats
 
@@ -68,6 +74,32 @@ struct SessionRecapView: View {
         return (session.completedAt ?? session.startedAt).map { fmt.string(from: $0) } ?? ""
     }
 
+    private var heroKicker: String {
+        guard let groupName else { return "SESSION RECAP" }
+        guard let routineName else { return groupName.uppercased() }
+        return "\(groupName.uppercased()) · \(routineName.uppercased())"
+    }
+
+    private func prCount(for userID: UUID) -> Int {
+        sessionPRs.filter { $0.userID == userID }.count
+    }
+
+    private var myPR: PersonalRecord? {
+        guard let selfID = appState.currentProfile?.id else { return nil }
+        return sessionPRs.first { $0.userID == selfID }
+    }
+
+    private func decimalString(_ value: Decimal) -> String {
+        var value = value
+        var rounded = Decimal()
+        NSDecimalRound(&rounded, &value, 0, .plain)
+        return rounded == value ? "\(rounded)" : "\(value)"
+    }
+
+    private var shareText: String {
+        "\(heroKicker == "SESSION RECAP" ? "GymSync session" : heroKicker) — \(durationString), \(formatVolume(totalVolume)) lbs, \(totalSets) sets."
+    }
+
     private var totalSets: Int { sets.filter { !$0.isPenalty }.count }
 
     private var totalVolume: Double {
@@ -89,7 +121,7 @@ struct SessionRecapView: View {
                         .padding(.bottom, 14)
 
                     // ── PER-PARTICIPANT ──────────────────────────────────
-                    GSSectionHeader("Results")
+                    GSSectionHeader("Leaderboard · By Volume")
                         .padding(.horizontal, 16)
                         .padding(.bottom, 8)
 
@@ -104,16 +136,31 @@ struct SessionRecapView: View {
                         }
                     }
 
+                    if let myPR {
+                        yourPRCallout(myPR)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 14)
+                    }
+
                     GSDivider()
                         .padding(.horizontal, 16)
                         .padding(.top, 14)
 
                     // ── DONE ─────────────────────────────────────────────
-                    Button("Done") {
-                        onDone()
-                        dismiss()
+                    HStack(spacing: 10) {
+                        ShareLink(item: shareText) {
+                            Text("Share Recap")
+                        }
+                        .buttonStyle(GSSecondaryButtonStyle())
+                        .frame(maxWidth: .infinity)
+
+                        Button("Done") {
+                            onDone()
+                            dismiss()
+                        }
+                        .buttonStyle(GSPrimaryButtonStyle())
+                        .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(GSPrimaryButtonStyle())
                     .padding(.horizontal, 16)
                     .padding(.top, 14)
                     .padding(.bottom, 30)
@@ -122,7 +169,60 @@ struct SessionRecapView: View {
             .background(theme.bg)
             .navigationTitle("Session Complete")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    ShareLink(item: shareText) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 17))
+                            .foregroundStyle(theme.text)
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
+                    }
+                }
+            }
+            .task { await loadExtras() }
         }
+    }
+
+    // MARK: - Data loading
+
+    @MainActor
+    private func loadExtras() async {
+        if let groupID = session.groupID {
+            groupName = (try? await GroupRepository.fetchMany(ids: [groupID]))?.first?.name
+        }
+        if let routineID = session.routineID {
+            routineName = (try? await RoutineRepository.fetch(id: routineID))?.0.name
+        }
+        sessionPRs = (try? await PersonalRecordRepository.bySession(sessionID: session.id)) ?? []
+        let unknownExerciseIDs = Set(sessionPRs.map(\.exerciseID)).subtracting(prExerciseNames.keys)
+        for exerciseID in unknownExerciseIDs {
+            if let exercise = try? await ExerciseRepository.fetch(id: exerciseID) {
+                prExerciseNames[exerciseID] = exercise.name
+            }
+        }
+    }
+
+    // MARK: - Your PR callout
+    // Canvas: distinct "YOUR PR THIS SESSION" callout card
+
+    private func yourPRCallout(_ pr: PersonalRecord) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("🔥 YOUR PR THIS SESSION")
+                .font(GSFont.bold(10, relativeTo: .caption2))
+                .tracking(1.2)
+                .foregroundStyle(theme.accent)
+            Text("\(prExerciseNames[pr.exerciseID] ?? "Exercise") — \(decimalString(pr.weight)) lbs × \(pr.reps)")
+                .font(GSFont.bold(15, relativeTo: .headline))
+                .foregroundStyle(theme.text)
+            Text("▲ Beat previous best by \(decimalString(pr.weight - pr.previousBest)) lbs")
+                .font(GSFont.body(11, relativeTo: .caption))
+                .foregroundStyle(theme.accent700)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.accent100)
+        .overlay(Rectangle().strokeBorder(theme.accent300, lineWidth: 1))
     }
 
     // MARK: - Hero banner
@@ -131,7 +231,7 @@ struct SessionRecapView: View {
 
     private var heroBanner: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("SESSION RECAP")
+            Text(heroKicker)
                 .font(GSFont.bold(10, relativeTo: .caption2))
                 .tracking(1.4)
                 .foregroundStyle(theme.bg.opacity(0.85))
@@ -152,6 +252,10 @@ struct SessionRecapView: View {
                     .fill(theme.bg.opacity(0.3))
                     .frame(width: 1, height: 32)
                 statPill(value: "\(totalSets)", label: "SETS")
+                Rectangle()
+                    .fill(theme.bg.opacity(0.3))
+                    .frame(width: 1, height: 32)
+                statPill(value: "\(sessionPRs.count)", label: "PRS")
             }
             .padding(.top, 12)
         }
@@ -224,6 +328,11 @@ struct SessionRecapView: View {
             }
 
             Spacer()
+
+            let prs = prCount(for: stat.participant.userID)
+            if prs > 0 {
+                GSTag(text: "\(prs) PR\(prs == 1 ? "" : "s")", style: .accent)
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)

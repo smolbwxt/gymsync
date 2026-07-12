@@ -86,6 +86,23 @@ enum GroupRepository {
         }
     }
 
+    /// Bulk group lookup by ID — backs Exercise History's "· {group name}"
+    /// meta suffix for sets logged in a group session.
+    static func fetchMany(ids: [UUID]) async throws -> [GymGroup] {
+        guard !ids.isEmpty else { return [] }
+        do {
+            let rows: [GymGroup] = try await SupabaseService.shared.client
+                .from("groups")
+                .select()
+                .in("id", values: ids.map(\.uuidString))
+                .execute()
+                .value
+            return rows
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
+
     static func members(groupID: UUID) async throws -> [(member: GroupMember, profile: Profile)] {
         do {
             let rows: [GroupMember] = try await SupabaseService.shared.client

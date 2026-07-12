@@ -47,7 +47,7 @@ struct SignInView: View {
                     } onCompletion: { result in
                         Task { await handle(result) }
                     }
-                    .signInWithAppleButtonStyle(.white)
+                    .signInWithAppleButtonStyle(.black)
                     .frame(height: 50)
 
                     if let errorText {

@@ -51,10 +51,7 @@ struct SocialTabView: View {
                         .padding(.top, 12)
 
                     // Groups header
-                    Text("Groups")
-                        .font(GSFont.bodyMedium(11, relativeTo: .caption2))
-                        .foregroundStyle(theme.neutral500)
-                        .tracking(0.5)
+                    GSSectionHeader("Groups")
                         .padding(.horizontal, 16)
                         .padding(.top, 16)
                         .padding(.bottom, 8)

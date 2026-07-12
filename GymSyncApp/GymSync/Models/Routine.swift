@@ -78,4 +78,20 @@ enum RoutineRepository {
             _ = try await client.from("routines").delete().eq("id", value: id).execute()
         } catch { throw ErrorMapping.map(error) }
     }
+
+    /// Bulk routine_exercises lookup — backs the Library list's card body/tags/meta
+    /// (needs every visible routine's exercises without N per-routine round-trips).
+    static func exercisesForRoutines(ids: [UUID]) async throws -> [RoutineExercise] {
+        guard !ids.isEmpty else { return [] }
+        do {
+            let rows: [RoutineExercise] = try await client
+                .from("routine_exercises")
+                .select()
+                .in("routine_id", values: ids.map(\.uuidString))
+                .order("position", ascending: true)
+                .execute()
+                .value
+            return rows
+        } catch { throw ErrorMapping.map(error) }
+    }
 }

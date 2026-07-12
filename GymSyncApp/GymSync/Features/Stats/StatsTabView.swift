@@ -7,6 +7,7 @@ struct StatsTabView: View {
     @State private var refreshedProfile: Profile?
     @State private var weeklyVolumes: [Decimal] = Array(repeating: 0, count: 6)
     @State private var recentPRs: [PersonalRecord] = []
+    @State private var monthTrendPercent: Double?
 
     var body: some View {
         NavigationStack {
@@ -20,6 +21,11 @@ struct StatsTabView: View {
                                 .font(GSFont.heading(34, relativeTo: .largeTitle))
                                 .foregroundStyle(theme.text)
                                 .monospacedDigit()
+                            if let monthTrendPercent {
+                                Text("\(monthTrendPercent >= 0 ? "▲" : "▼") \(abs(Int(monthTrendPercent.rounded())))% vs last month")
+                                    .font(GSFont.body(12, relativeTo: .caption))
+                                    .foregroundStyle(theme.accent700)
+                            }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(16)
@@ -247,9 +253,18 @@ struct StatsTabView: View {
     private func loadWeeklyVolumeAndPRs() async {
         guard let userID = appState.currentProfile?.id else { return }
         let currentWeekStart = StatMath.startOfWeek(containing: .now, calendar: .current)
-        let since = Calendar.current.date(byAdding: .day, value: -35, to: currentWeekStart) ?? currentWeekStart
+        // Widened to the start of last calendar month (min 35d) so the same
+        // fetch also backs the "vs last month" trend line, not just the 6
+        // weekly bars — avoids a second network round-trip.
+        let currentMonthStart = Calendar.current.date(
+            from: Calendar.current.dateComponents([.year, .month], from: .now)
+        ) ?? .now
+        let lastMonthStart = Calendar.current.date(byAdding: .month, value: -1, to: currentMonthStart) ?? currentMonthStart
+        let weeklyWindowStart = Calendar.current.date(byAdding: .day, value: -35, to: currentWeekStart) ?? currentWeekStart
+        let since = min(weeklyWindowStart, lastMonthStart)
         let logs = (try? await SessionRepository.recentSetLogs(userID: userID, since: since)) ?? []
         weeklyVolumes = StatMath.weeklyVolumes(logs: logs, weeks: 6, calendar: .current)
+        monthTrendPercent = StatMath.monthOverMonthVolumeChangePercent(logs: logs, calendar: .current)
         recentPRs = (try? await PersonalRecordRepository.recent(userID: userID, limit: 5)) ?? []
     }
 }

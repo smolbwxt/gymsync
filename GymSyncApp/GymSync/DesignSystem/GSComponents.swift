@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 
 // MARK: - GSPrimaryButtonStyle
 //
@@ -379,15 +380,31 @@ public struct GSStatTile: View {
     private let label: String
     private let valueColor: Color?
     private let valueFontSize: CGFloat
+    private let labelColor: Color?
+    private let uppercaseLabel: Bool
 
     /// `valueFontSize` defaults to the canonical 20pt (Home tab tiles); callers
     /// matching a canvas spec with a smaller scale (e.g. You tab's 18pt stat
     /// tiles) can override per-instance.
-    public init(value: String, label: String, valueColor: Color? = nil, valueFontSize: CGFloat = 20) {
+    ///
+    /// `labelColor`/`uppercaseLabel` default to the original neutral700,
+    /// sentence-case look — opt in per-instance (e.g. Exercise History's
+    /// tracked, accent-colored, all-caps tile labels) without touching any
+    /// other call site.
+    public init(
+        value: String,
+        label: String,
+        valueColor: Color? = nil,
+        valueFontSize: CGFloat = 20,
+        labelColor: Color? = nil,
+        uppercaseLabel: Bool = false
+    ) {
         self.value = value
         self.label = label
         self.valueColor = valueColor
         self.valueFontSize = valueFontSize
+        self.labelColor = labelColor
+        self.uppercaseLabel = uppercaseLabel
     }
 
     public var body: some View {
@@ -395,13 +412,69 @@ public struct GSStatTile: View {
             Text(value)
                 .font(GSFont.bold(valueFontSize, relativeTo: .title3))
                 .foregroundColor(valueColor ?? theme.text)
-            Text(label)
+            Text(uppercaseLabel ? label.uppercased() : label)
                 .font(GSFont.body(10, relativeTo: .caption2))
-                .foregroundColor(theme.neutral700)
+                .tracking(uppercaseLabel ? 1.2 : 0)
+                .foregroundColor(labelColor ?? theme.neutral700)
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.surface)
         .cornerRadius(0)
+    }
+}
+
+// MARK: - GSMiniTrendCard
+//
+// Compact sparkline trend card: uppercase tracked kicker + optional delta
+// badge header, axis-free line chart body. Companion to `TrendChartView`
+// (which adds axis labels + an 8w/6m/1y range toggle for the full Exercise
+// History screen) — this variant is for smaller inline placements, like
+// Exercise Detail's "Est. 1RM · 12 weeks" trend card.
+
+public struct GSMiniTrendCard: View {
+    @Environment(\.gsTheme) private var theme
+
+    private let kicker: String
+    private let data: [(Date, Double)]
+    private let deltaText: String?
+
+    public init(kicker: String, data: [(Date, Double)], deltaText: String? = nil) {
+        self.kicker = kicker
+        self.data = data
+        self.deltaText = deltaText
+    }
+
+    public var body: some View {
+        GSCard(bordered: true) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(kicker.uppercased())
+                        .font(GSFont.bodyMedium(10, relativeTo: .caption2))
+                        .tracking(1.0)
+                        .foregroundColor(theme.neutral700)
+                    Spacer()
+                    if let deltaText {
+                        Text(deltaText)
+                            .font(GSFont.body(12, relativeTo: .caption))
+                            .foregroundColor(theme.accent700)
+                    }
+                }
+                if data.isEmpty {
+                    Text("Not enough data yet.")
+                        .font(GSFont.body(13, relativeTo: .caption))
+                        .foregroundColor(theme.neutral500)
+                } else {
+                    Chart(Array(data.enumerated()), id: \.offset) { _, point in
+                        LineMark(x: .value("Date", point.0), y: .value("Value", point.1))
+                            .foregroundStyle(theme.accent)
+                    }
+                    .chartXAxis(.hidden)
+                    .chartYAxis(.hidden)
+                    .frame(height: 90)
+                }
+            }
+            .padding(16)
+        }
     }
 }

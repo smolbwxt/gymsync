@@ -208,25 +208,22 @@ struct ChatView: View {
                         .background(theme.surface)
                         .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
 
-                    // Mic button — hold to record per canvas; 38×38, bordered
-                    micButton
-
-                    // Send button — accent primary, 38×38
-                    Button {
-                        Task { await send() }
-                    } label: {
-                        Image(systemName: "arrow.up")
-                            .font(.system(size: 17, weight: .semibold))
-                            .foregroundStyle(theme.bg)
-                            .frame(width: 38, height: 38)
-                            .background(
-                                draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                    ? theme.neutral400
-                                    : theme.accent
-                            )
+                    // Mic (empty draft) or Send (non-empty draft) — matches the proof's
+                    // idle row, which never shows a separate mic icon alongside send.
+                    if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        micButton
+                    } else {
+                        Button {
+                            Task { await send() }
+                        } label: {
+                            Image(systemName: "arrow.up")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(theme.bg)
+                                .frame(width: 38, height: 38)
+                                .background(theme.accent)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 12)
                 .padding(.top, 9)
@@ -309,14 +306,8 @@ struct ChatView: View {
             }
             .buttonStyle(.plain)
 
-            // Red mic dot
-            Circle()
-                .fill(Color.red)
-                .frame(width: 8, height: 8)
-
-            Text("Recording…")
-                .font(GSFont.body(13, relativeTo: .callout))
-                .foregroundStyle(theme.neutral700)
+            // Decorative waveform bars (no live audio metering — visual only)
+            RecordingWaveformView(theme: theme)
 
             Spacer()
 
@@ -389,19 +380,11 @@ struct ChatView: View {
     @ViewBuilder
     private func systemMessageView(_ message: ChatMessage) -> some View {
         if message.kind == .systemPR {
-            // Canvas celebration card: accent-fill/border, 🔥 uppercase kicker "NEW PR",
-            // Archivo bold body — replaces the previous body-text-sniffing treatment.
-            VStack(alignment: .leading, spacing: 5) {
-                // Kicker row: fire emoji + "NEW PR" uppercase in tight tracking
-                HStack(spacing: 5) {
-                    Text("🔥")
-                        .font(.system(size: 14))
-                    Text("NEW PR")
-                        .font(.custom("Archivo-Bold", size: 11))
-                        .tracking(1.6)
-                        .foregroundStyle(theme.accent700)
-                }
-                // Message body in Archivo bold
+            // Canvas celebration card: accent-fill/border, single inline sentence
+            // ("🔥 " + bold body), matching the proof's one-line composition.
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                Text("🔥")
+                    .font(.system(size: 14))
                 Text(message.body ?? "")
                     .font(.custom("Archivo-Bold", size: 13))
                     .foregroundStyle(theme.text)
@@ -439,7 +422,7 @@ struct ChatView: View {
             .foregroundStyle(theme.text)
             .padding(.horizontal, 7)
             .padding(.vertical, 1)
-            .overlay(Capsule().strokeBorder(theme.divider, lineWidth: 1))
+            .background(Capsule().fill(theme.neutral300))
     }
 
     // MARK: - Message Content
@@ -688,5 +671,34 @@ private struct TypingDotsView: View {
                     .delay(delay),
                 value: phase
             )
+    }
+}
+
+// MARK: - RecordingWaveformView
+
+/// Decorative animated bars shown in the voice-recording input row.
+/// Purely visual — not driven by live audio metering.
+private struct RecordingWaveformView: View {
+    let theme: GSTheme
+    @State private var animate = false
+
+    private static let heights: [CGFloat] = [6, 12, 8, 16, 10, 14, 7]
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 3) {
+            ForEach(Array(Self.heights.enumerated()), id: \.offset) { index, height in
+                Capsule()
+                    .fill(theme.accent)
+                    .frame(width: 3, height: animate ? height : height * 0.4)
+                    .animation(
+                        .easeInOut(duration: 0.4)
+                            .repeatForever(autoreverses: true)
+                            .delay(Double(index) * 0.08),
+                        value: animate
+                    )
+            }
+        }
+        .frame(height: 16)
+        .onAppear { animate = true }
     }
 }

@@ -221,18 +221,14 @@ enum SessionRepository {
             throw GymSyncError.unauthorized
         }
         do {
-            // Two-step: my participant rows → sessions .in(ids)
-            let participations: [SessionParticipant] = try await client
-                .from("session_participants")
-                .select()
-                .eq("user_id", value: userID.uuidString)
-                .execute().value
-            guard !participations.isEmpty else { return [] }
-            let sessionIDs = participations.map(\.sessionID.uuidString)
+            // Server-side inner join on my participant rows. The previous
+            // two-step (fetch ALL participations, then sessions .in(ids))
+            // fanned every historical session ID into the request URL and
+            // returned 400 once a user accumulated a few hundred sessions.
             let sessions: [WorkoutSession] = try await client
                 .from("sessions")
-                .select()
-                .in("id", values: sessionIDs)
+                .select("*, session_participants!inner(user_id)")
+                .eq("session_participants.user_id", value: userID.uuidString)
                 .in("state", values: ["scheduled", "lobby_open", "editing", "voting", "locked"])
                 .order("scheduled_for", ascending: true)
                 .execute().value
@@ -305,6 +301,27 @@ enum SessionRepository {
         } catch {
             throw ErrorMapping.map(error)
         }
+    }
+
+    /// Bulk session lookup — backs Exercise History's "· solo" / "· {group}"
+    /// meta suffix (needs each logged set's session to know its `group_id`).
+    static func sessions(ids: [UUID]) async throws -> [WorkoutSession] {
+        guard !ids.isEmpty else { return [] }
+        do {
+            // Chunked: .in(ids) rides the request URL, which caps out around
+            // a couple hundred UUIDs (see upcoming()'s 400 regression).
+            var rows: [WorkoutSession] = []
+            for chunk in stride(from: 0, to: ids.count, by: 100).map({ Array(ids[$0..<min($0 + 100, ids.count)]) }) {
+                let batch: [WorkoutSession] = try await client
+                    .from("sessions")
+                    .select()
+                    .in("id", values: chunk.map(\.uuidString))
+                    .execute()
+                    .value
+                rows.append(contentsOf: batch)
+            }
+            return rows
+        } catch { throw ErrorMapping.map(error) }
     }
 
     /// Fetch a single session row by ID. Returns nil if not found (PGRST116).
@@ -494,6 +511,31 @@ enum SessionRepository {
         } catch {
             throw ErrorMapping.map(error)
         }
+    }
+
+    /// Old start/end timestamps from the most recent duration-edit audit row —
+    /// backs the "Duration edited by X · was Y" audit line on Session Detail.
+    static func latestDurationEdit(sessionID: UUID) async throws -> (oldStartedAt: Date?, oldCompletedAt: Date?)? {
+        struct AuditRow: Decodable {
+            let old_started_at: String?
+            let old_completed_at: String?
+        }
+        do {
+            let rows: [AuditRow] = try await client
+                .from("session_duration_edits")
+                .select("old_started_at,old_completed_at")
+                .eq("session_id", value: sessionID.uuidString)
+                .order("edited_at", ascending: false)
+                .limit(1)
+                .execute().value
+            guard let row = rows.first else { return nil }
+            let isoFmt = ISO8601DateFormatter()
+            isoFmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            return (
+                oldStartedAt: row.old_started_at.flatMap { isoFmt.date(from: $0) },
+                oldCompletedAt: row.old_completed_at.flatMap { isoFmt.date(from: $0) }
+            )
+        } catch { throw ErrorMapping.map(error) }
     }
 
     /// All set_logs for a session ordered by logged_at ascending.

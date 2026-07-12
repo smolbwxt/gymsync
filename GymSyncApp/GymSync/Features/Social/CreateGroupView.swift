@@ -22,15 +22,23 @@ struct CreateGroupView: View {
                             .padding(.horizontal, 16)
                             .padding(.top, 16)
 
-                        TextField("e.g. Push Crew", text: $name)
-                            .font(GSFont.body(14, relativeTo: .body))
-                            .foregroundStyle(theme.text)
-                            .tint(theme.accent)
-                            .padding(.horizontal, 12)
-                            .frame(height: 44)
-                            .background(theme.surface)
-                            .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
-                            .padding(.horizontal, 16)
+                        HStack(spacing: 10) {
+                            GSInitialsAvatar(
+                                name: name.trimmingCharacters(in: .whitespaces).isEmpty
+                                    ? "New Group" : name,
+                                size: 44
+                            )
+
+                            TextField("e.g. Push Crew", text: $name)
+                                .font(GSFont.body(14, relativeTo: .body))
+                                .foregroundStyle(theme.text)
+                                .tint(theme.accent)
+                                .padding(.horizontal, 12)
+                                .frame(height: 44)
+                                .background(theme.surface)
+                                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                        }
+                        .padding(.horizontal, 16)
                     }
 
                     GSDivider()
@@ -70,17 +78,11 @@ struct CreateGroupView: View {
                                     HStack(spacing: 10) {
                                         GSInitialsAvatar(name: profile.username, size: 36)
 
-                                        Text(profile.username)
-                                            .font(GSFont.bodyMedium(14, relativeTo: .body))
-                                            .foregroundStyle(theme.text)
+                                        nameBlock(profile)
 
                                         Spacer()
 
-                                        if selected.contains(profile.id) {
-                                            Image(systemName: "checkmark")
-                                                .font(.system(size: 13, weight: .semibold))
-                                                .foregroundStyle(theme.accent)
-                                        }
+                                        selectionCheckbox(isSelected: selected.contains(profile.id))
                                     }
                                     .padding(.horizontal, 16)
                                     .padding(.vertical, 10)
@@ -88,6 +90,11 @@ struct CreateGroupView: View {
                                         selected.contains(profile.id)
                                             ? theme.accent100
                                             : Color.clear
+                                    )
+                                    .overlay(
+                                        selected.contains(profile.id)
+                                            ? Rectangle().strokeBorder(theme.accent, lineWidth: 1)
+                                            : nil
                                     )
                                 }
                                 .buttonStyle(.plain)
@@ -136,11 +143,56 @@ struct CreateGroupView: View {
                     Button("Cancel") { dismiss() }
                         .foregroundStyle(theme.accent)
                 }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Create") { Task { await create() } }
+                        .font(GSFont.bold(14, relativeTo: .body))
+                        .foregroundStyle(
+                            name.trimmingCharacters(in: .whitespaces).isEmpty || isCreating
+                                ? theme.neutral500 : theme.accent
+                        )
+                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isCreating)
+                }
             }
             .task {
                 friends = (try? await FriendRepository.friends()) ?? []
             }
         }
+    }
+
+    // Two-line "Display Name" / "@username" block — matches the proof's
+    // name treatment (fallback: username-only, single line, when no
+    // displayName is set).
+    @ViewBuilder
+    private func nameBlock(_ profile: Profile) -> some View {
+        if let displayName = profile.displayName, !displayName.isEmpty {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(displayName)
+                    .font(GSFont.bodyMedium(14, relativeTo: .body))
+                    .foregroundStyle(theme.text)
+                Text("@\(profile.username)")
+                    .font(GSFont.body(11, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+            }
+        } else {
+            Text(profile.username)
+                .font(GSFont.bodyMedium(14, relativeTo: .body))
+                .foregroundStyle(theme.text)
+        }
+    }
+
+    // Filled checkbox-square with checkmark when selected, empty outline otherwise.
+    private func selectionCheckbox(isSelected: Bool) -> some View {
+        ZStack {
+            Rectangle()
+                .fill(isSelected ? theme.accent : Color.clear)
+                .overlay(Rectangle().strokeBorder(isSelected ? theme.accent : theme.neutral400, lineWidth: 1))
+            if isSelected {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(theme.bg)
+            }
+        }
+        .frame(width: 20, height: 20)
     }
 
     private func create() async {

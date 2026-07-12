@@ -77,7 +77,7 @@ struct HomeView: View {
 
     private var greetingHeader: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Home")
+            Text(greetingText)
                 .font(GSFont.heading(28, relativeTo: .largeTitle))
                 .foregroundStyle(theme.text)
             Text(Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day()))
@@ -88,6 +88,30 @@ struct HomeView: View {
         .padding(.horizontal, 16)
         .padding(.top, 16)
         .padding(.bottom, 16)
+    }
+
+    /// "Good {morning/afternoon/evening}, {first name}" — first name comes from
+    /// `appState.currentProfile.displayName`'s first word, falling back to the
+    /// username when no display name is set.
+    private var greetingText: String {
+        "Good \(timeOfDayGreeting), \(firstName)"
+    }
+
+    private var timeOfDayGreeting: String {
+        switch Calendar.current.component(.hour, from: .now) {
+        case 0..<12: return "morning"
+        case 12..<17: return "afternoon"
+        default: return "evening"
+        }
+    }
+
+    private var firstName: String {
+        guard let profile = appState.currentProfile else { return "" }
+        let name = profile.displayName?.trimmingCharacters(in: .whitespaces)
+        if let name, !name.isEmpty {
+            return String(name.split(separator: " ").first ?? Substring(name))
+        }
+        return profile.username
     }
 
     // MARK: - Start Solo Workout CTA (Task 5 — canvas content)
@@ -112,10 +136,7 @@ struct HomeView: View {
         let exerciseName = allExercises.first(where: { $0.id == pr.exerciseID })?.name ?? "Exercise"
         GSCard(bordered: false, backgroundColor: theme.accent100) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("🔥 New personal record")
-                    .font(GSFont.bodyMedium(11, relativeTo: .caption2))
-                    .tracking(1.2)
-                    .foregroundStyle(theme.neutral700)
+                GSSectionHeader("🔥 New personal record")
                 Text("\(exerciseName) — \(trimmedDecimal(pr.weight)) lbs × \(pr.reps)")
                     .font(GSFont.heading(16, relativeTo: .headline))
                     .foregroundStyle(theme.text)
@@ -140,10 +161,7 @@ struct HomeView: View {
         } label: {
             GSCard(bordered: false) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Today's routine")
-                        .font(GSFont.bodyMedium(11, relativeTo: .caption2))
-                        .tracking(1.2)
-                        .foregroundStyle(theme.neutral700)
+                    GSSectionHeader("Today's routine")
                     Text(routine.name)
                         .font(GSFont.heading(16, relativeTo: .headline))
                         .foregroundStyle(theme.text)
@@ -152,7 +170,7 @@ struct HomeView: View {
                             .font(GSFont.body(13, relativeTo: .subheadline))
                             .foregroundStyle(theme.neutral700)
                     }
-                    Text("\(todaysRoutineExercises.count) exercises")
+                    Text("\(todaysRoutineExercises.count) exercises · ~\(StatMath.estimatedMinutes(exerciseCount: todaysRoutineExercises.count)) min")
                         .font(GSFont.body(12, relativeTo: .caption))
                         .foregroundStyle(theme.neutral500)
                 }
@@ -478,6 +496,17 @@ private struct RoutinePickerSheet: View {
     @State private var allExercises: [Exercise] = []
     @State private var startNavigation = false
 
+    // Today's-routine card opens this sheet PAUSED: `chosenRoutine` seeds from
+    // `initialRoutine` purely for the visible preselection/highlight below — it no
+    // longer auto-starts. The user must tap a row (the preselected one or another)
+    // to actually start. Start Solo Workout still passes `initialRoutine: nil`, so
+    // this seeds to nil and the list opens with nothing highlighted — unchanged.
+    init(routines: [Routine], initialRoutine: Routine?) {
+        self.routines = routines
+        self.initialRoutine = initialRoutine
+        _chosenRoutine = State(initialValue: initialRoutine)
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -493,16 +522,25 @@ private struct RoutinePickerSheet: View {
                 .listRowBackground(theme.bg)
 
                 ForEach(routines) { routine in
+                    let isSelected = routine.id == chosenRoutine?.id
                     Button {
                         Task { await start(routine: routine) }
                     } label: {
-                        Text(routine.name)
-                            .font(GSFont.bodyMedium(16, relativeTo: .body))
-                            .foregroundStyle(theme.text)
+                        HStack {
+                            Text(routine.name)
+                                .font(GSFont.bodyMedium(16, relativeTo: .body))
+                                .foregroundStyle(theme.text)
+                            Spacer()
+                            if isSelected {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundStyle(theme.accent)
+                            }
+                        }
                     }
                     .frame(minHeight: 44)
                     .contentShape(Rectangle())
-                    .listRowBackground(theme.bg)
+                    .listRowBackground(isSelected ? theme.accent100 : theme.bg)
                 }
             }
             .listStyle(.plain)
@@ -514,11 +552,6 @@ private struct RoutinePickerSheet: View {
                 WorkoutSessionView(routine: chosenRoutine,
                                    routineExercises: routineExercises,
                                    allExercises: allExercises)
-            }
-            .task {
-                if let initialRoutine {
-                    await start(routine: initialRoutine)
-                }
             }
         }
     }
