@@ -184,34 +184,31 @@ struct SocialTabView: View {
             friendCount = try await FriendRepository.friends().count
             pendingCount = try await FriendRepository.incomingRequests().count
             let currentGroups = groups
-            var unreadIDs: Set<UUID> = []
-            await withTaskGroup(of: (UUID, Bool).self) { taskGroup in
-                for group in currentGroups {
-                    taskGroup.addTask {
-                        (group.id, (try? await ChatRepository.hasUnread(groupID: group.id)) == true)
-                    }
-                }
-                for await (id, hasUnread) in taskGroup where hasUnread {
-                    unreadIDs.insert(id)
-                }
-            }
-            unread = unreadIDs
 
+            // Single latest-message fetch per group feeds both the unread badge
+            // and the preview line (was 2 fetches/group across two task groups).
+            var unreadIDs: Set<UUID> = []
             var previewsByGroup: [UUID: String] = [:]
-            await withTaskGroup(of: (UUID, String?).self) { taskGroup in
+            await withTaskGroup(of: (UUID, Bool, String?).self) { taskGroup in
                 for group in currentGroups {
                     taskGroup.addTask {
                         let latest = try? await ChatRepository.messages(groupID: group.id, limit: 1)
-                        guard let message = latest?.first else { return (group.id, nil) }
-                        return (group.id, Self.previewText(for: message))
+                        let message = latest?.first
+                        let isUnread = (try? await ChatRepository.hasUnread(latest: message, groupID: group.id)) == true
+                        let preview = message.flatMap(Self.previewText(for:))
+                        return (group.id, isUnread, preview)
                     }
                 }
-                for await (id, text) in taskGroup {
+                for await (id, isUnread, text) in taskGroup {
+                    if isUnread {
+                        unreadIDs.insert(id)
+                    }
                     if let text {
                         previewsByGroup[id] = text
                     }
                 }
             }
+            unread = unreadIDs
             previews = previewsByGroup
 
             errorText = nil
