@@ -100,6 +100,7 @@ struct HomeView: View {
             Text("Start Solo Workout")
         }
         .buttonStyle(GSPrimaryButtonStyle(fontSize: 15, verticalPadding: 14))
+        .frame(maxWidth: .infinity)
         .padding(.horizontal, 16)
         .padding(.bottom, 16)
     }

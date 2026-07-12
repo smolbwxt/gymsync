@@ -655,12 +655,11 @@ struct LobbyView: View {
                                 Text("Lock in & Start")
                                     .font(GSFont.bold(15, relativeTo: .body))
                             }
-                            Spacer()
                         }
                         .foregroundStyle(theme.bg)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 14)
-                        .frame(maxWidth: .infinity)
+                        .frame(maxWidth: .infinity, alignment: .center)
                         .background(isStarting ? theme.accent600 : theme.accent)
                         .contentShape(Rectangle())
                     }
