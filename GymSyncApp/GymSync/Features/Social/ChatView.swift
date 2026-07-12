@@ -386,24 +386,35 @@ struct ChatView: View {
 
     @ViewBuilder
     private func systemMessageView(_ message: ChatMessage) -> some View {
-        // PR auto-messages get accent100 bg + 3px left border accent per canvas
-        if let body = message.body, body.contains("hit a PR") || body.contains("PR") {
-            HStack(alignment: .top, spacing: 7) {
-                Text("🔥")
-                    .font(.system(size: 16))
-                Text(body)
-                    .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
+        if message.kind == .systemPR {
+            // Canvas celebration card: accent-fill/border, 🔥 uppercase kicker "NEW PR",
+            // Archivo bold body — replaces the previous body-text-sniffing treatment.
+            VStack(alignment: .leading, spacing: 5) {
+                // Kicker row: fire emoji + "NEW PR" uppercase in tight tracking
+                HStack(spacing: 5) {
+                    Text("🔥")
+                        .font(.system(size: 14))
+                    Text("NEW PR")
+                        .font(.custom("Archivo-Bold", size: 11))
+                        .tracking(1.6)
+                        .foregroundStyle(theme.accent700)
+                }
+                // Message body in Archivo bold
+                Text(message.body ?? "")
+                    .font(.custom("Archivo-Bold", size: 13))
                     .foregroundStyle(theme.text)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.vertical, 9)
             .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(theme.accent100)
             .overlay(alignment: .leading) {
                 Rectangle()
                     .fill(theme.accent)
                     .frame(width: 3)
             }
-            .frame(maxWidth: .infinity, alignment: .center)
+            .overlay(Rectangle().strokeBorder(theme.accent.opacity(0.35), lineWidth: 1))
             .padding(.horizontal, 8)
         } else {
             // Standard system message: centered, inline border per canvas

@@ -61,6 +61,10 @@ struct GroupSessionLiveView: View {
     @State private var recapData: RecapData?          // non-nil → sheet
     @State private var penaltyLogged        = 0       // reps logged this session as penalty by me
 
+    // PR in-session overlay: shown for ~2.5s after MY set hits a new weight PR
+    @State private var isPROverlay          = false
+    @State private var prOverlayExerciseName: String = ""
+
     /// Fixed slug list — display names fetched async from the catalog.
     private let soundSlugs = ["airhorn", "lets-go", "ding", "boo"]
     /// Reaction emojis per canvas reaction strip.
@@ -144,6 +148,37 @@ struct GroupSessionLiveView: View {
                 }
             }
             .background(theme.bg)
+
+            // ── PR OVERLAY (full-width accent flash, ~2.5s, auto-dismiss) ──
+            // Centred via a full-screen VStack with Spacers so it sits mid-screen
+            // regardless of the ZStack's .bottom alignment.
+            if isPROverlay {
+                VStack {
+                    Spacer()
+                    VStack(spacing: 10) {
+                        Text("🔥")
+                            .font(.system(size: 36))
+                        Text("NEW PR")
+                            .font(.custom("Archivo-Bold", size: 13))
+                            .tracking(2.0)
+                            .foregroundStyle(theme.bg.opacity(0.9))
+                        Text(prOverlayExerciseName)
+                            .font(.custom("Archivo-Bold", size: 22))
+                            .foregroundStyle(theme.bg)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.vertical, 24)
+                    .padding(.horizontal, 20)
+                    .frame(maxWidth: .infinity)
+                    .background(theme.accent)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(theme.accent.opacity(0.55))
+                .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                .allowsHitTesting(false)
+            }
 
             // ── REACTION OVERLAY (floating emoji pill) ───────────────────
             if let emoji = reactionOverlay {
@@ -844,12 +879,47 @@ struct GroupSessionLiveView: View {
         )
         do {
             try await SessionRepository.logSet(log)
+
+            // PR check — same logic as solo WorkoutSessionView:
+            // after a non-failed set with a positive weight, compare against prior best.
+            if !isFailed, let weight, weight > 0 {
+                let prior = try await priorMax(exerciseID: exerciseID,
+                                               weight: weight, userID: userID)
+                if weight > prior {
+                    let name = await ExerciseNameCache.name(for: exerciseID)
+                    Task { @MainActor in await showPROverlay(exerciseName: name) }
+                }
+            }
+
             try await SessionRepository.advanceTurn(sessionID: session.id)
         } catch let error as GymSyncError {
             errorText = error.errorDescription
         } catch {
             errorText = error.localizedDescription
         }
+    }
+
+    /// Fetch the prior weight maximum for a given exercise (excluding failed/penalty sets).
+    /// Mirrors the identical helper in WorkoutSessionView.
+    private func priorMax(exerciseID: UUID, weight: Decimal, userID: UUID) async throws -> Decimal {
+        let history = try await SessionRepository.exerciseHistory(userID: userID,
+                                                                   exerciseID: exerciseID,
+                                                                   limit: 200)
+        return history
+            .filter { !$0.isFailed && !$0.isPenalty }
+            .compactMap { $0.weight }
+            .max() ?? 0
+    }
+
+    /// Show the in-session PR overlay for 2.5 seconds, play ding locally (no broadcast).
+    /// Uses Task.sleep — zero Timers.
+    @MainActor
+    private func showPROverlay(exerciseName: String) async {
+        prOverlayExerciseName = exerciseName
+        withAnimation(.easeOut(duration: 0.25)) { isPROverlay = true }
+        Task { await SoundboardPlayer.shared.play(slug: "ding") }
+        try? await Task.sleep(nanoseconds: 2_500_000_000)
+        withAnimation(.easeIn(duration: 0.25)) { isPROverlay = false }
     }
 
     @MainActor
