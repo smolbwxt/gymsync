@@ -17,6 +17,11 @@ import Foundation
 /// approved fallback in the task brief.
 final class VoiceMessageTests: XCTestCase {
 
+    override func setUp() async throws {
+        try await super.setUp()
+        try await TestAuth.signInIfConfigured()
+    }
+
     // MARK: - Fixture helpers
 
     /// Build a minimal 44.1kHz, 16-bit mono WAV containing `durationSeconds`
@@ -66,7 +71,6 @@ final class VoiceMessageTests: XCTestCase {
     ///   • body matches "m:ss" pattern (duration format pre-rendered by sendVoice)
     ///   • fetch by message id confirms storage_path survives the DB round-trip
     func testSendVoiceInsertsAudioMessageAndRoundTrips() async throws {
-        try await TestAuth.signInIfConfigured()
         let group = try await GroupRepository.create(name: "CI Voice Chat Group")
         defer { Task { try? await GroupRepository.deleteGroup(groupID: group.id) } }
 
@@ -92,14 +96,12 @@ final class VoiceMessageTests: XCTestCase {
         let path = try XCTUnwrap(sent.storagePath,
                                  "audio message must carry a storage_path")
 
-        // Storage path uses the group id as folder (matches bucket RLS: chat-audio/{group_id}/…)
-        // NOTE: StorageService.uploadChatAudio builds "chat-audio/{group}/{id}.m4a"
-        //       but only the group-relative portion is stored in the DB column.
-        //       Accept either "chat-audio/{group}/" or "{group}/" prefix.
+        // Storage path is "{group_id}/{message_id}.m4a" — group_id is the first path component.
+        // The RLS policy on the chat-audio bucket validates split_part(storage_path,'/',1)::uuid.
         let groupPrefix = group.id.uuidString.lowercased()
         XCTAssertTrue(
-            path.contains(groupPrefix),
-            "storage_path must contain the group id — got: \(path)"
+            path.hasPrefix(groupPrefix + "/"),
+            "storage_path must start with '{group_id}/' — got: \(path)"
         )
 
         let body = try XCTUnwrap(sent.body,
@@ -133,7 +135,6 @@ final class VoiceMessageTests: XCTestCase {
 
     /// Verify that the "0:00"-style pre-render logic handles edge cases.
     func testDurationBodyFormatEdgeCases() async throws {
-        try await TestAuth.signInIfConfigured()
         let group = try await GroupRepository.create(name: "CI Voice Duration Group")
         defer { Task { try? await GroupRepository.deleteGroup(groupID: group.id) } }
 
