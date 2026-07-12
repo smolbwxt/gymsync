@@ -79,8 +79,44 @@ async function main() {
     }).then((r) => r.json());
     console.log('voted:', JSON.stringify(res));
 
+  } else if (action === 'advance') {
+    // advance the turn (as current lifter or organizer): node qa_p3a.js advance SESSION_ID
+    const res = await fetch(`${BASE}/rest/v1/rpc/advance_turn`, {
+      method: 'POST', headers: H,
+      body: JSON.stringify({ p_session_id: arg1 }),
+    });
+    const body = await res.text();
+    if (!res.ok) throw new Error('advance failed: ' + body);
+    console.log('turn advanced; new current lifter:', body);
+
+  } else if (action === 'logset') {
+    // log a set in a session: node qa_p3a.js logset SESSION_ID REPS WEIGHT [penalty]
+    const exercises = await get(`exercises?select=id,name&order=name.asc&limit=1`);
+    const isPenalty = process.argv[6] === 'penalty';
+    const row = await fetch(`${BASE}/rest/v1/set_logs`, {
+      method: 'POST', headers: { ...H, Prefer: 'return=representation' },
+      body: JSON.stringify({
+        id: crypto.randomUUID(), session_id: arg1, user_id: uid,
+        exercise_id: exercises[0].id, set_index: 1,
+        reps: parseInt(arg2 ?? '5', 10), weight: parseFloat(process.argv[5] ?? '100'),
+        is_penalty: isPenalty, is_failed: false,
+      }),
+    }).then((r) => r.json());
+    console.log(`logged ${isPenalty ? 'PENALTY ' : ''}set:`, JSON.stringify(row));
+
+  } else if (action === 'cheat') {
+    // attempt to zero own burpees (should be BLOCKED by guard): node qa_p3a.js cheat SESSION_ID
+    const res = await fetch(
+      `${BASE}/rest/v1/session_participants?session_id=eq.${arg1}&user_id=eq.${uid}`, {
+        method: 'PATCH', headers: { ...H, Prefer: 'return=representation' },
+        body: JSON.stringify({ burpees_owed: 0 }),
+      });
+    const body = await res.text();
+    console.log(res.ok ? '⚠️ CHEAT SUCCEEDED (guard failed!): ' + body
+                       : '✅ cheat blocked: ' + body);
+
   } else {
-    throw new Error('usage: sessions | join CODE | checkin SESSION_ID | proposals SESSION_ID | vote PROPOSAL_ID approve|veto');
+    throw new Error('usage: sessions | join CODE | advance SID | logset SID REPS WT [penalty] | cheat SID | checkin SESSION_ID | proposals SESSION_ID | vote PROPOSAL_ID approve|veto');
   }
 }
 
