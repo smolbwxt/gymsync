@@ -72,7 +72,6 @@ struct RoutineBuilderView: View {
 
                 ForEach(items) { item in
                     exerciseRow(item)
-                        .draggable(item.id.uuidString)
                         .dropDestination(for: String.self) { droppedIDs, _ in
                             handleDrop(droppedIDs, onto: item)
                         }
@@ -192,6 +191,9 @@ struct RoutineBuilderView: View {
                 Image(systemName: "line.3.horizontal")
                     .font(.system(size: 14))
                     .foregroundStyle(theme.neutral500)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
+                    .draggable(item.id.uuidString)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(ex?.name ?? "Exercise")
