@@ -1,5 +1,85 @@
+import AVFoundation
 import SwiftUI
 import PhotosUI
+
+// MARK: - VoiceBubblePlayer
+
+/// Manages playback of voice-message bubbles.
+/// One active player at a time — starting a new bubble stops the previous.
+/// NEVER touches AVAudioSession category (ambient config stays in force — AUDIO SACRED RULE).
+@MainActor
+final class VoiceBubblePlayer: ObservableObject {
+
+    static let shared = VoiceBubblePlayer()
+    private init() {}
+
+    /// message.id of the currently playing bubble; nil when idle.
+    @Published private(set) var playingID: UUID?
+
+    private var player: AVAudioPlayer?
+    private var playerTask: Task<Void, Never>?
+
+    /// Local tmp-cache: message id → downloaded audio file URL.
+    private var cache: [UUID: URL] = [:]
+
+    /// Toggle play/pause for a given message.  If another bubble is playing,
+    /// it is stopped first.  Downloads the signed URL on first play (cached by message id).
+    func toggle(messageID: UUID, storagePath: String) async {
+        if playingID == messageID {
+            stop()
+            return
+        }
+        stop()
+
+        do {
+            let fileURL = try await resolve(messageID: messageID, storagePath: storagePath)
+            let p = try AVAudioPlayer(contentsOf: fileURL)
+            // AUDIO SACRED RULE: do NOT set audio session category here.
+            player = p
+            playingID = messageID
+            p.play()
+
+            // Reset when playback finishes
+            let dur = p.duration
+            playerTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64((dur + 0.2) * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                if self?.playingID == messageID {
+                    self?.playingID = nil
+                    self?.player = nil
+                }
+            }
+        } catch {
+            AppLogger.audio.error("VoiceBubblePlayer: \(error, privacy: .public)")
+            playingID = nil
+        }
+    }
+
+    func stop() {
+        playerTask?.cancel()
+        playerTask = nil
+        player?.stop()
+        player = nil
+        playingID = nil
+    }
+
+    // MARK: - Private
+
+    private func resolve(messageID: UUID, storagePath: String) async throws -> URL {
+        if let cached = cache[messageID] { return cached }
+        let signedURL = try await StorageService.signedChatAudioURL(path: storagePath)
+        let dest = FileManager.default.temporaryDirectory
+            .appendingPathComponent("voice_\(messageID.uuidString).m4a")
+        if !FileManager.default.fileExists(atPath: dest.path) {
+            let (tmp, _) = try await URLSession.shared.download(from: signedURL)
+            try FileManager.default.moveItem(at: tmp, to: dest)
+        }
+        cache[messageID] = dest
+        return dest
+    }
+}
+
+// MARK: - ChatView
 
 struct ChatView: View {
     let group: GymGroup
@@ -18,6 +98,13 @@ struct ChatView: View {
     @State private var pickerItem: PhotosPickerItem?
     @State private var imageURLs: [UUID: URL] = [:]
     @State private var isSendingImage = false
+
+    // Voice recording state
+    @ObservedObject private var voicePlayer = VoiceBubblePlayer.shared
+    @State private var voiceRecorder = VoiceRecorder()
+    @State private var isRecording = false
+    @State private var recordStart: Date?
+    @State private var isSendingVoice = false
 
     private static let reactionChoices = ["👍", "🔥", "💪", "😂"]
 
@@ -92,49 +179,60 @@ struct ChatView: View {
     // MARK: - Input Bar
 
     private var inputBar: some View {
-        HStack(spacing: 8) {
-            // Photo picker icon button — 38×38, bordered per canvas
-            PhotosPicker(selection: $pickerItem, matching: .images) {
-                Image(systemName: "photo")
-                    .font(.system(size: 17, weight: .regular))
-                    .foregroundStyle(theme.neutral700)
-                    .frame(width: 38, height: 38)
-                    .background(theme.bg)
-                    .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
-            }
-            .disabled(isSendingImage)
+        VStack(spacing: 0) {
+            if isRecording {
+                // Recording row: elapsed timer + cancel, hides text field per canvas
+                recordingIndicator
+            } else {
+                // Normal row: photo | text field | mic | send
+                HStack(spacing: 8) {
+                    // Photo picker icon button — 38×38, bordered per canvas
+                    PhotosPicker(selection: $pickerItem, matching: .images) {
+                        Image(systemName: "photo")
+                            .font(.system(size: 17, weight: .regular))
+                            .foregroundStyle(theme.neutral700)
+                            .frame(width: 38, height: 38)
+                            .background(theme.bg)
+                            .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                    }
+                    .disabled(isSendingImage)
 
-            // Message field — surface bg, 1px divider border, 38px height
-            TextField("Message", text: $draft, axis: .vertical)
-                .font(GSFont.body(14, relativeTo: .body))
-                .foregroundStyle(theme.text)
-                .tint(theme.accent)
-                .lineLimit(1...4)
+                    // Message field — surface bg, 1px divider border, 38px height
+                    TextField("Message", text: $draft, axis: .vertical)
+                        .font(GSFont.body(14, relativeTo: .body))
+                        .foregroundStyle(theme.text)
+                        .tint(theme.accent)
+                        .lineLimit(1...4)
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: 38)
+                        .background(theme.surface)
+                        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+
+                    // Mic button — hold to record per canvas; 38×38, bordered
+                    micButton
+
+                    // Send button — accent primary, 38×38
+                    Button {
+                        Task { await send() }
+                    } label: {
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(theme.bg)
+                            .frame(width: 38, height: 38)
+                            .background(
+                                draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                    ? theme.neutral400
+                                    : theme.accent
+                            )
+                    }
+                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .buttonStyle(.plain)
+                }
                 .padding(.horizontal, 12)
-                .frame(minHeight: 38)
-                .background(theme.surface)
-                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
-
-            // Send button — accent primary, 38×38
-            Button {
-                Task { await send() }
-            } label: {
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(theme.bg)
-                    .frame(width: 38, height: 38)
-                    .background(
-                        draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                            ? theme.neutral400
-                            : theme.accent
-                    )
+                .padding(.top, 9)
+                .padding(.bottom, 20)
             }
-            .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            .buttonStyle(.plain)
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 9)
-        .padding(.bottom, 20)
         .background(theme.bg)
         .overlay(alignment: .top) {
             GSDivider()
@@ -144,6 +242,93 @@ struct ChatView: View {
             pickerItem = nil
             Task { await sendImage(item) }
         }
+    }
+
+    // MARK: - Mic Button (hold to record)
+
+    private var micButton: some View {
+        Image(systemName: "mic")
+            .font(.system(size: 17, weight: .regular))
+            .foregroundStyle(theme.neutral700)
+            .frame(width: 38, height: 38)
+            .background(theme.bg)
+            .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+            // onLongPressGesture with pressing: true → start, false → stop
+            .onLongPressGesture(minimumDuration: 0.15, pressing: { pressing in
+                if pressing {
+                    guard !isRecording else { return }
+                    isRecording = true
+                    recordStart = Date()
+                    Task {
+                        do {
+                            try await voiceRecorder.startRecording()
+                        } catch {
+                            isRecording = false
+                            recordStart = nil
+                            errorText = (error as? GymSyncError)?.errorDescription
+                                ?? error.localizedDescription
+                        }
+                    }
+                } else {
+                    // Finger lifted — stop and send if long enough
+                    guard isRecording else { return }
+                    isRecording = false
+                    let start = recordStart
+                    recordStart = nil
+                    guard let result = voiceRecorder.stopRecording() else { return }
+                    let elapsed = start.map { Date().timeIntervalSince($0) } ?? result.duration
+                    guard elapsed >= 1.0 else {
+                        // Too short — discard
+                        try? FileManager.default.removeItem(at: result.url)
+                        return
+                    }
+                    Task { await sendVoice(url: result.url, duration: result.duration) }
+                }
+            }, perform: {
+                // Long press recognized (≥0.15s) — no additional action needed;
+                // the pressing: callback already manages state transitions.
+            })
+            .disabled(isSendingVoice)
+    }
+
+    // MARK: - Recording Indicator
+
+    private var recordingIndicator: some View {
+        HStack(spacing: 12) {
+            // Cancel button
+            Button {
+                isRecording = false
+                recordStart = nil
+                voiceRecorder.cancelRecording()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 20))
+                    .foregroundStyle(theme.neutral500)
+            }
+            .buttonStyle(.plain)
+
+            // Red mic dot
+            Circle()
+                .fill(Color.red)
+                .frame(width: 8, height: 8)
+
+            Text("Recording…")
+                .font(GSFont.body(13, relativeTo: .callout))
+                .foregroundStyle(theme.neutral700)
+
+            Spacer()
+
+            // Live elapsed timer — zero Timers: Text with .timer style
+            if let start = recordStart {
+                Text(start, style: .timer)
+                    .font(GSFont.bold(13, relativeTo: .callout))
+                    .foregroundStyle(theme.accent)
+                    .monospacedDigit()
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 9)
+        .padding(.bottom, 20)
     }
 
     // MARK: - Message Row
@@ -309,6 +494,37 @@ struct ChatView: View {
             }
             .padding(5)
             .background(theme.surface)
+        } else if message.kind == .audio {
+            // Voice bubble per canvas: play/pause button + duration label in a GS bubble.
+            // Colour treatment mirrors text: outgoing = accent fill; incoming = surface fill.
+            let isPlaying = voicePlayer.playingID == message.id
+            let duration = message.body ?? "0:00"
+            let storagePath = message.storagePath ?? ""
+
+            HStack(spacing: 8) {
+                Button {
+                    Task {
+                        await voicePlayer.toggle(
+                            messageID: message.id,
+                            storagePath: storagePath)
+                    }
+                } label: {
+                    Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                        .font(.system(size: 26, weight: .regular))
+                        .foregroundStyle(mine ? theme.bg : theme.accent)
+                }
+                .buttonStyle(.plain)
+                .disabled(storagePath.isEmpty)
+
+                Text(duration)
+                    .font(GSFont.bold(13, relativeTo: .callout))
+                    .foregroundStyle(mine ? theme.bg : theme.text)
+                    .monospacedDigit()
+            }
+            .padding(.vertical, 9)
+            .padding(.horizontal, 12)
+            .background(mine ? theme.accent : theme.surface)
+            .frame(maxWidth: 180, alignment: mine ? .trailing : .leading)
         } else {
             // Text bubble per canvas:
             //   incoming → surface fill
@@ -410,6 +626,23 @@ struct ChatView: View {
             guard imageURLs[message.id] == nil,
                   let path = message.storagePath else { continue }
             imageURLs[message.id] = try? await StorageService.signedChatImageURL(path: path)
+        }
+    }
+
+    private func sendVoice(url: URL, duration: TimeInterval) async {
+        isSendingVoice = true
+        defer { isSendingVoice = false }
+        do {
+            let sent = try await ChatRepository.sendVoice(
+                groupID: group.id, fileURL: url, duration: duration)
+            // Dedup-guard: realtime subscription may deliver it first
+            if !messages.contains(where: { $0.id == sent.id }) {
+                messages.append(sent)
+            }
+        } catch let error as GymSyncError {
+            errorText = error.errorDescription
+        } catch {
+            errorText = error.localizedDescription
         }
     }
 }
