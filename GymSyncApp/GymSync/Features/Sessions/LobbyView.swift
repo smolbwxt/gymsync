@@ -621,8 +621,6 @@ struct LobbyView: View {
 
     @MainActor
     private func cancelOccurrence() async {
-        isCancellingOccurrence = true
-        defer { isCancellingOccurrence = false }
         do {
             try await SeriesRepository.cancelOccurrence(sessionID: session.id)
             dismiss()
