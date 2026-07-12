@@ -81,6 +81,22 @@ enum PersonalRecordRepository {
         }
     }
 
+    /// PRs achieved within a specific session — backs the session recap's
+    /// aggregate PR count, per-lifter PR badges, and "your PR" callout.
+    static func bySession(sessionID: UUID) async throws -> [PersonalRecord] {
+        do {
+            let rows: [PersonalRecord] = try await client
+                .from("personal_records")
+                .select()
+                .eq("session_id", value: sessionID.uuidString)
+                .execute()
+                .value
+            return rows
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
+
     /// Count of PRs achieved on/after `date` — backs the "PRs this month" stat tile.
     static func countSince(userID: UUID, date: Date) async throws -> Int {
         do {

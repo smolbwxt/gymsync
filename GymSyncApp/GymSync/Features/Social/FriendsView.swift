@@ -59,9 +59,7 @@ struct FriendsView: View {
                     ForEach(incoming) { profile in
                         HStack(spacing: 10) {
                             GSInitialsAvatar(name: profile.username, size: 36)
-                            Text(profile.username)
-                                .font(GSFont.bodyMedium(14, relativeTo: .body))
-                                .foregroundStyle(theme.text)
+                            nameBlock(profile)
                             Spacer()
                             Button("Accept") {
                                 Task {
@@ -99,9 +97,7 @@ struct FriendsView: View {
                     ForEach(outgoing) { profile in
                         HStack(spacing: 10) {
                             GSInitialsAvatar(name: profile.username, size: 36)
-                            Text(profile.username)
-                                .font(GSFont.bodyMedium(14, relativeTo: .body))
-                                .foregroundStyle(theme.text)
+                            nameBlock(profile)
                             Spacer()
                             Button("Cancel") {
                                 Task {
@@ -133,9 +129,7 @@ struct FriendsView: View {
                     ForEach(friends) { profile in
                         HStack(spacing: 10) {
                             GSInitialsAvatar(name: profile.username, size: 36)
-                            Text(profile.username)
-                                .font(GSFont.bodyMedium(14, relativeTo: .body))
-                                .foregroundStyle(theme.text)
+                            nameBlock(profile)
                         }
                         .listRowBackground(theme.surface)
                         .listRowSeparatorTint(theme.divider)
@@ -160,6 +154,28 @@ struct FriendsView: View {
         .navigationTitle("Friends")
         .task { await refresh() }
         .refreshable { await refresh() }
+    }
+
+    // Two-line "Display Name" / "@username" block, matching the proof's
+    // name treatment across requests/sent/friends rows. Falls back to
+    // username-only (single line) when displayName is nil — never renders
+    // an empty first line.
+    @ViewBuilder
+    private func nameBlock(_ profile: Profile) -> some View {
+        if let displayName = profile.displayName, !displayName.isEmpty {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(displayName)
+                    .font(GSFont.bodyMedium(14, relativeTo: .body))
+                    .foregroundStyle(theme.text)
+                Text("@\(profile.username)")
+                    .font(GSFont.body(11, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+            }
+        } else {
+            Text(profile.username)
+                .font(GSFont.bodyMedium(14, relativeTo: .body))
+                .foregroundStyle(theme.text)
+        }
     }
 
     private func sendRequest() async {

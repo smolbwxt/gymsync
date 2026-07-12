@@ -511,6 +511,31 @@ enum SessionRepository {
         }
     }
 
+    /// Old start/end timestamps from the most recent duration-edit audit row —
+    /// backs the "Duration edited by X · was Y" audit line on Session Detail.
+    static func latestDurationEdit(sessionID: UUID) async throws -> (oldStartedAt: Date?, oldCompletedAt: Date?)? {
+        struct AuditRow: Decodable {
+            let old_started_at: String?
+            let old_completed_at: String?
+        }
+        do {
+            let rows: [AuditRow] = try await client
+                .from("session_duration_edits")
+                .select("old_started_at,old_completed_at")
+                .eq("session_id", value: sessionID.uuidString)
+                .order("edited_at", ascending: false)
+                .limit(1)
+                .execute().value
+            guard let row = rows.first else { return nil }
+            let isoFmt = ISO8601DateFormatter()
+            isoFmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            return (
+                oldStartedAt: row.old_started_at.flatMap { isoFmt.date(from: $0) },
+                oldCompletedAt: row.old_completed_at.flatMap { isoFmt.date(from: $0) }
+            )
+        } catch { throw ErrorMapping.map(error) }
+    }
+
     /// All set_logs for a session ordered by logged_at ascending.
     static func sessionSets(sessionID: UUID) async throws -> [SetLog] {
         do {

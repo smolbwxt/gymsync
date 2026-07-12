@@ -67,6 +67,14 @@ struct GroupSessionLiveView: View {
 
     /// Fixed slug list — display names fetched async from the catalog.
     private let soundSlugs = ["airhorn", "lets-go", "ding", "boo"]
+    /// Per-slug icon so soundboard tiles are visually differentiated (per proof) —
+    /// client-side mapping only; does not touch the `soundboard_sounds` catalog content.
+    private let soundIcons: [String: String] = [
+        "airhorn": "megaphone.fill",
+        "lets-go": "bolt.fill",
+        "ding":    "bell.fill",
+        "boo":     "hand.thumbsdown.fill"
+    ]
     /// Reaction emojis per canvas reaction strip.
     private let reactionEmojis = ["🔥", "💪", "😂", "👏"]
 
@@ -290,7 +298,7 @@ struct GroupSessionLiveView: View {
                             Task { await tapSound(slug: slug) }
                         } label: {
                             HStack(spacing: 4) {
-                                Image(systemName: "speaker.wave.1")
+                                Image(systemName: soundIcons[slug] ?? "speaker.wave.1")
                                     .font(.system(size: 9, weight: .semibold))
                                 Text(name.uppercased())
                                     .font(GSFont.bold(10, relativeTo: .caption2))

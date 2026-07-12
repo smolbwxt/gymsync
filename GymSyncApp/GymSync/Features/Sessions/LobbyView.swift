@@ -30,6 +30,8 @@ struct LobbyView: View {
     @State private var showProposalComposer = false
     @State private var allExercises: [Exercise] = []
     @State private var currentSession: WorkoutSession?
+    @State private var groupName: String?
+    @State private var primaryGymName: String?
 
     // MARK: - Manage menu state
 
@@ -69,6 +71,12 @@ struct LobbyView: View {
     }
 
     private var isCheckedIn: Bool { ownParticipant?.checkInState == "ready" }
+
+    private var checkInStatusSubtitle: String {
+        guard isCheckedIn else { return "Tap Check In below" }
+        guard let primaryGymName else { return "Geofence confirmed" }
+        return "\(primaryGymName) · Geofence confirmed"
+    }
 
     private var notReadyDialogTitle: String {
         notReadyCount == 1
@@ -130,7 +138,7 @@ struct LobbyView: View {
         .safeAreaInset(edge: .bottom) {
             actionBar
         }
-        .navigationTitle("Lobby")
+        .navigationTitle(groupName.map { "Lobby · \($0)" } ?? "Lobby")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if isManageVisible {
@@ -218,7 +226,7 @@ struct LobbyView: View {
 
     @ViewBuilder
     private var manageMenu: some View {
-        Menu("Manage") {
+        Menu {
             if effectiveSeriesID != nil {
                 Button {
                     changeTimeDate = effectiveSession.scheduledFor ?? Date()
@@ -261,6 +269,12 @@ struct LobbyView: View {
                     Label("Cancel session", systemImage: "xmark.circle")
                 }
             }
+        } label: {
+            Image(systemName: "gearshape")
+                .font(.system(size: 18, weight: .regular))
+                .foregroundStyle(theme.text)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
         }
     }
 
@@ -356,7 +370,7 @@ struct LobbyView: View {
                 Text(isCheckedIn ? "You're checked in" : "Not checked in")
                     .font(GSFont.bold(14, relativeTo: .headline))
                     .foregroundStyle(theme.text)
-                Text(isCheckedIn ? "Geofence confirmed" : "Tap Check In below")
+                Text(checkInStatusSubtitle)
                     .font(GSFont.body(11, relativeTo: .caption))
                     .foregroundStyle(theme.neutral500)
             }
@@ -430,9 +444,8 @@ struct LobbyView: View {
                 Spacer()
 
                 let readyCount = participants.filter { $0.participant.checkInState == "ready" }.count
-                let travelCount = participants.filter { $0.participant.checkInState == "traveling_override" }.count
-                if readyCount > 0 || travelCount > 0 {
-                    Text("\(readyCount) in\(travelCount > 0 ? " · \(travelCount) traveling" : "")")
+                if !participants.isEmpty {
+                    Text("\(readyCount) of \(participants.count) ready")
                         .font(GSFont.body(11, relativeTo: .caption))
                         .foregroundStyle(theme.neutral500)
                         .padding(.horizontal, 16)
@@ -507,13 +520,11 @@ struct LobbyView: View {
         } else {
             switch participant.checkInState {
             case "ready":
-                // Canvas: accent tag "Checked in"
-                GSTag(text: "Checked in", style: .accent)
+                // Canvas: accent tag "Ready"
+                GSTag(text: "Ready", style: .accent)
             case "invited":
-                // Canvas: clock icon for not-yet-arrived
-                Image(systemName: "clock")
-                    .font(.system(size: 14))
-                    .foregroundStyle(theme.neutral500)
+                // Canvas: outlined "Pending" pill for not-yet-arrived
+                GSTag(text: "Pending", style: .outline)
             default:
                 // Traveling / unknown
                 Image(systemName: "clock")
@@ -564,13 +575,36 @@ struct LobbyView: View {
 
     @ViewBuilder
     private var routineContent: some View {
-        if let info = routineInfo {
-            VStack(alignment: .leading, spacing: 4) {
+        if let info = routineInfo, let first = info.exercises.first {
+            VStack(alignment: .leading, spacing: 8) {
                 Text(info.name)
                     .font(GSFont.bold(14, relativeTo: .headline))
                     .foregroundStyle(theme.text)
-                ForEach(info.exercises) { ex in
-                    routineExerciseRow(ex)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("FIRST UP")
+                        .font(GSFont.bold(10, relativeTo: .caption2))
+                        .tracking(1.2)
+                        .foregroundStyle(theme.accent)
+                    Text(exerciseName(for: first))
+                        .font(GSFont.bold(16, relativeTo: .title3))
+                        .foregroundStyle(theme.text)
+
+                    HStack(spacing: 6) {
+                        if let equipment = exerciseEquipment(for: first) {
+                            GSTag(text: equipment, style: .outline)
+                        }
+                        if let sets = first.targetSets {
+                            GSTag(text: "\(sets) sets each", style: .outline)
+                        }
+                    }
+
+                    let rest = info.exercises.dropFirst()
+                    if !rest.isEmpty {
+                        Text("Then: \(rest.map { exerciseName(for: $0) }.joined(separator: " · "))")
+                            .font(GSFont.body(11, relativeTo: .caption))
+                            .foregroundStyle(theme.neutral500)
+                    }
                 }
             }
         } else {
@@ -580,19 +614,12 @@ struct LobbyView: View {
         }
     }
 
-    private func routineExerciseRow(_ ex: RoutineExercise) -> some View {
-        HStack(spacing: 8) {
-            if let sets = ex.targetSets {
-                Text("\(sets)×")
-                    .font(GSFont.bodyMedium(12, relativeTo: .caption))
-                    .foregroundStyle(theme.neutral700)
-            }
-            if let reps = ex.targetReps {
-                Text(reps)
-                    .font(GSFont.body(12, relativeTo: .caption))
-                    .foregroundStyle(theme.neutral500)
-            }
-        }
+    private func exerciseName(for ex: RoutineExercise) -> String {
+        allExercises.first(where: { $0.id == ex.exerciseID })?.name ?? "Exercise"
+    }
+
+    private func exerciseEquipment(for ex: RoutineExercise) -> String? {
+        allExercises.first(where: { $0.id == ex.exerciseID })?.equipment.capitalized
     }
 
     // MARK: - Action bar (pinned bottom)
@@ -755,6 +782,15 @@ struct LobbyView: View {
 
             if allExercises.isEmpty {
                 allExercises = (try? await ExerciseRepository.fetchAll()) ?? []
+            }
+
+            if groupName == nil, let groupID = (currentSession ?? session).groupID {
+                let groups = (try? await GroupRepository.fetchMany(ids: [groupID])) ?? []
+                groupName = groups.first?.name
+            }
+
+            if primaryGymName == nil {
+                primaryGymName = (try? await CheckInService.primaryGym())?.name
             }
 
             errorText = nil

@@ -3,10 +3,11 @@ import SwiftUI
 // MARK: - CompletedSessionView
 //
 // Shows a summary of a completed (or abandoned) session:
-//   • Header: routine/"Workout", date, duration H:MM, "✏️ EDITED" GSTag when durationWasEdited
-//   • Duration row with pencil button → DurationEditSheet
+//   • Header: duration H:MM headline + inline Edit button, audit line
+//     ("Duration edited by X · was Y") when durationWasEdited
+//   • Aggregate stats row (volume / sets / PRs)
 //   • Per-participant stats (same semantics as SessionRecapView: volume excludes penalty+failed,
-//     penalty reps shown separately)
+//     PR count + late/penalty reps shown as trailing pills)
 //
 // Loaded lazily via .task: sets + participants fetched from the live DB on appear.
 // Any participant may edit the duration (existing RLS UPDATE policy covers).
@@ -26,6 +27,13 @@ struct CompletedSessionView: View {
     @State private var participants: [(participant: SessionParticipant, profile: Profile)] = []
     @State private var isLoading = true
     @State private var errorText: String?
+
+    // MARK: - Audit / group / PR data
+
+    @State private var groupName: String?
+    @State private var editorName: String?
+    @State private var previousDuration: (start: Date, end: Date)?
+    @State private var sessionPRs: [PersonalRecord] = []
 
     // MARK: - Duration edit sheet
 
@@ -52,9 +60,10 @@ struct CompletedSessionView: View {
                         .padding(.top, 32)
                 } else {
 
-                    // ── DURATION ROW ──────────────────────────────────────
-                    durationRow
+                    // ── AGGREGATE STATS ────────────────────────────────────
+                    aggregateStatsRow
                         .padding(.horizontal, 16)
+                        .padding(.top, 14)
                         .padding(.bottom, 14)
 
                     GSDivider()
@@ -62,7 +71,7 @@ struct CompletedSessionView: View {
 
                     // ── PARTICIPANTS ──────────────────────────────────────
                     if !participants.isEmpty {
-                        GSSectionHeader("Results")
+                        GSSectionHeader("Lifters · \(participants.count)")
                             .padding(.horizontal, 16)
                             .padding(.top, 14)
                             .padding(.bottom, 8)
@@ -92,8 +101,19 @@ struct CompletedSessionView: View {
             }
         }
         .background(theme.bg)
-        .navigationTitle("Session Detail")
+        .navigationTitle(navigationTitleText)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                ShareLink(item: shareText) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 17))
+                        .foregroundStyle(theme.text)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+            }
+        }
         .task { await load() }
         .sheet(isPresented: $showEditSheet) {
             DurationEditSheet(session: liveSession) {
@@ -107,24 +127,46 @@ struct CompletedSessionView: View {
 
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("COMPLETED SESSION")
-                .font(GSFont.bold(10, relativeTo: .caption2))
-                .tracking(1.4)
-                .foregroundStyle(theme.bg.opacity(0.85))
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("DURATION")
+                        .font(GSFont.bold(10, relativeTo: .caption2))
+                        .tracking(1.4)
+                        .foregroundStyle(theme.bg.opacity(0.85))
 
-            Text(dateString)
-                .font(.custom("Archivo-Bold", size: 34).monospacedDigit())
-                .foregroundStyle(theme.bg)
-                .lineLimit(1)
-
-            HStack(spacing: 6) {
-                Text(durationString)
-                    .font(GSFont.body(13, relativeTo: .subheadline))
-                    .foregroundStyle(theme.bg.opacity(0.9))
-
-                if liveSession.durationWasEdited {
-                    GSTag(text: "✏️ EDITED", style: .neutral)
+                    Text(durationString)
+                        .font(.custom("Archivo-Bold", size: 34).monospacedDigit())
+                        .foregroundStyle(theme.bg)
+                        .lineLimit(1)
                 }
+
+                Spacer()
+
+                Button {
+                    showEditSheet = true
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 13, weight: .medium))
+                        Text("Edit")
+                            .font(GSFont.bold(12, relativeTo: .caption))
+                    }
+                    .foregroundStyle(theme.bg)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .frame(minHeight: 44)
+                    .background(theme.bg.opacity(0.15))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+
+            if liveSession.durationWasEdited {
+                Text(auditLineText)
+                    .font(GSFont.body(11, relativeTo: .caption))
+                    .italic()
+                    .foregroundStyle(theme.bg.opacity(0.8))
+                    .padding(.top, 2)
             }
         }
         .padding(16)
@@ -132,35 +174,23 @@ struct CompletedSessionView: View {
         .background(theme.accent)
     }
 
-    // MARK: - Duration row
+    // MARK: - Aggregate stats row
 
-    private var durationRow: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Duration")
-                    .font(GSFont.bold(13, relativeTo: .body))
-                    .foregroundStyle(theme.text)
-                Text(durationString)
-                    .font(GSFont.body(12, relativeTo: .footnote))
-                    .foregroundStyle(theme.neutral500)
-            }
-
-            Spacer()
-
-            Button {
-                showEditSheet = true
-            } label: {
-                Image(systemName: "pencil")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(theme.accent)
-                    .padding(8)
-                    .background(theme.surface)
-                    .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
+    private var aggregateStatsRow: some View {
+        HStack(spacing: 8) {
+            GSStatTile(value: formatVolume(totalVolume), label: "VOLUME")
+            GSStatTile(value: "\(totalSets)", label: "SETS")
+            GSStatTile(value: "\(sessionPRs.count)", label: "PRS")
         }
-        .padding(.vertical, 10)
+    }
+
+    private var totalSets: Int { sets.filter { !$0.isPenalty }.count }
+
+    private var totalVolume: Double {
+        sets.filter { !$0.isPenalty }.reduce(0.0) { acc, log in
+            guard !log.isFailed, let r = log.reps, let w = log.weight else { return acc }
+            return acc + Double(r) * NSDecimalNumber(decimal: w).doubleValue
+        }
     }
 
     // MARK: - Stats
@@ -229,21 +259,29 @@ struct CompletedSessionView: View {
                             .font(GSFont.body(11, relativeTo: .caption))
                             .foregroundStyle(theme.neutral500)
                     }
-                    if stat.penaltyReps > 0 {
-                        Text("·")
-                            .foregroundStyle(theme.neutral500)
-                            .font(GSFont.body(11, relativeTo: .caption))
-                        Text("\(stat.penaltyReps) penalty reps")
-                            .font(GSFont.body(11, relativeTo: .caption))
-                            .foregroundStyle(theme.accent700)
-                    }
                 }
             }
 
             Spacer()
+
+            VStack(alignment: .trailing, spacing: 4) {
+                let prs = prCount(for: stat.participant.userID)
+                if prs > 0 {
+                    GSTag(text: "\(prs) PR\(prs == 1 ? "" : "s")", style: .accent)
+                }
+                if stat.penaltyReps > 0 {
+                    Text("late · \(stat.penaltyReps) 🔥")
+                        .font(GSFont.body(10, relativeTo: .caption2))
+                        .foregroundStyle(theme.accent700)
+                }
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
+    }
+
+    private func prCount(for userID: UUID) -> Int {
+        sessionPRs.filter { $0.userID == userID }.count
     }
 
     // MARK: - Helpers
@@ -267,6 +305,40 @@ struct CompletedSessionView: View {
         return (liveSession.completedAt ?? liveSession.startedAt).map { fmt.string(from: $0) } ?? ""
     }
 
+    private var shortDateString: String {
+        guard let date = liveSession.completedAt ?? liveSession.startedAt else { return "" }
+        return date.formatted(.dateTime.month(.abbreviated).day())
+    }
+
+    private var navigationTitleText: String {
+        guard let groupName else { return shortDateString }
+        return "\(shortDateString) · \(groupName)"
+    }
+
+    private var shareText: String {
+        "\(navigationTitleText) — \(durationString), \(formatVolume(totalVolume)) lbs, \(totalSets) sets."
+    }
+
+    private func durationString(from start: Date, to end: Date) -> String {
+        let total = Int(max(0, end.timeIntervalSince(start)))
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        return h > 0
+            ? String(format: "%d:%02d", h, m)
+            : String(format: "%02d:%02d", m, total % 60)
+    }
+
+    private var auditLineText: String {
+        var text = "Duration edited"
+        if let editorName {
+            text += " by \(editorName)"
+        }
+        if let previousDuration {
+            text += " · was \(durationString(from: previousDuration.start, to: previousDuration.end))"
+        }
+        return text
+    }
+
     private func formatVolume(_ v: Double) -> String {
         v >= 1_000
             ? String(format: "%.1fk", v / 1_000)
@@ -287,6 +359,20 @@ struct CompletedSessionView: View {
             sets         = try await fetchedSets
             participants = try await fetchedParts
             errorText    = nil
+
+            if let groupID = liveSession.groupID {
+                groupName = (try? await GroupRepository.fetchMany(ids: [groupID]))?.first?.name
+            }
+            if liveSession.durationWasEdited {
+                if let editedBy = liveSession.editedBy {
+                    editorName = (try? await ProfileRepository.fetch(userID: editedBy))?.username
+                }
+                if let edit = try? await SessionRepository.latestDurationEdit(sessionID: liveSession.id),
+                   let start = edit.oldStartedAt, let end = edit.oldCompletedAt {
+                    previousDuration = (start: start, end: end)
+                }
+            }
+            sessionPRs = (try? await PersonalRecordRepository.bySession(sessionID: liveSession.id)) ?? []
         } catch {
             errorText = (error as? GymSyncError)?.errorDescription ?? error.localizedDescription
         }

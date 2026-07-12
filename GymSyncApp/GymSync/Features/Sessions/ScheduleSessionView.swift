@@ -30,6 +30,7 @@ struct ScheduleSessionView: View {
     // MARK: - What (routine) — use UUID selection to avoid Hashable requirement on Routine
     @State private var routines: [Routine] = []
     @State private var selectedRoutineID: UUID?
+    @State private var routineExerciseCounts: [UUID: Int] = [:]
 
     // MARK: - When
     @State private var scheduledFor: Date = Self.nextFullHour()
@@ -149,6 +150,15 @@ struct ScheduleSessionView: View {
                     Button("Cancel") { dismiss() }
                         .font(GSFont.bold(14, relativeTo: .body))
                         .foregroundStyle(theme.neutral700)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Next") { Task { await schedule() } }
+                        .font(GSFont.bold(14, relativeTo: .body))
+                        .foregroundStyle(
+                            (isScheduleButtonDisabled || isScheduling)
+                                ? theme.neutral500 : theme.accent
+                        )
+                        .disabled(isScheduleButtonDisabled || isScheduling)
                 }
             }
             .task { await loadData() }
@@ -349,6 +359,12 @@ struct ScheduleSessionView: View {
                         Text(selectedRoutine?.name ?? "None")
                             .font(GSFont.bold(14, relativeTo: .headline))
                             .foregroundStyle(selectedRoutine != nil ? theme.text : theme.neutral500)
+                        if let routine = selectedRoutine,
+                           let count = routineExerciseCounts[routine.id] {
+                            Text("\(count) exercises · ~\(StatMath.estimatedMinutes(exerciseCount: count)) min")
+                                .font(GSFont.body(11, relativeTo: .caption))
+                                .foregroundStyle(theme.neutral500)
+                        }
                     }
 
                     Spacer()
@@ -566,6 +582,12 @@ struct ScheduleSessionView: View {
             friends = f
             routines = r
             if selectedGroupID == nil { selectedGroupID = g.first?.id }
+
+            let exercises = (try? await RoutineRepository.exercisesForRoutines(
+                ids: r.map(\.id))) ?? []
+            routineExerciseCounts = Dictionary(
+                grouping: exercises, by: \.routineID
+            ).mapValues(\.count)
         } catch {
             errorText = ErrorMapping.map(error).errorDescription
         }
