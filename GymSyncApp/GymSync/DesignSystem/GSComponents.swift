@@ -195,7 +195,11 @@ public struct GSTabBar: View {
 
     @Binding private var selection: AppState.Tab
 
-    public init(selection: Binding<AppState.Tab>) {
+    // Not `public`: AppState.Tab is an internal type (AppState itself is
+    // implicitly internal), so a public initializer referencing it would be
+    // an access-level violation. GSTabBar is only constructed from RootView
+    // within this single-target app, so internal init access is sufficient.
+    init(selection: Binding<AppState.Tab>) {
         self._selection = selection
     }
 
