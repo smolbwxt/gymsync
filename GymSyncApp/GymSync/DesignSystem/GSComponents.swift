@@ -379,15 +379,31 @@ public struct GSStatTile: View {
     private let label: String
     private let valueColor: Color?
     private let valueFontSize: CGFloat
+    private let labelColor: Color?
+    private let uppercaseLabel: Bool
 
     /// `valueFontSize` defaults to the canonical 20pt (Home tab tiles); callers
     /// matching a canvas spec with a smaller scale (e.g. You tab's 18pt stat
     /// tiles) can override per-instance.
-    public init(value: String, label: String, valueColor: Color? = nil, valueFontSize: CGFloat = 20) {
+    ///
+    /// `labelColor`/`uppercaseLabel` default to the original neutral700,
+    /// sentence-case look — opt in per-instance (e.g. Exercise History's
+    /// tracked, accent-colored, all-caps tile labels) without touching any
+    /// other call site.
+    public init(
+        value: String,
+        label: String,
+        valueColor: Color? = nil,
+        valueFontSize: CGFloat = 20,
+        labelColor: Color? = nil,
+        uppercaseLabel: Bool = false
+    ) {
         self.value = value
         self.label = label
         self.valueColor = valueColor
         self.valueFontSize = valueFontSize
+        self.labelColor = labelColor
+        self.uppercaseLabel = uppercaseLabel
     }
 
     public var body: some View {
@@ -395,9 +411,10 @@ public struct GSStatTile: View {
             Text(value)
                 .font(GSFont.bold(valueFontSize, relativeTo: .title3))
                 .foregroundColor(valueColor ?? theme.text)
-            Text(label)
+            Text(uppercaseLabel ? label.uppercased() : label)
                 .font(GSFont.body(10, relativeTo: .caption2))
-                .foregroundColor(theme.neutral700)
+                .tracking(uppercaseLabel ? 1.2 : 0)
+                .foregroundColor(labelColor ?? theme.neutral700)
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)

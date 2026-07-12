@@ -133,17 +133,23 @@ struct ExerciseHistoryView: View {
             GSStatTile(
                 value: bestSet.map { "\(weightText($0.weight))×\($0.reps ?? 0)" } ?? "—",
                 label: "Best",
-                valueFontSize: 18
+                valueFontSize: 18,
+                labelColor: theme.accent700,
+                uppercaseLabel: true
             )
             GSStatTile(
                 value: estimatedOneRepMax.map { "\($0)" } ?? "—",
                 label: "Est 1RM",
-                valueFontSize: 18
+                valueFontSize: 18,
+                labelColor: theme.accent700,
+                uppercaseLabel: true
             )
             GSStatTile(
                 value: "\(sessionCount)",
                 label: "Sessions",
-                valueFontSize: 18
+                valueFontSize: 18,
+                labelColor: theme.accent700,
+                uppercaseLabel: true
             )
         }
     }

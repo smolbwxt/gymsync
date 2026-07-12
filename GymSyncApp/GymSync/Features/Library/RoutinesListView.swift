@@ -125,28 +125,22 @@ struct RoutinesListView: View {
         do {
             let fetchedRoutines = try await RoutineRepository.fetchAll(ownerID: ownerID)
             routines = fetchedRoutines
+            // Clear the spinner as soon as the routine list itself is in hand —
+            // rows paint immediately with title/kicker; names/tags/meta below
+            // populate progressively once the supplemental fetches resolve.
+            loading = false
 
-            // Card body/tags/meta need each routine's exercises — fetch them
-            // concurrently (best-effort per routine) alongside the shared
-            // exercise catalog so names/category/equipment can be resolved.
+            // Card body/tags/meta need every visible routine's exercises plus the
+            // shared exercise catalog. Fetch both concurrently: exercises via a
+            // single bulk `.in(routine_id)` query (not N per-routine fetches) so
+            // this stays one round trip regardless of list size. Best-effort —
+            // a failure here just leaves cards without names/tags/meta.
             async let exercisesFetch: [Exercise] = (try? await ExerciseRepository.fetchAll()) ?? []
-            async let perRoutineFetch: [UUID: [RoutineExercise]] = withTaskGroup(
-                of: (UUID, [RoutineExercise]).self
-            ) { group in
-                for routine in fetchedRoutines {
-                    group.addTask {
-                        let result = try? await RoutineRepository.fetch(id: routine.id)
-                        return (routine.id, result?.1 ?? [])
-                    }
-                }
-                var map: [UUID: [RoutineExercise]] = [:]
-                for await (id, exercises) in group {
-                    map[id] = exercises
-                }
-                return map
-            }
+            async let bulkExercisesFetch: [RoutineExercise] = (try? await RoutineRepository.exercisesForRoutines(
+                ids: fetchedRoutines.map(\.id)
+            )) ?? []
             allExercises = await exercisesFetch
-            routineExercises = await perRoutineFetch
+            routineExercises = Dictionary(grouping: await bulkExercisesFetch, by: \.routineID)
         }
         catch { errorText = ErrorMapping.map(error).errorDescription }
     }
