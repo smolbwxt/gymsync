@@ -21,3 +21,7 @@ node_modules/
 # Supabase local artifacts
 supabase/.temp/
 supabase/.branches/
+
+# Local scratch / design references
+Inspo/
+.superpowers/
