@@ -6,6 +6,13 @@ struct OnboardingCoordinator: View {
     @State private var profile: Profile?
     @State private var loading = true
 
+    // Only set true when `profile` was just created via UsernameView in
+    // this session — drives the home-gym + welcome screens. A `profile`
+    // loaded from `loadProfile()` (a returning user who already completed
+    // onboarding previously) skips straight to completion, as before.
+    @State private var isNewSignup = false
+    @State private var showWelcome = false
+
     var body: some View {
         Group {
             if loading {
@@ -15,11 +22,20 @@ struct OnboardingCoordinator: View {
                     get: { profile },
                     set: { newProfile in
                         profile = newProfile
-                        if let p = newProfile { appState.currentProfile = p }
+                        isNewSignup = newProfile != nil
                     }
                 ))
+            } else if isNewSignup, let p = profile {
+                if showWelcome {
+                    WelcomeView(profile: p) {
+                        appState.currentProfile = p
+                    }
+                } else {
+                    HomeGymSetupView(isOnboarding: true, onAdvance: {
+                        showWelcome = true
+                    })
+                }
             } else {
-                // Additional onboarding steps (home gym, notifications) added in later tasks.
                 Color.clear.onAppear { appState.currentProfile = profile }
             }
         }

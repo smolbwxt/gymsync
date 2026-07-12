@@ -22,7 +22,7 @@ struct UsernameView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     // Step indicator row
                     HStack(spacing: 10) {
-                        Text("STEP 2 OF 2")
+                        Text("STEP 2 OF 3")
                             .font(GSFont.bold(12, relativeTo: .caption2))
                             .tracking(0.6)
                             .foregroundColor(theme.neutral700)
@@ -33,6 +33,7 @@ struct UsernameView: View {
                         HStack(spacing: 4) {
                             Rectangle().fill(theme.accent).frame(width: 22, height: 4)
                             Rectangle().fill(theme.accent).frame(width: 22, height: 4)
+                            Rectangle().fill(theme.neutral300).frame(width: 22, height: 4)
                         }
                     }
                     .padding(.horizontal, 16)
@@ -127,7 +128,8 @@ struct UsernameView: View {
                                         .foregroundColor(theme.accent)
                                         .padding(.horizontal, 10)
                                         .padding(.vertical, 6)
-                                        .frame(minWidth: 0)
+                                        .frame(minWidth: 0, minHeight: 44)
+                                        .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
                                 .background(theme.surface)

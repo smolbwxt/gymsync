@@ -373,6 +373,8 @@ struct GroupSessionLiveView: View {
                     .foregroundStyle(theme.neutral700)
                     .frame(width: 30, height: 30)
                     .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }
@@ -452,6 +454,7 @@ struct GroupSessionLiveView: View {
                     .padding(.vertical, 13)
                     .background(theme.bg.opacity(0.2))
                     .overlay(Rectangle().strokeBorder(theme.bg.opacity(0.4), lineWidth: 1))
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             } else if isOrganizer && liveSession.currentTurnUserID != nil {
@@ -882,17 +885,27 @@ struct GroupSessionLiveView: View {
             // after a non-failed set with a positive weight, compare against prior best.
             // prior max MUST be captured before the insert (self-comparison bug)
             var isPR = false
+            var priorBest: Decimal = 0
             if !isFailed, let weight, weight > 0 {
                 let prior = try await priorMax(exerciseID: exerciseID,
                                                weight: weight, userID: userID)
+                priorBest = prior
                 isPR = weight > prior
             }
 
             try await SessionRepository.logSet(log)
 
-            if isPR {
+            if isPR, let weight {
                 let name = await ExerciseNameCache.name(for: exerciseID)
                 Task { @MainActor in await showPROverlay(exerciseName: name) }
+                // Best-effort PR record — a failed insert must never block turn advancement.
+                Task { _ = try? await PersonalRecordRepository.record(
+                    exerciseID: exerciseID,
+                    weight: weight,
+                    reps: reps ?? 0,
+                    previousBest: priorBest,
+                    sessionID: session.id
+                ) }
             }
 
             try await SessionRepository.advanceTurn(sessionID: session.id)

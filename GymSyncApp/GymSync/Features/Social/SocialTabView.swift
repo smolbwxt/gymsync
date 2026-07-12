@@ -3,6 +3,7 @@ import SwiftUI
 struct SocialTabView: View {
     @State private var groups: [GymGroup] = []
     @State private var unread: Set<UUID> = []
+    @State private var previews: [UUID: String] = [:]
     @State private var friendCount = 0
     @State private var pendingCount = 0
     @State private var showCreateGroup = false
@@ -151,6 +152,15 @@ struct SocialTabView: View {
                     .font(GSFont.bold(14, relativeTo: .headline))
                     .foregroundStyle(theme.text)
                     .lineLimit(1)
+
+                // Canvas: last-message preview line (Dossier §B — audit §2.6)
+                if let preview = previews[group.id] {
+                    Text(preview)
+                        .font(GSFont.body(13, relativeTo: .subheadline))
+                        .foregroundStyle(theme.neutral700)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
             }
 
             Spacer(minLength: 0)
@@ -174,22 +184,49 @@ struct SocialTabView: View {
             friendCount = try await FriendRepository.friends().count
             pendingCount = try await FriendRepository.incomingRequests().count
             let currentGroups = groups
+
+            // Single latest-message fetch per group feeds both the unread badge
+            // and the preview line (was 2 fetches/group across two task groups).
             var unreadIDs: Set<UUID> = []
-            await withTaskGroup(of: (UUID, Bool).self) { taskGroup in
+            var previewsByGroup: [UUID: String] = [:]
+            await withTaskGroup(of: (UUID, Bool, String?).self) { taskGroup in
                 for group in currentGroups {
                     taskGroup.addTask {
-                        (group.id, (try? await ChatRepository.hasUnread(groupID: group.id)) == true)
+                        let latest = try? await ChatRepository.messages(groupID: group.id, limit: 1)
+                        let message = latest?.first
+                        let isUnread = (try? await ChatRepository.hasUnread(latest: message, groupID: group.id)) == true
+                        let preview = message.flatMap(Self.previewText(for:))
+                        return (group.id, isUnread, preview)
                     }
                 }
-                for await (id, hasUnread) in taskGroup where hasUnread {
-                    unreadIDs.insert(id)
+                for await (id, isUnread, text) in taskGroup {
+                    if isUnread {
+                        unreadIDs.insert(id)
+                    }
+                    if let text {
+                        previewsByGroup[id] = text
+                    }
                 }
             }
             unread = unreadIDs
+            previews = previewsByGroup
+
             errorText = nil
         } catch {
             errorText = (error as? GymSyncError)?.errorDescription
                 ?? error.localizedDescription
+        }
+    }
+
+    /// Maps a chat message to its group-row preview line.
+    /// text/soundboard_echo/system kinds show the body as-is; image and audio
+    /// kinds show a fixed placeholder (no body to display).
+    private static func previewText(for message: ChatMessage) -> String? {
+        switch message.kind {
+        case .image: return "📷 Photo"
+        case .audio: return "🎤 Voice message"
+        case .text, .soundboardEcho, .systemPR, .systemSession, .systemLate, .systemLeaderboard:
+            return message.body
         }
     }
 }

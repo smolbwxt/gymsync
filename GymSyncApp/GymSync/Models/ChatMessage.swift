@@ -305,12 +305,19 @@ enum ChatRepository {
     }
 
     static func hasUnread(groupID: UUID) async throws -> Bool {
+        let latest = try await messages(groupID: groupID, limit: 1)
+        return try await hasUnread(latest: latest.first, groupID: groupID)
+    }
+
+    /// Same unread determination as `hasUnread(groupID:)`, but takes an already-fetched
+    /// latest message so callers that also need the message body (e.g. for a preview line)
+    /// don't have to issue a second `messages(groupID:limit:1)` query.
+    static func hasUnread(latest: ChatMessage?, groupID: UUID) async throws -> Bool {
         guard let me = await SupabaseService.shared.currentUserID() else {
             throw GymSyncError.unauthorized
         }
         do {
-            let latest = try await messages(groupID: groupID, limit: 1)
-            guard let latestID = latest.first?.id else { return false }
+            guard let latestID = latest?.id else { return false }
 
             struct ReadState: Codable {
                 let lastReadMessageID: UUID?
