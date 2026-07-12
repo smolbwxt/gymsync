@@ -23,6 +23,8 @@ targets:
     platform: iOS
     sources:
       - GymSync
+    resources:
+      - GymSync/DesignSystem/Fonts
     dependencies:
       - package: Supabase
         product: Supabase
@@ -40,6 +42,11 @@ targets:
         NSHealthShareUsageDescription: "Gym Sync writes your completed workouts to Apple Health so they appear in your Activity ring."
         NSHealthUpdateUsageDescription: "Gym Sync writes your completed workouts to Apple Health so they appear in your Activity ring."
         NSLocationWhenInUseUsageDescription: "Gym Sync uses your location to confirm you're at your home gym during check-in."
+        UIAppFonts:
+          - Archivo-Regular.ttf
+          - Archivo-Medium.ttf
+          - Archivo-SemiBold.ttf
+          - Archivo-Bold.ttf
     entitlements:
       path: GymSync/GymSync.entitlements
       properties:
