@@ -103,6 +103,27 @@ jobs:
           mkdir -p ~/private_keys
           printf '%s' "$ASC_API_KEY" > ~/private_keys/AuthKey_57G3DK86PA.p8
 
+      # Import the stable Apple Development signing cert so automatic signing REUSES it
+      # instead of minting a new "Created via API" cert per run (Apple caps certs per
+      # account — the cap was hit on 2026-07-12 and blocked the deploy).
+      - name: Import signing certificate into temporary keychain
+        env:
+          IOS_SIGNING_CERT_P12: ${{ secrets.IOS_SIGNING_CERT_P12 }}
+          IOS_SIGNING_CERT_PASSWORD: ${{ secrets.IOS_SIGNING_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PASSWORD=$(uuidgen)
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          echo "$IOS_SIGNING_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN_PATH" \
+            -P "$IOS_SIGNING_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+          rm "$RUNNER_TEMP/cert.p12"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+
       - name: Archive (automatic signing via ASC API key)
         working-directory: GymSyncApp
         run: |
