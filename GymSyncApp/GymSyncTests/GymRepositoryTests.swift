@@ -12,6 +12,18 @@ final class GymRepositoryTests: XCTestCase {
     /// existing primary row in place: same row id survives across both calls,
     /// and the second call's fields (including radius) win.
     func testUpsertPrimaryCreatesThenUpdates() async throws {
+        // Clean slate: delete any existing gyms for this user so the test exercises
+        // both INSERT (first upsert) and UPDATE (second upsert) paths.
+        guard let userID = await SupabaseService.shared.currentUserID() else {
+            XCTFail("must be signed in")
+            return
+        }
+        try await SupabaseService.shared.client
+            .from("gyms")
+            .delete()
+            .eq("user_id", value: userID.uuidString)
+            .execute()
+
         let first = try await GymRepository.upsertPrimary(
             name: "Test Gym A \(UUID().uuidString.prefix(6))",
             latitude: 37.7955,
