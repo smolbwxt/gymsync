@@ -42,6 +42,7 @@ targets:
         NSHealthShareUsageDescription: "Gym Sync writes your completed workouts to Apple Health so they appear in your Activity ring."
         NSHealthUpdateUsageDescription: "Gym Sync writes your completed workouts to Apple Health so they appear in your Activity ring."
         NSLocationWhenInUseUsageDescription: "Gym Sync uses your location to confirm you're at your home gym during check-in."
+        NSMicrophoneUsageDescription: "Gym Sync uses your microphone to record voice messages for your crew."
         UIAppFonts:
           - Archivo-Regular.ttf
           - Archivo-Medium.ttf

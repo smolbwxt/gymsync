@@ -18,7 +18,7 @@ struct ChatMessage: Codable, Identifiable, Sendable, Equatable {
     let payload: [String: PayloadValue]?
 
     enum Kind: String, Codable, Sendable {
-        case text, image
+        case text, image, audio
         case systemPR = "system_pr"
         case systemSession = "system_session"
         case systemLate = "system_late"
@@ -169,6 +169,67 @@ enum ChatRepository {
                          "author_id": me.uuidString,
                          "kind": "image",
                          "storage_path": path])
+                .select()
+                .single()
+                .execute()
+                .value
+            return row
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
+
+    static func sendVoice(groupID: UUID,
+                          fileURL: URL,
+                          duration: TimeInterval) async throws -> ChatMessage {
+        guard let me = await SupabaseService.shared.currentUserID() else {
+            throw GymSyncError.unauthorized
+        }
+        let messageID = UUID()
+        let data = try Data(contentsOf: fileURL)
+        let path = try await StorageService.uploadChatAudio(
+            groupID: groupID, messageID: messageID, data: data)
+
+        // Pre-render duration as "m:ss" string — e.g. "0:42", "1:03"
+        let totalSeconds = Int(duration)
+        let minutes = totalSeconds / 60
+        let seconds  = totalSeconds % 60
+        let bodyText  = "\(minutes):\(String(format: "%02d", seconds))"
+
+        // Use a Codable struct so the payload jsonb column encodes correctly
+        // (same pattern as insertSoundboardEcho in SessionBroadcastService).
+        struct AudioInsert: Encodable {
+            let id: UUID
+            let groupID: UUID
+            let authorID: UUID
+            let kind: String
+            let body: String
+            let storagePath: String
+            let payload: [String: AnyJSON]
+
+            enum CodingKeys: String, CodingKey {
+                case id
+                case groupID     = "group_id"
+                case authorID    = "author_id"
+                case kind, body, payload
+                case storagePath = "storage_path"
+            }
+        }
+
+        let insert = AudioInsert(
+            id: messageID,
+            groupID: groupID,
+            authorID: me,
+            kind: "audio",
+            body: bodyText,
+            storagePath: path,
+            payload: ["duration_seconds": .double(duration)]
+        )
+
+        do {
+            let row: ChatMessage = try await SupabaseService.shared.client
+                .from("chat_messages")
+                .insert(insert)
                 .select()
                 .single()
                 .execute()

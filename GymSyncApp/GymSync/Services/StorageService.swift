@@ -26,6 +26,30 @@ enum StorageService {
         }
     }
 
+    static func uploadChatAudio(groupID: UUID, messageID: UUID,
+                                data: Data) async throws -> String {
+        let path = "chat-audio/\(groupID.uuidString.lowercased())/\(messageID.uuidString.lowercased()).m4a"
+        do {
+            try await SupabaseService.shared.client.storage
+                .from("chat-audio")
+                .upload(path, data: data,
+                        options: FileOptions(contentType: "audio/mp4"))
+            return path
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
+
+    static func signedChatAudioURL(path: String) async throws -> URL {
+        do {
+            return try await SupabaseService.shared.client.storage
+                .from("chat-audio")
+                .createSignedURL(path: path, expiresIn: 3600)
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
+
     static func uploadGroupAvatar(groupID: UUID, jpegData: Data) async throws -> URL {
         let path = "groups/\(groupID.uuidString.lowercased()).jpg"
         do {
