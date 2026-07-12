@@ -878,17 +878,21 @@ struct GroupSessionLiveView: View {
             note: note, loggedAt: Date()
         )
         do {
-            try await SessionRepository.logSet(log)
-
             // PR check — same logic as solo WorkoutSessionView:
             // after a non-failed set with a positive weight, compare against prior best.
+            // prior max MUST be captured before the insert (self-comparison bug)
+            var isPR = false
             if !isFailed, let weight, weight > 0 {
                 let prior = try await priorMax(exerciseID: exerciseID,
                                                weight: weight, userID: userID)
-                if weight > prior {
-                    let name = await ExerciseNameCache.name(for: exerciseID)
-                    Task { @MainActor in await showPROverlay(exerciseName: name) }
-                }
+                isPR = weight > prior
+            }
+
+            try await SessionRepository.logSet(log)
+
+            if isPR {
+                let name = await ExerciseNameCache.name(for: exerciseID)
+                Task { @MainActor in await showPROverlay(exerciseName: name) }
             }
 
             try await SessionRepository.advanceTurn(sessionID: session.id)
