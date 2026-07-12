@@ -13,6 +13,9 @@ struct ChatMessage: Codable, Identifiable, Sendable, Equatable {
     let createdAt: Date
     let editedAt: Date?
     let deletedAt: Date?
+    /// Optional jsonb payload — decoded additively so older rows that lack the column
+    /// decode as nil without error.  soundboard_echo rows carry `{"sound_slug": "…"}`.
+    let payload: [String: PayloadValue]?
 
     enum Kind: String, Codable, Sendable {
         case text, image
@@ -23,6 +26,37 @@ struct ChatMessage: Codable, Identifiable, Sendable, Equatable {
         case soundboardEcho = "soundboard_echo"
     }
 
+    /// Flexible JSON value type for the payload column (jsonb).
+    /// Only string and number variants are needed today.
+    enum PayloadValue: Codable, Sendable, Equatable {
+        case string(String)
+        case number(Double)
+        case bool(Bool)
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.singleValueContainer()
+            if let s = try? c.decode(String.self)  { self = .string(s); return }
+            if let d = try? c.decode(Double.self)  { self = .number(d); return }
+            if let b = try? c.decode(Bool.self)    { self = .bool(b);   return }
+            throw DecodingError.dataCorruptedError(
+                in: c, debugDescription: "Unsupported payload JSON value type")
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.singleValueContainer()
+            switch self {
+            case .string(let s): try c.encode(s)
+            case .number(let d): try c.encode(d)
+            case .bool(let b):   try c.encode(b)
+            }
+        }
+
+        var stringValue: String? {
+            if case .string(let s) = self { return s }
+            return nil
+        }
+    }
+
     var isSystem: Bool { authorID == nil }
 
     enum CodingKeys: String, CodingKey {
@@ -30,12 +64,29 @@ struct ChatMessage: Codable, Identifiable, Sendable, Equatable {
         case groupID = "group_id"
         case sessionID = "session_id"
         case authorID = "author_id"
-        case kind, body
+        case kind, body, payload
         case storagePath = "storage_path"
         case replyToID = "reply_to_id"
         case createdAt = "created_at"
         case editedAt = "edited_at"
         case deletedAt = "deleted_at"
+    }
+
+    // Custom decode: payload is optional/nullable in the schema — tolerate missing column.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id           = try  c.decode(UUID.self,   forKey: .id)
+        groupID      = try  c.decode(UUID.self,   forKey: .groupID)
+        sessionID    = try? c.decodeIfPresent(UUID.self,   forKey: .sessionID)
+        authorID     = try? c.decodeIfPresent(UUID.self,   forKey: .authorID)
+        kind         = try  c.decode(Kind.self,   forKey: .kind)
+        body         = try? c.decodeIfPresent(String.self, forKey: .body)
+        storagePath  = try? c.decodeIfPresent(String.self, forKey: .storagePath)
+        replyToID    = try? c.decodeIfPresent(UUID.self,   forKey: .replyToID)
+        createdAt    = try  c.decode(Date.self,   forKey: .createdAt)
+        editedAt     = try? c.decodeIfPresent(Date.self,   forKey: .editedAt)
+        deletedAt    = try? c.decodeIfPresent(Date.self,   forKey: .deletedAt)
+        payload      = try? c.decodeIfPresent([String: PayloadValue].self, forKey: .payload)
     }
 }
 

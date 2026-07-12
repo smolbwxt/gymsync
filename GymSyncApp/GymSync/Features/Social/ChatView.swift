@@ -153,6 +153,10 @@ struct ChatView: View {
         if message.isSystem {
             // System messages: centered, inline-block, 1px divider border per canvas
             systemMessageView(message)
+        } else if message.kind == .soundboardEcho {
+            // Soundboard echo: centered inline (canvas treatment), no sender kicker
+            messageContent(message, mine: false)
+                .padding(.vertical, 2)
         } else {
             let mine = message.authorID == appState.currentProfile?.id
             VStack(alignment: mine ? .trailing : .leading, spacing: 3) {
@@ -253,6 +257,33 @@ struct ChatView: View {
                 .padding(.vertical, 9)
                 .padding(.horizontal, 12)
                 .background(theme.surface)
+        } else if message.kind == .soundboardEcho {
+            // Canvas soundboard echo: centered inline block with dashed divider border.
+            // 🔊 icon + body text; tapping replays the sound from the payload slug.
+            let slug = message.payload?["sound_slug"]?.stringValue
+            Button {
+                guard let s = slug else { return }
+                Task { await SoundboardPlayer.shared.play(slug: s) }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "speaker.wave.2")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text(message.body ?? "🔊")
+                        .font(GSFont.bold(11, relativeTo: .caption2))
+                        .lineLimit(2)
+                }
+                .foregroundStyle(theme.neutral700.opacity(0.85))
+                .padding(.horizontal, 11)
+                .padding(.vertical, 4)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 0)
+                        .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                        .foregroundStyle(theme.divider)
+                )
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .disabled(slug == nil)
         } else if message.kind == .image {
             // Image bubble: surface bg wrapper, 5px inner padding per canvas
             VStack(alignment: .leading, spacing: 0) {

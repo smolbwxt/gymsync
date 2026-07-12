@@ -189,6 +189,18 @@ final class SessionBroadcastService {
                 .channel("session:\(sessionID.uuidString)")
             await tmp.subscribe()
             ch = tmp
+            // RIDER: disposable-channel fallback — remove it immediately after sending
+            // so we don't leak a dangling Realtime subscription.
+            defer {
+                Task { await SupabaseService.shared.client.removeChannel(tmp) }
+            }
+            do {
+                try await ch.broadcast(event: event, message: message)
+            } catch {
+                AppLogger.soundboard.error(
+                    "broadcast send failed (\(event, privacy: .public)): \(error, privacy: .public)")
+            }
+            return
         }
         do {
             try await ch.broadcast(event: event, message: message)

@@ -10,6 +10,10 @@ import SwiftUI
 //     - NOT MY TURN + organizer → ghost Skip turn button
 //   • Penalty banner (accent fill, per canvas): "YOU OWE N burpees" + Log burpees button
 //   • Set feed: reverse-chron rows, cap 30, penalty rows tagged
+//   • Soundboard dock (canvas gs-dock-scroll strip): horizontally scrolling sound tiles
+//     (4 slugs) + reaction pills (🔥💪😂👏), tapping plays locally + broadcasts.
+//   • Reaction overlay: incoming reactions float up as emoji pills (2s, opacity + offset).
+//   • Soundboard overlay: incoming sounds show transient "{username} 🔊 {name}" line.
 //   • End Session: confirmation → complete → HealthKit → SessionRecapView sheet
 
 struct GroupSessionLiveView: View {
@@ -28,6 +32,19 @@ struct GroupSessionLiveView: View {
     @State private var exerciseNames: [UUID: String] = [:]
     @State private var liveService = SessionLiveService()
 
+    // MARK: - Soundboard & broadcast state
+
+    @State private var broadcastService = SessionBroadcastService()
+    /// Catalog of (slug, displayName) pairs, populated async on first appear.
+    @State private var soundCatalog: [(slug: String, name: String)] = []
+    /// 1-second local gate: prevents double-fire and keeps local + remote in sync.
+    @State private var lastSoundTapAt: Date = .distantPast
+    /// Transient incoming-sound overlay: "{username} 🔊 {name}" — cleared after 2.5s.
+    @State private var soundOverlayText: String? = nil
+    /// Transient floating reaction pill — cleared after 2s.
+    @State private var reactionOverlay: String? = nil
+    @State private var reactionOverlayVisible = false
+
     // MARK: - Routine state
 
     @State private var routineExercises: [RoutineExercise] = []
@@ -43,6 +60,11 @@ struct GroupSessionLiveView: View {
     @State private var errorText: String?
     @State private var recapData: RecapData?          // non-nil → sheet
     @State private var penaltyLogged        = 0       // reps logged this session as penalty by me
+
+    /// Fixed slug list — display names fetched async from the catalog.
+    private let soundSlugs = ["airhorn", "lets-go", "ding", "boo"]
+    /// Reaction emojis per canvas reaction strip.
+    private let reactionEmojis = ["🔥", "💪", "😂", "👏"]
 
     // MARK: - Helpers
 
@@ -80,50 +102,95 @@ struct GroupSessionLiveView: View {
     // MARK: - Body
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
+        ZStack(alignment: .bottom) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
 
-                // ── HEADER ──────────────────────────────────────────────
-                headerBar
+                    // ── HEADER ──────────────────────────────────────────────
+                    headerBar
 
-                GSDivider()
-
-                // ── TURN CARD ────────────────────────────────────────────
-                turnCard
-                    .padding(.horizontal, 16)
-                    .padding(.top, 14)
-
-                // ── PENALTY BANNER ───────────────────────────────────────
-                if burpeesRemaining > 0 {
-                    penaltyBanner
-                        .padding(.top, 12)
-                }
-
-                // ── SET FEED ─────────────────────────────────────────────
-                if !feedSets.isEmpty {
                     GSDivider()
+
+                    // ── TURN CARD ────────────────────────────────────────────
+                    turnCard
                         .padding(.horizontal, 16)
                         .padding(.top, 14)
 
-                    feedSection
-                }
+                    // ── PENALTY BANNER ───────────────────────────────────────
+                    if burpeesRemaining > 0 {
+                        penaltyBanner
+                            .padding(.top, 12)
+                    }
 
-                // ── ERROR ────────────────────────────────────────────────
-                if let errorText {
-                    Text(errorText)
-                        .font(GSFont.body(12, relativeTo: .footnote))
-                        .foregroundStyle(.red)
-                        .padding(.horizontal, 16)
-                        .padding(.top, 10)
-                }
+                    // ── SET FEED ─────────────────────────────────────────────
+                    if !feedSets.isEmpty {
+                        GSDivider()
+                            .padding(.horizontal, 16)
+                            .padding(.top, 14)
 
-                Spacer(minLength: 88)
+                        feedSection
+                    }
+
+                    // ── ERROR ────────────────────────────────────────────────
+                    if let errorText {
+                        Text(errorText)
+                            .font(GSFont.body(12, relativeTo: .footnote))
+                            .foregroundStyle(.red)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 10)
+                    }
+
+                    Spacer(minLength: 88)
+                }
+            }
+            .background(theme.bg)
+
+            // ── REACTION OVERLAY (floating emoji pill) ───────────────────
+            if let emoji = reactionOverlay {
+                Text(emoji)
+                    .font(.system(size: 40))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(theme.surface)
+                    .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                    .opacity(reactionOverlayVisible ? 1 : 0)
+                    .offset(y: reactionOverlayVisible ? -120 : -80)
+                    .animation(.easeOut(duration: 0.3), value: reactionOverlayVisible)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .allowsHitTesting(false)
             }
         }
-        .background(theme.bg)
         .navigationBarBackButtonHidden(true)
         .navigationTitle("")
-        .safeAreaInset(edge: .bottom) { endSessionBar }
+        .safeAreaInset(edge: .bottom) {
+            VStack(spacing: 0) {
+                // ── SOUNDBOARD DOCK ──────────────────────────────────────
+                soundboardDock
+                // ── END SESSION BAR ──────────────────────────────────────
+                endSessionBar
+            }
+        }
+        // Incoming-sound transient overlay (inline, above dock area)
+        .overlay(alignment: .bottom) {
+            if let txt = soundOverlayText {
+                HStack(spacing: 6) {
+                    Image(systemName: "speaker.wave.2")
+                        .font(.system(size: 11, weight: .semibold))
+                    Text(txt)
+                        .font(GSFont.bold(11, relativeTo: .caption2))
+                        .lineLimit(1)
+                }
+                .foregroundStyle(theme.neutral700)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 5)
+                .background(theme.surface)
+                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                .padding(.bottom, 130)  // float above dock
+                .transition(.opacity)
+                .id(txt)
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: soundOverlayText)
         // Log Set sheet (reuse LogSetSheet — must pick an exercise first)
         .sheet(isPresented: $showLogSetSheet) { logSetSheetContent }
         // Recap sheet
@@ -148,13 +215,88 @@ struct GroupSessionLiveView: View {
         } message: {
             Text("This will complete the session for all participants.")
         }
-        // Realtime lifecycle
+        // Realtime lifecycle — SessionLiveService + SessionBroadcastService
         .task { await openAndSubscribe() }
         .onChange(of: scenePhase) {
             guard scenePhase == .active else { return }
-            Task { await reload() }
+            Task {
+                await reload()
+                await subscribeBroadcast()
+            }
         }
-        .onDisappear { Task { await liveService.unsubscribe() } }
+        .onDisappear {
+            Task {
+                await liveService.unsubscribe()
+                await broadcastService.unsubscribe()
+            }
+        }
+    }
+
+    // MARK: - Soundboard Dock
+    // Canvas gs-dock-scroll strip: HYPE kicker + sound tiles + divider + reaction pills.
+
+    private var soundboardDock: some View {
+        VStack(spacing: 0) {
+            GSDivider()
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 5) {
+                    // Section kicker
+                    Text("HYPE")
+                        .font(GSFont.bold(9, relativeTo: .caption2))
+                        .tracking(0.8)
+                        .foregroundStyle(theme.neutral500)
+                        .fixedSize()
+
+                    // Sound tiles
+                    ForEach(soundSlugs, id: \.self) { slug in
+                        let name = soundCatalog.first(where: { $0.slug == slug })?.name
+                            ?? slug.uppercased()
+                        Button {
+                            Task { await tapSound(slug: slug) }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "speaker.wave.1")
+                                    .font(.system(size: 9, weight: .semibold))
+                                Text(name.uppercased())
+                                    .font(GSFont.bold(10, relativeTo: .caption2))
+                            }
+                            .foregroundStyle(theme.accent)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 6)
+                            .background(theme.accent100)
+                            .overlay(Rectangle().strokeBorder(theme.accent, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                        .fixedSize()
+                    }
+
+                    // Vertical separator
+                    Rectangle()
+                        .fill(theme.divider)
+                        .frame(width: 1, height: 20)
+                        .fixedSize()
+
+                    // Reaction pills
+                    ForEach(reactionEmojis, id: \.self) { emoji in
+                        Button {
+                            Task { await tapReaction(emoji: emoji) }
+                        } label: {
+                            Text(emoji)
+                                .font(.system(size: 13))
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 6)
+                                .background(theme.surface)
+                                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                        .fixedSize()
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+            }
+            .background(theme.bg)
+        }
     }
 
     // MARK: - Header bar
@@ -431,28 +573,26 @@ struct GroupSessionLiveView: View {
     }
 
     // MARK: - End session bar
+    // Note: GSDivider omitted here — soundboardDock above already provides the top border.
 
     private var endSessionBar: some View {
-        VStack(spacing: 0) {
-            GSDivider()
-            Button(role: .destructive) {
-                showEndConfirmation = true
-            } label: {
-                HStack {
-                    Image(systemName: "stop.circle")
-                    Text("End Session")
-                    Spacer()
-                }
-                .font(GSFont.bold(15, relativeTo: .body))
-                .foregroundStyle(.white)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 14)
-                .frame(maxWidth: .infinity)
-                .background(isEnding ? Color.red.opacity(0.6) : Color.red)
+        Button(role: .destructive) {
+            showEndConfirmation = true
+        } label: {
+            HStack {
+                Image(systemName: "stop.circle")
+                Text("End Session")
+                Spacer()
             }
-            .buttonStyle(.plain)
-            .disabled(isEnding)
+            .font(GSFont.bold(15, relativeTo: .body))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .frame(maxWidth: .infinity)
+            .background(isEnding ? Color.red.opacity(0.6) : Color.red)
         }
+        .buttonStyle(.plain)
+        .disabled(isEnding)
         .background(theme.bg)
     }
 
@@ -540,6 +680,68 @@ struct GroupSessionLiveView: View {
                 }
             }
         )
+        // Pre-fetch sound catalog display names and subscribe to broadcast.
+        await loadSoundCatalog()
+        await subscribeBroadcast()
+    }
+
+    /// Fetch display names for the 4 known slugs so tiles render correctly before any tap.
+    @MainActor
+    private func loadSoundCatalog() async {
+        var entries: [(slug: String, name: String)] = []
+        for slug in soundSlugs {
+            let name = await SoundboardPlayer.shared.displayName(for: slug)
+            entries.append((slug: slug, name: name))
+        }
+        soundCatalog = entries
+    }
+
+    /// Subscribe to broadcast events (soundboard + reaction). Mirrors the SessionLiveService
+    /// lifecycle — call from .task and re-call on scenePhase → active reload path.
+    @MainActor
+    private func subscribeBroadcast() async {
+        await broadcastService.subscribe(
+            sessionID: liveSession.id,
+            onSoundboard: { userID, slug in
+                // Incoming remote sound: play locally + show transient overlay.
+                // Closures are @MainActor, so @State mutations are safe here.
+                Task { @MainActor in
+                    await SoundboardPlayer.shared.play(slug: slug)
+                    let name = await SoundboardPlayer.shared.displayName(for: slug)
+                    let username = participants
+                        .first(where: { $0.participant.userID == userID })?.profile.username
+                        ?? "Someone"
+                    await showSoundOverlay("\(username) 🔊 \(name)")
+                }
+            },
+            onReaction: { _, emoji in
+                Task { @MainActor in
+                    await showReactionOverlay(emoji)
+                }
+            }
+        )
+    }
+
+    /// Show the incoming-sound transient overlay for 2.5 seconds.
+    @MainActor
+    private func showSoundOverlay(_ text: String) async {
+        soundOverlayText = text
+        try? await Task.sleep(nanoseconds: 2_500_000_000)
+        if soundOverlayText == text { soundOverlayText = nil }
+    }
+
+    /// Show a floating reaction pill for 2 seconds (opacity + offset animation per canvas).
+    @MainActor
+    private func showReactionOverlay(_ emoji: String) async {
+        reactionOverlay = emoji
+        reactionOverlayVisible = false
+        // Small yield so the view re-renders the initial hidden state first.
+        try? await Task.sleep(nanoseconds: 30_000_000)
+        reactionOverlayVisible = true
+        try? await Task.sleep(nanoseconds: 2_000_000_000)
+        reactionOverlayVisible = false
+        try? await Task.sleep(nanoseconds: 350_000_000)
+        if reactionOverlay == emoji { reactionOverlay = nil }
     }
 
     @MainActor
@@ -593,6 +795,33 @@ struct GroupSessionLiveView: View {
         if let fetched = try? await SessionRepository.participants(sessionID: session.id) {
             participants = fetched
         }
+    }
+
+    // MARK: - Soundboard & Reaction Actions
+
+    /// Local 1-second gate covers both the local play AND the remote send so they stay
+    /// perfectly in sync — if the gate blocks, we skip both without queuing.
+    @MainActor
+    private func tapSound(slug: String) async {
+        let now = Date()
+        guard now.timeIntervalSince(lastSoundTapAt) >= 1.0 else { return }
+        lastSoundTapAt = now
+        // Local play (immediately) + remote send (fire-and-forget).
+        async let playTask: Void = SoundboardPlayer.shared.play(slug: slug)
+        async let sendTask: Void = broadcastService.sendSound(
+            sessionID: liveSession.id,
+            groupID: liveSession.groupID,
+            slug: slug
+        )
+        _ = await (playTask, sendTask)
+    }
+
+    /// Tap a reaction emoji — sends broadcast; own pill shows via onReaction callback.
+    @MainActor
+    private func tapReaction(emoji: String) async {
+        // Show own pill immediately (don't wait for round-trip).
+        Task { @MainActor in await showReactionOverlay(emoji) }
+        await broadcastService.sendReaction(sessionID: liveSession.id, emoji: emoji)
     }
 
     // MARK: - Actions
