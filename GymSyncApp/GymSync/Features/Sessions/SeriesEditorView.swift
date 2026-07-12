@@ -28,6 +28,9 @@ struct WeekdayRuleEditor: View {
     /// Full list of routines for the picker.
     var routines: [Routine]
 
+    @Environment(\.gsTheme) private var theme
+
+    // Canvas: S M T W T F S  (weekday 1=Sun → 7=Sat)
     private let weekdays: [(label: String, value: Int)] = [
         ("S", 1), ("M", 2), ("T", 3), ("W", 4), ("T", 5), ("F", 6), ("S", 7)
     ]
@@ -38,10 +41,12 @@ struct WeekdayRuleEditor: View {
     }
 
     // MARK: - Chip row
+    // Canvas: square chips, aspect-ratio 1, accent fill when selected,
+    //   1px divider border + muted text when deselected; Archivo Bold 13pt; zero radius.
 
     @ViewBuilder
     private var chipRow: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 5) {
             ForEach(weekdays, id: \.value) { day in
                 let selected = selectedWeekdays.contains(day.value)
                 Button {
@@ -56,24 +61,25 @@ struct WeekdayRuleEditor: View {
                     }
                 } label: {
                     Text(day.label)
-                        .font(.subheadline.bold())
-                        .frame(width: 34, height: 34)
-                        .background(
-                            selected
-                                ? Color.accentColor
-                                : Color(.systemGray5),
-                            in: Circle()
+                        .font(GSFont.bold(13, relativeTo: .body))
+                        .foregroundStyle(selected ? theme.bg : theme.neutral500)
+                        .frame(maxWidth: .infinity)
+                        .aspectRatio(1, contentMode: .fit)
+                        .background(selected ? theme.accent : Color.clear)
+                        .overlay(
+                            selected ? nil :
+                                Rectangle().strokeBorder(theme.divider, lineWidth: 1)
                         )
-                        .foregroundStyle(selected ? Color.white : Color.primary)
                 }
                 .buttonStyle(.plain)
             }
-            Spacer()
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 4)
     }
 
     // MARK: - Per-day rows
+    // Canvas: bordered row, accent-700 day label (3-letter), divider separator,
+    //   Bold time, muted routine name trailing.
 
     @ViewBuilder
     private var perDayRows: some View {
@@ -85,8 +91,8 @@ struct WeekdayRuleEditor: View {
 
     @ViewBuilder
     private func perDayRow(weekday: Int) -> some View {
-        let fullNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
-        let name = fullNames[(weekday - 1) % 7]
+        let shortNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+        let name = shortNames[(weekday - 1) % 7]
 
         let defaultDayTime = DayTime(hour: defaultHour, minute: defaultMinute)
 
@@ -109,21 +115,42 @@ struct WeekdayRuleEditor: View {
             set: { dayRoutines[weekday] = $0 }
         )
 
-        VStack(alignment: .leading, spacing: 4) {
+        // Canvas per-day row: [accent-700 day name | divider | time | trailing: routine muted]
+        HStack(spacing: 0) {
             Text(name)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            DatePicker("Time", selection: timeBinding, displayedComponents: .hourAndMinute)
+                .font(GSFont.bold(13, relativeTo: .subheadline))
+                .foregroundStyle(theme.accent700)
+                .frame(width: 40, alignment: .leading)
+
+            Rectangle()
+                .fill(theme.divider)
+                .frame(width: 1)
+                .padding(.vertical, 2)
+                .padding(.horizontal, 8)
+
+            DatePicker("", selection: timeBinding, displayedComponents: .hourAndMinute)
                 .labelsHidden()
-            Picker("Routine", selection: routineBinding) {
+                .font(GSFont.bold(13, relativeTo: .subheadline))
+                .tint(theme.accent)
+
+            Spacer()
+
+            Picker("", selection: routineBinding) {
                 Text("None").tag(Optional<UUID>.none)
+                    .font(GSFont.body(11, relativeTo: .caption))
                 ForEach(routines, id: \.id) { routine in
                     Text(routine.name).tag(Optional(routine.id))
+                        .font(GSFont.body(11, relativeTo: .caption))
                 }
             }
             .pickerStyle(.menu)
+            .font(GSFont.body(11, relativeTo: .caption))
+            .foregroundStyle(theme.neutral500)
         }
-        .padding(.vertical, 4)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(theme.surface)
+        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
     }
 
     // MARK: - Helpers
@@ -147,6 +174,7 @@ struct SeriesEditorView: View {
 
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.gsTheme) private var theme
 
     @State private var series: SessionSeries?
     @State private var selectedWeekdays: Set<Int> = []
@@ -171,7 +199,14 @@ struct SeriesEditorView: View {
         NavigationStack {
             Group {
                 if isLoading {
-                    ProgressView("Loading series…")
+                    VStack {
+                        Spacer()
+                        ProgressView("Loading series…")
+                            .foregroundStyle(theme.neutral700)
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity)
+                    .background(theme.bg)
                 } else {
                     editorForm
                 }
@@ -181,9 +216,13 @@ struct SeriesEditorView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .font(GSFont.bold(14, relativeTo: .body))
+                        .foregroundStyle(theme.neutral700)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { Task { await save() } }
+                        .font(GSFont.bold(14, relativeTo: .body))
+                        .foregroundStyle(canSave ? theme.accent700 : theme.neutral500)
                         .disabled(!canSave)
                 }
             }
@@ -194,51 +233,69 @@ struct SeriesEditorView: View {
     // MARK: - Form
 
     private var editorForm: some View {
-        Form {
-            weekdaySection
-            untilDateSection
-            captionSection
+        List {
+            // Repeat on section
+            Section {
+                WeekdayRuleEditor(
+                    selectedWeekdays: $selectedWeekdays,
+                    dayTimes: $dayTimes,
+                    dayRoutines: $dayRoutines,
+                    defaultHour: defaultHour,
+                    defaultMinute: defaultMinute,
+                    defaultRoutineID: nil,
+                    routines: routines
+                )
+            } header: {
+                GSSectionHeader("Repeat on")
+            }
+            .listRowBackground(theme.bg)
+            .listRowSeparatorTint(theme.divider)
+
+            // Until section
+            Section {
+                let minDate = Date().addingTimeInterval(86400)
+                let maxDate = Date().addingTimeInterval(26 * 7 * 86400)
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Until")
+                            .font(GSFont.body(12, relativeTo: .caption))
+                            .foregroundStyle(theme.neutral500)
+                        DatePicker(
+                            "",
+                            selection: $untilDate,
+                            in: minDate...maxDate,
+                            displayedComponents: .date
+                        )
+                        .labelsHidden()
+                        .tint(theme.accent)
+                    }
+                    Spacer()
+                }
+                .listRowBackground(theme.surface)
+                .listRowSeparatorTint(theme.divider)
+            }
+
+            // Caption
+            Section {
+                Text("Changes apply to future sessions only.")
+                    .font(GSFont.body(13, relativeTo: .footnote))
+                    .foregroundStyle(theme.neutral500)
+                    .listRowBackground(theme.bg)
+            }
+
+            // Error
             if let errorText {
                 Section {
-                    Text(errorText).foregroundStyle(.red).font(.footnote)
+                    Text(errorText)
+                        .font(GSFont.body(12, relativeTo: .footnote))
+                        .foregroundStyle(.red)
+                        .listRowBackground(theme.bg)
                 }
             }
         }
-    }
-
-    private var weekdaySection: some View {
-        Section("Repeat on") {
-            WeekdayRuleEditor(
-                selectedWeekdays: $selectedWeekdays,
-                dayTimes: $dayTimes,
-                dayRoutines: $dayRoutines,
-                defaultHour: defaultHour,
-                defaultMinute: defaultMinute,
-                defaultRoutineID: nil,
-                routines: routines
-            )
-        }
-    }
-
-    private var untilDateSection: some View {
-        let minDate = Date().addingTimeInterval(86400)
-        let maxDate = Date().addingTimeInterval(26 * 7 * 86400)
-        return Section("Until") {
-            DatePicker(
-                "End date",
-                selection: $untilDate,
-                in: minDate...maxDate,
-                displayedComponents: .date
-            )
-        }
-    }
-
-    private var captionSection: some View {
-        Section {
-            Text("Changes apply to future sessions only.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(theme.bg)
     }
 
     // MARK: - Default hour/minute from loaded data
