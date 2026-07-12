@@ -34,7 +34,9 @@ enum SessionRepository {
                 groupID: nil,
                 roomCode: nil,
                 scheduledFor: nil,
-                seriesID: nil
+                seriesID: nil,
+                currentTurnUserID: nil,
+                currentTurnStartedAt: nil
             )
             let inserted: WorkoutSession = try await client
                 .from("sessions")
@@ -317,23 +319,41 @@ enum SessionRepository {
         } catch { throw ErrorMapping.map(error) }
     }
 
-    /// Start: evaluate lateness (organizer-only RPC) then transition state → in_progress.
+    /// Start: atomically calls `start_session` RPC (lateness + turn-order + state flip).
+    /// Signature unchanged — LobbyView untouched.
     static func start(sessionID: UUID) async throws {
         guard await SupabaseService.shared.currentUserID() != nil else {
             throw GymSyncError.unauthorized
         }
         do {
             _ = try await client
-                .rpc("evaluate_lateness", params: ["p_session_id": sessionID.uuidString])
+                .rpc("start_session", params: ["p_session_id": sessionID.uuidString])
                 .execute()
+        } catch { throw ErrorMapping.map(error) }
+    }
+
+    /// Advance the turn to the next participant (current-lifter or organizer gated).
+    static func advanceTurn(sessionID: UUID) async throws {
+        guard await SupabaseService.shared.currentUserID() != nil else {
+            throw GymSyncError.unauthorized
+        }
+        do {
             _ = try await client
-                .from("sessions")
-                .update([
-                    "state": "in_progress",
-                    "started_at": iso8601Now()
-                ])
-                .eq("id", value: sessionID.uuidString)
+                .rpc("advance_turn", params: ["p_session_id": sessionID.uuidString])
                 .execute()
+        } catch { throw ErrorMapping.map(error) }
+    }
+
+    /// All set_logs for a session ordered by logged_at ascending.
+    static func sessionSets(sessionID: UUID) async throws -> [SetLog] {
+        do {
+            let rows: [SetLog] = try await client
+                .from("set_logs")
+                .select()
+                .eq("session_id", value: sessionID.uuidString)
+                .order("logged_at", ascending: true)
+                .execute().value
+            return rows
         } catch { throw ErrorMapping.map(error) }
     }
 }

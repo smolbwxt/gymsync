@@ -11,4 +11,5 @@ enum AppLogger {
     static let ui = Logger(subsystem: subsystem, category: "ui")
     static let chat = Logger(subsystem: subsystem, category: "chat")
     static let lobby = Logger(subsystem: subsystem, category: "lobby")
+    static let sessions = Logger(subsystem: subsystem, category: "sessions")
 }
