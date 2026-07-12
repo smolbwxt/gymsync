@@ -287,6 +287,84 @@ public struct GSSectionHeader: View {
     }
 }
 
+// MARK: - GSSettingsRow
+//
+// Full-width tappable settings row: flush-left title + trailing chevron.
+// ≥44pt tap target via vertical padding, contentShape for edge-to-edge hit
+// testing, 1px divider along the bottom edge. Used by the You tab's
+// Settings section (Home Gym, Apple Health Sync, etc.).
+
+public struct GSSettingsRow: View {
+    @Environment(\.gsTheme) private var theme
+
+    private let title: String
+    private let action: () -> Void
+
+    public init(title: String, action: @escaping () -> Void) {
+        self.title = title
+        self.action = action
+    }
+
+    public var body: some View {
+        Button(action: action) {
+            HStack {
+                Text(title)
+                    .font(GSFont.bodyMedium(14, relativeTo: .subheadline))
+                    .foregroundColor(theme.text)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(theme.neutral500)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(theme.surface)
+            .contentShape(Rectangle())
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(theme.divider).frame(height: 1)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - GSSecondarySignOutButtonStyle
+//
+// Sign-Out variant of GSSecondaryButtonStyle: accent700 text (vs accent),
+// neutral300 border (vs accent), CENTERED label (canvas exception to the
+// DS system's flush-left rule — canvas explicitly sets
+// `justify-content:center` for the You-tab Sign Out button only).
+// Promoted from a private one-off in YouTabView so it's reusable/testable.
+
+public struct GSSecondarySignOutButtonStyle: ButtonStyle {
+    @Environment(\.gsTheme) private var theme
+
+    public init() {}
+
+    public func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 0) {
+            Spacer(minLength: 0)
+            configuration.label
+            Spacer(minLength: 0)
+        }
+        .font(GSFont.bold(16, relativeTo: .body))
+        .foregroundColor(configuration.isPressed ? theme.accent600 : theme.accent700)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(configuration.isPressed ? theme.accent100 : Color.clear)
+        .cornerRadius(0)
+        .overlay(
+            Rectangle()
+                .strokeBorder(
+                    configuration.isPressed ? theme.accent600 : theme.neutral300,
+                    lineWidth: 1
+                )
+        )
+        .contentShape(Rectangle())
+        .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+    }
+}
+
 // MARK: - GSStatTile
 //
 // Compact surface-card metric tile: bold value + muted label.
@@ -300,17 +378,22 @@ public struct GSStatTile: View {
     private let value: String
     private let label: String
     private let valueColor: Color?
+    private let valueFontSize: CGFloat
 
-    public init(value: String, label: String, valueColor: Color? = nil) {
+    /// `valueFontSize` defaults to the canonical 20pt (Home tab tiles); callers
+    /// matching a canvas spec with a smaller scale (e.g. You tab's 18pt stat
+    /// tiles) can override per-instance.
+    public init(value: String, label: String, valueColor: Color? = nil, valueFontSize: CGFloat = 20) {
         self.value = value
         self.label = label
         self.valueColor = valueColor
+        self.valueFontSize = valueFontSize
     }
 
     public var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(value)
-                .font(GSFont.bold(20, relativeTo: .title3))
+                .font(GSFont.bold(valueFontSize, relativeTo: .title3))
                 .foregroundColor(valueColor ?? theme.text)
             Text(label)
                 .font(GSFont.body(10, relativeTo: .caption2))

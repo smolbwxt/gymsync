@@ -1,72 +1,213 @@
+import HealthKit
 import SwiftUI
 
 struct YouTabView: View {
     @Environment(AuthService.self) private var auth
     @Environment(\.gsTheme) private var theme
+    @Environment(AppState.self) private var appState
+
+    @State private var profile: Profile?
+    @State private var workoutsLogged: Int = 0
+    @State private var homeGymName: String?
+    @State private var showHomeGymSheet = false
+    @State private var healthAuthStatus: HKAuthorizationStatus = .notDetermined
     @State private var errorText: String?
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    GSDivider()
-
-                    // ── Appearance ──────────────────────────────────────────────
-                    GSSectionHeader("Appearance")
-                        .padding(.horizontal, 16)
-                        .padding(.top, 16)
-                        .padding(.bottom, 10)
-
-                    appearanceRow
-
-                    GSDivider()
-                        .padding(.vertical, 16)
-
-                    // ── Account ─────────────────────────────────────────────────
-                    GSSectionHeader("Account")
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 10)
-
-                    signOutButton
-
-                    if let errorText {
-                        Text(errorText)
-                            .font(GSFont.body(13, relativeTo: .footnote))
-                            .foregroundStyle(.red)
+            GeometryReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        avatarCardView
                             .padding(.horizontal, 16)
-                            .padding(.top, 8)
-                    }
+                            .padding(.top, 16)
 
-                    Spacer(minLength: 32)
+                        statTileRow
+                            .padding(.horizontal, 16)
+                            .padding(.top, 16)
+
+                        GSSectionHeader("Settings")
+                            .padding(.horizontal, 16)
+                            .padding(.top, 24)
+                            .padding(.bottom, 10)
+
+                        settingsRows
+
+                        if let errorText {
+                            Text(errorText)
+                                .font(GSFont.body(13, relativeTo: .footnote))
+                                .foregroundStyle(.red)
+                                .padding(.horizontal, 16)
+                                .padding(.top, 8)
+                        }
+
+                        Spacer(minLength: 24)
+
+                        signOutButton
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 24)
+                    }
+                    .frame(minHeight: proxy.size.height)
                 }
             }
             .scrollContentBackground(.hidden)
             .background(theme.bg)
             .navigationTitle("You")
             .navigationBarTitleDisplayMode(.inline)
+            .task { await loadData() }
+            .sheet(isPresented: $showHomeGymSheet) {
+                HomeGymPlaceholderSheet(gymName: homeGymName)
+            }
         }
     }
 
-    // MARK: - Rows
+    // MARK: - Avatar Card
 
-    private var appearanceRow: some View {
+    @ViewBuilder
+    private var avatarCardView: some View {
+        let displayProfile = profile ?? appState.currentProfile
+        GSCard(bordered: false) {
+            VStack(spacing: 8) {
+                Text(initials(for: displayProfile))
+                    .font(GSFont.heading(20, relativeTo: .title3))
+                    .foregroundColor(theme.bg)
+                    .frame(width: 60, height: 60)
+                    .background(theme.accent)
+
+                Text(displayName(for: displayProfile))
+                    .font(GSFont.heading(18, relativeTo: .title3))
+                    .foregroundColor(theme.text)
+
+                if let displayProfile {
+                    Text(memberSinceText(for: displayProfile))
+                        .font(GSFont.body(13, relativeTo: .caption))
+                        .foregroundColor(theme.neutral700)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(16)
+        }
+    }
+
+    private func initials(for profile: Profile?) -> String {
+        guard let profile else { return "?" }
+        let trimmedDisplayName = profile.displayName?.trimmingCharacters(in: .whitespaces)
+        let source = (trimmedDisplayName?.isEmpty == false ? trimmedDisplayName : nil) ?? profile.username
+        let words = source.split(separator: " ")
+        if words.count >= 2 {
+            return String(words.prefix(2).compactMap(\.first)).uppercased()
+        }
+        return String(source.prefix(2)).uppercased()
+    }
+
+    private func displayName(for profile: Profile?) -> String {
+        guard let profile else { return "" }
+        if let name = profile.displayName, !name.trimmingCharacters(in: .whitespaces).isEmpty {
+            return name
+        }
+        return "@\(profile.username)"
+    }
+
+    private func memberSinceText(for profile: Profile) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM yyyy"
+        return "@\(profile.username) · Member since \(formatter.string(from: profile.createdAt))"
+    }
+
+    // MARK: - Stat Tiles
+
+    private var statTileRow: some View {
+        let displayProfile = profile ?? appState.currentProfile
+        return HStack(spacing: 8) {
+            GSStatTile(
+                value: "\(StatMath.compactNumber(displayProfile?.lifetimeVolumeLifted ?? 0)) lbs",
+                label: "Lifetime volume",
+                valueFontSize: 18
+            )
+            GSStatTile(
+                value: "\(workoutsLogged)",
+                label: "Workouts logged",
+                valueFontSize: 18
+            )
+        }
+    }
+
+    // MARK: - Settings Rows
+
+    @ViewBuilder
+    private var settingsRows: some View {
+        VStack(spacing: 0) {
+            GSSettingsRow(title: "Home Gym") {
+                showHomeGymSheet = true
+            }
+            healthSyncRow
+            themeRow
+        }
+        .padding(.horizontal, 16)
+    }
+
+    /// Shows current authorization state as trailing text (not a chevron —
+    /// this row isn't a navigation target). Tapping re-requests permission
+    /// then refreshes the displayed state.
+    private var healthSyncRow: some View {
+        Button {
+            Task { await requestHealthPermission() }
+        } label: {
+            HStack {
+                Text("Apple Health Sync")
+                    .font(GSFont.bodyMedium(14, relativeTo: .subheadline))
+                    .foregroundColor(theme.text)
+                Spacer()
+                Text(healthAuthStatusText)
+                    .font(GSFont.body(13, relativeTo: .caption))
+                    .foregroundColor(theme.neutral700)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(theme.surface)
+            .contentShape(Rectangle())
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(theme.divider).frame(height: 1)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var healthAuthStatusText: String {
+        switch healthAuthStatus {
+        case .sharingAuthorized: return "Enabled"
+        case .sharingDenied: return "Denied"
+        case .notDetermined: return "Not Enabled"
+        @unknown default: return "Unknown"
+        }
+    }
+
+    /// Restyled as a GSSettingsRow-shaped static row (recorded deviation —
+    /// canvas's You tab has no Theme row at all; this app only ships the
+    /// Midnight theme today, so the row is informational, not tappable).
+    private var themeRow: some View {
         HStack {
             Text("Theme")
-                .font(GSFont.bodyMedium(15, relativeTo: .body))
-                .foregroundStyle(theme.text)
+                .font(GSFont.bodyMedium(14, relativeTo: .subheadline))
+                .foregroundColor(theme.text)
             Spacer()
             Text("Midnight")
-                .font(GSFont.bodyMedium(15, relativeTo: .body))
-                .foregroundStyle(theme.neutral700)
+                .font(GSFont.body(13, relativeTo: .caption))
+                .foregroundColor(theme.neutral700)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
         .background(theme.surface)
-        .overlay(
-            Rectangle().strokeBorder(theme.neutral300, lineWidth: 1)
-        )
-        .padding(.horizontal, 16)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(theme.divider).frame(height: 1)
+        }
     }
+
+    // MARK: - Sign Out
+    //
+    // Canvas exception to the DS's flush-left button rule: centered label,
+    // accent700 text, secondary (neutral300) border. Uses the promoted
+    // GSSecondarySignOutButtonStyle (DesignSystem/GSComponents.swift).
 
     private var signOutButton: some View {
         Button {
@@ -78,34 +219,70 @@ struct YouTabView: View {
             Text("Sign Out")
         }
         .buttonStyle(GSSecondarySignOutButtonStyle())
-        .padding(.horizontal, 16)
+    }
+
+    // MARK: - Data loading
+
+    @MainActor
+    private func loadData() async {
+        guard let userID = appState.currentProfile?.id else { return }
+
+        async let profileFetch = ProfileRepository.refresh(userID: userID)
+        async let historyFetch = SessionRepository.history(userID: userID, limit: 500)
+        async let gymFetch = CheckInService.primaryGym()
+
+        if let fetched = try? await profileFetch {
+            profile = fetched
+            appState.currentProfile = fetched
+        }
+        if let history = try? await historyFetch {
+            workoutsLogged = history.count
+        }
+        let gym = try? await gymFetch
+        homeGymName = gym?.name
+
+        healthAuthStatus = HealthKitBridge.store.authorizationStatus(for: .workoutType())
+    }
+
+    private func requestHealthPermission() async {
+        try? await HealthKitBridge.requestPermission()
+        healthAuthStatus = HealthKitBridge.store.authorizationStatus(for: .workoutType())
     }
 }
 
-// MARK: - Sign-Out variant of Secondary (accent700 text colour per canvas)
+// MARK: - Home Gym placeholder sheet
+//
+// Task 8 builds the real HomeGymSetupView (map picker, geofence radius,
+// GymRepository.upsertPrimary wiring). This placeholder just surfaces the
+// current primary gym's name (or "Not set") so the row isn't a dead end.
 
-private struct GSSecondarySignOutButtonStyle: ButtonStyle {
+private struct HomeGymPlaceholderSheet: View {
+    let gymName: String?
+
     @Environment(\.gsTheme) private var theme
+    @Environment(\.dismiss) private var dismiss
 
-    func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 0) {
-            configuration.label
-            Spacer(minLength: 0)
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                Text(gymName ?? "Not set")
+                    .font(GSFont.heading(20, relativeTo: .title3))
+                    .foregroundColor(theme.text)
+                Text("Home gym setup is coming in a future update.")
+                    .font(GSFont.body(14, relativeTo: .subheadline))
+                    .foregroundColor(theme.neutral700)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(24)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(theme.bg)
+            .navigationTitle("Home Gym")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
         }
-        .font(GSFont.bold(16, relativeTo: .body))
-        .foregroundColor(configuration.isPressed ? theme.accent600 : theme.accent700)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(configuration.isPressed ? theme.accent100 : Color.clear)
-        .cornerRadius(0)
-        .overlay(
-            Rectangle()
-                .strokeBorder(
-                    configuration.isPressed ? theme.accent600 : theme.neutral300,
-                    lineWidth: 1
-                )
-        )
-        .contentShape(Rectangle())
-        .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
     }
 }
