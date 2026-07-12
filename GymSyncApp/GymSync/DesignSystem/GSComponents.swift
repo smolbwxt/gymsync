@@ -9,17 +9,26 @@ import SwiftUI
 public struct GSPrimaryButtonStyle: ButtonStyle {
     @Environment(\.gsTheme) private var theme
 
-    public init() {}
+    private let fontSize: CGFloat
+    private let verticalPadding: CGFloat
+
+    /// `fontSize`/`verticalPadding` default to the canonical 16pt/12pt treatment;
+    /// callers matching a canvas spec with a different scale (e.g. Home's
+    /// "Start Solo Workout" CTA at 15pt/14pt) can override per-instance.
+    public init(fontSize: CGFloat = 16, verticalPadding: CGFloat = 12) {
+        self.fontSize = fontSize
+        self.verticalPadding = verticalPadding
+    }
 
     public func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: 0) {
             configuration.label
             Spacer(minLength: 0)
         }
-        .font(GSFont.bold(16, relativeTo: .body))
+        .font(GSFont.bold(fontSize, relativeTo: .body))
         .foregroundColor(configuration.isPressed ? theme.neutral100 : theme.bg)
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.vertical, verticalPadding)
         .background(configuration.isPressed ? theme.accent600 : theme.accent)
         .cornerRadius(0)
         .contentShape(Rectangle())
@@ -95,16 +104,20 @@ public struct GSCard<Content: View>: View {
     @Environment(\.gsTheme) private var theme
 
     private let bordered: Bool
+    private let backgroundColor: Color?
     private let content: Content
 
-    public init(bordered: Bool = false, @ViewBuilder content: () -> Content) {
+    /// `backgroundColor` defaults to `theme.surface`; pass an override (e.g.
+    /// `theme.accent100` for a PR-celebration card) for non-default fills.
+    public init(bordered: Bool = false, backgroundColor: Color? = nil, @ViewBuilder content: () -> Content) {
         self.bordered = bordered
+        self.backgroundColor = backgroundColor
         self.content = content()
     }
 
     public var body: some View {
         content
-            .background(theme.surface)
+            .background(backgroundColor ?? theme.surface)
             .cornerRadius(0)
             .overlay(
                 bordered
@@ -271,5 +284,41 @@ public struct GSSectionHeader: View {
             .tracking(1.2)
             .foregroundColor(theme.neutral700)
             .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+// MARK: - GSStatTile
+//
+// Compact surface-card metric tile: bold value + muted label.
+// Sized to sit flex:1 in a row (Home stat row, You-tab stat row, etc.).
+// `valueColor` lets callers accent a particular tile's value (e.g. accent700
+// for "PRs this month") while leaving the label at the standard neutral700.
+
+public struct GSStatTile: View {
+    @Environment(\.gsTheme) private var theme
+
+    private let value: String
+    private let label: String
+    private let valueColor: Color?
+
+    public init(value: String, label: String, valueColor: Color? = nil) {
+        self.value = value
+        self.label = label
+        self.valueColor = valueColor
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(value)
+                .font(GSFont.bold(20, relativeTo: .title3))
+                .foregroundColor(valueColor ?? theme.text)
+            Text(label)
+                .font(GSFont.body(10, relativeTo: .caption2))
+                .foregroundColor(theme.neutral700)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.surface)
+        .cornerRadius(0)
     }
 }

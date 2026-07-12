@@ -6,7 +6,11 @@ import SwiftUI
 // - Logged sets table: SET | REPS | WEIGHT | RPE columns, checkmark for completed rows
 // - "Log Set N" ghost-style bottom anchor button
 struct WorkoutSessionView: View {
-    let routine: Routine
+    // Optional to support the Home "No routine" solo-start option (Task 5):
+    // a nil routine starts an untargeted session (routineExercises empty,
+    // startSolo(routineID: nil)) using this exact same view — no parallel
+    // session-start path was introduced.
+    let routine: Routine?
     let routineExercises: [RoutineExercise]
     let allExercises: [Exercise]
 
@@ -99,7 +103,7 @@ struct WorkoutSessionView: View {
             }
         }
         .background(theme.bg)
-        .navigationTitle(routine.name)
+        .navigationTitle(routine?.name ?? "Freeform Workout")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(!completed)
         .toolbarBackground(theme.surface, for: .navigationBar)
@@ -247,7 +251,7 @@ struct WorkoutSessionView: View {
         VStack(alignment: .leading, spacing: 16) {
             // Canvas: accent banner
             VStack(alignment: .leading, spacing: 4) {
-                Text(routine.name.uppercased())
+                Text((routine?.name ?? "Freeform Workout").uppercased())
                     .font(GSFont.bodyMedium(10, relativeTo: .caption2))
                     .tracking(1.4)
                     .foregroundStyle(theme.bg.opacity(0.85))
@@ -301,7 +305,7 @@ struct WorkoutSessionView: View {
     @MainActor
     private func startIfNeeded() async {
         guard session == nil else { return }
-        do { session = try await SessionRepository.startSolo(routineID: routine.id) }
+        do { session = try await SessionRepository.startSolo(routineID: routine?.id) }
         catch { errorText = ErrorMapping.map(error).errorDescription }
     }
 
