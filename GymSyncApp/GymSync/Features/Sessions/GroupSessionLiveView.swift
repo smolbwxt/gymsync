@@ -473,7 +473,7 @@ struct GroupSessionLiveView: View {
                     defaultWeight: nil
                 ) { reps, weight, rpe, isFailed, note in
                     Task { await logSet(reps: reps, weight: weight, rpe: rpe,
-                                        isFailed: false, note: note,
+                                        isFailed: isFailed, note: note,
                                         exerciseID: ex.id, isPenalty: true) }
                 }
             }
@@ -529,8 +529,8 @@ struct GroupSessionLiveView: View {
                 // Prepend to feed (newest-first), cap 30
                 feedSets.insert(log, at: 0)
                 if feedSets.count > 30 { feedSets = Array(feedSets.prefix(30)) }
-                // Track penalty reps logged by me
-                if log.userID == selfID && log.isPenalty {
+                // Track penalty reps logged by me (failed burpees don't clear debt)
+                if log.userID == selfID && log.isPenalty && !log.isFailed {
                     penaltyLogged += log.reps ?? 0
                 }
                 // Populate exercise name cache entry
@@ -557,9 +557,9 @@ struct GroupSessionLiveView: View {
             // Build feed: newest first, cap 30
             feedSets = Array(fetchedSets.reversed().prefix(30))
 
-            // Precount my penalty reps already logged
+            // Precount my penalty reps already logged (failed burpees don't clear debt)
             penaltyLogged = fetchedSets
-                .filter { $0.userID == selfID && $0.isPenalty }
+                .filter { $0.userID == selfID && $0.isPenalty && !$0.isFailed }
                 .compactMap(\.reps)
                 .reduce(0, +)
 
@@ -637,7 +637,7 @@ struct GroupSessionLiveView: View {
         )
         do {
             try await SessionRepository.logSet(log)
-            if isPenalty {
+            if isPenalty && !isFailed {
                 penaltyLogged += reps ?? 0
             }
         } catch let error as GymSyncError {
