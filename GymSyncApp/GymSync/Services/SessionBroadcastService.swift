@@ -48,12 +48,12 @@ final class SessionBroadcastService {
     ///
     /// - Parameters:
     ///   - sessionID:     The session to subscribe to (channel: `session:{id}`).
-    ///   - onSoundboard:  Called on MainActor when a soundboard broadcast arrives.
-    ///   - onReaction:    Called on MainActor when a reaction broadcast arrives.
+    ///   - onSoundboard:  Called on MainActor with (userID, soundSlug) when a soundboard broadcast arrives.
+    ///   - onReaction:    Called on MainActor with (userID, emoji) when a reaction broadcast arrives.
     func subscribe(
         sessionID: UUID,
-        onSoundboard: @escaping @MainActor (userID: UUID, slug: String) -> Void,
-        onReaction:   @escaping @MainActor (userID: UUID, emoji: String) -> Void
+        onSoundboard: @escaping @MainActor (UUID, String) -> Void,
+        onReaction:   @escaping @MainActor (UUID, String) -> Void
     ) async {
         await unsubscribe()
 
@@ -83,7 +83,7 @@ final class SessionBroadcastService {
                                 "broadcast: malformed soundboard payload")
                             continue
                         }
-                        onSoundboard(userID: uid, slug: slug)
+                        onSoundboard(uid, slug)
                     }
                 }
 
@@ -99,7 +99,7 @@ final class SessionBroadcastService {
                                 "broadcast: malformed reaction payload")
                             continue
                         }
-                        onReaction(userID: uid, emoji: emoji)
+                        onReaction(uid, emoji)
                     }
                 }
             }
