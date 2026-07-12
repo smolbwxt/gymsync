@@ -118,6 +118,26 @@ enum SessionRepository {
         } catch { throw ErrorMapping.map(error) }
     }
 
+    /// All of a user's set logs since `since`, excluding failed/penalty —
+    /// backs the Stats weekly-volume chart. Mirrors `exerciseHistory`'s
+    /// failed/penalty exclusion filters exactly.
+    static func recentSetLogs(userID: UUID, since: Date) async throws -> [SetLog] {
+        do {
+            let isoFmt = ISO8601DateFormatter()
+            isoFmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            let rows: [SetLog] = try await client
+                .from("set_logs")
+                .select()
+                .eq("user_id", value: userID)
+                .gte("logged_at", value: isoFmt.string(from: since))
+                .eq("is_failed", value: "false")
+                .eq("is_penalty", value: "false")
+                .order("logged_at", ascending: true)
+                .execute().value
+            return rows
+        } catch { throw ErrorMapping.map(error) }
+    }
+
     // MARK: - Phase 3a: Scheduling
 
     /// Schedule a session (group or ad-hoc). Inserts organizer + invitee participant rows.

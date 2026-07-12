@@ -43,6 +43,43 @@ enum StatMath {
         return calendar.date(from: components) ?? now
     }
 
+    /// Sum of reps×weight for `logs`, bucketed into `weeks` Monday-start
+    /// calendar weeks ending with the current week (last element). Excludes
+    /// failed/penalty sets and sets missing reps or weight — mirrors the
+    /// exclusion filters used by `SessionRepository.exerciseHistory`/
+    /// `recentSetLogs`. Weeks with no qualifying volume return `0`.
+    ///
+    /// `now` defaults to `.now` (not part of the brief's call signature) so
+    /// production call sites read as `weeklyVolumes(logs:weeks:calendar:)`
+    /// while tests can still pin the reference date.
+    static func weeklyVolumes(
+        logs: [SetLog],
+        weeks: Int = 6,
+        calendar: Calendar = .current,
+        now: Date = .now
+    ) -> [Decimal] {
+        guard weeks > 0 else { return [] }
+        let currentWeekStart = startOfWeek(containing: now, calendar: calendar)
+        let weekStarts: [Date] = (0..<weeks).map { offset in
+            calendar.date(byAdding: .day, value: -7 * (weeks - 1 - offset), to: currentWeekStart)
+                ?? currentWeekStart
+        }
+
+        var totals = [Decimal](repeating: 0, count: weeks)
+        for log in logs {
+            guard !log.isFailed, !log.isPenalty,
+                  let reps = log.reps, let weight = log.weight else { continue }
+            for (index, weekStart) in weekStarts.enumerated() {
+                guard let weekEnd = calendar.date(byAdding: .day, value: 7, to: weekStart) else { continue }
+                if log.loggedAt >= weekStart && log.loggedAt < weekEnd {
+                    totals[index] += Decimal(reps) * weight
+                    break
+                }
+            }
+        }
+        return totals
+    }
+
     // MARK: - Compact number formatting
 
     /// Compact display for large counts: 999 -> "999", 48_120 -> "48.1k",

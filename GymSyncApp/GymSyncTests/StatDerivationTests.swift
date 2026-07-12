@@ -91,4 +91,115 @@ final class StatDerivationTests: XCTestCase {
     func testCompactNumber_millionsFormatAsM() {
         XCTAssertEqual(StatMath.compactNumber(1_200_000), "1.2M")
     }
+
+    // MARK: - weeklyVolumes (Task 6)
+    // "now" is pinned to Wednesday 2024-01-03 (same anchor as the week-boundary
+    // tests above), so week 6 (index 5, current/last) is Mon 2024-01-01 -> Sun
+    // 2024-01-07, and week 1 (index 0, oldest) is Mon 2023-11-27 -> Sun 2023-12-03.
+
+    private func makeSetLog(loggedAt: Date, reps: Int? = 5, weight: Decimal? = 100,
+                             isFailed: Bool = false, isPenalty: Bool = false) -> SetLog {
+        SetLog(
+            id: UUID(),
+            userID: UUID(),
+            sessionID: UUID(),
+            exerciseID: UUID(),
+            setIndex: 0,
+            reps: reps,
+            weight: weight,
+            rpe: nil,
+            isFailed: isFailed,
+            isPenalty: isPenalty,
+            note: nil,
+            loggedAt: loggedAt
+        )
+    }
+
+    func testWeeklyVolumes_emptyLogsReturnsAllZeros() {
+        let now = date(2024, 1, 3, 12)
+        let result = StatMath.weeklyVolumes(logs: [], weeks: 6, calendar: utc, now: now)
+        XCTAssertEqual(result, Array(repeating: 0, count: 6))
+    }
+
+    func testWeeklyVolumes_currentWeekIsLastBucket() {
+        let now = date(2024, 1, 3, 12)
+        let logs = [makeSetLog(loggedAt: date(2024, 1, 2, 10), reps: 5, weight: 100)] // 500, current week
+        let result = StatMath.weeklyVolumes(logs: logs, weeks: 6, calendar: utc, now: now)
+        XCTAssertEqual(result.count, 6)
+        XCTAssertEqual(result[5], 500)
+        XCTAssertEqual(result[0..<5], ArraySlice(Array(repeating: Decimal(0), count: 5)))
+    }
+
+    func testWeeklyVolumes_mondayStartBoundaryIsIncludedInCurrentWeek() {
+        let now = date(2024, 1, 3, 12)
+        let logs = [makeSetLog(loggedAt: date(2024, 1, 1, 0, 0, 0), reps: 10, weight: 50)] // 500, Monday start
+        let result = StatMath.weeklyVolumes(logs: logs, weeks: 6, calendar: utc, now: now)
+        XCTAssertEqual(result[5], 500)
+    }
+
+    func testWeeklyVolumes_priorSundayFallsIntoPreviousWeekBucket() {
+        let now = date(2024, 1, 3, 12)
+        // 2023-12-31 23:59:59 is the last instant of the week BEFORE current (index 4).
+        let logs = [makeSetLog(loggedAt: date(2023, 12, 31, 23, 59, 59), reps: 4, weight: 25)] // 100
+        let result = StatMath.weeklyVolumes(logs: logs, weeks: 6, calendar: utc, now: now)
+        XCTAssertEqual(result[4], 100)
+        XCTAssertEqual(result[5], 0)
+    }
+
+    func testWeeklyVolumes_oldestWeekBoundary() {
+        let now = date(2024, 1, 3, 12)
+        // Week 1 (index 0) is Mon 2023-11-27 -> Sun 2023-12-03.
+        let logs = [makeSetLog(loggedAt: date(2023, 11, 27, 0, 0, 0), reps: 2, weight: 200)] // 400
+        let result = StatMath.weeklyVolumes(logs: logs, weeks: 6, calendar: utc, now: now)
+        XCTAssertEqual(result[0], 400)
+    }
+
+    func testWeeklyVolumes_logsBeforeWindowAreExcluded() {
+        let now = date(2024, 1, 3, 12)
+        // One day before week 1's start (2023-11-26 23:59:59) — outside the 6-week window entirely.
+        let logs = [makeSetLog(loggedAt: date(2023, 11, 26, 23, 59, 59), reps: 10, weight: 100)]
+        let result = StatMath.weeklyVolumes(logs: logs, weeks: 6, calendar: utc, now: now)
+        XCTAssertEqual(result, Array(repeating: 0, count: 6))
+    }
+
+    func testWeeklyVolumes_emptyWeeksInterspersedAreZero() {
+        let now = date(2024, 1, 3, 12)
+        let logs = [
+            makeSetLog(loggedAt: date(2023, 11, 27, 10), reps: 5, weight: 40),  // week 0: 200
+            makeSetLog(loggedAt: date(2024, 1, 2, 10), reps: 5, weight: 20)     // week 5 (current): 100
+        ]
+        let result = StatMath.weeklyVolumes(logs: logs, weeks: 6, calendar: utc, now: now)
+        XCTAssertEqual(result, [200, 0, 0, 0, 0, 100])
+    }
+
+    func testWeeklyVolumes_sumsMultipleSetsWithinSameWeek() {
+        let now = date(2024, 1, 3, 12)
+        let logs = [
+            makeSetLog(loggedAt: date(2024, 1, 1, 9), reps: 5, weight: 100),  // 500
+            makeSetLog(loggedAt: date(2024, 1, 2, 9), reps: 3, weight: 100)   // 300
+        ]
+        let result = StatMath.weeklyVolumes(logs: logs, weeks: 6, calendar: utc, now: now)
+        XCTAssertEqual(result[5], 800)
+    }
+
+    func testWeeklyVolumes_excludesFailedAndPenaltySets() {
+        let now = date(2024, 1, 3, 12)
+        let logs = [
+            makeSetLog(loggedAt: date(2024, 1, 2, 9), reps: 5, weight: 100, isFailed: true),
+            makeSetLog(loggedAt: date(2024, 1, 2, 9), reps: 5, weight: 100, isPenalty: true),
+            makeSetLog(loggedAt: date(2024, 1, 2, 9), reps: 5, weight: 100)  // only this counts: 500
+        ]
+        let result = StatMath.weeklyVolumes(logs: logs, weeks: 6, calendar: utc, now: now)
+        XCTAssertEqual(result[5], 500)
+    }
+
+    func testWeeklyVolumes_excludesSetsMissingRepsOrWeight() {
+        let now = date(2024, 1, 3, 12)
+        let logs = [
+            makeSetLog(loggedAt: date(2024, 1, 2, 9), reps: nil, weight: 100),
+            makeSetLog(loggedAt: date(2024, 1, 2, 9), reps: 5, weight: nil)
+        ]
+        let result = StatMath.weeklyVolumes(logs: logs, weeks: 6, calendar: utc, now: now)
+        XCTAssertEqual(result[5], 0)
+    }
 }
