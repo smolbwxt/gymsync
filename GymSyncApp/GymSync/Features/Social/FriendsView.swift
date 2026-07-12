@@ -7,28 +7,61 @@ struct FriendsView: View {
     @State private var addUsername = ""
     @State private var errorText: String?
 
+    @Environment(\.gsTheme) private var theme
+
     var body: some View {
+        // Keep List so swipeActions (Remove) on friends rows continues to work (contract).
         List {
-            Section("Add Friend") {
-                HStack {
-                    TextField("username", text: $addUsername)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    Button("Send") {
-                        Task { await sendRequest() }
+            // Add Friend section
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        HStack(spacing: 4) {
+                            Text("@")
+                                .font(GSFont.bodyMedium(14, relativeTo: .body))
+                                .foregroundStyle(theme.neutral500)
+                            TextField("username", text: $addUsername)
+                                .font(GSFont.body(14, relativeTo: .body))
+                                .foregroundStyle(theme.text)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .tint(theme.accent)
+                        }
+                        .padding(.horizontal, 12)
+                        .frame(height: 44)
+                        .background(theme.surface)
+                        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+
+                        Button("Send") {
+                            Task { await sendRequest() }
+                        }
+                        .buttonStyle(GSPrimaryButtonStyle())
+                        .frame(width: 72)
+                        .disabled(addUsername.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
-                    .disabled(addUsername.trimmingCharacters(in: .whitespaces).isEmpty)
+
+                    if let errorText {
+                        Text(errorText)
+                            .font(GSFont.body(12, relativeTo: .footnote))
+                            .foregroundStyle(.red)
+                    }
                 }
-                if let errorText {
-                    Text(errorText).foregroundStyle(.red).font(.footnote)
-                }
+                .listRowBackground(theme.bg)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
+            } header: {
+                GSSectionHeader("Add a friend")
             }
 
+            // Incoming requests
             if !incoming.isEmpty {
-                Section("Requests") {
+                Section {
                     ForEach(incoming) { profile in
-                        HStack {
+                        HStack(spacing: 10) {
+                            GSInitialsAvatar(name: profile.username, size: 36)
                             Text(profile.username)
+                                .font(GSFont.bodyMedium(14, relativeTo: .body))
+                                .foregroundStyle(theme.text)
                             Spacer()
                             Button("Accept") {
                                 Task {
@@ -36,24 +69,39 @@ struct FriendsView: View {
                                     await refresh()
                                 }
                             }
-                            .buttonStyle(.borderedProminent)
-                            Button("Decline") {
+                            .buttonStyle(GSPrimaryButtonStyle())
+                            .frame(width: 72)
+
+                            Button {
                                 Task {
                                     try? await FriendRepository.removeFriendship(with: profile.id)
                                     await refresh()
                                 }
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(theme.neutral500)
                             }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(.plain)
                         }
+                        .listRowBackground(theme.surface)
+                        .listRowSeparatorTint(theme.divider)
+                        .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
                     }
+                } header: {
+                    GSSectionHeader("Requests · \(incoming.count)")
                 }
             }
 
+            // Outgoing pending requests
             if !outgoing.isEmpty {
-                Section("Sent") {
+                Section {
                     ForEach(outgoing) { profile in
-                        HStack {
+                        HStack(spacing: 10) {
+                            GSInitialsAvatar(name: profile.username, size: 36)
                             Text(profile.username)
+                                .font(GSFont.bodyMedium(14, relativeTo: .body))
+                                .foregroundStyle(theme.text)
                             Spacer()
                             Button("Cancel") {
                                 Task {
@@ -61,19 +109,37 @@ struct FriendsView: View {
                                     await refresh()
                                 }
                             }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(GSSecondaryButtonStyle())
+                            .frame(width: 80)
                         }
+                        .listRowBackground(theme.surface)
+                        .listRowSeparatorTint(theme.divider)
+                        .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
                     }
+                } header: {
+                    GSSectionHeader("Sent")
                 }
             }
 
-            Section("Friends") {
+            // Friends list — swipeActions to Remove preserved
+            Section {
                 if friends.isEmpty {
                     Text("No friends yet. Send a request by username.")
-                        .foregroundStyle(.secondary)
-                }
-                ForEach(friends) { profile in
-                    Text(profile.username)
+                        .font(GSFont.body(14, relativeTo: .body))
+                        .foregroundStyle(theme.neutral500)
+                        .listRowBackground(theme.bg)
+                        .listRowSeparator(.hidden)
+                } else {
+                    ForEach(friends) { profile in
+                        HStack(spacing: 10) {
+                            GSInitialsAvatar(name: profile.username, size: 36)
+                            Text(profile.username)
+                                .font(GSFont.bodyMedium(14, relativeTo: .body))
+                                .foregroundStyle(theme.text)
+                        }
+                        .listRowBackground(theme.surface)
+                        .listRowSeparatorTint(theme.divider)
+                        .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
                         .swipeActions {
                             Button("Remove", role: .destructive) {
                                 Task {
@@ -82,9 +148,15 @@ struct FriendsView: View {
                                 }
                             }
                         }
+                    }
                 }
+            } header: {
+                GSSectionHeader("Friends · \(friends.count)")
             }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(theme.bg)
         .navigationTitle("Friends")
         .task { await refresh() }
         .refreshable { await refresh() }

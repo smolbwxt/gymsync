@@ -6,6 +6,7 @@ struct ChatView: View {
 
     @Environment(AppState.self) private var appState
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.gsTheme) private var theme
     @State private var messages: [ChatMessage] = []   // oldest-first for rendering
     @State private var reactions: [UUID: [ChatReaction]] = [:]
     @State private var usernames: [UUID: String] = [:]
@@ -24,14 +25,16 @@ struct ChatView: View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 10) {
+                    LazyVStack(alignment: .leading, spacing: 12) {
                         ForEach(messages) { message in
                             messageRow(message)
                                 .id(message.id)
                         }
                     }
-                    .padding()
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 14)
                 }
+                .background(theme.bg)
                 .onChange(of: messages.count) {
                     if let last = messages.last {
                         proxy.scrollTo(last.id, anchor: .bottom)
@@ -42,39 +45,31 @@ struct ChatView: View {
             }
 
             if let errorText {
-                Text(errorText).foregroundStyle(.red).font(.footnote)
-            }
-
-            if !typingUsers.isEmpty {
-                Text("\(typingUsers.sorted().joined(separator: ", ")) typing…")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text(errorText)
+                    .font(GSFont.body(12, relativeTo: .footnote))
+                    .foregroundStyle(.red)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal)
+                    .padding(.horizontal, 16)
             }
 
-            HStack {
-                PhotosPicker(selection: $pickerItem, matching: .images) {
-                    Image(systemName: "photo").font(.title3)
+            // Typing indicator — 3 animated dots + name per canvas
+            if !typingUsers.isEmpty {
+                HStack(spacing: 7) {
+                    TypingDotsView(theme: theme)
+                    Text("\(typingUsers.sorted().joined(separator: ", ")) is typing…")
+                        .font(GSFont.body(11, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral500)
                 }
-                .disabled(isSendingImage)
-                TextField("Message", text: $draft, axis: .vertical)
-                    .textFieldStyle(.roundedBorder)
-                    .lineLimit(1...4)
-                Button {
-                    Task { await send() }
-                } label: {
-                    Image(systemName: "arrow.up.circle.fill").font(.title2)
-                }
-                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 2)
+                .padding(.bottom, 4)
             }
-            .padding()
-            .onChange(of: pickerItem) {
-                guard let item = pickerItem else { return }
-                pickerItem = nil
-                Task { await sendImage(item) }
-            }
+
+            // Input bar: bg fill, 2px top divider, icon button | surface field | accent send button
+            inputBar
         }
+        .background(theme.bg)
         .task { await load() }
         .onChange(of: draft) {
             typingDebounce?.cancel()
@@ -94,22 +89,81 @@ struct ChatView: View {
         .onDisappear { Task { await realtime.unsubscribe() } }
     }
 
+    // MARK: - Input Bar
+
+    private var inputBar: some View {
+        HStack(spacing: 8) {
+            // Photo picker icon button — 38×38, bordered per canvas
+            PhotosPicker(selection: $pickerItem, matching: .images) {
+                Image(systemName: "photo")
+                    .font(.system(size: 17, weight: .regular))
+                    .foregroundStyle(theme.neutral700)
+                    .frame(width: 38, height: 38)
+                    .background(theme.bg)
+                    .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+            }
+            .disabled(isSendingImage)
+
+            // Message field — surface bg, 1px divider border, 38px height
+            TextField("Message", text: $draft, axis: .vertical)
+                .font(GSFont.body(14, relativeTo: .body))
+                .foregroundStyle(theme.text)
+                .tint(theme.accent)
+                .lineLimit(1...4)
+                .padding(.horizontal, 12)
+                .frame(minHeight: 38)
+                .background(theme.surface)
+                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+
+            // Send button — accent primary, 38×38
+            Button {
+                Task { await send() }
+            } label: {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(theme.bg)
+                    .frame(width: 38, height: 38)
+                    .background(
+                        draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            ? theme.neutral400
+                            : theme.accent
+                    )
+            }
+            .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 9)
+        .padding(.bottom, 20)
+        .background(theme.bg)
+        .overlay(alignment: .top) {
+            GSDivider()
+        }
+        .onChange(of: pickerItem) {
+            guard let item = pickerItem else { return }
+            pickerItem = nil
+            Task { await sendImage(item) }
+        }
+    }
+
+    // MARK: - Message Row
+
     @ViewBuilder
     private func messageRow(_ message: ChatMessage) -> some View {
         if message.isSystem {
-            Text(message.body ?? "")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .center)
+            // System messages: centered, inline-block, 1px divider border per canvas
+            systemMessageView(message)
         } else {
             let mine = message.authorID == appState.currentProfile?.id
             VStack(alignment: mine ? .trailing : .leading, spacing: 3) {
+                // Sender kicker — only for incoming messages (flush-left architecture)
                 if !mine, let author = message.authorID {
                     Text(usernames[author] ?? "…")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                        .font(GSFont.body(10, relativeTo: .caption2))
+                        .foregroundStyle(theme.neutral500)
+                        .padding(.leading, 2)
                 }
-                messageContent(message)
+                messageContent(message, mine: mine)
                     .contextMenu {
                         ForEach(Self.reactionChoices, id: \.self) { emoji in
                             Button(emoji) {
@@ -121,25 +175,124 @@ struct ChatView: View {
                             }
                         }
                     }
+                // Reaction pills
                 if let messageReactions = reactions[message.id], !messageReactions.isEmpty {
                     let counts = Dictionary(grouping: messageReactions, by: \.emoji)
                         .mapValues(\.count)
                         .sorted { $0.key < $1.key }
                     HStack(spacing: 4) {
                         ForEach(counts, id: \.key) { emoji, count in
-                            Text("\(emoji) \(count)")
-                                .font(.caption)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(Color(.tertiarySystemBackground),
-                                            in: Capsule())
+                            reactionPill(emoji: emoji, count: count)
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
                 }
             }
+            // Flush-left for incoming; flush-right for outgoing
             .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
         }
     }
+
+    // MARK: - System Message
+
+    @ViewBuilder
+    private func systemMessageView(_ message: ChatMessage) -> some View {
+        // PR auto-messages get accent100 bg + 3px left border accent per canvas
+        if let body = message.body, body.contains("hit a PR") || body.contains("PR") {
+            HStack(alignment: .top, spacing: 7) {
+                Text("🔥")
+                    .font(.system(size: 16))
+                Text(body)
+                    .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
+                    .foregroundStyle(theme.text)
+            }
+            .padding(.vertical, 9)
+            .padding(.horizontal, 12)
+            .background(theme.accent100)
+            .overlay(alignment: .leading) {
+                Rectangle()
+                    .fill(theme.accent)
+                    .frame(width: 3)
+            }
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.horizontal, 8)
+        } else {
+            // Standard system message: centered, inline border per canvas
+            Text(message.body ?? "")
+                .font(GSFont.bold(11, relativeTo: .caption))
+                .foregroundStyle(theme.neutral500)
+                .multilineTextAlignment(.center)
+                .padding(.vertical, 5)
+                .padding(.horizontal, 12)
+                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                .frame(maxWidth: .infinity, alignment: .center)
+        }
+    }
+
+    // MARK: - Reaction Pill
+
+    private func reactionPill(emoji: String, count: Int) -> some View {
+        Text("\(emoji) \(count)")
+            .font(GSFont.body(11, relativeTo: .caption))
+            .foregroundStyle(theme.text)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 1)
+            .overlay(Capsule().strokeBorder(theme.divider, lineWidth: 1))
+    }
+
+    // MARK: - Message Content
+
+    @ViewBuilder
+    private func messageContent(_ message: ChatMessage, mine: Bool) -> some View {
+        if message.deletedAt != nil {
+            // Deleted: surface bg, italic
+            Text("[deleted message]")
+                .italic()
+                .font(GSFont.body(14, relativeTo: .body))
+                .foregroundStyle(theme.neutral500)
+                .padding(.vertical, 9)
+                .padding(.horizontal, 12)
+                .background(theme.surface)
+        } else if message.kind == .image {
+            // Image bubble: surface bg wrapper, 5px inner padding per canvas
+            VStack(alignment: .leading, spacing: 0) {
+                AsyncImage(url: imageURLs[message.id]) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().scaledToFit()
+                    case .failure:
+                        Label("Image unavailable", systemImage: "photo.badge.exclamationmark")
+                            .font(GSFont.body(12, relativeTo: .footnote))
+                            .foregroundStyle(theme.neutral500)
+                            .padding(10)
+                    default:
+                        ZStack {
+                            theme.neutral300
+                            ProgressView()
+                                .tint(theme.neutral700)
+                        }
+                        .frame(width: 120, height: 120)
+                    }
+                }
+                .frame(maxWidth: 240, maxHeight: 280)
+            }
+            .padding(5)
+            .background(theme.surface)
+        } else {
+            // Text bubble per canvas:
+            //   incoming → surface fill
+            //   outgoing → accent fill + bg text
+            Text(message.body ?? "")
+                .font(GSFont.body(14, relativeTo: .body))
+                .foregroundStyle(mine ? theme.bg : theme.text)
+                .padding(.vertical, 9)
+                .padding(.horizontal, 12)
+                .background(mine ? theme.accent : theme.surface)
+                .frame(maxWidth: 260, alignment: mine ? .trailing : .leading)
+        }
+    }
+
+    // MARK: - Data Operations (all preserved byte-identical to original)
 
     private func load() async {
         do {
@@ -201,37 +354,6 @@ struct ChatView: View {
         }
     }
 
-    @ViewBuilder
-    private func messageContent(_ message: ChatMessage) -> some View {
-        if message.deletedAt != nil {
-            Text("[deleted message]").italic()
-                .padding(10)
-                .background(Color(.secondarySystemBackground),
-                            in: RoundedRectangle(cornerRadius: 14))
-        } else if message.kind == .image {
-            AsyncImage(url: imageURLs[message.id]) { phase in
-                switch phase {
-                case .success(let image):
-                    image.resizable().scaledToFit()
-                case .failure:
-                    Label("Image unavailable", systemImage: "photo.badge.exclamationmark")
-                        .font(.footnote).foregroundStyle(.secondary).padding(10)
-                default:
-                    ProgressView().frame(width: 120, height: 120)
-                }
-            }
-            .frame(maxWidth: 240, maxHeight: 320)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-        } else {
-            Text(message.body ?? "")
-                .padding(10)
-                .background(message.authorID == appState.currentProfile?.id
-                                ? Color.accentColor.opacity(0.25)
-                                : Color(.secondarySystemBackground),
-                            in: RoundedRectangle(cornerRadius: 14))
-        }
-    }
-
     private func sendImage(_ item: PhotosPickerItem) async {
         isSendingImage = true
         defer { isSendingImage = false }
@@ -258,5 +380,36 @@ struct ChatView: View {
                   let path = message.storagePath else { continue }
             imageURLs[message.id] = try? await StorageService.signedChatImageURL(path: path)
         }
+    }
+}
+
+// MARK: - TypingDotsView
+
+/// Three pulsing neutral500 circles, matching canvas typing indicator treatment.
+private struct TypingDotsView: View {
+    let theme: GSTheme
+    @State private var phase = false
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 3) {
+            dot(delay: 0.0)
+            dot(delay: 0.2)
+            dot(delay: 0.4)
+        }
+        .frame(height: 10)
+        .onAppear { phase = true }
+    }
+
+    private func dot(delay: Double) -> some View {
+        Circle()
+            .fill(theme.neutral500)
+            .frame(width: 6, height: 6)
+            .opacity(phase ? 0.3 : 1.0)
+            .animation(
+                .easeInOut(duration: 0.5)
+                    .repeatForever(autoreverses: true)
+                    .delay(delay),
+                value: phase
+            )
     }
 }

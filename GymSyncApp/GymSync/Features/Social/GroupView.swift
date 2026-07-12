@@ -11,6 +11,7 @@ struct GroupView: View {
     }
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.gsTheme) private var theme
     @State private var subTab: SubTab = .chat
     @State private var members: [(member: GroupMember, profile: Profile)] = []
     @State private var addUsername = ""
@@ -24,13 +25,10 @@ struct GroupView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Picker("View", selection: $subTab) {
-                ForEach(SubTab.allCases, id: \.self) { tab in
-                    Text(tab.rawValue).tag(tab)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal)
+            // Themed segmented control per canvas
+            themedSegmentedControl
+
+            GSDivider()
 
             switch subTab {
             case .chat:
@@ -41,6 +39,7 @@ struct GroupView: View {
                 sessionsList
             }
         }
+        .background(theme.bg)
         .navigationTitle(group.name)
         .navigationBarTitleDisplayMode(.inline)
         .task {
@@ -54,62 +53,157 @@ struct GroupView: View {
         }
     }
 
+    // MARK: - Themed Segmented Control
+
+    private var themedSegmentedControl: some View {
+        HStack(spacing: 0) {
+            ForEach(SubTab.allCases, id: \.self) { tab in
+                Button {
+                    subTab = tab
+                } label: {
+                    Text(tab.rawValue)
+                        .font(GSFont.bold(11, relativeTo: .caption))
+                        .foregroundStyle(subTab == tab ? theme.bg : theme.text)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(subTab == tab ? theme.accent : Color.clear)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .background(theme.surface)
+        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(theme.bg)
+    }
+
     // MARK: - Members List
 
     private var membersList: some View {
-        List {
-            Section {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+
+                // Avatar picker row
                 HStack(spacing: 12) {
                     if let url = avatarURL ?? group.avatarURL {
                         AsyncImage(url: url) { image in
                             image.resizable().scaledToFill()
                         } placeholder: {
-                            InitialsAvatar(name: group.name)
+                            GSInitialsAvatar(name: group.name, size: 56)
                         }
                         .frame(width: 56, height: 56)
-                        .clipShape(Circle())
+                        .clipped()
                     } else {
-                        InitialsAvatar(name: group.name)
+                        GSInitialsAvatar(name: group.name, size: 56)
                     }
+
                     PhotosPicker(selection: $avatarItem, matching: .images) {
                         Text("Change Group Photo")
+                            .font(GSFont.bodyMedium(14, relativeTo: .body))
+                            .foregroundStyle(theme.accent)
                     }
                 }
-            }
-            Section {
-                HStack {
-                    TextField("add by username", text: $addUsername)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    Button("Add") { Task { await addMember() } }
-                        .disabled(addUsername.trimmingCharacters(in: .whitespaces).isEmpty)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+
+                GSDivider()
+                    .padding(.horizontal, 16)
+
+                // Add member field
+                VStack(alignment: .leading, spacing: 8) {
+                    GSSectionHeader("Add member")
+                        .padding(.horizontal, 16)
+                        .padding(.top, 12)
+
+                    HStack(spacing: 8) {
+                        HStack {
+                            Text("@")
+                                .font(GSFont.bodyMedium(14, relativeTo: .body))
+                                .foregroundStyle(theme.neutral500)
+                            TextField("username", text: $addUsername)
+                                .font(GSFont.body(14, relativeTo: .body))
+                                .foregroundStyle(theme.text)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .tint(theme.accent)
+                        }
+                        .padding(.horizontal, 12)
+                        .frame(height: 44)
+                        .background(theme.surface)
+                        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+
+                        Button("Add") { Task { await addMember() } }
+                            .buttonStyle(GSPrimaryButtonStyle())
+                            .frame(width: 64)
+                            .disabled(addUsername.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                    .padding(.horizontal, 16)
+
+                    if let errorText {
+                        Text(errorText)
+                            .font(GSFont.body(12, relativeTo: .footnote))
+                            .foregroundStyle(.red)
+                            .padding(.horizontal, 16)
+                    }
                 }
-                if let errorText {
-                    Text(errorText).foregroundStyle(.red).font(.footnote)
-                }
-            }
-            Section("\(members.count) members") {
-                ForEach(members, id: \.member.userID) { entry in
-                    HStack {
-                        Text(entry.profile.username)
-                        Spacer()
-                        if entry.member.role == .admin {
-                            Text("admin")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+
+                GSDivider()
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+
+                GSSectionHeader("\(members.count) members")
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .padding(.bottom, 8)
+
+                VStack(spacing: 0) {
+                    ForEach(members, id: \.member.userID) { entry in
+                        HStack(spacing: 10) {
+                            GSInitialsAvatar(name: entry.profile.username, size: 36)
+
+                            Text(entry.profile.username)
+                                .font(GSFont.bodyMedium(14, relativeTo: .body))
+                                .foregroundStyle(theme.text)
+
+                            Spacer()
+
+                            if entry.member.role == .admin {
+                                GSTag(text: "Admin", style: .neutral)
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+
+                        if entry.member.userID != members.last?.member.userID {
+                            Rectangle()
+                                .fill(theme.divider)
+                                .frame(height: 1)
+                                .padding(.horizontal, 16)
                         }
                     }
                 }
-            }
-            Section {
+
+                GSDivider()
+                    .padding(.horizontal, 16)
+                    .padding(.top, 16)
+
                 Button("Leave Group", role: .destructive) {
                     Task {
                         try? await GroupRepository.leave(groupID: group.id)
                         dismiss()
                     }
                 }
+                .font(GSFont.bodyMedium(14, relativeTo: .body))
+                .foregroundStyle(.red)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+
+                Spacer(minLength: 32)
             }
         }
+        .background(theme.bg)
         .onChange(of: avatarItem) {
             guard let item = avatarItem else { return }
             avatarItem = nil
@@ -143,30 +237,42 @@ struct GroupView: View {
             if upcomingSessions.isEmpty && pastSessions.isEmpty {
                 Section {
                     Text("No upcoming sessions — schedule one from Home.")
-                        .foregroundStyle(.secondary)
-                        .font(.subheadline)
+                        .foregroundStyle(theme.neutral500)
+                        .font(GSFont.body(14, relativeTo: .subheadline))
+                        .listRowBackground(theme.bg)
                 }
             } else {
                 if !upcomingSessions.isEmpty {
-                    Section("Upcoming") {
+                    Section {
                         ForEach(upcomingSessions) { session in
                             NavigationLink {
                                 LobbyView(session: session)
                             } label: {
                                 sessionRow(session)
                             }
+                            .listRowBackground(theme.surface)
+                            .listRowSeparatorTint(theme.divider)
                         }
+                    } header: {
+                        GSSectionHeader("Upcoming")
                     }
                 }
                 if !pastSessions.isEmpty {
-                    Section("Past") {
+                    Section {
                         ForEach(pastSessions) { session in
                             sessionRow(session)
+                                .listRowBackground(theme.surface)
+                                .listRowSeparatorTint(theme.divider)
                         }
+                    } header: {
+                        GSSectionHeader("Past")
                     }
                 }
             }
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(theme.bg)
         .refreshable { await loadGroupSessions() }
     }
 
@@ -180,20 +286,23 @@ struct GroupView: View {
                     Text("\u{1F32B}\u{FE0F}")
                 }
                 Text("Workout")
-                    .fontWeight(.semibold)
+                    .font(GSFont.bold(14, relativeTo: .headline))
+                    .foregroundStyle(theme.text)
                 if session.seriesID != nil {
                     Image(systemName: "repeat")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(theme.neutral500)
                 }
             }
             if let scheduledFor = session.scheduledFor {
-                Text(scheduledFor, style: .date)
-                    + Text(" at ") + Text(scheduledFor, style: .time)
+                (Text(scheduledFor, style: .date)
+                    + Text(" at ") + Text(scheduledFor, style: .time))
+                    .font(GSFont.body(13, relativeTo: .subheadline))
+                    .foregroundStyle(theme.neutral700)
             }
             Text(session.state.replacingOccurrences(of: "_", with: " ").capitalized)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(GSFont.body(11, relativeTo: .caption))
+                .foregroundStyle(theme.neutral500)
         }
     }
 
