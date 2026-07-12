@@ -250,11 +250,13 @@ struct ChatView: View {
         Image(systemName: "mic")
             .font(.system(size: 17, weight: .regular))
             .foregroundStyle(theme.neutral700)
-            .frame(width: 38, height: 38)
+            .frame(width: 44, height: 44)
             .background(theme.bg)
             .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+            .opacity(isSendingVoice ? 0.4 : 1)
             // onLongPressGesture with pressing: true → start, false → stop
             .onLongPressGesture(minimumDuration: 0.15, pressing: { pressing in
+                guard !isSendingVoice else { return }
                 if pressing {
                     guard !isRecording else { return }
                     isRecording = true

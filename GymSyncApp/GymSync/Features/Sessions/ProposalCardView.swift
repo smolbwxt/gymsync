@@ -58,8 +58,10 @@ struct ProposalCardView: View {
                                 .foregroundStyle(theme.text)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 7)
+                                .frame(minHeight: 44)
                                 .background(theme.surface)
                                 .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
 
@@ -71,7 +73,9 @@ struct ProposalCardView: View {
                                 .foregroundStyle(theme.bg)
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 7)
+                                .frame(minHeight: 44)
                                 .background(theme.accent)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                     }

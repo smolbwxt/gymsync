@@ -553,6 +553,8 @@ struct LobbyView: View {
                         .font(GSFont.bodyMedium(14, relativeTo: .body))
                 }
                 .foregroundStyle(theme.accent)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .padding(.horizontal, 16)
@@ -627,6 +629,7 @@ struct LobbyView: View {
                         .frame(maxWidth: .infinity)
                         .background(theme.accent100)
                         .overlay(Rectangle().strokeBorder(theme.accent, lineWidth: 1))
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .disabled(isCheckingIn)
@@ -659,6 +662,7 @@ struct LobbyView: View {
                         .padding(.vertical, 14)
                         .frame(maxWidth: .infinity)
                         .background(isStarting ? theme.accent600 : theme.accent)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .disabled(isStarting)

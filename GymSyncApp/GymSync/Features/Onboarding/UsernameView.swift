@@ -127,7 +127,8 @@ struct UsernameView: View {
                                         .foregroundColor(theme.accent)
                                         .padding(.horizontal, 10)
                                         .padding(.vertical, 6)
-                                        .frame(minWidth: 0)
+                                        .frame(minWidth: 0, minHeight: 44)
+                                        .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
                                 .background(theme.surface)

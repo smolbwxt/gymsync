@@ -373,6 +373,8 @@ struct GroupSessionLiveView: View {
                     .foregroundStyle(theme.neutral700)
                     .frame(width: 30, height: 30)
                     .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }
@@ -452,6 +454,7 @@ struct GroupSessionLiveView: View {
                     .padding(.vertical, 13)
                     .background(theme.bg.opacity(0.2))
                     .overlay(Rectangle().strokeBorder(theme.bg.opacity(0.4), lineWidth: 1))
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             } else if isOrganizer && liveSession.currentTurnUserID != nil {

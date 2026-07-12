@@ -156,6 +156,8 @@ struct CompletedSessionView: View {
                     .padding(8)
                     .background(theme.surface)
                     .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
         }
         .padding(.vertical, 10)
