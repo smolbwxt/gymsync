@@ -134,12 +134,13 @@ GymSyncApp/GymSyncTests/
 
 ### Task 6: Hygiene sweep + ship
 
-**Files:** Modify `LobbyView.swift` (proposal composer input clamps), `SessionSeries.swift` (DRY formatter — RS follow-up), migration `20260714000003_sessions_delete_parity.sql` (RS follow-up: member-gate the sessions DELETE policy) + extend `supabase/tests/session_engine_test.sql` or new small test.
+**Files:** Modify `SessionSeries.swift` (DRY formatter — RS follow-up), migration `20260714000003_sessions_delete_parity.sql` (RS follow-up: member-gate the sessions DELETE policy) + extend `supabase/tests/session_engine_test.sql` or new small test.
 
-- [ ] Proposal composer: clamp target_sets to 1…10 (Stepper), target_reps to a 16-char string (the 883-set incident).
+> Input clamps deliberately DROPPED per user decision (2026-07-12): proposal set/rep inputs stay unclamped — outlandish proposals are the veto system's job, not the input field's.
+
 - [ ] `20260714000003_sessions_delete_parity.sql`: DROP/CREATE `"organizer deletes own scheduled sessions"` adding `AND (sessions.group_id IS NULL OR public.is_group_member(sessions.group_id, auth.uid()))`; pgTAP: departed organizer cannot delete their old group session (CTE 0), solo (groupless) delete still works.
 - [ ] DRY the `yyyy-MM-dd` formatter (single static in SessionSeries used by repository).
-- [ ] `node scripts/run_pgtap.js` ALL PASSED; commit `chore: 3b hygiene — input clamps, delete-policy parity, formatter DRY`; push; CI green.
+- [ ] `node scripts/run_pgtap.js` ALL PASSED; commit `chore: 3b hygiene — delete-policy parity, formatter DRY`; push; CI green.
 - [ ] PR `--base master`: "Phase 3b: Live session — chess clock, turns, penalties, recap". Merge after review+CI (coordinate with design-agent work per controller).
 - [ ] Device QA (controller drives ci_test_user_2; extend `scripts/qa_p3a.js` with `advance`/`logset` actions at QA time):
   1. Start with both ready → turn order by check-in, chess clock ticking, no Timer jank
