@@ -899,13 +899,13 @@ struct GroupSessionLiveView: View {
                 let name = await ExerciseNameCache.name(for: exerciseID)
                 Task { @MainActor in await showPROverlay(exerciseName: name) }
                 // Best-effort PR record — a failed insert must never block turn advancement.
-                _ = try? await PersonalRecordRepository.record(
+                Task { _ = try? await PersonalRecordRepository.record(
                     exerciseID: exerciseID,
                     weight: weight,
                     reps: reps ?? 0,
                     previousBest: priorBest,
                     sessionID: session.id
-                )
+                ) }
             }
 
             try await SessionRepository.advanceTurn(sessionID: session.id)
