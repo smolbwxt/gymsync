@@ -260,9 +260,13 @@ struct GroupView: View {
                 if !pastSessions.isEmpty {
                     Section {
                         ForEach(pastSessions) { session in
-                            sessionRow(session)
-                                .listRowBackground(theme.surface)
-                                .listRowSeparatorTint(theme.divider)
+                            NavigationLink {
+                                CompletedSessionView(session: session)
+                            } label: {
+                                sessionRow(session)
+                            }
+                            .listRowBackground(theme.surface)
+                            .listRowSeparatorTint(theme.divider)
                         }
                     } header: {
                         GSSectionHeader("Past")

@@ -34,7 +34,9 @@ enum SessionRepository {
                 groupID: nil,
                 roomCode: nil,
                 scheduledFor: nil,
-                seriesID: nil
+                seriesID: nil,
+                currentTurnUserID: nil,
+                currentTurnStartedAt: nil
             )
             let inserted: WorkoutSession = try await client
                 .from("sessions")
@@ -317,23 +319,170 @@ enum SessionRepository {
         } catch { throw ErrorMapping.map(error) }
     }
 
-    /// Start: evaluate lateness (organizer-only RPC) then transition state → in_progress.
+    /// Start: atomically calls `start_session` RPC (lateness + turn-order + state flip).
+    /// Signature unchanged — LobbyView untouched.
     static func start(sessionID: UUID) async throws {
         guard await SupabaseService.shared.currentUserID() != nil else {
             throw GymSyncError.unauthorized
         }
         do {
             _ = try await client
-                .rpc("evaluate_lateness", params: ["p_session_id": sessionID.uuidString])
+                .rpc("start_session", params: ["p_session_id": sessionID.uuidString])
                 .execute()
+        } catch { throw ErrorMapping.map(error) }
+    }
+
+    /// Advance the turn to the next participant (current-lifter or organizer gated).
+    static func advanceTurn(sessionID: UUID) async throws {
+        guard await SupabaseService.shared.currentUserID() != nil else {
+            throw GymSyncError.unauthorized
+        }
+        do {
+            _ = try await client
+                .rpc("advance_turn", params: ["p_session_id": sessionID.uuidString])
+                .execute()
+        } catch { throw ErrorMapping.map(error) }
+    }
+
+    // MARK: - Phase 3b: Duration editing
+
+    /// Edit a completed session's start/end timestamps.
+    ///
+    /// Validates:
+    ///   - `newCompletedAt > newStartedAt`
+    ///   - Both new values are within ±48 h of the ORIGINAL session times
+    ///
+    /// On success:
+    ///   1. Inserts a `session_duration_edits` audit row (old + new values, edited_by me).
+    ///   2. Updates `sessions` (started_at, completed_at, duration_was_edited = true, edited_by = me).
+    ///
+    /// HealthKit re-write on edit is deferred to Phase 3c polish.
+    /// TODO(3c): after a successful edit, call HealthKitBridge.replaceWorkout(session:) to
+    ///           update the Health sample's duration to match the corrected timestamps.
+    static func editDuration(
+        sessionID: UUID,
+        newStartedAt: Date,
+        newCompletedAt: Date,
+        reason: String?
+    ) async throws {
+        guard let userID = await SupabaseService.shared.currentUserID() else {
+            throw GymSyncError.unauthorized
+        }
+
+        // Client-side validation: order must be correct.
+        guard newCompletedAt > newStartedAt else {
+            throw GymSyncError.validation("End time must be after start time.")
+        }
+
+        do {
+            // Fetch the current session to obtain current stored values (used for the audit row).
+            guard let existing = try await session(id: sessionID) else {
+                throw GymSyncError.notFound
+            }
+
+            // ±48 h anchor rule: always measure against the ORIGINAL times, not the current
+            // stored values. The earliest audit row preserves the old_* values from the very
+            // first edit (which recorded the session's as-completed times). If no audit row
+            // exists this is the first edit, so fall back to the current stored values.
+            struct EarliestAuditRow: Decodable {
+                let old_started_at: String?
+                let old_completed_at: String?
+            }
+            let earliestRows: [EarliestAuditRow] = try await client
+                .from("session_duration_edits")
+                .select("old_started_at,old_completed_at")
+                .eq("session_id", value: sessionID.uuidString)
+                .order("edited_at", ascending: true)
+                .limit(1)
+                .execute().value
+
+            let isoFmt = ISO8601DateFormatter()
+            isoFmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+            // Derive anchor dates from the earliest audit row when available.
+            let anchorStart: Date?
+            let anchorEnd: Date?
+            if let earliest = earliestRows.first {
+                anchorStart = earliest.old_started_at.flatMap { isoFmt.date(from: $0) }
+                    ?? existing.startedAt
+                anchorEnd = earliest.old_completed_at.flatMap { isoFmt.date(from: $0) }
+                    ?? existing.completedAt
+            } else {
+                anchorStart = existing.startedAt
+                anchorEnd   = existing.completedAt
+            }
+
+            let fortyEightHours: TimeInterval = 48 * 3600
+
+            if let anchor = anchorStart {
+                guard abs(newStartedAt.timeIntervalSince(anchor)) <= fortyEightHours else {
+                    throw GymSyncError.validation("New start time must be within 48 hours of the original start.")
+                }
+            }
+            if let anchor = anchorEnd {
+                guard abs(newCompletedAt.timeIntervalSince(anchor)) <= fortyEightHours else {
+                    throw GymSyncError.validation("New end time must be within 48 hours of the original end.")
+                }
+            }
+
+            // 1. Insert audit row (Codable struct for type safety).
+            // old_* values always reflect the CURRENT stored values so the chain is auditable;
+            // the anchor for ±48 h validation is handled separately above.
+            struct DurationEditInsert: Encodable {
+                let id: String
+                let session_id: String
+                let edited_by: String
+                let old_started_at: String?
+                let old_completed_at: String?
+                let new_started_at: String
+                let new_completed_at: String
+                let reason: String?
+            }
+            let auditRow = DurationEditInsert(
+                id:               UUID().uuidString,
+                session_id:       sessionID.uuidString,
+                edited_by:        userID.uuidString,
+                old_started_at:   existing.startedAt.map   { isoFmt.string(from: $0) },
+                old_completed_at: existing.completedAt.map { isoFmt.string(from: $0) },
+                new_started_at:   isoFmt.string(from: newStartedAt),
+                new_completed_at: isoFmt.string(from: newCompletedAt),
+                reason:           reason
+            )
+
+            _ = try await client
+                .from("session_duration_edits")
+                .insert(auditRow)
+                .execute()
+
+            // 2. Update session row.
             _ = try await client
                 .from("sessions")
                 .update([
-                    "state": "in_progress",
-                    "started_at": iso8601Now()
+                    "started_at":          isoFmt.string(from: newStartedAt),
+                    "completed_at":        isoFmt.string(from: newCompletedAt),
+                    "duration_was_edited": "true",
+                    "edited_by":           userID.uuidString
                 ])
                 .eq("id", value: sessionID.uuidString)
                 .execute()
+
+        } catch let e as GymSyncError {
+            throw e
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
+
+    /// All set_logs for a session ordered by logged_at ascending.
+    static func sessionSets(sessionID: UUID) async throws -> [SetLog] {
+        do {
+            let rows: [SetLog] = try await client
+                .from("set_logs")
+                .select()
+                .eq("session_id", value: sessionID.uuidString)
+                .order("logged_at", ascending: true)
+                .execute().value
+            return rows
         } catch { throw ErrorMapping.map(error) }
     }
 }

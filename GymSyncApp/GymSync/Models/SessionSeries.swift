@@ -20,7 +20,7 @@ struct SessionSeries: Codable, Identifiable, Sendable {
     // MARK: Public contract: Tasks 5/6 compile against this.
     var untilDate: Date { SessionSeries.untilDateFormatter.date(from: untilDateString) ?? Date.distantFuture }
 
-    private static let untilDateFormatter: DateFormatter = {
+    static let untilDateFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
         f.locale = Locale(identifier: "en_US_POSIX")
@@ -82,14 +82,6 @@ enum SeriesRepository {
     private static func isoString(_ date: Date) -> String {
         iso8601Frac.string(from: date)
     }
-
-    private static let untilDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = TimeZone(secondsFromGMT: 0)
-        return f
-    }()
 
     // MARK: - Pure materialization (unit-testable, no network)
 
@@ -224,7 +216,7 @@ enum SeriesRepository {
         }
         do {
             let seriesID = UUID()
-            let untilStr = untilDateFormatter.string(from: untilDate)
+            let untilStr = SessionSeries.untilDateFormatter.string(from: untilDate)
 
             // Build time_local strings ("HH:mm:ss") for each day rule
             func timeString(hour: Int, minute: Int) -> String {
@@ -379,7 +371,7 @@ enum SeriesRepository {
         do {
             let now = Date()
             let nowStr = isoString(now)
-            let untilStr = untilDateFormatter.string(from: untilDate)
+            let untilStr = SessionSeries.untilDateFormatter.string(from: untilDate)
 
             // Update until_date on series
             _ = try await client
