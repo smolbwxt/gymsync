@@ -21,6 +21,10 @@ struct RootView: View {
                 }
             }
         }
+        // ── Midnight chrome ──
+        .preferredColorScheme(.dark)
+        .environment(\.gsTheme, .midnight)
+        .background(GSTheme.midnight.bg.ignoresSafeArea())
     }
 }
 
