@@ -131,7 +131,7 @@ struct HomeGymSetupView: View {
             // The map pans underneath them; the visible center is the gym
             // coordinate that gets saved.
             Circle()
-                .fill(theme.accent.opacity(0.2))
+                .fill(theme.accent.opacity(0.12))
                 .overlay(Circle().strokeBorder(theme.accent, lineWidth: 2))
                 .frame(width: 120, height: 120)
                 .allowsHitTesting(false)

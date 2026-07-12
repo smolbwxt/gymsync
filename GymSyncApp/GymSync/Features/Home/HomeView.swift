@@ -496,6 +496,17 @@ private struct RoutinePickerSheet: View {
     @State private var allExercises: [Exercise] = []
     @State private var startNavigation = false
 
+    // Today's-routine card opens this sheet PAUSED: `chosenRoutine` seeds from
+    // `initialRoutine` purely for the visible preselection/highlight below — it no
+    // longer auto-starts. The user must tap a row (the preselected one or another)
+    // to actually start. Start Solo Workout still passes `initialRoutine: nil`, so
+    // this seeds to nil and the list opens with nothing highlighted — unchanged.
+    init(routines: [Routine], initialRoutine: Routine?) {
+        self.routines = routines
+        self.initialRoutine = initialRoutine
+        _chosenRoutine = State(initialValue: initialRoutine)
+    }
+
     var body: some View {
         NavigationStack {
             List {
@@ -511,16 +522,25 @@ private struct RoutinePickerSheet: View {
                 .listRowBackground(theme.bg)
 
                 ForEach(routines) { routine in
+                    let isSelected = routine.id == chosenRoutine?.id
                     Button {
                         Task { await start(routine: routine) }
                     } label: {
-                        Text(routine.name)
-                            .font(GSFont.bodyMedium(16, relativeTo: .body))
-                            .foregroundStyle(theme.text)
+                        HStack {
+                            Text(routine.name)
+                                .font(GSFont.bodyMedium(16, relativeTo: .body))
+                                .foregroundStyle(theme.text)
+                            Spacer()
+                            if isSelected {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundStyle(theme.accent)
+                            }
+                        }
                     }
                     .frame(minHeight: 44)
                     .contentShape(Rectangle())
-                    .listRowBackground(theme.bg)
+                    .listRowBackground(isSelected ? theme.accent100 : theme.bg)
                 }
             }
             .listStyle(.plain)
@@ -532,11 +552,6 @@ private struct RoutinePickerSheet: View {
                 WorkoutSessionView(routine: chosenRoutine,
                                    routineExercises: routineExercises,
                                    allExercises: allExercises)
-            }
-            .task {
-                if let initialRoutine {
-                    await start(routine: initialRoutine)
-                }
             }
         }
     }

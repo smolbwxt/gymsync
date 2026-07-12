@@ -408,7 +408,7 @@ struct WorkoutSessionView: View {
                 .foregroundStyle(theme.bg.opacity(0.9))
 
             HStack(spacing: 8) {
-                heroStatCell(value: recapTotalLbsText, label: "TOTAL LBS")
+                heroStatCell(value: recapTotalLbsHeroText, label: "TOTAL LBS")
                 heroStatCell(value: "\(recapNonPenaltySets.count)", label: "SETS")
                 heroStatCell(value: "\(sessionPRs.count)", label: "PR")
             }
@@ -562,7 +562,9 @@ struct WorkoutSessionView: View {
         return order.map { exerciseID in
             let sets = setsByExercise[exerciseID] ?? []
             let name = allExercises.first { $0.id == exerciseID }?.name ?? "Exercise"
-            let topSet = sets.max { ($0.weight ?? 0) < ($1.weight ?? 0) }
+            // Top-set value derives from completed sets only (excludes isFailed) — set
+            // COUNT above still includes failed sets, matching penalty exclusion as-is.
+            let topSet = sets.filter { !$0.isFailed }.max { ($0.weight ?? 0) < ($1.weight ?? 0) }
             return ExerciseSummary(
                 id: exerciseID,
                 name: name,
@@ -599,6 +601,18 @@ struct WorkoutSessionView: View {
 
     private var recapTotalLbsText: String {
         StatMath.compactNumber(Decimal(HealthKitBridge.totalVolume(from: loggedSets)))
+    }
+
+    /// Comma-grouped ("7,240") variant of the hero's TOTAL LBS figure — mirrors
+    /// StatsTabView's `volumeString` convention. Small stat tiles elsewhere (Home,
+    /// You, Stats weekly) and the ShareLink summary keep the compact ("7.2k") form
+    /// via `recapTotalLbsText`; only the recap hero cell uses this.
+    private var recapTotalLbsHeroText: String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 0
+        let raw = HealthKitBridge.totalVolume(from: loggedSets)
+        return formatter.string(from: NSNumber(value: raw)) ?? "0"
     }
 
     private var appleHealthMetaText: String {

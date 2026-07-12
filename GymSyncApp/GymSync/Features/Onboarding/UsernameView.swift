@@ -128,12 +128,13 @@ struct UsernameView: View {
                                         .foregroundColor(theme.accent)
                                         .padding(.horizontal, 10)
                                         .padding(.vertical, 6)
-                                        .frame(minWidth: 0, minHeight: 44)
-                                        .contentShape(Rectangle())
+                                        .frame(minWidth: 0)
                                 }
                                 .buttonStyle(.plain)
                                 .background(theme.surface)
                                 .overlay(Rectangle().strokeBorder(theme.neutral300, lineWidth: 1))
+                                .frame(minHeight: 44)
+                                .contentShape(Rectangle())
                             }
                         }
                     }
