@@ -344,6 +344,104 @@ enum SessionRepository {
         } catch { throw ErrorMapping.map(error) }
     }
 
+    // MARK: - Phase 3b: Duration editing
+
+    /// Edit a completed session's start/end timestamps.
+    ///
+    /// Validates:
+    ///   - `newCompletedAt > newStartedAt`
+    ///   - Both new values are within ±48 h of the session's current values
+    ///
+    /// On success:
+    ///   1. Inserts a `session_duration_edits` audit row (old + new values, edited_by me).
+    ///   2. Updates `sessions` (started_at, completed_at, duration_was_edited = true, edited_by = me).
+    ///
+    /// HealthKit re-write on edit is deferred to Phase 3c polish.
+    /// TODO(3c): after a successful edit, call HealthKitBridge.replaceWorkout(session:) to
+    ///           update the Health sample's duration to match the corrected timestamps.
+    static func editDuration(
+        sessionID: UUID,
+        newStartedAt: Date,
+        newCompletedAt: Date,
+        reason: String?
+    ) async throws {
+        guard let userID = await SupabaseService.shared.currentUserID() else {
+            throw GymSyncError.unauthorized
+        }
+
+        // Client-side validation: order must be correct.
+        guard newCompletedAt > newStartedAt else {
+            throw GymSyncError.validation("End time must be after start time.")
+        }
+
+        do {
+            // Fetch the current session to obtain old values and apply ±48 h guard.
+            guard let existing = try await session(id: sessionID) else {
+                throw GymSyncError.notFound
+            }
+
+            let fortyEightHours: TimeInterval = 48 * 3600
+
+            if let oldStart = existing.startedAt {
+                guard abs(newStartedAt.timeIntervalSince(oldStart)) <= fortyEightHours else {
+                    throw GymSyncError.validation("New start time must be within 48 hours of the original start.")
+                }
+            }
+            if let oldEnd = existing.completedAt {
+                guard abs(newCompletedAt.timeIntervalSince(oldEnd)) <= fortyEightHours else {
+                    throw GymSyncError.validation("New end time must be within 48 hours of the original end.")
+                }
+            }
+
+            let fmt = ISO8601DateFormatter()
+            fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+            // 1. Insert audit row (Codable struct for type safety).
+            struct DurationEditInsert: Encodable {
+                let id: String
+                let session_id: String
+                let edited_by: String
+                let old_started_at: String?
+                let old_completed_at: String?
+                let new_started_at: String
+                let new_completed_at: String
+                let reason: String?
+            }
+            let auditRow = DurationEditInsert(
+                id:               UUID().uuidString,
+                session_id:       sessionID.uuidString,
+                edited_by:        userID.uuidString,
+                old_started_at:   existing.startedAt.map   { fmt.string(from: $0) },
+                old_completed_at: existing.completedAt.map { fmt.string(from: $0) },
+                new_started_at:   fmt.string(from: newStartedAt),
+                new_completed_at: fmt.string(from: newCompletedAt),
+                reason:           reason
+            )
+
+            _ = try await client
+                .from("session_duration_edits")
+                .insert(auditRow)
+                .execute()
+
+            // 2. Update session row.
+            _ = try await client
+                .from("sessions")
+                .update([
+                    "started_at":          fmt.string(from: newStartedAt),
+                    "completed_at":        fmt.string(from: newCompletedAt),
+                    "duration_was_edited": "true",
+                    "edited_by":           userID.uuidString
+                ])
+                .eq("id", value: sessionID.uuidString)
+                .execute()
+
+        } catch let e as GymSyncError {
+            throw e
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
+
     /// All set_logs for a session ordered by logged_at ascending.
     static func sessionSets(sessionID: UUID) async throws -> [SetLog] {
         do {

@@ -17,6 +17,9 @@ struct WorkoutSession: Codable, Identifiable, Sendable {
     // Phase 3b additions (chess clock / turn rotation)
     var currentTurnUserID: UUID?
     var currentTurnStartedAt: Date?
+    // Phase 3b: duration editing audit fields (columns added in 3a migration)
+    var durationWasEdited: Bool
+    var editedBy: UUID?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -32,6 +35,64 @@ struct WorkoutSession: Codable, Identifiable, Sendable {
         case seriesID = "series_id"
         case currentTurnUserID = "current_turn_user_id"
         case currentTurnStartedAt = "current_turn_started_at"
+        case durationWasEdited = "duration_was_edited"
+        case editedBy = "edited_by"
+    }
+
+    // Safe decode: duration_was_edited has DB DEFAULT false so older rows always carry it;
+    // edited_by is nullable. Custom init guards against any schema-lag during migration.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id                   = try c.decode(UUID.self,    forKey: .id)
+        routineID            = try c.decodeIfPresent(UUID.self,   forKey: .routineID)
+        organizerID          = try c.decode(UUID.self,    forKey: .organizerID)
+        state                = try c.decode(String.self,  forKey: .state)
+        startedAt            = try c.decodeIfPresent(Date.self,   forKey: .startedAt)
+        completedAt          = try c.decodeIfPresent(Date.self,   forKey: .completedAt)
+        createdAt            = try c.decode(Date.self,    forKey: .createdAt)
+        groupID              = try c.decodeIfPresent(UUID.self,   forKey: .groupID)
+        roomCode             = try c.decodeIfPresent(String.self, forKey: .roomCode)
+        scheduledFor         = try c.decodeIfPresent(Date.self,   forKey: .scheduledFor)
+        seriesID             = try c.decodeIfPresent(UUID.self,   forKey: .seriesID)
+        currentTurnUserID    = try c.decodeIfPresent(UUID.self,   forKey: .currentTurnUserID)
+        currentTurnStartedAt = try c.decodeIfPresent(Date.self,   forKey: .currentTurnStartedAt)
+        durationWasEdited    = (try? c.decodeIfPresent(Bool.self, forKey: .durationWasEdited)) ?? false
+        editedBy             = try? c.decodeIfPresent(UUID.self,  forKey: .editedBy)
+    }
+
+    // Memberwise init used by startSolo and other repository callers.
+    init(
+        id: UUID,
+        routineID: UUID?,
+        organizerID: UUID,
+        state: String,
+        startedAt: Date?,
+        completedAt: Date?,
+        createdAt: Date,
+        groupID: UUID?,
+        roomCode: String?,
+        scheduledFor: Date?,
+        seriesID: UUID?,
+        currentTurnUserID: UUID?,
+        currentTurnStartedAt: Date?,
+        durationWasEdited: Bool = false,
+        editedBy: UUID? = nil
+    ) {
+        self.id                   = id
+        self.routineID            = routineID
+        self.organizerID          = organizerID
+        self.state                = state
+        self.startedAt            = startedAt
+        self.completedAt          = completedAt
+        self.createdAt            = createdAt
+        self.groupID              = groupID
+        self.roomCode             = roomCode
+        self.scheduledFor         = scheduledFor
+        self.seriesID             = seriesID
+        self.currentTurnUserID    = currentTurnUserID
+        self.currentTurnStartedAt = currentTurnStartedAt
+        self.durationWasEdited    = durationWasEdited
+        self.editedBy             = editedBy
     }
 }
 
