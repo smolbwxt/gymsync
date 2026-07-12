@@ -7,6 +7,7 @@ struct ScheduleSessionView: View {
 
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.gsTheme) private var theme
 
     // MARK: - Who selection
     enum WhoMode: String, CaseIterable {
@@ -63,29 +64,91 @@ struct ScheduleSessionView: View {
         Calendar.current.component(.minute, from: scheduledFor)
     }
 
+    // MARK: - Body
+    // Canvas: custom non-Form scroll layout; sections separated by GSDivider;
+    //   bg background, surface cards, Archivo type throughout.
+
     var body: some View {
         NavigationStack {
-            Form {
-                whoSection
-                whatSection
-                whenSection
-                if whoMode == .group {
-                    repeatsSection
-                }
-                if let errorText {
-                    Section {
-                        Text(errorText).foregroundStyle(.red).font(.footnote)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    // WHO section
+                    whoSection
+
+                    GSDivider()
+                        .padding(.horizontal, 16)
+
+                    // WHEN section
+                    whenSection
+
+                    GSDivider()
+                        .padding(.horizontal, 16)
+
+                    // ROUTINE section
+                    whatSection
+
+                    // REPEATS section (Group-only)
+                    if whoMode == .group {
+                        GSDivider()
+                            .padding(.horizontal, 16)
+                        repeatsSection
                     }
+
+                    // Error
+                    if let errorText {
+                        Text(errorText)
+                            .font(GSFont.body(12, relativeTo: .footnote))
+                            .foregroundStyle(.red)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 8)
+                    }
+
+                    Spacer(minLength: 80)
                 }
             }
-            .navigationTitle("Schedule Session")
+            .background(theme.bg)
+            .scrollContentBackground(.hidden)
+            .safeAreaInset(edge: .bottom) {
+                // Pinned CTA — "Schedule" / "Create series"
+                VStack(spacing: 0) {
+                    GSDivider()
+                    Button {
+                        Task { await schedule() }
+                    } label: {
+                        HStack {
+                            Text(repeatWeekly ? "Create series" : "Schedule")
+                                .font(GSFont.bold(15, relativeTo: .body))
+                            Spacer()
+                            if repeatWeekly && occurrenceCount > 0 {
+                                Text("\(occurrenceCount) sessions")
+                                    .font(GSFont.body(13, relativeTo: .subheadline))
+                                    .foregroundStyle(theme.bg.opacity(0.8))
+                            }
+                        }
+                        .foregroundStyle(theme.bg)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
+                        .frame(maxWidth: .infinity)
+                        .background(
+                            (isScheduleButtonDisabled || isScheduling)
+                                ? theme.neutral400
+                                : theme.accent
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isScheduleButtonDisabled || isScheduling)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background(theme.bg)
+                }
+            }
+            .navigationTitle("Schedule")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Schedule") { Task { await schedule() } }
-                        .disabled(isScheduleButtonDisabled || isScheduling)
+                        .font(GSFont.bold(14, relativeTo: .body))
+                        .foregroundStyle(theme.neutral700)
                 }
             }
             .task { await loadData() }
@@ -100,39 +163,107 @@ struct ScheduleSessionView: View {
     }
 
     // MARK: - Who Section
+    // Canvas: "Who's invited" kicker, themed segmented control, bordered group/friend rows
 
     private var whoSection: some View {
-        Section("Who") {
-            Picker("Mode", selection: $whoMode) {
-                ForEach(WhoMode.allCases, id: \.self) { mode in
-                    Text(mode.rawValue).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
+        VStack(alignment: .leading, spacing: 10) {
+            GSSectionHeader("Who's invited")
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
 
-            if whoMode == .group {
+            // Themed segmented control — same pattern as GroupView
+            themedWhoSegment
+                .padding(.horizontal, 16)
+
+            // Content for selected mode
+            switch whoMode {
+            case .group:
                 groupPickerContent
-            } else if whoMode == .friends {
+                    .padding(.horizontal, 16)
+            case .friends:
                 friendsMultiSelectContent
-            } else {
+                    .padding(.horizontal, 16)
+            case .code:
                 Text("A room code will be generated — share it so others can join.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .font(GSFont.body(13, relativeTo: .footnote))
+                    .foregroundStyle(theme.neutral500)
+                    .padding(.horizontal, 16)
             }
         }
+        .padding(.bottom, 14)
+    }
+
+    private var themedWhoSegment: some View {
+        HStack(spacing: 0) {
+            ForEach(WhoMode.allCases, id: \.self) { mode in
+                Button {
+                    whoMode = mode
+                } label: {
+                    Text(mode.rawValue)
+                        .font(GSFont.bold(11, relativeTo: .caption))
+                        .foregroundStyle(whoMode == mode ? theme.bg : theme.text)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(whoMode == mode ? theme.accent : Color.clear)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .background(theme.surface)
+        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
     }
 
     @ViewBuilder
     private var groupPickerContent: some View {
         if groups.isEmpty {
             Text("You have no groups yet.")
-                .foregroundStyle(.secondary)
+                .font(GSFont.body(13, relativeTo: .subheadline))
+                .foregroundStyle(theme.neutral500)
         } else {
-            Picker("Group", selection: $selectedGroupID) {
-                Text("Select a group").tag(Optional<UUID>.none)
-                ForEach(groups) { group in
-                    Text(group.name).tag(Optional(group.id))
+            // Canvas: bordered row with initials avatar + name + member count + chevron
+            Menu {
+                Picker("Group", selection: $selectedGroupID) {
+                    Text("Select a group").tag(Optional<UUID>.none)
+                    ForEach(groups) { group in
+                        Text(group.name).tag(Optional(group.id))
+                    }
                 }
+            } label: {
+                HStack(spacing: 10) {
+                    // Initials avatar
+                    let name = selectedGroup?.name ?? "?"
+                    let initials = String(name.prefix(2)).uppercased()
+                    ZStack {
+                        Rectangle()
+                            .fill(theme.accent)
+                            .frame(width: 32, height: 32)
+                        Text(initials)
+                            .font(GSFont.bold(11, relativeTo: .caption2))
+                            .foregroundStyle(theme.bg)
+                    }
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(selectedGroup?.name ?? "Select a group")
+                            .font(GSFont.bold(14, relativeTo: .headline))
+                            .foregroundStyle(selectedGroup != nil ? theme.text : theme.neutral500)
+                        if selectedGroup != nil {
+                            Text("\(groupMemberIDs.count + 1) members")
+                                .font(GSFont.body(11, relativeTo: .caption))
+                                .foregroundStyle(theme.neutral500)
+                        }
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(theme.neutral500)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 9)
+                .background(theme.surface)
+                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
             }
         }
     }
@@ -141,75 +272,231 @@ struct ScheduleSessionView: View {
     private var friendsMultiSelectContent: some View {
         if friends.isEmpty {
             Text("No friends to invite yet.")
-                .foregroundStyle(.secondary)
+                .font(GSFont.body(13, relativeTo: .subheadline))
+                .foregroundStyle(theme.neutral500)
         } else {
-            ForEach(friends, id: \.id) { friend in
-                Button {
-                    if selectedFriendIDs.contains(friend.id) {
-                        selectedFriendIDs.remove(friend.id)
-                    } else {
-                        selectedFriendIDs.insert(friend.id)
-                    }
-                } label: {
-                    HStack {
-                        Text(friend.username).foregroundStyle(.primary)
-                        Spacer()
-                        if selectedFriendIDs.contains(friend.id) {
-                            Image(systemName: "checkmark").foregroundStyle(Color.accentColor)
+            VStack(spacing: 0) {
+                ForEach(friends, id: \.id) { friend in
+                    let isSelected = selectedFriendIDs.contains(friend.id)
+                    Button {
+                        if isSelected {
+                            selectedFriendIDs.remove(friend.id)
+                        } else {
+                            selectedFriendIDs.insert(friend.id)
                         }
+                    } label: {
+                        HStack(spacing: 10) {
+                            // Initials avatar
+                            let initials = String(friend.username.prefix(2)).uppercased()
+                            ZStack {
+                                Rectangle()
+                                    .fill(isSelected ? theme.accent : theme.neutral400)
+                                    .frame(width: 32, height: 32)
+                                Text(initials)
+                                    .font(GSFont.bold(11, relativeTo: .caption2))
+                                    .foregroundStyle(theme.bg)
+                            }
+
+                            Text(friend.username)
+                                .font(GSFont.bodyMedium(14, relativeTo: .body))
+                                .foregroundStyle(theme.text)
+
+                            Spacer()
+
+                            if isSelected {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundStyle(theme.accent)
+                            }
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 9)
+                        .background(isSelected ? theme.accent100 : theme.surface)
+                        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
                     }
+                    .buttonStyle(.plain)
+                    .padding(.bottom, 4)
                 }
             }
         }
     }
 
     // MARK: - What Section
+    // Canvas: "Routine" kicker, bordered picker row
 
     private var whatSection: some View {
-        Section("Routine (optional)") {
-            Picker("Routine", selection: $selectedRoutineID) {
-                Text("None").tag(Optional<UUID>.none)
-                ForEach(routines, id: \.id) { routine in
-                    Text(routine.name).tag(Optional(routine.id))
+        VStack(alignment: .leading, spacing: 8) {
+            GSSectionHeader("Routine")
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+
+            // Bordered row with dumbbell icon + routine name + chevron
+            Menu {
+                Picker("Routine", selection: $selectedRoutineID) {
+                    Text("None").tag(Optional<UUID>.none)
+                    ForEach(routines, id: \.id) { routine in
+                        Text(routine.name).tag(Optional(routine.id))
+                    }
                 }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "dumbbell")
+                        .font(.system(size: 16, weight: .regular))
+                        .foregroundStyle(theme.accent)
+                        .frame(width: 20)
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(selectedRoutine?.name ?? "None")
+                            .font(GSFont.bold(14, relativeTo: .headline))
+                            .foregroundStyle(selectedRoutine != nil ? theme.text : theme.neutral500)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(theme.neutral500)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 9)
+                .background(theme.surface)
+                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
             }
+            .padding(.horizontal, 16)
         }
+        .padding(.bottom, 14)
     }
 
     // MARK: - When Section
+    // Canvas: DATE + TIME side-by-side bordered tiles
 
     private var whenSection: some View {
-        Section("When") {
-            DatePicker(
-                "Date & Time",
-                selection: $scheduledFor,
-                in: Date()...,
-                displayedComponents: [.date, .hourAndMinute]
-            )
+        VStack(alignment: .leading, spacing: 8) {
+            GSSectionHeader("When")
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+
+            HStack(spacing: 8) {
+                // Date tile
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("DATE")
+                        .font(GSFont.bold(9, relativeTo: .caption2))
+                        .tracking(0.8)
+                        .foregroundStyle(theme.neutral500)
+                    DatePicker(
+                        "",
+                        selection: $scheduledFor,
+                        in: Date()...,
+                        displayedComponents: .date
+                    )
+                    .labelsHidden()
+                    .tint(theme.accent)
+                    .font(GSFont.bold(15, relativeTo: .body))
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(theme.surface)
+                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+
+                // Time tile
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("TIME")
+                        .font(GSFont.bold(9, relativeTo: .caption2))
+                        .tracking(0.8)
+                        .foregroundStyle(theme.neutral500)
+                    DatePicker(
+                        "",
+                        selection: $scheduledFor,
+                        in: Date()...,
+                        displayedComponents: .hourAndMinute
+                    )
+                    .labelsHidden()
+                    .tint(theme.accent)
+                    .font(GSFont.bold(15, relativeTo: .body))
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(theme.surface)
+                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+            }
+            .padding(.horizontal, 16)
         }
+        .padding(.bottom, 14)
     }
 
     // MARK: - Repeats Section
+    // Canvas: Toggle row with accent pill-toggle, then weekday chips + per-day rows + until
 
     @ViewBuilder
     private var repeatsSection: some View {
-        Section("Repeats") {
-            Toggle("Repeat weekly", isOn: $repeatWeekly)
-                .onChange(of: repeatWeekly) {
-                    if repeatWeekly && selectedWeekdays.isEmpty {
-                        // Pre-select the weekday of the chosen date
-                        let wd = Calendar.current.component(.weekday, from: scheduledFor)
-                        selectedWeekdays.insert(wd)
-                        dayTimes[wd] = DayTime(hour: defaultHour, minute: defaultMinute)
-                        dayRoutines[wd] = selectedRoutineID
-                    }
-                    updateOccurrenceCount()
+        VStack(alignment: .leading, spacing: 0) {
+            // Repeats toggle row
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Repeats")
+                        .font(GSFont.bold(15, relativeTo: .body))
+                        .foregroundStyle(theme.text)
+                    Text("Make this a recurring series")
+                        .font(GSFont.body(11, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral500)
                 }
 
+                Spacer()
+
+                Toggle("", isOn: $repeatWeekly)
+                    .labelsHidden()
+                    .tint(theme.accent)
+                    .onChange(of: repeatWeekly) {
+                        if repeatWeekly && selectedWeekdays.isEmpty {
+                            let wd = Calendar.current.component(.weekday, from: scheduledFor)
+                            selectedWeekdays.insert(wd)
+                            dayTimes[wd] = DayTime(hour: defaultHour, minute: defaultMinute)
+                            dayRoutines[wd] = selectedRoutineID
+                        }
+                        updateOccurrenceCount()
+                    }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+
             if repeatWeekly {
-                weekdayRuleEditorContent
-                untilDateContent
+                GSDivider()
+                    .padding(.horizontal, 16)
+
+                // "On these days" kicker + chips
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("ON THESE DAYS")
+                        .font(GSFont.bold(9, relativeTo: .caption2))
+                        .tracking(0.8)
+                        .foregroundStyle(theme.neutral500)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 12)
+
+                    weekdayRuleEditorContent
+                        .padding(.horizontal, 16)
+                }
+
+                GSDivider()
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+
+                // Until row
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Until")
+                            .font(GSFont.body(11, relativeTo: .caption))
+                            .foregroundStyle(theme.neutral500)
+                        untilDateContent
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+
                 occurrenceFooter
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
             }
         }
     }
@@ -233,19 +520,22 @@ struct ScheduleSessionView: View {
         let minDate = Date().addingTimeInterval(86400)
         let maxDate = Date().addingTimeInterval(26 * 7 * 86400)
         DatePicker(
-            "Until",
+            "",
             selection: $untilDate,
             in: minDate...maxDate,
             displayedComponents: .date
         )
+        .labelsHidden()
+        .tint(theme.accent)
+        .font(GSFont.bold(14, relativeTo: .body))
     }
 
     @ViewBuilder
     private var occurrenceFooter: some View {
         if occurrenceCount > 0 {
             Text("\(occurrenceCount) sessions will be scheduled")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+                .font(GSFont.body(12, relativeTo: .footnote))
+                .foregroundStyle(theme.neutral500)
         }
     }
 

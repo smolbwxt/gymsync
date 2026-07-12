@@ -11,61 +11,79 @@ struct ProposalCardView: View {
     let onApprove: () async -> Void
     let onVeto:    () async -> Void
 
+    @Environment(\.gsTheme) private var theme
+
     private var approveCount: Int { votes.filter { $0.vote == .approve }.count }
     private var vetoCount: Int    { votes.filter { $0.vote == .veto }.count }
     private var myVote: ProposalVote? { votes.first { $0.userID == myID } }
     private var isOpen: Bool { proposal.status == .open }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Header: proposer + status tint
-            HStack {
-                Text(proposerLabel)
-                    .font(.subheadline).fontWeight(.semibold)
+        VStack(alignment: .leading, spacing: 10) {
+            // Header: kicker "Proposal · from <name>"
+            HStack(alignment: .firstTextBaseline) {
+                Text(proposerKicker)
+                    .font(GSFont.bold(11, relativeTo: .caption2))
+                    .tracking(0.5)
+                    .foregroundStyle(theme.neutral500)
                 Spacer()
                 statusBadge
             }
 
-            // Description
+            // Description — struck through + dimmed when vetoed
             Text(proposalDescription)
-                .font(.footnote)
-                .foregroundStyle(proposal.status == .vetoed ? .secondary : .primary)
-                .strikethrough(proposal.status == .vetoed)
+                .font(GSFont.bold(16, relativeTo: .headline))
+                .foregroundStyle(proposal.status == .vetoed ? theme.neutral500 : theme.text)
+                .strikethrough(proposal.status == .vetoed, color: theme.neutral500)
 
-            // Vote counts
-            HStack(spacing: 16) {
-                Label("\(approveCount)", systemImage: "hand.thumbsup")
-                    .font(.caption).foregroundStyle(.green)
-                Label("\(vetoCount)", systemImage: "hand.thumbsdown")
-                    .font(.caption).foregroundStyle(.red)
-            }
+            // Vote progress bar: accent for approve portion, neutral400 for veto
+            voteMeter
 
-            // Action buttons (only when open and I haven't voted)
-            if isOpen, myVote == nil {
-                HStack(spacing: 12) {
-                    Button {
-                        Task { await onApprove() }
-                    } label: {
-                        Label("Approve", systemImage: "checkmark.circle")
-                            .frame(maxWidth: .infinity)
+            // Vote counts + action buttons
+            HStack(alignment: .center) {
+                Text("\(approveCount) approve · \(vetoCount) veto")
+                    .font(GSFont.body(11, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+
+                Spacer()
+
+                // Action buttons only when open and I haven't voted
+                if isOpen, myVote == nil {
+                    HStack(spacing: 6) {
+                        Button {
+                            Task { await onVeto() }
+                        } label: {
+                            Text("Veto")
+                                .font(GSFont.bold(12, relativeTo: .caption))
+                                .foregroundStyle(theme.text)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(theme.surface)
+                                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            Task { await onApprove() }
+                        } label: {
+                            Text("Approve")
+                                .font(GSFont.bold(12, relativeTo: .caption))
+                                .foregroundStyle(theme.bg)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 7)
+                                .background(theme.accent)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.bordered)
-                    .tint(.green)
-
-                    Button {
-                        Task { await onVeto() }
-                    } label: {
-                        Label("Veto", systemImage: "xmark.circle")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(.red)
                 }
-                .font(.footnote)
             }
         }
-        .padding(.vertical, 4)
-        .listRowBackground(rowBackground)
+        .padding(12)
+        .background(rowBackground)
+        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .listRowBackground(theme.bg)
+        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+        .listRowSeparator(.hidden)
     }
 
     // MARK: - Sub-views
@@ -75,41 +93,71 @@ struct ProposalCardView: View {
         switch proposal.status {
         case .open:
             Text("Open")
-                .font(.caption2).padding(.horizontal, 6).padding(.vertical, 2)
-                .background(Color.accentColor.opacity(0.15), in: Capsule())
-                .foregroundStyle(Color.accentColor)
+                .font(GSFont.bold(10, relativeTo: .caption2))
+                .tracking(0.4)
+                .foregroundStyle(theme.accent)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(theme.accent100)
         case .approved:
             Text("Approved")
-                .font(.caption2).padding(.horizontal, 6).padding(.vertical, 2)
-                .background(Color.green.opacity(0.15), in: Capsule())
-                .foregroundStyle(.green)
+                .font(GSFont.bold(10, relativeTo: .caption2))
+                .tracking(0.4)
+                .foregroundStyle(Color.green)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(Color.green.opacity(0.12))
         case .vetoed:
             Text("Vetoed")
-                .font(.caption2).padding(.horizontal, 6).padding(.vertical, 2)
-                .background(Color.secondary.opacity(0.15), in: Capsule())
-                .foregroundStyle(.secondary)
+                .font(GSFont.bold(10, relativeTo: .caption2))
+                .tracking(0.4)
+                .foregroundStyle(theme.neutral500)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(theme.neutral300)
         case .superseded:
             Text("Superseded")
-                .font(.caption2).padding(.horizontal, 6).padding(.vertical, 2)
-                .background(Color.secondary.opacity(0.15), in: Capsule())
-                .foregroundStyle(.secondary)
+                .font(GSFont.bold(10, relativeTo: .caption2))
+                .tracking(0.4)
+                .foregroundStyle(theme.neutral500)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(theme.neutral300)
+        }
+    }
+
+    // Canvas: thin progress bar, accent fill for approve portion, neutral400 for veto
+    @ViewBuilder
+    private var voteMeter: some View {
+        let total = approveCount + vetoCount
+        if total > 0 {
+            GeometryReader { geo in
+                HStack(spacing: 2) {
+                    Rectangle()
+                        .fill(theme.accent)
+                        .frame(width: geo.size.width * CGFloat(approveCount) / CGFloat(total))
+                    Rectangle()
+                        .fill(theme.neutral400)
+                }
+            }
+            .frame(height: 6)
         }
     }
 
     @ViewBuilder
     private var rowBackground: some View {
         switch proposal.status {
-        case .approved:  Color.green.opacity(0.06)
-        case .vetoed:    Color.secondary.opacity(0.04)
-        default:         Color.clear
+        case .approved:  theme.accent100
+        case .vetoed:    theme.neutral100
+        default:         theme.surface
         }
     }
 
     // MARK: - Helpers
 
-    private var proposerLabel: String {
+    private var proposerKicker: String {
         let name = usernames[proposal.proposerID] ?? "Someone"
-        return "\(name) proposed:"
+        return "PROPOSAL · FROM \(name.uppercased())"
     }
 
     private var proposalDescription: String {

@@ -9,6 +9,7 @@ struct LobbyView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.gsTheme) private var theme
 
     // MARK: - State
 
@@ -78,15 +79,59 @@ struct LobbyView: View {
     // MARK: - Body
 
     var body: some View {
-        List {
-            roomCodeSection
-            routineSection
-            participantsSection
-            proposalsSection
-            errorSection
-            actionSection
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                // Room code banner (canvas: full-width accent fill, large monospaced code)
+                roomCodeBanner
+
+                // Check-in status card (canvas: bordered card, accent left border, location icon)
+                checkInStatusCard
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
+
+                // Proposals section
+                if !proposals.isEmpty {
+                    GSDivider()
+                        .padding(.horizontal, 16)
+                        .padding(.top, 14)
+
+                    proposalsSection
+                        .padding(.top, 8)
+                }
+
+                GSDivider()
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
+
+                // Participants "Who's here"
+                participantsSection
+
+                GSDivider()
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+
+                // Routine section
+                routineSection
+                    .padding(.top, 8)
+
+                // Error
+                if let errorText {
+                    Text(errorText)
+                        .font(GSFont.body(12, relativeTo: .footnote))
+                        .foregroundStyle(.red)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+                }
+
+                Spacer(minLength: 80)
+            }
+        }
+        .background(theme.bg)
+        .safeAreaInset(edge: .bottom) {
+            actionBar
         }
         .navigationTitle("Lobby")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if isManageVisible {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -169,13 +214,12 @@ struct LobbyView: View {
         }
     }
 
-    // MARK: - Manage Menu
+    // MARK: - Manage Menu (functional items unchanged)
 
     @ViewBuilder
     private var manageMenu: some View {
         Menu("Manage") {
             if effectiveSeriesID != nil {
-                // Series session menu items
                 Button {
                     changeTimeDate = effectiveSession.scheduledFor ?? Date()
                     showChangeTimeSheet = true
@@ -204,7 +248,6 @@ struct LobbyView: View {
                     Label("Cancel rest of series", systemImage: "xmark.circle.fill")
                 }
             } else {
-                // Non-series session menu items
                 Button {
                     changeTimeDate = effectiveSession.scheduledFor ?? Date()
                     showChangeTimeSheet = true
@@ -233,215 +276,410 @@ struct LobbyView: View {
                         in: Date()...,
                         displayedComponents: [.date, .hourAndMinute]
                     )
+                    .tint(theme.accent)
                 }
+                .listRowBackground(theme.surface)
             }
+            .scrollContentBackground(.hidden)
+            .background(theme.bg)
             .navigationTitle("Change Time")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { showChangeTimeSheet = false }
+                        .foregroundStyle(theme.neutral700)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { Task { await applyReschedule() } }
+                        .font(GSFont.bold(14, relativeTo: .body))
+                        .foregroundStyle(theme.accent700)
                 }
             }
         }
     }
 
-    // MARK: - Sections
+    // MARK: - Room code banner
+    // Canvas: accent fill, "ROOM CODE" kicker, large monospaced code, bg-fill copy button
 
     @ViewBuilder
-    private var roomCodeSection: some View {
+    private var roomCodeBanner: some View {
         if let code = session.roomCode {
-            Section {
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("ROOM CODE")
+                        .font(GSFont.bold(10, relativeTo: .caption2))
+                        .tracking(1.2)
+                        .foregroundStyle(theme.bg.opacity(0.85))
+                    Text(code)
+                        .font(.custom("Archivo-Bold", size: 30).monospacedDigit())
+                        .kerning(4)
+                        .foregroundStyle(theme.bg)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                }
+
+                Spacer()
+
                 Button {
                     UIPasteboard.general.string = code
                 } label: {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Room Code").font(.caption).foregroundStyle(.secondary)
-                            Text(code)
-                                .font(.title2.monospaced())
-                                .fontWeight(.bold)
-                        }
-                        Spacer()
-                        Image(systemName: "doc.on.doc").foregroundStyle(Color.accentColor)
+                    HStack(spacing: 5) {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 13, weight: .regular))
+                        Text("Share")
+                            .font(GSFont.bold(12, relativeTo: .caption))
                     }
+                    .foregroundStyle(theme.text)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(theme.bg)
                 }
                 .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(theme.accent)
+        }
+    }
+
+    // MARK: - Check-in status card
+    // Canvas: bordered card with 3px accent left border, location icon, name/status, checkmark
+
+    @ViewBuilder
+    private var checkInStatusCard: some View {
+        HStack(spacing: 10) {
+            Image(systemName: isCheckedIn ? "location.fill" : "location")
+                .font(.system(size: 20))
+                .foregroundStyle(theme.accent)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(isCheckedIn ? "You're checked in" : "Not checked in")
+                    .font(GSFont.bold(14, relativeTo: .headline))
+                    .foregroundStyle(theme.text)
+                Text(isCheckedIn ? "Geofence confirmed" : "Tap Check In below")
+                    .font(GSFont.body(11, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+            }
+
+            Spacer()
+
+            if isCheckedIn {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(theme.accent700)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
+        .background(theme.surface)
+        .overlay(
+            HStack(spacing: 0) {
+                Rectangle()
+                    .fill(theme.accent)
+                    .frame(width: 3)
+                Rectangle()
+                    .fill(theme.divider)
+                    .frame(width: 1)
+                    .padding(.leading, 2)
+                Spacer()
+                Rectangle()
+                    .fill(theme.divider)
+                    .frame(width: 1)
+                Rectangle()
+                    .fill(theme.divider)
+                    .frame(height: 1)
+                    .rotationEffect(.degrees(90))
+                    .hidden() // top/bottom via alignment
+            }, alignment: .leading
+        )
+        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+    }
+
+    // MARK: - Proposals Section
+    // Canvas: "Proposal · from Jordan" kicker card, progress bar, Veto/Approve buttons
+
+    @ViewBuilder
+    private var proposalsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            GSSectionHeader("Routine Proposals")
+                .padding(.horizontal, 16)
+
+            ForEach(proposals) { proposal in
+                ProposalCardView(
+                    proposal: proposal,
+                    votes: proposalVotes[proposal.id] ?? [],
+                    usernames: proposerUsernames,
+                    myID: selfID,
+                    onApprove: { await castVote(proposalID: proposal.id, approve: true) },
+                    onVeto:    { await castVote(proposalID: proposal.id, approve: false) }
+                )
             }
         }
     }
 
+    // MARK: - Participants Section
+    // Canvas: "Who's here" kicker, bordered rows with initials avatar + name/status + check-in tag
+
+    private var participantsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                GSSectionHeader("Who's here")
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
+
+                Spacer()
+
+                let readyCount = participants.filter { $0.participant.checkInState == "ready" }.count
+                let travelCount = participants.filter { $0.participant.checkInState == "traveling_override" }.count
+                if readyCount > 0 || travelCount > 0 {
+                    Text("\(readyCount) in\(travelCount > 0 ? " · \(travelCount) traveling" : "")")
+                        .font(GSFont.body(11, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral500)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 14)
+                }
+            }
+
+            VStack(spacing: 4) {
+                ForEach(participants, id: \.participant.userID) { item in
+                    participantRow(item)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
+        }
+    }
+
+    // Canvas participant row: initials avatar + name/status + check-in tag or clock
+    private func participantRow(
+        _ item: (participant: SessionParticipant, profile: Profile)
+    ) -> some View {
+        HStack(spacing: 10) {
+            // Presence dot + initials avatar
+            ZStack(alignment: .bottomTrailing) {
+                let initials = String(item.profile.username.prefix(2)).uppercased()
+                ZStack {
+                    Rectangle()
+                        .fill(item.participant.checkInState == "ready" ? theme.accent : theme.neutral400)
+                        .frame(width: 32, height: 32)
+                    Text(initials)
+                        .font(GSFont.bold(11, relativeTo: .caption2))
+                        .foregroundStyle(theme.bg)
+                }
+
+                // Presence online dot
+                Circle()
+                    .fill(presenceSet.contains(item.participant.userID) ? Color.green : theme.neutral400)
+                    .frame(width: 9, height: 9)
+                    .overlay(Circle().strokeBorder(theme.bg, lineWidth: 1.5))
+                    .offset(x: 3, y: 3)
+            }
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(item.profile.username)
+                    .font(GSFont.bold(13, relativeTo: .body))
+                    .foregroundStyle(theme.text)
+                Text(checkInSubtitle(for: item.participant))
+                    .font(GSFont.body(10, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+            }
+
+            Spacer()
+
+            // Check-in status tag or burpees
+            checkInBadge(for: item.participant)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(theme.surface)
+        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+    }
+
+    @ViewBuilder
+    private func checkInBadge(for participant: SessionParticipant) -> some View {
+        if participant.burpeesOwed > 0 {
+            Text("\(participant.burpeesOwed) burpees")
+                .font(GSFont.bold(10, relativeTo: .caption2))
+                .foregroundStyle(theme.accent700)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(theme.accent100)
+        } else {
+            switch participant.checkInState {
+            case "ready":
+                // Canvas: accent tag "Checked in"
+                GSTag(text: "Checked in", style: .accent)
+            case "invited":
+                // Canvas: clock icon for not-yet-arrived
+                Image(systemName: "clock")
+                    .font(.system(size: 14))
+                    .foregroundStyle(theme.neutral500)
+            default:
+                // Traveling / unknown
+                Image(systemName: "clock")
+                    .font(.system(size: 14))
+                    .foregroundStyle(theme.neutral500)
+            }
+        }
+    }
+
+    private func checkInSubtitle(for participant: SessionParticipant) -> String {
+        switch participant.checkInState {
+        case "ready":              return "Checked in"
+        case "traveling_override": return "Traveling"
+        case "invited":            return "Invited"
+        default:                   return participant.checkInState ?? "Invited"
+        }
+    }
+
+    // MARK: - Routine Section
+
     private var routineSection: some View {
-        Section("Routine") {
+        VStack(alignment: .leading, spacing: 8) {
+            GSSectionHeader("Routine")
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+
             routineContent
+                .padding(.horizontal, 16)
+
             Button {
                 showProposalComposer = true
             } label: {
-                Label("Edit Routine", systemImage: "pencil.and.list.clipboard")
+                HStack(spacing: 6) {
+                    Image(systemName: "pencil.and.list.clipboard")
+                        .font(.system(size: 14))
+                    Text("Edit Routine")
+                        .font(GSFont.bodyMedium(14, relativeTo: .body))
+                }
+                .foregroundStyle(theme.accent)
             }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
         }
     }
 
     @ViewBuilder
     private var routineContent: some View {
         if let info = routineInfo {
-            Text(info.name).fontWeight(.semibold)
-            ForEach(info.exercises) { ex in
-                routineExerciseRow(ex)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(info.name)
+                    .font(GSFont.bold(14, relativeTo: .headline))
+                    .foregroundStyle(theme.text)
+                ForEach(info.exercises) { ex in
+                    routineExerciseRow(ex)
+                }
             }
         } else {
             Text("No routine — propose one below.")
-                .foregroundStyle(.secondary)
+                .font(GSFont.body(13, relativeTo: .subheadline))
+                .foregroundStyle(theme.neutral500)
         }
     }
-
-    private var participantsSection: some View {
-        Section("Participants") {
-            ForEach(participants, id: \.participant.userID) { item in
-                participantRow(item)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var proposalsSection: some View {
-        if !proposals.isEmpty {
-            Section("Routine Proposals") {
-                ForEach(proposals) { proposal in
-                    ProposalCardView(
-                        proposal: proposal,
-                        votes: proposalVotes[proposal.id] ?? [],
-                        usernames: proposerUsernames,
-                        myID: selfID,
-                        onApprove: { await castVote(proposalID: proposal.id, approve: true) },
-                        onVeto:    { await castVote(proposalID: proposal.id, approve: false) }
-                    )
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var errorSection: some View {
-        if let errorText {
-            Section {
-                Text(errorText).foregroundStyle(.red).font(.footnote)
-            }
-        }
-    }
-
-    private var actionSection: some View {
-        Section {
-            checkInRow
-            startRow
-        }
-    }
-
-    @ViewBuilder
-    private var checkInRow: some View {
-        if !isCheckedIn {
-            Button {
-                Task { await initiateCheckIn() }
-            } label: {
-                if isCheckingIn {
-                    HStack {
-                        ProgressView().controlSize(.small)
-                        Text("Checking in…")
-                    }
-                } else {
-                    Label("Check In", systemImage: "location.circle.fill")
-                }
-            }
-            .disabled(isCheckingIn)
-        }
-    }
-
-    @ViewBuilder
-    private var startRow: some View {
-        if isOrganizer {
-            Button {
-                if allReady {
-                    Task { await startSession() }
-                } else {
-                    showStartDialog = true
-                }
-            } label: {
-                if isStarting {
-                    HStack {
-                        ProgressView().controlSize(.small)
-                        Text("Starting…")
-                    }
-                } else {
-                    Label("Start Session", systemImage: "play.circle.fill")
-                }
-            }
-            .disabled(isStarting)
-        } else if isCheckedIn {
-            HStack {
-                ProgressView().controlSize(.small)
-                Text("Waiting for organizer to start…").foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    // MARK: - Row helpers
 
     private func routineExerciseRow(_ ex: RoutineExercise) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Exercise").font(.footnote)
-                HStack(spacing: 8) {
-                    if let sets = ex.targetSets {
-                        Text("\(sets)×").font(.caption2).foregroundStyle(.secondary)
+        HStack(spacing: 8) {
+            if let sets = ex.targetSets {
+                Text("\(sets)×")
+                    .font(GSFont.bodyMedium(12, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral700)
+            }
+            if let reps = ex.targetReps {
+                Text(reps)
+                    .font(GSFont.body(12, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+            }
+        }
+    }
+
+    // MARK: - Action bar (pinned bottom)
+    // Canvas: "Lock in & Start" primary button; check-in ghost button above if not checked in
+
+    private var actionBar: some View {
+        VStack(spacing: 0) {
+            GSDivider()
+
+            VStack(spacing: 8) {
+                // Check-in button (if not yet checked in)
+                if !isCheckedIn {
+                    Button {
+                        Task { await initiateCheckIn() }
+                    } label: {
+                        HStack {
+                            if isCheckingIn {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .tint(theme.accent)
+                                Text("Checking in…")
+                                    .font(GSFont.bold(15, relativeTo: .body))
+                            } else {
+                                Image(systemName: "location.circle.fill")
+                                    .font(.system(size: 15))
+                                Text("Check In")
+                                    .font(GSFont.bold(15, relativeTo: .body))
+                            }
+                            Spacer()
+                        }
+                        .foregroundStyle(theme.accent)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: .infinity)
+                        .background(theme.accent100)
+                        .overlay(Rectangle().strokeBorder(theme.accent, lineWidth: 1))
                     }
-                    if let reps = ex.targetReps {
-                        Text(reps).font(.caption2).foregroundStyle(.secondary)
+                    .buttonStyle(.plain)
+                    .disabled(isCheckingIn)
+                }
+
+                // Start / Waiting row (organizer vs attendee)
+                if isOrganizer {
+                    Button {
+                        if allReady {
+                            Task { await startSession() }
+                        } else {
+                            showStartDialog = true
+                        }
+                    } label: {
+                        HStack {
+                            if isStarting {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .tint(theme.bg)
+                                Text("Starting…")
+                                    .font(GSFont.bold(15, relativeTo: .body))
+                            } else {
+                                Text("Lock in & Start")
+                                    .font(GSFont.bold(15, relativeTo: .body))
+                            }
+                            Spacer()
+                        }
+                        .foregroundStyle(theme.bg)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
+                        .frame(maxWidth: .infinity)
+                        .background(isStarting ? theme.accent600 : theme.accent)
                     }
+                    .buttonStyle(.plain)
+                    .disabled(isStarting)
+                } else if isCheckedIn {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(theme.neutral500)
+                        Text("Waiting for organizer to start…")
+                            .font(GSFont.body(13, relativeTo: .subheadline))
+                            .foregroundStyle(theme.neutral500)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
                 }
             }
-            Spacer()
-        }
-    }
-
-    private func participantRow(
-        _ item: (participant: SessionParticipant, profile: Profile)
-    ) -> some View {
-        HStack(spacing: 10) {
-            Circle()
-                .fill(
-                    presenceSet.contains(item.participant.userID)
-                        ? Color.green
-                        : Color(.systemGray4)
-                )
-                .frame(width: 8, height: 8)
-
-            Text(item.profile.username)
-            Spacer()
-
-            checkInIcon(for: item.participant.checkInState)
-
-            if item.participant.burpeesOwed > 0 {
-                Text("\(item.participant.burpeesOwed) burpees")
-                    .font(.caption2)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(Color.orange.opacity(0.15), in: Capsule())
-                    .foregroundStyle(.orange)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func checkInIcon(for state: String?) -> some View {
-        switch state {
-        case "ready":
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-        case "invited":
-            Image(systemName: "clock").foregroundStyle(.secondary)
-        default:
-            Image(systemName: "clock.badge.exclamationmark").foregroundStyle(.orange)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+            .padding(.bottom, 22)
+            .background(theme.bg)
         }
     }
 
@@ -538,11 +776,9 @@ struct LobbyView: View {
                     if CheckInService.distanceCheck(gym: gym, location: location) {
                         await checkIn(method: "geofence")
                     } else {
-                        // Out of range — offer traveling override
                         showTravelDialog = true
                     }
                 } catch {
-                    // Location unavailable / denied — always offer override so check-in is reachable
                     showTravelDialog = true
                 }
             } else {
@@ -664,6 +900,7 @@ private struct ProposalComposerView: View {
     let onProposed: (RoutineProposal) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.gsTheme) private var theme
 
     @State private var selectedExercise: Exercise?
     @State private var targetSets: String = "3"
@@ -675,22 +912,74 @@ private struct ProposalComposerView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                exercisePickSection
-                targetsSection
+            List {
+                // Exercise section
+                Section {
+                    if let ex = selectedExercise {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(ex.name)
+                                .font(GSFont.bold(14, relativeTo: .headline))
+                                .foregroundStyle(theme.text)
+                            Text(ex.primaryMuscle.capitalized)
+                                .font(GSFont.body(12, relativeTo: .caption))
+                                .foregroundStyle(theme.neutral500)
+                        }
+                        .listRowBackground(theme.surface)
+                    }
+                    Button {
+                        showExercisePicker = true
+                    } label: {
+                        Label(
+                            selectedExercise == nil ? "Pick an exercise" : "Change exercise",
+                            systemImage: "magnifyingglass"
+                        )
+                        .font(GSFont.bodyMedium(14, relativeTo: .body))
+                        .foregroundStyle(theme.accent)
+                    }
+                    .listRowBackground(theme.surface)
+                } header: {
+                    GSSectionHeader("Exercise")
+                }
+                .listRowSeparatorTint(theme.divider)
+
+                // Targets section
+                Section {
+                    targetRow(label: "Sets", placeholder: "3", text: $targetSets,
+                              keyboard: .numberPad)
+                    targetRow(label: "Reps", placeholder: "8-12", text: $targetReps,
+                              keyboard: .default)
+                    targetRow(label: "Weight (optional)", placeholder: "e.g. BW",
+                              text: $targetWeight, keyboard: .default)
+                } header: {
+                    GSSectionHeader("Targets")
+                }
+                .listRowBackground(theme.surface)
+                .listRowSeparatorTint(theme.divider)
+
                 if let errorText {
                     Section {
-                        Text(errorText).foregroundStyle(.red).font(.footnote)
+                        Text(errorText)
+                            .font(GSFont.body(12, relativeTo: .footnote))
+                            .foregroundStyle(.red)
+                            .listRowBackground(theme.bg)
                     }
                 }
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(theme.bg)
             .navigationTitle("Propose Exercise")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
+                        .foregroundStyle(theme.neutral700)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Propose") { Task { await propose() } }
+                        .font(GSFont.bold(14, relativeTo: .body))
+                        .foregroundStyle(selectedExercise == nil || isProposing
+                                         ? theme.neutral500 : theme.accent700)
                         .disabled(selectedExercise == nil || isProposing)
                 }
             }
@@ -700,47 +989,21 @@ private struct ProposalComposerView: View {
         }
     }
 
-    private var exercisePickSection: some View {
-        Section("Exercise") {
-            if let ex = selectedExercise {
-                VStack(alignment: .leading) {
-                    Text(ex.name).fontWeight(.semibold)
-                    Text(ex.primaryMuscle.capitalized)
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            Button {
-                showExercisePicker = true
-            } label: {
-                Label(
-                    selectedExercise == nil ? "Pick an exercise" : "Change exercise",
-                    systemImage: "magnifyingglass"
-                )
-            }
-        }
-    }
-
-    private var targetsSection: some View {
-        Section("Targets") {
-            HStack {
-                Text("Sets")
-                Spacer()
-                TextField("3", text: $targetSets)
-                    .keyboardType(.numberPad)
-                    .multilineTextAlignment(.trailing)
-            }
-            HStack {
-                Text("Reps")
-                Spacer()
-                TextField("8-12", text: $targetReps)
-                    .multilineTextAlignment(.trailing)
-            }
-            HStack {
-                Text("Weight (optional)")
-                Spacer()
-                TextField("e.g. BW", text: $targetWeight)
-                    .multilineTextAlignment(.trailing)
-            }
+    @ViewBuilder
+    private func targetRow(label: String, placeholder: String, text: Binding<String>,
+                            keyboard: UIKeyboardType) -> some View {
+        HStack {
+            Text(label)
+                .font(GSFont.body(14, relativeTo: .body))
+                .foregroundStyle(theme.text)
+            Spacer()
+            TextField(placeholder, text: text)
+                .keyboardType(keyboard)
+                .multilineTextAlignment(.trailing)
+                .font(GSFont.bodyMedium(14, relativeTo: .body))
+                .foregroundStyle(theme.text)
+                .tint(theme.accent)
+                .frame(width: 100)
         }
     }
 
@@ -751,18 +1014,27 @@ private struct ProposalComposerView: View {
                     selectedExercise = ex
                     showExercisePicker = false
                 } label: {
-                    VStack(alignment: .leading) {
+                    VStack(alignment: .leading, spacing: 2) {
                         Text(ex.name)
+                            .font(GSFont.bodyMedium(14, relativeTo: .body))
+                            .foregroundStyle(theme.text)
                         Text(ex.primaryMuscle.capitalized)
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(GSFont.body(12, relativeTo: .caption))
+                            .foregroundStyle(theme.neutral500)
                     }
                 }
-                .foregroundStyle(.primary)
+                .listRowBackground(theme.surface)
+                .listRowSeparatorTint(theme.divider)
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(theme.bg)
             .navigationTitle("Add exercise")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { showExercisePicker = false }
+                        .foregroundStyle(theme.neutral700)
                 }
             }
         }

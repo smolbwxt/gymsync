@@ -4,6 +4,7 @@ struct CreateGroupView: View {
     let onCreated: (GymGroup) -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.gsTheme) private var theme
     @State private var name = ""
     @State private var friends: [Profile] = []
     @State private var selected: Set<UUID> = []
@@ -12,45 +13,128 @@ struct CreateGroupView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Group Name") {
-                    TextField("e.g. Push Crew", text: $name)
-                }
-                Section("Add Friends") {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+
+                    // Group name field
+                    VStack(alignment: .leading, spacing: 8) {
+                        GSSectionHeader("Group name")
+                            .padding(.horizontal, 16)
+                            .padding(.top, 16)
+
+                        TextField("e.g. Push Crew", text: $name)
+                            .font(GSFont.body(14, relativeTo: .body))
+                            .foregroundStyle(theme.text)
+                            .tint(theme.accent)
+                            .padding(.horizontal, 12)
+                            .frame(height: 44)
+                            .background(theme.surface)
+                            .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                            .padding(.horizontal, 16)
+                    }
+
+                    GSDivider()
+                        .padding(.horizontal, 16)
+                        .padding(.top, 16)
+
+                    // Add Friends section
+                    HStack {
+                        GSSectionHeader("Add friends")
+                        Spacer()
+                        if !selected.isEmpty {
+                            Text("\(selected.count) selected · max 25")
+                                .font(GSFont.body(11, relativeTo: .caption))
+                                .foregroundStyle(theme.neutral500)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .padding(.bottom, 8)
+
                     if friends.isEmpty {
                         Text("No friends to add yet — you can add members later.")
-                            .foregroundStyle(.secondary)
-                    }
-                    ForEach(friends) { profile in
-                        Button {
-                            if selected.contains(profile.id) {
-                                selected.remove(profile.id)
-                            } else {
-                                selected.insert(profile.id)
-                            }
-                        } label: {
-                            HStack {
-                                Text(profile.username).foregroundStyle(.primary)
-                                Spacer()
-                                if selected.contains(profile.id) {
-                                    Image(systemName: "checkmark")
+                            .font(GSFont.body(14, relativeTo: .body))
+                            .foregroundStyle(theme.neutral500)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 12)
+                    } else {
+                        VStack(spacing: 0) {
+                            ForEach(friends) { profile in
+                                Button {
+                                    if selected.contains(profile.id) {
+                                        selected.remove(profile.id)
+                                    } else {
+                                        selected.insert(profile.id)
+                                    }
+                                } label: {
+                                    HStack(spacing: 10) {
+                                        GSInitialsAvatar(name: profile.username, size: 36)
+
+                                        Text(profile.username)
+                                            .font(GSFont.bodyMedium(14, relativeTo: .body))
+                                            .foregroundStyle(theme.text)
+
+                                        Spacer()
+
+                                        if selected.contains(profile.id) {
+                                            Image(systemName: "checkmark")
+                                                .font(.system(size: 13, weight: .semibold))
+                                                .foregroundStyle(theme.accent)
+                                        }
+                                    }
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 10)
+                                    .background(
+                                        selected.contains(profile.id)
+                                            ? theme.accent100
+                                            : Color.clear
+                                    )
+                                }
+                                .buttonStyle(.plain)
+
+                                if profile.id != friends.last?.id {
+                                    Rectangle()
+                                        .fill(theme.divider)
+                                        .frame(height: 1)
+                                        .padding(.horizontal, 16)
                                 }
                             }
                         }
                     }
-                }
-                if let errorText {
-                    Text(errorText).foregroundStyle(.red).font(.footnote)
+
+                    if let errorText {
+                        Text(errorText)
+                            .font(GSFont.body(12, relativeTo: .footnote))
+                            .foregroundStyle(.red)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 8)
+                    }
+
+                    // Create button
+                    Button {
+                        Task { await create() }
+                    } label: {
+                        if selected.isEmpty {
+                            Text("Create Group")
+                        } else {
+                            Text("Create Group · \(selected.count + 1) members")
+                        }
+                    }
+                    .buttonStyle(GSPrimaryButtonStyle())
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 24)
+                    .padding(.bottom, 32)
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isCreating)
                 }
             }
+            .background(theme.bg)
+            .scrollContentBackground(.hidden)
             .navigationTitle("New Group")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") { Task { await create() } }
-                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isCreating)
+                        .foregroundStyle(theme.accent)
                 }
             }
             .task {

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct HomeView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.gsTheme) private var theme
 
     @State private var upcomingSessions: [WorkoutSession] = []
     @State private var groups: [GymGroup] = []
@@ -14,12 +15,21 @@ struct HomeView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                welcomeSection
-                upcomingSection
-                joinWithCodeSection
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    greetingHeader
+                    GSDivider()
+                    scheduleButton
+                    GSDivider()
+                    upcomingSection
+                    GSDivider()
+                    joinWithCodeSection
+                }
             }
+            .scrollContentBackground(.hidden)
+            .background(theme.bg)
             .navigationTitle("Home")
+            .navigationBarTitleDisplayMode(.inline)
             .task { await refresh() }
             .refreshable { await refresh() }
             .onChange(of: scenePhase) {
@@ -39,103 +49,160 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - Sections
+    // MARK: - Greeting Header
 
-    private var welcomeSection: some View {
-        Section {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Welcome to Gym Sync")
-                    .font(.title2.bold())
-                Text("Start a solo workout from Library → Routines.")
-                    .foregroundStyle(.secondary)
-                Button {
-                    showScheduleSheet = true
-                } label: {
-                    Label("+ Schedule Session", systemImage: "calendar.badge.plus")
-                }
-                .buttonStyle(.borderedProminent)
-                .padding(.top, 4)
-            }
-            .padding(.vertical, 4)
+    private var greetingHeader: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Home")
+                .font(GSFont.heading(28, relativeTo: .largeTitle))
+                .foregroundStyle(theme.text)
+            Text(Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day()))
+                .font(GSFont.body(13, relativeTo: .caption))
+                .foregroundStyle(theme.neutral500)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.top, 16)
+        .padding(.bottom, 16)
     }
 
+    // MARK: - Schedule Button
+
+    private var scheduleButton: some View {
+        Button {
+            showScheduleSheet = true
+        } label: {
+            Text("+ Schedule Session")
+        }
+        .buttonStyle(GSPrimaryButtonStyle())
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+
+    // MARK: - Upcoming Section
+
     private var upcomingSection: some View {
-        Section("Upcoming Sessions") {
+        VStack(alignment: .leading, spacing: 0) {
+            GSSectionHeader("Upcoming Sessions")
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 10)
+
             if upcomingSessions.isEmpty {
                 Text("No upcoming sessions — schedule one above.")
-                    .foregroundStyle(.secondary)
-                    .font(.subheadline)
+                    .font(GSFont.body(14, relativeTo: .subheadline))
+                    .foregroundStyle(theme.neutral500)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 16)
             } else {
                 ForEach(upcomingSessions) { session in
                     NavigationLink {
                         LobbyView(session: session)
                     } label: {
-                        upcomingRow(session)
+                        upcomingCard(session)
                     }
+                    .buttonStyle(.plain)
+                    GSDivider()
                 }
             }
         }
     }
 
     @ViewBuilder
-    private func upcomingRow(_ session: WorkoutSession) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            // Routine name (or generic "Workout" fallback is set at row level via label)
-            HStack(spacing: 4) {
+    private func upcomingCard(_ session: WorkoutSession) -> some View {
+        GSCard(bordered: false) {
+            VStack(alignment: .leading, spacing: 4) {
+                // Kicker: group name or "Session"
+                HStack(spacing: 6) {
+                    if let groupID = session.groupID,
+                       let group = groups.first(where: { $0.id == groupID }) {
+                        Text(group.name.uppercased())
+                            .font(GSFont.bodyMedium(11, relativeTo: .caption2))
+                            .tracking(1.2)
+                            .foregroundStyle(theme.neutral700)
+                    } else {
+                        Text("SESSION")
+                            .font(GSFont.bodyMedium(11, relativeTo: .caption2))
+                            .tracking(1.2)
+                            .foregroundStyle(theme.neutral700)
+                    }
+                    if session.seriesID != nil {
+                        Image(systemName: "repeat")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(theme.accent700)
+                    }
+                }
+                // Title: routine label
                 Text(routineLabel(for: session))
-                    .fontWeight(.semibold)
-                if session.seriesID != nil {
-                    Image(systemName: "repeat")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    .font(GSFont.heading(16, relativeTo: .headline))
+                    .foregroundStyle(theme.text)
+                // Meta: scheduled time or status
+                if let scheduledFor = session.scheduledFor {
+                    Text(scheduledFor.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()))
+                        .font(GSFont.body(13, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral500)
+                } else {
+                    Text(session.state.replacingOccurrences(of: "_", with: " ").capitalized)
+                        .font(GSFont.body(13, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral500)
                 }
             }
-            if let groupID = session.groupID,
-               let group = groups.first(where: { $0.id == groupID }) {
-                Text(group.name)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            if let scheduledFor = session.scheduledFor {
-                Text(scheduledFor, style: .date)
-                    + Text(" at ") + Text(scheduledFor, style: .time)
-            } else {
-                Text(session.state.replacingOccurrences(of: "_", with: " ").capitalized)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
     }
 
+    // MARK: - Join with Code Section
+
     private var joinWithCodeSection: some View {
-        Section("Join with Code") {
-            HStack {
-                TextField("6-character code", text: $joinCode)
-                    .textInputAutocapitalization(.characters)
-                    .autocorrectionDisabled()
-                    .keyboardType(.asciiCapable)
-                    .onChange(of: joinCode) {
-                        let uppercased = joinCode.uppercased()
-                        if joinCode != uppercased { joinCode = uppercased }
-                        if joinCode.count > 6 { joinCode = String(joinCode.prefix(6)) }
+        VStack(alignment: .leading, spacing: 0) {
+            GSSectionHeader("Join with Code")
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 10)
+
+            GSCard(bordered: true) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 8) {
+                        TextField("6-character code", text: $joinCode)
+                            .textInputAutocapitalization(.characters)
+                            .autocorrectionDisabled()
+                            .keyboardType(.asciiCapable)
+                            .font(GSFont.bodyMedium(16, relativeTo: .body))
+                            .foregroundStyle(theme.text)
+                            .onChange(of: joinCode) {
+                                let uppercased = joinCode.uppercased()
+                                if joinCode != uppercased { joinCode = uppercased }
+                                if joinCode.count > 6 { joinCode = String(joinCode.prefix(6)) }
+                            }
+                        Button("Join") {
+                            Task { await joinByCode() }
+                        }
+                        .buttonStyle(GSPrimaryButtonStyle())
+                        .frame(width: 72)
+                        .disabled(joinCode.count != 6 || isJoining)
+                        .opacity(joinCode.count != 6 || isJoining ? 0.4 : 1)
                     }
-                Button("Join") {
-                    Task { await joinByCode() }
+                    if isJoining {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small).tint(theme.accent)
+                            Text("Joining…")
+                                .font(GSFont.body(14, relativeTo: .subheadline))
+                                .foregroundStyle(theme.neutral500)
+                        }
+                    }
+                    if let joinError {
+                        Text(joinError)
+                            .font(GSFont.body(13, relativeTo: .footnote))
+                            .foregroundStyle(.red)
+                    }
                 }
-                .disabled(joinCode.count != 6 || isJoining)
+                .padding(16)
             }
-            if isJoining {
-                HStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("Joining…").foregroundStyle(.secondary)
-                }
-            }
-            if let joinError {
-                Text(joinError)
-                    .foregroundStyle(.red)
-                    .font(.footnote)
-            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 24)
         }
     }
 
