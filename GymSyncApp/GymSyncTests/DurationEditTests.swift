@@ -171,6 +171,43 @@ final class DurationEditTests: XCTestCase {
                        "completedAt must reflect the second (47 h) edit")
     }
 
+    // MARK: - State guard: only completed sessions may be edited
+
+    /// editDuration on a session that is still in the 'scheduled' state must throw .validation.
+    func testEditDurationRejectsScheduledSession() async throws {
+        guard await SupabaseService.shared.currentUserID() != nil else {
+            throw XCTSkip("not signed in — skipping live-DB test")
+        }
+
+        // Create a scheduled session — do NOT start or complete it.
+        let session = try await SessionRepository.schedule(
+            groupID: nil,
+            inviteeIDs: [],
+            routineID: nil,
+            scheduledFor: Date().addingTimeInterval(3600),
+            generateRoomCode: false
+        )
+        XCTAssertEqual(session.state, "scheduled")
+
+        let now = Date()
+        do {
+            try await SessionRepository.editDuration(
+                sessionID:      session.id,
+                newStartedAt:   now.addingTimeInterval(-3600),
+                newCompletedAt: now,
+                reason:         nil
+            )
+            XCTFail("editDuration should have thrown .validation for a scheduled (non-completed) session")
+        } catch GymSyncError.validation(let message) {
+            XCTAssertFalse(message.isEmpty, "validation message must be non-empty")
+        } catch {
+            XCTFail("Expected GymSyncError.validation but got: \(error)")
+        }
+
+        // Cleanup: delete the scheduled occurrence.
+        try await SeriesRepository.cancelOccurrence(sessionID: session.id)
+    }
+
     // MARK: - Validation: completed < started must throw .validation
 
     func testEditDurationRejectsEndBeforeStart() async throws {

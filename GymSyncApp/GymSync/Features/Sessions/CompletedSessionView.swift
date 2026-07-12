@@ -373,6 +373,29 @@ private struct DurationEditSheet: View {
                                     ? nil
                                     : reason.trimmingCharacters(in: .whitespacesAndNewlines)
             )
+
+            // Re-export to HealthKit with the updated interval.
+            // KNOWN LIMITATION: HealthKitBridge has no delete/update API, so this may create
+            // a second Health entry for the same session (duplicate); acceptable for v1.
+            let updatedSession = WorkoutSession(
+                id:                   session.id,
+                routineID:            session.routineID,
+                organizerID:          session.organizerID,
+                state:                session.state,
+                startedAt:            newStartedAt,
+                completedAt:          newCompletedAt,
+                createdAt:            session.createdAt,
+                groupID:              session.groupID,
+                roomCode:             session.roomCode,
+                scheduledFor:         session.scheduledFor,
+                seriesID:             session.seriesID,
+                currentTurnUserID:    session.currentTurnUserID,
+                currentTurnStartedAt: session.currentTurnStartedAt
+            )
+            let existingSets = (try? await SessionRepository.sessionSets(sessionID: session.id)) ?? []
+            try? await HealthKitBridge.requestPermission()
+            try? await HealthKitBridge.exportWorkout(session: updatedSession, setLogs: existingSets)
+
             onSaved()
             dismiss()
         } catch let e as GymSyncError {
