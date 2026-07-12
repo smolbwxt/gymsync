@@ -33,20 +33,25 @@ private struct MainTabView: View {
 
     var body: some View {
         @Bindable var appState = appState
-        VStack(spacing: 0) {
-            ZStack {
-                switch appState.selectedTab {
-                case .home:    HomeView()
-                case .library: LibraryTabView()
-                case .social:  SocialTabView()
-                case .stats:   StatsTabView()
-                case .you:     YouTabView()
-                }
+        ZStack {
+            switch appState.selectedTab {
+            case .home:    HomeView()
+            case .library: LibraryTabView()
+            case .social:  SocialTabView()
+            case .stats:   StatsTabView()
+            case .you:     YouTabView()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            GSTabBar(selection: $appState.selectedTab)
         }
-        .ignoresSafeArea(.keyboard, edges: .bottom)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            // Dock stays pinned at the physical bottom edge — it must NOT ride
+            // up on the keyboard (matches system TabView chrome behavior).
+            // Ignoring keyboard here only (not on an ancestor of the tab
+            // content) keeps this opt-out scoped to the dock, so content
+            // above it (ChatView compose bar, HomeView join-code field)
+            // still receives the keyboard safe-area inset normally.
+            GSTabBar(selection: $appState.selectedTab)
+                .ignoresSafeArea(.keyboard, edges: .bottom)
+        }
     }
 }
