@@ -81,6 +81,9 @@ struct GroupSessionLiveView: View {
     @State private var logRPE: Double = 7.0
     @State private var logIsFailed = false
     @State private var logNote: String = ""
+    /// In-flight guard for "Log Set & Pass" — prevents a double-tap from double-inserting
+    /// the set and double-advancing the turn during the async commitInlineLog() round-trip.
+    @State private var isLoggingSet = false
 
     // PR full-screen celebration (p29) — user-dismissed, no auto-timeout.
     @State private var isPROverlay          = false
@@ -658,7 +661,8 @@ struct GroupSessionLiveView: View {
                 .foregroundStyle(theme.neutral500)
 
             HStack(spacing: 10) {
-                logStepperCell(
+                stepperCell(
+                    theme: theme,
                     label: "Reps",
                     value: $logReps,
                     borderColor: theme.divider,
@@ -667,8 +671,9 @@ struct GroupSessionLiveView: View {
                     onDecrement: { decrementInt(&logReps) },
                     onIncrement: { incrementInt(&logReps) }
                 )
-                logStepperCell(
-                    label: "Weight",
+                stepperCell(
+                    theme: theme,
+                    label: "Weight (\(currentExerciseForSheet?.defaultUnit ?? "lbs"))",
                     value: $logWeight,
                     borderColor: theme.accent,
                     valueColor: theme.accent700,
@@ -688,7 +693,7 @@ struct GroupSessionLiveView: View {
                         .font(GSFont.heading(12, relativeTo: .caption))
                         .foregroundStyle(theme.accent700)
                 }
-                InlineRPEBar(value: $logRPE, theme: theme)
+                RPESegmentBar(value: $logRPE, theme: theme)
             }
 
             HStack {
@@ -719,76 +724,9 @@ struct GroupSessionLiveView: View {
         .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
     }
 
-    // Compact stepper cell for the inline log card — same visual language as
-    // LogSetSheet's stepperCell (duplicated locally; that one is file-private to
-    // LogSetSheet.swift), sized to keep every tap target ≥44pt.
-    private func logStepperCell(
-        label: String,
-        value: Binding<String>,
-        borderColor: Color,
-        valueColor: Color,
-        keyboard: UIKeyboardType,
-        onDecrement: @escaping () -> Void,
-        onIncrement: @escaping () -> Void
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(label)
-                .font(GSFont.body(11, relativeTo: .caption))
-                .foregroundStyle(theme.neutral500)
-
-            HStack(spacing: 0) {
-                Button(action: onDecrement) {
-                    Text("−")
-                        .font(.system(size: 22, weight: .light))
-                        .foregroundStyle(theme.neutral700)
-                        .frame(width: 40, height: 48)
-                        .contentShape(Rectangle())
-                }
-                .overlay(alignment: .trailing) {
-                    Rectangle().fill(borderColor.opacity(0.6)).frame(width: 1)
-                }
-
-                TextField("", text: value)
-                    .keyboardType(keyboard)
-                    .multilineTextAlignment(.center)
-                    .font(GSFont.heading(22, relativeTo: .title2))
-                    .foregroundStyle(valueColor)
-                    .frame(maxWidth: .infinity, minHeight: 48)
-
-                Button(action: onIncrement) {
-                    Text("+")
-                        .font(.system(size: 22, weight: .light))
-                        .foregroundStyle(theme.accent)
-                        .frame(width: 40, height: 48)
-                        .contentShape(Rectangle())
-                }
-                .overlay(alignment: .leading) {
-                    Rectangle().fill(borderColor.opacity(0.6)).frame(width: 1)
-                }
-            }
-            .overlay(Rectangle().strokeBorder(borderColor, lineWidth: 1))
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private func decrementInt(_ s: inout String) {
-        let v = max(0, (Int(s) ?? 0) - 1)
-        s = "\(v)"
-    }
-    private func incrementInt(_ s: inout String) {
-        let v = (Int(s) ?? 0) + 1
-        s = "\(v)"
-    }
-    private func decrementDecimal(_ s: inout String) {
-        let v = max(0, (Double(s) ?? 0) - 2.5)
-        s = v.truncatingRemainder(dividingBy: 1) == 0
-               ? "\(Int(v))" : String(format: "%.1f", v)
-    }
-    private func incrementDecimal(_ s: inout String) {
-        let v = (Double(s) ?? 0) + 2.5
-        s = v.truncatingRemainder(dividingBy: 1) == 0
-               ? "\(Int(v))" : String(format: "%.1f", v)
-    }
+    // Reps/weight stepper cell and its arithmetic helpers now live in LogSetSheet.swift
+    // (shared, internal — see `stepperCell`, `decrementInt`/`incrementInt`/
+    // `decrementDecimal`/`incrementDecimal`) so this view no longer duplicates them.
 
     // MARK: - Rotation strip (my turn) — p06 "NOW / NEXT / 3RD / 4TH" tiles
 
@@ -1004,11 +942,20 @@ struct GroupSessionLiveView: View {
                 commitInlineLog()
             } label: {
                 HStack {
-                    Text("Log Set & Pass")
-                        .font(GSFont.bold(16, relativeTo: .body))
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 15, weight: .semibold))
+                    if isLoggingSet {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(theme.bg)
+                        Text("Logging…")
+                            .font(GSFont.bold(16, relativeTo: .body))
+                        Spacer()
+                    } else {
+                        Text("Log Set & Pass")
+                            .font(GSFont.bold(16, relativeTo: .body))
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 15, weight: .semibold))
+                    }
                 }
                 .foregroundStyle(theme.bg)
                 .padding(.horizontal, 16)
@@ -1018,7 +965,7 @@ struct GroupSessionLiveView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(Int(logReps) == nil && !logIsFailed)
+            .disabled(isLoggingSet || (Int(logReps) == nil && !logIsFailed))
             .background(theme.bg)
         } else if let hint = upcomingTurnHint {
             Text(hint)
@@ -1291,16 +1238,25 @@ struct GroupSessionLiveView: View {
     }
 
     /// Commit the inline "LOG THIS SET" card — delegates to `logSetAndAdvance` UNCHANGED
-    /// (same priorMax-before-insert ordering, same fire-and-forget PR record, same
-    /// advanceTurn call). Only the caller changed (was a sheet's onLog closure).
+    /// (same priorMax-before-insert ordering, same PR pipeline, same advanceTurn call).
+    /// Only the caller changed (was a sheet's onLog closure).
+    ///
+    /// `isLoggingSet` guards against re-entrancy: the CTA stays tappable for the whole
+    /// async round-trip otherwise, and a double-tap would double-insert the set and
+    /// double-advance the turn. Set true here (before any await), cleared via `defer`
+    /// once `logSetAndAdvance` returns — on every path, since that function already
+    /// catches its own errors internally and never rethrows.
     private func commitInlineLog() {
+        guard !isLoggingSet else { return }
         guard let ex = currentExerciseForSheet else { return }
+        isLoggingSet = true
         let reps = Int(logReps)
         let weight = Decimal(string: logWeight)
         let rpe = Decimal(logRPE)
         let note = logNote.isEmpty ? nil : logNote
         let failed = logIsFailed
         Task {
+            defer { isLoggingSet = false }
             await logSetAndAdvance(reps: reps, weight: weight, rpe: rpe,
                                     isFailed: failed, note: note, exerciseID: ex.id)
         }
@@ -1524,14 +1480,22 @@ struct GroupSessionLiveView: View {
                     await showPROverlay(exerciseName: name, weight: weight,
                                          reps: repsForOverlay, priorBest: priorBest)
                 }
-                // Best-effort PR record — a failed insert must never block turn advancement.
-                Task { _ = try? await PersonalRecordRepository.record(
-                    exerciseID: exerciseID,
-                    weight: weight,
-                    reps: reps ?? 0,
-                    previousBest: priorBest,
-                    sessionID: session.id
-                ) }
+                // Ordered PR pipeline: record insert → monthly count → badge update, as ONE
+                // detached task so `countSince` can never race the insert it depends on
+                // (previously two unordered tasks — the badge could undercount by 1). Still
+                // off the turn-critical path: advanceTurn below does not await this task.
+                Task { @MainActor in
+                    _ = try? await PersonalRecordRepository.record(
+                        exerciseID: exerciseID,
+                        weight: weight,
+                        reps: repsForOverlay,
+                        previousBest: priorBest,
+                        sessionID: session.id
+                    )
+                    let startOfMonth = Calendar.current.dateInterval(of: .month, for: Date())?.start ?? Date()
+                    prOverlayMonthlyCount = try? await PersonalRecordRepository.countSince(
+                        userID: userID, date: startOfMonth)
+                }
             }
 
             try await SessionRepository.advanceTurn(sessionID: session.id)
@@ -1555,7 +1519,9 @@ struct GroupSessionLiveView: View {
     }
 
     /// Show the full-screen, USER-DISMISSED PR celebration (p29) — no auto-timeout.
-    /// Fetches this-month PR count best-effort (never blocks the overlay from showing).
+    /// The overlay presents immediately with no monthly badge; the ordered PR pipeline in
+    /// `logSetAndAdvance` populates `prOverlayMonthlyCount` once its record insert →
+    /// countSince chain resolves, so the badge appears when the count is actually correct.
     @MainActor
     private func showPROverlay(exerciseName: String, weight: Decimal, reps: Int, priorBest: Decimal) async {
         prOverlayExerciseName = exerciseName
@@ -1565,13 +1531,6 @@ struct GroupSessionLiveView: View {
         prOverlayMonthlyCount = nil
         withAnimation(.easeOut(duration: 0.25)) { isPROverlay = true }
         Task { await SoundboardPlayer.shared.play(slug: "ding") }
-        if let userID = selfID {
-            let startOfMonth = Calendar.current.dateInterval(of: .month, for: Date())?.start ?? Date()
-            Task { @MainActor in
-                prOverlayMonthlyCount = try? await PersonalRecordRepository.countSince(
-                    userID: userID, date: startOfMonth)
-            }
-        }
     }
 
     @MainActor
@@ -1626,53 +1585,6 @@ struct GroupSessionLiveView: View {
         } catch {
             errorText = error.localizedDescription
         }
-    }
-}
-
-// MARK: - InlineRPEBar
-// Compact RPE segmented bar for the inline "LOG THIS SET" card — same visual language as
-// LogSetSheet's RPESegmentBar (duplicated locally; that one is file-private to
-// LogSetSheet.swift).
-
-private struct InlineRPEBar: View {
-    @Binding var value: Double
-    let theme: GSTheme
-
-    private let steps: [Double] = Array(stride(from: 1.0, through: 10.0, by: 1.0))
-
-    var body: some View {
-        HStack(spacing: 3) {
-            ForEach(steps, id: \.self) { step in
-                segment(for: step)
-                    .onTapGesture { value = step }
-            }
-        }
-        .frame(height: 30)
-    }
-
-    @ViewBuilder
-    private func segment(for step: Double) -> some View {
-        let isSelected = Int(step) == Int(value)
-        let isFilled   = step < value
-
-        ZStack {
-            if isSelected {
-                theme.accent
-            } else if isFilled {
-                theme.accent200
-            } else {
-                theme.surface
-                    .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
-            }
-
-            if isSelected {
-                Text("\(Int(step))")
-                    .font(GSFont.heading(13, relativeTo: .caption))
-                    .foregroundStyle(theme.bg)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .contentShape(Rectangle())
     }
 }
 
