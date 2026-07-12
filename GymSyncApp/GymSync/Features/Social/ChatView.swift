@@ -474,7 +474,7 @@ struct ChatView: View {
                 .padding(.horizontal, 11)
                 .padding(.vertical, 4)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 0)
+                    Rectangle()
                         .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
                         .foregroundStyle(theme.divider)
                 )

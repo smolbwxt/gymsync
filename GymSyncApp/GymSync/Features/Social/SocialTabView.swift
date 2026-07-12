@@ -3,6 +3,7 @@ import SwiftUI
 struct SocialTabView: View {
     @State private var groups: [GymGroup] = []
     @State private var unread: Set<UUID> = []
+    @State private var previews: [UUID: String] = [:]
     @State private var friendCount = 0
     @State private var pendingCount = 0
     @State private var showCreateGroup = false
@@ -151,6 +152,15 @@ struct SocialTabView: View {
                     .font(GSFont.bold(14, relativeTo: .headline))
                     .foregroundStyle(theme.text)
                     .lineLimit(1)
+
+                // Canvas: last-message preview line (Dossier §B — audit §2.6)
+                if let preview = previews[group.id] {
+                    Text(preview)
+                        .font(GSFont.body(13, relativeTo: .subheadline))
+                        .foregroundStyle(theme.neutral700)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
             }
 
             Spacer(minLength: 0)
@@ -186,10 +196,40 @@ struct SocialTabView: View {
                 }
             }
             unread = unreadIDs
+
+            var previewsByGroup: [UUID: String] = [:]
+            await withTaskGroup(of: (UUID, String?).self) { taskGroup in
+                for group in currentGroups {
+                    taskGroup.addTask {
+                        let latest = try? await ChatRepository.messages(groupID: group.id, limit: 1)
+                        guard let message = latest?.first else { return (group.id, nil) }
+                        return (group.id, Self.previewText(for: message))
+                    }
+                }
+                for await (id, text) in taskGroup {
+                    if let text {
+                        previewsByGroup[id] = text
+                    }
+                }
+            }
+            previews = previewsByGroup
+
             errorText = nil
         } catch {
             errorText = (error as? GymSyncError)?.errorDescription
                 ?? error.localizedDescription
+        }
+    }
+
+    /// Maps a chat message to its group-row preview line.
+    /// text/soundboard_echo/system kinds show the body as-is; image and audio
+    /// kinds show a fixed placeholder (no body to display).
+    private static func previewText(for message: ChatMessage) -> String? {
+        switch message.kind {
+        case .image: return "📷 Photo"
+        case .audio: return "🎤 Voice message"
+        case .text, .soundboardEcho, .systemPR, .systemSession, .systemLate, .systemLeaderboard:
+            return message.body
         }
     }
 }

@@ -42,7 +42,7 @@ struct LogSetSheet: View {
 
                     // Canvas: drag handle pill
                     HStack { Spacer()
-                        RoundedRectangle(cornerRadius: 2)
+                        Rectangle()
                             .fill(theme.neutral400)
                             .frame(width: 36, height: 4)
                         Spacer()
