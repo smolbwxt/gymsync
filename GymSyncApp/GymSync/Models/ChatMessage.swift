@@ -32,14 +32,17 @@ struct ChatMessage: Codable, Identifiable, Sendable, Equatable {
         case string(String)
         case number(Double)
         case bool(Bool)
+        case null
+        case unknown
 
         init(from decoder: Decoder) throws {
             let c = try decoder.singleValueContainer()
             if let s = try? c.decode(String.self)  { self = .string(s); return }
             if let d = try? c.decode(Double.self)  { self = .number(d); return }
             if let b = try? c.decode(Bool.self)    { self = .bool(b);   return }
-            throw DecodingError.dataCorruptedError(
-                in: c, debugDescription: "Unsupported payload JSON value type")
+            if c.decodeNil() { self = .null; return }
+            // Unknown type (objects, arrays, etc.) — tolerate without throwing
+            self = .unknown
         }
 
         func encode(to encoder: Encoder) throws {
@@ -48,6 +51,8 @@ struct ChatMessage: Codable, Identifiable, Sendable, Equatable {
             case .string(let s): try c.encode(s)
             case .number(let d): try c.encode(d)
             case .bool(let b):   try c.encode(b)
+            case .null:          try c.encodeNil()
+            case .unknown:       try c.encodeNil()
             }
         }
 

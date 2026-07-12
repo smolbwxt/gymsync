@@ -703,6 +703,8 @@ struct GroupSessionLiveView: View {
         await broadcastService.subscribe(
             sessionID: liveSession.id,
             onSoundboard: { userID, slug in
+                // Skip own soundboard echo — sender already played locally on tap.
+                guard userID != selfID else { return }
                 // Incoming remote sound: play locally + show transient overlay.
                 // Closures are @MainActor, so @State mutations are safe here.
                 Task { @MainActor in
