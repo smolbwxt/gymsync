@@ -33,7 +33,8 @@ enum SessionRepository {
                 createdAt: Date(),
                 groupID: nil,
                 roomCode: nil,
-                scheduledFor: nil
+                scheduledFor: nil,
+                seriesID: nil
             )
             let inserted: WorkoutSession = try await client
                 .from("sessions")
@@ -300,6 +301,20 @@ enum SessionRepository {
         } catch {
             throw ErrorMapping.map(error)
         }
+    }
+
+    /// Reschedule a session by updating its `scheduled_for` timestamp.
+    /// Organizer-only; enforced by DB policy.
+    static func reschedule(sessionID: UUID, to newDate: Date) async throws {
+        do {
+            let fmt = ISO8601DateFormatter()
+            fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            _ = try await client
+                .from("sessions")
+                .update(["scheduled_for": fmt.string(from: newDate)])
+                .eq("id", value: sessionID.uuidString)
+                .execute()
+        } catch { throw ErrorMapping.map(error) }
     }
 
     /// Start: evaluate lateness (organizer-only RPC) then transition state → in_progress.

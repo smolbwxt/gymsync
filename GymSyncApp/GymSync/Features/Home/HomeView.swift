@@ -82,8 +82,15 @@ struct HomeView: View {
     private func upcomingRow(_ session: WorkoutSession) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             // Routine name (or generic "Workout" fallback is set at row level via label)
-            Text(routineLabel(for: session))
-                .fontWeight(.semibold)
+            HStack(spacing: 4) {
+                Text(routineLabel(for: session))
+                    .fontWeight(.semibold)
+                if session.seriesID != nil {
+                    Image(systemName: "repeat")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
             if let groupID = session.groupID,
                let group = groups.first(where: { $0.id == groupID }) {
                 Text(group.name)
