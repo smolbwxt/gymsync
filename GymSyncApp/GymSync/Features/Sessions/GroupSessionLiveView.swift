@@ -637,9 +637,7 @@ struct GroupSessionLiveView: View {
         )
         do {
             try await SessionRepository.logSet(log)
-            if isPenalty && !isFailed {
-                penaltyLogged += reps ?? 0
-            }
+            // penaltyLogged updates via the realtime echo (single source; reload() re-seeds)
         } catch let error as GymSyncError {
             errorText = error.errorDescription
         } catch {
