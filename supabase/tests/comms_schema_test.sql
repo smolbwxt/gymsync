@@ -73,13 +73,13 @@ SELECT throws_ok(
 -- Seed a row as superuser first
 SET LOCAL role postgres;
 INSERT INTO soundboard_sounds (id, slug, display_name, storage_path, duration_ms)
-VALUES ('d0000000-0000-0000-0000-000000000001', 'airhorn', 'Air Horn', 'airhorn.wav', 1200);
+VALUES ('d0000000-0000-0000-0000-000000000001', 'zz-test-sound', 'ZZ Test Sound', 'zz-test-sound.wav', 1200);
 
 SET LOCAL role authenticated;
 SET LOCAL request.jwt.claim.sub = '00000000-0000-0000-0000-000000000ca1';
 
 SELECT results_eq(
-  $$SELECT count(*)::int FROM soundboard_sounds$$,
+  $$SELECT count(*)::int FROM soundboard_sounds WHERE slug='zz-test-sound'$$,
   ARRAY[1],
   'authenticated user can read soundboard_sounds'
 );
