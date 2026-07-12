@@ -379,6 +379,9 @@ enum SessionRepository {
             guard let existing = try await session(id: sessionID) else {
                 throw GymSyncError.notFound
             }
+            guard existing.state == "completed" else {
+                throw GymSyncError.validation("Only completed sessions can be edited.")
+            }
 
             // ±48 h anchor rule: always measure against the ORIGINAL times, not the current
             // stored values. The earliest audit row preserves the old_* values from the very

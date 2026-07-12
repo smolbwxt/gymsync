@@ -26,6 +26,33 @@ enum StorageService {
         }
     }
 
+    static func uploadChatAudio(groupID: UUID, messageID: UUID,
+                                data: Data) async throws -> String {
+        // Path is group-relative so the DB storage_path column matches the bucket RLS
+        // policy: split_part(storage_path, '/', 1)::uuid = group_id.
+        // Do NOT include the bucket name ("chat-audio") in the path.
+        let path = "\(groupID.uuidString.lowercased())/\(messageID.uuidString.lowercased()).m4a"
+        do {
+            try await SupabaseService.shared.client.storage
+                .from("chat-audio")
+                .upload(path, data: data,
+                        options: FileOptions(contentType: "audio/mp4"))
+            return path
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
+
+    static func signedChatAudioURL(path: String) async throws -> URL {
+        do {
+            return try await SupabaseService.shared.client.storage
+                .from("chat-audio")
+                .createSignedURL(path: path, expiresIn: 3600)
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
+
     static func uploadGroupAvatar(groupID: UUID, jpegData: Data) async throws -> URL {
         let path = "groups/\(groupID.uuidString.lowercased()).jpg"
         do {
