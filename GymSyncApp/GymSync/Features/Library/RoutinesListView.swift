@@ -6,6 +6,8 @@ struct RoutinesListView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.gsTheme) private var theme
     @State private var routines: [Routine] = []
+    @State private var routineExercises: [UUID: [RoutineExercise]] = [:]
+    @State private var allExercises: [Exercise] = []
     @State private var loading = false
     @State private var errorText: String?
     @State private var showingBuilder = false
@@ -68,33 +70,51 @@ struct RoutinesListView: View {
         .task { await load() }
     }
 
-    // Canvas: GSCard with title + body text + tags + meta row
+    // Canvas: GSCard with title + exercise-name preview + tags + meta row
     private func routineCard(_ routine: Routine) -> some View {
-        GSCard(bordered: true) {
+        let exercises = orderedExercises(for: routine)
+        let names = exercises.compactMap { re in
+            allExercises.first(where: { $0.id == re.exerciseID })?.name
+        }
+        let firstExercise = exercises.first.flatMap { re in
+            allExercises.first(where: { $0.id == re.exerciseID })
+        }
+
+        return GSCard(bordered: true) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(routine.name)
                     .font(GSFont.heading(17, relativeTo: .headline))
                     .foregroundStyle(theme.text)
 
-                if let desc = routine.description, !desc.isEmpty {
-                    Text(desc)
+                if !names.isEmpty {
+                    Text(names.joined(separator: ", "))
                         .font(GSFont.body(13, relativeTo: .subheadline))
                         .foregroundStyle(theme.neutral700)
                         .lineLimit(2)
                 }
 
-                // Canvas: tag row — accent for compound type, neutral for equipment
-                HStack(spacing: 6) {
-                    GSTag(text: "Routine", style: .accent)
+                // Canvas: tag row — accent for compound/isolation category (from the
+                // routine's first exercise), neutral for its equipment. Dropped
+                // entirely when the routine has no exercises loaded yet (no fake tag).
+                if let firstExercise {
+                    HStack(spacing: 6) {
+                        GSTag(text: firstExercise.category.capitalized, style: .accent)
+                        GSTag(text: firstExercise.equipment.capitalized, style: .neutral)
+                    }
                 }
 
-                // Canvas: card meta — exercise count
-                Text("\(0) exercises")
+                // Canvas: card meta — real exercise count + duration estimate
+                Text("\(exercises.count) exercises · ~\(StatMath.estimatedMinutes(exerciseCount: exercises.count)) min")
                     .font(GSFont.body(12, relativeTo: .caption))
                     .foregroundStyle(theme.neutral500)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)
         }
+    }
+
+    private func orderedExercises(for routine: Routine) -> [RoutineExercise] {
+        (routineExercises[routine.id] ?? []).sorted { $0.position < $1.position }
     }
 
     @MainActor
@@ -102,7 +122,32 @@ struct RoutinesListView: View {
         guard let ownerID = appState.currentProfile?.id else { return }
         loading = true
         defer { loading = false }
-        do { routines = try await RoutineRepository.fetchAll(ownerID: ownerID) }
+        do {
+            let fetchedRoutines = try await RoutineRepository.fetchAll(ownerID: ownerID)
+            routines = fetchedRoutines
+
+            // Card body/tags/meta need each routine's exercises — fetch them
+            // concurrently (best-effort per routine) alongside the shared
+            // exercise catalog so names/category/equipment can be resolved.
+            async let exercisesFetch: [Exercise] = (try? await ExerciseRepository.fetchAll()) ?? []
+            async let perRoutineFetch: [UUID: [RoutineExercise]] = withTaskGroup(
+                of: (UUID, [RoutineExercise]).self
+            ) { group in
+                for routine in fetchedRoutines {
+                    group.addTask {
+                        let result = try? await RoutineRepository.fetch(id: routine.id)
+                        return (routine.id, result?.1 ?? [])
+                    }
+                }
+                var map: [UUID: [RoutineExercise]] = [:]
+                for await (id, exercises) in group {
+                    map[id] = exercises
+                }
+                return map
+            }
+            allExercises = await exercisesFetch
+            routineExercises = await perRoutineFetch
+        }
         catch { errorText = ErrorMapping.map(error).errorDescription }
     }
 

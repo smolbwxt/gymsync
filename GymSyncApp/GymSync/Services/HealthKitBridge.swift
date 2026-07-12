@@ -14,6 +14,14 @@ enum HealthKitBridge {
         max(0, end.timeIntervalSince(start))
     }
 
+    /// Rough resistance-training calorie estimate for the recap's Apple
+    /// Health card — no per-user bodyweight is stored anywhere in the app,
+    /// so this uses a flat ~7.5 kcal/min (moderate-intensity weight training,
+    /// average adult) rather than a full MET × bodyweight × duration formula.
+    static func estimatedCalories(minutes: Double) -> Int {
+        Int((max(0, minutes) * 7.5).rounded())
+    }
+
     static func totalVolume(from logs: [SetLog]) -> Double {
         logs.reduce(0.0) { acc, log in
             guard !log.isFailed, !log.isPenalty,

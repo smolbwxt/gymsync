@@ -307,6 +307,21 @@ enum SessionRepository {
         }
     }
 
+    /// Bulk session lookup — backs Exercise History's "· solo" / "· {group}"
+    /// meta suffix (needs each logged set's session to know its `group_id`).
+    static func sessions(ids: [UUID]) async throws -> [WorkoutSession] {
+        guard !ids.isEmpty else { return [] }
+        do {
+            let rows: [WorkoutSession] = try await client
+                .from("sessions")
+                .select()
+                .in("id", values: ids.map(\.uuidString))
+                .execute()
+                .value
+            return rows
+        } catch { throw ErrorMapping.map(error) }
+    }
+
     /// Fetch a single session row by ID. Returns nil if not found (PGRST116).
     static func session(id: UUID) async throws -> WorkoutSession? {
         do {

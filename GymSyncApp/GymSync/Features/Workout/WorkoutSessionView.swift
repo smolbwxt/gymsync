@@ -27,6 +27,11 @@ struct WorkoutSessionView: View {
     @State private var completed = false
     @State private var isPRToast: Bool = false
     @State private var setStartedAt: Date = .now
+    /// End of the current rest window (started right after a set is logged,
+    /// using that exercise's `restSeconds`). Cleared once the lifter starts
+    /// logging the next set — same "no polling Timer" pattern as the elapsed
+    /// header clock: `Text(timerInterval:countsDown:)` renders itself live.
+    @State private var restEndAt: Date?
     /// PRs achieved this session — consumed by the recap view (Task 9).
     @State private var sessionPRs: [PersonalRecord] = []
     /// The completed session record (has `completedAt`) — captured by `endSession()`
@@ -58,6 +63,8 @@ struct WorkoutSessionView: View {
                         // Canvas: logged sets table
                         loggedSetsTable
 
+                        restTimerRow
+
                     } else if completed {
                         recapHeader
                         recapBody
@@ -86,6 +93,7 @@ struct WorkoutSessionView: View {
                     GSDivider()
                     Button {
                         setStartedAt = .now
+                        restEndAt = nil
                         showLogSheet = true
                     } label: {
                         Text("Log Set \(currentSetIndex)")
@@ -117,16 +125,25 @@ struct WorkoutSessionView: View {
                 .background(theme.bg)
             }
 
-            // Canvas: PR toast — accent pill
-            if isPRToast {
-                Text("NEW PR")
-                    .font(GSFont.bold(14, relativeTo: .headline))
-                    .foregroundStyle(theme.bg)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 10)
-                    .background(theme.accent)
-                    .transition(.scale.combined(with: .opacity))
-                    .padding(.bottom, 100)
+            // Canvas: PR toast — top-anchored two-line accent banner with the
+            // triggering PersonalRecord's weight/reps/exercise/delta (was a
+            // bottom-pinned single-line "NEW PR" pill with no detail).
+            if isPRToast, let pr = sessionPRs.last {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("🔥 NEW PR — \(decimalString(pr.weight)) × \(pr.reps)")
+                        .font(GSFont.bold(15, relativeTo: .headline))
+                        .foregroundStyle(theme.bg)
+                    Text("\(exerciseName(for: pr.exerciseID)) · beat your best by \(decimalString(pr.weight - pr.previousBest)) lbs")
+                        .font(GSFont.body(12, relativeTo: .caption))
+                        .foregroundStyle(theme.bg.opacity(0.9))
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(theme.accent)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .padding(.top, 8)
             }
         }
         .background(theme.bg)
@@ -148,18 +165,18 @@ struct WorkoutSessionView: View {
                             .monospacedDigit()
                     }
                 }
-                // Compact bordered-secondary treatment (not the full-size
-                // GSSecondaryButtonStyle, which is sized for block CTAs).
+                // Canvas: solid neutral "Finish" button (not the accent-outlined
+                // "End" bordered treatment previously used here).
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         Task { await endSession() }
                     } label: {
-                        Text("End")
+                        Text("Finish")
                             .font(GSFont.bold(13, relativeTo: .caption))
-                            .foregroundStyle(theme.accent)
+                            .foregroundStyle(theme.text)
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
-                            .overlay(Rectangle().strokeBorder(theme.accent, lineWidth: 1))
+                            .background(theme.neutral400)
                             .frame(minHeight: 44)
                             .contentShape(Rectangle())
                     }
@@ -296,6 +313,35 @@ struct WorkoutSessionView: View {
         }
     }
 
+    // Canvas: "Rest running / Next set in mm:ss" row — shown after a set is
+    // logged, until the lifter taps "Log Set" for the next one.
+    @ViewBuilder
+    private var restTimerRow: some View {
+        if let restEndAt, restEndAt > .now {
+            HStack(spacing: 10) {
+                Image(systemName: "timer")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(theme.accent700)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Rest running")
+                        .font(GSFont.bold(13, relativeTo: .subheadline))
+                        .foregroundStyle(theme.text)
+                    Text("Next set in")
+                        .font(GSFont.body(11, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral500)
+                }
+                Spacer()
+                Text(timerInterval: Date.now...restEndAt, countsDown: true)
+                    .font(GSFont.heading(24, relativeTo: .title2))
+                    .monospacedDigit()
+                    .foregroundStyle(theme.text)
+            }
+            .padding(16)
+            .background(theme.surface)
+            .padding(.horizontal, 16)
+        }
+    }
+
     // MARK: - Recap (Dossier §A.4) — replaces the old completionCard.
     // All data below is already in view state (§B.10): no new queries.
 
@@ -410,9 +456,7 @@ struct WorkoutSessionView: View {
     // Canvas: "By exercise" breakdown — grouped by first-logged order, 1px dividers, PR tags.
     private var exerciseBreakdown: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("By exercise")
-                .font(GSFont.bold(13, relativeTo: .subheadline))
-                .foregroundStyle(theme.neutral700)
+            GSSectionHeader("By exercise")
                 .padding(.bottom, 8)
 
             ForEach(Array(exerciseSummaries.enumerated()), id: \.element.id) { index, summary in
@@ -558,8 +602,10 @@ struct WorkoutSessionView: View {
     }
 
     private var appleHealthMetaText: String {
-        let minutes = Int((recapDurationInterval / 60).rounded())
-        return "\(minutes) min · \(recapNonPenaltySets.count) sets"
+        let minutesDouble = recapDurationInterval / 60
+        let minutes = Int(minutesDouble.rounded())
+        let calories = HealthKitBridge.estimatedCalories(minutes: minutesDouble)
+        return "\(minutes) min · \(calories) kcal"
     }
 
     private var recapShareSummary: String {
@@ -592,6 +638,10 @@ struct WorkoutSessionView: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "EEEE, MMMM d"
         return formatter.string(from: date)
+    }
+
+    private func exerciseName(for exerciseID: UUID) -> String {
+        allExercises.first { $0.id == exerciseID }?.name ?? "Exercise"
     }
 
     /// Trims a trailing ".0"/zero fraction so whole-number weights read as "190" not "190.0".
@@ -669,7 +719,10 @@ struct WorkoutSessionView: View {
                 currentSetIndex += 1
             }
             if currentExerciseIndex >= routineExercises.count {
+                restEndAt = nil
                 await endSession()
+            } else if let restSeconds = re.restSeconds, restSeconds > 0 {
+                restEndAt = Date().addingTimeInterval(TimeInterval(restSeconds))
             }
         } catch { errorText = ErrorMapping.map(error).errorDescription }
     }
