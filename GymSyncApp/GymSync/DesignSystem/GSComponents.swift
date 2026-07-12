@@ -182,6 +182,71 @@ public struct GSDivider: View {
     }
 }
 
+// MARK: - GSTabBar
+//
+// Custom bottom tab dock replacing system TabView chrome (DEFECT-9).
+// theme.bg background, 2pt top border (theme.divider), 5 equal-flex items.
+// Outline SF Symbols (no `.fill`), 21pt icon, 10pt GSFont.bold label.
+// Active = theme.accent, inactive = theme.text.opacity(0.45).
+// Matches canvas dock spec verbatim (Dossier §A.5).
+
+public struct GSTabBar: View {
+    @Environment(\.gsTheme) private var theme
+
+    @Binding private var selection: AppState.Tab
+
+    public init(selection: Binding<AppState.Tab>) {
+        self._selection = selection
+    }
+
+    private struct Item {
+        let tab: AppState.Tab
+        let icon: String
+        let label: String
+    }
+
+    private let items: [Item] = [
+        Item(tab: .home, icon: "house", label: "Home"),
+        Item(tab: .library, icon: "book", label: "Library"),
+        Item(tab: .social, icon: "person.2", label: "Social"),
+        Item(tab: .stats, icon: "chart.bar", label: "Stats"),
+        Item(tab: .you, icon: "person.crop.circle", label: "You"),
+    ]
+
+    public var body: some View {
+        HStack(spacing: 0) {
+            ForEach(items, id: \.tab) { item in
+                tabButton(item)
+            }
+        }
+        .padding(.top, 8)
+        .background(theme.bg)
+        .overlay(alignment: .top) {
+            theme.divider
+                .frame(height: 2)
+        }
+    }
+
+    @ViewBuilder
+    private func tabButton(_ item: Item) -> some View {
+        let isActive = selection == item.tab
+        Button {
+            selection = item.tab
+        } label: {
+            VStack(spacing: 3) {
+                Image(systemName: item.icon)
+                    .font(.system(size: 21, weight: .regular))
+                Text(item.label)
+                    .font(GSFont.bold(10, relativeTo: .caption2))
+            }
+            .foregroundColor(isActive ? theme.accent : theme.text.opacity(0.45))
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 // MARK: - GSSectionHeader
 //
 // Uppercase, tracked kicker label — neutral700 text.
