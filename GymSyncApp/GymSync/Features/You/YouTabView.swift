@@ -56,7 +56,9 @@ struct YouTabView: View {
             .navigationBarTitleDisplayMode(.inline)
             .task { await loadData() }
             .sheet(isPresented: $showHomeGymSheet) {
-                HomeGymPlaceholderSheet(gymName: homeGymName)
+                HomeGymSetupView(isOnboarding: false, onSaved: {
+                    Task { await refreshHomeGymName() }
+                })
             }
         }
     }
@@ -248,41 +250,14 @@ struct YouTabView: View {
         try? await HealthKitBridge.requestPermission()
         healthAuthStatus = HealthKitBridge.store.authorizationStatus(for: .workoutType())
     }
-}
 
-// MARK: - Home Gym placeholder sheet
-//
-// Task 8 builds the real HomeGymSetupView (map picker, geofence radius,
-// GymRepository.upsertPrimary wiring). This placeholder just surfaces the
-// current primary gym's name (or "Not set") so the row isn't a dead end.
-
-private struct HomeGymPlaceholderSheet: View {
-    let gymName: String?
-
-    @Environment(\.gsTheme) private var theme
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            VStack(spacing: 16) {
-                Text(gymName ?? "Not set")
-                    .font(GSFont.heading(20, relativeTo: .title3))
-                    .foregroundColor(theme.text)
-                Text("Home gym setup is coming in a future update.")
-                    .font(GSFont.body(14, relativeTo: .subheadline))
-                    .foregroundColor(theme.neutral700)
-                    .multilineTextAlignment(.center)
-            }
-            .padding(24)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(theme.bg)
-            .navigationTitle("Home Gym")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
-                }
-            }
-        }
+    /// Re-fetches the primary gym's name after the editor sheet saves, so
+    /// the Home Gym settings row reflects the new value once the sheet
+    /// dismisses (review note from Task 7: the row's name was only fetched
+    /// once in `.task`).
+    @MainActor
+    private func refreshHomeGymName() async {
+        let gym = try? await CheckInService.primaryGym()
+        homeGymName = gym?.name
     }
 }
