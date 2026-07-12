@@ -350,7 +350,7 @@ enum SessionRepository {
     ///
     /// Validates:
     ///   - `newCompletedAt > newStartedAt`
-    ///   - Both new values are within ±48 h of the session's current values
+    ///   - Both new values are within ±48 h of the ORIGINAL session times
     ///
     /// On success:
     ///   1. Inserts a `session_duration_edits` audit row (old + new values, edited_by me).
@@ -375,28 +375,59 @@ enum SessionRepository {
         }
 
         do {
-            // Fetch the current session to obtain old values and apply ±48 h guard.
+            // Fetch the current session to obtain current stored values (used for the audit row).
             guard let existing = try await session(id: sessionID) else {
                 throw GymSyncError.notFound
             }
 
+            // ±48 h anchor rule: always measure against the ORIGINAL times, not the current
+            // stored values. The earliest audit row preserves the old_* values from the very
+            // first edit (which recorded the session's as-completed times). If no audit row
+            // exists this is the first edit, so fall back to the current stored values.
+            struct EarliestAuditRow: Decodable {
+                let old_started_at: String?
+                let old_completed_at: String?
+            }
+            let earliestRows: [EarliestAuditRow] = try await client
+                .from("session_duration_edits")
+                .select("old_started_at,old_completed_at")
+                .eq("session_id", value: sessionID.uuidString)
+                .order("edited_at", ascending: true)
+                .limit(1)
+                .execute().value
+
+            let isoFmt = ISO8601DateFormatter()
+            isoFmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+            // Derive anchor dates from the earliest audit row when available.
+            let anchorStart: Date?
+            let anchorEnd: Date?
+            if let earliest = earliestRows.first {
+                anchorStart = earliest.old_started_at.flatMap { isoFmt.date(from: $0) }
+                    ?? existing.startedAt
+                anchorEnd = earliest.old_completed_at.flatMap { isoFmt.date(from: $0) }
+                    ?? existing.completedAt
+            } else {
+                anchorStart = existing.startedAt
+                anchorEnd   = existing.completedAt
+            }
+
             let fortyEightHours: TimeInterval = 48 * 3600
 
-            if let oldStart = existing.startedAt {
-                guard abs(newStartedAt.timeIntervalSince(oldStart)) <= fortyEightHours else {
+            if let anchor = anchorStart {
+                guard abs(newStartedAt.timeIntervalSince(anchor)) <= fortyEightHours else {
                     throw GymSyncError.validation("New start time must be within 48 hours of the original start.")
                 }
             }
-            if let oldEnd = existing.completedAt {
-                guard abs(newCompletedAt.timeIntervalSince(oldEnd)) <= fortyEightHours else {
+            if let anchor = anchorEnd {
+                guard abs(newCompletedAt.timeIntervalSince(anchor)) <= fortyEightHours else {
                     throw GymSyncError.validation("New end time must be within 48 hours of the original end.")
                 }
             }
 
-            let fmt = ISO8601DateFormatter()
-            fmt.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-
             // 1. Insert audit row (Codable struct for type safety).
+            // old_* values always reflect the CURRENT stored values so the chain is auditable;
+            // the anchor for ±48 h validation is handled separately above.
             struct DurationEditInsert: Encodable {
                 let id: String
                 let session_id: String
@@ -411,10 +442,10 @@ enum SessionRepository {
                 id:               UUID().uuidString,
                 session_id:       sessionID.uuidString,
                 edited_by:        userID.uuidString,
-                old_started_at:   existing.startedAt.map   { fmt.string(from: $0) },
-                old_completed_at: existing.completedAt.map { fmt.string(from: $0) },
-                new_started_at:   fmt.string(from: newStartedAt),
-                new_completed_at: fmt.string(from: newCompletedAt),
+                old_started_at:   existing.startedAt.map   { isoFmt.string(from: $0) },
+                old_completed_at: existing.completedAt.map { isoFmt.string(from: $0) },
+                new_started_at:   isoFmt.string(from: newStartedAt),
+                new_completed_at: isoFmt.string(from: newCompletedAt),
                 reason:           reason
             )
 
@@ -427,8 +458,8 @@ enum SessionRepository {
             _ = try await client
                 .from("sessions")
                 .update([
-                    "started_at":          fmt.string(from: newStartedAt),
-                    "completed_at":        fmt.string(from: newCompletedAt),
+                    "started_at":          isoFmt.string(from: newStartedAt),
+                    "completed_at":        isoFmt.string(from: newCompletedAt),
                     "duration_was_edited": "true",
                     "edited_by":           userID.uuidString
                 ])

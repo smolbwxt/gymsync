@@ -72,6 +72,105 @@ final class DurationEditTests: XCTestCase {
                        "completedAt must reflect the new end time")
     }
 
+    // MARK: - Anchor invariant: ±48 h window must reference ORIGINAL times, not current stored values
+
+    /// After one successful edit the window must still be anchored to the ORIGINAL completed_at.
+    /// Attempting a second edit at original + 49 h must be rejected even though it would be
+    /// within 48 h of the first-edited value (original + 30 min).
+    func testEditDurationAnchorDoesNotWalkOn49h() async throws {
+        guard await SupabaseService.shared.currentUserID() != nil else {
+            throw XCTSkip("not signed in — skipping live-DB test")
+        }
+
+        // ── Build a completed session ─────────────────────────────────────────
+        let session = try await SessionRepository.schedule(
+            groupID: nil, inviteeIDs: [], routineID: nil,
+            scheduledFor: Date(), generateRoomCode: false
+        )
+        try await SessionRepository.openLobby(sessionID: session.id)
+        try await SessionRepository.checkIn(sessionID: session.id, method: "traveling_override")
+        try await SessionRepository.start(sessionID: session.id)
+        let completed = try await SessionRepository.complete(sessionID: session.id)
+        let originalEnd = try XCTUnwrap(completed.completedAt)
+        let originalStart = completed.startedAt ?? Date().addingTimeInterval(-3600)
+
+        // ── First edit: push end out by +30 min ───────────────────────────────
+        let firstEditEnd = originalEnd.addingTimeInterval(30 * 60)
+        try await SessionRepository.editDuration(
+            sessionID: session.id,
+            newStartedAt: originalStart,
+            newCompletedAt: firstEditEnd,
+            reason: "anchor-test first edit"
+        )
+
+        // ── Second edit: attempt original + 49 h → must throw .validation ─────
+        // After the first edit the stored value is originalEnd + 30 min, so naively
+        // originalEnd + 49 h would be only 48 h 30 min from the stored value — it
+        // would pass a re-anchored check. It must be rejected because the anchor
+        // is locked to the original completed_at.
+        let tooFarEnd = originalEnd.addingTimeInterval(49 * 3600)
+        do {
+            try await SessionRepository.editDuration(
+                sessionID: session.id,
+                newStartedAt: originalStart,
+                newCompletedAt: tooFarEnd,
+                reason: "anchor-test 49h attempt"
+            )
+            XCTFail("editDuration should have thrown .validation for original + 49 h")
+        } catch GymSyncError.validation(let message) {
+            XCTAssertFalse(message.isEmpty, "validation message must be non-empty")
+        } catch {
+            // Any error is acceptable — the key requirement is that it throws.
+        }
+    }
+
+    /// After one successful edit, a second edit at original + 47 h must still succeed —
+    /// the anchor window is ±48 h around the original, not a stricter re-anchored range.
+    func testEditDurationAnchorAllows47hSecondEdit() async throws {
+        guard await SupabaseService.shared.currentUserID() != nil else {
+            throw XCTSkip("not signed in — skipping live-DB test")
+        }
+
+        // ── Build a completed session ─────────────────────────────────────────
+        let session = try await SessionRepository.schedule(
+            groupID: nil, inviteeIDs: [], routineID: nil,
+            scheduledFor: Date(), generateRoomCode: false
+        )
+        try await SessionRepository.openLobby(sessionID: session.id)
+        try await SessionRepository.checkIn(sessionID: session.id, method: "traveling_override")
+        try await SessionRepository.start(sessionID: session.id)
+        let completed = try await SessionRepository.complete(sessionID: session.id)
+        let originalEnd = try XCTUnwrap(completed.completedAt)
+        let originalStart = completed.startedAt ?? Date().addingTimeInterval(-3600)
+
+        // ── First edit: push end out by +30 min ───────────────────────────────
+        let firstEditEnd = originalEnd.addingTimeInterval(30 * 60)
+        try await SessionRepository.editDuration(
+            sessionID: session.id,
+            newStartedAt: originalStart,
+            newCompletedAt: firstEditEnd,
+            reason: "anchor-47h first edit"
+        )
+
+        // ── Second edit: original + 47 h → must succeed ───────────────────────
+        let acceptableEnd = originalEnd.addingTimeInterval(47 * 3600)
+        try await SessionRepository.editDuration(
+            sessionID: session.id,
+            newStartedAt: originalStart,
+            newCompletedAt: acceptableEnd,
+            reason: "anchor-47h second edit"
+        )
+
+        guard let refetched = try await SessionRepository.session(id: session.id) else {
+            XCTFail("session not found after second editDuration"); return
+        }
+        let finalEnd = try XCTUnwrap(refetched.completedAt)
+        XCTAssertEqual(finalEnd.timeIntervalSince1970,
+                       acceptableEnd.timeIntervalSince1970,
+                       accuracy: 1.0,
+                       "completedAt must reflect the second (47 h) edit")
+    }
+
     // MARK: - Validation: completed < started must throw .validation
 
     func testEditDurationRejectsEndBeforeStart() async throws {
