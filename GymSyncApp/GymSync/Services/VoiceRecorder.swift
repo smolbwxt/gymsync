@@ -31,31 +31,36 @@ final class VoiceRecorder: NSObject {
         // Swap session category BEFORE creating the recorder
         try AudioSessionManager.shared.enterRecordMode()
 
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-            .appendingPathExtension("m4a")
+        do {
+            let url = FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString)
+                .appendingPathExtension("m4a")
 
-        let settings: [String: Any] = [
-            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-            AVSampleRateKey: 44_100,
-            AVNumberOfChannelsKey: 1,
-            AVEncoderBitRateKey: 64_000,
-            AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue
-        ]
+            let settings: [String: Any] = [
+                AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+                AVSampleRateKey: 44_100,
+                AVNumberOfChannelsKey: 1,
+                AVEncoderBitRateKey: 64_000,
+                AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue
+            ]
 
-        let rec = try AVAudioRecorder(url: url, settings: settings)
-        rec.delegate = self
-        rec.record()
+            let rec = try AVAudioRecorder(url: url, settings: settings)
+            rec.delegate = self
+            rec.record()
 
-        recorder = rec
-        currentURL = url
+            recorder = rec
+            currentURL = url
 
-        // 60 s hard cap — use a Task instead of a repeating Timer.
-        // @MainActor so the call to autoStop() stays on the actor.
-        autoStopTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(nanoseconds: 60_000_000_000)
-            guard !Task.isCancelled else { return }
-            self?.autoStop()
+            // 60 s hard cap — use a Task instead of a repeating Timer.
+            // @MainActor so the call to autoStop() stays on the actor.
+            autoStopTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                guard !Task.isCancelled else { return }
+                self?.autoStop()
+            }
+        } catch {
+            restoreSession()
+            throw error
         }
     }
 
