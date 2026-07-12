@@ -23,6 +23,8 @@ struct WorkoutSessionView: View {
     @State private var completed = false
     @State private var isPRToast: Bool = false
     @State private var setStartedAt: Date = .now
+    /// PRs achieved this session — consumed by the recap view (Task 9).
+    @State private var sessionPRs: [PersonalRecord] = []
 
     private var currentRoutineExercise: RoutineExercise? {
         guard currentExerciseIndex < routineExercises.count else { return nil }
@@ -327,6 +329,29 @@ struct WorkoutSessionView: View {
                                                   weight: weight, userID: userID)
                 if weight > priorMax {
                     withAnimation { isPRToast = true }
+                    // Best-effort PR record — a failed insert must never block or delay
+                    // set logging (which already happened above). Fall back to a local
+                    // record so the recap (Task 9) still has the PR if the write failed.
+                    if let record = try? await PersonalRecordRepository.record(
+                        exerciseID: re.exerciseID,
+                        weight: weight,
+                        reps: reps ?? 0,
+                        previousBest: priorMax,
+                        sessionID: session.id
+                    ) {
+                        sessionPRs.append(record)
+                    } else {
+                        sessionPRs.append(PersonalRecord(
+                            id: UUID(),
+                            userID: userID,
+                            exerciseID: re.exerciseID,
+                            weight: weight,
+                            reps: reps ?? 0,
+                            previousBest: priorMax,
+                            sessionID: session.id,
+                            achievedAt: Date()
+                        ))
+                    }
                     try? await Task.sleep(nanoseconds: 2_000_000_000)
                     withAnimation { isPRToast = false }
                 }
