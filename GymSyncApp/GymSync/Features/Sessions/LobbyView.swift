@@ -818,6 +818,9 @@ struct LobbyView: View {
         errorText = nil
         do {
             try await SessionRepository.start(sessionID: session.id)
+            // Unsubscribe lobby realtime BEFORE navigating to live session
+            // so the lobby channel doesn't compete with the live-session channel.
+            await realtime.unsubscribe()
             navigateToInProgress = true
         } catch let error as GymSyncError {
             errorText = error.errorDescription
