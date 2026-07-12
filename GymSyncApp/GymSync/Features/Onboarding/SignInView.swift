@@ -6,32 +6,64 @@ struct SignInView: View {
     @State private var currentNonce: String = ""
     @State private var errorText: String?
     @Environment(AuthService.self) private var auth
+    @Environment(\.gsTheme) private var theme
 
     var body: some View {
-        VStack(spacing: 24) {
-            Spacer()
-            Text("Gym Sync")
-                .font(.largeTitle.bold())
-            Text("Lift together, anywhere.")
-                .font(.title3)
-                .foregroundStyle(.secondary)
-            Spacer()
-            SignInWithAppleButton(.signIn) { req in
-                let nonce = Self.randomNonce()
-                currentNonce = nonce
-                req.requestedScopes = [.fullName, .email]
-                req.nonce = Self.sha256(nonce)
-            } onCompletion: { result in
-                Task { await handle(result) }
-            }
-            .signInWithAppleButtonStyle(.black)
-            .frame(height: 50)
-            .padding(.horizontal, 32)
+        ZStack {
+            theme.accent.ignoresSafeArea()
 
-            if let errorText {
-                Text(errorText).foregroundStyle(.red).font(.footnote)
+            VStack(spacing: 0) {
+                // Hero content — centred vertically
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("GYM SYNC")
+                        .font(GSFont.bold(13, relativeTo: .caption))
+                        .tracking(2.4)
+                        .foregroundColor(theme.bg.opacity(0.85))
+
+                    Text("Lift together,\nanywhere.")
+                        .font(GSFont.bold(52, relativeTo: .largeTitle))
+                        .foregroundColor(theme.bg)
+                        .lineSpacing(2)
+                        .padding(.top, 14)
+
+                    Text("Take turns on the bar with your crew over live voice — reps, weight, and heart rate, shared in real time.")
+                        .font(GSFont.body(15, relativeTo: .body))
+                        .foregroundColor(theme.bg.opacity(0.9))
+                        .padding(.top, 16)
+                        .frame(maxWidth: 280, alignment: .leading)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 28)
+                .padding(.top, 52)
+                .frame(maxHeight: .infinity)
+
+                // Bottom CTA stack
+                VStack(spacing: 12) {
+                    SignInWithAppleButton(.signIn) { req in
+                        let nonce = Self.randomNonce()
+                        currentNonce = nonce
+                        req.requestedScopes = [.fullName, .email]
+                        req.nonce = Self.sha256(nonce)
+                    } onCompletion: { result in
+                        Task { await handle(result) }
+                    }
+                    .signInWithAppleButtonStyle(.white)
+                    .frame(height: 50)
+
+                    if let errorText {
+                        Text(errorText)
+                            .font(GSFont.body(11, relativeTo: .caption))
+                            .foregroundColor(theme.bg.opacity(0.85))
+                    }
+
+                    Text("By continuing you agree to the Terms & Privacy Policy.")
+                        .font(GSFont.body(11, relativeTo: .caption))
+                        .foregroundColor(theme.bg.opacity(0.75))
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 40)
             }
-            Spacer(minLength: 40)
         }
     }
 

@@ -5,6 +5,13 @@ struct OnboardingCoordinator: View {
     @Environment(AppState.self) private var appState
     @State private var profile: Profile?
     @State private var loading = true
+    @State private var step: OnboardingStep = .username
+
+    private enum OnboardingStep {
+        case username
+        case homeGym
+        case youreIn
+    }
 
     var body: some View {
         Group {
@@ -15,12 +22,27 @@ struct OnboardingCoordinator: View {
                     get: { profile },
                     set: { newProfile in
                         profile = newProfile
-                        if let p = newProfile { appState.currentProfile = p }
+                        if newProfile != nil { step = .homeGym }
                     }
                 ))
             } else {
-                // Additional onboarding steps (home gym, notifications) added in later tasks.
-                Color.clear.onAppear { appState.currentProfile = profile }
+                switch step {
+                case .username:
+                    // Profile already exists — skip straight to home gym
+                    Color.clear.onAppear { step = .homeGym }
+
+                case .homeGym:
+                    HomeGymSetupView(
+                        onSkip: { step = .youreIn },
+                        onComplete: { step = .youreIn }
+                    )
+
+                case .youreIn:
+                    YoureInView(
+                        username: profile?.username ?? "",
+                        onEnter: { appState.currentProfile = profile }
+                    )
+                }
             }
         }
         .task { await loadProfile() }
