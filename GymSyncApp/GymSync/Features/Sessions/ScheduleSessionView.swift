@@ -33,6 +33,14 @@ struct ScheduleSessionView: View {
     // MARK: - When
     @State private var scheduledFor: Date = Self.nextFullHour()
 
+    // MARK: - Repeat weekly (Group-only)
+    @State private var repeatWeekly: Bool = false
+    @State private var selectedWeekdays: Set<Int> = []
+    @State private var dayTimes: [Int: DayTime] = [:]
+    @State private var dayRoutines: [Int: UUID?] = [:]
+    @State private var untilDate: Date = Date().addingTimeInterval(8 * 7 * 86400)
+    @State private var occurrenceCount: Int = 0
+
     // MARK: - State
     @State private var isScheduling = false
     @State private var errorText: String?
@@ -47,12 +55,23 @@ struct ScheduleSessionView: View {
         routines.first { $0.id == selectedRoutineID }
     }
 
+    private var defaultHour: Int {
+        Calendar.current.component(.hour, from: scheduledFor)
+    }
+
+    private var defaultMinute: Int {
+        Calendar.current.component(.minute, from: scheduledFor)
+    }
+
     var body: some View {
         NavigationStack {
             Form {
                 whoSection
                 whatSection
                 whenSection
+                if whoMode == .group {
+                    repeatsSection
+                }
                 if let errorText {
                     Section {
                         Text(errorText).foregroundStyle(.red).font(.footnote)
@@ -73,6 +92,10 @@ struct ScheduleSessionView: View {
             .onChange(of: selectedGroupID) {
                 Task { await loadGroupMembers() }
             }
+            .onChange(of: scheduledFor) { updateOccurrenceCount() }
+            .onChange(of: selectedWeekdays) { updateOccurrenceCount() }
+            .onChange(of: dayTimes) { updateOccurrenceCount() }
+            .onChange(of: untilDate) { updateOccurrenceCount() }
         }
     }
 
@@ -166,11 +189,74 @@ struct ScheduleSessionView: View {
         }
     }
 
+    // MARK: - Repeats Section
+
+    @ViewBuilder
+    private var repeatsSection: some View {
+        Section("Repeats") {
+            Toggle("Repeat weekly", isOn: $repeatWeekly)
+                .onChange(of: repeatWeekly) {
+                    if repeatWeekly && selectedWeekdays.isEmpty {
+                        // Pre-select the weekday of the chosen date
+                        let wd = Calendar.current.component(.weekday, from: scheduledFor)
+                        selectedWeekdays.insert(wd)
+                        dayTimes[wd] = DayTime(hour: defaultHour, minute: defaultMinute)
+                        dayRoutines[wd] = selectedRoutineID
+                    }
+                    updateOccurrenceCount()
+                }
+
+            if repeatWeekly {
+                weekdayRuleEditorContent
+                untilDateContent
+                occurrenceFooter
+            }
+        }
+    }
+
+    // Decomposed to help the type-checker
+    @ViewBuilder
+    private var weekdayRuleEditorContent: some View {
+        WeekdayRuleEditor(
+            selectedWeekdays: $selectedWeekdays,
+            dayTimes: $dayTimes,
+            dayRoutines: $dayRoutines,
+            defaultHour: defaultHour,
+            defaultMinute: defaultMinute,
+            defaultRoutineID: selectedRoutineID,
+            routines: routines
+        )
+    }
+
+    @ViewBuilder
+    private var untilDateContent: some View {
+        let minDate = Date().addingTimeInterval(86400)
+        let maxDate = Date().addingTimeInterval(26 * 7 * 86400)
+        DatePicker(
+            "Until",
+            selection: $untilDate,
+            in: minDate...maxDate,
+            displayedComponents: .date
+        )
+    }
+
+    @ViewBuilder
+    private var occurrenceFooter: some View {
+        if occurrenceCount > 0 {
+            Text("\(occurrenceCount) sessions will be scheduled")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
+
     // MARK: - Validation
 
     private var isScheduleButtonDisabled: Bool {
         switch whoMode {
-        case .group:    return selectedGroupID == nil
+        case .group:
+            if selectedGroupID == nil { return true }
+            if repeatWeekly && selectedWeekdays.isEmpty { return true }
+            return false
         case .friends:  return false
         case .code:     return false
         }
@@ -241,6 +327,34 @@ struct ScheduleSessionView: View {
             generateRoomCode = true
         }
 
+        // Repeating series path (Group only)
+        if whoMode == .group, repeatWeekly, let gid = groupID {
+            do {
+                let days = buildSeriesDayInputs()
+                guard !days.isEmpty else {
+                    errorText = "Select at least one day."
+                    return
+                }
+                let series = try await SeriesRepository.create(
+                    groupID: gid,
+                    days: days,
+                    untilDate: untilDate,
+                    timezone: .current
+                )
+                let occurrences = try await SeriesRepository.occurrences(seriesID: series.id)
+                if let first = occurrences.first {
+                    onScheduled(first)
+                }
+                dismiss()
+            } catch let error as GymSyncError {
+                errorText = error.errorDescription
+            } catch {
+                errorText = error.localizedDescription
+            }
+            return
+        }
+
+        // Single-session path (unchanged)
         do {
             let session = try await SessionRepository.schedule(
                 groupID: groupID,
@@ -256,6 +370,36 @@ struct ScheduleSessionView: View {
         } catch {
             errorText = error.localizedDescription
         }
+    }
+
+    // MARK: - Repeat helpers
+
+    private func buildSeriesDayInputs() -> [SeriesDayInput] {
+        selectedWeekdays.sorted().map { wd in
+            let dt = dayTimes[wd] ?? DayTime(hour: defaultHour, minute: defaultMinute)
+            let routineID: UUID? = dayRoutines[wd] ?? nil
+            return SeriesDayInput(
+                weekday: wd,
+                hour: dt.hour,
+                minute: dt.minute,
+                routineID: routineID
+            )
+        }
+    }
+
+    private func updateOccurrenceCount() {
+        guard repeatWeekly, !selectedWeekdays.isEmpty else {
+            occurrenceCount = 0
+            return
+        }
+        let days = buildSeriesDayInputs()
+        let pairs = SeriesRepository.occurrenceDates(
+            days: days,
+            from: Date(),
+            until: untilDate,
+            timezone: .current
+        )
+        occurrenceCount = pairs.count
     }
 
     // MARK: - Helpers
