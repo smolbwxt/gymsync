@@ -555,17 +555,42 @@ enum SessionRepository {
 
     // MARK: - Phase 3b/Canvas Task 3: Burpee Ledger
 
-    /// Every `session_participants` row across a group's sessions, joined
-    /// server-side with the session fields the Burpee Ledger needs — a
-    /// single bulk query, no per-session ID fan-out into the URL (mirrors
-    /// `upcoming()`'s join, embedded from the opposite direction). See
-    /// `BurpeeLedgerRow`'s doc comment for the RLS reasoning.
-    static func burpeeLedger(groupID: UUID) async throws -> [BurpeeLedgerRow] {
+    /// Group-wide crew debts (Fix round 1 — task-3-report.md). Calls the
+    /// `group_burpee_ledger` SECURITY DEFINER RPC instead of querying
+    /// `session_participants` directly: the direct query was gated by
+    /// "readable by other participants" RLS, so a member who joined the
+    /// group after some of its sessions had already run was never invited to
+    /// those sessions and couldn't see their `session_participants` rows —
+    /// silently undercounting EVERY crew member's total, not just their own.
+    /// The RPC instead gates on current group membership and sums across
+    /// every session the group has run, regardless of who was invited to
+    /// which one (see `burpee_ledger_rpc_test.sql`).
+    static func burpeeLedger(groupID: UUID) async throws -> [BurpeeLedgerMath.CrewDebt] {
+        do {
+            let aggregates: [GroupBurpeeLedgerAggregate] = try await client
+                .rpc("group_burpee_ledger", params: ["p_group": groupID.uuidString])
+                .execute().value
+            return BurpeeLedgerMath.crewDebts(aggregates: aggregates)
+        } catch { throw ErrorMapping.map(error) }
+    }
+
+    /// The current user's OWN `session_participants` rows for the group,
+    /// joined with the session fields the "YOU OWE" banner's detail line
+    /// needs (late minutes, per-minute rate, date, live-session id). Kept as
+    /// a direct query (not the RPC above): a user's own rows are always RLS
+    /// -visible via "user_id = auth.uid()" regardless of current group
+    /// membership timing, so there's no undercount risk here to fix — see
+    /// `BurpeeLedgerMath.youOweSummary`.
+    static func myBurpeeLedgerRows(groupID: UUID) async throws -> [BurpeeLedgerRow] {
+        guard let userID = await SupabaseService.shared.currentUserID() else {
+            throw GymSyncError.unauthorized
+        }
         do {
             let rows: [BurpeeLedgerRow] = try await client
                 .from("session_participants")
                 .select("user_id, check_in_state, late_minutes, burpees_owed, sessions!inner(id, state, scheduled_for, started_at, late_penalty)")
                 .eq("sessions.group_id", value: groupID.uuidString)
+                .eq("user_id", value: userID.uuidString)
                 .execute().value
             return rows
         } catch { throw ErrorMapping.map(error) }

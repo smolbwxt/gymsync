@@ -35,7 +35,11 @@ struct BurpeeLedgerView: View {
     @Environment(\.gsTheme) private var theme
     @Environment(AppState.self) private var appState
 
-    @State private var rows: [BurpeeLedgerRow] = []
+    // Fix round 1 (task-3-report.md): the group-wide crew debt list and the
+    // self-only "YOU OWE" detail now come from two separate queries — see
+    // `SessionRepository.burpeeLedger`/`myBurpeeLedgerRows` doc comments.
+    @State private var crewDebts: [BurpeeLedgerMath.CrewDebt] = []
+    @State private var myRows: [BurpeeLedgerRow] = []
     @State private var profiles: [UUID: Profile] = [:]
     @State private var liveSessionForCTA: WorkoutSession?
     @State private var isLoading = true
@@ -43,20 +47,23 @@ struct BurpeeLedgerView: View {
 
     private var selfID: UUID? { appState.currentProfile?.id }
 
-    private var crewDebts: [BurpeeLedgerMath.CrewDebt] {
-        BurpeeLedgerMath.crewDebts(rows: rows)
-    }
-
     private var youOwe: BurpeeLedgerMath.YouOweSummary? {
         guard let selfID else { return nil }
-        return BurpeeLedgerMath.youOweSummary(rows: rows, userID: selfID)
+        return BurpeeLedgerMath.youOweSummary(rows: myRows, userID: selfID)
     }
 
     /// The rate that actually applied most recently across the group's
     /// sessions — there's no single "the group's penalty config" read
     /// available client-side beyond what each session snapshot recorded.
+    /// `myRows` is self-only, but that's not a narrower session set than the
+    /// old group-wide fetch actually covered for this caller: RLS already
+    /// bounded that fetch to sessions the caller participates in (own row,
+    /// or "readable by other participants" — which itself requires the
+    /// caller to already be a participant), so per-session coverage is
+    /// identical; only the now-redundant OTHER participants' duplicate rows
+    /// for those same sessions are gone.
     private var latePenaltyPerMinute: Int? {
-        rows
+        myRows
             .compactMap { row -> (Date, Int)? in
                 guard let rate = row.session.latePenalty?.perMinute else { return nil }
                 return (row.session.effectiveDate ?? .distantPast, rate)
@@ -195,8 +202,16 @@ struct BurpeeLedgerView: View {
     private func crewDebtRow(_ debt: BurpeeLedgerMath.CrewDebt) -> some View {
         let profile = profiles[debt.userID]
         let isMe = debt.userID == selfID
-        let displayName = isMe ? "You" : (profile?.displayName ?? profile?.username ?? "Unknown")
-        let initials = String((profile?.username ?? "?").prefix(2)).uppercased()
+        // Fix (minor, task-3-report.md): initials used to derive from
+        // `username` alone while the label showed `displayName ?? username`
+        // — a real user with a displayName would show initials that didn't
+        // match their rendered name. Both now derive from the SAME identity
+        // string. `identityName` (not the "You" substitution) is what feeds
+        // initials even for the self row — the proof (p25) shows the self
+        // row's avatar as "AJ", the user's real initials, not "Y".
+        let identityName = profile?.displayName ?? profile?.username ?? "Unknown"
+        let displayName = isMe ? "You" : identityName
+        let initials = Self.initials(from: identityName)
 
         return HStack(spacing: 10) {
             ZStack {
@@ -271,15 +286,18 @@ struct BurpeeLedgerView: View {
         isLoading = true
         defer { isLoading = false }
         do {
-            let fetchedRows = try await SessionRepository.burpeeLedger(groupID: group.id)
-            rows = fetchedRows
+            async let crewTask = SessionRepository.burpeeLedger(groupID: group.id)
+            async let myRowsTask = SessionRepository.myBurpeeLedgerRows(groupID: group.id)
+            let (fetchedCrewDebts, fetchedMyRows) = try await (crewTask, myRowsTask)
+            crewDebts = fetchedCrewDebts
+            myRows = fetchedMyRows
 
-            let ids = Array(Set(fetchedRows.map(\.userID)))
+            let ids = fetchedCrewDebts.map(\.userID)
             let fetchedProfiles = try await ProfileRepository.fetchMany(ids: ids)
             profiles = Dictionary(uniqueKeysWithValues: fetchedProfiles.map { ($0.id, $0) })
 
             if let selfID {
-                let summary = BurpeeLedgerMath.youOweSummary(rows: fetchedRows, userID: selfID)
+                let summary = BurpeeLedgerMath.youOweSummary(rows: fetchedMyRows, userID: selfID)
                 if summary.total > 0, summary.mostRecentSessionIsLive,
                    let sessionID = summary.mostRecentSessionID {
                     liveSessionForCTA = try await SessionRepository.session(id: sessionID)
@@ -295,5 +313,20 @@ struct BurpeeLedgerView: View {
         } catch {
             errorText = error.localizedDescription
         }
+    }
+
+    // MARK: - Initials
+
+    /// Same split-on-spaces algorithm as `GSInitialsAvatar` (SocialTabView.swift)
+    /// — replicated rather than reused because that view computes initials
+    /// from its own `name` property (not trivially accessible as a static
+    /// helper) and this row's avatar deliberately diverges from
+    /// `GSInitialsAvatar` in color (`theme.neutral700`/`theme.bg` here vs.
+    /// its `theme.accent`/`theme.bg` — matches the canvas markup's
+    /// `--color-neutral-700` literally, a documented judgment call from the
+    /// original task-3 build, not something this fix touches).
+    private static func initials(from name: String) -> String {
+        let parts = name.split(separator: " ").prefix(2)
+        return parts.map { String($0.prefix(1)).uppercased() }.joined()
     }
 }

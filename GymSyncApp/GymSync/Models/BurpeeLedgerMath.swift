@@ -2,7 +2,10 @@ import Foundation
 
 /// Pure, testable aggregation for the Burpee Ledger (Canvas Completion Task 3,
 /// proof p25). No repository/network dependency — callers pass already-fetched
-/// `BurpeeLedgerRow`s in (mirrors `StatMath`'s pattern).
+/// rows in (mirrors `StatMath`'s pattern): `crewDebts` takes the
+/// `group_burpee_ledger` RPC's pre-aggregated `GroupBurpeeLedgerAggregate`
+/// rows (Fix round 1 — server-side, membership-gated); `youOweSummary` still
+/// takes raw self-only `BurpeeLedgerRow`s (own rows are always RLS-visible).
 ///
 /// SCHEMA GAP (recorded for product — see task-3-report.md): the proof shows a
 /// "paid off 20 · Jul 9" crew-debt state. No paid/cleared concept exists
@@ -21,6 +24,11 @@ enum BurpeeLedgerMath {
         let totalOwed: Int
         let lateCount: Int
         let noShowCount: Int
+        /// Most recent session (scheduled_for, falling back to started_at)
+        /// that actually contributed debt (burpees_owed > 0) — server-computed
+        /// by `group_burpee_ledger` (Fix round 1). Not currently rendered by
+        /// `crewDebtRow`, kept for parity with the RPC's contract.
+        let lastLateAt: Date?
 
         var id: UUID { userID }
 
@@ -48,30 +56,26 @@ enum BurpeeLedgerMath {
         let mostRecentSessionIsLive: Bool
     }
 
-    /// Per-user crew debts across every row supplied (the caller's query is
-    /// already group-scoped), sorted by total owed descending — ties broken
-    /// by user ID for a deterministic, stable order (the view layers profile
+    /// Per-user crew debts, sorted by total owed descending — ties broken by
+    /// user ID for a deterministic, stable order (the view layers profile
     /// names on top; it doesn't need this function to know about them).
-    static func crewDebts(rows: [BurpeeLedgerRow]) -> [CrewDebt] {
-        var totals: [UUID: Int] = [:]
-        var lateCounts: [UUID: Int] = [:]
-        var noShowCounts: [UUID: Int] = [:]
-
-        for row in rows {
-            totals[row.userID, default: 0] += row.burpeesOwed
-            switch row.checkInState {
-            case "late":    lateCounts[row.userID, default: 0] += 1
-            case "no_show": noShowCounts[row.userID, default: 0] += 1
-            default: break
-            }
-        }
-
-        return totals.keys.map { userID in
+    ///
+    /// Fix round 1 (task-3-report.md): summation/counting used to happen
+    /// HERE, client-side, over raw `session_participants` rows fetched under
+    /// RLS — which undercounted every crew member's total for any caller who
+    /// joined the group after some of its sessions had already run (RLS hid
+    /// rows for sessions they weren't invited to). That aggregation now
+    /// happens server-side in `group_burpee_ledger` (membership-gated, not
+    /// session-participant-gated); this function's remaining job is just the
+    /// deterministic sort the view needs.
+    static func crewDebts(aggregates: [GroupBurpeeLedgerAggregate]) -> [CrewDebt] {
+        aggregates.map { aggregate in
             CrewDebt(
-                userID: userID,
-                totalOwed: totals[userID] ?? 0,
-                lateCount: lateCounts[userID] ?? 0,
-                noShowCount: noShowCounts[userID] ?? 0
+                userID: aggregate.userID,
+                totalOwed: aggregate.totalOwed,
+                lateCount: aggregate.lateCount,
+                noShowCount: aggregate.noShowCount,
+                lastLateAt: aggregate.lastLateAt
             )
         }.sorted { lhs, rhs in
             if lhs.totalOwed != rhs.totalOwed { return lhs.totalOwed > rhs.totalOwed }

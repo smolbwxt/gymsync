@@ -43,30 +43,45 @@ final class BurpeeLedgerMathTests: XCTestCase {
         )
     }
 
+    // Fix round 1 (task-3-report.md): crewDebts now takes the
+    // group_burpee_ledger RPC's pre-aggregated rows — sums/counts are
+    // computed server-side, so fixtures build the aggregate directly
+    // instead of raw per-session participant rows.
+    private func makeAggregate(
+        userID: UUID,
+        totalOwed: Int = 0,
+        lateCount: Int = 0,
+        noShowCount: Int = 0,
+        lastLateAt: Date? = nil
+    ) -> GroupBurpeeLedgerAggregate {
+        GroupBurpeeLedgerAggregate(
+            userID: userID,
+            totalOwed: totalOwed,
+            lateCount: lateCount,
+            noShowCount: noShowCount,
+            lastLateAt: lastLateAt
+        )
+    }
+
     // MARK: - crewDebts
 
-    func testCrewDebts_sumsOwedAcrossMultipleSessions() {
+    func testCrewDebts_mapsAggregateFieldsThrough() {
+        // Summation/counting now happens server-side (group_burpee_ledger);
+        // this just verifies the RPC row's fields flow into CrewDebt unchanged.
         let sarah = UUID()
-        let rows = [
-            makeRow(userID: sarah, checkInState: "late", burpeesOwed: 10),
-            makeRow(userID: sarah, checkInState: "late", burpeesOwed: 25)
-        ]
-        let debts = BurpeeLedgerMath.crewDebts(rows: rows)
+        let lastLate = date(2026, 7, 10)
+        let aggregates = [makeAggregate(userID: sarah, totalOwed: 35, lateCount: 2, lastLateAt: lastLate)]
+        let debts = BurpeeLedgerMath.crewDebts(aggregates: aggregates)
         XCTAssertEqual(debts.count, 1)
         XCTAssertEqual(debts[0].totalOwed, 35)
         XCTAssertEqual(debts[0].lateCount, 2)
+        XCTAssertEqual(debts[0].lastLateAt, lastLate)
     }
 
     func testCrewDebts_countsNoShowsAndLateSeparately() {
         let sarah = UUID()
-        let rows = [
-            makeRow(userID: sarah, checkInState: "no_show", burpeesOwed: 0),
-            makeRow(userID: sarah, checkInState: "no_show", burpeesOwed: 0),
-            makeRow(userID: sarah, checkInState: "no_show", burpeesOwed: 0),
-            makeRow(userID: sarah, checkInState: "late", burpeesOwed: 5),
-            makeRow(userID: sarah, checkInState: "late", burpeesOwed: 5)
-        ]
-        let debts = BurpeeLedgerMath.crewDebts(rows: rows)
+        let aggregates = [makeAggregate(userID: sarah, totalOwed: 10, lateCount: 2, noShowCount: 3)]
+        let debts = BurpeeLedgerMath.crewDebts(aggregates: aggregates)
         XCTAssertEqual(debts[0].noShowCount, 3)
         XCTAssertEqual(debts[0].lateCount, 2)
         XCTAssertEqual(debts[0].summaryText, "3 no-shows · 2 late")
@@ -74,11 +89,11 @@ final class BurpeeLedgerMathTests: XCTestCase {
 
     func testCrewDebts_summaryText_singularNoShowAndAllClear() {
         let a = UUID(); let b = UUID()
-        let rows = [
-            makeRow(userID: a, checkInState: "no_show", burpeesOwed: 0),
-            makeRow(userID: b, checkInState: "online", burpeesOwed: 0)
+        let aggregates = [
+            makeAggregate(userID: a, noShowCount: 1),
+            makeAggregate(userID: b)
         ]
-        let debts = BurpeeLedgerMath.crewDebts(rows: rows)
+        let debts = BurpeeLedgerMath.crewDebts(aggregates: aggregates)
         let aDebt = debts.first { $0.userID == a }!
         let bDebt = debts.first { $0.userID == b }!
         XCTAssertEqual(aDebt.summaryText, "1 no-show")
@@ -87,12 +102,12 @@ final class BurpeeLedgerMathTests: XCTestCase {
 
     func testCrewDebts_sortedByTotalOwedDescending() {
         let low = UUID(); let high = UUID(); let zero = UUID()
-        let rows = [
-            makeRow(userID: low, checkInState: "late", burpeesOwed: 15),
-            makeRow(userID: high, checkInState: "late", burpeesOwed: 35),
-            makeRow(userID: zero, checkInState: "online", burpeesOwed: 0)
+        let aggregates = [
+            makeAggregate(userID: low, totalOwed: 15, lateCount: 1),
+            makeAggregate(userID: high, totalOwed: 35, lateCount: 1),
+            makeAggregate(userID: zero)
         ]
-        let debts = BurpeeLedgerMath.crewDebts(rows: rows)
+        let debts = BurpeeLedgerMath.crewDebts(aggregates: aggregates)
         XCTAssertEqual(debts.map(\.userID), [high, low, zero])
     }
 
@@ -102,11 +117,11 @@ final class BurpeeLedgerMathTests: XCTestCase {
         // (e.g. the row simply isn't in this fetch) is indistinguishable
         // from one who was never late. Both surface as "all clear", 0 owed.
         let neverLate = UUID(); let settledElsewhere = UUID()
-        let rows = [
-            makeRow(userID: neverLate, checkInState: "online", burpeesOwed: 0),
-            makeRow(userID: settledElsewhere, checkInState: "ready", burpeesOwed: 0)
+        let aggregates = [
+            makeAggregate(userID: neverLate),
+            makeAggregate(userID: settledElsewhere)
         ]
-        let debts = BurpeeLedgerMath.crewDebts(rows: rows)
+        let debts = BurpeeLedgerMath.crewDebts(aggregates: aggregates)
         XCTAssertEqual(Set(debts.map(\.summaryText)), ["all clear"])
         XCTAssertTrue(debts.allSatisfy { $0.totalOwed == 0 })
     }
