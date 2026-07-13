@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(26);
+SELECT plan(29);
 
 -- ── Fixtures ──────────────────────────────────────────────────────────────────
 -- pu1 alice = organizer / PR scorer / late-participant test author
@@ -152,6 +152,16 @@ SELECT throws_ok(
   'client cannot insert directly into push_queue'
 );
 
+-- ── 12. Client cannot call enqueue_push directly (42501) ───────────────────
+-- 20260716000002_push_hardening.sql revokes EXECUTE from PUBLIC/anon/
+-- authenticated. Without it, PostgREST would expose this SECURITY DEFINER
+-- function as an RPC that any client could use to enqueue arbitrary pushes.
+SELECT throws_ok(
+  $$SELECT public.enqueue_push('00000000-0000-0000-0000-0000000f0001'::uuid, 'friend_request', '{}'::jsonb)$$,
+  '42501', NULL,
+  'clients cannot call enqueue_push directly'
+);
+
 
 -- ============================================================
 -- session_invite trigger
@@ -174,7 +184,7 @@ INSERT INTO session_participants (session_id, user_id, check_in_state) VALUES
 
 SET LOCAL role postgres;
 
--- ── 12. Organizer's own row is skipped ─────────────────────────────────────
+-- ── 13. Organizer's own row is skipped ─────────────────────────────────────
 SELECT results_eq(
   $$SELECT count(*)::int FROM push_queue
     WHERE event = 'session_invite' AND user_id = '00000000-0000-0000-0000-0000000f0001'$$,
@@ -182,13 +192,51 @@ SELECT results_eq(
   'session_invite is not enqueued for the organizer''s own participant row'
 );
 
--- ── 13. Invitees (bob, carol) each get a session_invite push ──────────────
+-- ── 14. Invitees (bob, carol) each get a session_invite push ──────────────
 SELECT results_eq(
   $$SELECT count(*)::int FROM push_queue
     WHERE event = 'session_invite'
       AND user_id IN ('00000000-0000-0000-0000-0000000f0002', '00000000-0000-0000-0000-0000000f0003')$$,
   ARRAY[2],
   'session_invite is enqueued for each non-organizer invitee'
+);
+
+-- ── 15. Self-join (join_session_by_code) suppresses the invite push ───────
+-- erin joins f2001 herself via the real RPC. The inserted row's user_id
+-- (erin) equals the acting JWT sub (erin) even though join_session_by_code
+-- is SECURITY DEFINER — the request.jwt.claim.sub GUC reflects the calling
+-- client, not the function owner — so push_session_invite's new self-guard
+-- must suppress the push even though erin isn't the organizer.
+SET LOCAL role postgres;
+UPDATE sessions SET room_code = 'PUSHTEST1' WHERE id = '00000000-0000-0000-0000-0000000f2001';
+
+SET LOCAL role authenticated;
+SET LOCAL request.jwt.claim.sub = '00000000-0000-0000-0000-0000000f0005';
+SELECT join_session_by_code('PUSHTEST1');
+
+SET LOCAL role postgres;
+SELECT results_eq(
+  $$SELECT count(*)::int FROM push_queue
+    WHERE event = 'session_invite' AND user_id = '00000000-0000-0000-0000-0000000f0005'$$,
+  ARRAY[0],
+  'self-join via join_session_by_code does not push an invite to the joiner'
+);
+
+-- ── 16. Organizer-inserted invite still fires (acting user != invitee) ────
+-- Same trigger, but alice (organizer) inserts dave's row this time, so the
+-- self-guard's acting-user check (jwt.sub = alice) does not match
+-- NEW.user_id (dave) and the push still goes out.
+SET LOCAL role authenticated;
+SET LOCAL request.jwt.claim.sub = '00000000-0000-0000-0000-0000000f0001';
+INSERT INTO session_participants (session_id, user_id, check_in_state) VALUES
+  ('00000000-0000-0000-0000-0000000f2001', '00000000-0000-0000-0000-0000000f0004', 'invited');
+
+SET LOCAL role postgres;
+SELECT results_eq(
+  $$SELECT count(*)::int FROM push_queue
+    WHERE event = 'session_invite' AND user_id = '00000000-0000-0000-0000-0000000f0004'$$,
+  ARRAY[1],
+  'organizer-inserted invite still pushes the invitee'
 );
 
 
@@ -203,7 +251,7 @@ UPDATE sessions SET state = 'lobby_open'
 
 SET LOCAL role postgres;
 
--- ── 14. bob (still 'invited', not yet present) gets a lobby_open push ─────
+-- ── 17. bob (still 'invited', not yet present) gets a lobby_open push ─────
 SELECT results_eq(
   $$SELECT count(*)::int FROM push_queue
     WHERE event = 'session_lobby_open' AND user_id = '00000000-0000-0000-0000-0000000f0002'$$,
@@ -211,7 +259,7 @@ SELECT results_eq(
   'session_lobby_open pushes a participant who has not checked in yet'
 );
 
--- ── 15. carol and alice (already 'online') do NOT get a lobby_open push ───
+-- ── 18. carol and alice (already 'online') do NOT get a lobby_open push ───
 SELECT results_eq(
   $$SELECT count(*)::int FROM push_queue
     WHERE event = 'session_lobby_open'
@@ -232,7 +280,7 @@ UPDATE sessions SET current_turn_user_id = '00000000-0000-0000-0000-0000000f0002
 
 SET LOCAL role postgres;
 
--- ── 16. bob gets a your_turn push ──────────────────────────────────────────
+-- ── 19. bob gets a your_turn push ──────────────────────────────────────────
 SELECT results_eq(
   $$SELECT count(*)::int FROM push_queue
     WHERE event = 'your_turn' AND user_id = '00000000-0000-0000-0000-0000000f0002'$$,
@@ -248,7 +296,7 @@ UPDATE sessions SET current_turn_user_id = '00000000-0000-0000-0000-0000000f0003
 
 SET LOCAL role postgres;
 
--- ── 17. Clearing to NULL never enqueues; only carol (the real new holder) does ─
+-- ── 20. Clearing to NULL never enqueues; only carol (the real new holder) does ─
 SELECT results_eq(
   $$SELECT count(*)::int FROM push_queue WHERE event = 'your_turn'$$,
   ARRAY[2],
@@ -265,7 +313,7 @@ INSERT INTO chat_messages (id, group_id, author_id, kind, body, payload) VALUES
    'system_pr', 'test pr announcement',
    jsonb_build_object('user_id', '00000000-0000-0000-0000-0000000f0001'));
 
--- ── 18. bob, carol, dave (all other group members) get a partner_pr push ──
+-- ── 21. bob, carol, dave (all other group members) get a partner_pr push ──
 SELECT results_eq(
   $$SELECT count(*)::int FROM push_queue
     WHERE event = 'partner_pr' AND payload ->> 'message_id' = '00000000-0000-0000-0000-0000000f3010'$$,
@@ -273,7 +321,7 @@ SELECT results_eq(
   'partner_pr pushes every other group member'
 );
 
--- ── 19. alice (the PR scorer / author) does not get pushed her own PR ─────
+-- ── 22. alice (the PR scorer / author) does not get pushed her own PR ─────
 SELECT results_eq(
   $$SELECT count(*)::int FROM push_queue
     WHERE event = 'partner_pr' AND user_id = '00000000-0000-0000-0000-0000000f0001'$$,
@@ -294,7 +342,7 @@ UPDATE session_participants SET check_in_state = 'late'
 
 SET LOCAL role postgres;
 
--- ── 20. alice and carol (the other participants) get a lateness_chirp push ─
+-- ── 23. alice and carol (the other participants) get a lateness_chirp push ─
 SELECT results_eq(
   $$SELECT count(*)::int FROM push_queue
     WHERE event = 'lateness_chirp'
@@ -303,7 +351,7 @@ SELECT results_eq(
   'lateness_chirp pushes the other participants'
 );
 
--- ── 21. bob (the late one) does not get pushed his own lateness ───────────
+-- ── 24. bob (the late one) does not get pushed his own lateness ───────────
 SELECT results_eq(
   $$SELECT count(*)::int FROM push_queue
     WHERE event = 'lateness_chirp' AND user_id = '00000000-0000-0000-0000-0000000f0002'$$,
@@ -345,7 +393,7 @@ INSERT INTO chat_messages (id, group_id, author_id, kind, body) VALUES
 
 SET LOCAL role postgres;
 
--- ── 22. Single mention pushes exactly bob ──────────────────────────────────
+-- ── 25. Single mention pushes exactly bob ──────────────────────────────────
 SELECT results_eq(
   $$SELECT user_id FROM push_queue
     WHERE event = 'chat_mention' AND payload ->> 'message_id' = '00000000-0000-0000-0000-0000000f3001'$$,
@@ -353,7 +401,7 @@ SELECT results_eq(
   'single @mention pushes exactly the mentioned member'
 );
 
--- ── 23. Multi mention pushes bob, carol, dave (3 rows) ─────────────────────
+-- ── 26. Multi mention pushes bob, carol, dave (3 rows) ─────────────────────
 SELECT results_eq(
   $$SELECT count(*)::int FROM push_queue
     WHERE event = 'chat_mention' AND payload ->> 'message_id' = '00000000-0000-0000-0000-0000000f3002'$$,
@@ -361,7 +409,7 @@ SELECT results_eq(
   'multi @mention pushes every distinct mentioned member'
 );
 
--- ── 24. No-mention message enqueues nothing ────────────────────────────────
+-- ── 27. No-mention message enqueues nothing ────────────────────────────────
 SELECT results_eq(
   $$SELECT count(*)::int FROM push_queue
     WHERE event = 'chat_mention' AND payload ->> 'message_id' = '00000000-0000-0000-0000-0000000f3003'$$,
@@ -369,7 +417,7 @@ SELECT results_eq(
   'message with no @mention enqueues no chat_mention push'
 );
 
--- ── 25. Self mention + non-member mention both enqueue nothing ────────────
+-- ── 28. Self mention + non-member mention both enqueue nothing ────────────
 SELECT results_eq(
   $$SELECT count(*)::int FROM push_queue
     WHERE event = 'chat_mention'
@@ -395,7 +443,7 @@ INSERT INTO friendships (user_id, friend_id, status) VALUES
 
 SET LOCAL role postgres;
 
--- ── 26. Opted-out bob still has exactly 1 friend_request row (the earlier
+-- ── 29. Opted-out bob still has exactly 1 friend_request row (the earlier
 --        one from alice, before he opted out) — the new one from carol was
 --        suppressed by enqueue_push's prefs check ───────────────────────────
 SELECT results_eq(
