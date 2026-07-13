@@ -102,7 +102,9 @@ final class PushRegistrationTests: XCTestCase {
 
     /// Pure data test — no network/auth needed. Verifies the UI's category
     /// -> plain-English label mapping covers exactly the repository's 10
-    /// categories, with no duplicate keys or labels.
+    /// categories, with no duplicate keys or labels, and that exact label
+    /// strings match the designer brief (silent rewording caught via
+    /// dictionary equality assertion).
     func testNotificationPreferencesCategoryLabelMappingIsComplete() {
         let mapping = NotificationPreferencesView.categoryLabels
         XCTAssertEqual(mapping.count, 10)
@@ -117,5 +119,21 @@ final class PushRegistrationTests: XCTestCase {
         let labels = mapping.map(\.label)
         XCTAssertEqual(Set(labels).count, labels.count, "duplicate labels")
         XCTAssertTrue(labels.allSatisfy { !$0.isEmpty })
+
+        // Assert exact label strings match expected mapping (catches silent rewording)
+        let expectedMapping: [String: String] = [
+            "friend_request": "Friend requests",
+            "session_invite": "Session invites",
+            "session_reminder_15min": "15-minute reminders",
+            "session_lobby_open": "Lobby is open",
+            "your_turn": "It's your turn",
+            "partner_pr": "Crew PRs",
+            "lateness_chirp": "Late-arrival pings",
+            "session_idle": "Idle session nudges",
+            "chat_mention": "Mentions in chat",
+            "leaderboard_passed": "Leaderboard changes",
+        ]
+        let actualMapping = Dictionary(uniqueKeysWithValues: mapping)
+        XCTAssertEqual(actualMapping, expectedMapping, "notification category labels must match expected strings exactly")
     }
 }
