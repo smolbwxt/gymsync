@@ -45,17 +45,29 @@ public struct GSPrimaryButtonStyle: ButtonStyle {
 public struct GSSecondaryButtonStyle: ButtonStyle {
     @Environment(\.gsTheme) private var theme
 
-    public init() {}
+    private let fontSize: CGFloat
+    private let horizontalPadding: CGFloat
+    private let verticalPadding: CGFloat
+
+    /// Defaults match the canonical 16pt/16-horizontal/12-vertical treatment;
+    /// callers matching a canvas spec with a smaller scale (e.g. a compact
+    /// "Open" action inside a denied-permission banner) can override
+    /// per-instance — mirrors `GSPrimaryButtonStyle`'s existing pattern.
+    public init(fontSize: CGFloat = 16, horizontalPadding: CGFloat = 16, verticalPadding: CGFloat = 12) {
+        self.fontSize = fontSize
+        self.horizontalPadding = horizontalPadding
+        self.verticalPadding = verticalPadding
+    }
 
     public func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: 0) {
             configuration.label
             Spacer(minLength: 0)
         }
-        .font(GSFont.bold(16, relativeTo: .body))
+        .font(GSFont.bold(fontSize, relativeTo: .body))
         .foregroundColor(configuration.isPressed ? theme.accent600 : theme.accent)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, horizontalPadding)
+        .padding(.vertical, verticalPadding)
         .background(configuration.isPressed ? theme.accent100 : Color.clear)
         .cornerRadius(0)
         .overlay(
@@ -510,5 +522,52 @@ public struct GSMiniTrendCard: View {
             }
             .padding(16)
         }
+    }
+}
+
+// MARK: - GSToggle
+//
+// Custom square on/off control replacing SwiftUI's system `Toggle` (canvas
+// redraw, Notif Preferences frame — see new-canvas-section.diff). 46x27
+// track, 21x21 knob, knob inset 3pt (vertical centering falls out of
+// 27-21=6 symmetric padding). On: accent track, bg-colored knob, knob
+// right-aligned. Off: neutral300 track, neutral500 knob, knob left-aligned.
+// Per Designer ruling #1 ("small drawn boxes, 44pt invisible hit areas"),
+// the drawn track stays exactly 46x27 — only the tappable region is padded
+// out to >=44pt via `.frame(minWidth:minHeight:)`, same pattern used by
+// GSSettingsRow/GSPrimaryButtonStyle elsewhere in this file.
+//
+// Label rendering (including the "60% opacity when off" treatment) is the
+// caller's responsibility — this view is a pure `Bool` control with no
+// label of its own, matching the canvas markup where the label is a
+// sibling `<span>`, not part of the toggle itself.
+
+public struct GSToggle: View {
+    @Environment(\.gsTheme) private var theme
+
+    @Binding private var isOn: Bool
+
+    public init(isOn: Binding<Bool>) {
+        self._isOn = isOn
+    }
+
+    public var body: some View {
+        Button {
+            isOn.toggle()
+        } label: {
+            ZStack(alignment: isOn ? .trailing : .leading) {
+                Rectangle()
+                    .fill(isOn ? theme.accent : theme.neutral300)
+                    .frame(width: 46, height: 27)
+                Rectangle()
+                    .fill(isOn ? theme.bg : theme.neutral500)
+                    .frame(width: 21, height: 21)
+                    .padding(3)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .frame(minWidth: 44, minHeight: 44)
+        .animation(.easeInOut(duration: 0.15), value: isOn)
     }
 }

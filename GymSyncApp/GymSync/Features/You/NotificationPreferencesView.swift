@@ -2,11 +2,16 @@ import SwiftUI
 import UserNotifications
 
 /// Per-category push notification opt-out screen (Designer brief Feature 2,
-/// Dossier §A.7) — nav-pushed from `YouTabView`'s "Notifications" settings
-/// row. Also serves as the "re-entry when denied" surface described in
-/// Feature 1's brief: per task-6-brief.md, the You tab routes here directly
-/// (not through `PushPrimingView`), and the system-denied banner below
-/// covers that role via its own "Open Settings" deep link.
+/// Dossier §A.7; redrawn per new-canvas-section.diff's "Notif Preferences"
+/// frame, Jul 2026 — Canvas Completion Task 1). Nav-pushed from
+/// `YouTabView`'s "Notifications" settings row.
+///
+/// The system-denied banner below is this screen's own re-entry surface: its
+/// "Open" action pushes `PushPrimingView(isOnboarding: false)`, whose denied
+/// state carries the "Open Settings" deep link. That re-entry destination
+/// previously had no production call site (task-6-report.md); this wiring
+/// resolves that tracked question. The banner itself is kept — the canvas
+/// designs both surfaces separately, each per its own frame.
 struct NotificationPreferencesView: View {
     @Environment(\.gsTheme) private var theme
     @Environment(\.scenePhase) private var scenePhase
@@ -21,27 +26,35 @@ struct NotificationPreferencesView: View {
         uniqueKeysWithValues: NotificationPrefsRepository.categories.map { ($0, true) }
     )
     @State private var errorText: String?
+    @State private var showPushPrimingReentry = false
 
     private var pushReceiver: PushReceiver { PushReceiver.shared }
 
-    /// Category key -> plain-English label, verbatim from the designer
-    /// brief's Feature 2 table (2026-07-12-design-request-next-phases.md,
-    /// lines 56-67), in the same order as
-    /// `NotificationPrefsRepository.categories`. Not `private` so
-    /// `PushRegistrationTests` can assert completeness (all 10, no dupes)
-    /// without duplicating this list in the test target.
-    static let categoryLabels: [(category: String, label: String)] = [
-        ("friend_request", "Friend requests"),
+    /// Category key -> plain-English label, grouped and ordered per the
+    /// canvas's "Notif Preferences" frame (new-canvas-section.diff):
+    /// "Sessions" then "Social & chat", each in the diff's row order.
+    /// `categoryLabels` is the flat union of both (order-independent for
+    /// callers that don't care about grouping, e.g. `loadPrefs()` and
+    /// `PushRegistrationTests`'s completeness/label assertions). Not
+    /// `private` so `PushRegistrationTests` can assert completeness (all
+    /// 10, no dupes) without duplicating this list in the test target.
+    static let sessionsCategories: [(category: String, label: String)] = [
         ("session_invite", "Session invites"),
         ("session_reminder_15min", "15-minute reminders"),
         ("session_lobby_open", "Lobby is open"),
         ("your_turn", "It's your turn"),
+        ("session_idle", "Idle session nudges"),
+    ]
+
+    static let socialCategories: [(category: String, label: String)] = [
+        ("friend_request", "Friend requests"),
         ("partner_pr", "Crew PRs"),
         ("lateness_chirp", "Late-arrival pings"),
-        ("session_idle", "Idle session nudges"),
         ("chat_mention", "Mentions in chat"),
         ("leaderboard_passed", "Leaderboard changes"),
     ]
+
+    static let categoryLabels: [(category: String, label: String)] = sessionsCategories + socialCategories
 
     private var allOff: Bool {
         Self.categoryLabels.allSatisfy { !(prefs[$0.category] ?? true) }
@@ -49,45 +62,28 @@ struct NotificationPreferencesView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 16) {
                 deniedBanner
 
-                GSSectionHeader("Notifications")
-                    .padding(.horizontal, 16)
-                    .padding(.top, 24)
-                    .padding(.bottom, 6)
-
-                Text("All on by default — turn off any you don't need.")
-                    .font(GSFont.body(13, relativeTo: .footnote))
-                    .foregroundColor(theme.neutral700)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 14)
-
-                VStack(spacing: 0) {
-                    ForEach(Self.categoryLabels, id: \.category) { entry in
-                        toggleRow(category: entry.category, label: entry.label)
-                    }
-                }
-                .padding(.horizontal, 16)
+                groupSection(title: "Sessions", entries: Self.sessionsCategories)
+                groupSection(title: "Social & chat", entries: Self.socialCategories)
 
                 if allOff {
                     Text("You won't receive any notifications.")
                         .font(GSFont.body(12, relativeTo: .caption))
                         .foregroundColor(theme.neutral700)
-                        .padding(.horizontal, 16)
-                        .padding(.top, 10)
                 }
 
                 if let errorText {
                     Text(errorText)
                         .font(GSFont.body(13, relativeTo: .footnote))
                         .foregroundColor(.red)
-                        .padding(.horizontal, 16)
-                        .padding(.top, 8)
                 }
 
                 Spacer(minLength: 24)
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
         }
         .background(theme.bg)
         .navigationTitle("Notifications")
@@ -95,6 +91,9 @@ struct NotificationPreferencesView: View {
         // Pushed from YouTabView's Settings section — see GSComponents.swift's
         // GSHidesDock.
         .gsHidesDock()
+        .navigationDestination(isPresented: $showPushPrimingReentry) {
+            PushPrimingView(isOnboarding: false)
+        }
         .task {
             await pushReceiver.refreshAuthorizationStatus()
             await loadPrefs()
@@ -110,65 +109,93 @@ struct NotificationPreferencesView: View {
     @ViewBuilder
     private var deniedBanner: some View {
         if pushReceiver.authorizationStatus == .denied {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Notifications are disabled in iOS Settings — per-category preferences are saved but won't apply until you re-enable them.")
-                    .font(GSFont.body(13, relativeTo: .footnote))
-                    .foregroundColor(theme.text)
+            HStack(alignment: .center, spacing: 10) {
+                Image(systemName: "exclamationmark.circle")
+                    .font(.system(size: 18, weight: .regular))
+                    .foregroundColor(theme.accent)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Disabled in iOS Settings")
+                        .font(GSFont.bold(12, relativeTo: .footnote))
+                        .foregroundColor(theme.text)
+                    Text("Saved here, but won't apply until re-enabled.")
+                        .font(GSFont.body(11, relativeTo: .caption2))
+                        .foregroundColor(theme.neutral700)
+                }
+
+                Spacer()
 
                 Button {
-                    openSettings()
+                    showPushPrimingReentry = true
                 } label: {
-                    Text("Open Settings")
+                    Text("Open")
                 }
-                .buttonStyle(GSSecondaryButtonStyle())
+                .buttonStyle(GSSecondaryButtonStyle(fontSize: 11, horizontalPadding: 9, verticalPadding: 6))
                 .frame(minHeight: 44)
             }
-            .padding(16)
-            .background(theme.accent100)
-            .overlay(Rectangle().strokeBorder(theme.accent300, lineWidth: 1))
+            .padding(12)
+            .background(theme.surface)
+            .overlay(alignment: .leading) {
+                Rectangle()
+                    .fill(theme.accent)
+                    .frame(width: 3)
+            }
+        }
+    }
+
+    // MARK: - Grouped sections
+
+    private func groupSection(title: String, entries: [(category: String, label: String)]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
+                .foregroundColor(theme.text.opacity(0.6))
+
+            VStack(spacing: 0) {
+                ForEach(Array(entries.enumerated()), id: \.element.category) { index, entry in
+                    toggleRow(category: entry.category, label: entry.label, isLast: index == entries.count - 1)
+                }
+            }
+            .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
         }
     }
 
     // MARK: - Toggle row
 
-    private func toggleRow(category: String, label: String) -> some View {
-        HStack {
+    private func toggleRow(category: String, label: String, isLast: Bool) -> some View {
+        let isOn = prefs[category] ?? true
+        return HStack {
             Text(label)
                 .font(GSFont.bodyMedium(14, relativeTo: .subheadline))
-                .foregroundColor(theme.text)
+                .foregroundColor(theme.text.opacity(isOn ? 1.0 : 0.6))
             Spacer()
-            Toggle("", isOn: Binding(
+            GSToggle(isOn: Binding(
                 get: { prefs[category] ?? true },
                 set: { setEnabled($0, category: category) }
             ))
-            .labelsHidden()
-            .tint(theme.accent)
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 12)
         .padding(.vertical, 12)
         .frame(minHeight: 44)
         .background(theme.surface)
         .overlay(alignment: .bottom) {
-            Rectangle().fill(theme.divider).frame(height: 1)
+            if !isLast {
+                Rectangle().fill(theme.divider).frame(height: 1)
+            }
         }
     }
 
     // MARK: - Actions
 
-    private func openSettings() {
-        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
-        UIApplication.shared.open(url)
-    }
-
-    /// DECISION (documented in task-6-report.md): toggling ON deletes the
-    /// stored row (reverts to the server's absence-means-enabled default)
-    /// rather than upserting `enabled=true` — keeps the table storing only
-    /// exceptions to the default, matching `reset(category:)`'s own doc
-    /// comment ("reverting it to the default (enabled)") and the schema's
-    /// design intent (spec: "Defaults: all on for v1"). Toggling OFF has no
-    /// such default to fall back to, so it upserts `enabled=false`
-    /// explicitly — the only way to represent "off" given absence always
-    /// means "on".
+    /// DECISION (documented in task-6-report.md, preserved in
+    /// task-1-report.md): toggling ON deletes the stored row (reverts to
+    /// the server's absence-means-enabled default) rather than upserting
+    /// `enabled=true` — keeps the table storing only exceptions to the
+    /// default, matching `reset(category:)`'s own doc comment ("reverting
+    /// it to the default (enabled)") and the schema's design intent (spec:
+    /// "Defaults: all on for v1"). Toggling OFF has no such default to fall
+    /// back to, so it upserts `enabled=false` explicitly — the only way to
+    /// represent "off" given absence always means "on".
     private func setEnabled(_ enabled: Bool, category: String) {
         let previous = prefs[category] ?? true
         prefs[category] = enabled
