@@ -97,4 +97,25 @@ final class PushRegistrationTests: XCTestCase {
         let afterReset = try await NotificationPrefsRepository.isEnabled(category: category)
         XCTAssertTrue(afterReset)
     }
+
+    // MARK: - NotificationPreferencesView category/label mapping (Task 6)
+
+    /// Pure data test — no network/auth needed. Verifies the UI's category
+    /// -> plain-English label mapping covers exactly the repository's 10
+    /// categories, with no duplicate keys or labels.
+    func testNotificationPreferencesCategoryLabelMappingIsComplete() {
+        let mapping = NotificationPreferencesView.categoryLabels
+        XCTAssertEqual(mapping.count, 10)
+
+        let categories = mapping.map(\.category)
+        XCTAssertEqual(Set(categories).count, categories.count, "duplicate category keys")
+        XCTAssertEqual(
+            Set(categories), Set(NotificationPrefsRepository.categories),
+            "mapping must cover exactly the repository's categories"
+        )
+
+        let labels = mapping.map(\.label)
+        XCTAssertEqual(Set(labels).count, labels.count, "duplicate labels")
+        XCTAssertTrue(labels.allSatisfy { !$0.isEmpty })
+    }
 }
