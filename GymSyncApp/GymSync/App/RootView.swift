@@ -6,6 +6,11 @@ struct RootView: View {
     // the same instance from outside the view tree — see AppState.shared's
     // doc comment.
     @State private var appState = AppState.shared
+    // Singleton (Canvas Completion Task 5), same convention as `appState`
+    // above — reading `themeStore.current` here (rather than a hardcoded
+    // `.midnight`) is what makes the whole app re-render live when
+    // `AppearanceView` calls `ThemeStore.select(_:)`.
+    @State private var themeStore = ThemeStore.shared
 
     var body: some View {
         Group {
@@ -24,10 +29,13 @@ struct RootView: View {
                 }
             }
         }
-        // ── Midnight chrome ──
-        .preferredColorScheme(.dark)
-        .environment(\.gsTheme, .midnight)
-        .background(GSTheme.midnight.bg.ignoresSafeArea())
+        // ── Live theme chrome ──
+        // `isDark` covers modernist/ink (light palettes) alongside
+        // midnight/arena (dark) — see GSTheme.isDark's doc comment for the
+        // luminance-based determination.
+        .preferredColorScheme(themeStore.current.isDark ? .dark : .light)
+        .environment(\.gsTheme, themeStore.current)
+        .background(themeStore.current.bg.ignoresSafeArea())
     }
 }
 
@@ -64,6 +72,14 @@ private struct MainTabView: View {
             // the initial permission prompt stays owned by onboarding
             // (Task 6), which this deliberately does not touch.
             await PushReceiver.shared.registerTokenIfAuthorized()
+        }
+        .task {
+            // Best-effort load of the persisted palette (Canvas Completion
+            // Task 5) — same "runs on every launch that reaches signed-in +
+            // profile-loaded state" timing as the push-token registration
+            // above, since that's the earliest point a `user_settings` row
+            // is guaranteed to be readable for the signed-in user.
+            await ThemeStore.shared.load()
         }
         .onPreferenceChange(GSHidesDock.self) { hides in
             withAnimation(.easeInOut(duration: 0.2)) {

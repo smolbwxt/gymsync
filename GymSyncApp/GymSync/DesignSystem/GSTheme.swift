@@ -3,8 +3,16 @@ import SwiftUI
 // MARK: - GSTheme
 
 /// The GymSync design-system token bag.
-/// All midnight values are verbatim from the "Midnight tokens" table in the
+/// Midnight values are verbatim from the "Midnight tokens" table in the
 /// 2026-07-12-design-adoption-midnight plan (Global Constraints section).
+/// Arena/Ink/Modernist values (Canvas Completion Task 5) are transcribed
+/// verbatim from the committed canvas's `<style>` block —
+/// `docs/design/Gym Sync App Designs.dc.html`, the `.gs-theme[data-palette=
+/// "arena"|"ink"|"modernist"]` CSS custom-property rules. Every `--color-*`
+/// var maps 1:1 to the property of the same name below (e.g. `--color-
+/// accent-600` → `accent600`); nothing is "corrected" even where a ramp
+/// looks unusual (ink's `accent700` and `accent800` are identically
+/// `#16233d` in the source CSS — kept as written).
 public struct GSTheme {
 
     // MARK: Surface & text
@@ -31,6 +39,16 @@ public struct GSTheme {
     public let neutral800: Color  // #cfd4db
     public let neutral900: Color  // #eef2f7
 
+    /// Drives `.preferredColorScheme` — `true` for midnight/arena (near-black
+    /// backgrounds, light text), `false` for ink/modernist (light backgrounds,
+    /// dark text). Determined from each palette's `bg`/`text` hex luminance,
+    /// corroborated by the canvas's own shadow-token grouping (ink and
+    /// modernist share the light-surface `color-mix(in srgb,#2d2b2b ...)`
+    /// shadow formula; midnight and arena share the dark-surface plain
+    /// `rgba(0,0,0,...)` formula) — see task-5-report.md for the full
+    /// determination.
+    public let isDark: Bool
+
     // MARK: - Midnight palette
 
     public static let midnight = GSTheme(
@@ -53,8 +71,133 @@ public struct GSTheme {
         neutral500: Color(hex: 0x6b7280),
         neutral700: Color(hex: 0x9aa2ae),
         neutral800: Color(hex: 0xcfd4db),
-        neutral900: Color(hex: 0xeef2f7)
+        neutral900: Color(hex: 0xeef2f7),
+
+        isDark: true
     )
+
+    // MARK: - Arena palette
+    // Canvas: .gs-theme[data-palette="arena"] — "Near-black · volt lime".
+
+    public static let arena = GSTheme(
+        bg:         Color(hex: 0x101310),
+        surface:    Color(hex: 0x1b1f19),
+        text:       Color(hex: 0xeef3e8),
+        divider:    Color.white.opacity(0.14),
+
+        accent:     Color(hex: 0xb6f236),
+        accent100:  Color(hex: 0x1e2a0e),
+        accent200:  Color(hex: 0x2b3d13),
+        accent300:  Color(hex: 0x3c541b),
+        accent600:  Color(hex: 0xa3e01f),
+        accent700:  Color(hex: 0xcdf76a),
+        accent800:  Color(hex: 0xdcfb9a),
+
+        neutral100: Color(hex: 0x1a1e17),
+        neutral300: Color(hex: 0x2c312a),
+        neutral400: Color(hex: 0x3c423a),
+        neutral500: Color(hex: 0x6f766a),
+        neutral700: Color(hex: 0x9ba295),
+        neutral800: Color(hex: 0xced3c8),
+        neutral900: Color(hex: 0xeef3e8),
+
+        isDark: true
+    )
+
+    // MARK: - Ink palette
+    // Canvas: .gs-theme[data-palette="ink"] — "Warm bone · deep navy".
+    // NOTE: light theme (bg is a light cream, text is dark navy) despite the
+    // dark-sounding accent color — see `isDark`'s doc comment.
+
+    public static let ink = GSTheme(
+        bg:         Color(hex: 0xf3efe6),
+        surface:    Color(hex: 0xe8e2d5),
+        text:       Color(hex: 0x1b2540),
+        divider:    Color(hex: 0x1b2540).opacity(0.26),
+
+        accent:     Color(hex: 0x22345c),
+        accent100:  Color(hex: 0xe3e6ee),
+        accent200:  Color(hex: 0xc8cfdf),
+        accent300:  Color(hex: 0xa9b3ca),
+        accent600:  Color(hex: 0x1a2947),
+        accent700:  Color(hex: 0x16233d),
+        accent800:  Color(hex: 0x16233d),
+
+        neutral100: Color(hex: 0xefe9dd),
+        neutral300: Color(hex: 0xd3ccbd),
+        neutral400: Color(hex: 0xb4ab98),
+        neutral500: Color(hex: 0x8b8371),
+        neutral700: Color(hex: 0x4c4638),
+        neutral800: Color(hex: 0x353026),
+        neutral900: Color(hex: 0x211d16),
+
+        isDark: false
+    )
+
+    // MARK: - Modernist palette
+    // Canvas: .gs-theme[data-palette="modernist"] — "Bone · signal red".
+
+    public static let modernist = GSTheme(
+        bg:         Color(hex: 0xf3f2f2),
+        surface:    Color(hex: 0xeae9e9),
+        text:       Color(hex: 0x201e1d),
+        divider:    Color(hex: 0x201e1d).opacity(0.4),
+
+        accent:     Color(hex: 0xec3013),
+        accent100:  Color(hex: 0xfff2ef),
+        accent200:  Color(hex: 0xffe0d9),
+        accent300:  Color(hex: 0xffc4b8),
+        accent600:  Color(hex: 0xdd2b0f),
+        accent700:  Color(hex: 0xae1800),
+        accent800:  Color(hex: 0x7c1405),
+
+        neutral100: Color(hex: 0xf8f4f4),
+        neutral300: Color(hex: 0xd7d3d3),
+        neutral400: Color(hex: 0xbab6b6),
+        neutral500: Color(hex: 0x9b9797),
+        neutral700: Color(hex: 0x605d5d),
+        neutral800: Color(hex: 0x444141),
+        neutral900: Color(hex: 0x2d2b2b),
+
+        isDark: false
+    )
+}
+
+// MARK: - GSPalettes
+//
+// Metadata (id/name/subtitle) for every palette, keyed by the exact string
+// `user_settings.palette` persists (the migration's CHECK constraint values:
+// midnight/arena/ink/modernist). Single source of truth for AppearanceView's
+// row list, YouTabView's Settings Hub value preview, and ThemeStore's
+// id → GSTheme resolution — name/subtitle text transcribed verbatim from the
+// canvas's Theme Picker markup (proof p33-theme-picker).
+
+public struct GSPaletteOption: Identifiable {
+    public let id: String
+    public let name: String
+    public let subtitle: String
+    public let theme: GSTheme
+}
+
+public enum GSPalettes {
+    public static let all: [GSPaletteOption] = [
+        GSPaletteOption(id: "midnight",  name: "Midnight",  subtitle: "Charcoal · electric cyan", theme: .midnight),
+        GSPaletteOption(id: "arena",     name: "Arena",     subtitle: "Near-black · volt lime",    theme: .arena),
+        GSPaletteOption(id: "ink",       name: "Ink",       subtitle: "Warm bone · deep navy",     theme: .ink),
+        GSPaletteOption(id: "modernist", name: "Modernist", subtitle: "Bone · signal red",         theme: .modernist),
+    ]
+
+    /// Falls back to `.midnight` for any unrecognized id (matches
+    /// `UserSettings.defaults`' own "midnight" default, and keeps this total
+    /// rather than failable/optional — an unrecognized persisted value
+    /// should degrade to the default look, not crash or show nothing).
+    public static func theme(for id: String) -> GSTheme {
+        all.first { $0.id == id }?.theme ?? .midnight
+    }
+
+    public static func name(for id: String) -> String {
+        all.first { $0.id == id }?.name ?? "Midnight"
+    }
 }
 
 // MARK: - Hex Color initialiser (fileprivate)

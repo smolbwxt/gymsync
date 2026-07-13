@@ -17,6 +17,12 @@ struct YouTabView: View {
     @State private var showNotificationPrefs = false
     @State private var showAppearance = false
     @State private var showRestTimerSetting = false
+    // Canvas Completion Task 5: singleton (matches `AppState.shared`'s
+    // convention) so the Settings Hub's "Appearance" value preview reflects
+    // the LIVE palette name (updates the instant `AppearanceView` calls
+    // `ThemeStore.select(_:)`), independent of this view's own separately-
+    // fetched `userSettings` (which only refreshes on `.task`/sheet-save).
+    @State private var themeStore = ThemeStore.shared
 
     private var pushReceiver: PushReceiver { PushReceiver.shared }
 
@@ -76,7 +82,7 @@ struct YouTabView: View {
                 NotificationPreferencesView()
             }
             .navigationDestination(isPresented: $showAppearance) {
-                AppearanceView(currentPaletteName: paletteDisplayName)
+                AppearanceView()
             }
             .navigationDestination(isPresented: $showRestTimerSetting) {
                 RestTimerSettingView(currentSettings: effectiveUserSettings) { updated in
@@ -219,8 +225,11 @@ struct YouTabView: View {
         .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
     }
 
+    /// Reads the live `ThemeStore` (not `userSettings.palette`) so this row
+    /// updates the instant a selection is made in `AppearanceView`, without
+    /// waiting for `YouTabView`'s own `.task` to re-fetch `user_settings`.
     private var paletteDisplayName: String {
-        (userSettings?.palette ?? "midnight").capitalized
+        GSPalettes.name(for: themeStore.paletteID)
     }
 
     private var restTimerDisplayText: String {
