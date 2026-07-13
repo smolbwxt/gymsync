@@ -351,10 +351,15 @@ UPDATE sessions SET current_turn_user_id = '00000000-0000-0000-0000-0000000f0003
 SET LOCAL role postgres;
 
 -- ── 20. Clearing to NULL never enqueues; only carol (the real new holder) does ─
+-- Fixture-scoped: the live DB accrues real your_turn rows from actual app usage
+-- (enqueuers run in prod), so a global count is not deterministic.
 SELECT results_eq(
-  $$SELECT count(*)::int FROM push_queue WHERE event = 'your_turn'$$,
+  $$SELECT count(*)::int FROM push_queue
+    WHERE event = 'your_turn'
+      AND user_id IN ('00000000-0000-0000-0000-0000000f0002',
+                      '00000000-0000-0000-0000-0000000f0003')$$,
   ARRAY[2],
-  'your_turn skips the NULL transition (only 2 real turn-holder pushes total)'
+  'your_turn skips the NULL transition (only 2 fixture turn-holder pushes)'
 );
 
 
