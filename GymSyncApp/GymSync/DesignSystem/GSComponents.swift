@@ -525,6 +525,38 @@ public struct GSMiniTrendCard: View {
     }
 }
 
+// MARK: - GSSquareToggleStyle
+//
+// ToggleStyle rendering the square on/off knob (46x27 track, 21x21 knob,
+// 3pt inset). On: accent track, bg-colored knob, knob right-aligned.
+// Off: neutral300 track, neutral500 knob, knob left-aligned.
+// Drawn control stays exactly 46x27; the tappable hit area expands to >=44pt
+// via `.frame(minWidth:minHeight:)`.
+
+public struct GSSquareToggleStyle: ToggleStyle {
+    @Environment(\.gsTheme) private var theme
+
+    public func makeBody(configuration: Configuration) -> some View {
+        Button {
+            configuration.isOn.toggle()
+        } label: {
+            ZStack(alignment: configuration.isOn ? .trailing : .leading) {
+                Rectangle()
+                    .fill(configuration.isOn ? theme.accent : theme.neutral300)
+                    .frame(width: 46, height: 27)
+                Rectangle()
+                    .fill(configuration.isOn ? theme.bg : theme.neutral500)
+                    .frame(width: 21, height: 21)
+                    .padding(3)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .frame(minWidth: 44, minHeight: 44)
+        .animation(.easeInOut(duration: 0.15), value: configuration.isOn)
+    }
+}
+
 // MARK: - GSToggle
 //
 // Custom square on/off control replacing SwiftUI's system `Toggle` (canvas
@@ -537,37 +569,35 @@ public struct GSMiniTrendCard: View {
 // out to >=44pt via `.frame(minWidth:minHeight:)`, same pattern used by
 // GSSettingsRow/GSPrimaryButtonStyle elsewhere in this file.
 //
+// Internally uses a real SwiftUI `Toggle` + `GSSquareToggleStyle`, which
+// provides proper VoiceOver semantics (switch trait, on/off value). Optional
+// `label` param (defaulted nil for backward compatibility) applies
+// accessibility label when present.
+//
 // Label rendering (including the "60% opacity when off" treatment) is the
 // caller's responsibility — this view is a pure `Bool` control with no
-// label of its own, matching the canvas markup where the label is a
+// visual label of its own, matching the canvas markup where the label is a
 // sibling `<span>`, not part of the toggle itself.
 
 public struct GSToggle: View {
-    @Environment(\.gsTheme) private var theme
-
     @Binding private var isOn: Bool
+    private let label: String?
 
-    public init(isOn: Binding<Bool>) {
+    /// Creates a GSToggle with optional accessibility label. Public API remains
+    /// identical to the prior Button-based implementation — callers unchanged.
+    /// Optional `label` param (defaulted nil) applies accessibilityLabel when
+    /// present, e.g., GSToggle(isOn: $prefs["foo"], label: "Notifications").
+    public init(isOn: Binding<Bool>, label: String? = nil) {
         self._isOn = isOn
+        self.label = label
     }
 
     public var body: some View {
-        Button {
-            isOn.toggle()
-        } label: {
-            ZStack(alignment: isOn ? .trailing : .leading) {
-                Rectangle()
-                    .fill(isOn ? theme.accent : theme.neutral300)
-                    .frame(width: 46, height: 27)
-                Rectangle()
-                    .fill(isOn ? theme.bg : theme.neutral500)
-                    .frame(width: 21, height: 21)
-                    .padding(3)
-            }
-            .contentShape(Rectangle())
+        Toggle(isOn: isOn) {
+            EmptyView()
         }
-        .buttonStyle(.plain)
-        .frame(minWidth: 44, minHeight: 44)
-        .animation(.easeInOut(duration: 0.15), value: isOn)
+        .labelsHidden()
+        .toggleStyle(GSSquareToggleStyle())
+        .accessibilityLabel(label ?? "")
     }
 }

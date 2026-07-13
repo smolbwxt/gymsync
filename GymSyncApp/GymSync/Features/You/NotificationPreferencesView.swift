@@ -169,10 +169,13 @@ struct NotificationPreferencesView: View {
                 .font(GSFont.bodyMedium(14, relativeTo: .subheadline))
                 .foregroundColor(theme.text.opacity(isOn ? 1.0 : 0.6))
             Spacer()
-            GSToggle(isOn: Binding(
-                get: { prefs[category] ?? true },
-                set: { setEnabled($0, category: category) }
-            ))
+            GSToggle(
+                isOn: Binding(
+                    get: { prefs[category] ?? true },
+                    set: { setEnabled($0, category: category) }
+                ),
+                label: label
+            )
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 12)
