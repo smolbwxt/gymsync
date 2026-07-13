@@ -2,6 +2,11 @@ import SwiftUI
 
 @main
 struct GymSyncApp: App {
+    // Only hook for APNs' didRegisterForRemoteNotificationsWithDeviceToken /
+    // UNUserNotificationCenterDelegate — SwiftUI's App protocol has no
+    // native equivalent. See AppDelegate.swift.
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     init() {
         try? AudioSessionManager.shared.configure()
         GSAppearance.apply()

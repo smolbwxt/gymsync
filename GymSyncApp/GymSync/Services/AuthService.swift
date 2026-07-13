@@ -36,6 +36,13 @@ final class AuthService {
     }
 
     func signOut() async throws {
+        // Best-effort, and must run BEFORE the Supabase session is torn
+        // down — push_devices' owner-only RLS policy needs an authenticated
+        // auth.uid() to match. A failed cleanup here must never block
+        // sign-out itself (a stray device row just means a future push to a
+        // token nobody's listening on anymore; push-dispatcher already
+        // handles dead tokens via APNs' 410/BadDeviceToken response).
+        try? await PushDeviceRepository.deleteOwnDevices()
         try await SupabaseService.shared.signOut()
         state = .signedOut
     }

@@ -53,6 +53,7 @@ targets:
       properties:
         com.apple.developer.applesignin: [Default]
         com.apple.developer.healthkit: true
+        aps-environment: development
 
   GymSyncTests:
     type: bundle.unit-test

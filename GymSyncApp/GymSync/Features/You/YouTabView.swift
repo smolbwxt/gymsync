@@ -12,6 +12,7 @@ struct YouTabView: View {
     @State private var showHomeGymSheet = false
     @State private var healthAuthStatus: HKAuthorizationStatus = .notDetermined
     @State private var errorText: String?
+    @State private var showNotificationPrefs = false
 
     var body: some View {
         NavigationStack {
@@ -59,6 +60,9 @@ struct YouTabView: View {
                 HomeGymSetupView(isOnboarding: false, onSaved: {
                     Task { await refreshHomeGymName() }
                 })
+            }
+            .navigationDestination(isPresented: $showNotificationPrefs) {
+                NotificationPreferencesView()
             }
         }
     }
@@ -143,6 +147,9 @@ struct YouTabView: View {
                 showHomeGymSheet = true
             }
             healthSyncRow
+            GSSettingsRow(title: "Notifications") {
+                showNotificationPrefs = true
+            }
             themeRow
         }
         .padding(.horizontal, 16)

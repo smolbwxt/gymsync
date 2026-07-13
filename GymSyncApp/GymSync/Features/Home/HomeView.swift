@@ -51,11 +51,17 @@ struct HomeView: View {
             .background(theme.bg)
             .navigationTitle("Home")
             .navigationBarTitleDisplayMode(.inline)
-            .task { await refresh() }
+            .task {
+                await refresh()
+                await consumePendingRouteIfNeeded()
+            }
             .refreshable { await refresh() }
             .onChange(of: scenePhase) {
                 guard scenePhase == .active else { return }
                 Task { await refresh() }
+            }
+            .onChange(of: appState.pendingRoute) {
+                Task { await consumePendingRouteIfNeeded() }
             }
             .sheet(isPresented: $showScheduleSheet) {
                 ScheduleSessionView { newSession in
@@ -71,6 +77,27 @@ struct HomeView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Push deep-link routing (Phase 3d Task 5)
+
+    /// Consumes `.lobby`/`.session` — both resolve to `LobbyView(session:)`,
+    /// the app's single entry point for a session regardless of its current
+    /// state (see `upcomingSection`'s existing NavigationLink, which routes
+    /// every session there whether scheduled or in_progress). Clears
+    /// `pendingRoute` immediately so a later `.onChange` firing (or this
+    /// `.task` re-running) doesn't re-navigate.
+    private func consumePendingRouteIfNeeded() async {
+        let sessionID: UUID?
+        switch appState.pendingRoute {
+        case .lobby(let id), .session(let id): sessionID = id
+        default: sessionID = nil
+        }
+        guard let sessionID else { return }
+        appState.pendingRoute = nil
+        guard let session = try? await SessionRepository.session(id: sessionID) else { return }
+        joinedSession = session
+        navigateToJoined = true
     }
 
     // MARK: - Greeting Header

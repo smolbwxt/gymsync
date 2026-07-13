@@ -173,7 +173,20 @@ struct ChatView: View {
             guard scenePhase == .active else { return }
             Task { await load() }
         }
-        .onDisappear { Task { await realtime.unsubscribe() } }
+        .onAppear {
+            // Suppresses the push banner for this group's chat while it's
+            // open live (AppDelegate.willPresent, AppState.activeChatGroupID).
+            appState.activeChatGroupID = group.id
+        }
+        .onDisappear {
+            // Only clear the suppression flag if it's still pointing at THIS
+            // group's chat — see GroupSessionLiveView's identical guard on
+            // activeSessionID for why an unconditional nil is unsafe.
+            if appState.activeChatGroupID == group.id {
+                appState.activeChatGroupID = nil
+            }
+            Task { await realtime.unsubscribe() }
+        }
         // ChatView's inputBar is bottom-pinned; when reached via GroupView's
         // push (SocialTabView → GroupView → Chat sub-tab) it would otherwise
         // sit under the custom dock. GroupView also carries this modifier
