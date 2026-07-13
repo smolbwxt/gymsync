@@ -7,8 +7,13 @@ struct SocialTabView: View {
     @State private var friendCount = 0
     @State private var pendingCount = 0
     @State private var showCreateGroup = false
+    // Also doubles as the "did the last groups load fail" flag (Canvas
+    // Completion Task 4) — it's already a String? set from `refresh()`'s
+    // catch block, so a second dedicated Bool would just duplicate it.
     @State private var errorText: String?
     @State private var friendRealtime = FriendRealtimeService()
+    // Canvas Completion Task 4 — drives the "Reconnecting…" pill below.
+    @State private var connectivity = ConnectivityMonitor.shared
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.gsTheme) private var theme
     @Environment(AppState.self) private var appState
@@ -22,6 +27,17 @@ struct SocialTabView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
+                    // Offline pill (Canvas Completion Task 4 — proof
+                    // p30-empty-offline). Anchored at the top of this
+                    // screen's content, matching the canvas frame — see
+                    // ConnectivityMonitor.swift's doc comment for why this
+                    // isn't a RootView-wide overlay.
+                    if !connectivity.isOnline {
+                        GSOfflineBanner()
+                            .padding(.horizontal, 16)
+                            .padding(.top, 10)
+                    }
+
                     // Friends row
                     NavigationLink {
                         FriendsView()
@@ -62,12 +78,32 @@ struct SocialTabView: View {
                         .padding(.top, 16)
                         .padding(.bottom, 8)
 
+                    // Canvas Completion Task 4 (proof p30/p31): the blank-list
+                    // error card only replaces the plain empty state when the
+                    // list is ACTUALLY blank because the load failed — a
+                    // refresh failure with existing groups on screen leaves
+                    // them in place (best-effort, unchanged) and only surfaces
+                    // the small red caption below.
                     if groups.isEmpty {
-                        Text("No groups yet. Create one to start chatting.")
-                            .font(GSFont.body(14, relativeTo: .body))
-                            .foregroundStyle(theme.neutral500)
+                        if errorText != nil {
+                            GSErrorCard(
+                                title: "Couldn't load your groups",
+                                message: errorText ?? "Check your connection and try again.",
+                                retry: { Task { await refresh() } }
+                            )
                             .padding(.horizontal, 16)
-                            .padding(.vertical, 12)
+                            .padding(.top, 8)
+                        } else {
+                            GSEmptyState(
+                                icon: "person.3",
+                                title: "No groups yet",
+                                message: "Start a group with your crew — then take turns on the bar together.",
+                                ctaTitle: "+ New Group",
+                                action: { showCreateGroup = true }
+                            )
+                            .padding(.horizontal, 16)
+                            .padding(.top, 8)
+                        }
                     }
 
                     VStack(spacing: 8) {
@@ -82,19 +118,29 @@ struct SocialTabView: View {
                         }
                     }
 
-                    // New Group button
-                    Button {
-                        showCreateGroup = true
-                    } label: {
-                        Text("+ New Group")
+                    // New Group button — hidden in the true empty case since
+                    // GSEmptyState above already surfaces an equivalent "+ New
+                    // Group" CTA (avoids showing the same action twice). Still
+                    // shown during the blank-list-plus-error case (GSErrorCard
+                    // has no group-creation CTA of its own) and whenever the
+                    // list has content.
+                    if !groups.isEmpty || errorText != nil {
+                        Button {
+                            showCreateGroup = true
+                        } label: {
+                            Text("+ New Group")
+                        }
+                        .buttonStyle(GSSecondaryButtonStyle())
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 16)
+                        .padding(.bottom, 24)
                     }
-                    .buttonStyle(GSSecondaryButtonStyle())
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 16)
-                    .padding(.bottom, 24)
 
-                    if let errorText {
+                    // Non-blank-list case only — the blank-list case already
+                    // surfaced this same message via GSErrorCard above, so
+                    // showing it again here would be redundant.
+                    if let errorText, !groups.isEmpty {
                         Text(errorText)
                             .font(GSFont.body(12, relativeTo: .footnote))
                             .foregroundStyle(.red)

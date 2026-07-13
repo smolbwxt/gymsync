@@ -640,3 +640,213 @@ public struct GSToggle: View {
         .accessibilityLabel(label ?? "")
     }
 }
+
+// MARK: - GSEmptyState
+//
+// First-run / zero-data block: a bordered icon square (64×64, 2pt divider
+// border, 45%-opacity glyph) + bold headline + centered muted body copy
+// (max width 250) + an optional primary CTA + an optional secondary ghost
+// link. Matches the canvas "No crew yet" frame (Canvas Completion Task 4,
+// proof p30-empty-offline; markup `docs/design/Gym Sync App
+// Designs.dc.html` lines ~2279-2288).
+//
+// Deliberately does NOT force full-screen vertical centering — the canvas
+// frame shows this as the SOLE content of an isolated "states" mockup, but
+// real call sites (SocialTabView's Groups section, FriendsView's Friends
+// section) sit alongside other content, so this renders as a self-contained
+// block wherever the empty condition already lives, matching how the
+// pre-existing plain-text empties it replaces were positioned.
+//
+// The CTA button intentionally has no `.frame(maxWidth: .infinity)` — left
+// unconstrained, `GSPrimaryButtonStyle`'s internal `Spacer` collapses to
+// zero width, so the button hugs its label exactly like the canvas's
+// `justify-content:center` override, and the enclosing VStack's default
+// `.center` alignment centers the whole content-sized button. Same trick
+// for the secondary ghost link.
+
+public struct GSEmptyState: View {
+    @Environment(\.gsTheme) private var theme
+
+    private let icon: String
+    private let title: String
+    private let message: String
+    private let ctaTitle: String?
+    private let action: (() -> Void)?
+    private let secondaryTitle: String?
+    private let secondaryAction: (() -> Void)?
+
+    public init(
+        icon: String,
+        title: String,
+        message: String,
+        ctaTitle: String? = nil,
+        action: (() -> Void)? = nil,
+        secondaryTitle: String? = nil,
+        secondaryAction: (() -> Void)? = nil
+    ) {
+        self.icon = icon
+        self.title = title
+        self.message = message
+        self.ctaTitle = ctaTitle
+        self.action = action
+        self.secondaryTitle = secondaryTitle
+        self.secondaryAction = secondaryAction
+    }
+
+    public var body: some View {
+        VStack(spacing: 0) {
+            ZStack {
+                Rectangle().strokeBorder(theme.divider, lineWidth: 2)
+                Image(systemName: icon)
+                    .font(.system(size: 30, weight: .regular))
+                    .foregroundStyle(theme.text.opacity(0.45))
+            }
+            .frame(width: 64, height: 64)
+            .padding(.bottom, 18)
+
+            Text(title)
+                .font(GSFont.heading(22, relativeTo: .title2))
+                .foregroundStyle(theme.text)
+
+            Text(message)
+                .font(GSFont.body(14, relativeTo: .subheadline))
+                .foregroundStyle(theme.neutral500)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 250)
+                .padding(.top, 6)
+
+            if let ctaTitle, let action {
+                Button(ctaTitle, action: action)
+                    .buttonStyle(GSPrimaryButtonStyle(fontSize: 14, verticalPadding: 12))
+                    .padding(.top, 18)
+            }
+
+            if let secondaryTitle, let secondaryAction {
+                Button(secondaryTitle, action: secondaryAction)
+                    .buttonStyle(GSGhostButtonStyle())
+                    .padding(.top, 8)
+            }
+        }
+        .multilineTextAlignment(.center)
+        .padding(.horizontal, 32)
+        .padding(.vertical, 24)
+        .frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - GSErrorCard
+//
+// Blank-list-plus-failure block: same visual language as `GSEmptyState` but
+// at the canvas's smaller "Couldn't load the roster" scale (56×56 icon
+// square, 20pt title, 13pt/240pt-wide message, single "Try again" CTA — no
+// secondary link). Matches proof p31-errors; markup lines ~2318-2326.
+//
+// Contract (Canvas Completion Task 4): this card is for the "list would
+// otherwise be blank AND a load failed" case only — best-effort refresh
+// failures that leave stale data on screen stay silent (no card), so a
+// transient network blip never converts non-blocking semantics into a
+// blocking error. Callers are expected to gate this behind their own
+// `<list>.isEmpty && <lastLoadFailed>` check; it does not gate itself.
+
+public struct GSErrorCard: View {
+    @Environment(\.gsTheme) private var theme
+
+    private let title: String
+    private let message: String
+    private let retryTitle: String
+    private let retry: () -> Void
+
+    public init(
+        title: String = "Couldn't load",
+        message: String,
+        retryTitle: String = "Try again",
+        retry: @escaping () -> Void
+    ) {
+        self.title = title
+        self.message = message
+        self.retryTitle = retryTitle
+        self.retry = retry
+    }
+
+    public var body: some View {
+        VStack(spacing: 0) {
+            ZStack {
+                Rectangle().strokeBorder(theme.divider, lineWidth: 2)
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 26, weight: .regular))
+                    .foregroundStyle(theme.text.opacity(0.45))
+            }
+            .frame(width: 56, height: 56)
+            .padding(.bottom, 14)
+
+            Text(title)
+                .font(GSFont.heading(20, relativeTo: .title3))
+                .foregroundStyle(theme.text)
+
+            Text(message)
+                .font(GSFont.body(13, relativeTo: .footnote))
+                .foregroundStyle(theme.neutral500)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 240)
+                .padding(.top, 6)
+
+            Button(retryTitle, action: retry)
+                .buttonStyle(GSPrimaryButtonStyle(fontSize: 14, verticalPadding: 11))
+                .padding(.top, 16)
+        }
+        .multilineTextAlignment(.center)
+        .padding(16)
+        .frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - GSOfflineBanner
+//
+// "Reconnecting…" pill — 1px divider border, surface fill, a pulsing accent
+// dot, bold "Reconnecting…" label, trailing muted "Showing your last synced
+// data" caption. Matches proof p30-empty-offline; markup lines ~2272-2277.
+//
+// The dot is a `Circle` (not the app's usual zero-radius `Rectangle`) —
+// this is a deliberate, recurring exception in the canvas markup for
+// "live activity blip" indicators specifically (the same round dot appears
+// on the chat typing indicator and voice-recording composer; contrast the
+// SQUARE "LIVE" session badge dot elsewhere in the same file), not an
+// oversight of the house zero-radius rule.
+//
+// Driven by `ConnectivityMonitor.shared.isOnline` — this view itself has no
+// opinion on when to show; callers gate it (`if !connectivity.isOnline`).
+
+public struct GSOfflineBanner: View {
+    @Environment(\.gsTheme) private var theme
+    @State private var isDimmed = false
+
+    public init() {}
+
+    public var body: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(theme.accent)
+                .frame(width: 8, height: 8)
+                .opacity(isDimmed ? 0.25 : 1)
+
+            Text("Reconnecting…")
+                .font(GSFont.bold(12, relativeTo: .caption))
+                .foregroundStyle(theme.text)
+
+            Spacer(minLength: 8)
+
+            Text("Showing your last synced data")
+                .font(GSFont.body(11, relativeTo: .caption2))
+                .foregroundStyle(theme.neutral500)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(theme.surface)
+        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1).repeatForever(autoreverses: true)) {
+                isDimmed = true
+            }
+        }
+    }
+}
