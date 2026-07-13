@@ -112,7 +112,13 @@ public final class ThemeStore {
     ///
     /// Delegates to `mergeExternalSettingsWrite(cached:incoming:persistInFlight:)`
     /// — see that function's doc comment for the merge semantics.
-    public func noteExternalSettingsWrite(_ settings: UserSettings) {
+    ///
+    /// Not `public` (unlike `load()`/`select(_:)`): its parameter is
+    /// `UserSettings`, which is an internal (module-default-access) type —
+    /// a `public` method can't expose an internal type in its signature.
+    /// `RestTimerSettingView` is in the same module, so internal access is
+    /// sufficient for its one call site.
+    func noteExternalSettingsWrite(_ settings: UserSettings) {
         lastKnownSettings = Self.mergeExternalSettingsWrite(
             cached: lastKnownSettings,
             incoming: settings,
