@@ -369,6 +369,21 @@ enum SessionRepository {
         } catch { throw ErrorMapping.map(error) }
     }
 
+    /// Client foreground heartbeat — resets the idle-ladder's activity clock
+    /// while any participant has the app open on a live session
+    /// (push-dossier.md §A.4: "app foreground >5s" counts as activity; v1
+    /// fires once per scenePhase → active transition, no polling timer).
+    /// No-ops server-side (0 rows updated, no error) if the session isn't
+    /// in_progress — a heartbeat arriving just after a session ends is a
+    /// harmless straggler, not something callers need to special-case.
+    static func touchActivity(sessionID: UUID) async throws {
+        do {
+            _ = try await client
+                .rpc("touch_session_activity", params: ["p_session": sessionID.uuidString])
+                .execute()
+        } catch { throw ErrorMapping.map(error) }
+    }
+
     /// Advance the turn to the next participant (current-lifter or organizer gated).
     static func advanceTurn(sessionID: UUID) async throws {
         guard await SupabaseService.shared.currentUserID() != nil else {

@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(26);
+SELECT plan(32);
 
 -- ── Fixtures ──────────────────────────────────────────────────────────────────
 -- pd1 alice = organizer of every fixture session
@@ -376,6 +376,82 @@ SET LOCAL role postgres;
 SELECT lives_ok(
   $$SELECT public.push_drain_dispatch()$$,
   'push_drain_dispatch no-ops safely when the vault secret is not yet seeded'
+);
+
+
+-- ============================================================
+-- wrap_up_session() / still_going(): Task 5 idle-action RPCs
+-- (20260716000006_idle_rpcs.sql)
+-- ============================================================
+-- wrap_up fixture: in_progress, fixed last_activity_at so completed_at's
+-- value can be asserted by exact equality (same idiom as the abandon-
+-- fixture's system-chat regression test above).
+INSERT INTO sessions (id, organizer_id, group_id, state, started_at, last_activity_at) VALUES
+  ('d0000000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-0000000d0001',
+   '00000000-0000-0000-0000-0000000d1001', 'in_progress',
+   '2026-01-01 00:00:00+00'::timestamptz, '2026-01-01 00:30:00+00'::timestamptz);
+INSERT INTO session_participants (session_id, user_id, check_in_state) VALUES
+  ('d0000000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-0000000d0001', 'ready'),
+  ('d0000000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-0000000d0002', 'ready');
+
+-- still_going fixture: in_progress, stale last_activity_at + both idle flags
+-- already set, proving the RPC both bumps the clock and clears the flags.
+INSERT INTO sessions (id, organizer_id, group_id, state, started_at, last_activity_at,
+                       idle_30_notified_at, idle_60_notified_at) VALUES
+  ('d0000000-0000-0000-0000-0000000000a3', '00000000-0000-0000-0000-0000000d0001',
+   '00000000-0000-0000-0000-0000000d1001', 'in_progress',
+   now() - interval '2 hours', now() - interval '65 minutes',
+   now() - interval '35 minutes', now() - interval '5 minutes');
+INSERT INTO session_participants (session_id, user_id, check_in_state) VALUES
+  ('d0000000-0000-0000-0000-0000000000a3', '00000000-0000-0000-0000-0000000d0001', 'ready'),
+  ('d0000000-0000-0000-0000-0000000000a3', '00000000-0000-0000-0000-0000000d0002', 'ready');
+
+-- ── wrap_up_session: outsider rejected ──────────────────────────────────
+SET LOCAL role authenticated;
+SET LOCAL request.jwt.claim.sub = '00000000-0000-0000-0000-0000000d0004';
+SELECT throws_ok(
+  $$SELECT public.wrap_up_session('d0000000-0000-0000-0000-0000000000a2')$$,
+  'P0001', 'only session participants may wrap up the session',
+  'wrap_up_session: non-participant is rejected'
+);
+
+-- ── wrap_up_session: participant succeeds ───────────────────────────────
+SET LOCAL request.jwt.claim.sub = '00000000-0000-0000-0000-0000000d0002';
+SELECT lives_ok(
+  $$SELECT public.wrap_up_session('d0000000-0000-0000-0000-0000000000a2')$$,
+  'wrap_up_session: participant (non-organizer) succeeds'
+);
+
+SET LOCAL role postgres;
+SELECT results_eq(
+  $$SELECT state, completed_at FROM sessions WHERE id = 'd0000000-0000-0000-0000-0000000000a2'$$,
+  $$VALUES ('completed', '2026-01-01 00:30:00+00'::timestamptz)$$,
+  'wrap_up_session: state -> completed, completed_at = last_activity_at'
+);
+
+-- ── still_going: outsider rejected ──────────────────────────────────────
+SET LOCAL role authenticated;
+SET LOCAL request.jwt.claim.sub = '00000000-0000-0000-0000-0000000d0004';
+SELECT throws_ok(
+  $$SELECT public.still_going('d0000000-0000-0000-0000-0000000000a3')$$,
+  'P0001', 'only session participants may confirm the session is still going',
+  'still_going: non-participant is rejected'
+);
+
+-- ── still_going: participant succeeds, resets clock + clears both flags ──
+SET LOCAL request.jwt.claim.sub = '00000000-0000-0000-0000-0000000d0002';
+SELECT lives_ok(
+  $$SELECT public.still_going('d0000000-0000-0000-0000-0000000000a3')$$,
+  'still_going: participant (non-organizer) succeeds'
+);
+
+SET LOCAL role postgres;
+SELECT ok(
+  (SELECT last_activity_at >= now() - interval '5 seconds'
+     AND idle_30_notified_at IS NULL
+     AND idle_60_notified_at IS NULL
+   FROM sessions WHERE id = 'd0000000-0000-0000-0000-0000000000a3'),
+  'still_going: last_activity_at reset to now and both idle flags cleared'
 );
 
 SELECT * FROM finish();

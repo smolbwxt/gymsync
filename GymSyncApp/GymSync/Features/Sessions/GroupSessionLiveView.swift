@@ -446,9 +446,19 @@ struct GroupSessionLiveView: View {
             Task {
                 await reload()
                 await subscribeBroadcast()
+                // Idle-ladder activity heartbeat (push-dossier.md §A.4) —
+                // one call per foreground transition, no timer. Best-effort:
+                // a failed heartbeat must never disrupt the live session UI.
+                try? await SessionRepository.touchActivity(sessionID: liveSession.id)
             }
         }
+        .onAppear {
+            // Suppresses the push banner for this same session while it's
+            // open live (AppDelegate.willPresent, AppState.activeSessionID).
+            appState.activeSessionID = liveSession.id
+        }
         .onDisappear {
+            appState.activeSessionID = nil
             Task {
                 await liveService.unsubscribe()
                 await broadcastService.unsubscribe()
@@ -1302,6 +1312,10 @@ struct GroupSessionLiveView: View {
         await loadSoundCatalog()
         await subscribeBroadcast()
         if isMyTurn { prefillLogInputs() }
+        // Initial heartbeat — the scenePhase→active heartbeat above only
+        // fires on a later transition, so this covers "already foreground,
+        // just opened the session" (push-dossier.md §A.4).
+        try? await SessionRepository.touchActivity(sessionID: liveSession.id)
     }
 
     /// Fetch display names for the 4 known slugs so tiles render correctly before any tap.

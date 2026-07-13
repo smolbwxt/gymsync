@@ -11,6 +11,12 @@ struct SocialTabView: View {
     @State private var friendRealtime = FriendRealtimeService()
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.gsTheme) private var theme
+    @Environment(AppState.self) private var appState
+
+    // Push deep-link routing (Phase 3d Task 5) — programmatic navigation
+    // targets consumed from `appState.pendingRoute`.
+    @State private var pendingChatGroup: GymGroup?
+    @State private var navigateToFriends = false
 
     var body: some View {
         NavigationStack {
@@ -111,6 +117,7 @@ struct SocialTabView: View {
                         Task { await refresh() }
                     }
                 }
+                await consumePendingRouteIfNeeded()
             }
             .onChange(of: scenePhase) {
                 guard scenePhase == .active else { return }
@@ -123,8 +130,38 @@ struct SocialTabView: View {
                     }
                 }
             }
+            .onChange(of: appState.pendingRoute) {
+                Task { await consumePendingRouteIfNeeded() }
+            }
             .onDisappear { Task { await friendRealtime.unsubscribe() } }
             .refreshable { await refresh() }
+            .navigationDestination(item: $pendingChatGroup) { group in
+                GroupView(group: group)
+            }
+            .navigationDestination(isPresented: $navigateToFriends) {
+                FriendsView()
+            }
+        }
+    }
+
+    // MARK: - Push deep-link routing (Phase 3d Task 5)
+
+    /// Consumes `.chat`/`.friends`. Clears `pendingRoute` immediately so a
+    /// later `.onChange` firing (or this `.task` re-running) doesn't
+    /// re-navigate. `.chat`'s group fetch can legitimately come back empty
+    /// (e.g. the user left the group between the push firing and the tap) —
+    /// silently no-ops rather than surfacing an error for that edge case.
+    private func consumePendingRouteIfNeeded() async {
+        switch appState.pendingRoute {
+        case .friends:
+            appState.pendingRoute = nil
+            navigateToFriends = true
+        case .chat(let groupID):
+            appState.pendingRoute = nil
+            let groups = (try? await GroupRepository.fetchMany(ids: [groupID])) ?? []
+            pendingChatGroup = groups.first
+        default:
+            break
         }
     }
 

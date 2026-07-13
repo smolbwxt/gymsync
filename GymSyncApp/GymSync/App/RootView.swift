@@ -2,7 +2,10 @@ import SwiftUI
 
 struct RootView: View {
     @Environment(AuthService.self) private var auth
-    @State private var appState = AppState()
+    // AppState is now a singleton (Phase 3d Task 5) so AppDelegate can reach
+    // the same instance from outside the view tree — see AppState.shared's
+    // doc comment.
+    @State private var appState = AppState.shared
 
     var body: some View {
         Group {

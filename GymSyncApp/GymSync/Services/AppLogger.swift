@@ -14,4 +14,5 @@ enum AppLogger {
     static let sessions = Logger(subsystem: subsystem, category: "sessions")
     static let soundboard = Logger(subsystem: subsystem, category: "soundboard")
     static let audio = Logger(subsystem: subsystem, category: "audio")
+    static let push = Logger(subsystem: subsystem, category: "push")
 }
