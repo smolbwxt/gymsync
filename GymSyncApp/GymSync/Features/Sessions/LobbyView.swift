@@ -44,6 +44,14 @@ struct LobbyView: View {
 
     @State private var showSeriesEditor = false
 
+    // MARK: - Check-in window state
+
+    /// Toggled exactly once, by a single scheduled `Task.sleep` (never a repeating/polling
+    /// Timer — see the `.task(id:)` on `actionBar`), when the 20-minute check-in window
+    /// opens. `canCheckIn` reads live `Date()` on every body evaluation, so this only
+    /// needs to force ONE re-render at the right moment for the button to unlock itself.
+    @State private var checkInWindowRefreshTick = false
+
     // MARK: - Computed helpers
 
     private var selfID: UUID? { appState.currentProfile?.id }
@@ -71,6 +79,29 @@ struct LobbyView: View {
     }
 
     private var isCheckedIn: Bool { ownParticipant?.checkInState == "ready" }
+
+    /// Check-in opens 20 minutes before the scheduled start (server-enforced too —
+    /// see `supabase/migrations/20260715000003_checkin_window.sql`). `nil` when the
+    /// session has no `scheduledFor` (shouldn't happen for a lobby, but fail open
+    /// rather than permanently locking the button on unexpected data).
+    private var checkInOpensAt: Date? {
+        effectiveSession.scheduledFor?.addingTimeInterval(-20 * 60)
+    }
+
+    private var canCheckIn: Bool {
+        // Read (but don't branch on) `checkInWindowRefreshTick` so SwiftUI's dependency
+        // tracking knows this computed property — and therefore `actionBar` — depends on
+        // it; the one-shot `.task(id:)` toggle is otherwise never observed, since the
+        // real truth here always comes from a fresh `Date()` comparison below.
+        let _ = checkInWindowRefreshTick
+        guard let checkInOpensAt else { return true }
+        return Date() >= checkInOpensAt
+    }
+
+    private var checkInOpensAtText: String {
+        guard let checkInOpensAt else { return "" }
+        return checkInOpensAt.formatted(date: .omitted, time: .shortened)
+    }
 
     private var checkInStatusSubtitle: String {
         guard isCheckedIn else { return "Tap Check In below" }
@@ -138,6 +169,10 @@ struct LobbyView: View {
         .safeAreaInset(edge: .bottom) {
             actionBar
         }
+        // Pushed detail screen with its own bottom-pinned action bar — see
+        // GSComponents.swift's GSHidesDock for why the custom dock can't just
+        // reserve more safe-area inset for content reached via push.
+        .gsHidesDock()
         .navigationTitle(groupName.map { "Lobby · \($0)" } ?? "Lobby")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -642,6 +677,11 @@ struct LobbyView: View {
                                     .tint(theme.accent)
                                 Text("Checking in…")
                                     .font(GSFont.bold(15, relativeTo: .body))
+                            } else if !canCheckIn {
+                                Image(systemName: "clock")
+                                    .font(.system(size: 15))
+                                Text("Check-in opens at \(checkInOpensAtText)")
+                                    .font(GSFont.bold(15, relativeTo: .body))
                             } else {
                                 Image(systemName: "location.circle.fill")
                                     .font(.system(size: 15))
@@ -659,7 +699,7 @@ struct LobbyView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .disabled(isCheckingIn)
+                    .disabled(isCheckingIn || !canCheckIn)
                 }
 
                 // Start / Waiting row (organizer vs attendee)
@@ -710,6 +750,18 @@ struct LobbyView: View {
             .padding(.top, 10)
             .padding(.bottom, 22)
             .background(theme.bg)
+        }
+        // One-shot wake-up when the check-in window opens — NOT a polling Timer.
+        // `canCheckIn` already reads live `Date()` on every body evaluation; this just
+        // forces the ONE re-render needed at the moment the window actually opens so the
+        // button unlocks itself without the user having to background/foreground the app.
+        // Keyed on `checkInOpensAt` so a reschedule (which changes `scheduledFor`)
+        // correctly cancels and reschedules this wake-up.
+        .task(id: checkInOpensAt) {
+            guard let checkInOpensAt, checkInOpensAt > Date() else { return }
+            try? await Task.sleep(for: .seconds(checkInOpensAt.timeIntervalSinceNow))
+            guard !Task.isCancelled else { return }
+            checkInWindowRefreshTick.toggle()
         }
     }
 
@@ -805,6 +857,11 @@ struct LobbyView: View {
 
     @MainActor
     private func initiateCheckIn() async {
+        // Defense in depth: the button is already disabled while `!canCheckIn`, but a
+        // stale render (or a future call site) must not be able to fire a check-in
+        // before the 20-minute window opens. The server enforces this independently too
+        // — see supabase/migrations/20260715000003_checkin_window.sql.
+        guard canCheckIn else { return }
         isCheckingIn = true
         defer { isCheckingIn = false }
         errorText = nil

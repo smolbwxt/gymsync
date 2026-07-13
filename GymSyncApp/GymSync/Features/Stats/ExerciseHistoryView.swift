@@ -123,6 +123,9 @@ struct ExerciseHistoryView: View {
         }
         .scrollContentBackground(.hidden)
         .background(theme.bg)
+        // Pushed from StatsTabView's per-exercise history list — see
+        // GSComponents.swift's GSHidesDock.
+        .gsHidesDock()
         .navigationTitle(exercise.name)
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }

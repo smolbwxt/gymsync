@@ -99,6 +99,13 @@ struct RoutineBuilderView: View {
             .padding(16)
         }
         .background(theme.bg)
+        // Used both as a sheet (RoutinesListView's "New Routine") and as a
+        // pushed destination (a routine's "Edit routine" NavigationLink). The
+        // dock-hiding preference is a no-op in the sheet case (sheets already
+        // fully cover the dock and preferences don't cross the sheet
+        // boundary) and necessary in the push case — see GSComponents.swift's
+        // GSHidesDock.
+        .gsHidesDock()
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(theme.surface, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)

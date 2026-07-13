@@ -114,6 +114,8 @@ struct ExerciseDetailView: View {
             .padding(16)
         }
         .background(theme.bg)
+        // Pushed from ExercisesListView — see GSComponents.swift's GSHidesDock.
+        .gsHidesDock()
         .navigationTitle("Exercise")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(theme.surface, for: .navigationBar)

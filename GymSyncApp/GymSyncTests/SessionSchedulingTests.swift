@@ -12,7 +12,10 @@ final class SessionSchedulingTests: XCTestCase {
 
     func testScheduleAndLifecycle() async throws {
         // 1. Schedule an ad-hoc session with a room code
-        let scheduledFor = Date().addingTimeInterval(3600) // +1 hour
+        // scheduledFor must be within the 20-minute check-in window (step 4
+        // below checks in immediately) — see
+        // supabase/migrations/20260715000003_checkin_window.sql.
+        let scheduledFor = Date().addingTimeInterval(15 * 60) // +15 minutes
         let session = try await SessionRepository.schedule(
             groupID: nil,
             inviteeIDs: [],

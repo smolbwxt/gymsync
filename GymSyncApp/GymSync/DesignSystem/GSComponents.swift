@@ -265,6 +265,40 @@ public struct GSTabBar: View {
     }
 }
 
+// MARK: - GSHidesDock
+//
+// PreferenceKey + convenience modifier for hiding the custom bottom dock
+// (`GSTabBar`) while a pushed detail screen is on-screen (DEFECT-1 fix).
+//
+// `.safeAreaInset` (used by `GSTabBar`'s host) only augments the safe area
+// for its own SwiftUI-layout descendants — a `NavigationStack`'s pushed
+// `navigationDestination` content is presented via UIKit's push-transition
+// machinery and never sees that inset, so the dock draws over bottom-pinned
+// UI on pushed screens (action bars, input bars, sticky CTAs). Preferences,
+// unlike safe-area insets, DO propagate up through pushed destination
+// content to ancestors above the `NavigationStack` (they travel through the
+// SwiftUI view graph, not the UIKit presentation layer), so this preference
+// reaches `MainTabView` correctly and it can omit the dock entirely for the
+// duration — mirroring system `hidesBottomBarWhenPushed` behavior instead of
+// trying to make `safeAreaInset` reach through the push boundary.
+public struct GSHidesDock: PreferenceKey {
+    public static let defaultValue: Bool = false
+    public static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
+    }
+}
+
+extension View {
+    /// Marks this screen as one that should hide the app's custom bottom
+    /// dock (`GSTabBar`) while it is part of the visible navigation stack.
+    /// Apply to pushed `navigationDestination` content with bottom-pinned UI
+    /// of its own (action bars, input bars, sticky CTAs) — NOT to tab ROOT
+    /// views, which must keep the dock visible.
+    public func gsHidesDock(_ hides: Bool = true) -> some View {
+        preference(key: GSHidesDock.self, value: hides)
+    }
+}
+
 // MARK: - GSSectionHeader
 //
 // Uppercase, tracked kicker label — neutral700 text.

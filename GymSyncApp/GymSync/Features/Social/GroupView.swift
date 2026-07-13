@@ -40,6 +40,12 @@ struct GroupView: View {
             }
         }
         .background(theme.bg)
+        // Pushed from SocialTabView. Its Chat sub-tab embeds ChatView's
+        // bottom-pinned inputBar and its Members sub-tab has a bottom-pinned
+        // "Leave Group" footer — applied here (the actual push destination)
+        // so the dock stays hidden across all three sub-tabs, not just Chat.
+        // See GSComponents.swift's GSHidesDock.
+        .gsHidesDock()
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

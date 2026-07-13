@@ -373,6 +373,11 @@ struct GroupSessionLiveView: View {
         }
         .navigationBarBackButtonHidden(true)
         .navigationTitle("")
+        // Pushed via LobbyView → SessionInProgressView; the soundboard dock +
+        // bottom action bar below are bottom-pinned — see GSComponents.swift's
+        // GSHidesDock for why the custom app dock can't reach them via
+        // safeAreaInset alone.
+        .gsHidesDock()
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 0) {
                 // ── SOUNDBOARD DOCK ──────────────────────────────────────

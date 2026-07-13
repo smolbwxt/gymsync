@@ -147,6 +147,10 @@ struct WorkoutSessionView: View {
             }
         }
         .background(theme.bg)
+        // Pushed from Home's "Start Solo Workout" / a routine's "Start Workout";
+        // the sticky "Log Set N" / "Done" CTA is a bottom-pinned ZStack overlay,
+        // not a safeAreaInset — see GSComponents.swift's GSHidesDock.
+        .gsHidesDock()
         .navigationTitle(routine?.name ?? "Freeform Workout")
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(!completed)
@@ -689,40 +693,49 @@ struct WorkoutSessionView: View {
             note: note, loggedAt: Date()
         )
         do {
+            // Prior max MUST be captured BEFORE the insert below — querying it after
+            // logSet() would fold the just-inserted set's own weight into the max
+            // (self-comparison), making `weight > priorBest` always false for a
+            // genuine new max and silently suppressing the PR toast. Mirrors
+            // GroupSessionLiveView.logSetAndAdvance's identical ordering.
+            var isPR = false
+            var priorBest: Decimal = 0
+            if !isFailed, let weight, weight > 0 {
+                priorBest = try await priorMax(exerciseID: re.exerciseID,
+                                               weight: weight, userID: userID)
+                isPR = weight > priorBest
+            }
+
             try await SessionRepository.logSet(log)
             loggedSets.append(log)
 
-            if !isFailed, let weight, weight > 0 {
-                let priorMax = try await priorMax(exerciseID: re.exerciseID,
-                                                  weight: weight, userID: userID)
-                if weight > priorMax {
-                    withAnimation { isPRToast = true }
-                    // Best-effort PR record — a failed insert must never block or delay
-                    // set logging (which already happened above). Fall back to a local
-                    // record so the recap (Task 9) still has the PR if the write failed.
-                    if let record = try? await PersonalRecordRepository.record(
+            if isPR, let weight {
+                withAnimation { isPRToast = true }
+                // Best-effort PR record — a failed insert must never block or delay
+                // set logging (which already happened above). Fall back to a local
+                // record so the recap (Task 9) still has the PR if the write failed.
+                if let record = try? await PersonalRecordRepository.record(
+                    exerciseID: re.exerciseID,
+                    weight: weight,
+                    reps: reps ?? 0,
+                    previousBest: priorBest,
+                    sessionID: session.id
+                ) {
+                    sessionPRs.append(record)
+                } else {
+                    sessionPRs.append(PersonalRecord(
+                        id: UUID(),
+                        userID: userID,
                         exerciseID: re.exerciseID,
                         weight: weight,
                         reps: reps ?? 0,
-                        previousBest: priorMax,
-                        sessionID: session.id
-                    ) {
-                        sessionPRs.append(record)
-                    } else {
-                        sessionPRs.append(PersonalRecord(
-                            id: UUID(),
-                            userID: userID,
-                            exerciseID: re.exerciseID,
-                            weight: weight,
-                            reps: reps ?? 0,
-                            previousBest: priorMax,
-                            sessionID: session.id,
-                            achievedAt: Date()
-                        ))
-                    }
-                    try? await Task.sleep(nanoseconds: 2_000_000_000)
-                    withAnimation { isPRToast = false }
+                        previousBest: priorBest,
+                        sessionID: session.id,
+                        achievedAt: Date()
+                    ))
                 }
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                withAnimation { isPRToast = false }
             }
 
             let targetSets = re.targetSets ?? 1
