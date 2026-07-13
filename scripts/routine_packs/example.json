@@ -1,0 +1,18 @@
+[
+  {
+    "name": "12 Days of Liftmas",
+    "exercises": [
+      { "slug": "barbell-bench-press", "sets": 4, "reps": "8-10", "weight": "185" },
+      { "slug": "overhead-press", "sets": 3, "reps": "10" },
+      { "slug": "tricep-pushdown", "sets": 3, "reps": "12" }
+    ]
+  },
+  {
+    "name": "New Year Legs",
+    "exercises": [
+      { "slug": "back-squat", "sets": 5, "reps": "5", "weight": "225" },
+      { "slug": "romanian-deadlift", "sets": 3, "reps": "8" },
+      { "slug": "leg-press", "sets": 3, "reps": "12" }
+    ]
+  }
+]

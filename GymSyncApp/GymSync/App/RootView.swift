@@ -31,6 +31,13 @@ struct RootView: View {
 private struct MainTabView: View {
     @Environment(AppState.self) private var appState
 
+    // Set true whenever a pushed descendant (LobbyView, ChatView, etc.) reports
+    // `.gsHidesDock()` — see GSComponents.swift for the full rationale. Popping
+    // back to a tab root (no more `.gsHidesDock()` contributors mounted) flips
+    // this back to false via the same onPreferenceChange callback, restoring
+    // the dock reliably regardless of push depth.
+    @State private var isDockHidden = false
+
     var body: some View {
         @Bindable var appState = appState
         ZStack {
@@ -43,6 +50,11 @@ private struct MainTabView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onPreferenceChange(GSHidesDock.self) { hides in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isDockHidden = hides
+            }
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             // Dock stays pinned at the physical bottom edge — it must NOT ride
             // up on the keyboard (matches system TabView chrome behavior).
@@ -50,8 +62,11 @@ private struct MainTabView: View {
             // content) keeps this opt-out scoped to the dock, so content
             // above it (ChatView compose bar, HomeView join-code field)
             // still receives the keyboard safe-area inset normally.
-            GSTabBar(selection: $appState.selectedTab)
-                .ignoresSafeArea(.keyboard, edges: .bottom)
+            if !isDockHidden {
+                GSTabBar(selection: $appState.selectedTab)
+                    .ignoresSafeArea(.keyboard, edges: .bottom)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
     }
 }

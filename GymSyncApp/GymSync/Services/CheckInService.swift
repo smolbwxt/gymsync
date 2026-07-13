@@ -61,7 +61,10 @@ enum CheckInService {
     // MARK: One-shot location
 
     /// Requests a one-shot current location. Asks for when-in-use auth if not yet determined.
-    /// Throws `GymSyncError.validation("Location unavailable")` on denial or failure.
+    /// Throws `GymSyncError.validation("Location unavailable")` on denial or failure, or
+    /// `GymSyncError.validation("Location timed out")` if no CLLocationManager callback
+    /// fires within the hard timeout (see `LocationOneShotHelper.fetchLocation()`).
+    @MainActor
     static func requestLocation() async throws -> CLLocation {
         try await LocationOneShotHelper().fetchLocation()
     }
@@ -70,7 +73,14 @@ enum CheckInService {
 // MARK: - LocationOneShotHelper
 
 /// Retained for the duration of the async call; holds the CLLocationManager + delegate.
-private final class LocationOneShotHelper: NSObject, CLLocationManagerDelegate, @unchecked Sendable {
+///
+/// `@MainActor`-isolated so `CLLocationManager` is always constructed and driven from the
+/// main run loop — a non-isolated `async` context can otherwise run on a Swift Concurrency
+/// cooperative-pool thread with no actively-pumped run loop, which is a well-known failure
+/// mode where CLLocationManager silently never delivers delegate callbacks (see Bug 2 in
+/// the device-QA diagnosis).
+@MainActor
+private final class LocationOneShotHelper: NSObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     private var continuation: CheckedContinuation<CLLocation, Error>?
 
@@ -79,6 +89,11 @@ private final class LocationOneShotHelper: NSObject, CLLocationManagerDelegate, 
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyHundredMeters
     }
+
+    /// Hard timeout for the one-shot location fetch. Covers Location Services off
+    /// system-wide, an unanswered `.notDetermined` prompt, an indoor GPS fix that never
+    /// resolves, or any other path where no CLLocationManager delegate callback ever fires.
+    private static let timeout: Duration = .seconds(10)
 
     func fetchLocation() async throws -> CLLocation {
         try await withCheckedThrowingContinuation { continuation in
@@ -94,6 +109,15 @@ private final class LocationOneShotHelper: NSObject, CLLocationManagerDelegate, 
                 resume(throwing: GymSyncError.validation("Location unavailable"))
             @unknown default:
                 resume(throwing: GymSyncError.validation("Location unavailable"))
+            }
+
+            // Race the delegate callback against a hard timeout. Whichever fires first
+            // wins — `resume(throwing:)`/`resume(returning:)` are guarded by the
+            // `continuation = nil` check below, so this is safe to call even after a
+            // delegate callback (or a prior timeout) already resumed.
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: Self.timeout)
+                self?.resume(throwing: GymSyncError.validation("Location timed out"))
             }
         }
     }

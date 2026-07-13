@@ -174,6 +174,12 @@ struct ChatView: View {
             Task { await load() }
         }
         .onDisappear { Task { await realtime.unsubscribe() } }
+        // ChatView's inputBar is bottom-pinned; when reached via GroupView's
+        // push (SocialTabView → GroupView → Chat sub-tab) it would otherwise
+        // sit under the custom dock. GroupView also carries this modifier
+        // (it covers ChatView's every sub-tab sibling too), so this is
+        // belt-and-suspenders — see GSComponents.swift's GSHidesDock.
+        .gsHidesDock()
     }
 
     // MARK: - Input Bar

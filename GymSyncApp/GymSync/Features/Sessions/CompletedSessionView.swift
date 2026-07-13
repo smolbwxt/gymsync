@@ -101,6 +101,11 @@ struct CompletedSessionView: View {
             }
         }
         .background(theme.bg)
+        // Pushed from GroupView's Sessions sub-tab — see GSComponents.swift's
+        // GSHidesDock (matches system hidesBottomBarWhenPushed for every
+        // pushed detail screen, per the canvas proofs, not just ones with an
+        // explicit bottom bar of their own).
+        .gsHidesDock()
         .navigationTitle(navigationTitleText)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
