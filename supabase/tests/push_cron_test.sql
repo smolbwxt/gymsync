@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(24);
+SELECT plan(26);
 
 -- ── Fixtures ──────────────────────────────────────────────────────────────────
 -- pd1 alice = organizer of every fixture session
@@ -79,6 +79,20 @@ INSERT INTO sessions (id, organizer_id, group_id, state, scheduled_for) VALUES
 INSERT INTO session_participants (session_id, user_id, check_in_state) VALUES
   ('d0000000-0000-0000-0000-0000000000b2', '00000000-0000-0000-0000-0000000d0001', 'invited'),
   ('d0000000-0000-0000-0000-0000000000b2', '00000000-0000-0000-0000-0000000d0003', 'invited');
+
+-- reminder_catchup (20260716000004 regression): scheduled_for only 5 minutes
+-- out — OUTSIDE the old boundary-exact [now()+14min, now()+15min) window,
+-- which would have silently skipped this session forever under a single
+-- delayed/dropped cron tick. Proves the widened
+-- "scheduled_for - 15min <= now() AND scheduled_for > now()" predicate
+-- still catches it, i.e. the fix is catch-up-safe.
+INSERT INTO sessions (id, organizer_id, group_id, state, scheduled_for) VALUES
+  ('d0000000-0000-0000-0000-0000000000b3', '00000000-0000-0000-0000-0000000d0001',
+   '00000000-0000-0000-0000-0000000d1001', 'scheduled',
+   now() + interval '5 minutes');
+INSERT INTO session_participants (session_id, user_id, check_in_state) VALUES
+  ('d0000000-0000-0000-0000-0000000000b3', '00000000-0000-0000-0000-0000000d0001', 'invited'),
+  ('d0000000-0000-0000-0000-0000000000b3', '00000000-0000-0000-0000-0000000d0002', 'invited');
 
 -- heartbeat: fresh in_progress session, no activity recorded yet.
 INSERT INTO sessions (id, organizer_id, group_id, state, started_at) VALUES
@@ -188,6 +202,14 @@ SELECT results_eq(
       AND payload ->> 'session_id' = 'd0000000-0000-0000-0000-0000000000b2'$$,
   ARRAY[0],
   'NULL scheduled_for session never enqueues a reminder'
+);
+
+SELECT results_eq(
+  $$SELECT count(*)::int FROM push_queue
+    WHERE event = 'session_reminder_15min'
+      AND payload ->> 'session_id' = 'd0000000-0000-0000-0000-0000000000b3'$$,
+  ARRAY[2],
+  'reminder catch-up: session scheduled 5 minutes out (past the old boundary-exact window) still gets reminded — widened window is catch-up-safe'
 );
 
 -- ============================================================
@@ -302,6 +324,33 @@ SELECT ok(
 SELECT ok(
   (SELECT last_activity_at IS NULL FROM sessions WHERE id = 'd0000000-0000-0000-0000-0000000000e2'),
   'chat_messages INSERT does not touch a session in a DIFFERENT group'
+);
+
+
+-- ============================================================
+-- chat_messages INSERT trigger: system messages do NOT reset the idle
+-- clock (regression test, fix round 1) — author_id IS NULL is the "NULL =
+-- system" convention (20260710000003_create_chat.sql). Without the guard
+-- in touch_session_activity_on_chat(), a system-authored row (e.g. the
+-- "session scheduled" announcement announce_session_lifecycle posts when a
+-- brand-new session is scheduled into a group that also has an
+-- in_progress session) would incorrectly resurrect that unrelated
+-- session's activity clock even though no participant did anything. Uses
+-- a fixed timestamp literal (not now() - interval) so the assertion is an
+-- exact equality check, not a fuzzy "still old" bound.
+-- ============================================================
+INSERT INTO sessions (id, organizer_id, group_id, state, started_at, last_activity_at) VALUES
+  ('d0000000-0000-0000-0000-0000000000f1', '00000000-0000-0000-0000-0000000d0001',
+   '00000000-0000-0000-0000-0000000d1001', 'in_progress',
+   '2026-01-01 00:00:00+00'::timestamptz, '2026-01-01 00:00:00+00'::timestamptz);
+
+INSERT INTO chat_messages (group_id, author_id, kind, body) VALUES
+  ('00000000-0000-0000-0000-0000000d1001', NULL, 'system_session', 'Session scheduled');
+
+SELECT results_eq(
+  $$SELECT last_activity_at FROM sessions WHERE id = 'd0000000-0000-0000-0000-0000000000f1'$$,
+  $$VALUES ('2026-01-01 00:00:00+00'::timestamptz)$$,
+  'system chat message (author_id IS NULL) does not reset last_activity_at on an in_progress session in the same group'
 );
 
 
