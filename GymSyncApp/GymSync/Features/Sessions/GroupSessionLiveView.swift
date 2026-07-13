@@ -71,6 +71,18 @@ struct GroupSessionLiveView: View {
     @State private var showEndConfirmation  = false
     @State private var isEnding             = false
     @State private var errorText: String?
+    /// Canvas Completion Task 4 fix round 1 (proof p31-errors, "Couldn't load
+    /// the roster"): `reload()` previously swallowed participants/session
+    /// fetch failures with only an `AppLogger` line — no UI signal at all.
+    /// Set in `reload()`'s catch, cleared on success. Gates the `GSErrorCard`
+    /// replacement for the roster/spotlight block below (see `body`).
+    @State private var rosterLoadFailed     = false
+    /// Canvas Completion Task 4 fix round 1 (proof p31-errors, "Set didn't
+    /// save"): dedicated to `logSetAndAdvance`'s failure only — deliberately
+    /// separate from the generic `errorText` above (which stays the small
+    /// red caption for skipTurn/endSession/penalty-log failures, unchanged).
+    /// Cleared optimistically at the start of every `logSetAndAdvance` call.
+    @State private var logSetErrorText: String?
     @State private var recapData: RecapData?          // non-nil → sheet
     @State private var penaltyLogged        = 0       // reps logged this session as penalty by me
     /// Fetched lazily when this is a group session — backs the penalty
@@ -304,11 +316,37 @@ struct GroupSessionLiveView: View {
                     GSDivider()
 
                     // ── SPOTLIGHT (my turn) / ROSTER (spectating) ───────────
-                    if isMyTurn {
+                    // Canvas Completion Task 4 fix round 1 (proof p31-errors,
+                    // "Couldn't load the roster"): when the participants fetch
+                    // has actually failed AND left the list blank, show the
+                    // error card in place of both the spotlight and spectating
+                    // blocks — both derive rotation/roster state from
+                    // `participants`, so a blank list means neither block has
+                    // anything real to show anyway (stale/placeholder text at
+                    // best). A transient refresh failure that leaves an
+                    // already-populated `participants` list intact never
+                    // triggers this (matches the same best-effort contract as
+                    // `GSErrorCard`'s other call sites).
+                    if participants.isEmpty && rosterLoadFailed {
+                        GSErrorCard(
+                            title: "Couldn't load the roster",
+                            message: "Check your connection. Your workout keeps logging locally.",
+                            retry: { Task { await reload() } }
+                        )
+                        .padding(.horizontal, 16)
+                        .padding(.top, 14)
+                    } else if isMyTurn {
                         VStack(alignment: .leading, spacing: 12) {
                             spotlightHeaderCard
                             statTimerRow
                             logThisSetCard
+                            if let logSetErrorText {
+                                GSInlineErrorBanner(
+                                    title: "Set didn't save.",
+                                    message: "Check your connection, then try again — your reps are still filled in above.",
+                                    retry: { commitInlineLog() }
+                                )
+                            }
                             if !rotationTiles.isEmpty {
                                 rotationStrip
                             }
@@ -1423,6 +1461,7 @@ struct GroupSessionLiveView: View {
         do {
             let (fetchedParts, fetchedSets, fetchedSession) =
                 try await (pFetch, setsFetch, sessionRef)
+            rosterLoadFailed = false
             participants = fetchedParts
             if let s = fetchedSession { liveSession = s }
 
@@ -1445,6 +1484,7 @@ struct GroupSessionLiveView: View {
             }
         } catch {
             AppLogger.sessions.error("GroupSessionLiveView reload: \(error, privacy: .public)")
+            rosterLoadFailed = true
         }
 
         // Routine
@@ -1504,6 +1544,11 @@ struct GroupSessionLiveView: View {
         isFailed: Bool, note: String?, exerciseID: UUID
     ) async {
         guard let userID = selfID else { return }
+        // Canvas Completion Task 4 fix round 1: clear optimistically at the
+        // start of every attempt (mirrors `endSession()`'s `errorText = nil`
+        // convention) so a retry that succeeds drops the banner immediately,
+        // and a retry that fails re-sets it fresh below.
+        logSetErrorText = nil
         let log = SetLog(
             id: UUID(), userID: userID, sessionID: session.id,
             exerciseID: exerciseID,
@@ -1554,9 +1599,13 @@ struct GroupSessionLiveView: View {
 
             try await SessionRepository.advanceTurn(sessionID: session.id)
         } catch let error as GymSyncError {
-            errorText = error.errorDescription
+            // Upgraded treatment (Canvas Completion Task 4 fix round 1, proof
+            // p31-errors) — NOT the shared `errorText` red caption; see
+            // `logSetErrorText`'s declaration + the `GSInlineErrorBanner`
+            // wiring in `body`.
+            logSetErrorText = error.errorDescription
         } catch {
-            errorText = error.localizedDescription
+            logSetErrorText = error.localizedDescription
         }
     }
 

@@ -1,6 +1,15 @@
 import SwiftUI
 
 struct FriendsView: View {
+    /// When true, focuses the "Add a friend" username field as soon as this
+    /// view appears. Wired from `SocialTabView`'s full-tab "No crew yet" CTA
+    /// (Canvas Completion Task 4 fix round 1) so tapping "Add your first
+    /// friend" there lands with the keyboard already up, not just a bare
+    /// navigation. Defaults to false for every other entry point (the
+    /// Social tab's "Friends" row, the push-route deep link), which are
+    /// unchanged.
+    var focusAddFieldOnAppear = false
+
     @State private var friends: [Profile] = []
     @State private var incoming: [Profile] = []
     @State private var outgoing: [Profile] = []
@@ -182,6 +191,11 @@ struct FriendsView: View {
         .navigationTitle("Friends")
         .task { await refresh() }
         .refreshable { await refresh() }
+        .onAppear {
+            if focusAddFieldOnAppear {
+                isUsernameFieldFocused = true
+            }
+        }
     }
 
     // Two-line "Display Name" / "@username" block, matching the proof's

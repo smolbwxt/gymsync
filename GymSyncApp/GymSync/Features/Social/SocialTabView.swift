@@ -22,130 +22,178 @@ struct SocialTabView: View {
     // targets consumed from `appState.pendingRoute`.
     @State private var pendingChatGroup: GymGroup?
     @State private var navigateToFriends = false
+    // Canvas Completion Task 4 fix round 1 — the full-tab "No crew yet"
+    // moment's CTA navigates through this SEPARATE destination (rather than
+    // reusing `navigateToFriends`, which also serves the push-route deep
+    // link and must keep landing on a plain, unfocused `FriendsView()`) so
+    // only this specific entry point focuses the add-friend field.
+    @State private var navigateToFriendsFocused = false
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    // Offline pill (Canvas Completion Task 4 — proof
-                    // p30-empty-offline). Anchored at the top of this
-                    // screen's content, matching the canvas frame — see
-                    // ConnectivityMonitor.swift's doc comment for why this
-                    // isn't a RootView-wide overlay.
-                    if !connectivity.isOnline {
-                        GSOfflineBanner()
-                            .padding(.horizontal, 16)
-                            .padding(.top, 10)
-                    }
-
-                    // Friends row
-                    NavigationLink {
-                        FriendsView()
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: "person.2")
-                                .font(.system(size: 18, weight: .regular))
-                                .foregroundStyle(theme.text)
-                            Text("Friends")
-                                .font(GSFont.bold(14, relativeTo: .headline))
-                                .foregroundStyle(theme.text)
-                            Spacer()
-                            if pendingCount > 0 {
-                                GSTag(text: "\(pendingCount) new", style: .accent)
-                            }
-                            Text("\(friendCount)")
-                                .font(GSFont.body(13, relativeTo: .subheadline))
-                                .foregroundStyle(theme.neutral500)
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(theme.neutral500)
+            GeometryReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        // Offline pill (Canvas Completion Task 4 — proof
+                        // p30-empty-offline). Anchored at the top of this
+                        // screen's content, matching the canvas frame — see
+                        // ConnectivityMonitor.swift's doc comment for why this
+                        // isn't a RootView-wide overlay.
+                        if !connectivity.isOnline {
+                            GSOfflineBanner()
+                                .padding(.horizontal, 16)
+                                .padding(.top, 10)
                         }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 12)
-                        .background(theme.surface)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 16)
 
-                    GSDivider()
-                        .padding(.horizontal, 16)
-                        .padding(.top, 12)
-
-                    // Groups header
-                    GSSectionHeader("Groups")
-                        .padding(.horizontal, 16)
-                        .padding(.top, 16)
-                        .padding(.bottom, 8)
-
-                    // Canvas Completion Task 4 (proof p30/p31): the blank-list
-                    // error card only replaces the plain empty state when the
-                    // list is ACTUALLY blank because the load failed — a
-                    // refresh failure with existing groups on screen leaves
-                    // them in place (best-effort, unchanged) and only surfaces
-                    // the small red caption below.
-                    if groups.isEmpty {
-                        if errorText != nil {
-                            GSErrorCard(
-                                title: "Couldn't load your groups",
-                                message: errorText ?? "Check your connection and try again.",
-                                retry: { Task { await refresh() } }
-                            )
-                            .padding(.horizontal, 16)
-                            .padding(.top, 8)
-                        } else {
+                        // Canvas Completion Task 4 fix round 1 (proof
+                        // p30-empty-offline, full-tab "No crew yet" moment):
+                        // when there are truly NO friends AND NO groups, the
+                        // proof draws a single full-screen centered empty
+                        // state instead of the Friends row + Groups section —
+                        // there's nothing for either to summarize yet. Gated
+                        // on `errorText == nil` so an actual load failure
+                        // still surfaces via the existing GSErrorCard path
+                        // below (in the `else` branch) rather than being
+                        // masked by this friendlier empty state.
+                        if groups.isEmpty && friendCount == 0 && errorText == nil {
+                            Spacer(minLength: 0)
                             GSEmptyState(
-                                icon: "person.3",
-                                title: "No groups yet",
-                                message: "Start a group with your crew — then take turns on the bar together.",
-                                ctaTitle: "+ New Group",
-                                action: { showCreateGroup = true }
+                                icon: "person.2",
+                                title: "No crew yet",
+                                message: "Add a friend by username or start a group — then take turns on the bar together.",
+                                ctaTitle: "Add your first friend",
+                                action: { navigateToFriendsFocused = true }
                             )
                             .padding(.horizontal, 16)
-                            .padding(.top, 8)
-                        }
-                    }
-
-                    VStack(spacing: 8) {
-                        ForEach(groups) { group in
+                            // Recorded deviation (same finding as FriendsView's
+                            // identical empty state): the proof's secondary
+                            // "Enter a room code" link is omitted here too — no
+                            // room-code/join-by-code feature exists for
+                            // friends or groups anywhere in the codebase
+                            // (grepped `room code|joinCode|inviteCode|
+                            // groupCode`; the only code-join flow is
+                            // HomeView's session-join-by-code, an unrelated
+                            // domain). `GSEmptyState` still supports an
+                            // optional secondary link for whenever a real
+                            // join-by-code feature exists.
+                            Spacer(minLength: 0)
+                        } else {
+                            // Friends row
                             NavigationLink {
-                                GroupView(group: group)
+                                FriendsView()
                             } label: {
-                                groupRow(group)
+                                HStack(spacing: 8) {
+                                    Image(systemName: "person.2")
+                                        .font(.system(size: 18, weight: .regular))
+                                        .foregroundStyle(theme.text)
+                                    Text("Friends")
+                                        .font(GSFont.bold(14, relativeTo: .headline))
+                                        .foregroundStyle(theme.text)
+                                    Spacer()
+                                    if pendingCount > 0 {
+                                        GSTag(text: "\(pendingCount) new", style: .accent)
+                                    }
+                                    Text("\(friendCount)")
+                                        .font(GSFont.body(13, relativeTo: .subheadline))
+                                        .foregroundStyle(theme.neutral500)
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(theme.neutral500)
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 12)
+                                .background(theme.surface)
                             }
                             .buttonStyle(.plain)
                             .padding(.horizontal, 16)
+                            .padding(.top, 16)
+
+                            GSDivider()
+                                .padding(.horizontal, 16)
+                                .padding(.top, 12)
+
+                            // Groups header
+                            GSSectionHeader("Groups")
+                                .padding(.horizontal, 16)
+                                .padding(.top, 16)
+                                .padding(.bottom, 8)
+
+                            // Canvas Completion Task 4 (proof p30/p31): the blank-list
+                            // error card only replaces the plain empty state when the
+                            // list is ACTUALLY blank because the load failed — a
+                            // refresh failure with existing groups on screen leaves
+                            // them in place (best-effort, unchanged) and only surfaces
+                            // the small red caption below.
+                            //
+                            // Fix round 1: this compact "No groups yet" card is now
+                            // only reachable for the groups-empty-but-has-friends
+                            // case — the both-empty case is handled by the full-tab
+                            // moment above.
+                            if groups.isEmpty {
+                                if errorText != nil {
+                                    GSErrorCard(
+                                        title: "Couldn't load your groups",
+                                        message: errorText ?? "Check your connection and try again.",
+                                        retry: { Task { await refresh() } }
+                                    )
+                                    .padding(.horizontal, 16)
+                                    .padding(.top, 8)
+                                } else {
+                                    GSEmptyState(
+                                        icon: "person.3",
+                                        title: "No groups yet",
+                                        message: "Start a group with your crew — then take turns on the bar together.",
+                                        ctaTitle: "+ New Group",
+                                        action: { showCreateGroup = true }
+                                    )
+                                    .padding(.horizontal, 16)
+                                    .padding(.top, 8)
+                                }
+                            }
+
+                            VStack(spacing: 8) {
+                                ForEach(groups) { group in
+                                    NavigationLink {
+                                        GroupView(group: group)
+                                    } label: {
+                                        groupRow(group)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .padding(.horizontal, 16)
+                                }
+                            }
+
+                            // New Group button — hidden in the true empty case since
+                            // GSEmptyState above already surfaces an equivalent "+ New
+                            // Group" CTA (avoids showing the same action twice). Still
+                            // shown during the blank-list-plus-error case (GSErrorCard
+                            // has no group-creation CTA of its own) and whenever the
+                            // list has content.
+                            if !groups.isEmpty || errorText != nil {
+                                Button {
+                                    showCreateGroup = true
+                                } label: {
+                                    Text("+ New Group")
+                                }
+                                .buttonStyle(GSSecondaryButtonStyle())
+                                .frame(maxWidth: .infinity)
+                                .padding(.horizontal, 16)
+                                .padding(.top, 16)
+                                .padding(.bottom, 24)
+                            }
+
+                            // Non-blank-list case only — the blank-list case already
+                            // surfaced this same message via GSErrorCard above, so
+                            // showing it again here would be redundant.
+                            if let errorText, !groups.isEmpty {
+                                Text(errorText)
+                                    .font(GSFont.body(12, relativeTo: .footnote))
+                                    .foregroundStyle(.red)
+                                    .padding(.horizontal, 16)
+                            }
                         }
                     }
-
-                    // New Group button — hidden in the true empty case since
-                    // GSEmptyState above already surfaces an equivalent "+ New
-                    // Group" CTA (avoids showing the same action twice). Still
-                    // shown during the blank-list-plus-error case (GSErrorCard
-                    // has no group-creation CTA of its own) and whenever the
-                    // list has content.
-                    if !groups.isEmpty || errorText != nil {
-                        Button {
-                            showCreateGroup = true
-                        } label: {
-                            Text("+ New Group")
-                        }
-                        .buttonStyle(GSSecondaryButtonStyle())
-                        .frame(maxWidth: .infinity)
-                        .padding(.horizontal, 16)
-                        .padding(.top, 16)
-                        .padding(.bottom, 24)
-                    }
-
-                    // Non-blank-list case only — the blank-list case already
-                    // surfaced this same message via GSErrorCard above, so
-                    // showing it again here would be redundant.
-                    if let errorText, !groups.isEmpty {
-                        Text(errorText)
-                            .font(GSFont.body(12, relativeTo: .footnote))
-                            .foregroundStyle(.red)
-                            .padding(.horizontal, 16)
-                    }
+                    .frame(minHeight: proxy.size.height)
                 }
             }
             .background(theme.bg)
@@ -186,6 +234,13 @@ struct SocialTabView: View {
             }
             .navigationDestination(isPresented: $navigateToFriends) {
                 FriendsView()
+            }
+            // Canvas Completion Task 4 fix round 1 — separate destination
+            // (see `navigateToFriendsFocused`'s declaration) so only the
+            // full-tab "No crew yet" CTA lands with the add-friend field
+            // focused; the push-route deep link above is untouched.
+            .navigationDestination(isPresented: $navigateToFriendsFocused) {
+                FriendsView(focusAddFieldOnAppear: true)
             }
         }
     }

@@ -844,9 +844,87 @@ public struct GSOfflineBanner: View {
         .background(theme.surface)
         .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
         .onAppear {
-            withAnimation(.easeInOut(duration: 1).repeatForever(autoreverses: true)) {
+            // Canvas Completion Task 4 fix round 1: `repeatForever(autoreverses:
+            // true)` doubles a single-leg duration into a full forward+reverse
+            // cycle — `duration: 1` here was actually a 2s cycle, not the
+            // markup's `animation:gsPulse 1s ease-in-out infinite` (1s full
+            // cycle). Halved to 0.5s per leg so the autoreversed round trip
+            // matches the spec's 1s cycle.
+            withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) {
                 isDimmed = true
             }
         }
+    }
+}
+
+// MARK: - GSInlineErrorBanner
+//
+// Solid-accent inline error banner — bold lead-in + continuation copy, single
+// "Try again" CTA. Matches proof p31-errors' "Set didn't save" toast shape
+// (markup lines ~2313-2317: accent fill, bg-colored text, exclamation-circle
+// icon, single flowing message) with ONE deliberate, behavior-truthful
+// deviation from the literal proof copy and shape:
+//
+// - The proof's copy is "Set didn't save. We'll retry when you're back
+//   online." — this app has no offline retry queue (no outbox, no background
+//   sync), so that copy would promise a capability that doesn't exist.
+//   Callers should pass a `message` that's honest about there being no
+//   auto-retry (e.g. "Check your connection, then try again").
+// - The proof's banner has no button at all (it relies on the fabricated
+//   auto-retry). This component adds a real "Try again" CTA so the failure
+//   is actually recoverable — callers wire `retry` to re-invoke the exact
+//   action that failed.
+//
+// See Canvas Completion Task 4 fix round 1 report for the full record of
+// this deviation.
+
+public struct GSInlineErrorBanner: View {
+    @Environment(\.gsTheme) private var theme
+
+    private let title: String
+    private let message: String
+    private let retryTitle: String
+    private let retry: () -> Void
+
+    public init(
+        title: String,
+        message: String,
+        retryTitle: String = "Try again",
+        retry: @escaping () -> Void
+    ) {
+        self.title = title
+        self.message = message
+        self.retryTitle = retryTitle
+        self.retry = retry
+    }
+
+    public var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.circle")
+                .font(.system(size: 18, weight: .regular))
+                .foregroundStyle(theme.bg)
+
+            VStack(alignment: .leading, spacing: 8) {
+                (
+                    Text(title).font(GSFont.bold(13, relativeTo: .footnote))
+                    + Text(" \(message)").font(GSFont.body(13, relativeTo: .footnote))
+                )
+                .foregroundStyle(theme.bg)
+                .fixedSize(horizontal: false, vertical: true)
+
+                Button(action: retry) {
+                    Text(retryTitle)
+                        .font(GSFont.bold(12, relativeTo: .caption))
+                        .foregroundStyle(theme.bg)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .overlay(Rectangle().strokeBorder(theme.bg.opacity(0.6), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .background(theme.accent)
     }
 }
