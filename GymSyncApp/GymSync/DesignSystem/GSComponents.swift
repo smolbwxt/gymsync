@@ -593,7 +593,7 @@ public struct GSToggle: View {
     }
 
     public var body: some View {
-        Toggle(isOn: isOn) {
+        Toggle(isOn: $isOn) {
             EmptyView()
         }
         .labelsHidden()
