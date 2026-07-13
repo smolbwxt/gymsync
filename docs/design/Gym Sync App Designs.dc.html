@@ -2460,11 +2460,264 @@
 
   </div>
 
-  <!-- MORE-SCREENS -->
+  <!-- ============ NEXT PHASES (Jul 2026 request) ============ -->
+  <div style="max-width:1400px;margin:0 auto;padding:var(--space-8) var(--space-6) 0;">
+    <div class="hr" style="margin-bottom:var(--space-8);"></div>
+    <h6 style="color:var(--color-accent-700);">Engineering request · Jul 2026</h6>
+    <h1 style="margin-bottom:var(--space-2);">Next phases — settings, permissions &amp; live data</h1>
+    <p class="text-muted" style="max-width:720px;">Seven surfaces the app needs designed to go live: notification priming + preferences, the full PTT state model, the You-tab settings hub that activates the palette picker, live/loading/error states for Home stat tiles, a re-entrant gym setup, and the solo rest timer.</p>
+  </div>
 
-</div>
+  <div class="gs-phone-scroll" style="display:flex;gap:var(--space-8);overflow-x:auto;padding:var(--space-6);">
 
-</x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;palette&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;midnight&quot;,&quot;options&quot;:[&quot;midnight&quot;,&quot;arena&quot;,&quot;ink&quot;,&quot;modernist&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Theme&quot;}}"></script>
-</body>
-</html>
+    <!-- YOU TAB SETTINGS HUB -->
+    <div style="flex:none;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:var(--space-3);">
+        <span style="background:var(--color-neutral-800);color:var(--color-bg);font-family:var(--font-heading);font-weight:800;font-size:11px;letter-spacing:.05em;padding:3px 8px;">YOU</span>
+        <h5 style="margin:0;">Settings Hub</h5>
+      </div>
+      <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" width="{{ 380 }}" height="{{ 824 }}" hint-size="380px,824px">
+        <div style="min-height:100%;display:flex;flex-direction:column;background:var(--color-bg);">
+          <div style="display:flex;align-items:center;gap:10px;padding:52px 16px 10px;border-bottom:2px solid var(--color-divider);">
+            <span style="font-family:var(--font-heading);font-weight:800;font-size:18px;">You</span>
+          </div>
+          <div style="flex:1;padding:14px 16px;display:flex;flex-direction:column;gap:16px;overflow:auto;">
+            <!-- profile -->
+            <div style="display:flex;align-items:center;gap:12px;">
+              <div style="width:52px;height:52px;flex-shrink:0;background:var(--color-accent);color:var(--color-bg);display:flex;align-items:center;justify-content:center;font-family:var(--font-heading);font-weight:800;font-size:19px;">AJ</div>
+              <div style="flex:1;"><div style="font-family:var(--font-heading);font-weight:800;font-size:17px;">Alex J.</div><div class="text-muted" style="font-size:12px;">@alexlifts</div></div>
+              <button class="btn btn-secondary" style="font-size:12px;padding:6px 12px;margin-top:0;">Edit</button>
+            </div>
+            <!-- SETTINGS group -->
+            <div>
+              <h6 style="margin:0 0 8px;color:color-mix(in srgb,var(--color-text) 60%,transparent);">Settings</h6>
+              <div style="border:1px solid var(--color-divider);">
+                <div style="display:flex;align-items:center;gap:12px;padding:13px 12px;border-bottom:1px solid var(--color-divider);">
+                  <span style="color:var(--color-accent);display:flex;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg></span>
+                  <span style="flex:1;font-family:var(--font-heading);font-weight:800;font-size:14px;">Appearance</span>
+                  <span class="text-muted" style="font-size:13px;">Midnight</span>
+                  <span class="text-muted"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg></span>
+                </div>
+                <div style="display:flex;align-items:center;gap:12px;padding:13px 12px;border-bottom:1px solid var(--color-divider);">
+                  <span style="color:var(--color-accent);display:flex;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.7 21a2 2 0 0 1-3.4 0"></path></svg></span>
+                  <span style="flex:1;font-family:var(--font-heading);font-weight:800;font-size:14px;">Notifications</span>
+                  <span class="text-muted" style="font-size:13px;">On</span>
+                  <span class="text-muted"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg></span>
+                </div>
+                <div style="display:flex;align-items:center;gap:12px;padding:13px 12px;border-bottom:1px solid var(--color-divider);">
+                  <span style="color:var(--color-accent);display:flex;"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"></path></svg></span>
+                  <span style="flex:1;font-family:var(--font-heading);font-weight:800;font-size:14px;">Home Gym</span>
+                  <span class="text-muted" style="font-size:13px;">Iron Temple</span>
+                  <span class="text-muted"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg></span>
+                </div>
+                <div style="display:flex;align-items:center;gap:12px;padding:13px 12px;">
+                  <span style="color:var(--color-accent);display:flex;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 6.5h11v11h-11z"></path><path d="M4 9v6M20 9v6"></path></svg></span>
+                  <span style="flex:1;font-family:var(--font-heading);font-weight:800;font-size:14px;">Default rest timer</span>
+                  <span class="text-muted" style="font-size:13px;">2:00</span>
+                  <span class="text-muted"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg></span>
+                </div>
+              </div>
+            </div>
+            <button class="btn btn-secondary btn-block" style="justify-content:center;padding:13px;margin-top:0;color:var(--color-accent-700);">Sign out</button>
+          </div>
+        </div>
+      </x-import>
+    </div>
+
+    <!-- NOTIF PRIMING (default + denied) -->
+    <div style="flex:none;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:var(--space-3);">
+        <span style="background:var(--color-neutral-800);color:var(--color-bg);font-family:var(--font-heading);font-weight:800;font-size:11px;letter-spacing:.05em;padding:3px 8px;">PERMISSIONS</span>
+        <h5 style="margin:0;">Notif Priming</h5>
+      </div>
+      <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" width="{{ 380 }}" height="{{ 824 }}" hint-size="380px,824px">
+        <div style="min-height:100%;display:flex;flex-direction:column;background:var(--color-bg);">
+          <div style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:52px 28px 12px;">
+            <div style="width:60px;height:60px;background:var(--color-accent);color:var(--color-bg);display:flex;align-items:center;justify-content:center;margin-bottom:22px;">
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.7 21a2 2 0 0 1-3.4 0"></path></svg>
+            </div>
+            <h1 style="font-size:34px;line-height:1.02;">Never miss your turn on the bar</h1>
+            <p class="text-muted" style="font-size:15px;margin-top:14px;">We'll ping you only for the things that matter mid-training. You can fine-tune every category later.</p>
+            <div style="display:flex;flex-direction:column;gap:10px;margin-top:22px;">
+              <div style="display:flex;align-items:center;gap:10px;"><span style="color:var(--color-accent-700);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span style="font-size:14px;">A heads-up when the lobby opens</span></div>
+              <div style="display:flex;align-items:center;gap:10px;"><span style="color:var(--color-accent-700);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span style="font-size:14px;">A nudge the moment it's your turn</span></div>
+              <div style="display:flex;align-items:center;gap:10px;"><span style="color:var(--color-accent-700);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span><span style="font-size:14px;">A ping when a friend adds you</span></div>
+            </div>
+          </div>
+          <div style="padding:0 20px 40px;display:flex;flex-direction:column;gap:8px;">
+            <button class="btn btn-primary btn-block" style="justify-content:center;font-size:15px;padding:14px;margin-top:0;">Turn on notifications</button>
+            <button class="btn btn-ghost" style="align-self:center;">Not now</button>
+          </div>
+        </div>
+      </x-import>
+    </div>
+
+    <!-- NOTIF PRIMING DENIED -->
+    <div style="flex:none;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:var(--space-3);">
+        <span style="background:var(--color-neutral-800);color:var(--color-bg);font-family:var(--font-heading);font-weight:800;font-size:11px;letter-spacing:.05em;padding:3px 8px;">PERMISSIONS</span>
+        <h5 style="margin:0;">Notif · Denied</h5>
+      </div>
+      <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" width="{{ 380 }}" height="{{ 824 }}" hint-size="380px,824px">
+        <div style="min-height:100%;display:flex;flex-direction:column;background:var(--color-bg);">
+          <div style="display:flex;align-items:center;gap:10px;padding:52px 16px 10px;">
+            <button class="btn btn-icon" style="border:1px solid var(--color-divider);width:30px;height:30px;" aria-label="Back"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"></path></svg></button>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:0 28px 12px;">
+            <div style="width:60px;height:60px;border:2px solid var(--color-divider);color:color-mix(in srgb,var(--color-text) 50%,transparent);display:flex;align-items:center;justify-content:center;margin-bottom:22px;">
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2l20 20"></path><path d="M18 8a6 6 0 0 0-9.5-5.7M6 8c0 7-3 9-3 9h13"></path><path d="M13.7 21a2 2 0 0 1-3.4 0"></path></svg>
+            </div>
+            <h1 style="font-size:34px;line-height:1.02;">Notifications are off</h1>
+            <p class="text-muted" style="font-size:15px;margin-top:14px;">Turn them back on in iOS Settings to get turn alerts, session reminders, and friend pings. Your category preferences are saved and waiting.</p>
+          </div>
+          <div style="padding:0 20px 40px;">
+            <button class="btn btn-primary btn-block" style="justify-content:space-between;font-size:15px;padding:14px 16px;margin-top:0;"><span>Open Settings</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M8 7h9v9"></path></svg></button>
+          </div>
+        </div>
+      </x-import>
+    </div>
+
+    <!-- NOTIF PREFERENCES -->
+    <div style="flex:none;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:var(--space-3);">
+        <span style="background:var(--color-neutral-800);color:var(--color-bg);font-family:var(--font-heading);font-weight:800;font-size:11px;letter-spacing:.05em;padding:3px 8px;">SETTINGS</span>
+        <h5 style="margin:0;">Notif Preferences</h5>
+      </div>
+      <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" width="{{ 380 }}" height="{{ 824 }}" hint-size="380px,824px">
+        <div style="min-height:100%;display:flex;flex-direction:column;background:var(--color-bg);">
+          <div style="display:flex;align-items:center;gap:10px;padding:52px 16px 10px;border-bottom:2px solid var(--color-divider);">
+            <button class="btn btn-icon" style="border:1px solid var(--color-divider);width:30px;height:30px;" aria-label="Back"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"></path></svg></button>
+            <span style="font-family:var(--font-heading);font-weight:800;font-size:14px;">Notifications</span>
+          </div>
+          <div style="flex:1;padding:14px 16px;display:flex;flex-direction:column;gap:16px;overflow:auto;">
+            <!-- system-denied banner -->
+            <div class="card elev-sm" style="flex-direction:row;align-items:center;gap:10px;border-left:3px solid var(--color-accent);">
+              <span style="color:var(--color-accent);display:flex;flex-shrink:0;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"></path><circle cx="12" cy="12" r="9"></circle></svg></span>
+              <div style="flex:1;"><div style="font-family:var(--font-heading);font-weight:800;font-size:12px;">Disabled in iOS Settings</div><div class="text-muted" style="font-size:11px;">Saved here, but won't apply until re-enabled.</div></div>
+              <button class="btn btn-secondary" style="font-size:11px;padding:6px 9px;margin-top:0;">Open</button>
+            </div>
+            <!-- SESSION group -->
+            <div>
+              <h6 style="margin:0 0 8px;color:color-mix(in srgb,var(--color-text) 60%,transparent);">Sessions</h6>
+              <div style="border:1px solid var(--color-divider);">
+                <div style="display:flex;align-items:center;padding:12px;border-bottom:1px solid var(--color-divider);"><span style="flex:1;font-size:14px;font-family:var(--font-heading);font-weight:800;">Session invites</span><span style="width:46px;height:27px;background:var(--color-accent);position:relative;flex-shrink:0;"><span style="position:absolute;top:3px;right:3px;width:21px;height:21px;background:var(--color-bg);"></span></span></div>
+                <div style="display:flex;align-items:center;padding:12px;border-bottom:1px solid var(--color-divider);"><span style="flex:1;font-size:14px;font-family:var(--font-heading);font-weight:800;">15-minute reminders</span><span style="width:46px;height:27px;background:var(--color-accent);position:relative;flex-shrink:0;"><span style="position:absolute;top:3px;right:3px;width:21px;height:21px;background:var(--color-bg);"></span></span></div>
+                <div style="display:flex;align-items:center;padding:12px;border-bottom:1px solid var(--color-divider);"><span style="flex:1;font-size:14px;font-family:var(--font-heading);font-weight:800;">Lobby is open</span><span style="width:46px;height:27px;background:var(--color-accent);position:relative;flex-shrink:0;"><span style="position:absolute;top:3px;right:3px;width:21px;height:21px;background:var(--color-bg);"></span></span></div>
+                <div style="display:flex;align-items:center;padding:12px;border-bottom:1px solid var(--color-divider);"><span style="flex:1;font-size:14px;font-family:var(--font-heading);font-weight:800;">It's your turn</span><span style="width:46px;height:27px;background:var(--color-accent);position:relative;flex-shrink:0;"><span style="position:absolute;top:3px;right:3px;width:21px;height:21px;background:var(--color-bg);"></span></span></div>
+                <div style="display:flex;align-items:center;padding:12px;"><span style="flex:1;font-size:14px;font-family:var(--font-heading);font-weight:800;color:color-mix(in srgb,var(--color-text) 60%,transparent);">Idle session nudges</span><span style="width:46px;height:27px;background:var(--color-neutral-300);position:relative;flex-shrink:0;"><span style="position:absolute;top:3px;left:3px;width:21px;height:21px;background:var(--color-neutral-500);"></span></span></div>
+              </div>
+            </div>
+            <!-- SOCIAL group -->
+            <div>
+              <h6 style="margin:0 0 8px;color:color-mix(in srgb,var(--color-text) 60%,transparent);">Social &amp; chat</h6>
+              <div style="border:1px solid var(--color-divider);">
+                <div style="display:flex;align-items:center;padding:12px;border-bottom:1px solid var(--color-divider);"><span style="flex:1;font-size:14px;font-family:var(--font-heading);font-weight:800;">Friend requests</span><span style="width:46px;height:27px;background:var(--color-accent);position:relative;flex-shrink:0;"><span style="position:absolute;top:3px;right:3px;width:21px;height:21px;background:var(--color-bg);"></span></span></div>
+                <div style="display:flex;align-items:center;padding:12px;border-bottom:1px solid var(--color-divider);"><span style="flex:1;font-size:14px;font-family:var(--font-heading);font-weight:800;">Crew PRs</span><span style="width:46px;height:27px;background:var(--color-accent);position:relative;flex-shrink:0;"><span style="position:absolute;top:3px;right:3px;width:21px;height:21px;background:var(--color-bg);"></span></span></div>
+                <div style="display:flex;align-items:center;padding:12px;border-bottom:1px solid var(--color-divider);"><span style="flex:1;font-size:14px;font-family:var(--font-heading);font-weight:800;color:color-mix(in srgb,var(--color-text) 60%,transparent);">Late-arrival pings</span><span style="width:46px;height:27px;background:var(--color-neutral-300);position:relative;flex-shrink:0;"><span style="position:absolute;top:3px;left:3px;width:21px;height:21px;background:var(--color-neutral-500);"></span></span></div>
+                <div style="display:flex;align-items:center;padding:12px;border-bottom:1px solid var(--color-divider);"><span style="flex:1;font-size:14px;font-family:var(--font-heading);font-weight:800;">Mentions in chat</span><span style="width:46px;height:27px;background:var(--color-accent);position:relative;flex-shrink:0;"><span style="position:absolute;top:3px;right:3px;width:21px;height:21px;background:var(--color-bg);"></span></span></div>
+                <div style="display:flex;align-items:center;padding:12px;"><span style="flex:1;font-size:14px;font-family:var(--font-heading);font-weight:800;">Leaderboard changes</span><span style="width:46px;height:27px;background:var(--color-accent);position:relative;flex-shrink:0;"><span style="position:absolute;top:3px;right:3px;width:21px;height:21px;background:var(--color-bg);"></span></span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </x-import>
+    </div>
+
+    <!-- PTT LOBBY STATES -->
+    <div style="flex:none;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:var(--space-3);">
+        <span style="background:var(--color-accent);color:var(--color-bg);font-family:var(--font-heading);font-weight:800;font-size:11px;letter-spacing:.05em;padding:3px 8px;">VOICE</span>
+        <h5 style="margin:0;">Lobby PTT states</h5>
+      </div>
+      <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" width="{{ 380 }}" height="{{ 824 }}" hint-size="380px,824px">
+        <div style="min-height:100%;display:flex;flex-direction:column;background:var(--color-bg);">
+          <div style="display:flex;align-items:center;gap:10px;padding:52px 16px 10px;border-bottom:2px solid var(--color-divider);">
+            <button class="btn btn-icon" style="border:1px solid var(--color-divider);width:30px;height:30px;" aria-label="Back"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"></path></svg></button>
+            <span style="font-family:var(--font-heading);font-weight:800;font-size:14px;">Lobby · Push Crew</span>
+            <!-- connecting pill -->
+            <span style="margin-left:auto;display:flex;align-items:center;gap:5px;border:1px solid var(--color-divider);padding:4px 9px;font-size:11px;font-family:var(--font-heading);font-weight:800;"><span style="width:7px;height:7px;border-radius:50%;background:var(--color-accent);animation:gsPulse 1s ease-in-out infinite;"></span>Connecting voice…</span>
+          </div>
+          <div style="flex:1;padding:14px 16px;display:flex;flex-direction:column;gap:14px;overflow:auto;">
+            <h6 style="margin:0;color:color-mix(in srgb,var(--color-text) 60%,transparent);">Who's here · voice on</h6>
+            <div style="display:flex;flex-direction:column;gap:6px;">
+              <!-- active speaker inline indicator -->
+              <div style="display:flex;align-items:center;gap:10px;border:1px solid var(--color-accent);padding:9px 10px;">
+                <div style="width:32px;height:32px;flex-shrink:0;background:var(--color-accent);color:var(--color-bg);display:flex;align-items:center;justify-content:center;font-family:var(--font-heading);font-weight:800;font-size:11px;">JC</div>
+                <div style="flex:1;"><div style="font-family:var(--font-heading);font-weight:800;font-size:13px;">Jordan</div><div style="font-size:10px;color:var(--color-accent-700);font-weight:800;font-family:var(--font-heading);">talking</div></div>
+                <span style="display:flex;align-items:flex-end;gap:2px;height:16px;">
+                  <span style="width:3px;height:100%;background:var(--color-accent);transform-origin:bottom;animation:gsTalk .9s ease-in-out infinite;"></span>
+                  <span style="width:3px;height:100%;background:var(--color-accent);transform-origin:bottom;animation:gsTalk .9s ease-in-out .3s infinite;"></span>
+                  <span style="width:3px;height:100%;background:var(--color-accent);transform-origin:bottom;animation:gsTalk .9s ease-in-out .6s infinite;"></span>
+                </span>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;border:1px solid var(--color-divider);padding:9px 10px;">
+                <div style="width:32px;height:32px;flex-shrink:0;background:var(--color-neutral-700);color:var(--color-bg);display:flex;align-items:center;justify-content:center;font-family:var(--font-heading);font-weight:800;font-size:11px;">SM</div>
+                <div style="flex:1;"><div style="font-family:var(--font-heading);font-weight:800;font-size:13px;">Sam</div><div class="text-muted" style="font-size:10px;">listening</div></div>
+                <span style="color:color-mix(in srgb,var(--color-text) 45%,transparent);display:flex;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2l20 20"></path><path d="M9 9v3a3 3 0 0 0 5 2.1M15 9.3V4a3 3 0 0 0-5.7-1.3"></path></svg></span>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;border:1px solid var(--color-divider);padding:9px 10px;">
+                <div style="width:32px;height:32px;flex-shrink:0;background:var(--color-neutral-700);color:var(--color-bg);display:flex;align-items:center;justify-content:center;font-family:var(--font-heading);font-weight:800;font-size:11px;">AJ</div>
+                <div style="flex:1;"><div style="font-family:var(--font-heading);font-weight:800;font-size:13px;">You</div><div class="text-muted" style="font-size:10px;">muted</div></div>
+              </div>
+            </div>
+            <!-- voice unavailable degraded -->
+            <div class="card elev-sm" style="flex-direction:row;align-items:center;gap:10px;border-left:3px solid var(--color-accent);">
+              <span style="color:var(--color-accent);display:flex;flex-shrink:0;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2l20 20"></path><path d="M9 9v3a3 3 0 0 0 5 2.1M15 9.3V4a3 3 0 0 0-5.7-1.3"></path><path d="M17 16.9A7 7 0 0 1 5 12M12 19v3"></path></svg></span>
+              <div style="flex:1;"><div style="font-family:var(--font-heading);font-weight:800;font-size:12px;">Voice unavailable</div><div class="text-muted" style="font-size:11px;">Couldn't join the room</div></div>
+              <button class="btn btn-secondary" style="font-size:11px;padding:6px 9px;margin-top:0;">Retry</button>
+            </div>
+          </div>
+          <!-- PTT dock — idle -->
+          <div style="position:sticky;bottom:0;background:var(--color-bg);border-top:2px solid var(--color-divider);padding:12px 16px 24px;display:flex;align-items:center;gap:12px;">
+            <button style="flex:1;display:flex;align-items:center;gap:10px;background:var(--color-surface);border:1px solid var(--color-divider);padding:13px 16px;cursor:pointer;color:var(--color-text);">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"></rect><path d="M5 10a7 7 0 0 0 14 0"></path><path d="M12 19v3"></path></svg>
+              <span style="font-family:var(--font-heading);font-weight:800;font-size:14px;">Hold to talk</span>
+            </button>
+          </div>
+        </div>
+      </x-import>
+    </div>
+
+    <!-- PTT DENIED / DEGRADED BUTTON VARIANTS -->
+    <div style="flex:none;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:var(--space-3);">
+        <span style="background:var(--color-accent);color:var(--color-bg);font-family:var(--font-heading);font-weight:800;font-size:11px;letter-spacing:.05em;padding:3px 8px;">VOICE</span>
+        <h5 style="margin:0;">PTT button variants</h5>
+      </div>
+      <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" width="{{ 380 }}" height="{{ 824 }}" hint-size="380px,824px">
+        <div style="min-height:100%;display:flex;flex-direction:column;background:var(--color-bg);">
+          <div style="display:flex;align-items:center;gap:10px;padding:52px 16px 10px;border-bottom:2px solid var(--color-divider);">
+            <span style="font-family:var(--font-heading);font-weight:800;font-size:14px;">PTT button — every state</span>
+          </div>
+          <div style="flex:1;padding:18px 16px;display:flex;flex-direction:column;gap:18px;overflow:auto;">
+            <!-- idle -->
+            <div>
+              <div class="text-muted" style="font-size:11px;font-weight:800;font-family:var(--font-heading);letter-spacing:.06em;margin-bottom:8px;">RESTING · CONNECTED</div>
+              <button style="width:100%;display:flex;align-items:center;gap:10px;background:var(--color-surface);border:1px solid var(--color-divider);padding:13px 16px;cursor:pointer;color:var(--color-text);">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"></rect><path d="M5 10a7 7 0 0 0 14 0"></path><path d="M12 19v3"></path></svg>
+                <span style="font-family:var(--font-heading);font-weight:800;font-size:14px;">Hold to talk</span>
+              </button>
+            </div>
+            <!-- transmitting -->
+            <div>
+              <div style="font-size:11px;font-weight:800;font-family:var(--font-heading);letter-spacing:.06em;margin-bottom:8px;color:var(--color-accent-700);">TRANSMITTING</div>
+              <button style="width:100%;display:flex;align-items:center;gap:10px;background:var(--color-accent);color:var(--color-bg);border:none;padding:13px 16px;cursor:pointer;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"></rect><path d="M5 10a7 7 0 0 0 14 0"></path><path d="M12 19v3"></path></svg>
+                <span style="font-family:var(--font-heading);font-weight:800;font-size:14px;">Release to stop</span>
+                <span style="margin-left:auto;display:flex;align-items:flex-end;gap:2px;height:16px;"><span style="width:3px;height:100%;background:var(--color-bg);transform-origin:bottom;animation:gsTalk .9s ease-in-out infinite;"></span><span style="width:3px;height:100%;background:var(--color-bg);transform-origin:bottom;animation:gsTalk .9s ease-in-out .3s infinite;"></span><span style="width:3px;height:100%;background:var(--color-bg);transform-origin:bottom;animation:gsTalk .9s ease-in-out .6s infinite;"></span></span>
+              </button>
+            </div>
+            <!-- connecting -->
+            <div>
+              <div class="text-muted" style="font-size:11px;font-weight:800;font-family:var(--font-heading);letter-spacing:.06em;margin-bottom:8px;">CONNECTING</div>
+              <button style="width:100%;display:flex;align-items:center;gap:10px;background:var(--color-surface);border:1px solid var(--color-divider);padding:13px 16px;opacity:.75;color:var(--color-text);">
+                <span style="width:20px;height:20px;border:2px solid var(--color-neutral-400);border-top-color:var(--color-accent);border-radius:50%;animation:gsPulse 1s ease-in-out infinite;flex-shrink:0;"></span>
+                <span style="font-family:var(--font-heading);font-weight:800;font-size:14px;">Connecting voice…</span>
+              </button>
+            </div>
+            <!-- muted / not-now -->
+            <div>
+              <div class="text-muted" style="font-size:11px;font-weight:800;font-family:var(--font-heading);letter-spacing:.06em;margin-bottom:8px;">MIC OFF · TAP TO ENABLE</div>
+              <button style="width:100%;display:flex;align-items:center;gap:10px;background:var(--color-surface);border:1px dashed var(--color-divider);padding:13px 16px;cursor:pointer;color:color-mix(in srgb,var(--color-text) 60%,transparent);">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2l20 20"></path><path d="M9 9v3a3 3 0 0 0 5 2.1M15 9.3V4a3 3 0 0 0-5.7-1.3"></path><path d="M17 16.9A7 7 0 0 1 5 12M12 19v3"></path></svg>
+                <span style="font-family:var(--font-heading);font-weight:800;font-size:14px;
