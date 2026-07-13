@@ -339,26 +339,63 @@ public struct GSSectionHeader: View {
 // Full-width tappable settings row: flush-left title + trailing chevron.
 // ≥44pt tap target via vertical padding, contentShape for edge-to-edge hit
 // testing, 1px divider along the bottom edge. Used by the You tab's
-// Settings section (Home Gym, Apple Health Sync, etc.).
+// Settings section (Home Gym, Apple Health Sync, etc.) and the Settings Hub
+// group box (Appearance, Notifications, Home Gym, Default rest timer —
+// new-canvas-section.diff's "Settings Hub" frame, Canvas Completion Task 2).
+//
+// `icon`/`value` are optional and default to `nil` — existing call sites
+// (title + action only) are unaffected. When provided: `icon` renders an
+// 18pt accent-colored SF Symbol (nearest-equivalent to the diff's raw SVGs)
+// leading the title; `value` renders a trailing neutral700 preview string
+// before the chevron (e.g. "Midnight", "On", "2:00").
+//
+// `showDivider` (default `true`) lets a caller that wraps several rows in its
+// own 1px-bordered group box (per the diff's "internal dividers" spec)
+// suppress the bottom divider on the last row in the group, so it doesn't
+// double up against the group box's own bottom border — same technique
+// `NotificationPreferencesView.groupSection` already uses for its toggle
+// rows.
 
 public struct GSSettingsRow: View {
     @Environment(\.gsTheme) private var theme
 
     private let title: String
+    private let icon: String?
+    private let value: String?
+    private let showDivider: Bool
     private let action: () -> Void
 
-    public init(title: String, action: @escaping () -> Void) {
+    public init(
+        title: String,
+        icon: String? = nil,
+        value: String? = nil,
+        showDivider: Bool = true,
+        action: @escaping () -> Void
+    ) {
         self.title = title
+        self.icon = icon
+        self.value = value
+        self.showDivider = showDivider
         self.action = action
     }
 
     public var body: some View {
         Button(action: action) {
-            HStack {
+            HStack(spacing: 12) {
+                if let icon {
+                    Image(systemName: icon)
+                        .font(.system(size: 18, weight: .regular))
+                        .foregroundColor(theme.accent)
+                }
                 Text(title)
                     .font(GSFont.bodyMedium(14, relativeTo: .subheadline))
                     .foregroundColor(theme.text)
                 Spacer()
+                if let value {
+                    Text(value)
+                        .font(GSFont.body(13, relativeTo: .caption))
+                        .foregroundColor(theme.neutral700)
+                }
                 Image(systemName: "chevron.right")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(theme.neutral500)
@@ -368,7 +405,9 @@ public struct GSSettingsRow: View {
             .background(theme.surface)
             .contentShape(Rectangle())
             .overlay(alignment: .bottom) {
-                Rectangle().fill(theme.divider).frame(height: 1)
+                if showDivider {
+                    Rectangle().fill(theme.divider).frame(height: 1)
+                }
             }
         }
         .buttonStyle(.plain)
