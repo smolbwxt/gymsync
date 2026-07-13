@@ -2,24 +2,23 @@ import SwiftUI
 import UserNotifications
 
 /// Push notification permission priming interstitial (Designer brief
-/// Feature 1, Dossier §A.7) — reuses the mic permission priming frame's
-/// visual pattern (accent-filled square + icon, headline, bullets, CTA
-/// stack) with `bell.badge` iconography; the bell variant is not separately
-/// designed (recorded assumption per task-6-brief.md).
+/// Feature 1, Dossier §A.7; redrawn per new-canvas-section.diff's "Notif
+/// Priming" / "Notif · Denied" frames, Jul 2026 — Canvas Completion Task 1).
 ///
 /// `isOnboarding` mirrors `HomeGymSetupView`'s pattern: `true` when shown
 /// directly by `OnboardingCoordinator` (no surrounding `NavigationStack`, so
-/// there's no system back button to worry about); `false` for a
-/// nav-pushed re-entry from the You tab, where the system back button shows
-/// automatically because the caller pushes it inside a `NavigationStack`.
+/// there's no system back button to worry about); `false` for a nav-pushed
+/// re-entry from the You tab's Notifications preferences screen (see
+/// `NotificationPreferencesView.deniedBanner`'s "Open" action).
 ///
-/// NOTE: per task-6-brief.md, `YouTabView`'s "Notifications" row currently
-/// pushes `NotificationPreferencesView` directly (its own system-denied
-/// banner + "Open Settings" serves as the "re-entry when denied" surface),
-/// not this view. The `isOnboarding: false` path below is implemented to
-/// the full contract (denied variant, visible back button, no "Not now")
-/// for completeness/future wiring, but has no current production call site
-/// — documented in task-6-report.md.
+/// The system back button is hidden unconditionally now — the canvas draws
+/// its own small back-arrow affordance (30x30, 44pt hit target) rather than
+/// relying on system nav-bar chrome, and per Designer ruling #1 ("small
+/// drawn boxes, 44pt invisible hit areas") we match that for the ONE case
+/// where a back button is reachable at all: the denied state in re-entry
+/// mode. Onboarding never shows a back button (nothing to go back to from
+/// this screen in the onboarding step machine — matches the pre-existing
+/// "Continue" reasoning below).
 struct PushPrimingView: View {
     var isOnboarding: Bool = true
 
@@ -47,9 +46,18 @@ struct PushPrimingView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
+                    // Drawn back affordance — denied + re-entry only (see
+                    // type doc). Onboarding-denied keeps its "Continue"
+                    // ghost button in the footer instead.
+                    if isDenied && !isOnboarding {
+                        backButton
+                            .padding(.horizontal, 16)
+                            .padding(.top, 20)
+                    }
+
                     iconBadge
                         .padding(.horizontal, 20)
-                        .padding(.top, isOnboarding ? 72 : 32)
+                        .padding(.top, iconBadgeTopPadding)
 
                     if isDenied {
                         deniedContent
@@ -63,7 +71,7 @@ struct PushPrimingView: View {
 
             footer
         }
-        .navigationBarBackButtonHidden(isOnboarding)
+        .navigationBarBackButtonHidden(true)
         // Full-screen interstitial with its own bottom CTA stack — see
         // GSComponents.swift's GSHidesDock. No-op during onboarding, since
         // OnboardingCoordinator renders outside MainTabView's dock entirely.
@@ -75,14 +83,49 @@ struct PushPrimingView: View {
         }
     }
 
+    // MARK: - Back button (denied + re-entry only)
+
+    private var backButton: some View {
+        Button {
+            advance()
+        } label: {
+            Image(systemName: "chevron.left")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundColor(theme.text)
+                .frame(width: 30, height: 30)
+                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                .contentShape(Rectangle())
+        }
+        .frame(minWidth: 44, minHeight: 44)
+    }
+
+    private var iconBadgeTopPadding: CGFloat {
+        // When the back-button row is present, it already carries the
+        // screen's top spacing — the badge only needs a small gap under it.
+        if isDenied && !isOnboarding { return 20 }
+        return isOnboarding ? 72 : 32
+    }
+
     // MARK: - Icon badge
 
+    @ViewBuilder
     private var iconBadge: some View {
-        ZStack {
-            Rectangle().fill(theme.accent).frame(width: 64, height: 64)
-            Image(systemName: "bell.badge")
-                .font(.system(size: 28, weight: .regular))
-                .foregroundColor(theme.bg)
+        if isDenied {
+            ZStack {
+                Rectangle()
+                    .strokeBorder(theme.divider, lineWidth: 2)
+                    .frame(width: 60, height: 60)
+                Image(systemName: "bell.slash")
+                    .font(.system(size: 30, weight: .regular))
+                    .foregroundColor(theme.text.opacity(0.5))
+            }
+        } else {
+            ZStack {
+                Rectangle().fill(theme.accent).frame(width: 60, height: 60)
+                Image(systemName: "bell")
+                    .font(.system(size: 30, weight: .regular))
+                    .foregroundColor(theme.bg)
+            }
         }
     }
 
@@ -91,32 +134,32 @@ struct PushPrimingView: View {
     private var prePromptContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Never miss your turn on the bar")
-                .font(GSFont.bold(28, relativeTo: .title))
+                .font(GSFont.bold(34, relativeTo: .title))
                 .foregroundColor(theme.text)
                 .padding(.horizontal, 20)
-                .padding(.top, 24)
+                .padding(.top, 22)
 
-            Text("Gym Sync uses notifications to keep you in the loop during sessions and with your crew.")
-                .font(GSFont.body(14, relativeTo: .subheadline))
+            Text("We'll ping you only for the things that matter mid-training. You can fine-tune every category later.")
+                .font(GSFont.body(15, relativeTo: .subheadline))
                 .foregroundColor(theme.neutral700)
                 .padding(.horizontal, 20)
-                .padding(.top, 10)
+                .padding(.top, 14)
 
-            VStack(alignment: .leading, spacing: 14) {
-                benefitRow("Get pinged the second the lobby opens")
-                benefitRow("Know instantly when it's your turn")
-                benefitRow("Never miss a friend request")
+            VStack(alignment: .leading, spacing: 10) {
+                benefitRow("A heads-up when the lobby opens")
+                benefitRow("A nudge the moment it's your turn")
+                benefitRow("A ping when a friend adds you")
             }
             .padding(.horizontal, 20)
-            .padding(.top, 24)
+            .padding(.top, 22)
         }
     }
 
     private func benefitRow(_ text: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "checkmark")
-                .font(.system(size: 14, weight: .bold))
-                .foregroundColor(theme.accent)
+                .font(.system(size: 18, weight: .bold))
+                .foregroundColor(theme.accent700)
             Text(text)
                 .font(GSFont.body(14, relativeTo: .body))
                 .foregroundColor(theme.text)
@@ -128,16 +171,16 @@ struct PushPrimingView: View {
     private var deniedContent: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("Notifications are off")
-                .font(GSFont.bold(28, relativeTo: .title))
+                .font(GSFont.bold(34, relativeTo: .title))
                 .foregroundColor(theme.text)
                 .padding(.horizontal, 20)
                 .padding(.top, 24)
 
-            Text("You can turn them on anytime in iOS Settings.")
-                .font(GSFont.body(14, relativeTo: .subheadline))
+            Text("Turn them back on in iOS Settings to get turn alerts, session reminders, and friend pings. Your category preferences are saved and waiting.")
+                .font(GSFont.body(15, relativeTo: .subheadline))
                 .foregroundColor(theme.neutral700)
                 .padding(.horizontal, 20)
-                .padding(.top, 10)
+                .padding(.top, 14)
         }
     }
 
@@ -152,22 +195,25 @@ struct PushPrimingView: View {
                     Button {
                         openSettings()
                     } label: {
-                        Text("Open Settings").frame(maxWidth: .infinity)
+                        HStack {
+                            Text("Open Settings")
+                            Spacer()
+                            Image(systemName: "arrow.up.right")
+                                .font(.system(size: 16, weight: .semibold))
+                        }
+                        .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(GSPrimaryButtonStyle())
+                    .buttonStyle(GSPrimaryButtonStyle(fontSize: 15, verticalPadding: 14))
                     .frame(minHeight: 44)
 
-                    // DECISION (documented in task-6-report.md): the brief
-                    // explicitly omits "Not now" from the denied state
-                    // ("nothing to defer"), but onboarding has no back
-                    // button, so a denied user would otherwise be stuck with
-                    // only "Open Settings" and no way to proceed. "Continue"
-                    // is deliberately NOT "Not now": it doesn't skip a
-                    // still-pending decision (the decision — denied — is
-                    // already resolved), it just moves onboarding forward.
-                    // Re-entry mode (isOnboarding: false) omits this button
-                    // because the system back button already provides an
-                    // exit, matching the brief's "no Not now" rule exactly.
+                    // DECISION (documented in task-1-report.md): the canvas
+                    // frame for "Notif · Denied" shows only "Open Settings"
+                    // — it's designed around the re-entry use case, which
+                    // always has the drawn back button above as its exit.
+                    // Onboarding has no such back button (nothing to go
+                    // back to in the onboarding step machine), so it keeps
+                    // "Continue" as its way forward — same reasoning as
+                    // shipped v1, preserved rather than removed.
                     if isOnboarding {
                         Button {
                             advance()
@@ -188,7 +234,7 @@ struct PushPrimingView: View {
                             Text("Turn on notifications").frame(maxWidth: .infinity)
                         }
                     }
-                    .buttonStyle(GSPrimaryButtonStyle())
+                    .buttonStyle(GSPrimaryButtonStyle(fontSize: 15, verticalPadding: 14))
                     .frame(minHeight: 44)
                     .disabled(isRequesting)
 
@@ -255,7 +301,7 @@ struct PushPrimingView: View {
     /// returning from "Open Settings") and silently auto-advances if the
     /// user granted it there — the same behavior as granting via the native
     /// prompt. If still denied, the onboarding-only "Continue" button (or,
-    /// in re-entry mode, the back button) remains the way forward.
+    /// in re-entry mode, the drawn back button) remains the way forward.
     @MainActor
     private func handleForegroundReturn() async {
         guard isDenied else { return }

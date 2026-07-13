@@ -21,31 +21,37 @@ struct GymSyncApp: App {
 
 // MARK: - GSAppearance
 //
-// Configures UIKit global appearances once at launch so every
-// NavigationStack and TabView gets the midnight chrome without
-// per-view modifier boilerplate.
+// Configures UIKit global appearances so every NavigationStack and TabView
+// gets themed chrome without per-view modifier boilerplate. Called once at
+// launch with the default (`.midnight`) — settings haven't loaded yet at
+// process init, and every SwiftUI-rendered view already gets the live theme
+// via `\.gsTheme` regardless — then re-called by `ThemeStore` (Canvas
+// Completion Task 5) whenever the persisted/selected palette changes, so
+// newly-created tab bars/nav bars pick up the live palette instead of
+// staying pinned to midnight.
 
 enum GSAppearance {
 
-    static func apply() {
-        applyTabBar()
-        applyNavigationBar()
+    static func apply(theme: GSTheme = .midnight) {
+        applyTabBar(theme: theme)
+        applyNavigationBar(theme: theme)
     }
 
     // MARK: Tab bar
     //
-    // Canvas dock treatment:
-    //   background  = surface  (#1e232c)
-    //   border-top  = divider  (white 15%) — 2 px rule
-    //   selected    = accent   (#38bdf8)
-    //   unselected  = neutral500 (#6b7280)
+    // Canvas dock treatment (values now sourced from the passed-in theme
+    // rather than hardcoded — see the palette tables in GSTheme.swift):
+    //   background  = theme.surface
+    //   border-top  = theme.divider — 2 px rule
+    //   selected    = theme.accent
+    //   unselected  = theme.neutral500
     //   label font  = Archivo-Bold 10 pt (canvas: font-heading weight-800 10px)
 
-    private static func applyTabBar() {
-        let surface    = UIColor(hex: 0x1e232c)
-        let accent     = UIColor(hex: 0x38bdf8)
-        let unselected = UIColor(hex: 0x6b7280)
-        let divider    = UIColor.white.withAlphaComponent(0.15)
+    private static func applyTabBar(theme: GSTheme) {
+        let surface    = UIColor(theme.surface)
+        let accent     = UIColor(theme.accent)
+        let unselected = UIColor(theme.neutral500)
+        let divider    = UIColor(theme.divider)
 
         let labelFont  = UIFont(name: "Archivo-Bold", size: 10)
                       ?? UIFont.systemFont(ofSize: 10, weight: .bold)
@@ -88,14 +94,14 @@ enum GSAppearance {
     // MARK: Navigation bar
     //
     // Canvas nav treatment:
-    //   background     = surface (#1e232c)
-    //   title / large  = text (#eef2f7), Archivo-SemiBold
-    //   back indicator = accent (#38bdf8)
+    //   background     = theme.surface
+    //   title / large  = theme.text, Archivo-SemiBold
+    //   back indicator = theme.accent
 
-    private static func applyNavigationBar() {
-        let surface   = UIColor(hex: 0x1e232c)
-        let textColor = UIColor(hex: 0xeef2f7)
-        let accent    = UIColor(hex: 0x38bdf8)
+    private static func applyNavigationBar(theme: GSTheme) {
+        let surface   = UIColor(theme.surface)
+        let textColor = UIColor(theme.text)
+        let accent    = UIColor(theme.accent)
 
         let titleFont = UIFont(name: "Archivo-SemiBold", size: 17)
                      ?? UIFont.systemFont(ofSize: 17, weight: .semibold)
@@ -122,17 +128,6 @@ enum GSAppearance {
         UINavigationBar.appearance().scrollEdgeAppearance = appearance
         UINavigationBar.appearance().compactAppearance    = appearance
         UINavigationBar.appearance().tintColor            = accent
-    }
-}
-
-// MARK: - UIColor hex convenience (internal to this file)
-
-private extension UIColor {
-    convenience init(hex: UInt32) {
-        let r = CGFloat((hex >> 16) & 0xff) / 255
-        let g = CGFloat((hex >>  8) & 0xff) / 255
-        let b = CGFloat( hex        & 0xff) / 255
-        self.init(red: r, green: g, blue: b, alpha: 1)
     }
 }
 

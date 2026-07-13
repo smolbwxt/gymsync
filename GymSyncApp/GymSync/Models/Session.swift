@@ -117,3 +117,94 @@ struct SessionParticipant: Codable, Sendable {
         case burpeesOwed = "burpees_owed"
     }
 }
+
+// MARK: - Burpee Ledger DTO (Canvas Completion Task 3)
+//
+// One `session_participants` row, joined server-side with just the
+// `sessions` fields the ledger needs. Fetched via a single PostgREST embed
+// query (`SessionRepository.myBurpeeLedgerRows(groupID:)`) — `sessions!inner
+// (...)` filtered by `sessions.group_id` AND `user_id = auth.uid()`, the
+// mirror image of `upcoming()`'s `sessions` embedding
+// `session_participants!inner(...)`. No per-session ID fan-out into the URL.
+//
+// Fix round 1 (task-3-report.md): this DTO used to also back the group-wide
+// crew debts list, on the assumption that "every group-scheduled session
+// invites the full group roster, so any CURRENT group member is a
+// participant of every group session" — true only for members who were
+// ALREADY in the group when a session was scheduled. A member who joins
+// later has no `session_participants` row for earlier sessions at all, so
+// RLS's "participants readable by other participants" policy silently
+// dropped those sessions from their fetch, undercounting every crew
+// member's total (not just their own). The crew-wide aggregate now comes
+// from the `group_burpee_ledger` SECURITY DEFINER RPC (membership-gated,
+// see `GroupBurpeeLedgerAggregate` below) instead. This DTO is scoped to
+// self-only rows now, which sidesteps the gap entirely: "user_id =
+// auth.uid()" makes a user's own rows unconditionally RLS-visible,
+// regardless of when they joined the group.
+struct BurpeeLedgerRow: Decodable, Sendable {
+    let userID: UUID
+    let checkInState: String?
+    let lateMinutes: Int
+    let burpeesOwed: Int
+    let session: SessionInfo
+
+    struct SessionInfo: Decodable, Sendable {
+        let id: UUID
+        let state: String
+        let scheduledFor: Date?
+        let startedAt: Date?
+        let latePenalty: LatePenalty?
+
+        struct LatePenalty: Decodable, Sendable {
+            let perMinute: Int?
+            enum CodingKeys: String, CodingKey { case perMinute = "per_minute" }
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case id, state
+            case scheduledFor = "scheduled_for"
+            case startedAt = "started_at"
+            case latePenalty = "late_penalty"
+        }
+
+        /// The date the ledger sorts/displays by — when this session happened
+        /// (or is scheduled to). Ad-hoc sessions have no `scheduled_for`.
+        var effectiveDate: Date? { scheduledFor ?? startedAt }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case userID = "user_id"
+        case checkInState = "check_in_state"
+        case lateMinutes = "late_minutes"
+        case burpeesOwed = "burpees_owed"
+        case session = "sessions"
+    }
+}
+
+// MARK: - Burpee Ledger RPC row (Fix round 1 — task-3-report.md)
+//
+// One row of `group_burpee_ledger(p_group)`'s SECURITY DEFINER aggregate.
+// Replaces the client-side `BurpeeLedgerRow` summation for crew debts: the
+// old direct `session_participants` query undercounted every crew member's
+// total for any caller who joined the group after some of the group's
+// sessions had already run (they were never invited to those sessions, so
+// `session_participants`' "readable by other participants" RLS policy hid
+// those rows from THEIR fetch entirely — not just their own debt, everyone
+// else's too). The RPC is gated on current group membership instead of
+// session participation, so it sums across every session the group has run
+// regardless of who was invited to which one.
+struct GroupBurpeeLedgerAggregate: Decodable, Sendable {
+    let userID: UUID
+    let totalOwed: Int
+    let lateCount: Int
+    let noShowCount: Int
+    let lastLateAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case userID = "user_id"
+        case totalOwed = "total_owed"
+        case lateCount = "late_count"
+        case noShowCount = "no_show_count"
+        case lastLateAt = "last_late_at"
+    }
+}

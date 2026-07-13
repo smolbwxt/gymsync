@@ -5,21 +5,33 @@ struct YouTabView: View {
     @Environment(AuthService.self) private var auth
     @Environment(\.gsTheme) private var theme
     @Environment(AppState.self) private var appState
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var profile: Profile?
     @State private var workoutsLogged: Int = 0
     @State private var homeGymName: String?
+    @State private var userSettings: UserSettings?
     @State private var showHomeGymSheet = false
     @State private var healthAuthStatus: HKAuthorizationStatus = .notDetermined
     @State private var errorText: String?
     @State private var showNotificationPrefs = false
+    @State private var showAppearance = false
+    @State private var showRestTimerSetting = false
+    // Canvas Completion Task 5: singleton (matches `AppState.shared`'s
+    // convention) so the Settings Hub's "Appearance" value preview reflects
+    // the LIVE palette name (updates the instant `AppearanceView` calls
+    // `ThemeStore.select(_:)`), independent of this view's own separately-
+    // fetched `userSettings` (which only refreshes on `.task`/sheet-save).
+    @State private var themeStore = ThemeStore.shared
+
+    private var pushReceiver: PushReceiver { PushReceiver.shared }
 
     var body: some View {
         NavigationStack {
             GeometryReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
-                        avatarCardView
+                        profileRow
                             .padding(.horizontal, 16)
                             .padding(.top, 16)
 
@@ -32,7 +44,8 @@ struct YouTabView: View {
                             .padding(.top, 24)
                             .padding(.bottom, 10)
 
-                        settingsRows
+                        settingsGroupBox
+                            .padding(.horizontal, 16)
 
                         if let errorText {
                             Text(errorText)
@@ -56,6 +69,10 @@ struct YouTabView: View {
             .navigationTitle("You")
             .navigationBarTitleDisplayMode(.inline)
             .task { await loadData() }
+            .onChange(of: scenePhase) {
+                guard scenePhase == .active else { return }
+                Task { await pushReceiver.refreshAuthorizationStatus() }
+            }
             .sheet(isPresented: $showHomeGymSheet) {
                 HomeGymSetupView(isOnboarding: false, onSaved: {
                     Task { await refreshHomeGymName() }
@@ -64,34 +81,59 @@ struct YouTabView: View {
             .navigationDestination(isPresented: $showNotificationPrefs) {
                 NotificationPreferencesView()
             }
+            .navigationDestination(isPresented: $showAppearance) {
+                AppearanceView()
+            }
+            .navigationDestination(isPresented: $showRestTimerSetting) {
+                RestTimerSettingView(currentSettings: effectiveUserSettings) { updated in
+                    userSettings = updated
+                }
+            }
         }
     }
 
-    // MARK: - Avatar Card
+    // MARK: - Profile row
+    //
+    // Compact profile row per new-canvas-section.diff's "Settings Hub" frame:
+    // 52pt avatar square, 17pt name, muted 12pt "@username", small INERT
+    // "Edit" secondary button. Replaces the prior centered avatar card (60pt
+    // avatar + "Member since ..." subtitle) — the diff specifies this exact
+    // compact shape with no member-since text, so `memberSinceText` (the old
+    // helper) was removed rather than left dead.
 
     @ViewBuilder
-    private var avatarCardView: some View {
+    private var profileRow: some View {
         let displayProfile = profile ?? appState.currentProfile
-        GSCard(bordered: false) {
-            VStack(spacing: 8) {
-                Text(initials(for: displayProfile))
-                    .font(GSFont.heading(20, relativeTo: .title3))
-                    .foregroundColor(theme.bg)
-                    .frame(width: 60, height: 60)
-                    .background(theme.accent)
+        HStack(spacing: 12) {
+            Text(initials(for: displayProfile))
+                .font(GSFont.heading(19, relativeTo: .title3))
+                .foregroundColor(theme.bg)
+                .frame(width: 52, height: 52)
+                .background(theme.accent)
 
+            VStack(alignment: .leading, spacing: 2) {
                 Text(displayName(for: displayProfile))
-                    .font(GSFont.heading(18, relativeTo: .title3))
+                    .font(GSFont.heading(17, relativeTo: .headline))
                     .foregroundColor(theme.text)
-
                 if let displayProfile {
-                    Text(memberSinceText(for: displayProfile))
-                        .font(GSFont.body(13, relativeTo: .caption))
+                    Text("@\(displayProfile.username)")
+                        .font(GSFont.body(12, relativeTo: .caption))
                         .foregroundColor(theme.neutral700)
                 }
             }
-            .frame(maxWidth: .infinity)
-            .padding(16)
+
+            Spacer()
+
+            // INERT for now (recorded deviation — see task-2-report.md): Edit
+            // Profile is a future screen. Present here for the hub's visual
+            // completeness per the diff; tapping does nothing yet.
+            Button {
+                // no-op — Edit Profile screen not yet built.
+            } label: {
+                Text("Edit")
+            }
+            .buttonStyle(GSSecondaryButtonStyle(fontSize: 12, horizontalPadding: 12, verticalPadding: 6))
+            .frame(minHeight: 44)
         }
     }
 
@@ -106,21 +148,25 @@ struct YouTabView: View {
         return String(source.prefix(2)).uppercased()
     }
 
+    /// Name text only — the "@username" subtitle is rendered as its own
+    /// `Text` by `profileRow`, so (unlike the old avatar card's identically
+    /// named helper) this no longer falls back to "@username" itself; it
+    /// falls back to the bare username instead, to avoid showing the handle
+    /// twice.
     private func displayName(for profile: Profile?) -> String {
         guard let profile else { return "" }
         if let name = profile.displayName, !name.trimmingCharacters(in: .whitespaces).isEmpty {
             return name
         }
-        return "@\(profile.username)"
-    }
-
-    private func memberSinceText(for profile: Profile) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMM yyyy"
-        return "@\(profile.username) · Member since \(formatter.string(from: profile.createdAt))"
+        return profile.username
     }
 
     // MARK: - Stat Tiles
+    //
+    // Recorded deviation (per task brief): the diff's Settings Hub frame
+    // omits these entirely, but they're recent parity work and
+    // data-valuable — kept between the profile row and the Settings group,
+    // flagged for designer review.
 
     private var statTileRow: some View {
         let displayProfile = profile ?? appState.currentProfile
@@ -138,26 +184,95 @@ struct YouTabView: View {
         }
     }
 
-    // MARK: - Settings Rows
+    // MARK: - Settings group box
+    //
+    // 1px-bordered box (per the diff) with 4 rows — Appearance / Notifications
+    // / Home Gym / Default rest timer — plus Apple Health Sync appended as a
+    // 5th row.
+    //
+    // Recorded deviation: the diff's Settings Hub frame has no Apple Health
+    // row at all, but it's the app's ONLY manual entry point to (re-)request
+    // HealthKit authorization — `WorkoutSessionView.endSession()` only
+    // re-prompts opportunistically during export, it never exposes a
+    // settings toggle. Dropping this row would make that permission
+    // undiscoverable with no other access point. Kept per the same
+    // "recorded deviation, flag for designer" reasoning the brief already
+    // applies to the stat tiles above. The old standalone "Theme" row is
+    // fully superseded by "Appearance" (same info — current palette name —
+    // now sourced from `user_settings` instead of a hardcoded "Midnight").
 
     @ViewBuilder
-    private var settingsRows: some View {
+    private var settingsGroupBox: some View {
         VStack(spacing: 0) {
-            GSSettingsRow(title: "Home Gym") {
-                showHomeGymSheet = true
+            GSSettingsRow(title: "Appearance", icon: "sun.max", value: paletteDisplayName) {
+                showAppearance = true
             }
-            healthSyncRow
-            GSSettingsRow(title: "Notifications") {
+            GSSettingsRow(title: "Notifications", icon: "bell", value: notificationsStatusText) {
                 showNotificationPrefs = true
             }
-            themeRow
+            GSSettingsRow(title: "Home Gym", icon: "mappin.and.ellipse", value: homeGymName ?? "Not set") {
+                showHomeGymSheet = true
+            }
+            GSSettingsRow(
+                title: "Default rest timer",
+                icon: "timer",
+                value: restTimerDisplayText
+            ) {
+                showRestTimerSetting = true
+            }
+            healthSyncRow
         }
-        .padding(.horizontal, 16)
+        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+    }
+
+    /// Reads the live `ThemeStore` (not `userSettings.palette`) so this row
+    /// updates the instant a selection is made in `AppearanceView`, without
+    /// waiting for `YouTabView`'s own `.task` to re-fetch `user_settings`.
+    private var paletteDisplayName: String {
+        GSPalettes.name(for: themeStore.paletteID)
+    }
+
+    private var restTimerDisplayText: String {
+        UserSettings.formatRestSeconds(userSettings?.defaultRestSeconds ?? 120)
+    }
+
+    /// Settings handed to `RestTimerSettingView` — falls back to
+    /// `UserSettings.defaults` if `.task` hasn't resolved the real row yet.
+    /// Safe even with a placeholder `userID`: `UserSettingsRepository.upsert`
+    /// always re-derives the actual authenticated user id itself rather than
+    /// trusting this struct's `userID` field.
+    ///
+    /// Fix round B1 (final review blocker): always overwrites `.palette`
+    /// with the LIVE `themeStore.paletteID` rather than trusting
+    /// `userSettings.palette` — this view's own cache, which only refreshes
+    /// on `.task`/sheet-save and can lag a palette change made in
+    /// `AppearanceView` during the same Settings visit. Without this,
+    /// pushing `RestTimerSettingView` right after changing the palette would
+    /// hand it a stale palette value; its own full-row upsert on save would
+    /// then write that stale value back to `user_settings`, silently
+    /// reverting the just-made palette change in the DB (invisible until
+    /// relaunch). See `ThemeStore.noteExternalSettingsWrite` for the
+    /// mirror-image fix in the other direction (rest-then-palette).
+    private var effectiveUserSettings: UserSettings {
+        var settings = userSettings ?? UserSettings.defaults(userID: appState.currentProfile?.id ?? UUID())
+        settings.palette = themeStore.paletteID
+        return settings
+    }
+
+    private var notificationsStatusText: String {
+        switch pushReceiver.authorizationStatus {
+        case .authorized, .provisional, .ephemeral: return "On"
+        case .denied, .notDetermined: return "Off"
+        @unknown default: return "Off"
+        }
     }
 
     /// Shows current authorization state as trailing text (not a chevron —
     /// this row isn't a navigation target). Tapping re-requests permission
-    /// then refreshes the displayed state.
+    /// then refreshes the displayed state. Kept as a custom row (not
+    /// `GSSettingsRow`) since it has no chevron and a different action
+    /// shape; omits its own trailing divider since it's always the group
+    /// box's last row (the box's own bottom border serves that edge).
     private var healthSyncRow: some View {
         Button {
             Task { await requestHealthPermission() }
@@ -175,9 +290,6 @@ struct YouTabView: View {
             .padding(.vertical, 14)
             .background(theme.surface)
             .contentShape(Rectangle())
-            .overlay(alignment: .bottom) {
-                Rectangle().fill(theme.divider).frame(height: 1)
-            }
         }
         .buttonStyle(.plain)
     }
@@ -188,27 +300,6 @@ struct YouTabView: View {
         case .sharingDenied: return "Denied"
         case .notDetermined: return "Not Enabled"
         @unknown default: return "Unknown"
-        }
-    }
-
-    /// Restyled as a GSSettingsRow-shaped static row (recorded deviation —
-    /// canvas's You tab has no Theme row at all; this app only ships the
-    /// Midnight theme today, so the row is informational, not tappable).
-    private var themeRow: some View {
-        HStack {
-            Text("Theme")
-                .font(GSFont.bodyMedium(14, relativeTo: .subheadline))
-                .foregroundColor(theme.text)
-            Spacer()
-            Text("Midnight")
-                .font(GSFont.body(13, relativeTo: .caption))
-                .foregroundColor(theme.neutral700)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .background(theme.surface)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(theme.divider).frame(height: 1)
         }
     }
 
@@ -239,6 +330,7 @@ struct YouTabView: View {
         async let profileFetch = ProfileRepository.refresh(userID: userID)
         async let historyFetch = SessionRepository.history(userID: userID, limit: 500)
         async let gymFetch = CheckInService.primaryGym()
+        async let settingsFetch = UserSettingsRepository.get()
 
         if let fetched = try? await profileFetch {
             profile = fetched
@@ -249,8 +341,10 @@ struct YouTabView: View {
         }
         let gym = try? await gymFetch
         homeGymName = gym?.name
+        userSettings = try? await settingsFetch
 
         healthAuthStatus = HealthKitBridge.store.authorizationStatus(for: .workoutType())
+        await pushReceiver.refreshAuthorizationStatus()
     }
 
     private func requestHealthPermission() async {

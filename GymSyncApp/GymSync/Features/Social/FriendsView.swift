@@ -1,11 +1,27 @@
 import SwiftUI
 
 struct FriendsView: View {
+    /// When true, focuses the "Add a friend" username field as soon as this
+    /// view appears. Wired from `SocialTabView`'s full-tab "No crew yet" CTA
+    /// (Canvas Completion Task 4 fix round 1) so tapping "Add your first
+    /// friend" there lands with the keyboard already up, not just a bare
+    /// navigation. Defaults to false for every other entry point (the
+    /// Social tab's "Friends" row, the push-route deep link), which are
+    /// unchanged.
+    var focusAddFieldOnAppear = false
+
     @State private var friends: [Profile] = []
     @State private var incoming: [Profile] = []
     @State private var outgoing: [Profile] = []
     @State private var addUsername = ""
     @State private var errorText: String?
+    // Canvas Completion Task 4: `refresh()`'s existing `try?`-and-swallow
+    // pattern never tracked failure at all, so — unlike SocialTabView's
+    // reused `errorText` — this is a genuinely new flag. Only set from the
+    // `friends` fetch specifically (the one GSEmptyState/GSErrorCard below
+    // cares about); `incoming`/`outgoing` failures stay silent as before.
+    @State private var friendsLoadFailed = false
+    @FocusState private var isUsernameFieldFocused: Bool
 
     @Environment(\.gsTheme) private var theme
 
@@ -26,6 +42,7 @@ struct FriendsView: View {
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
                                 .tint(theme.accent)
+                                .focused($isUsernameFieldFocused)
                         }
                         .padding(.horizontal, 12)
                         .frame(height: 44)
@@ -119,12 +136,32 @@ struct FriendsView: View {
 
             // Friends list — swipeActions to Remove preserved
             Section {
+                // Canvas Completion Task 4 (proof p30-empty-offline, "No crew
+                // yet"): the error card only shows when the list is blank
+                // BECAUSE the load failed — a refresh failure that leaves
+                // existing friends on screen stays silent, same as before.
                 if friends.isEmpty {
-                    Text("No friends yet. Send a request by username.")
-                        .font(GSFont.body(14, relativeTo: .body))
-                        .foregroundStyle(theme.neutral500)
+                    if friendsLoadFailed {
+                        GSErrorCard(
+                            title: "Couldn't load your friends",
+                            message: "Check your connection and try again.",
+                            retry: { Task { await refresh() } }
+                        )
                         .listRowBackground(theme.bg)
                         .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets())
+                    } else {
+                        GSEmptyState(
+                            icon: "person.2",
+                            title: "No crew yet",
+                            message: "Add a friend by username — then take turns on the bar together.",
+                            ctaTitle: "Add your first friend",
+                            action: { isUsernameFieldFocused = true }
+                        )
+                        .listRowBackground(theme.bg)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets())
+                    }
                 } else {
                     ForEach(friends) { profile in
                         HStack(spacing: 10) {
@@ -154,6 +191,11 @@ struct FriendsView: View {
         .navigationTitle("Friends")
         .task { await refresh() }
         .refreshable { await refresh() }
+        .onAppear {
+            if focusAddFieldOnAppear {
+                isUsernameFieldFocused = true
+            }
+        }
     }
 
     // Two-line "Display Name" / "@username" block, matching the proof's
@@ -193,7 +235,17 @@ struct FriendsView: View {
     }
 
     private func refresh() async {
-        friends = (try? await FriendRepository.friends()) ?? []
+        // Best-effort per Canvas Completion Task 4's contract: a failure here
+        // leaves the previous `friends` value in place (does NOT reset to
+        // `[]`) so a transient blip never wipes a populated list — only a
+        // failure while `friends` is ALREADY empty produces the
+        // blank-list-plus-error condition GSErrorCard is for.
+        do {
+            friends = try await FriendRepository.friends()
+            friendsLoadFailed = false
+        } catch {
+            friendsLoadFailed = true
+        }
         incoming = (try? await FriendRepository.incomingRequests()) ?? []
         outgoing = (try? await FriendRepository.outgoingRequests()) ?? []
     }

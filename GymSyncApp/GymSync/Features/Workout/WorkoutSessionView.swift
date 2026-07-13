@@ -40,6 +40,14 @@ struct WorkoutSessionView: View {
     /// True only when `HealthKitBridge.exportWorkout` succeeded — surfaces sync
     /// state to the recap's Apple Health card (never blocks completion on failure).
     @State private var healthSynced: Bool = false
+    /// Fallback rest duration for exercises with no per-exercise `restSeconds`
+    /// configured (e.g. a routine item where rest was left unset) — read from
+    /// `user_settings.default_rest_seconds` in `.task`, falls back to the
+    /// column's own default (120) if the fetch hasn't resolved yet or fails.
+    /// Canvas Completion Task 2 wiring: previously such exercises got no rest
+    /// timer at all (`re.restSeconds.map { ... }` at the call site below was
+    /// `nil`-guarded away); now they use the user's configured default.
+    @State private var defaultRestSeconds: Int = 120
 
     private var currentRoutineExercise: RoutineExercise? {
         guard currentExerciseIndex < routineExercises.count else { return nil }
@@ -189,6 +197,7 @@ struct WorkoutSessionView: View {
             }
         }
         .task { await startIfNeeded() }
+        .task { await loadDefaultRestSeconds() }
         .sheet(isPresented: $showLogSheet) {
             if let ex = currentExercise, let re = currentRoutineExercise {
                 LogSetSheet(
@@ -677,6 +686,16 @@ struct WorkoutSessionView: View {
         catch { errorText = ErrorMapping.map(error).errorDescription }
     }
 
+    /// Best-effort — a failed fetch must never block workout start; the
+    /// `@State` initializer's 120 fallback covers that case (mirrors the
+    /// `defaultRestSeconds = 120` fallback documented on the column itself).
+    @MainActor
+    private func loadDefaultRestSeconds() async {
+        if let settings = try? await UserSettingsRepository.get() {
+            defaultRestSeconds = settings.defaultRestSeconds
+        }
+    }
+
     @MainActor
     private func log(reps: Int?, weight: Decimal?, rpe: Decimal?, isFailed: Bool, note: String?) async {
         guard let session, let re = currentRoutineExercise,
@@ -748,8 +767,14 @@ struct WorkoutSessionView: View {
             if currentExerciseIndex >= routineExercises.count {
                 restEndAt = nil
                 await endSession()
-            } else if let restSeconds = re.restSeconds, restSeconds > 0 {
-                restEndAt = Date().addingTimeInterval(TimeInterval(restSeconds))
+            } else {
+                // Per-exercise rest wins when configured; otherwise fall back
+                // to the user's default_rest_seconds (Canvas Completion Task 2)
+                // rather than showing no rest timer at all.
+                let restSeconds = re.restSeconds ?? defaultRestSeconds
+                if restSeconds > 0 {
+                    restEndAt = Date().addingTimeInterval(TimeInterval(restSeconds))
+                }
             }
         } catch { errorText = ErrorMapping.map(error).errorDescription }
     }

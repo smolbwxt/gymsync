@@ -86,6 +86,27 @@ enum GroupRepository {
         }
     }
 
+    /// Single group lookup by ID — backs the Burpee Ledger's secondary entry
+    /// point from `GroupSessionLiveView`, which only carries the session's
+    /// `groupID` (not a full `GymGroup`). Mirrors `SessionRepository.session(id:)`'s
+    /// not-found handling (PGRST116 → nil, not an error).
+    static func fetch(id: UUID) async throws -> GymGroup? {
+        do {
+            let row: GymGroup = try await SupabaseService.shared.client
+                .from("groups")
+                .select()
+                .eq("id", value: id.uuidString)
+                .single()
+                .execute()
+                .value
+            return row
+        } catch let error as PostgrestError where error.code == "PGRST116" {
+            return nil
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
+
     /// Bulk group lookup by ID — backs Exercise History's "· {group name}"
     /// meta suffix for sets logged in a group session.
     static func fetchMany(ids: [UUID]) async throws -> [GymGroup] {

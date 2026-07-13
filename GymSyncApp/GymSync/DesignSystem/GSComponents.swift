@@ -45,17 +45,29 @@ public struct GSPrimaryButtonStyle: ButtonStyle {
 public struct GSSecondaryButtonStyle: ButtonStyle {
     @Environment(\.gsTheme) private var theme
 
-    public init() {}
+    private let fontSize: CGFloat
+    private let horizontalPadding: CGFloat
+    private let verticalPadding: CGFloat
+
+    /// Defaults match the canonical 16pt/16-horizontal/12-vertical treatment;
+    /// callers matching a canvas spec with a smaller scale (e.g. a compact
+    /// "Open" action inside a denied-permission banner) can override
+    /// per-instance — mirrors `GSPrimaryButtonStyle`'s existing pattern.
+    public init(fontSize: CGFloat = 16, horizontalPadding: CGFloat = 16, verticalPadding: CGFloat = 12) {
+        self.fontSize = fontSize
+        self.horizontalPadding = horizontalPadding
+        self.verticalPadding = verticalPadding
+    }
 
     public func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: 0) {
             configuration.label
             Spacer(minLength: 0)
         }
-        .font(GSFont.bold(16, relativeTo: .body))
+        .font(GSFont.bold(fontSize, relativeTo: .body))
         .foregroundColor(configuration.isPressed ? theme.accent600 : theme.accent)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.horizontal, horizontalPadding)
+        .padding(.vertical, verticalPadding)
         .background(configuration.isPressed ? theme.accent100 : Color.clear)
         .cornerRadius(0)
         .overlay(
@@ -327,26 +339,63 @@ public struct GSSectionHeader: View {
 // Full-width tappable settings row: flush-left title + trailing chevron.
 // ≥44pt tap target via vertical padding, contentShape for edge-to-edge hit
 // testing, 1px divider along the bottom edge. Used by the You tab's
-// Settings section (Home Gym, Apple Health Sync, etc.).
+// Settings section (Home Gym, Apple Health Sync, etc.) and the Settings Hub
+// group box (Appearance, Notifications, Home Gym, Default rest timer —
+// new-canvas-section.diff's "Settings Hub" frame, Canvas Completion Task 2).
+//
+// `icon`/`value` are optional and default to `nil` — existing call sites
+// (title + action only) are unaffected. When provided: `icon` renders an
+// 18pt accent-colored SF Symbol (nearest-equivalent to the diff's raw SVGs)
+// leading the title; `value` renders a trailing neutral700 preview string
+// before the chevron (e.g. "Midnight", "On", "2:00").
+//
+// `showDivider` (default `true`) lets a caller that wraps several rows in its
+// own 1px-bordered group box (per the diff's "internal dividers" spec)
+// suppress the bottom divider on the last row in the group, so it doesn't
+// double up against the group box's own bottom border — same technique
+// `NotificationPreferencesView.groupSection` already uses for its toggle
+// rows.
 
 public struct GSSettingsRow: View {
     @Environment(\.gsTheme) private var theme
 
     private let title: String
+    private let icon: String?
+    private let value: String?
+    private let showDivider: Bool
     private let action: () -> Void
 
-    public init(title: String, action: @escaping () -> Void) {
+    public init(
+        title: String,
+        icon: String? = nil,
+        value: String? = nil,
+        showDivider: Bool = true,
+        action: @escaping () -> Void
+    ) {
         self.title = title
+        self.icon = icon
+        self.value = value
+        self.showDivider = showDivider
         self.action = action
     }
 
     public var body: some View {
         Button(action: action) {
-            HStack {
+            HStack(spacing: 12) {
+                if let icon {
+                    Image(systemName: icon)
+                        .font(.system(size: 18, weight: .regular))
+                        .foregroundColor(theme.accent)
+                }
                 Text(title)
                     .font(GSFont.bodyMedium(14, relativeTo: .subheadline))
                     .foregroundColor(theme.text)
                 Spacer()
+                if let value {
+                    Text(value)
+                        .font(GSFont.body(13, relativeTo: .caption))
+                        .foregroundColor(theme.neutral700)
+                }
                 Image(systemName: "chevron.right")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundColor(theme.neutral500)
@@ -356,7 +405,9 @@ public struct GSSettingsRow: View {
             .background(theme.surface)
             .contentShape(Rectangle())
             .overlay(alignment: .bottom) {
-                Rectangle().fill(theme.divider).frame(height: 1)
+                if showDivider {
+                    Rectangle().fill(theme.divider).frame(height: 1)
+                }
             }
         }
         .buttonStyle(.plain)
@@ -510,5 +561,370 @@ public struct GSMiniTrendCard: View {
             }
             .padding(16)
         }
+    }
+}
+
+// MARK: - GSSquareToggleStyle
+//
+// ToggleStyle rendering the square on/off knob (46x27 track, 21x21 knob,
+// 3pt inset). On: accent track, bg-colored knob, knob right-aligned.
+// Off: neutral300 track, neutral500 knob, knob left-aligned.
+// Drawn control stays exactly 46x27; the tappable hit area expands to >=44pt
+// via `.frame(minWidth:minHeight:)`.
+
+public struct GSSquareToggleStyle: ToggleStyle {
+    @Environment(\.gsTheme) private var theme
+
+    public func makeBody(configuration: Configuration) -> some View {
+        Button {
+            configuration.isOn.toggle()
+        } label: {
+            ZStack(alignment: configuration.isOn ? .trailing : .leading) {
+                Rectangle()
+                    .fill(configuration.isOn ? theme.accent : theme.neutral300)
+                    .frame(width: 46, height: 27)
+                Rectangle()
+                    .fill(configuration.isOn ? theme.bg : theme.neutral500)
+                    .frame(width: 21, height: 21)
+                    .padding(3)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .frame(minWidth: 44, minHeight: 44)
+        .animation(.easeInOut(duration: 0.15), value: configuration.isOn)
+    }
+}
+
+// MARK: - GSToggle
+//
+// Custom square on/off control replacing SwiftUI's system `Toggle` (canvas
+// redraw, Notif Preferences frame — see new-canvas-section.diff). 46x27
+// track, 21x21 knob, knob inset 3pt (vertical centering falls out of
+// 27-21=6 symmetric padding). On: accent track, bg-colored knob, knob
+// right-aligned. Off: neutral300 track, neutral500 knob, knob left-aligned.
+// Per Designer ruling #1 ("small drawn boxes, 44pt invisible hit areas"),
+// the drawn track stays exactly 46x27 — only the tappable region is padded
+// out to >=44pt via `.frame(minWidth:minHeight:)`, same pattern used by
+// GSSettingsRow/GSPrimaryButtonStyle elsewhere in this file.
+//
+// Internally uses a real SwiftUI `Toggle` + `GSSquareToggleStyle`, which
+// provides proper VoiceOver semantics (switch trait, on/off value). Optional
+// `label` param (defaulted nil for backward compatibility) applies
+// accessibility label when present.
+//
+// Label rendering (including the "60% opacity when off" treatment) is the
+// caller's responsibility — this view is a pure `Bool` control with no
+// visual label of its own, matching the canvas markup where the label is a
+// sibling `<span>`, not part of the toggle itself.
+
+public struct GSToggle: View {
+    @Binding private var isOn: Bool
+    private let label: String?
+
+    /// Creates a GSToggle with optional accessibility label. Public API remains
+    /// identical to the prior Button-based implementation — callers unchanged.
+    /// Optional `label` param (defaulted nil) applies accessibilityLabel when
+    /// present, e.g., GSToggle(isOn: $prefs["foo"], label: "Notifications").
+    public init(isOn: Binding<Bool>, label: String? = nil) {
+        self._isOn = isOn
+        self.label = label
+    }
+
+    public var body: some View {
+        Toggle(isOn: $isOn) {
+            EmptyView()
+        }
+        .labelsHidden()
+        .toggleStyle(GSSquareToggleStyle())
+        .accessibilityLabel(label ?? "")
+    }
+}
+
+// MARK: - GSEmptyState
+//
+// First-run / zero-data block: a bordered icon square (64×64, 2pt divider
+// border, 45%-opacity glyph) + bold headline + centered muted body copy
+// (max width 250) + an optional primary CTA + an optional secondary ghost
+// link. Matches the canvas "No crew yet" frame (Canvas Completion Task 4,
+// proof p30-empty-offline; markup `docs/design/Gym Sync App
+// Designs.dc.html` lines ~2279-2288).
+//
+// Deliberately does NOT force full-screen vertical centering — the canvas
+// frame shows this as the SOLE content of an isolated "states" mockup, but
+// real call sites (SocialTabView's Groups section, FriendsView's Friends
+// section) sit alongside other content, so this renders as a self-contained
+// block wherever the empty condition already lives, matching how the
+// pre-existing plain-text empties it replaces were positioned.
+//
+// The CTA button intentionally has no `.frame(maxWidth: .infinity)` — left
+// unconstrained, `GSPrimaryButtonStyle`'s internal `Spacer` collapses to
+// zero width, so the button hugs its label exactly like the canvas's
+// `justify-content:center` override, and the enclosing VStack's default
+// `.center` alignment centers the whole content-sized button. Same trick
+// for the secondary ghost link.
+
+public struct GSEmptyState: View {
+    @Environment(\.gsTheme) private var theme
+
+    private let icon: String
+    private let title: String
+    private let message: String
+    private let ctaTitle: String?
+    private let action: (() -> Void)?
+    private let secondaryTitle: String?
+    private let secondaryAction: (() -> Void)?
+
+    public init(
+        icon: String,
+        title: String,
+        message: String,
+        ctaTitle: String? = nil,
+        action: (() -> Void)? = nil,
+        secondaryTitle: String? = nil,
+        secondaryAction: (() -> Void)? = nil
+    ) {
+        self.icon = icon
+        self.title = title
+        self.message = message
+        self.ctaTitle = ctaTitle
+        self.action = action
+        self.secondaryTitle = secondaryTitle
+        self.secondaryAction = secondaryAction
+    }
+
+    public var body: some View {
+        VStack(spacing: 0) {
+            ZStack {
+                Rectangle().strokeBorder(theme.divider, lineWidth: 2)
+                Image(systemName: icon)
+                    .font(.system(size: 30, weight: .regular))
+                    .foregroundStyle(theme.text.opacity(0.45))
+            }
+            .frame(width: 64, height: 64)
+            .padding(.bottom, 18)
+
+            Text(title)
+                .font(GSFont.heading(22, relativeTo: .title2))
+                .foregroundStyle(theme.text)
+
+            Text(message)
+                .font(GSFont.body(14, relativeTo: .subheadline))
+                .foregroundStyle(theme.neutral500)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 250)
+                .padding(.top, 6)
+
+            if let ctaTitle, let action {
+                Button(ctaTitle, action: action)
+                    .buttonStyle(GSPrimaryButtonStyle(fontSize: 14, verticalPadding: 12))
+                    .padding(.top, 18)
+            }
+
+            if let secondaryTitle, let secondaryAction {
+                Button(secondaryTitle, action: secondaryAction)
+                    .buttonStyle(GSGhostButtonStyle())
+                    .padding(.top, 8)
+            }
+        }
+        .multilineTextAlignment(.center)
+        .padding(.horizontal, 32)
+        .padding(.vertical, 24)
+        .frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - GSErrorCard
+//
+// Blank-list-plus-failure block: same visual language as `GSEmptyState` but
+// at the canvas's smaller "Couldn't load the roster" scale (56×56 icon
+// square, 20pt title, 13pt/240pt-wide message, single "Try again" CTA — no
+// secondary link). Matches proof p31-errors; markup lines ~2318-2326.
+//
+// Contract (Canvas Completion Task 4): this card is for the "list would
+// otherwise be blank AND a load failed" case only — best-effort refresh
+// failures that leave stale data on screen stay silent (no card), so a
+// transient network blip never converts non-blocking semantics into a
+// blocking error. Callers are expected to gate this behind their own
+// `<list>.isEmpty && <lastLoadFailed>` check; it does not gate itself.
+
+public struct GSErrorCard: View {
+    @Environment(\.gsTheme) private var theme
+
+    private let title: String
+    private let message: String
+    private let retryTitle: String
+    private let retry: () -> Void
+
+    public init(
+        title: String = "Couldn't load",
+        message: String,
+        retryTitle: String = "Try again",
+        retry: @escaping () -> Void
+    ) {
+        self.title = title
+        self.message = message
+        self.retryTitle = retryTitle
+        self.retry = retry
+    }
+
+    public var body: some View {
+        VStack(spacing: 0) {
+            ZStack {
+                Rectangle().strokeBorder(theme.divider, lineWidth: 2)
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 26, weight: .regular))
+                    .foregroundStyle(theme.text.opacity(0.45))
+            }
+            .frame(width: 56, height: 56)
+            .padding(.bottom, 14)
+
+            Text(title)
+                .font(GSFont.heading(20, relativeTo: .title3))
+                .foregroundStyle(theme.text)
+
+            Text(message)
+                .font(GSFont.body(13, relativeTo: .footnote))
+                .foregroundStyle(theme.neutral500)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 240)
+                .padding(.top, 6)
+
+            Button(retryTitle, action: retry)
+                .buttonStyle(GSPrimaryButtonStyle(fontSize: 14, verticalPadding: 11))
+                .padding(.top, 16)
+        }
+        .multilineTextAlignment(.center)
+        .padding(16)
+        .frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - GSOfflineBanner
+//
+// "Reconnecting…" pill — 1px divider border, surface fill, a pulsing accent
+// dot, bold "Reconnecting…" label, trailing muted "Showing your last synced
+// data" caption. Matches proof p30-empty-offline; markup lines ~2272-2277.
+//
+// The dot is a `Circle` (not the app's usual zero-radius `Rectangle`) —
+// this is a deliberate, recurring exception in the canvas markup for
+// "live activity blip" indicators specifically (the same round dot appears
+// on the chat typing indicator and voice-recording composer; contrast the
+// SQUARE "LIVE" session badge dot elsewhere in the same file), not an
+// oversight of the house zero-radius rule.
+//
+// Driven by `ConnectivityMonitor.shared.isOnline` — this view itself has no
+// opinion on when to show; callers gate it (`if !connectivity.isOnline`).
+
+public struct GSOfflineBanner: View {
+    @Environment(\.gsTheme) private var theme
+    @State private var isDimmed = false
+
+    public init() {}
+
+    public var body: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(theme.accent)
+                .frame(width: 8, height: 8)
+                .opacity(isDimmed ? 0.25 : 1)
+
+            Text("Reconnecting…")
+                .font(GSFont.bold(12, relativeTo: .caption))
+                .foregroundStyle(theme.text)
+
+            Spacer(minLength: 8)
+
+            Text("Showing your last synced data")
+                .font(GSFont.body(11, relativeTo: .caption2))
+                .foregroundStyle(theme.neutral500)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(theme.surface)
+        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .onAppear {
+            // Canvas Completion Task 4 fix round 1: `repeatForever(autoreverses:
+            // true)` doubles a single-leg duration into a full forward+reverse
+            // cycle — `duration: 1` here was actually a 2s cycle, not the
+            // markup's `animation:gsPulse 1s ease-in-out infinite` (1s full
+            // cycle). Halved to 0.5s per leg so the autoreversed round trip
+            // matches the spec's 1s cycle.
+            withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) {
+                isDimmed = true
+            }
+        }
+    }
+}
+
+// MARK: - GSInlineErrorBanner
+//
+// Solid-accent inline error banner — bold lead-in + continuation copy, single
+// "Try again" CTA. Matches proof p31-errors' "Set didn't save" toast shape
+// (markup lines ~2313-2317: accent fill, bg-colored text, exclamation-circle
+// icon, single flowing message) with ONE deliberate, behavior-truthful
+// deviation from the literal proof copy and shape:
+//
+// - The proof's copy is "Set didn't save. We'll retry when you're back
+//   online." — this app has no offline retry queue (no outbox, no background
+//   sync), so that copy would promise a capability that doesn't exist.
+//   Callers should pass a `message` that's honest about there being no
+//   auto-retry (e.g. "Check your connection, then try again").
+// - The proof's banner has no button at all (it relies on the fabricated
+//   auto-retry). This component adds a real "Try again" CTA so the failure
+//   is actually recoverable — callers wire `retry` to re-invoke the exact
+//   action that failed.
+//
+// See Canvas Completion Task 4 fix round 1 report for the full record of
+// this deviation.
+
+public struct GSInlineErrorBanner: View {
+    @Environment(\.gsTheme) private var theme
+
+    private let title: String
+    private let message: String
+    private let retryTitle: String
+    private let retry: () -> Void
+
+    public init(
+        title: String,
+        message: String,
+        retryTitle: String = "Try again",
+        retry: @escaping () -> Void
+    ) {
+        self.title = title
+        self.message = message
+        self.retryTitle = retryTitle
+        self.retry = retry
+    }
+
+    public var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.circle")
+                .font(.system(size: 18, weight: .regular))
+                .foregroundStyle(theme.bg)
+
+            VStack(alignment: .leading, spacing: 8) {
+                (
+                    Text(title).font(GSFont.bold(13, relativeTo: .footnote))
+                    + Text(" \(message)").font(GSFont.body(13, relativeTo: .footnote))
+                )
+                .foregroundStyle(theme.bg)
+                .fixedSize(horizontal: false, vertical: true)
+
+                Button(action: retry) {
+                    Text(retryTitle)
+                        .font(GSFont.bold(12, relativeTo: .caption))
+                        .foregroundStyle(theme.bg)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .overlay(Rectangle().strokeBorder(theme.bg.opacity(0.6), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .background(theme.accent)
     }
 }

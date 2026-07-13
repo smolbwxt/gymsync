@@ -278,6 +278,31 @@ struct GroupView: View {
 
     private var sessionsList: some View {
         List {
+            // Burpee Ledger entry point (Canvas Completion Task 3, proof p25) —
+            // group-scoped crew debt aggregate, always available regardless of
+            // whether this group currently has upcoming/past sessions.
+            Section {
+                NavigationLink {
+                    BurpeeLedgerView(group: group)
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "figure.strengthtraining.functional")
+                            .font(.system(size: 18, weight: .regular))
+                            .foregroundStyle(theme.accent)
+                        Text("Burpee Ledger")
+                            .font(GSFont.bodyMedium(14, relativeTo: .subheadline))
+                            .foregroundStyle(theme.text)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(theme.neutral500)
+                    }
+                    .frame(minHeight: 44)
+                }
+                .listRowBackground(theme.surface)
+                .listRowSeparatorTint(theme.divider)
+            }
+
             if upcomingSessions.isEmpty && pastSessions.isEmpty {
                 Section {
                     Text("No upcoming sessions — schedule one from Home.")

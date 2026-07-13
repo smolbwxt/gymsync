@@ -68,7 +68,65 @@ final class DesignSystemTests: XCTestCase {
         XCTAssertEqual(a, 1.0,       accuracy: tolerance, "accent alpha must be 1.0")
     }
 
+    // MARK: - Palette activation tests (Canvas Completion Task 5)
+    //
+    // Spot-checks bg/surface/accent for each new palette against the exact
+    // hex values transcribed from the canvas's `.gs-theme[data-palette=...]`
+    // CSS custom-property rules (`docs/design/Gym Sync App Designs.dc.html`).
+    // `assertColor` reuses `testMidnightAccentColour`'s component-compare
+    // approach rather than duplicating it three more times.
+
+    func testArenaTokens() {
+        assertColor(GSTheme.arena.bg,      hex: 0x101310, label: "arena.bg")
+        assertColor(GSTheme.arena.surface, hex: 0x1b1f19, label: "arena.surface")
+        assertColor(GSTheme.arena.accent,  hex: 0xb6f236, label: "arena.accent")
+        XCTAssertTrue(GSTheme.arena.isDark, "arena is a near-black dark palette")
+    }
+
+    func testInkTokens() {
+        assertColor(GSTheme.ink.bg,      hex: 0xf3efe6, label: "ink.bg")
+        assertColor(GSTheme.ink.surface, hex: 0xe8e2d5, label: "ink.surface")
+        assertColor(GSTheme.ink.accent,  hex: 0x22345c, label: "ink.accent")
+        XCTAssertFalse(GSTheme.ink.isDark, "ink is a light (warm bone bg / dark navy text) palette")
+    }
+
+    func testModernistTokens() {
+        assertColor(GSTheme.modernist.bg,      hex: 0xf3f2f2, label: "modernist.bg")
+        assertColor(GSTheme.modernist.surface, hex: 0xeae9e9, label: "modernist.surface")
+        assertColor(GSTheme.modernist.accent,  hex: 0xec3013, label: "modernist.accent")
+        XCTAssertFalse(GSTheme.modernist.isDark, "modernist is a light (bone bg / near-black text) palette")
+    }
+
+    func testGSPalettesResolvesEachID() {
+        XCTAssertEqual(GSPalettes.name(for: "midnight"), "Midnight")
+        XCTAssertEqual(GSPalettes.name(for: "arena"), "Arena")
+        XCTAssertEqual(GSPalettes.name(for: "ink"), "Ink")
+        XCTAssertEqual(GSPalettes.name(for: "modernist"), "Modernist")
+        // Unrecognized ids degrade to the midnight default rather than crash.
+        XCTAssertEqual(GSPalettes.name(for: "not-a-palette"), "Midnight")
+    }
+
     // MARK: - Helpers
+
+    /// Asserts `color` resolves to `hex` (24-bit RGB, alpha 1.0) within a
+    /// small tolerance — same component-compare approach as
+    /// `testMidnightAccentColour`, generalized so each new-palette test can
+    /// spot-check multiple tokens in one line.
+    private func assertColor(_ color: Color, hex: UInt32, label: String, file: StaticString = #filePath, line: UInt = #line) {
+        let uiColor = UIColor(color)
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        uiColor.getRed(&r, green: &g, blue: &b, alpha: &a)
+
+        let expectedR = CGFloat((hex >> 16) & 0xff) / 255.0
+        let expectedG = CGFloat((hex >>  8) & 0xff) / 255.0
+        let expectedB = CGFloat( hex        & 0xff) / 255.0
+        let tolerance: CGFloat = 0.01
+
+        XCTAssertEqual(r, expectedR, accuracy: tolerance, "\(label) red component mismatch", file: file, line: line)
+        XCTAssertEqual(g, expectedG, accuracy: tolerance, "\(label) green component mismatch", file: file, line: line)
+        XCTAssertEqual(b, expectedB, accuracy: tolerance, "\(label) blue component mismatch", file: file, line: line)
+        XCTAssertEqual(a, 1.0,       accuracy: tolerance, "\(label) alpha must be 1.0", file: file, line: line)
+    }
 
     private func fontDiagnostic(expected: String) -> String {
         let families = UIFont.familyNames.sorted()
