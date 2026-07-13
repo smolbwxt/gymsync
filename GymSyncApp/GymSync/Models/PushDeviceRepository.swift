@@ -17,26 +17,6 @@ struct PushDevice: Codable, Identifiable, Sendable {
     }
 }
 
-/// Encodable-only upsert body — keeps `apnsToken`/`lastSeenAt` as their real
-/// Swift types (String/Date) rather than a `[String: String]` dictionary, so
-/// there's no risk of a stringified Date landing as the wrong Postgres type.
-/// Mirrors the pattern of passing whole Codable structs to `.insert()`/
-/// `.upsert()` used elsewhere (e.g. SessionRepository's `WorkoutSession`,
-/// SetLog) rather than PersonalRecordRepository's manual-dictionary style
-/// (which exists there specifically to dodge Decimal-JSON precision loss —
-/// not a concern here).
-private struct PushDeviceUpsert: Encodable {
-    let userID: UUID
-    let apnsToken: String
-    let lastSeenAt: Date
-
-    enum CodingKeys: String, CodingKey {
-        case userID = "user_id"
-        case apnsToken = "apns_token"
-        case lastSeenAt = "last_seen_at"
-    }
-}
-
 enum PushDeviceRepository {
     private static var client: SupabaseClient { SupabaseService.shared.client }
 
@@ -49,29 +29,30 @@ enum PushDeviceRepository {
         data.map { String(format: "%02x", $0) }.joined()
     }
 
-    /// Upserts the current device's token, keyed on `apns_token` (not the
-    /// row's `id`) — a token rotation/reinstall naturally produces a fresh
+    /// Registers (or reassigns) the current device's token, keyed on
+    /// `apns_token` — a token rotation/reinstall naturally produces a fresh
     /// row rather than colliding with a stale one for the same physical
     /// device. `last_seen_at` refreshes on every call so push-dispatcher's
     /// dead-token cleanup (410/BadDeviceToken → delete) has a live signal to
     /// contrast against, though that cleanup doesn't currently read it.
-    @discardableResult
-    static func upsert(token: Data) async throws -> PushDevice {
-        guard let userID = await SupabaseService.shared.currentUserID() else {
+    ///
+    /// Delegates to the `register_push_device` RPC
+    /// (20260716000007_register_push_device.sql) rather than a client-side
+    /// `.upsert(onConflict:)` — a same-device, different-user re-registration
+    /// (sign out, sign in as someone else) needs its `ON CONFLICT DO UPDATE`
+    /// branch to reassign a row currently owned by someone ELSE, which the
+    /// owner-only RLS policy silently blocks for a plain client upsert. The
+    /// RPC is SECURITY DEFINER and pins `user_id = auth.uid()` on both
+    /// branches, so it can reassign ownership regardless of who currently
+    /// holds the row.
+    static func upsert(token: Data) async throws {
+        guard await SupabaseService.shared.currentUserID() != nil else {
             throw GymSyncError.unauthorized
         }
         do {
-            let row: PushDevice = try await client
-                .from("push_devices")
-                .upsert(
-                    PushDeviceUpsert(userID: userID, apnsToken: hexEncode(token), lastSeenAt: .now),
-                    onConflict: "apns_token"
-                )
-                .select()
-                .single()
+            _ = try await client
+                .rpc("register_push_device", params: ["p_token": hexEncode(token)])
                 .execute()
-                .value
-            return row
         } catch {
             throw ErrorMapping.map(error)
         }

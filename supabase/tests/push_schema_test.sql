@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(29);
+SELECT plan(34);
 
 -- ── Fixtures ──────────────────────────────────────────────────────────────────
 -- pu1 alice = organizer / PR scorer / late-participant test author
@@ -75,6 +75,60 @@ SELECT throws_ok(
   '42501', NULL,
   'outsider cannot insert a push device for another user'
 );
+
+
+-- ============================================================
+-- register_push_device RPC: same-device cross-user reassignment
+-- (20260716000007_register_push_device.sql)
+-- ============================================================
+
+-- ── a. alice registers a token via the RPC → row owned by alice ───────────
+SET LOCAL role authenticated;
+SET LOCAL request.jwt.claim.sub = '00000000-0000-0000-0000-0000000f0001';
+SELECT lives_ok(
+  $$SELECT public.register_push_device('tok-reassign-1')$$,
+  'alice can register a push device via register_push_device'
+);
+
+SET LOCAL role postgres;
+-- A single-row VALUES comparison also implicitly proves there's exactly one
+-- row for this token (a stray duplicate would make the actual result set
+-- have the wrong cardinality and fail results_eq on its own).
+SELECT results_eq(
+  $$SELECT user_id FROM push_devices WHERE apns_token = 'tok-reassign-1'$$,
+  $$VALUES ('00000000-0000-0000-0000-0000000f0001'::uuid)$$,
+  'register_push_device: row is owned by the registering user (alice)'
+);
+
+-- ── b. bob registers the SAME token → row is reassigned to bob, single row ─
+SET LOCAL role authenticated;
+SET LOCAL request.jwt.claim.sub = '00000000-0000-0000-0000-0000000f0002';
+SELECT lives_ok(
+  $$SELECT public.register_push_device('tok-reassign-1')$$,
+  'bob can re-register the same token as a different user'
+);
+
+SET LOCAL role postgres;
+SELECT results_eq(
+  $$SELECT user_id FROM push_devices WHERE apns_token = 'tok-reassign-1'$$,
+  $$VALUES ('00000000-0000-0000-0000-0000000f0002'::uuid)$$,
+  'register_push_device: reassignment moves ownership to bob (single row, not a duplicate)'
+);
+
+-- ── c. anon/no-JWT call raises (EXECUTE revoked from anon + PUBLIC) ───────
+SET LOCAL role anon;
+SELECT throws_ok(
+  $$SELECT public.register_push_device('tok-anon-attempt')$$,
+  '42501', NULL,
+  'anon (no JWT) cannot call register_push_device'
+);
+
+-- Restore role to authenticated — every section below this point (starting
+-- with notification_prefs) only re-sets request.jwt.claim.sub between
+-- sections, not role, so it must be left as authenticated here or those
+-- later bare (non-lives_ok/throws_ok) INSERTs raise a raw RLS error under
+-- role=anon and abort the whole transaction.
+SET LOCAL role authenticated;
 
 
 -- ============================================================

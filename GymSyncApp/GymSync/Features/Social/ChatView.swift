@@ -179,7 +179,12 @@ struct ChatView: View {
             appState.activeChatGroupID = group.id
         }
         .onDisappear {
-            appState.activeChatGroupID = nil
+            // Only clear the suppression flag if it's still pointing at THIS
+            // group's chat — see GroupSessionLiveView's identical guard on
+            // activeSessionID for why an unconditional nil is unsafe.
+            if appState.activeChatGroupID == group.id {
+                appState.activeChatGroupID = nil
+            }
             Task { await realtime.unsubscribe() }
         }
         // ChatView's inputBar is bottom-pinned; when reached via GroupView's

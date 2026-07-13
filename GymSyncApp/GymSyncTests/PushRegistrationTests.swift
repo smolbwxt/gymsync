@@ -26,15 +26,34 @@ final class PushRegistrationTests: XCTestCase {
         // Unique-per-run fake token so repeated CI runs don't collide on the
         // apns_token UNIQUE constraint from a prior run's leftover row.
         let token = Data("push-test-\(UUID().uuidString)".utf8)
+        let hexToken = PushDeviceRepository.hexEncode(token)
 
-        let device = try await PushDeviceRepository.upsert(token: token)
-        XCTAssertEqual(device.userID, userID)
-        XCTAssertEqual(device.apnsToken, PushDeviceRepository.hexEncode(token))
+        // upsert() now delegates to the register_push_device RPC (returns
+        // Void — see 20260716000007_register_push_device.sql), so verify the
+        // round trip by reading the row back directly.
+        try await PushDeviceRepository.upsert(token: token)
+        let rows: [PushDevice] = try await SupabaseService.shared.client
+            .from("push_devices")
+            .select()
+            .eq("apns_token", value: hexToken)
+            .execute()
+            .value
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?.userID, userID)
+        XCTAssertEqual(rows.first?.apnsToken, hexToken)
+        let deviceID = rows.first?.id
 
         // Re-upsert the same token — updates the same row (conflict target
         // is apns_token), doesn't create a duplicate.
-        let device2 = try await PushDeviceRepository.upsert(token: token)
-        XCTAssertEqual(device2.id, device.id)
+        try await PushDeviceRepository.upsert(token: token)
+        let rowsAfter: [PushDevice] = try await SupabaseService.shared.client
+            .from("push_devices")
+            .select()
+            .eq("apns_token", value: hexToken)
+            .execute()
+            .value
+        XCTAssertEqual(rowsAfter.count, 1)
+        XCTAssertEqual(rowsAfter.first?.id, deviceID)
     }
 
     func testPushDeviceDeleteOwnDevicesOnSignOut() async throws {
@@ -42,7 +61,7 @@ final class PushRegistrationTests: XCTestCase {
             XCTFail("must be signed in"); return
         }
         let token = Data("push-test-signout-\(UUID().uuidString)".utf8)
-        _ = try await PushDeviceRepository.upsert(token: token)
+        try await PushDeviceRepository.upsert(token: token)
 
         try await PushDeviceRepository.deleteOwnDevices()
 

@@ -458,7 +458,15 @@ struct GroupSessionLiveView: View {
             appState.activeSessionID = liveSession.id
         }
         .onDisappear {
-            appState.activeSessionID = nil
+            // Only clear the suppression flag if it's still pointing at THIS
+            // session — a second GroupSessionLiveView push (or a fast
+            // navigate-away-and-back) could have already overwritten it with
+            // a different session's id by the time this onDisappear fires,
+            // and clearing unconditionally would un-suppress banners for
+            // whichever session is now actually live.
+            if appState.activeSessionID == session.id {
+                appState.activeSessionID = nil
+            }
             Task {
                 await liveService.unsubscribe()
                 await broadcastService.unsubscribe()

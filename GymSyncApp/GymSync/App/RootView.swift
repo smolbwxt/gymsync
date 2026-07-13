@@ -53,6 +53,18 @@ private struct MainTabView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task {
+            // Re-register the APNs token for users who have ALREADY granted
+            // push authorization, on every launch that reaches the signed-
+            // in + profile-loaded state (MainTabView) — covers reinstall/
+            // restore, where the OS hands out a fresh token but the user
+            // never revisits onboarding to trigger the original
+            // registration. registerTokenIfAuthorized() is a no-op when
+            // authorization is .notDetermined/.denied (no prompt fires) —
+            // the initial permission prompt stays owned by onboarding
+            // (Task 6), which this deliberately does not touch.
+            await PushReceiver.shared.registerTokenIfAuthorized()
+        }
         .onPreferenceChange(GSHidesDock.self) { hides in
             withAnimation(.easeInOut(duration: 0.2)) {
                 isDockHidden = hides
