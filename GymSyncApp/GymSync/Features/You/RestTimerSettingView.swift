@@ -157,6 +157,17 @@ struct RestTimerSettingView: View {
         min(Self.maxSeconds, max(Self.minSeconds, seconds))
     }
 
+    /// Fix round B1 (final review blocker): on success, also calls
+    /// `ThemeStore.shared.noteExternalSettingsWrite(updated)` — this view's
+    /// own full-row upsert (`currentSettings` + the new `defaultRestSeconds`)
+    /// otherwise leaves `ThemeStore`'s `lastKnownSettings` cache holding a
+    /// stale rest-seconds value, which the *next* palette `select(_:)` would
+    /// then upsert right back over this save (clobbering it in the DB,
+    /// invisible until relaunch). `updated` already carries the correct,
+    /// live palette (see `YouTabView.effectiveUserSettings`), so this call
+    /// is safe even though it also passes `.palette` along — see
+    /// `noteExternalSettingsWrite`'s own doc for how it protects that field
+    /// from an in-flight palette persist.
     private func select(_ seconds: Int) {
         guard seconds != selectedSeconds else { return }
         let previous = selectedSeconds
@@ -166,7 +177,10 @@ struct RestTimerSettingView: View {
                 var updated = currentSettings
                 updated.defaultRestSeconds = seconds
                 try await UserSettingsRepository.upsert(updated)
-                await MainActor.run { onSaved(updated) }
+                await MainActor.run {
+                    ThemeStore.shared.noteExternalSettingsWrite(updated)
+                    onSaved(updated)
+                }
             } catch {
                 await MainActor.run {
                     selectedSeconds = previous

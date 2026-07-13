@@ -31,7 +31,17 @@ public final class ThemeStore {
     /// letting both run unordered, where a slower first-tap upsert completing
     /// *after* the second could let a stale palette value win the DB row (and
     /// `lastKnownSettings`), reverting to it on next launch.
+    ///
+    /// Fix round B1 (final review blocker): this is `nil`ed out by the task
+    /// itself once it finishes (success, failure, or cancellation) — see the
+    /// `defer` in `select(_:)` — so elsewhere (`noteExternalSettingsWrite`)
+    /// its non-nil-ness can be trusted as a live "a palette persist is
+    /// currently in flight" signal, not just "one was ever started." A
+    /// `persistGeneration` counter guards that reset so an older, superseded
+    /// task's delayed cleanup can't stomp on a newer task that's still
+    /// genuinely running.
     private var persistTask: Task<Void, Never>?
+    private var persistGeneration = 0
 
     /// Best-effort load from `user_settings` — silently keeps the seeded
     /// `.midnight` default on any failure (unauthenticated, network, missing
@@ -68,7 +78,17 @@ public final class ThemeStore {
     public func select(_ paletteID: String) {
         apply(paletteID: paletteID)
         persistTask?.cancel()
+        persistGeneration += 1
+        let generation = persistGeneration
         persistTask = Task {
+            defer {
+                // Only the still-current generation clears the slot — an
+                // older, cancelled task finishing its cleanup late must not
+                // nil out a newer task that's still in flight.
+                if generation == persistGeneration {
+                    persistTask = nil
+                }
+            }
             guard let userID = await SupabaseService.shared.currentUserID() else { return }
             var updated = lastKnownSettings ?? UserSettings.defaults(userID: userID)
             updated.palette = paletteID
@@ -79,6 +99,64 @@ public final class ThemeStore {
             guard !Task.isCancelled, succeeded else { return }
             lastKnownSettings = updated
         }
+    }
+
+    /// Called by `RestTimerSettingView`'s save path right after it persists a
+    /// new `defaultRestSeconds` value, so `ThemeStore`'s own cached row
+    /// doesn't go stale and clobber the rest-timer value the next time
+    /// `select(_:)` upserts a palette change. Closes the "rest-then-palette"
+    /// direction of the full-row-upsert race (see `YouTabView
+    /// .effectiveUserSettings` for the "palette-then-rest" direction, which
+    /// this method's `settings` argument already benefits from — it always
+    /// carries the live `paletteID` by the time it reaches here).
+    ///
+    /// Delegates to `mergeExternalSettingsWrite(cached:incoming:persistInFlight:)`
+    /// — see that function's doc comment for the merge semantics.
+    public func noteExternalSettingsWrite(_ settings: UserSettings) {
+        lastKnownSettings = Self.mergeExternalSettingsWrite(
+            cached: lastKnownSettings,
+            incoming: settings,
+            persistInFlight: persistTask != nil
+        )
+    }
+
+    /// Pure merge rule behind `noteExternalSettingsWrite` — extracted (and
+    /// kept `nonisolated`, since it only touches its value-type parameters)
+    /// so it's unit-testable without a `ThemeStore` instance, `@MainActor`,
+    /// or network. Decision table:
+    ///   - no cached row yet -> adopt `incoming` wholesale (nothing to
+    ///     protect).
+    ///   - no persist in flight -> adopt `incoming` wholesale (`cached` isn't
+    ///     fresher than `incoming` in this case, so there's nothing at risk).
+    ///   - persist in flight -> a `select(_:)` task is still working toward
+    ///     landing its own palette value in the DB and in `lastKnownSettings`;
+    ///     it — not this call — owns `.palette` in the cache until it
+    ///     finishes. So: keep `cached.palette`, and adopt only
+    ///     `incoming.defaultRestSeconds` (the field this call actually has
+    ///     authority over).
+    ///
+    /// This is a field-level ("don't touch a field someone else is actively
+    /// writing"), not value-level, merge rule — it doesn't try to determine
+    /// whether `incoming.palette` happens to already match the in-flight
+    /// task's target value; it always defers regardless, which is simplest
+    /// and safe in every case. Residual risk (documented, not fixable from
+    /// the cache alone): if the in-flight `select(_:)` task already read
+    /// `lastKnownSettings` into its own local snapshot *before* this call
+    /// runs, its eventual upsert will still write using that earlier
+    /// snapshot's `defaultRestSeconds` — no cache reconciliation after the
+    /// fact can correct an already-captured local variable. That narrow
+    /// interleaving window is a network-timing race, not a cache-merge bug;
+    /// device QA is the backstop for it.
+    nonisolated static func mergeExternalSettingsWrite(
+        cached: UserSettings?,
+        incoming: UserSettings,
+        persistInFlight: Bool
+    ) -> UserSettings {
+        guard persistInFlight, var merged = cached else {
+            return incoming
+        }
+        merged.defaultRestSeconds = incoming.defaultRestSeconds
+        return merged
     }
 
     private func apply(paletteID: String) {

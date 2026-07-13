@@ -241,8 +241,22 @@ struct YouTabView: View {
     /// Safe even with a placeholder `userID`: `UserSettingsRepository.upsert`
     /// always re-derives the actual authenticated user id itself rather than
     /// trusting this struct's `userID` field.
+    ///
+    /// Fix round B1 (final review blocker): always overwrites `.palette`
+    /// with the LIVE `themeStore.paletteID` rather than trusting
+    /// `userSettings.palette` — this view's own cache, which only refreshes
+    /// on `.task`/sheet-save and can lag a palette change made in
+    /// `AppearanceView` during the same Settings visit. Without this,
+    /// pushing `RestTimerSettingView` right after changing the palette would
+    /// hand it a stale palette value; its own full-row upsert on save would
+    /// then write that stale value back to `user_settings`, silently
+    /// reverting the just-made palette change in the DB (invisible until
+    /// relaunch). See `ThemeStore.noteExternalSettingsWrite` for the
+    /// mirror-image fix in the other direction (rest-then-palette).
     private var effectiveUserSettings: UserSettings {
-        userSettings ?? UserSettings.defaults(userID: appState.currentProfile?.id ?? UUID())
+        var settings = userSettings ?? UserSettings.defaults(userID: appState.currentProfile?.id ?? UUID())
+        settings.palette = themeStore.paletteID
+        return settings
     }
 
     private var notificationsStatusText: String {
