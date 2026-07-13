@@ -1,0 +1,299 @@
+import SwiftUI
+
+// MARK: - BurpeeLedgerView
+//
+// Proof p25 ("Penalty Ledger"). Group-scoped: aggregates burpee debt across
+// every session the group has run, per crew member.
+//
+// Entry points (per task-3-brief.md, "likely GroupView tab/row and/or the
+// live session penalty banner"):
+//   1. PRIMARY — GroupView's Sessions sub-tab, a row above Upcoming/Past.
+//   2. SECONDARY — GroupSessionLiveView's existing per-session penalty
+//      banner, a "Crew ledger" link (only for group sessions, since ad-hoc
+//      solo/friend sessions have no `groupID`).
+//
+// SCHEMA GAP (recorded for product — full detail in BurpeeLedgerMath's doc
+// comment and task-3-report.md): the proof's crew-debt list includes a
+// "paid off 20 · Jul 9" state. No paid/cleared concept exists in the schema,
+// so this view renders owed-only — a settled participant reads identically
+// to one who was never late ("all clear").
+//
+// SCHEMA GAP #2: the proof's late-penalty config card also shows a fixed
+// "no-show = 25" clause. `late_penalty` jsonb only ever carries `per_minute`
+// (see `20260712000001_sessions_phase3_columns.sql`) — `evaluate_lateness`
+// never assigns a fixed no-show burpee count, only late-minutes × per-minute.
+// Rendered without that clause rather than inventing a number.
+//
+// SCHEMA GAP #3: the card's "Edit" affordance has no write path — no
+// repository method updates `sessions.late_penalty` or
+// `groups.default_late_penalty` from the client, and building that RPC is
+// out of this task's contract (aggregate reads only). Rendered as an inert,
+// visually-disabled label rather than a button that silently no-ops.
+struct BurpeeLedgerView: View {
+    let group: GymGroup
+
+    @Environment(\.gsTheme) private var theme
+    @Environment(AppState.self) private var appState
+
+    @State private var rows: [BurpeeLedgerRow] = []
+    @State private var profiles: [UUID: Profile] = [:]
+    @State private var liveSessionForCTA: WorkoutSession?
+    @State private var isLoading = true
+    @State private var errorText: String?
+
+    private var selfID: UUID? { appState.currentProfile?.id }
+
+    private var crewDebts: [BurpeeLedgerMath.CrewDebt] {
+        BurpeeLedgerMath.crewDebts(rows: rows)
+    }
+
+    private var youOwe: BurpeeLedgerMath.YouOweSummary? {
+        guard let selfID else { return nil }
+        return BurpeeLedgerMath.youOweSummary(rows: rows, userID: selfID)
+    }
+
+    /// The rate that actually applied most recently across the group's
+    /// sessions — there's no single "the group's penalty config" read
+    /// available client-side beyond what each session snapshot recorded.
+    private var latePenaltyPerMinute: Int? {
+        rows
+            .compactMap { row -> (Date, Int)? in
+                guard let rate = row.session.latePenalty?.perMinute else { return nil }
+                return (row.session.effectiveDate ?? .distantPast, rate)
+            }
+            .max { $0.0 < $1.0 }?
+            .1
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                if let youOwe, youOwe.total > 0 {
+                    youOweBanner(youOwe)
+                } else if !isLoading {
+                    allClearBanner
+                }
+
+                if !crewDebts.isEmpty {
+                    crewDebtsSection
+                }
+
+                latePenaltyCard
+
+                if let errorText {
+                    Text(errorText)
+                        .font(GSFont.body(12, relativeTo: .footnote))
+                        .foregroundStyle(.red)
+                }
+            }
+            .padding(16)
+        }
+        .background(theme.bg)
+        .navigationTitle("Penalty Ledger")
+        .navigationBarTitleDisplayMode(.inline)
+        .refreshable { await load() }
+        .task { await load() }
+    }
+
+    // MARK: - You-owe banner
+
+    private func youOweBanner(_ summary: BurpeeLedgerMath.YouOweSummary) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("YOU OWE")
+                .font(GSFont.bold(10, relativeTo: .caption2))
+                .tracking(1.4)
+                .foregroundStyle(theme.bg.opacity(0.85))
+
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("\(summary.total)")
+                    .font(GSFont.bold(56, relativeTo: .largeTitle))
+                    .foregroundStyle(theme.bg)
+                    .lineLimit(1)
+                Text("burpees")
+                    .font(GSFont.bold(18, relativeTo: .title2))
+                    .foregroundStyle(theme.bg)
+            }
+
+            if let detail = detailLine(summary) {
+                Text(detail)
+                    .font(GSFont.body(12, relativeTo: .caption))
+                    .foregroundStyle(theme.bg.opacity(0.9))
+            }
+
+            // Only actionable when the contributing session is still live —
+            // burpee logging has no standalone flow outside a live session's
+            // LogSetSheet (see GroupSessionLiveView.logSetSheetContent).
+            if let live = liveSessionForCTA {
+                NavigationLink {
+                    GroupSessionLiveView(session: live)
+                } label: {
+                    HStack {
+                        Text("Log burpees now")
+                            .font(GSFont.bold(14, relativeTo: .body))
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .foregroundStyle(theme.text)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .background(theme.bg)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.accent)
+    }
+
+    private func detailLine(_ summary: BurpeeLedgerMath.YouOweSummary) -> String? {
+        guard let minutes = summary.mostRecentLateMinutes else { return nil }
+        var parts = ["\(minutes) min late to \(group.name)"]
+        if let date = summary.mostRecentDate {
+            parts.append(date.formatted(.dateTime.month(.abbreviated).day()))
+        }
+        if let rate = summary.mostRecentPerMinute {
+            parts.append("\(rate) burpees / min")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private var allClearBanner: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("YOU OWE")
+                .font(GSFont.bold(10, relativeTo: .caption2))
+                .tracking(1.4)
+                .foregroundStyle(theme.neutral500)
+            Text("Nothing — you're all clear")
+                .font(GSFont.bold(16, relativeTo: .body))
+                .foregroundStyle(theme.text)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.surface)
+        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+    }
+
+    // MARK: - Crew debts
+
+    private var crewDebtsSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            GSSectionHeader("Crew debts")
+            VStack(spacing: 0) {
+                ForEach(crewDebts) { debt in
+                    crewDebtRow(debt)
+                    if debt.id != crewDebts.last?.id {
+                        Rectangle().fill(theme.divider).frame(height: 1)
+                    }
+                }
+            }
+        }
+    }
+
+    private func crewDebtRow(_ debt: BurpeeLedgerMath.CrewDebt) -> some View {
+        let profile = profiles[debt.userID]
+        let isMe = debt.userID == selfID
+        let displayName = isMe ? "You" : (profile?.displayName ?? profile?.username ?? "Unknown")
+        let initials = String((profile?.username ?? "?").prefix(2)).uppercased()
+
+        return HStack(spacing: 10) {
+            ZStack {
+                Rectangle()
+                    .fill(theme.neutral700)
+                    .frame(width: 32, height: 32)
+                Text(initials)
+                    .font(GSFont.bold(11, relativeTo: .caption2))
+                    .foregroundStyle(theme.bg)
+            }
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(displayName)
+                    .font(GSFont.bold(14, relativeTo: .body))
+                    .foregroundStyle(theme.text)
+                Text(debt.summaryText)
+                    .font(GSFont.body(11, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+            }
+
+            Spacer()
+
+            Text("\(debt.totalOwed)")
+                .font(GSFont.bold(18, relativeTo: .title3))
+                .foregroundStyle(debt.totalOwed > 0 ? theme.accent700 : theme.neutral500.opacity(0.6))
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 4)
+        .frame(minHeight: 44)
+        .background(isMe ? theme.text.opacity(0.04) : Color.clear)
+    }
+
+    // MARK: - Late penalty config card
+
+    private var latePenaltyCard: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "gearshape")
+                .font(.system(size: 18))
+                .foregroundStyle(theme.accent)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Late penalty")
+                    .font(GSFont.bold(13, relativeTo: .subheadline))
+                    .foregroundStyle(theme.text)
+                Text(latePenaltyPerMinute.map { "\($0) burpees per minute" } ?? "Not yet configured")
+                    .font(GSFont.body(11, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+            }
+
+            Spacer()
+
+            // Intentionally inert — no repository write path for late_penalty
+            // config exists yet (schema gap #3, see file header). A visually
+            // disabled label rather than a button that silently no-ops.
+            Text("Edit")
+                .font(GSFont.bodyMedium(12, relativeTo: .caption))
+                .foregroundStyle(theme.neutral500)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .overlay(Rectangle().strokeBorder(theme.neutral400, lineWidth: 1))
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .background(theme.surface)
+        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+    }
+
+    // MARK: - Data loading
+
+    @MainActor
+    private func load() async {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let fetchedRows = try await SessionRepository.burpeeLedger(groupID: group.id)
+            rows = fetchedRows
+
+            let ids = Array(Set(fetchedRows.map(\.userID)))
+            let fetchedProfiles = try await ProfileRepository.fetchMany(ids: ids)
+            profiles = Dictionary(uniqueKeysWithValues: fetchedProfiles.map { ($0.id, $0) })
+
+            if let selfID {
+                let summary = BurpeeLedgerMath.youOweSummary(rows: fetchedRows, userID: selfID)
+                if summary.total > 0, summary.mostRecentSessionIsLive,
+                   let sessionID = summary.mostRecentSessionID {
+                    liveSessionForCTA = try await SessionRepository.session(id: sessionID)
+                } else {
+                    liveSessionForCTA = nil
+                }
+            } else {
+                liveSessionForCTA = nil
+            }
+            errorText = nil
+        } catch let error as GymSyncError {
+            errorText = error.errorDescription
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+}

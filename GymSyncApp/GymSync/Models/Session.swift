@@ -117,3 +117,55 @@ struct SessionParticipant: Codable, Sendable {
         case burpeesOwed = "burpees_owed"
     }
 }
+
+// MARK: - Burpee Ledger DTO (Canvas Completion Task 3)
+//
+// One `session_participants` row scoped to a group, joined server-side with
+// just the `sessions` fields the ledger needs. Fetched via a single
+// PostgREST embed query (`SessionRepository.burpeeLedger(groupID:)`) —
+// `sessions!inner(...)` filtered by `sessions.group_id`, the mirror image of
+// `upcoming()`'s `sessions` embedding `session_participants!inner(...)`. No
+// per-session ID fan-out into the URL, and RLS's "participants readable by
+// other participants" policy is satisfied because every group-scheduled
+// session invites the full group roster (see `ScheduleSessionView`), so any
+// current group member is a participant of every group session and can read
+// all of its participant rows.
+struct BurpeeLedgerRow: Decodable, Sendable {
+    let userID: UUID
+    let checkInState: String?
+    let lateMinutes: Int
+    let burpeesOwed: Int
+    let session: SessionInfo
+
+    struct SessionInfo: Decodable, Sendable {
+        let id: UUID
+        let state: String
+        let scheduledFor: Date?
+        let startedAt: Date?
+        let latePenalty: LatePenalty?
+
+        struct LatePenalty: Decodable, Sendable {
+            let perMinute: Int?
+            enum CodingKeys: String, CodingKey { case perMinute = "per_minute" }
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case id, state
+            case scheduledFor = "scheduled_for"
+            case startedAt = "started_at"
+            case latePenalty = "late_penalty"
+        }
+
+        /// The date the ledger sorts/displays by — when this session happened
+        /// (or is scheduled to). Ad-hoc sessions have no `scheduled_for`.
+        var effectiveDate: Date? { scheduledFor ?? startedAt }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case userID = "user_id"
+        case checkInState = "check_in_state"
+        case lateMinutes = "late_minutes"
+        case burpeesOwed = "burpees_owed"
+        case session = "sessions"
+    }
+}

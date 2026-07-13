@@ -553,6 +553,24 @@ enum SessionRepository {
         } catch { throw ErrorMapping.map(error) }
     }
 
+    // MARK: - Phase 3b/Canvas Task 3: Burpee Ledger
+
+    /// Every `session_participants` row across a group's sessions, joined
+    /// server-side with the session fields the Burpee Ledger needs — a
+    /// single bulk query, no per-session ID fan-out into the URL (mirrors
+    /// `upcoming()`'s join, embedded from the opposite direction). See
+    /// `BurpeeLedgerRow`'s doc comment for the RLS reasoning.
+    static func burpeeLedger(groupID: UUID) async throws -> [BurpeeLedgerRow] {
+        do {
+            let rows: [BurpeeLedgerRow] = try await client
+                .from("session_participants")
+                .select("user_id, check_in_state, late_minutes, burpees_owed, sessions!inner(id, state, scheduled_for, started_at, late_penalty)")
+                .eq("sessions.group_id", value: groupID.uuidString)
+                .execute().value
+            return rows
+        } catch { throw ErrorMapping.map(error) }
+    }
+
     /// All set_logs for a session ordered by logged_at ascending.
     static func sessionSets(sessionID: UUID) async throws -> [SetLog] {
         do {

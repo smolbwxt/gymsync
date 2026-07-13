@@ -73,6 +73,11 @@ struct GroupSessionLiveView: View {
     @State private var errorText: String?
     @State private var recapData: RecapData?          // non-nil → sheet
     @State private var penaltyLogged        = 0       // reps logged this session as penalty by me
+    /// Fetched lazily when this is a group session — backs the penalty
+    /// banner's secondary "Crew ledger" link into BurpeeLedgerView (Canvas
+    /// Completion Task 3). `nil` for ad-hoc/solo sessions (no groupID) and
+    /// until the fetch completes.
+    @State private var ledgerGroup: GymGroup?
 
     // MARK: - Inline "LOG THIS SET" card state (my-turn spotlight — replaces the old sheet)
 
@@ -1039,6 +1044,25 @@ struct GroupSessionLiveView: View {
                 .overlay(Rectangle().strokeBorder(theme.bg.opacity(0.4), lineWidth: 1))
             }
             .buttonStyle(.plain)
+
+            // Secondary entry into the group-wide Burpee Ledger (Canvas
+            // Completion Task 3, proof p25) — only for group sessions;
+            // ad-hoc/solo sessions have no group-scoped ledger to show.
+            if let ledgerGroup {
+                NavigationLink {
+                    BurpeeLedgerView(group: ledgerGroup)
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("Crew ledger")
+                            .font(GSFont.bodyMedium(12, relativeTo: .caption))
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10, weight: .semibold))
+                    }
+                    .foregroundStyle(theme.bg.opacity(0.85))
+                    .frame(minHeight: 44)
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1291,6 +1315,9 @@ struct GroupSessionLiveView: View {
     private func openAndSubscribe() async {
         await reload()
         await ExerciseNameCache.preload()
+        if let groupID = liveSession.groupID {
+            ledgerGroup = try? await GroupRepository.fetch(id: groupID)
+        }
         await liveService.subscribe(
             sessionID: liveSession.id,
             onSessionChange: { updated in
