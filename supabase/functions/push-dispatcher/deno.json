@@ -5,6 +5,6 @@
     "@std/assert": "jsr:@std/assert@1"
   },
   "tasks": {
-    "test": "deno test --allow-env"
+    "test": "deno test"
   }
 }

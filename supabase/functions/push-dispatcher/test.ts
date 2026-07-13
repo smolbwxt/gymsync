@@ -424,6 +424,158 @@ Deno.test("dispatch: happy path — single device, 200 — marks sent", async ()
   assertEquals(result.sent, 1);
 });
 
+// ============================================================
+// index.ts — dispatchBatch: per-row / per-device error isolation
+// ============================================================
+
+/** Captures console.{log,warn,error} calls made during `fn()`, then restores the originals. */
+async function captureConsole(fn: () => Promise<void>): Promise<{ log: string[]; warn: string[]; error: string[] }> {
+  const captured = { log: [] as string[], warn: [] as string[], error: [] as string[] };
+  const orig = { log: console.log, warn: console.warn, error: console.error };
+  console.log = (...args: unknown[]) => captured.log.push(args.map(String).join(" "));
+  console.warn = (...args: unknown[]) => captured.warn.push(args.map(String).join(" "));
+  console.error = (...args: unknown[]) => captured.error.push(args.map(String).join(" "));
+  try {
+    await fn();
+  } finally {
+    console.log = orig.log;
+    console.warn = orig.warn;
+    console.error = orig.error;
+  }
+  return captured;
+}
+
+interface DispatchResultForTest {
+  claimed: number;
+  sent: number;
+  retried: number;
+  devicesDeleted: number;
+  noDevice: number;
+  failed: number;
+}
+
+Deno.test("dispatch: a rejecting fetchImpl for one row's device does not abort the rest of the batch", async () => {
+  const apns = await makeTestApnsClient();
+  const fetchImpl: typeof fetch = (input) => {
+    const url = String(input);
+    if (url.includes("reject-token")) {
+      return Promise.reject(new Error("simulated network failure"));
+    }
+    return Promise.resolve(jsonResponse(200, {}));
+  };
+
+  const rowA = row({ id: 30, user_id: "u-a" });
+  const rowB = row({ id: 31, user_id: "u-b" });
+  const queue = new FakeQueueClient(
+    [rowA, rowB],
+    new Map([
+      ["u-a", [{ id: "dev-a", apns_token: "reject-token" }]],
+      ["u-b", [{ id: "dev-b", apns_token: "ok-token" }]],
+    ]),
+  );
+
+  let result!: DispatchResultForTest;
+  const captured = await captureConsole(async () => {
+    result = await dispatchBatch({ queue, apns, fetchImpl });
+  });
+
+  // Row A: send rejected — left unsent, no device deleted, counted as a retry (not a hard failure).
+  assertEquals(queue.sentIds.includes(30), false, "row A must stay unsent after its device send rejected");
+  assertEquals(queue.deletedDeviceIds, [], "a rejection is not a device problem — no delete");
+
+  // Row B: unaffected by row A's failure — still delivered.
+  assertEquals(queue.sentIds.includes(31), true, "row B must still be marked sent despite row A's failure");
+
+  assertEquals(result!.claimed, 2);
+  assertEquals(result!.sent, 1);
+  assertEquals(result!.retried, 1);
+  assertEquals(result!.failed, 0, "a device-level rejection is a retry, not a row-level failure");
+
+  const errorText = captured.error.join("\n");
+  assertEquals(errorText.includes("30"), true, "the failing row's id should be logged");
+  assertEquals(errorText.includes("reject-token"), false, "the raw device token must never be logged");
+});
+
+Deno.test("dispatch: queue.markSent throwing for one row does not abort the rest of the batch", async () => {
+  const apns = await makeTestApnsClient();
+  const fetchImpl: typeof fetch = () => Promise.resolve(jsonResponse(200, {}));
+
+  const rowA = row({ id: 40, user_id: "u-a" });
+  const rowB = row({ id: 41, user_id: "u-b" });
+  const queue = new FakeQueueClient(
+    [rowA, rowB],
+    new Map([
+      ["u-a", [{ id: "dev-a", apns_token: "tok-a" }]],
+      ["u-b", [{ id: "dev-b", apns_token: "tok-b" }]],
+    ]),
+  );
+  const originalMarkSent = queue.markSent.bind(queue);
+  queue.markSent = (id: number): Promise<void> => {
+    if (id === 40) return Promise.reject(new Error("simulated DB failure"));
+    return originalMarkSent(id);
+  };
+
+  const result = await dispatchBatch({ queue, apns, fetchImpl });
+
+  assertEquals(queue.sentIds.includes(40), false, "row A must stay unsent when markSent throws");
+  assertEquals(queue.sentIds.includes(41), true, "row B must still be processed and marked sent");
+  assertEquals(result.claimed, 2);
+  assertEquals(result.sent, 1);
+  assertEquals(result.failed, 1, "row A's thrown markSent is a hard failure, not a retry");
+});
+
+Deno.test("dispatch: summary log reports accurate claimed/delivered/retried/failed counts", async () => {
+  const apns = await makeTestApnsClient();
+  const fetchImpl: typeof fetch = () => Promise.resolve(jsonResponse(200, {}));
+
+  const rowSuccess = row({ id: 50, user_id: "u-success" });
+  const rowRetry = row({ id: 51, user_id: "u-retry" });
+  const rowNoDevice = row({ id: 52, user_id: "u-no-device" });
+  const rowThrows = row({ id: 53, user_id: "u-throws" });
+
+  const retryFetch: typeof fetch = () => Promise.resolve(jsonResponse(503, { reason: "ServiceUnavailable" }));
+
+  const queue = new FakeQueueClient(
+    [rowSuccess, rowRetry, rowNoDevice, rowThrows],
+    new Map([
+      ["u-success", [{ id: "dev-success", apns_token: "tok-success" }]],
+      ["u-retry", [{ id: "dev-retry", apns_token: "tok-retry" }]],
+      ["u-throws", [{ id: "dev-throws", apns_token: "tok-throws" }]],
+    ]),
+  );
+  const originalMarkSent = queue.markSent.bind(queue);
+  queue.markSent = (id: number): Promise<void> => {
+    if (id === 53) return Promise.reject(new Error("simulated DB failure"));
+    return originalMarkSent(id);
+  };
+
+  // dev-retry needs its own fetchImpl behavior (503) while the rest succeed;
+  // route by token so a single dispatchBatch call covers all four rows.
+  const mixedFetch: typeof fetch = (input, init) => {
+    const url = String(input);
+    if (url.includes("tok-retry")) return retryFetch(input, init);
+    return fetchImpl(input, init);
+  };
+
+  let result!: DispatchResultForTest;
+  const captured = await captureConsole(async () => {
+    result = await dispatchBatch({ queue, apns, fetchImpl: mixedFetch });
+  });
+
+  assertEquals(result.claimed, 4);
+  assertEquals(result.sent, 2, "rowSuccess + rowNoDevice");
+  assertEquals(result.retried, 1, "rowRetry (503)");
+  assertEquals(result.noDevice, 1);
+  assertEquals(result.failed, 1, "rowThrows (markSent rejected)");
+
+  const summaryLine = captured.log.find((l) => l.includes("drain complete"));
+  assertExists(summaryLine, "a single summary line must be logged per drain invocation");
+  assertEquals(summaryLine!.includes("claimed=4"), true);
+  assertEquals(summaryLine!.includes("delivered=2"), true);
+  assertEquals(summaryLine!.includes("retried=1"), true);
+  assertEquals(summaryLine!.includes("failed=1"), true);
+});
+
 Deno.test("dispatch: does not consult notification_prefs — QueueClient has no such method", () => {
   // Structural proof, not a behavioral one: prefs filtering already happened
   // at enqueue time (enqueue_push, 20260716000001_push_schema.sql checks

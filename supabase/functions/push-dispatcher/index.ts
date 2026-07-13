@@ -87,9 +87,16 @@ export interface DispatchResult {
   retried: number;
   devicesDeleted: number;
   noDevice: number;
+  /** Rows whose processing threw (e.g. a QueueClient call rejected) — left unsent, distinct from a normal APNs-driven retry. */
+  failed: number;
 }
 
 const CLAIM_LIMIT = 100;
+
+/** Renders any thrown value to a log-safe string. Never touches payload/token contents — callers only pass row/device identifiers alongside this. */
+function errMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
 
 /**
  * Drains up to `limit` rows from push_queue and delivers each to every
@@ -99,73 +106,112 @@ const CLAIM_LIMIT = 100;
  * only be correct if prefs can never change between enqueue and drain, which
  * they can, but re-filtering post-hoc is out of scope for this task (prefs
  * are a point-in-time gate at enqueue, matching the brief).
+ *
+ * Error isolation: a rejecting fetchImpl/QueueClient call must never abort
+ * the rest of the claimed batch. Each per-device APNs send is individually
+ * try/catch'd (a rejection is treated like a 5xx — row stays unsent for
+ * retry). Each row's entire processing block (including its mark-sent /
+ * device-delete DB calls) is also try/catch'd, so one row's unexpected
+ * exception can't strand the rest of the batch — that row is simply left
+ * unsent and counted under `failed`.
  */
 export async function dispatchBatch(deps: DispatchDeps, limit: number = CLAIM_LIMIT): Promise<DispatchResult> {
   const { queue, apns, fetchImpl } = deps;
-  const result: DispatchResult = { claimed: 0, sent: 0, retried: 0, devicesDeleted: 0, noDevice: 0 };
+  const result: DispatchResult = { claimed: 0, sent: 0, retried: 0, devicesDeleted: 0, noDevice: 0, failed: 0 };
 
   const rows = await queue.claimBatch(limit);
   result.claimed = rows.length;
 
   for (const row of rows) {
-    const devices = await queue.devicesForUser(row.user_id);
+    try {
+      const devices = await queue.devicesForUser(row.user_id);
 
-    if (devices.length === 0) {
-      await queue.markSent(row.id);
-      result.sent++;
-      result.noDevice++;
-      continue;
-    }
-
-    const content = buildNotificationPayload(row.event, row.payload ?? {});
-    if (!content) {
-      // Unknown event name — nothing sensible to render. Mark sent rather
-      // than retrying forever on a payload shape this dispatcher will never
-      // understand; an unrecognized event is a code/schema drift bug to fix
-      // upstream, not something a retry will resolve.
-      await queue.markSent(row.id);
-      result.sent++;
-      continue;
-    }
-
-    const apnsPayload: ApnsAlertPayload = {
-      aps: {
-        alert: { title: content.title, body: content.body },
-        ...(content.category ? { category: content.category } : {}),
-        ...(content.threadId ? { "thread-id": content.threadId } : {}),
-      },
-    };
-
-    let shouldRetry = false;
-    for (const device of devices) {
-      const sendResult = await apns.send(device.apns_token, apnsPayload, fetchImpl);
-      if (sendResult.ok) continue;
-
-      if (sendResult.status === 410 || sendResult.reason === "BadDeviceToken") {
-        await queue.deleteDevice(device.id);
-        result.devicesDeleted++;
+      if (devices.length === 0) {
+        await queue.markSent(row.id);
+        result.sent++;
+        result.noDevice++;
         continue;
       }
 
-      if (sendResult.status === 429 || sendResult.status >= 500) {
+      const content = buildNotificationPayload(row.event, row.payload ?? {});
+      if (!content) {
+        // Unknown event name — nothing sensible to render. Mark sent rather
+        // than retrying forever on a payload shape this dispatcher will never
+        // understand; an unrecognized event is a code/schema drift bug to fix
+        // upstream, not something a retry will resolve.
+        console.warn(`push-dispatcher: unknown event "${row.event}" for row ${row.id}; marking sent`);
+        await queue.markSent(row.id);
+        result.sent++;
+        continue;
+      }
+
+      const apnsPayload: ApnsAlertPayload = {
+        aps: {
+          alert: { title: content.title, body: content.body },
+          ...(content.category ? { category: content.category } : {}),
+          ...(content.threadId ? { "thread-id": content.threadId } : {}),
+        },
+      };
+
+      let shouldRetry = false;
+      for (const device of devices) {
+        let sendResult;
+        try {
+          sendResult = await apns.send(device.apns_token, apnsPayload, fetchImpl);
+        } catch (err) {
+          // Network failure or other rejection out of apns.send (which
+          // normally resolves even for APNs error responses) — treat like a
+          // 5xx: leave the row unsent for retry, don't let it take the rest
+          // of the batch down with it.
+          console.error(
+            `push-dispatcher: send threw for row ${row.id} (event=${row.event}, device=${device.id}): ${errMessage(err)}`,
+          );
+          shouldRetry = true;
+          continue;
+        }
+        if (sendResult.ok) continue;
+
+        if (sendResult.status === 410 || sendResult.reason === "BadDeviceToken") {
+          await queue.deleteDevice(device.id);
+          result.devicesDeleted++;
+          console.warn(
+            `push-dispatcher: deleted device ${device.id} for row ${row.id} (status=${sendResult.status}, reason=${
+              sendResult.reason ?? "n/a"
+            })`,
+          );
+          continue;
+        }
+
+        if (sendResult.status === 429 || sendResult.status >= 500) {
+          shouldRetry = true;
+          continue;
+        }
+
+        // Any other non-ok status (e.g. a malformed-payload 400 that isn't
+        // BadDeviceToken) is unexpected — leave the row unsent so it surfaces
+        // in logs on retry rather than silently disappearing.
         shouldRetry = true;
+      }
+
+      if (shouldRetry) {
+        result.retried++;
         continue;
       }
 
-      // Any other non-ok status (e.g. a malformed-payload 400 that isn't
-      // BadDeviceToken) is unexpected — leave the row unsent so it surfaces
-      // in logs on retry rather than silently disappearing.
-      shouldRetry = true;
+      await queue.markSent(row.id);
+      result.sent++;
+    } catch (err) {
+      // Anything else that threw while processing this row (devicesForUser,
+      // markSent, deleteDevice, ...) — log it, leave the row unsent, move on
+      // to the next row rather than aborting the whole claimed batch.
+      console.error(`push-dispatcher: row ${row.id} (event=${row.event}) failed: ${errMessage(err)}`);
+      result.failed++;
     }
-
-    if (shouldRetry) {
-      result.retried++;
-      continue;
-    }
-
-    await queue.markSent(row.id);
-    result.sent++;
   }
+
+  console.log(
+    `push-dispatcher: drain complete — claimed=${result.claimed} delivered=${result.sent} retried=${result.retried} failed=${result.failed} devicesDeleted=${result.devicesDeleted} noDevice=${result.noDevice}`,
+  );
 
   return result;
 }
@@ -188,11 +234,19 @@ export async function handleRequest(
     });
   }
 
-  const result = await dispatchBatch(deps);
-  return new Response(JSON.stringify(result), {
-    status: 200,
-    headers: { "content-type": "application/json" },
-  });
+  try {
+    const result = await dispatchBatch(deps);
+    return new Response(JSON.stringify(result), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  } catch (err) {
+    console.error(`push-dispatcher: handler failed: ${errMessage(err)}`);
+    return new Response(JSON.stringify({ error: "internal_error" }), {
+      status: 500,
+      headers: { "content-type": "application/json" },
+    });
+  }
 }
 
 if (import.meta.main) {
