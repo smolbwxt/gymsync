@@ -5,6 +5,22 @@ struct LibraryTabView: View {
     @State private var selection: SubTab = .routines
     @Environment(\.gsTheme) private var theme
 
+    // MARK: - Featured shelf (Canvas frame 3: Library Featured)
+
+    @State private var featured: [(routine: Routine, ownerUsername: String)] = []
+    @State private var featuredExerciseCounts: [UUID: Int] = [:]
+    @State private var cloningIDs: Set<UUID> = []
+    @State private var cloneErrorText: String?
+
+    /// Bumped after a successful clone to force `RoutinesListView` to tear
+    /// down and re-mount, re-running its own `.task { await load() }` so the
+    /// newly-cloned routine appears in "Your routines" immediately.
+    /// `RoutinesListView.swift` is out of this task's file scope (brief lists
+    /// only `LibraryTabView.swift` + `RoutineBuilderView.swift`), so its
+    /// private `load()` can't be invoked directly — SwiftUI's `.id()`
+    /// identity-change mechanism reruns it without touching that file.
+    @State private var routinesRefreshToken = UUID()
+
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -20,8 +36,17 @@ struct LibraryTabView: View {
                 GSDivider()
 
                 switch selection {
-                case .routines:  RoutinesListView()
-                case .exercises: ExercisesListView()
+                case .routines:
+                    VStack(spacing: 0) {
+                        if !featured.isEmpty {
+                            featuredShelf
+                            GSDivider()
+                        }
+                        RoutinesListView()
+                            .id(routinesRefreshToken)
+                    }
+                case .exercises:
+                    ExercisesListView()
                 }
             }
             .background(theme.bg)
@@ -29,6 +54,7 @@ struct LibraryTabView: View {
             .toolbarBackground(theme.surface, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
         }
+        .task { await loadFeatured() }
     }
 
     // Canvas: `.seg` — flat rectangle, 1px divider border, no radius, hugs content.
@@ -62,5 +88,183 @@ struct LibraryTabView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - Featured shelf
+
+    // Frame 3: accent star + "Featured · curated packs" kicker, a SEASONAL
+    // hero card (newest publication), then a horizontal row of the rest.
+    // Entirely absent when `featured` is empty (gated by the caller above).
+    private var featuredShelf: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "star.fill")
+                    .font(.system(size: 15))
+                    .foregroundStyle(theme.accent700)
+                Text("Featured · curated packs")
+                    .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
+                    .foregroundStyle(theme.text.opacity(0.6))
+            }
+            .padding(.horizontal, 16)
+
+            if let hero = featured.first {
+                heroCard(hero)
+                    .padding(.horizontal, 16)
+            }
+
+            if featured.count > 1 {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(Array(Array(featured.dropFirst()).enumerated()), id: \.offset) { _, item in
+                            packCard(item)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+            }
+
+            if let cloneErrorText {
+                Text(cloneErrorText)
+                    .font(GSFont.body(12, relativeTo: .caption))
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 16)
+            }
+        }
+        .padding(.top, 14)
+        .padding(.bottom, 14)
+    }
+
+    // Canvas: 150pt image placeholder (neutral300 + centered photo glyph @30%),
+    // bottom gradient scrim, SEASONAL chip, bold-22 white name, "by {owner}"
+    // caption; full-width primary CTA below with space-between plus glyph
+    // (canvas button doctrine — see PushPrimingView's "Open Settings" CTA for
+    // the same label+Spacer+icon-inside-a-`.frame(maxWidth:.infinity)` shape).
+    private func heroCard(_ item: (routine: Routine, ownerUsername: String)) -> some View {
+        let isCloning = cloningIDs.contains(item.routine.id)
+        return VStack(alignment: .leading, spacing: 8) {
+            ZStack(alignment: .bottom) {
+                Rectangle().fill(theme.neutral300)
+                Image(systemName: "photo")
+                    .font(.system(size: 40, weight: .regular))
+                    .foregroundStyle(theme.text.opacity(0.3))
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("SEASONAL")
+                        .font(GSFont.bold(10, relativeTo: .caption2))
+                        .tracking(0.6)
+                        .foregroundStyle(theme.bg)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(theme.accent)
+
+                    Text(item.routine.name)
+                        .font(GSFont.bold(22, relativeTo: .title2))
+                        .foregroundStyle(.white)
+                        .lineLimit(2)
+
+                    Text("by \(item.ownerUsername)")
+                        .font(GSFont.body(12, relativeTo: .caption))
+                        .foregroundStyle(.white.opacity(0.85))
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    LinearGradient(colors: [.black.opacity(0.7), .clear],
+                                   startPoint: .bottom, endPoint: .top)
+                )
+            }
+            .frame(height: 150)
+            .clipped()
+
+            Button {
+                Task { await clone(item.routine.id) }
+            } label: {
+                HStack {
+                    Text("Add to my routines")
+                    Spacer()
+                    Image(systemName: "plus")
+                        .font(.system(size: 15, weight: .semibold))
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(GSPrimaryButtonStyle(fontSize: 14, verticalPadding: 12))
+            .disabled(isCloning)
+            .opacity(isCloning ? 0.6 : 1)
+        }
+    }
+
+    // Canvas: 150pt-wide bordered card — 84pt placeholder, name, exercise
+    // count caption ("packs" are single routines in v1 — no pack concept in
+    // the schema, see the plan's self-review notes), centered "Add" CTA.
+    private func packCard(_ item: (routine: Routine, ownerUsername: String)) -> some View {
+        let isCloning = cloningIDs.contains(item.routine.id)
+        let count = featuredExerciseCounts[item.routine.id] ?? 0
+        return VStack(alignment: .leading, spacing: 0) {
+            ZStack {
+                Rectangle().fill(theme.neutral300)
+                Image(systemName: "photo")
+                    .font(.system(size: 22, weight: .regular))
+                    .foregroundStyle(theme.text.opacity(0.3))
+            }
+            .frame(width: 150, height: 84)
+            .clipped()
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(item.routine.name)
+                    .font(GSFont.bold(14, relativeTo: .subheadline))
+                    .foregroundStyle(theme.text)
+                    .lineLimit(1)
+                Text("\(count) exercise\(count == 1 ? "" : "s")")
+                    .font(GSFont.body(11, relativeTo: .caption2))
+                    .foregroundStyle(theme.neutral500)
+
+                Button {
+                    Task { await clone(item.routine.id) }
+                } label: {
+                    Text("Add")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(GSSecondaryButtonStyle(fontSize: 12, horizontalPadding: 7, verticalPadding: 7))
+                .disabled(isCloning)
+                .opacity(isCloning ? 0.6 : 1)
+                .padding(.top, 4)
+            }
+            .padding(10)
+        }
+        .frame(width: 150)
+        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+    }
+
+    // MARK: - Data
+
+    @MainActor
+    private func loadFeatured() async {
+        do {
+            let rows = try await RoutineRepository.publicRoutines()
+            let exercises = (try? await RoutineRepository.exercisesForRoutines(
+                ids: rows.map { $0.routine.id }
+            )) ?? []
+            featuredExerciseCounts = Dictionary(grouping: exercises, by: \.routineID).mapValues(\.count)
+            featured = rows
+        } catch {
+            // Per brief: failure or empty -> section entirely absent, no
+            // empty-state chrome. `featured.isEmpty` already gates rendering.
+            featured = []
+            featuredExerciseCounts = [:]
+        }
+    }
+
+    @MainActor
+    private func clone(_ routineID: UUID) async {
+        guard !cloningIDs.contains(routineID) else { return }
+        cloningIDs.insert(routineID)
+        defer { cloningIDs.remove(routineID) }
+        do {
+            _ = try await RoutineRepository.clone(routineID: routineID)
+            cloneErrorText = nil
+            routinesRefreshToken = UUID()
+        } catch {
+            cloneErrorText = ErrorMapping.map(error).errorDescription
+        }
     }
 }

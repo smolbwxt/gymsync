@@ -19,7 +19,8 @@ struct RoutineBuilderView: View {
     @State private var showExercisePicker = false
     @State private var errorText: String?
     @State private var allExercises: [Exercise] = []
-    // Save honors this (private vs public); UI toggle lands in Task 4.
+    // Save honors this (private vs public); UI toggle below (curator-only),
+    // bootstrap-seeded from `editing?.visibility` in `load()`.
     @State private var publishAsFeatured = false
 
     var body: some View {
@@ -92,6 +93,16 @@ struct RoutineBuilderView: View {
                 }
                 .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
 
+                // Curator-only publish toggle (frame 3's Featured shelf is
+                // fed by this) — visible only to curators; server-enforced
+                // via RLS regardless (migration 20260717000003), this is
+                // just the UI gate. Bordered row, GSToggle idiom reused from
+                // NotificationPreferencesView's toggleRow. Placed above the
+                // Save action (Save itself lives in the nav toolbar).
+                if appState.currentProfile?.isCurator == true {
+                    publishToggleRow
+                }
+
                 if let errorText {
                     Text(errorText)
                         .font(GSFont.body(13, relativeTo: .caption))
@@ -145,6 +156,30 @@ struct RoutineBuilderView: View {
 
     private var exerciseCountLabel: String {
         "\(items.count) EXERCISE\(items.count == 1 ? "" : "S")"
+    }
+
+    // Canvas: bordered row, label + caption on the left, GSToggle on the
+    // right — same shape as NotificationPreferencesView.toggleRow, extended
+    // with a second caption line per the brief ("Visible to every Gym Sync
+    // user").
+    private var publishToggleRow: some View {
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Publish as Featured")
+                    .font(GSFont.bodyMedium(14, relativeTo: .subheadline))
+                    .foregroundStyle(theme.text)
+                Text("Visible to every Gym Sync user")
+                    .font(GSFont.body(12, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral700)
+            }
+            Spacer(minLength: 8)
+            GSToggle(isOn: $publishAsFeatured, label: "Publish as Featured")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 12)
+        .frame(minHeight: 44)
+        .background(theme.surface)
+        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
     }
 
     // Canvas: exercise picker rows — name + muscle kicker
@@ -348,6 +383,12 @@ struct RoutineBuilderView: View {
             if let editing {
                 name = editing.name
                 description = editing.description ?? ""
+                // CRITICAL: must be seeded here, unconditionally, from
+                // `editing` itself — not left at its `false` default. Without
+                // this, a curator editing an already-published routine and
+                // hitting Save would silently unpublish it (save writes
+                // `visibility` from this toggle's current value).
+                publishAsFeatured = editing.visibility == "public"
                 if let (_, exs) = try await RoutineRepository.fetch(id: editing.id) {
                     items = exs
                 }
