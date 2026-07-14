@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <title>Gym Sync — Curation (soundboard + featured routines)</title>
+  <link rel="stylesheet" href="../_ds/modernist-91f0e407-441d-4fe1-9229-e6d9255276ee/styles.css">
+  <script src="../_ds/modernist-91f0e407-441d-4fe1-9229-e6d9255276ee/_ds_bundle.js"></script>
+  <style>
+    body { margin: 0; }
+    a { color: var(--color-accent); }
+    a:hover { color: var(--color-accent-700); }
+    .gs-phone-scroll::-webkit-scrollbar { height: 10px; }
+    .gs-phone-scroll::-webkit-scrollbar-thumb { background: var(--color-neutral-400); }
+    .gs-dock-scroll::-webkit-scrollbar { display: none; }
+    @keyframes gsPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+    .gs-theme, .gs-theme[data-palette="midnight"] {
+      --color-bg:#13161c; --color-surface:#1e232c; --color-text:#eef2f7;
+      --color-divider:rgba(255,255,255,.15);
+      --color-accent:#38bdf8; --color-accent-600:#22a6e4; --color-accent-700:#7dd3fc;
+      --color-accent-100:#0e2c3a; --color-accent-200:#123a4d; --color-accent-300:#17506b; --color-accent-800:#bae6fd;
+      --color-neutral-100:#1a1e26; --color-neutral-300:#2b3038; --color-neutral-400:#3a414b;
+      --color-neutral-500:#6b7280; --color-neutral-700:#9aa2ae; --color-neutral-800:#cfd4db; --color-neutral-900:#eef2f7;
+      --shadow-sm:0 1px 2px rgba(0,0,0,.5); --shadow-md:0 4px 14px rgba(0,0,0,.55); --shadow-lg:0 14px 36px rgba(0,0,0,.6);
+    }
+    .gs-theme[data-palette="arena"] {
+      --color-bg:#101310; --color-surface:#1b1f19; --color-text:#eef3e8;
+      --color-divider:rgba(255,255,255,.14);
+      --color-accent:#b6f236; --color-accent-600:#a3e01f; --color-accent-700:#cdf76a;
+      --color-accent-100:#1e2a0e; --color-accent-200:#2b3d13; --color-accent-300:#3c541b; --color-accent-800:#dcfb9a;
+      --color-neutral-100:#1a1e17; --color-neutral-300:#2c312a; --color-neutral-400:#3c423a;
+      --color-neutral-500:#6f766a; --color-neutral-700:#9ba295; --color-neutral-800:#ced3c8; --color-neutral-900:#eef3e8;
+      --shadow-sm:0 1px 2px rgba(0,0,0,.5); --shadow-md:0 4px 14px rgba(0,0,0,.55); --shadow-lg:0 14px 36px rgba(0,0,0,.6);
+    }
+    .gs-theme[data-palette="ink"] {
+      --color-bg:#f3efe6; --color-surface:#e8e2d5; --color-text:#1b2540;
+      --color-divider:rgba(27,37,64,.26);
+      --color-accent:#22345c; --color-accent-600:#1a2947; --color-accent-700:#16233d;
+      --color-accent-100:#e3e6ee; --color-accent-200:#c8cfdf; --color-accent-300:#a9b3ca; --color-accent-800:#16233d;
+      --color-neutral-100:#efe9dd; --color-neutral-300:#d3ccbd; --color-neutral-400:#b4ab98;
+      --color-neutral-500:#8b8371; --color-neutral-700:#4c4638; --color-neutral-800:#353026; --color-neutral-900:#211d16;
+      --shadow-sm:0 1px 2px color-mix(in srgb,#2d2b2b 14%,transparent); --shadow-md:0 3px 10px color-mix(in srgb,#2d2b2b 16%,transparent); --shadow-lg:0 12px 32px color-mix(in srgb,#2d2b2b 22%,transparent);
+    }
+    .gs-theme[data-palette="modernist"] {
+      --color-bg:#f3f2f2; --color-surface:#eae9e9; --color-text:#201e1d;
+      --color-divider:color-mix(in srgb,#201e1d 40%,transparent);
+      --color-accent:#ec3013; --color-accent-600:#dd2b0f; --color-accent-700:#ae1800;
+      --color-accent-100:#fff2ef; --color-accent-200:#ffe0d9; --color-accent-300:#ffc4b8; --color-accent-800:#7c1405;
+      --color-neutral-100:#f8f4f4; --color-neutral-300:#d7d3d3; --color-neutral-400:#bab6b6;
+      --color-neutral-500:#9b9797; --color-neutral-700:#605d5d; --color-neutral-800:#444141; --color-neutral-900:#2d2b2b;
+      --shadow-sm:0 1px 2px color-mix(in srgb,#2d2b2b 14%,transparent); --shadow-md:0 3px 10px color-mix(in srgb,#2d2b2b 16%,transparent); --shadow-lg:0 12px 32px color-mix(in srgb,#2d2b2b 22%,transparent);
+    }
+    .gs-phone { flex:none; width:392px; background:#0a0b0f; border-radius:48px; padding:11px; box-shadow:0 22px 60px rgba(0,0,0,.5); }
+    .gs-screen { position:relative; border-radius:38px; overflow:hidden; background:var(--color-bg); color:var(--color-text); height:820px; display:flex; flex-direction:column; }
+    .gs-island { position:absolute; top:11px; left:50%; transform:translateX(-50%); width:104px; height:30px; background:#000; border-radius:16px; z-index:20; }
+    .gs-status { display:flex; align-items:center; justify-content:space-between; padding:15px 28px 8px; font-family:var(--font-heading); }
+  </style>
+</helmet>
+
+<div class="gs-theme" data-palette="{{ palette }}" style="background:var(--color-bg);color:var(--color-text);font-family:var(--font-body);min-height:100vh;padding-bottom:80px;">
+
+  <div class="nav" style="background:var(--color-bg);">
+    <div class="nav-brand">Gym Sync — Curation</div>
+    <span class="text-muted" style="font-size:13px;">Section · 2026-07 · sounds &amp; featured</span>
+  </div>
+
+  <div style="max-width:1400px;margin:0 auto;padding:var(--space-8) var(--space-6) 0;">
+    <h6 style="color:var(--color-accent-700);">Curation surfaces · next phase</h6>
+    <h1 style="margin-bottom:var(--space-2);">Soundboard &amp; featured routines</h1>
+    <p class="text-muted" style="max-width:720px;">Three curation frames: the personalized soundboard favorites ribbon in the live dock, the sound-library sheet for picking those favorites and firing any clip, and the Library-tab Featured section for curated public routine packs. Plain HTML, hand-drawn chrome, split file per the file contract.</p>
+  </div>
+
+  <div class="gs-phone-scroll" style="display:flex;gap:var(--space-8);overflow-x:auto;padding:var(--space-6);">
+
+    <!-- 1 · FAVORITES RIBBON -->
+    <div style="flex:none;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:var(--space-3);">
+        <span style="background:var(--color-accent);color:var(--color-bg);font-family:var(--font-heading);font-weight:800;font-size:11px;letter-spacing:.05em;padding:3px 8px;">SOUNDBOARD</span>
+        <h5 style="margin:0;">Favorites ribbon</h5>
+      </div>
+      <div class="gs-phone">
+        <div class="gs-screen">
+          <div class="gs-island"></div>
+          <div class="gs-status">
+            <span style="font-weight:800;font-size:14px;">9:41</span>
+            <span style="display:flex;align-items:center;gap:6px;">
+              <svg width="18" height="11" viewBox="0 0 18 11" fill="currentColor"><rect x="0" y="7" width="3" height="4" rx="1"></rect><rect x="5" y="5" width="3" height="6" rx="1"></rect><rect x="10" y="2.5" width="3" height="8.5" rx="1"></rect><rect x="15" y="0" width="3" height="11" rx="1"></rect></svg>
+              <svg width="16" height="12" viewBox="0 0 16 12" fill="currentColor"><path d="M8 2.4c2.3 0 4.4.9 6 2.4l-1.3 1.4A6.6 6.6 0 0 0 8 5.3a6.6 6.6 0 0 0-4.7 1.9L2 4.8A8.6 8.6 0 0 1 8 2.4Z"></path><path d="M8 6.3c1.2 0 2.3.5 3.1 1.3L9.7 9A2.4 2.4 0 0 0 8 8.3c-.6 0-1.2.3-1.7.7L4.9 7.6A4.4 4.4 0 0 1 8 6.3Z"></path><circle cx="8" cy="10.3" r="1.3"></circle></svg>
+              <svg width="26" height="12" viewBox="0 0 26 12" fill="none"><rect x="0.5" y="0.5" width="22" height="11" rx="3" stroke="currentColor" opacity=".4"></rect><rect x="2" y="2" width="17" height="8" rx="1.5" fill="currentColor"></rect><rect x="24" y="4" width="2" height="4" rx="1" fill="currentColor" opacity=".4"></rect></svg>
+            </span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;padding:6px 18px 12px;">
+            <span style="display:flex;align-items:center;gap:5px;"><span style="width:9px;height:9px;background:var(--color-accent);animation:gsPulse 1.2s ease-in-out infinite;"></span><span style="font-family:var(--font-heading);font-weight:800;font-size:12px;letter-spacing:.08em;">LIVE</span></span>
+            <span style="font-family:var(--font-heading);font-weight:800;font-size:13px;">Push Crew</span>
+            <span style="margin-left:auto;font-family:var(--font-heading);font-weight:800;font-size:14px;">12:47</span>
+          </div>
+          <div style="flex:1;padding:8px 16px;display:flex;flex-direction:column;gap:12px;">
+            <div style="background:var(--color-accent);color:var(--color-bg);padding:14px;">
+              <div style="font-size:10px;letter-spacing:.14em;font-weight:800;font-family:var(--font-heading);opacity:.85;">JORDAN'S TURN</div>
+              <div style="font-family:var(--font-heading);font-weight:800;font-size:24px;line-height:1;margin-top:5px;">Bench Press</div>
+              <div style="font-size:12px;opacity:.9;margin-top:3px;">Set 2 of 4 · 185 × 5</div>
+            </div>
+            <div class="text-muted" style="font-size:11px;">Your soundboard — four favorites, fixed to the dock. Fire one without opening anything.</div>
+          </div>
+          <!-- dock: favorites ribbon + mic -->
+          <div style="border-top:2px solid var(--color-divider);padding:10px 12px 26px;display:flex;flex-direction:column;gap:10px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <span class="text-muted" style="font-size:9px;font-weight:800;letter-spacing:.1em;">YOUR SOUNDS</span>
+              <button style="display:flex;align-items:center;gap:4px;background:none;border:none;color:var(--color-accent-700);font-family:var(--font-heading);font-weight:800;font-size:11px;cursor:pointer;">Edit
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4"></path></svg>
+              </button>
+            </div>
+            <div style="display:flex;gap:6px;">
+              <button style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;background:var(--color-surface);border:1px solid var(--color-divider);padding:10px 4px;cursor:pointer;color:var(--color-text);">
+                <span style="font-size:22px;">📯</span><span style="font-family:var(--font-heading);font-weight:800;font-size:10px;">Airhorn</span>
+              </button>
+              <button style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;background:var(--color-surface);border:1px solid var(--color-divider);padding:10px 4px;cursor:pointer;color:var(--color-text);">
+                <span style="font-size:22px;">🔥</span><span style="font-family:var(--font-heading);font-weight:800;font-size:10px;">Let's go</span>
+              </button>
+              <button style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;background:var(--color-surface);border:1px solid var(--color-divider);padding:10px 4px;cursor:pointer;color:var(--color-text);">
+                <span style="font-size:22px;">🥁</span><span style="font-family:var(--font-heading);font-weight:800;font-size:10px;">Drumroll</span>
+              </button>
+              <button style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;background:var(--color-surface);border:1px solid var(--color-divider);padding:10px 4px;cursor:pointer;color:var(--color-text);">
+                <span style="font-size:22px;">👏</span><span style="font-family:var(--font-heading);font-weight:800;font-size:10px;">Clap</span>
+              </button>
+              <!-- expand affordance -->
+              <button style="width:52px;flex-shrink:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;background:none;border:1px dashed var(--color-accent);color:var(--color-accent);cursor:pointer;" aria-label="Open sound library">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect></svg>
+                <span style="font-family:var(--font-heading);font-weight:800;font-size:9px;">All</span>
+              </button>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <button class="btn btn-secondary btn-icon" style="border-color:var(--color-accent);color:var(--color-accent);width:44px;height:44px;flex-shrink:0;" aria-label="Mic">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"></rect><path d="M5 10a7 7 0 0 0 14 0"></path><path d="M12 19v3"></path></svg>
+              </button>
+              <div style="flex:1;height:44px;border:1px solid var(--color-divider);background:var(--color-surface);display:flex;align-items:center;justify-content:center;font-family:var(--font-heading);font-weight:800;font-size:13px;color:color-mix(in srgb,var(--color-text) 60%,transparent);">Tap to talk · hold to talk live</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2 · SOUND LIBRARY SHEET -->
+    <div style="flex:none;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:var(--space-3);">
+        <span style="background:var(--color-accent);color:var(--color-bg);font-family:var(--font-heading);font-weight:800;font-size:11px;letter-spacing:.05em;padding:3px 8px;">SOUNDBOARD</span>
+        <h5 style="margin:0;">Sound library</h5>
+      </div>
+      <div class="gs-phone">
+        <div class="gs-screen">
+          <div class="gs-island"></div>
+          <div class="gs-status">
+            <span style="font-weight:800;font-size:14px;">9:41</span>
+            <span style="display:flex;align-items:center;gap:6px;">
+              <svg width="18" height="11" viewBox="0 0 18 11" fill="currentColor"><rect x="0" y="7" width="3" height="4" rx="1"></rect><rect x="5" y="5" width="3" height="6" rx="1"></rect><rect x="10" y="2.5" width="3" height="8.5" rx="1"></rect><rect x="15" y="0" width="3" height="11" rx="1"></rect></svg>
+              <svg width="16" height="12" viewBox="0 0 16 12" fill="currentColor"><path d="M8 2.4c2.3 0 4.4.9 6 2.4l-1.3 1.4A6.6 6.6 0 0 0 8 5.3a6.6 6.6 0 0 0-4.7 1.9L2 4.8A8.6 8.6 0 0 1 8 2.4Z"></path><path d="M8 6.3c1.2 0 2.3.5 3.1 1.3L9.7 9A2.4 2.4 0 0 0 8 8.3c-.6 0-1.2.3-1.7.7L4.9 7.6A4.4 4.4 0 0 1 8 6.3Z"></path><circle cx="8" cy="10.3" r="1.3"></circle></svg>
+              <svg width="26" height="12" viewBox="0 0 26 12" fill="none"><rect x="0.5" y="0.5" width="22" height="11" rx="3" stroke="currentColor" opacity=".4"></rect><rect x="2" y="2" width="17" height="8" rx="1.5" fill="currentColor"></rect><rect x="24" y="4" width="2" height="4" rx="1" fill="currentColor" opacity=".4"></rect></svg>
+            </span>
+          </div>
+          <div style="flex:1;background:rgba(0,0,0,.5);"></div>
+          <div style="background:var(--color-bg);border-top:2px solid var(--color-divider);padding:10px 16px 26px;">
+            <div style="width:40px;height:4px;background:var(--color-neutral-400);margin:0 auto 14px;"></div>
+            <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px;">
+              <h3 style="margin:0;font-size:22px;">Sounds</h3>
+              <span class="text-muted" style="font-size:12px;">Tap to send · star to favorite</span>
+            </div>
+            <!-- favorites reorder -->
+            <h6 style="margin:0 0 8px;color:color-mix(in srgb,var(--color-text) 60%,transparent);">Your 4 favorites · drag to reorder</h6>
+            <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px;">
+              <div style="display:flex;align-items:center;gap:10px;border:1px solid var(--color-divider);padding:8px 10px;">
+                <span class="text-muted" style="cursor:grab;display:flex;"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"></circle><circle cx="15" cy="6" r="1.5"></circle><circle cx="9" cy="12" r="1.5"></circle><circle cx="15" cy="12" r="1.5"></circle><circle cx="9" cy="18" r="1.5"></circle><circle cx="15" cy="18" r="1.5"></circle></svg></span>
+                <span style="font-size:18px;">📯</span><span style="flex:1;font-family:var(--font-heading);font-weight:800;font-size:13px;">Airhorn</span>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="var(--color-accent)" stroke="var(--color-accent)" stroke-width="1.5" stroke-linejoin="round"><path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.9 5.9 21.4l1.4-6.8L2.2 9.9l6.9-.8z"></path></svg>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;border:1px solid var(--color-divider);padding:8px 10px;">
+                <span class="text-muted" style="cursor:grab;display:flex;"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"></circle><circle cx="15" cy="6" r="1.5"></circle><circle cx="9" cy="12" r="1.5"></circle><circle cx="15" cy="12" r="1.5"></circle><circle cx="9" cy="18" r="1.5"></circle><circle cx="15" cy="18" r="1.5"></circle></svg></span>
+                <span style="font-size:18px;">🔥</span><span style="flex:1;font-family:var(--font-heading);font-weight:800;font-size:13px;">Let's go</span>
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="var(--color-accent)" stroke="var(--color-accent)" stroke-width="1.5" stroke-linejoin="round"><path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.9 5.9 21.4l1.4-6.8L2.2 9.9l6.9-.8z"></path></svg>
+              </div>
+            </div>
+            <!-- catalog -->
+            <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:8px;">
+              <h6 style="margin:0;color:color-mix(in srgb,var(--color-text) 60%,transparent);">All sounds</h6>
+              <div class="seg" style="font-size:11px;">
+                <label class="seg-opt" style="padding:4px 9px;background:var(--color-accent);color:var(--color-bg);">Hype</label>
+                <label class="seg-opt" style="padding:4px 9px;">Funny</label>
+                <label class="seg-opt" style="padding:4px 9px;">FX</label>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+              <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--color-divider);padding:9px 10px;">
+                <span style="font-size:18px;">🥁</span><span style="flex:1;font-family:var(--font-heading);font-weight:800;font-size:12px;">Drumroll</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--color-accent)" stroke="var(--color-accent)" stroke-width="1.5" stroke-linejoin="round"><path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.9 5.9 21.4l1.4-6.8L2.2 9.9l6.9-.8z"></path></svg>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--color-divider);padding:9px 10px;">
+                <span style="font-size:18px;">👏</span><span style="flex:1;font-family:var(--font-heading);font-weight:800;font-size:12px;">Clap</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--color-accent)" stroke="var(--color-accent)" stroke-width="1.5" stroke-linejoin="round"><path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.9 5.9 21.4l1.4-6.8L2.2 9.9l6.9-.8z"></path></svg>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--color-divider);padding:9px 10px;">
+                <span style="font-size:18px;">🔨</span><span style="flex:1;font-family:var(--font-heading);font-weight:800;font-size:12px;">Dig in</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="color:var(--color-neutral-500);"><path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.9 5.9 21.4l1.4-6.8L2.2 9.9l6.9-.8z"></path></svg>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--color-divider);padding:9px 10px;">
+                <span style="font-size:18px;">🪶</span><span style="flex:1;font-family:var(--font-heading);font-weight:800;font-size:12px;">Lightweight</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="color:var(--color-neutral-500);"><path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.9 5.9 21.4l1.4-6.8L2.2 9.9l6.9-.8z"></path></svg>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--color-divider);padding:9px 10px;">
+                <span style="font-size:18px;">📣</span><span style="flex:1;font-family:var(--font-heading);font-weight:800;font-size:12px;">Boo</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="color:var(--color-neutral-500);"><path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.9 5.9 21.4l1.4-6.8L2.2 9.9l6.9-.8z"></path></svg>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;border:1px solid var(--color-divider);padding:9px 10px;">
+                <span style="font-size:18px;">🔔</span><span style="flex:1;font-family:var(--font-heading);font-weight:800;font-size:12px;">Ding</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" style="color:var(--color-neutral-500);"><path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.9 5.9 21.4l1.4-6.8L2.2 9.9l6.9-.8z"></path></svg>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3 · LIBRARY FEATURED -->
+    <div style="flex:none;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:var(--space-3);">
+        <span style="background:var(--color-neutral-800);color:var(--color-bg);font-family:var(--font-heading);font-weight:800;font-size:11px;letter-spacing:.05em;padding:3px 8px;">LIBRARY</span>
+        <h5 style="margin:0;">Featured routines</h5>
+      </div>
+      <div class="gs-phone">
+        <div class="gs-screen">
+          <div class="gs-island"></div>
+          <div class="gs-status">
+            <span style="font-weight:800;font-size:14px;">9:41</span>
+            <span style="display:flex;align-items:center;gap:6px;">
+              <svg width="18" height="11" viewBox="0 0 18 11" fill="currentColor"><rect x="0" y="7" width="3" height="4" rx="1"></rect><rect x="5" y="5" width="3" height="6" rx="1"></rect><rect x="10" y="2.5" width="3" height="8.5" rx="1"></rect><rect x="15" y="0" width="3" height="11" rx="1"></rect></svg>
+              <svg width="16" height="12" viewBox="0 0 16 12" fill="currentColor"><path d="M8 2.4c2.3 0 4.4.9 6 2.4l-1.3 1.4A6.6 6.6 0 0 0 8 5.3a6.6 6.6 0 0 0-4.7 1.9L2 4.8A8.6 8.6 0 0 1 8 2.4Z"></path><path d="M8 6.3c1.2 0 2.3.5 3.1 1.3L9.7 9A2.4 2.4 0 0 0 8 8.3c-.6 0-1.2.3-1.7.7L4.9 7.6A4.4 4.4 0 0 1 8 6.3Z"></path><circle cx="8" cy="10.3" r="1.3"></circle></svg>
+              <svg width="26" height="12" viewBox="0 0 26 12" fill="none"><rect x="0.5" y="0.5" width="22" height="11" rx="3" stroke="currentColor" opacity=".4"></rect><rect x="2" y="2" width="17" height="8" rx="1.5" fill="currentColor"></rect><rect x="24" y="4" width="2" height="4" rx="1" fill="currentColor" opacity=".4"></rect></svg>
+            </span>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;padding:6px 16px 10px;border-bottom:2px solid var(--color-divider);">
+            <span style="font-family:var(--font-heading);font-weight:800;font-size:20px;">Library</span>
+            <button class="btn btn-icon" style="border:1px solid var(--color-divider);width:30px;height:30px;margin-left:auto;" aria-label="Search"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg></button>
+          </div>
+          <div style="flex:1;overflow:auto;">
+            <div style="padding:14px 16px 8px;display:flex;align-items:center;gap:8px;">
+              <span style="color:var(--color-accent-700);"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.9 6.3 6.9.8-5.1 4.7 1.4 6.8L12 17.9 5.9 21.4l1.4-6.8L2.2 9.9l6.9-.8z"></path></svg></span>
+              <h6 style="margin:0;color:color-mix(in srgb,var(--color-text) 60%,transparent);">Featured · curated packs</h6>
+            </div>
+            <!-- seasonal hero -->
+            <div style="margin:0 16px;">
+              <div style="position:relative;height:150px;background:var(--color-neutral-300);overflow:hidden;display:flex;align-items:flex-end;">
+                <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:color-mix(in srgb,var(--color-text) 30%,transparent);"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="3" width="18" height="18"></rect><circle cx="8.5" cy="8.5" r="1.8"></circle><path d="m21 15-5-5L5 21"></path></svg></div>
+                <div style="position:relative;width:100%;background:linear-gradient(to top, rgba(0,0,0,.7), transparent);padding:14px;">
+                  <span style="background:var(--color-accent);color:var(--color-bg);font-family:var(--font-heading);font-weight:800;font-size:10px;letter-spacing:.06em;padding:2px 7px;">SEASONAL</span>
+                  <div style="color:#fff;font-family:var(--font-heading);font-weight:800;font-size:22px;line-height:1.05;margin-top:8px;">12 Days of Liftmas</div>
+                  <div style="color:rgba(255,255,255,.85);font-size:12px;margin-top:2px;">12 festive sessions · by Gym Sync</div>
+                </div>
+              </div>
+              <button class="btn btn-primary btn-block" style="justify-content:space-between;font-size:14px;padding:12px 14px;margin-top:8px;"><span>Add to my routines</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="M12 5v14"></path></svg></button>
+            </div>
+            <!-- pack row -->
+            <div class="gs-dock-scroll" style="display:flex;gap:8px;overflow-x:auto;padding:14px 16px;">
+              <div style="flex:none;width:150px;border:1px solid var(--color-divider);">
+                <div style="height:84px;background:var(--color-neutral-300);"></div>
+                <div style="padding:10px;">
+                  <div style="font-family:var(--font-heading);font-weight:800;font-size:14px;">Summer Shred</div>
+                  <div class="text-muted" style="font-size:11px;">8 weeks · 4×/wk</div>
+                  <button class="btn btn-secondary btn-block" style="justify-content:center;font-size:12px;padding:7px;margin-top:8px;">Add</button>
+                </div>
+              </div>
+              <div style="flex:none;width:150px;border:1px solid var(--color-divider);">
+                <div style="height:84px;background:var(--color-neutral-300);"></div>
+                <div style="padding:10px;">
+                  <div style="font-family:var(--font-heading);font-weight:800;font-size:14px;">Powerbuilding 101</div>
+                  <div class="text-muted" style="font-size:11px;">12 weeks · 5×/wk</div>
+                  <button class="btn btn-secondary btn-block" style="justify-content:center;font-size:12px;padding:7px;margin-top:8px;">Add</button>
+                </div>
+              </div>
+            </div>
+            <!-- your routines -->
+            <div class="hr" style="margin:0 16px;"></div>
+            <div style="padding:14px 16px 6px;"><h6 style="margin:0;color:color-mix(in srgb,var(--color-text) 60%,transparent);">Your routines</h6></div>
+            <div style="padding:0 16px 16px;display:flex;flex-direction:column;">
+              <div style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--color-divider);">
+                <div style="flex:1;"><div style="font-family:var(--font-heading);font-weight:800;font-size:14px;">Push Day A</div><div class="text-muted" style="font-size:11px;">3 exercises · ~50 min</div></div>
+                <span class="text-muted"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg></span>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid var(--color-divider);">
+                <div style="flex:1;"><div style="font-family:var(--font-heading);font-weight:800;font-size:14px;">Pull Day A</div><div class="text-muted" style="font-size:11px;">4 exercises · ~55 min</div></div>
+                <span class="text-muted"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg></span>
+              </div>
+            </div>
+          </div>
+          <!-- tab bar -->
+          <div style="display:flex;background:var(--color-bg);border-top:2px solid var(--color-divider);padding:8px 0 22px;">
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:color-mix(in srgb,var(--color-text) 45%,transparent);">
+              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+              <span style="font-family:var(--font-heading);font-weight:800;font-size:10px;">Home</span>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--color-accent);">
+              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
+              <span style="font-family:var(--font-heading);font-weight:800;font-size:10px;">Library</span>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:color-mix(in srgb,var(--color-text) 45%,transparent);">
+              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+              <span style="font-family:var(--font-heading);font-weight:800;font-size:10px;">Social</span>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:color-mix(in srgb,var(--color-text) 45%,transparent);">
+              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"></path><path d="M18 17V9"></path><path d="M13 17V5"></path><path d="M8 17v-3"></path></svg>
+              <span style="font-family:var(--font-heading);font-weight:800;font-size:10px;">Stats</span>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:color-mix(in srgb,var(--color-text) 45%,transparent);">
+              <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="10" r="3"></circle><path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662"></path></svg>
+              <span style="font-family:var(--font-heading);font-weight:800;font-size:10px;">You</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:460,&quot;height&quot;:900},&quot;palette&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;midnight&quot;,&quot;options&quot;:[&quot;midnight&quot;,&quot;arena&quot;,&quot;ink&quot;,&quot;modernist&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Theme&quot;}}"></script>
+</body>
+</html>

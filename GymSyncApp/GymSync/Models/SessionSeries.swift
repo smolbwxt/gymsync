@@ -5,7 +5,7 @@ import Supabase
 
 /// A recurring session series.
 /// `until_date` is a DATE column (PostgREST returns "yyyy-MM-dd").
-/// We decode it as a String and expose `untilDate: Date` via a static formatter.
+/// We decode it as a String and expose `untilDate: Date` parsed in the series' own timezone.
 /// Tasks 5/6 must use `untilDate` (the computed Date property), not the raw string.
 struct SessionSeries: Codable, Identifiable, Sendable {
     let id: UUID
@@ -18,15 +18,31 @@ struct SessionSeries: Codable, Identifiable, Sendable {
     let createdAt: Date
 
     // MARK: Public contract: Tasks 5/6 compile against this.
-    var untilDate: Date { SessionSeries.untilDateFormatter.date(from: untilDateString) ?? Date.distantFuture }
+    /// Midnight of the until-day in the SERIES' OWN timezone — not UTC.
+    /// A UTC-pinned parse shifted the day one earlier for any timezone west
+    /// of UTC (e.g. "2026-07-27" → Jul 26 20:00 ET), which made
+    /// materialization drop the final day's occurrence whenever until fell
+    /// on a series weekday, and prefilled SeriesEditorView's picker a day
+    /// early (CI run 29307177206 caught the count mismatch).
+    var untilDate: Date {
+        let parts = untilDateString.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return .distantFuture }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: timezone) ?? .current
+        return cal.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
+            ?? .distantFuture
+    }
 
-    static let untilDateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateFormat = "yyyy-MM-dd"
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = TimeZone(secondsFromGMT: 0) // DATE is timezone-agnostic
-        return f
-    }()
+    /// Formats `date`'s calendar day in `timezone` as the DATE-column string
+    /// ("yyyy-MM-dd"). The mirror of `untilDate`: both directions of the
+    /// round-trip must use the series timezone or the day shifts near
+    /// midnight/timezone boundaries.
+    static func dayString(for date: Date, in timezone: TimeZone) -> String {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = timezone
+        let c = cal.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+    }
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -143,11 +159,13 @@ enum SeriesRepository {
         series: SessionSeries,
         days: [SeriesDayInput],
         from: Date,
+        until: Date,             // caller's own until — NOT series.untilDate, whose
+                                 // DATE round-trip is day-granular (see untilDate doc)
         memberUserIDs: [UUID],   // ALL group members (organizer already included via members query)
         organizerID: UUID
     ) async throws {
         let tz = TimeZone(identifier: series.timezone) ?? .current
-        let occurrences = occurrenceDates(days: days, from: from, until: series.untilDate, timezone: tz)
+        let occurrences = occurrenceDates(days: days, from: from, until: until, timezone: tz)
         guard !occurrences.isEmpty else { return }
 
         // Build session rows
@@ -216,7 +234,7 @@ enum SeriesRepository {
         }
         do {
             let seriesID = UUID()
-            let untilStr = SessionSeries.untilDateFormatter.string(from: untilDate)
+            let untilStr = SessionSeries.dayString(for: untilDate, in: timezone)
 
             // Build time_local strings ("HH:mm:ss") for each day rule
             func timeString(hour: Int, minute: Int) -> String {
@@ -263,11 +281,14 @@ enum SeriesRepository {
                 .value
             let memberIDs = memberRows.map(\.userID)
 
-            // Materialize sessions + participants
+            // Materialize sessions + participants — pass the caller's
+            // untilDate directly so the count is identical to the hermetic
+            // occurrenceDates() computation on the same inputs.
             try await materializeOccurrences(
                 series: series,
                 days: days,
                 from: Date(),
+                until: untilDate,
                 memberUserIDs: memberIDs,
                 organizerID: organizerID
             )
@@ -371,7 +392,15 @@ enum SeriesRepository {
         do {
             let now = Date()
             let nowStr = isoString(now)
-            let untilStr = SessionSeries.untilDateFormatter.string(from: untilDate)
+
+            // Fetch the series up front — its stored timezone drives the
+            // DATE formatting, and its groupID scopes the member query for
+            // re-materialization below.
+            guard let existing = try await self.series(id: seriesID) else {
+                throw GymSyncError.notFound
+            }
+            let seriesTZ = TimeZone(identifier: existing.timezone) ?? .current
+            let untilStr = SessionSeries.dayString(for: untilDate, in: seriesTZ)
 
             // Update until_date on series
             _ = try await client
@@ -413,25 +442,23 @@ enum SeriesRepository {
                 .gt("scheduled_for", value: nowStr)
                 .execute()
 
-            // Refetch series to get groupID + timezone for re-materialization
-            guard let updatedSeries = try await self.series(id: seriesID) else {
-                throw GymSyncError.notFound
-            }
-
             // Fetch group members
             let memberRows: [GroupMember] = try await client
                 .from("group_members")
                 .select()
-                .eq("group_id", value: updatedSeries.groupID.uuidString)
+                .eq("group_id", value: existing.groupID.uuidString)
                 .execute()
                 .value
             let memberIDs = memberRows.map(\.userID)
 
-            // Re-materialize from now forward
+            // Re-materialize from now forward. `existing` still carries the
+            // OLD until_date string, which is why `until` is passed
+            // explicitly — the caller's Date, not the row round-trip.
             try await materializeOccurrences(
-                series: updatedSeries,
+                series: existing,
                 days: days,
                 from: now,
+                until: untilDate,
                 memberUserIDs: memberIDs,
                 organizerID: organizerID
             )

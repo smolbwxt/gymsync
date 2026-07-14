@@ -16,6 +16,9 @@ packages:
   Supabase:
     url: https://github.com/supabase/supabase-swift
     from: 2.5.0
+  LiveKit:
+    url: https://github.com/livekit/client-sdk-swift
+    from: 2.15.0
 
 targets:
   GymSync:
@@ -28,6 +31,8 @@ targets:
     dependencies:
       - package: Supabase
         product: Supabase
+      - package: LiveKit
+        product: LiveKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.gymsync.ios
@@ -42,7 +47,7 @@ targets:
         NSHealthShareUsageDescription: "Gym Sync writes your completed workouts to Apple Health so they appear in your Activity ring."
         NSHealthUpdateUsageDescription: "Gym Sync writes your completed workouts to Apple Health so they appear in your Activity ring."
         NSLocationWhenInUseUsageDescription: "Gym Sync uses your location to confirm you're at your home gym during check-in."
-        NSMicrophoneUsageDescription: "Gym Sync uses your microphone to record voice messages for your crew."
+        NSMicrophoneUsageDescription: "Gym Sync uses your microphone for voice messages and push-to-talk during live sessions with your crew."
         UIAppFonts:
           - Archivo-Regular.ttf
           - Archivo-Medium.ttf

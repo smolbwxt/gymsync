@@ -69,6 +69,11 @@ final class AuthService {
         // token nobody's listening on anymore; push-dispatcher already
         // handles dead tokens via APNs' 410/BadDeviceToken response).
         try? await PushDeviceRepository.deleteOwnDevices()
+        // Phase 3e (Task 3): sign-out must leave any active voice room and
+        // restore the audio session — never throws, so this can't block
+        // sign-out itself, and it's a harmless no-op if no room was ever
+        // joined (VoiceRoomService.leave() is idempotent from `.idle`).
+        await VoiceRoomService.shared.leave()
         try await SupabaseService.shared.signOut()
         state = .signedOut
     }
