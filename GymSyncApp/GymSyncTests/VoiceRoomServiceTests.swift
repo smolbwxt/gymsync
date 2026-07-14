@@ -42,23 +42,31 @@ final class VoiceRoomServiceTests: XCTestCase {
         func requestRecordPermission() async -> Bool { granted }
     }
 
-    /// Suspends `requestRecordPermission()` until the test calls `resume()`
-    /// — lets a test observe the transient `.connecting` state before join()
-    /// completes, without a fixed sleep.
-    private final class GatedMicPermission: MicPermissionChecking, @unchecked Sendable {
-        private(set) var wasCalled = false
-        private var continuation: CheckedContinuation<Bool, Never>?
+    /// Immediate-return fake that also fires an observation hook at the
+    /// moment `join()` requests permission — lets a test capture the
+    /// transient `.connecting` state deterministically, with no second Task,
+    /// no polling, and no continuation that could be left un-resumed. The
+    /// method NEVER suspends, so it is provably non-blocking.
+    ///
+    /// HISTORY (CI deadlock, run 29303069124): the first version of this
+    /// fake suspended on a `CheckedContinuation` that the test resumed after
+    /// observing a `wasCalled` flag from a MainActor poll loop. Its
+    /// nonisolated-async method ran OFF the main actor and set
+    /// `wasCalled = true` BEFORE `withCheckedContinuation` stored the
+    /// continuation — so the spinning MainActor test could observe the flag
+    /// and call `resume()` while `continuation` was still nil (`continuation?
+    /// .resume` = silent no-op), leaving the join task suspended forever and
+    /// the test awaiting it until the 45-min job timeout. This replacement is
+    /// `@MainActor` (legal witness for an async protocol requirement) and
+    /// has nothing to race and nothing to resume.
+    @MainActor
+    private final class RecordingMicPermission: MicPermissionChecking {
+        var granted = true
+        var onRequest: (@MainActor () -> Void)?
 
         func requestRecordPermission() async -> Bool {
-            wasCalled = true
-            return await withCheckedContinuation { continuation in
-                self.continuation = continuation
-            }
-        }
-
-        func resume(granted: Bool) {
-            continuation?.resume(returning: granted)
-            continuation = nil
+            onRequest?()
+            return granted
         }
     }
 
@@ -96,7 +104,7 @@ final class VoiceRoomServiceTests: XCTestCase {
 
     func testJoinTransitionsThroughConnectingToConnectedMuted() async throws {
         let tokenFetcher = FakeTokenFetcher()
-        let micPermission = GatedMicPermission()
+        let micPermission = RecordingMicPermission()
         let room = FakeRoomConnection()
         let service = VoiceRoomService(tokenFetcher: tokenFetcher, micPermission: micPermission, room: room)
 
@@ -104,30 +112,21 @@ final class VoiceRoomServiceTests: XCTestCase {
             XCTFail("expected initial state .idle, got \(service.state)"); return
         }
 
-        let sessionID = UUID()
-        let joinTask = Task { await service.join(sessionID: sessionID) }
+        // Capture the state at the exact moment join() performs its first
+        // await (the permission request). join() sets `state = .connecting`
+        // synchronously before that call, so this observes the transient
+        // state deterministically — no second Task, no polling, no
+        // suspension anywhere in the test.
+        var stateWhenPermissionRequested: VoiceRoomState?
+        micPermission.onRequest = { stateWhenPermissionRequested = service.state }
 
-        // Poll (bounded) until join() has reached the permission-check await
-        // point. `state = .connecting` is set synchronously before this
-        // call, so by the time `wasCalled` flips, `.connecting` is
-        // guaranteed to already be in effect — no race.
-        var iterations = 0
-        while !micPermission.wasCalled {
-            iterations += 1
-            if iterations > 10_000 {
-                XCTFail("timed out waiting for requestRecordPermission to be called")
-                return
-            }
-            await Task.yield()
-        }
-        guard case .connecting = service.state else {
-            XCTFail("expected .connecting while permission check is pending, got \(service.state)")
+        let sessionID = UUID()
+        await service.join(sessionID: sessionID)
+
+        guard case .connecting? = stateWhenPermissionRequested else {
+            XCTFail("expected .connecting at permission-request time, got \(String(describing: stateWhenPermissionRequested))")
             return
         }
-
-        micPermission.resume(granted: true)
-        await joinTask.value
-
         guard case .connected(.muted) = service.state else {
             XCTFail("expected .connected(.muted) after join completes, got \(service.state)")
             return
