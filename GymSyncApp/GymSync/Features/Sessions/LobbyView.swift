@@ -574,7 +574,7 @@ struct LobbyView: View {
         // honestly here; deliberately left as the existing check-in-only row
         // when not speaking.
         let isSpeaking = VoiceRoomService.shared.speakingParticipantIDs
-            .contains(item.participant.userID.uuidString)
+            .contains(item.participant.userID.uuidString.lowercased())
 
         return HStack(spacing: 10) {
             // Presence dot + initials avatar

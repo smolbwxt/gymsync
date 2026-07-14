@@ -153,7 +153,10 @@ export async function handleRequest(req: Request, deps: HandleRequestDeps): Prom
     // FKs to profiles(id)) — the userId fallback is defense-in-depth, not an
     // expected path.
     const username = (await deps.gateway.getUsername(userId)) ?? userId;
-    const room = `session:${sessionId}`;
+    // Canonicalize casing: iOS sends UUID.uuidString (UPPERCASE), the DB and
+    // web clients use lowercase. The room name must be identical for every
+    // caller or clients silently land in different rooms (final-review I1).
+    const room = `session:${sessionId.toLowerCase()}`;
 
     const token = await mintLiveKitToken({
       apiKey: deps.liveKitApiKey,

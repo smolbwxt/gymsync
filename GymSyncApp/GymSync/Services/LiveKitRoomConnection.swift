@@ -83,7 +83,12 @@ final class LiveKitRoomConnection: VoiceRoomConnecting {
         // `compactMap` rather than defaulting to "" on nil: a participant
         // with no identity yet (e.g. mid-handshake) shouldn't be conflated
         // with another identity-less participant under the same empty key.
-        let identities = Set(participants.compactMap { $0.identity?.stringValue })
+        //
+        // Lowercased at the boundary: identities are the token's `sub` claim
+        // — a LOWERCASE Supabase UUID — while Swift's UUID.uuidString is
+        // uppercase. Without canonicalizing, every speaking-indicator
+        // compare in the views is silently false (final-review C1).
+        let identities = Set(participants.compactMap { $0.identity?.stringValue.lowercased() })
         onSpeakingParticipantsChanged?(identities)
     }
 }

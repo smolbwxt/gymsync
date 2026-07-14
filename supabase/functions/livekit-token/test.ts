@@ -413,6 +413,25 @@ for (const state of VOICE_ELIGIBLE_STATES) {
   });
 }
 
+Deno.test("handleRequest: room name is lowercased regardless of caller casing (iOS sends UPPERCASE uuidString; web/DB use lowercase — same room either way)", async () => {
+  const { token, jwks } = await makeCallerAuth("user-42");
+  // Gateway lookups receive the RAW session_id (Postgres uuid casts are
+  // case-insensitive in prod); only the LiveKit room string canonicalizes.
+  const gateway = new FakeGateway(
+    new Set(["ABC-UPPER:user-42"]),
+    new Map([["ABC-UPPER", "lobby_open"]]),
+    new Map([["user-42", "tommy"]]),
+  );
+  const res = await handleRequest(
+    req({ session_id: "ABC-UPPER" }, `Bearer ${token}`),
+    baseDeps({ gateway, jwksCache: cacheFor(jwks) }),
+  );
+  assertEquals(res.status, 200);
+  const body = await res.json();
+  const { claims } = decodeJwt(body.token);
+  assertEquals((claims.video as { room: string }).room, "session:abc-upper");
+});
+
 Deno.test("handleRequest: falls back to the raw user id for `name` if no profile username is found (defensive; should not happen in practice)", async () => {
   const { token, jwks } = await makeCallerAuth("user-no-profile");
   const gateway = new FakeGateway(new Set(["s1:user-no-profile"]), new Map([["s1", "lobby_open"]]));

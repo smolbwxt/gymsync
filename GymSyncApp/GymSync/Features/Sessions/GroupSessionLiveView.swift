@@ -865,7 +865,7 @@ struct GroupSessionLiveView: View {
                     // Speaking ring (Task 4) — see `rosterCard`'s comment on
                     // why only the "talking" sub-state is derivable here.
                     let isSpeaking = VoiceRoomService.shared.speakingParticipantIDs
-                        .contains(tile.userID.uuidString)
+                        .contains(tile.userID.uuidString.lowercased())
                     VStack(spacing: 4) {
                         Text(tile.label)
                             .font(GSFont.bold(9, relativeTo: .caption2))
@@ -972,7 +972,7 @@ struct GroupSessionLiveView: View {
         // participants isn't derivable here either (same honest limitation
         // as `LobbyView.participantRow`); only the "talking" ring is real.
         let isSpeaking = VoiceRoomService.shared.speakingParticipantIDs
-            .contains(item.participant.userID.uuidString)
+            .contains(item.participant.userID.uuidString.lowercased())
 
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 5) {
