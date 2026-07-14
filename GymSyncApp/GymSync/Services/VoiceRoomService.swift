@@ -167,6 +167,15 @@ final class VoiceRoomService {
     private let room: VoiceRoomConnecting
     private var currentSessionID: UUID?
 
+    /// Monotonic lifecycle guard. `leave()` bumps it; `join()`/transmit
+    /// re-check it after every suspension. Without this, a `leave()` that
+    /// runs while `join()` is parked on the token fetch or the connect lets
+    /// the resumed join re-enter voice mode, finish connecting, and
+    /// overwrite `.idle` with `.connected` — a live room the caller believes
+    /// it left. All access is MainActor-serialized, so an equality check
+    /// between awaits is race-free.
+    private var lifecycleEpoch = 0
+
     init(
         tokenFetcher: VoiceTokenFetching = SupabaseVoiceTokenFetcher(),
         micPermission: MicPermissionChecking = SystemMicPermissionChecker(),
@@ -208,10 +217,14 @@ final class VoiceRoomService {
         if case .connecting = state { return }
         if case .connected = state { return }
 
+        let epoch = lifecycleEpoch
         currentSessionID = sessionID
         state = .connecting
 
         let granted = await micPermission.requestRecordPermission()
+        // leave() ran while we were parked on the permission prompt: it
+        // already reset state; nothing was entered yet, so just stop.
+        guard lifecycleEpoch == epoch else { return }
         guard granted else {
             state = .micDenied
             return
@@ -219,7 +232,10 @@ final class VoiceRoomService {
 
         var joinSucceeded = false
         defer {
-            if !joinSucceeded {
+            // Epoch-gated: if leave() interleaved, IT restored the baseline
+            // (and a newer join may already own voice mode again) — a stale
+            // join must not touch the audio session on its way out.
+            if !joinSucceeded && lifecycleEpoch == epoch {
                 audioSession.exitVoiceMode()
             }
         }
@@ -227,13 +243,24 @@ final class VoiceRoomService {
         do {
             try audioSession.enterVoiceMode()
             let response = try await tokenFetcher.fetchToken(sessionID: sessionID.uuidString)
+            guard lifecycleEpoch == epoch else { return }
             try await room.connectAndPublishMuted(url: response.url, token: response.token)
+            guard lifecycleEpoch == epoch else {
+                // leave() interleaved while we were connecting — its
+                // disconnect raced our in-flight connect, so undo the
+                // connection this stale join just established.
+                await room.disconnect()
+                return
+            }
             state = .connected(.muted)
             joinSucceeded = true
         } catch {
             AppLogger.voice.error(
                 "join failed for session \(sessionID.uuidString, privacy: .public): \(error, privacy: .public)"
             )
+            // A stale join's failure belongs to a lifecycle the user already
+            // left — don't overwrite whatever state the current epoch set.
+            guard lifecycleEpoch == epoch else { return }
             state = .unavailable(error)
         }
     }
@@ -253,8 +280,12 @@ final class VoiceRoomService {
     /// rather than lying to the UI about being live.
     func beginTransmit() async {
         guard case .connected(.muted) = state else { return }
+        let epoch = lifecycleEpoch
         do {
             try await room.setMicrophoneMuted(false)
+            // leave() interleaved with the unmute — the room is gone; don't
+            // resurrect a .connected state over the epoch owner's .idle.
+            guard lifecycleEpoch == epoch else { return }
             state = .connected(.transmitting)
         } catch {
             AppLogger.voice.error("beginTransmit failed: \(error, privacy: .public)")
@@ -269,11 +300,15 @@ final class VoiceRoomService {
     /// `.connected(.transmitting)`.
     func endTransmit() async {
         guard case .connected(.transmitting) = state else { return }
+        let epoch = lifecycleEpoch
         do {
             try await room.setMicrophoneMuted(true)
         } catch {
             AppLogger.voice.error("endTransmit failed: \(error, privacy: .public)")
         }
+        // Same epoch discipline as beginTransmit: a leave() that interleaved
+        // with the mute call owns the state now.
+        guard lifecycleEpoch == epoch else { return }
         state = .connected(.muted)
     }
 
@@ -282,8 +317,11 @@ final class VoiceRoomService {
     /// sign-out (`AuthService.signOut()` calls this before tearing down the
     /// Supabase session). Safe to call from `.idle` (never-joined) —
     /// `room.disconnect()`/`exitVoiceMode()` are both no-ops/idempotent in
-    /// that case.
+    /// that case. Also invalidates any in-flight `join()`/transmit call via
+    /// `lifecycleEpoch` — a suspended join that resumes after this cannot
+    /// reconnect or overwrite the `.idle` state.
     func leave() async {
+        lifecycleEpoch += 1
         defer {
             audioSession.exitVoiceMode()
             state = .idle
