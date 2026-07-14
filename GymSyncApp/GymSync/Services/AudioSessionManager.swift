@@ -1,13 +1,23 @@
 import AVFoundation
+import os
 
 final class AudioSessionManager {
     static let shared = AudioSessionManager()
     private let session = AVAudioSession.sharedInstance()
 
     /// True while the session is scoped for live voice (push-to-talk) mode.
-    /// Readable by other services (e.g. VoiceRecorder) to gate against stepping
-    /// on an active voice room's audio session.
-    private(set) var isInVoiceMode = false
+    /// Readable by other services (e.g. VoiceRecorder, VoiceRoomService) to
+    /// gate against stepping on an active voice room's audio session.
+    ///
+    /// Lock-protected rather than a plain `var` — `AudioSessionManager` itself
+    /// isn't actor-isolated, and its callers now span two independent
+    /// `@MainActor` classes (`VoiceRecorder`, `VoiceRoomService`); a future
+    /// caller off the main actor isn't ruled out either. Flagged by T2 review
+    /// during Phase 3e Task 3 as unsynchronized — fixed here without changing
+    /// the public `Bool` surface, so existing callers/tests are unaffected.
+    private let voiceModeFlag = OSAllocatedUnfairLock(initialState: false)
+
+    var isInVoiceMode: Bool { voiceModeFlag.withLock { $0 } }
 
     private init() {}
 
@@ -48,8 +58,14 @@ final class AudioSessionManager {
             mode: .voiceChat,
             options: [.mixWithOthers, .allowBluetoothA2DP, .defaultToSpeaker]
         )
+        // Manual audio-session mode (LiveKit's `isAutomaticConfigurationEnabled
+        // = false`, set once by `LiveKitRoomConnection` before its first
+        // connect) means WE are responsible for the buffer tuning LiveKit's
+        // automatic path otherwise applies internally — match WebRTC's 20ms
+        // frame size (Dossier §B.3.3.4).
+        try session.setPreferredIOBufferDuration(0.02)
         try session.setActive(true)
-        isInVoiceMode = true
+        voiceModeFlag.withLock { $0 = true }
     }
 
     /// Restore the ambient + mixWithOthers state that `configure()` establishes.
@@ -62,6 +78,6 @@ final class AudioSessionManager {
         } catch {
             AppLogger.audio.error("AudioSessionManager.exitVoiceMode failed: \(error)")
         }
-        isInVoiceMode = false
+        voiceModeFlag.withLock { $0 = false }
     }
 }

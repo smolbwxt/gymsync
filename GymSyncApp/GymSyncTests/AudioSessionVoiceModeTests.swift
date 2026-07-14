@@ -103,4 +103,22 @@ final class AudioSessionVoiceModeTests: XCTestCase {
         XCTAssertTrue(avSession.categoryOptions.contains(.mixWithOthers))
         XCTAssertFalse(manager.isInVoiceMode)
     }
+
+    /// Phase 3e Task 3 addition (Dossier §B.3.3.4): manual audio-session mode
+    /// means we own the buffer tuning LiveKit's automatic path would
+    /// otherwise apply, so `enterVoiceMode()` requests a ~20ms IO buffer to
+    /// match WebRTC's frame size. We deliberately do NOT assert an exact
+    /// value here — the OS/simulator hardware abstraction is free to clamp
+    /// the requested duration to the nearest supported value, so an exact
+    /// equality assertion would be flaky across simulator/device audio
+    /// hardware. Asserting `enterVoiceMode()` doesn't throw and leaves a
+    /// positive preference in place is the honest, non-flaky signal that the
+    /// call path executes.
+    func testEnterVoiceModeRequestsPositiveIOBufferDuration() throws {
+        try manager.enterVoiceMode()
+        XCTAssertGreaterThan(
+            avSession.preferredIOBufferDuration, 0,
+            "enterVoiceMode must request a nonzero IO buffer duration (Dossier §B.3.3.4)."
+        )
+    }
 }
