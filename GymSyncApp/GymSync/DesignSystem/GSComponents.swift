@@ -274,6 +274,15 @@ public struct GSTabBar: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // Collapses the icon+label VStack into a single accessibility
+        // element with an exact, stable label (matches the pattern already
+        // used by AppearanceView.paletteRow below) — without this, VoiceOver
+        // (and XCUITest's `app.buttons["Home"]` queries, used by the
+        // GymSyncScreenshots UI test target) would see the button's label as
+        // some concatenation of the SF Symbol's own accessible name plus the
+        // title text, which isn't a reliable exact match.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(item.label)
     }
 }
 
@@ -411,6 +420,14 @@ public struct GSSettingsRow: View {
             }
         }
         .buttonStyle(.plain)
+        // Collapses icon+title+value+chevron into one accessibility element
+        // labeled by `title` alone (ignores the mutable trailing `value`,
+        // e.g. the current palette name) — same idiom as
+        // AppearanceView.paletteRow, and what lets the GymSyncScreenshots UI
+        // test target find this row via an exact `app.buttons["Appearance"]`
+        // query regardless of its current preview value.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(title)
     }
 }
 
