@@ -137,6 +137,27 @@ struct GroupSessionLiveView: View {
     private var isMyTurn: Bool { liveSession.currentTurnUserID == selfID }
     private var isOrganizer: Bool { liveSession.organizerID == selfID }
 
+    // MARK: - Voice (Task 4 — PTT dock, Dossier §A.1's locked session-state scope)
+
+    /// Mirrors `LobbyView`'s identical set — kept as a second literal copy
+    /// rather than a shared constant since neither view currently has a
+    /// common home for session-state helpers, and this codebase has no
+    /// existing precedent of factoring session-state string sets out of
+    /// individual views.
+    private static let voiceEligibleStates: Set<String> = [
+        "lobby_open", "editing", "voting", "locked", "in_progress"
+    ]
+
+    private var isVoiceEligible: Bool {
+        Self.voiceEligibleStates.contains(liveSession.state)
+    }
+
+    @MainActor
+    private func joinVoiceIfEligible() async {
+        guard isVoiceEligible else { return }
+        await VoiceRoomService.shared.join(sessionID: liveSession.id)
+    }
+
     private var myParticipant: SessionParticipant? {
         participants.first(where: { $0.participant.userID == selfID })?.participant
     }
@@ -423,8 +444,27 @@ struct GroupSessionLiveView: View {
         .gsHidesDock()
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 0) {
+                // ── VOICE DEGRADED BANNER ────────────────────────────────
+                // "Inserted above the dock" per Dossier §A.2's live-session
+                // unavailable frame — above the whole sticky composition
+                // (soundboard + PTT + action bar), matching that frame's
+                // literal ordering.
+                if isVoiceEligible, case .unavailable = VoiceRoomService.shared.state {
+                    GSVoiceUnavailableBanner(retry: {
+                        Task { await VoiceRoomService.shared.retry() }
+                    })
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(theme.bg)
+                }
                 // ── SOUNDBOARD DOCK ──────────────────────────────────────
                 soundboardDock
+                // ── PUSH-TO-TALK DOCK ────────────────────────────────────
+                // Dossier §A.2 confirms the exact insertion point: between
+                // the HYPE strip and the bottom action bar.
+                if isVoiceEligible {
+                    PTTDockRow()
+                }
                 // ── BOTTOM ACTION BAR ────────────────────────────────────
                 // My turn → pinned "Log Set & Pass" CTA (per proof, lives OUTSIDE the
                 // spotlight card). Spectating → dashed rotation hint, no CTA.
@@ -513,6 +553,16 @@ struct GroupSessionLiveView: View {
             Task {
                 await liveService.unsubscribe()
                 await broadcastService.unsubscribe()
+                // Unconditional, mirroring the two unsubscribes above — this
+                // is the top of the voice-eligible flow (no further "more
+                // live" view to hand the room off to, unlike LobbyView's
+                // guarded leave() for its Lobby -> live-session transition),
+                // so every disappearance here is a genuine "stop talking"
+                // moment (session ended, backed out, or a child pushed on
+                // top — the latter already re-subscribes everything else on
+                // return via this same `.task`, so voice re-joining too is
+                // consistent, not a new blip class introduced here).
+                await VoiceRoomService.shared.leave()
             }
         }
     }
@@ -608,6 +658,12 @@ struct GroupSessionLiveView: View {
                 .lineLimit(1)
 
             Spacer()
+
+            // "Connecting voice…" pill — Dossier §A.2: "header shows the
+            // same connecting pill as the lobby frame."
+            if case .connecting = VoiceRoomService.shared.state {
+                GSConnectingVoicePill()
+            }
 
             // Session elapsed — Text timer, never a Swift Timer
             if let startedAt = liveSession.startedAt {
@@ -806,6 +862,10 @@ struct GroupSessionLiveView: View {
             HStack(spacing: 6) {
                 ForEach(rotationTiles, id: \.userID) { tile in
                     let isNow = tile.label == "NOW"
+                    // Speaking ring (Task 4) — see `rosterCard`'s comment on
+                    // why only the "talking" sub-state is derivable here.
+                    let isSpeaking = VoiceRoomService.shared.speakingParticipantIDs
+                        .contains(tile.userID.uuidString)
                     VStack(spacing: 4) {
                         Text(tile.label)
                             .font(GSFont.bold(9, relativeTo: .caption2))
@@ -820,7 +880,9 @@ struct GroupSessionLiveView: View {
                     .padding(.vertical, 10)
                     .frame(maxWidth: .infinity, minHeight: 44)
                     .background(isNow ? theme.accent : theme.surface)
-                    .overlay(Rectangle().strokeBorder(isNow ? Color.clear : theme.divider, lineWidth: 1))
+                    .overlay(Rectangle().strokeBorder(
+                        isSpeaking ? theme.accent700 : (isNow ? Color.clear : theme.divider),
+                        lineWidth: isSpeaking ? 2 : 1))
                 }
             }
         }
@@ -903,6 +965,14 @@ struct GroupSessionLiveView: View {
     private func rosterCard(_ item: (participant: SessionParticipant, profile: Profile)) -> some View {
         let status = rosterStatus(for: item.participant.userID)
         let isLifting = status == .lifting
+        // Speaking ring (Task 4, Dossier §A.2's lobby-strip "talking" state,
+        // reused here for the live-session roster grid). `VoiceRoomService`
+        // exposes only WHO is currently speaking, not a full roster of who
+        // else has joined the room — so "listening"/"muted" for other
+        // participants isn't derivable here either (same honest limitation
+        // as `LobbyView.participantRow`); only the "talking" ring is real.
+        let isSpeaking = VoiceRoomService.shared.speakingParticipantIDs
+            .contains(item.participant.userID.uuidString)
 
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 5) {
@@ -914,6 +984,12 @@ struct GroupSessionLiveView: View {
                     Image(systemName: "checkmark")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(theme.accent700)
+                }
+                if isSpeaking {
+                    GSTalkingBars(color: isLifting ? theme.bg : theme.accent700, barWidth: 2, maxHeight: 9)
+                    Text("talking")
+                        .font(GSFont.bold(9, relativeTo: .caption2))
+                        .foregroundStyle(isLifting ? theme.bg.opacity(0.85) : theme.accent700)
                 }
             }
 
@@ -937,7 +1013,9 @@ struct GroupSessionLiveView: View {
         .padding(10)
         .frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
         .background(isLifting ? theme.accent : theme.surface)
-        .overlay(Rectangle().strokeBorder(isLifting ? Color.clear : theme.divider, lineWidth: 1))
+        .overlay(Rectangle().strokeBorder(
+            isSpeaking ? theme.accent700 : (isLifting ? Color.clear : theme.divider),
+            lineWidth: isSpeaking ? 2 : 1))
     }
 
     private func rosterStatusLabel(_ status: RosterStatus) -> String {
@@ -1500,6 +1578,13 @@ struct GroupSessionLiveView: View {
         } else if allExercises.isEmpty {
             allExercises = (try? await ExerciseRepository.fetchAll()) ?? []
         }
+
+        // Auto-join voice once `liveSession` reflects the latest state
+        // (Task 4) — no-ops once already connecting/connected, so it's safe
+        // to call from every reload(), not just the first (`openAndSubscribe`
+        // calls this at its very start, and the scenePhase→active handler
+        // calls it again on every foreground transition).
+        await joinVoiceIfEligible()
     }
 
     @MainActor

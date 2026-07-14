@@ -262,6 +262,18 @@ struct ChatView: View {
 
     // MARK: - Mic Button (hold to record)
 
+    /// True while a live PTT voice room is connected (any sub-state — muted
+    /// or transmitting). Gates the voice-MESSAGE mic below: `VoiceRecorder`'s
+    /// `exitRecordMode()` unconditionally resets `AVAudioSession` to
+    /// `.ambient` on every recording end path, which would silently kill the
+    /// still-connected room's audio out from under it (AUDIO SACRED RULE —
+    /// only `VoiceRoomService`/`AudioSessionManager` may own the session
+    /// while a room is live; see Dossier §B.3.4).
+    private var isVoiceRoomActive: Bool {
+        if case .connected = VoiceRoomService.shared.state { return true }
+        return false
+    }
+
     private var micButton: some View {
         Image(systemName: "mic")
             .font(.system(size: 17, weight: .regular))
@@ -269,10 +281,10 @@ struct ChatView: View {
             .frame(width: 44, height: 44)
             .background(theme.bg)
             .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
-            .opacity(isSendingVoice ? 0.4 : 1)
+            .opacity((isSendingVoice || isVoiceRoomActive) ? 0.4 : 1)
             // onLongPressGesture with pressing: true → start, false → stop
             .onLongPressGesture(minimumDuration: 0.15, pressing: { pressing in
-                guard !isSendingVoice else { return }
+                guard !isSendingVoice, !isVoiceRoomActive else { return }
                 if pressing {
                     guard !isRecording else { return }
                     isRecording = true
@@ -306,7 +318,7 @@ struct ChatView: View {
                 // Long press recognized (≥0.15s) — no additional action needed;
                 // the pressing: callback already manages state transitions.
             })
-            .disabled(isSendingVoice)
+            .disabled(isSendingVoice || isVoiceRoomActive)
     }
 
     // MARK: - Recording Indicator

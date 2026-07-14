@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import UIKit
 
 // MARK: - GSPrimaryButtonStyle
 //
@@ -943,5 +944,441 @@ public struct GSInlineErrorBanner: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
         .background(theme.accent)
+    }
+}
+
+// MARK: - GSTalkingBars
+//
+// Small animated 3-bar level meter — canvas's `gsTalk .9s ease-in-out
+// infinite` staggered treatment (Dossier §A.2 lobby "talking" roster state +
+// PTT "Transmitting" trailing meter). Purely decorative — not driven by live
+// audio levels (`VoiceRoomService` exposes no metering API), same honesty
+// note as `ChatView.RecordingWaveformView`, which this mirrors.
+
+struct GSTalkingBars: View {
+    let color: Color
+    var barWidth: CGFloat = 3
+    var maxHeight: CGFloat = 14
+
+    @State private var animate = false
+
+    private static let heightScales: [CGFloat] = [0.5, 1.0, 0.7]
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 2) {
+            ForEach(Array(Self.heightScales.enumerated()), id: \.offset) { index, scale in
+                Capsule()
+                    .fill(color)
+                    .frame(width: barWidth, height: animate ? maxHeight * scale : maxHeight * scale * 0.35)
+                    .animation(
+                        .easeInOut(duration: 0.45)
+                            .repeatForever(autoreverses: true)
+                            .delay(Double(index) * 0.3),
+                        value: animate
+                    )
+            }
+        }
+        .frame(height: maxHeight)
+        .onAppear { animate = true }
+    }
+}
+
+// MARK: - GSConnectingVoicePill
+//
+// "Connecting voice…" header pill — pulsing accent dot + bold label, 1px
+// divider border (Dossier §A.2: the lobby header and the live-session header
+// both show this identical pill while `VoiceRoomService.state == .connecting`).
+// Same contract as `GSOfflineBanner` above: this view has no opinion on when
+// to show — callers gate visibility (`if case .connecting = ...`).
+
+struct GSConnectingVoicePill: View {
+    @Environment(\.gsTheme) private var theme
+    @State private var isDimmed = false
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(theme.accent)
+                .frame(width: 7, height: 7)
+                .opacity(isDimmed ? 0.35 : 1)
+            Text("Connecting voice…")
+                .font(GSFont.bold(11, relativeTo: .caption2))
+                .foregroundStyle(theme.text)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 4)
+        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) {
+                isDimmed = true
+            }
+        }
+    }
+}
+
+// MARK: - GSVoiceUnavailableBanner
+//
+// Degraded-voice banner — accent left-border card, mic-slash icon, "Voice
+// unavailable" title + message, secondary "Retry" button (Dossier §A.2's
+// lobby "Voice unavailable / Couldn't join the room" frame + the live-session
+// dock's "persistent card elev-sm degraded banner"). No shipped precedent
+// existed for this exact shape (grepped the codebase — nothing named
+// voice-unavailable/GSErrorCard-adjacent matched it), so this is a fresh,
+// small component rather than a reuse; `GSErrorCard` above was considered
+// but its centered-icon-square layout doesn't match the canvas's inline
+// left-border card, so it wasn't retrofit here.
+
+struct GSVoiceUnavailableBanner: View {
+    @Environment(\.gsTheme) private var theme
+
+    let message: String
+    let retry: () -> Void
+
+    init(message: String = "Couldn't join the room. Text and soundboard still work.",
+         retry: @escaping () -> Void) {
+        self.message = message
+        self.retry = retry
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "mic.slash")
+                .font(.system(size: 18, weight: .regular))
+                .foregroundStyle(theme.accent)
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Voice unavailable")
+                    .font(GSFont.bold(14, relativeTo: .headline))
+                    .foregroundStyle(theme.text)
+                Text(message)
+                    .font(GSFont.body(12, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+            }
+
+            Spacer(minLength: 8)
+
+            Button("Retry", action: retry)
+                .buttonStyle(GSSecondaryButtonStyle(fontSize: 13, horizontalPadding: 12, verticalPadding: 8))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(theme.surface)
+        .overlay(alignment: .leading) {
+            Rectangle()
+                .fill(theme.accent)
+                .frame(width: 3)
+        }
+        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+    }
+}
+
+// MARK: - PTTDockRow
+//
+// Shared live-voice push-to-talk dock control for LobbyView +
+// GroupSessionLiveView (Dossier §A.2: "the same idle/connecting/unavailable/
+// denied states that live in the lobby, shown in the live-session dock").
+// Fully self-contained — reads/drives `VoiceRoomService.shared` directly, no
+// parameters needed (mirrors `GSTabBar`'s note above: `VoiceRoomState`/
+// `TransmitState` are internal types, so this type and its properties are
+// deliberately NOT `public`, same access-level reasoning). Renders one of the
+// task brief's "four states exactly":
+//   .idle / .connected(.muted)   -> "idle" row (mic outline, tap/hold hint)
+//   .connected(.transmitting)    -> "transmitting" row (accent fill, bars)
+//   .connecting                  -> "connecting" row (dimmed, spinner)
+//   .micDenied                   -> single full-width "open Settings" row
+//   .unavailable                 -> dashed, muted "Voice unavailable" row
+//     (pairs with `GSVoiceUnavailableBanner`, shown by the caller above the
+//     dock per the degraded-banner frame)
+//
+// Gesture (Task 4 AMENDMENT, 2026-07-14 — overrides the brief's hold-only
+// text): the mic control supports BOTH tap-to-toggle (mic stays open
+// hands-free until tapped again) and hold-to-talk (walkie-talkie; release
+// ALWAYS mutes a HELD transmission, never a toggled-open one). Built on
+// `onLongPressGesture(minimumDuration:pressing:perform:)` — the same gesture
+// primitive ChatView's `micButton` (Task 3c) uses — with `minimumDuration`
+// serving as the tap/hold cutoff: `perform` fires exactly when a press
+// crosses the hold threshold while still down (walkie-talkie begins then);
+// `pressing(false)` fires on EVERY release regardless of whether `perform`
+// ever fired, which is what lets a plain tap be told apart from a hold
+// release after the fact, via `isHeldTransmitOwnedByThisPress`.
+
+struct PTTDockRow: View {
+    @Environment(\.gsTheme) private var theme
+
+    /// True from the moment THIS press crosses the hold threshold (`perform`
+    /// fired) until the next press-down resets it — regardless of whether
+    /// that threshold-crossing actually started a transmission. Needed to
+    /// tell "a genuine tap" apart from "a hold that started while the mic
+    /// was already toggled open" on release — both leave
+    /// `isHeldTransmitOwnedByThisPress` false, but only the former should
+    /// fall through to tap-toggle (see `handleRelease`).
+    @State private var holdThresholdCrossedThisPress = false
+
+    /// True once THIS press has actually begun a walkie-talkie transmission
+    /// (i.e. the hold threshold fired AND the mic was muted at that moment,
+    /// so `beginTransmit()` actually ran and actually flipped the service to
+    /// `.transmitting`). Only when this is true does release call
+    /// `endTransmit()` — a hold gesture that starts while the mic is ALREADY
+    /// tap-toggled open must never mute it on release (amendment: "a
+    /// tap-toggled-open mic is never auto-muted by release").
+    @State private var isHeldTransmitOwnedByThisPress = false
+
+    /// The in-flight `beginTransmit()` attempt kicked off by the current
+    /// press's hold-threshold crossing, if any. `handleRelease` awaits this
+    /// before deciding what release means — without it, a hold released a
+    /// few milliseconds after crossing the threshold could read
+    /// `isHeldTransmitOwnedByThisPress` before the begin-transmit `Task` has
+    /// actually finished setting it, take the "no-op" branch, and leave the
+    /// mic stuck open (nothing else would ever call `endTransmit()` for that
+    /// press).
+    @State private var holdBeginTask: Task<Void, Never>?
+
+    /// True while the mic is open via TAP (hands-free, sustained) rather
+    /// than an in-progress hold. Purely a copy/label switch for the
+    /// "transmitting" row — `VoiceRoomService` itself has no concept of WHY
+    /// it's transmitting, only that it is (see its state machine doc
+    /// comment), so this distinction lives entirely in this view.
+    @State private var isToggledOpen = false
+
+    private static let holdThreshold: TimeInterval = 0.35
+
+    private var voice: VoiceRoomService { .shared }
+
+    var body: some View {
+        switch voice.state {
+        case .micDenied:
+            deniedRow
+        case .unavailable:
+            unavailableRow
+        case .connecting:
+            connectingRow
+        case .connected(.transmitting):
+            transmittingRow
+        case .idle, .connected(.muted):
+            idleRow
+        }
+    }
+
+    // MARK: Idle — canvas "Hold to talk"; amendment copy below
+
+    private var idleRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "mic")
+                .font(.system(size: 17, weight: .regular))
+                .foregroundStyle(theme.accent)
+            Text("Tap to talk · hold to talk live")
+                .font(GSFont.bold(14, relativeTo: .body))
+                .foregroundStyle(theme.text)
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 13)
+        .frame(minHeight: 44)
+        .background(theme.surface)
+        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .contentShape(Rectangle())
+        .modifier(PTTPressGesture(threshold: Self.holdThreshold,
+                                   onPressBegan: handlePressBegan,
+                                   onHoldThresholdCrossed: handleHoldThresholdCrossed,
+                                   onRelease: handleRelease))
+    }
+
+    // MARK: Transmitting — canvas "Release to stop"; amendment "Mic open · tap to mute"
+
+    private var transmittingRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "mic.fill")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(theme.bg)
+            Text(isToggledOpen ? "Mic open · tap to mute" : "Release to stop")
+                .font(GSFont.bold(14, relativeTo: .body))
+                .foregroundStyle(theme.bg)
+            Spacer()
+            GSTalkingBars(color: theme.bg, barWidth: 3, maxHeight: 14)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 13)
+        .frame(minHeight: 44)
+        .background(theme.accent)
+        .contentShape(Rectangle())
+        .modifier(PTTPressGesture(threshold: Self.holdThreshold,
+                                   onPressBegan: handlePressBegan,
+                                   onHoldThresholdCrossed: handleHoldThresholdCrossed,
+                                   onRelease: handleRelease))
+    }
+
+    // MARK: Connecting — canvas: secondary style, 75% opacity, spinner
+
+    private var connectingRow: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+                .controlSize(.small)
+                .tint(theme.accent)
+            Text("Connecting voice…")
+                .font(GSFont.bold(14, relativeTo: .body))
+                .foregroundStyle(theme.text)
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 13)
+        .frame(minHeight: 44)
+        .background(theme.surface)
+        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .opacity(0.75)
+    }
+
+    // MARK: Mic denied — entire row becomes one "open Settings" button
+
+    private var deniedRow: some View {
+        Button {
+            if let url = URL(string: UIApplication.openSettingsURLString) {
+                UIApplication.shared.open(url)
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "mic.slash")
+                    .font(.system(size: 17, weight: .regular))
+                    .foregroundStyle(theme.accent)
+                Text("Mic access off — turn on in Settings")
+                    .font(GSFont.bold(14, relativeTo: .body))
+                    .foregroundStyle(theme.text)
+                Spacer()
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(theme.accent700)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 13)
+            .frame(minHeight: 44)
+            .background(theme.bg)
+            .overlay(Rectangle().strokeBorder(theme.accent, lineWidth: 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: Unavailable — dashed, muted; pairs with `GSVoiceUnavailableBanner` above the dock
+
+    private var unavailableRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "mic.slash")
+                .font(.system(size: 17, weight: .regular))
+                .foregroundStyle(theme.neutral500)
+            Text("Voice unavailable")
+                .font(GSFont.bold(14, relativeTo: .body))
+                .foregroundStyle(theme.neutral500)
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 13)
+        .frame(minHeight: 44)
+        .background(theme.surface)
+        .overlay(
+            Rectangle()
+                .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                .foregroundStyle(theme.neutral400)
+        )
+    }
+
+    // MARK: - Gesture handlers
+    //
+    // Edge cases double-checked (Task 4 self-review contract):
+    //   - tap while held-transmitting: not reachable through a single
+    //     press/release cycle on one button — a "tap" IS a full press+
+    //     release under threshold, so it can't overlap a still-down hold.
+    //   - hold while toggled-open: `handleHoldThresholdCrossed`'s guard
+    //     requires `.connected(.muted)`, so it never sets
+    //     `isHeldTransmitOwnedByThisPress` here; `handleRelease` falls to
+    //     the "threshold crossed but not owned" no-op branch, leaving the
+    //     toggled-open mic untouched.
+    //   - release ordering: `handleRelease` awaits `holdBeginTask` (the
+    //     in-flight `beginTransmit()` from this same press) before reading
+    //     `isHeldTransmitOwnedByThisPress`, so a release that lands a few ms
+    //     after the threshold fires can never observe a mid-flight value and
+    //     strand the mic open.
+    //   - disappear during transmit: handled at the service layer, not
+    //     here — `VoiceRoomService.leave()` unconditionally restores `.idle`
+    //     regardless of transmit state, and any stale `endTransmit()` this
+    //     view's Task still fires afterward is a guarded no-op (state is no
+    //     longer `.connected`). See `LobbyView`/`GroupSessionLiveView`'s
+    //     `onDisappear`.
+
+    private func handlePressBegan() {
+        holdThresholdCrossedThisPress = false
+        isHeldTransmitOwnedByThisPress = false
+    }
+
+    private func handleHoldThresholdCrossed() {
+        holdThresholdCrossedThisPress = true
+        holdBeginTask = Task {
+            guard case .connected(.muted) = voice.state else { return }
+            await voice.beginTransmit()
+            if case .connected(.transmitting) = voice.state {
+                isHeldTransmitOwnedByThisPress = true
+            }
+        }
+    }
+
+    private func handleRelease() {
+        Task {
+            // Settle any in-flight begin-transmit from this same press
+            // before deciding what release means (see doc comment above).
+            await holdBeginTask?.value
+            holdBeginTask = nil
+
+            if isHeldTransmitOwnedByThisPress {
+                isHeldTransmitOwnedByThisPress = false
+                await voice.endTransmit()
+            } else if holdThresholdCrossedThisPress {
+                // Hold crossed the threshold but never owned a transmission
+                // (mic was already toggled open) — release must not touch
+                // mute state at all.
+            } else {
+                await handleTapToggle()
+            }
+        }
+    }
+
+    private func handleTapToggle() async {
+        switch voice.state {
+        case .connected(.muted):
+            await voice.beginTransmit()
+            if case .connected(.transmitting) = voice.state {
+                isToggledOpen = true
+            }
+        case .connected(.transmitting):
+            await voice.endTransmit()
+            isToggledOpen = false
+        default:
+            break
+        }
+    }
+}
+
+// MARK: - PTTPressGesture
+//
+// Wraps `onLongPressGesture(minimumDuration:pressing:perform:)` so
+// `PTTDockRow`'s two interactive rows (idle/transmitting) share one gesture
+// wiring instead of duplicating the modifier call — see `PTTDockRow`'s doc
+// comment for why a single `onLongPressGesture` is enough to derive both tap
+// and hold behavior.
+
+private struct PTTPressGesture: ViewModifier {
+    let threshold: TimeInterval
+    let onPressBegan: () -> Void
+    let onHoldThresholdCrossed: () -> Void
+    let onRelease: () -> Void
+
+    func body(content: Content) -> some View {
+        content.onLongPressGesture(minimumDuration: threshold, pressing: { pressing in
+            if pressing {
+                onPressBegan()
+            } else {
+                onRelease()
+            }
+        }, perform: {
+            onHoldThresholdCrossed()
+        })
     }
 }

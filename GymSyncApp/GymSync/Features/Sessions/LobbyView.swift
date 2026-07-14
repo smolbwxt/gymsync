@@ -80,6 +80,25 @@ struct LobbyView: View {
 
     private var isCheckedIn: Bool { ownParticipant?.checkInState == "ready" }
 
+    // MARK: - Voice (Task 4 — PTT dock, Dossier §A.1's locked session-state scope)
+
+    /// Session states the spec (Dossier §A.1) says voice should be live for.
+    /// Matches the `sessions.state` check constraint enum minus the
+    /// non-actionable states (`scheduled`, `completed`, `abandoned`).
+    private static let voiceEligibleStates: Set<String> = [
+        "lobby_open", "editing", "voting", "locked", "in_progress"
+    ]
+
+    private var isVoiceEligible: Bool {
+        Self.voiceEligibleStates.contains(effectiveSession.state)
+    }
+
+    @MainActor
+    private func joinVoiceIfEligible() async {
+        guard isVoiceEligible else { return }
+        await VoiceRoomService.shared.join(sessionID: effectiveSession.id)
+    }
+
     /// Check-in opens 20 minutes before the scheduled start (server-enforced too —
     /// see `supabase/migrations/20260715000003_checkin_window.sql`). `nil` when the
     /// session has no `scheduledFor` (shouldn't happen for a lobby, but fail open
@@ -142,6 +161,18 @@ struct LobbyView: View {
                     .padding(.horizontal, 16)
                     .padding(.top, 14)
 
+                // Voice degraded banner (Dossier §A.2 lobby frame) — sits
+                // beside the roster it degrades, not pinned to the dock
+                // (contrast the live-session dock, which pins its own copy
+                // of this banner above the sticky dock per that frame).
+                if case .unavailable = VoiceRoomService.shared.state {
+                    GSVoiceUnavailableBanner(retry: {
+                        Task { await VoiceRoomService.shared.retry() }
+                    })
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
+                }
+
                 // Participants "Who's here"
                 participantsSection
 
@@ -167,7 +198,19 @@ struct LobbyView: View {
         }
         .background(theme.bg)
         .safeAreaInset(edge: .bottom) {
-            actionBar
+            VStack(spacing: 0) {
+                // ── PUSH-TO-TALK DOCK ────────────────────────────────────
+                // Open layout question flagged by Dossier §A.2 (never
+                // resolved there): whether the PTT dock replaces, stacks
+                // above, or sits below the existing `actionBar`. ASSUMPTION
+                // (judgment call, no design ruling to follow): stacks above,
+                // matching how GroupSessionLiveView already stacks its own
+                // soundboard dock above its bottom action bar.
+                if isVoiceEligible {
+                    PTTDockRow()
+                }
+                actionBar
+            }
         }
         // Pushed detail screen with its own bottom-pinned action bar — see
         // GSComponents.swift's GSHidesDock for why the custom dock can't just
@@ -176,6 +219,12 @@ struct LobbyView: View {
         .navigationTitle(groupName.map { "Lobby · \($0)" } ?? "Lobby")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            // Header "Connecting voice…" pill (Dossier §A.2 lobby frame).
+            if case .connecting = VoiceRoomService.shared.state {
+                ToolbarItem(placement: .topBarTrailing) {
+                    GSConnectingVoicePill()
+                }
+            }
             if isManageVisible {
                 ToolbarItem(placement: .topBarTrailing) {
                     manageMenu
@@ -187,7 +236,20 @@ struct LobbyView: View {
             guard scenePhase == .active else { return }
             Task { await reload() }
         }
-        .onDisappear { Task { await realtime.unsubscribe() } }
+        .onDisappear {
+            Task { await realtime.unsubscribe() }
+            // Voice room persists across the Lobby -> live-session
+            // transition (same session, same `VoiceRoomService` instance —
+            // see its own doc comment on why `join()` no-ops while already
+            // connecting/connected). `navigateToInProgress` is the exact
+            // signal `startSession()` sets right before that push, so it
+            // doubles as the identity guard here: only leave voice when this
+            // disappearance is NOT that push (i.e. the user backed out of
+            // the lobby before starting the session).
+            if !navigateToInProgress {
+                Task { await VoiceRoomService.shared.leave() }
+            }
+        }
         // Proposal composer sheet
         .sheet(isPresented: $showProposalComposer) {
             proposalComposerSheet
@@ -502,7 +564,19 @@ struct LobbyView: View {
     private func participantRow(
         _ item: (participant: SessionParticipant, profile: Profile)
     ) -> some View {
-        HStack(spacing: 10) {
+        // Speaking ring (Task 4, Dossier §A.2 lobby "Who's here · voice on"
+        // strip's "talking" state) — accent border + animated bars + label,
+        // driven by `speakingParticipantIDs` (LiveKit identity = user UUID
+        // string, per T1). Only the "talking" sub-state is derivable from
+        // `VoiceRoomService`'s current surface — it exposes no roster of
+        // who else has joined the room at all, so the strip's "listening"/
+        // "muted" sub-states for OTHER participants can't be rendered
+        // honestly here; deliberately left as the existing check-in-only row
+        // when not speaking.
+        let isSpeaking = VoiceRoomService.shared.speakingParticipantIDs
+            .contains(item.participant.userID.uuidString)
+
+        return HStack(spacing: 10) {
             // Presence dot + initials avatar
             ZStack(alignment: .bottomTrailing) {
                 let initials = String(item.profile.username.prefix(2)).uppercased()
@@ -532,6 +606,15 @@ struct LobbyView: View {
                     .foregroundStyle(theme.neutral500)
             }
 
+            if isSpeaking {
+                HStack(spacing: 4) {
+                    GSTalkingBars(color: theme.accent700, barWidth: 2, maxHeight: 10)
+                    Text("talking")
+                        .font(GSFont.bold(9, relativeTo: .caption2))
+                        .foregroundStyle(theme.accent700)
+                }
+            }
+
             Spacer()
 
             // Check-in status tag or burpees
@@ -540,7 +623,7 @@ struct LobbyView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(theme.surface)
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(Rectangle().strokeBorder(isSpeaking ? theme.accent : theme.divider, lineWidth: isSpeaking ? 2 : 1))
     }
 
     @ViewBuilder
@@ -851,6 +934,13 @@ struct LobbyView: View {
         } catch {
             errorText = error.localizedDescription
         }
+
+        // Auto-join voice once eligibility is known (Task 4) — no-ops once
+        // already connecting/connected (VoiceRoomService.join()'s own
+        // idempotent guard), so it's safe to call from every reload(),
+        // including the presence/realtime-triggered ones, not just the
+        // first.
+        await joinVoiceIfEligible()
     }
 
     // MARK: - Check-In
