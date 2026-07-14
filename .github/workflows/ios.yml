@@ -65,6 +65,106 @@ jobs:
             -scheme GymSync \
             -destination "id=$DEST"
 
+  # CI simulator-screenshot pipeline (infra/ci-screenshots): builds the
+  # GymSyncScreenshots scheme (GymSyncUITests only — never the unit-test
+  # scheme above) and uploads the screenshots each test method attaches via
+  # XCTAttachment as a workflow artifact, so a reviewer/agent can visually
+  # verify a build against design proofs without a Mac. `continue-on-error`
+  # at the job level: this pipeline is new and screenshot flakiness (network
+  # timing, simulator quirks) must not block merges while it's hardened —
+  # the artifact existing is the goal, not this job's pass/fail status.
+  screenshots:
+    runs-on: macos-15
+    timeout-minutes: 45
+    needs: build-test
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      # Same as build-test: must run BEFORE xcodegen. TEST_USER_EMAIL/
+      # PASSWORD here double as the UITEST_EMAIL/PASSWORD launch-environment
+      # values passed to the `xcodebuild test` step below (same ci_test_user_2
+      # account GymSyncTests already signs in as).
+      - name: Write Secrets.swift and TestSecrets.swift
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+          TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+          TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+        run: |
+          if [ -n "$SUPABASE_URL" ]; then
+            printf 'import Foundation\n\nenum Secrets {\n    static let supabaseURL = URL(string: "%s")!\n    static let supabaseAnonKey = "%s"\n}\n' \
+              "$SUPABASE_URL" "$SUPABASE_PUBLISHABLE_KEY" > GymSyncApp/GymSync/Config/Secrets.swift
+          else
+            cp GymSyncApp/GymSync/Config/Secrets.swift.template GymSyncApp/GymSync/Config/Secrets.swift
+          fi
+          if [ -n "$TEST_USER_EMAIL" ]; then
+            printf 'import Foundation\n\nenum TestSecrets {\n    static let testUserEmail = "%s"\n    static let testUserPassword = "%s"\n}\n' \
+              "$TEST_USER_EMAIL" "$TEST_USER_PASSWORD" > GymSyncApp/GymSyncTests/TestSecrets.swift
+          else
+            cp GymSyncApp/GymSyncTests/TestSecrets.swift.template GymSyncApp/GymSyncTests/TestSecrets.swift
+          fi
+
+      - name: Generate Xcode project from project.yml
+        run: xcodegen generate --spec GymSyncApp/project.yml --project GymSyncApp
+
+      - name: Run screenshot UI tests
+        working-directory: GymSyncApp
+        # TEST_RUNNER_ prefix required: xcodebuild does NOT pass its own
+        # environment into the UI test runner process on the simulator. It
+        # strips this prefix and injects the remainder (UITEST_EMAIL/
+        # UITEST_PASSWORD) into the runner, where ScreenshotTests reads
+        # ProcessInfo and forwards them via launchEnvironment. Without the
+        # prefix the app sits at Sign in with Apple and every test times out
+        # (run 29297982021).
+        env:
+          TEST_RUNNER_UITEST_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+          TEST_RUNNER_UITEST_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+        run: |
+          # Same simulator-selection logic as build-test.
+          DEST=$(xcrun simctl list devices available | grep -E 'iPhone' | head -1 \
+            | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' | head -1)
+          if [ -z "$DEST" ]; then
+            DEST=$(xcrun simctl list devices available | grep -v '^==' | grep '(' | head -1 \
+              | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' | head -1)
+          fi
+          echo "Using simulator UDID: $DEST"
+          xcodebuild test \
+            -project GymSync.xcodeproj \
+            -scheme GymSyncScreenshots \
+            -destination "id=$DEST" \
+            -resultBundlePath "$RUNNER_TEMP/shots.xcresult"
+
+      # `if: always()` on this and the upload step below: one flaky/failing
+      # tab screenshot must not swallow the screenshots successfully
+      # attached by every OTHER test method in the same xcresult bundle.
+      - name: Export screenshot attachments
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/screens"
+          if [ -d "$RUNNER_TEMP/shots.xcresult" ] && xcrun xcresulttool export attachments \
+            --path "$RUNNER_TEMP/shots.xcresult" \
+            --output-path "$RUNNER_TEMP/screens"; then
+            echo "Exported via 'xcresulttool export attachments'"
+          else
+            echo "'xcresulttool export attachments' unavailable or failed on this Xcode version — falling back to xcparse"
+            brew install chargepoint/xcparse/xcparse
+            xcparse attachments "$RUNNER_TEMP/shots.xcresult" "$RUNNER_TEMP/screens" || true
+          fi
+          echo "Exported files:"
+          ls -la "$RUNNER_TEMP/screens" || true
+
+      - name: Upload screenshots artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-screenshots
+          path: ${{ runner.temp }}/screens
+          if-no-files-found: warn
+
   deploy-testflight:
     runs-on: macos-15
     timeout-minutes: 45

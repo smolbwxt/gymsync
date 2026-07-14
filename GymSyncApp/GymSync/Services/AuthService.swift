@@ -20,6 +20,32 @@ final class AuthService {
     }
 
     func bootstrap() async {
+        #if DEBUG
+        // CI screenshot pipeline (infra/ci-screenshots): a debug-only escape
+        // hatch so `GymSyncScreenshots` UI tests can reach a signed-in state
+        // without automating Sign in with Apple (not automatable against a
+        // real Apple ID in CI). Only engages when BOTH env vars are present —
+        // `ScreenshotTests` sets them via `XCUIApplication.launchEnvironment`;
+        // absent in every other run (including local debug builds and the
+        // regular `GymSyncTests` unit-test target), so this is a no-op there.
+        // Compile-gated out of release builds entirely.
+        if let email = ProcessInfo.processInfo.environment["UITEST_EMAIL"],
+           let password = ProcessInfo.processInfo.environment["UITEST_PASSWORD"] {
+            do {
+                let session = try await SupabaseService.shared.client.auth.signIn(
+                    email: email,
+                    password: password
+                )
+                state = .signedIn(userID: session.user.id)
+                AppLogger.auth.info("UI test autologin succeeded")
+                return
+            } catch {
+                AppLogger.auth.error("UI test autologin failed: \(error.localizedDescription, privacy: .public)")
+                // Fall through to the normal bootstrap path below.
+            }
+        }
+        #endif
+
         if let id = await SupabaseService.shared.currentUserID() {
             state = .signedIn(userID: id)
         } else {

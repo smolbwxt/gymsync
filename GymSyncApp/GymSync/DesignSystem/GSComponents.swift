@@ -274,6 +274,15 @@ public struct GSTabBar: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // Collapses the icon+label VStack into a single accessibility
+        // element with an exact, stable label (matches the pattern already
+        // used by AppearanceView.paletteRow below) — without this, VoiceOver
+        // (and XCUITest's `app.buttons["Home"]` queries, used by the
+        // GymSyncScreenshots UI test target) would see the button's label as
+        // some concatenation of the SF Symbol's own accessible name plus the
+        // title text, which isn't a reliable exact match.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(item.label)
     }
 }
 
@@ -411,6 +420,14 @@ public struct GSSettingsRow: View {
             }
         }
         .buttonStyle(.plain)
+        // No accessibility flattening here: the Button's derived label is
+        // "{title}, {value}" (e.g. "Appearance, Ink"), which is the right
+        // VoiceOver experience — the row announces its current value. UI
+        // tests must match with a BEGINSWITH predicate, not an exact label.
+        // (An .accessibilityElement(children:.ignore) wrapper was tried and
+        // reverted: applied outside a Button it adds a non-interactive Other
+        // element AROUND the button instead of relabeling it — CI run
+        // 29298949155's hierarchy dump has the evidence.)
     }
 }
 

@@ -66,6 +66,23 @@ targets:
     dependencies:
       - target: GymSync
 
+  # CI simulator-screenshot pipeline (infra/ci-screenshots). Deliberately a
+  # separate target/scheme from GymSyncTests: UI tests are much slower than
+  # unit tests and need real Supabase credentials (UITEST_EMAIL/PASSWORD) to
+  # get past sign-in, so they must never run as part of `xcodebuild test
+  # -scheme GymSync` (build-test job) — only via the dedicated
+  # GymSyncScreenshots scheme below.
+  GymSyncUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - GymSyncUITests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: GymSync
+
 schemes:
   GymSync:
     build:
@@ -75,3 +92,15 @@ schemes:
     test:
       targets:
         - GymSyncTests
+
+  # Runs ONLY GymSyncUITests — kept out of the GymSync scheme above so the
+  # regular build-test job's `xcodebuild test -scheme GymSync` never picks up
+  # these slower, credential-dependent UI tests.
+  GymSyncScreenshots:
+    build:
+      targets:
+        GymSync: all
+        GymSyncUITests: [test]
+    test:
+      targets:
+        - GymSyncUITests
