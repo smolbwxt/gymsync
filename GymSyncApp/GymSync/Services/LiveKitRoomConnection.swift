@@ -2,27 +2,26 @@ import Foundation
 import LiveKit
 
 // ASSUMPTIONS — not independently verified against the vendored SDK source
-// (no Mac/Xcode available this session; per the task's process contract, iOS
-// CI's SPM resolution + build is the actual verifier). Everything else in
-// this file's API usage is cited to a specific line in Dossier §B.4 and is
-// high-confidence; these three are not:
+// before first CI run (no Mac/Xcode available this session; per the task's
+// process contract, iOS CI's SPM resolution + build is the actual verifier).
+// Everything else in this file's API usage is cited to a specific line in
+// Dossier §B.4 and is high-confidence. Three were originally flagged
+// unconfirmed; CI round 2 confirmed #1 and #3 compile clean as written, and
+// corrected #2:
 //
-//   1. `LocalTrackPublication.mute()` / `.unmute()` are the correct symbols
-//      for driving hold-to-talk mute semantics. Dossier §B.4 flags this
-//      exact uncertainty verbatim: "the correct symbol is almost certainly
-//      a mute()/unmute() on the microphone LocalTrackPublication itself...
-//      flagged, not independently confirmed this session."
-//   2. `Participant.identity` exposes a `.stringValue` (a typed-ID newtype
-//      wrapper, matching other LiveKit Swift SDK ID conventions) rather than
-//      being a plain `String` already.
-//   3. `Room.add(delegate:)` is the multicast-delegate registration method
-//      (supporting more than one observer) rather than a single `delegate`
-//      settable property.
+//   1. `LocalTrackPublication.mute()` / `.unmute()` for hold-to-talk mute
+//      semantics — CONFIRMED correct by CI (compiled with zero errors).
+//   2. `Participant.identity` — CI corrected this: it's `Participant.Identity?`
+//      (OPTIONAL), not the non-optional type originally assumed. Fixed in
+//      `speakingParticipantsDidChange` below via `compactMap` rather than
+//      force-unwrap or an empty-string fallback.
+//   3. `Room.add(delegate:)` as the multicast-delegate registration method —
+//      CONFIRMED correct by CI (compiled with zero errors).
 //
-// If CI's build-test job fails to compile, these three lines are the first
-// place to look — the fix is contained to this one file. Nothing in
-// VoiceRoomService.swift or VoiceRoomServiceTests.swift depends on the exact
-// symbol names; they only see the `VoiceRoomConnecting` protocol.
+// If CI's build-test job fails to compile here again, these are still the
+// first three symbols to check — the fix is contained to this one file.
+// Nothing in VoiceRoomService.swift or VoiceRoomServiceTests.swift depends on
+// the exact symbol names; they only see the `VoiceRoomConnecting` protocol.
 
 /// Production `VoiceRoomConnecting` conformer — the one file that talks
 /// directly to the LiveKit SDK. `VoiceRoomService` never imports LiveKit or
@@ -79,7 +78,12 @@ final class LiveKitRoomConnection: VoiceRoomConnecting {
     }
 
     fileprivate func speakingParticipantsDidChange(_ participants: [Participant]) {
-        let identities = Set(participants.map { $0.identity.stringValue })
+        // `Participant.identity` is `Participant.Identity?` (confirmed by CI —
+        // optional, not the non-optional type this file originally assumed).
+        // `compactMap` rather than defaulting to "" on nil: a participant
+        // with no identity yet (e.g. mid-handshake) shouldn't be conflated
+        // with another identity-less participant under the same empty key.
+        let identities = Set(participants.compactMap { $0.identity?.stringValue })
         onSpeakingParticipantsChanged?(identities)
     }
 }
