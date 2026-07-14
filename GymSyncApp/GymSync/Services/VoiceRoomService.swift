@@ -86,6 +86,24 @@ struct SystemMicPermissionChecker: MicPermissionChecking {
     }
 }
 
+// MARK: - Audio session seam
+
+/// Abstracts the `AudioSessionManager` voice-mode surface so
+/// `VoiceRoomService`'s enter/exit discipline is hermetically testable
+/// against a spy instead of process-global singleton state (the real
+/// manager's `isInVoiceMode` flag survives across tests, so asserting on it
+/// couples every test to run order — bitten on CI, task-3-report "CI round
+/// 4"). The production conformer is the real `AudioSessionManager` via the
+/// retroactive conformance below — it already exposes exactly this surface,
+/// so the class itself (and its untouchable tests) is unchanged.
+protocol VoiceAudioSessionManaging {
+    var isInVoiceMode: Bool { get }
+    func enterVoiceMode() throws
+    func exitVoiceMode()
+}
+
+extension AudioSessionManager: VoiceAudioSessionManaging {}
+
 // MARK: - Room seam
 
 /// Abstracts the LiveKit `Room` surface `VoiceRoomService` drives (connect +
@@ -145,14 +163,14 @@ final class VoiceRoomService {
 
     private let tokenFetcher: VoiceTokenFetching
     private let micPermission: MicPermissionChecking
-    private let audioSession: AudioSessionManager
+    private let audioSession: VoiceAudioSessionManaging
     private let room: VoiceRoomConnecting
     private var currentSessionID: UUID?
 
     init(
         tokenFetcher: VoiceTokenFetching = SupabaseVoiceTokenFetcher(),
         micPermission: MicPermissionChecking = SystemMicPermissionChecker(),
-        audioSession: AudioSessionManager = .shared,
+        audioSession: VoiceAudioSessionManaging = AudioSessionManager.shared,
         room: VoiceRoomConnecting? = nil
     ) {
         self.tokenFetcher = tokenFetcher

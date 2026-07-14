@@ -1,5 +1,4 @@
 import XCTest
-import AVFoundation
 @testable import GymSync
 
 /// Hermetic tests for `VoiceRoomService`'s state machine, mic-permission
@@ -11,17 +10,17 @@ import AVFoundation
 /// `VoiceRoomConnecting`, the same seam the production `LiveKitRoomConnection`
 /// conforms to, so this file never links against the LiveKit SDK.
 ///
-/// `AudioSessionManager.shared` is used directly (not faked) — it's already
-/// cheaply hermetic on the simulator, exactly like `AudioSessionVoiceModeTests`,
-/// so these tests get real audio-session-restoration verification for free
-/// rather than trusting a mock's bookkeeping.
+/// The audio session is faked via the `VoiceAudioSessionManaging` seam
+/// (`SpyAudioSession` below). The first version of this file asserted against
+/// `AudioSessionManager.shared` directly, which coupled tests to run order:
+/// once the happy-path test completed it left the process-global
+/// `isInVoiceMode` flag true, and the alphabetically-later micDenied test
+/// failed against the polluted singleton (CI run 29307177206). Real
+/// enter/exit ↔ AVAudioSession behavior is covered by
+/// `AudioSessionVoiceModeTests`; these tests own the ORCHESTRATION contract
+/// (when enter/exit are called), which the spy captures more precisely.
 @MainActor
 final class VoiceRoomServiceTests: XCTestCase {
-
-    override func setUp() async throws {
-        try await super.setUp()
-        try AudioSessionManager.shared.configure()
-    }
 
     // MARK: - Fakes
 
@@ -40,6 +39,29 @@ final class VoiceRoomServiceTests: XCTestCase {
     private final class FakeMicPermission: MicPermissionChecking {
         var granted = true
         func requestRecordPermission() async -> Bool { granted }
+    }
+
+    /// Spy for the `VoiceAudioSessionManaging` seam — mirrors the real
+    /// manager's semantics (enter can throw; exit never does; the flag
+    /// tracks the last call) while recording call counts, so tests can
+    /// assert not just the end state but that enter was NEVER called on
+    /// gated paths. Fresh instance per test: zero shared state.
+    private final class SpyAudioSession: VoiceAudioSessionManaging {
+        var enterError: Error?
+        private(set) var enterCallCount = 0
+        private(set) var exitCallCount = 0
+        private(set) var isInVoiceMode = false
+
+        func enterVoiceMode() throws {
+            if let enterError { throw enterError }
+            enterCallCount += 1
+            isInVoiceMode = true
+        }
+
+        func exitVoiceMode() {
+            exitCallCount += 1
+            isInVoiceMode = false
+        }
     }
 
     /// Immediate-return fake that also fires an observation hook at the
@@ -105,8 +127,11 @@ final class VoiceRoomServiceTests: XCTestCase {
     func testJoinTransitionsThroughConnectingToConnectedMuted() async throws {
         let tokenFetcher = FakeTokenFetcher()
         let micPermission = RecordingMicPermission()
+        let audio = SpyAudioSession()
         let room = FakeRoomConnection()
-        let service = VoiceRoomService(tokenFetcher: tokenFetcher, micPermission: micPermission, room: room)
+        let service = VoiceRoomService(
+            tokenFetcher: tokenFetcher, micPermission: micPermission, audioSession: audio, room: room
+        )
 
         guard case .idle = service.state else {
             XCTFail("expected initial state .idle, got \(service.state)"); return
@@ -135,13 +160,15 @@ final class VoiceRoomServiceTests: XCTestCase {
         XCTAssertEqual(tokenFetcher.requestedSessionIDs, [sessionID.uuidString])
         XCTAssertEqual(room.lastConnectURL, "wss://example.livekit.cloud")
         XCTAssertEqual(room.lastConnectToken, "test-token")
-        XCTAssertTrue(AudioSessionManager.shared.isInVoiceMode)
+        XCTAssertEqual(audio.enterCallCount, 1, "join must enter voice mode exactly once")
+        XCTAssertTrue(audio.isInVoiceMode)
     }
 
     func testJoinIsNoOpWhileAlreadyConnected() async throws {
         let room = FakeRoomConnection()
         let service = VoiceRoomService(
-            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(), room: room
+            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(),
+            audioSession: SpyAudioSession(), room: room
         )
 
         await service.join(sessionID: UUID())
@@ -157,8 +184,11 @@ final class VoiceRoomServiceTests: XCTestCase {
         let tokenFetcher = FakeTokenFetcher()
         let micPermission = FakeMicPermission()
         micPermission.granted = false
+        let audio = SpyAudioSession()
         let room = FakeRoomConnection()
-        let service = VoiceRoomService(tokenFetcher: tokenFetcher, micPermission: micPermission, room: room)
+        let service = VoiceRoomService(
+            tokenFetcher: tokenFetcher, micPermission: micPermission, audioSession: audio, room: room
+        )
 
         await service.join(sessionID: UUID())
 
@@ -167,7 +197,7 @@ final class VoiceRoomServiceTests: XCTestCase {
         }
         XCTAssertEqual(room.connectCallCount, 0, "must not attempt to connect when mic permission is denied")
         XCTAssertEqual(tokenFetcher.requestedSessionIDs.count, 0, "must not fetch a token when mic permission is denied")
-        XCTAssertFalse(AudioSessionManager.shared.isInVoiceMode, "must never enter voice mode when mic permission is denied")
+        XCTAssertEqual(audio.enterCallCount, 0, "must never enter voice mode when mic permission is denied")
     }
 
     // MARK: - invoke-failure -> unavailable + audio restored
@@ -175,9 +205,10 @@ final class VoiceRoomServiceTests: XCTestCase {
     func testJoinTokenFetchFailureSetsUnavailableAndRestoresAudio() async throws {
         let tokenFetcher = FakeTokenFetcher()
         tokenFetcher.result = .failure(URLError(.notConnectedToInternet))
+        let audio = SpyAudioSession()
         let room = FakeRoomConnection()
         let service = VoiceRoomService(
-            tokenFetcher: tokenFetcher, micPermission: FakeMicPermission(), room: room
+            tokenFetcher: tokenFetcher, micPermission: FakeMicPermission(), audioSession: audio, room: room
         )
 
         await service.join(sessionID: UUID())
@@ -187,18 +218,18 @@ final class VoiceRoomServiceTests: XCTestCase {
         }
         XCTAssertEqual(room.connectCallCount, 0, "must not attempt to connect when the token fetch itself fails")
         XCTAssertFalse(
-            AudioSessionManager.shared.isInVoiceMode,
-            "audio session must be restored to ambient on token-fetch failure — the Edge Function isn't deployed yet (T5), so this is the failure path Task 3 can actually exercise pre-deploy"
+            audio.isInVoiceMode,
+            "audio session must be restored on token-fetch failure — the Edge Function isn't deployed yet (T5), so this is the failure path Task 3 can actually exercise pre-deploy"
         )
-        XCTAssertEqual(AVAudioSession.sharedInstance().category, .ambient)
-        XCTAssertTrue(AVAudioSession.sharedInstance().categoryOptions.contains(.mixWithOthers))
+        XCTAssertEqual(audio.exitCallCount, 1, "failure path must exit voice mode exactly once")
     }
 
     func testJoinRoomConnectFailureSetsUnavailableAndRestoresAudio() async throws {
         let room = FakeRoomConnection()
         room.connectError = URLError(.timedOut)
+        let audio = SpyAudioSession()
         let service = VoiceRoomService(
-            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(), room: room
+            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(), audioSession: audio, room: room
         )
 
         await service.join(sessionID: UUID())
@@ -206,7 +237,7 @@ final class VoiceRoomServiceTests: XCTestCase {
         guard case .unavailable = service.state else {
             XCTFail("expected .unavailable, got \(service.state)"); return
         }
-        XCTAssertFalse(AudioSessionManager.shared.isInVoiceMode)
+        XCTAssertFalse(audio.isInVoiceMode)
     }
 
     func testRetryReRunsJoinOnceAfterUnavailable() async throws {
@@ -214,7 +245,8 @@ final class VoiceRoomServiceTests: XCTestCase {
         tokenFetcher.result = .failure(URLError(.notConnectedToInternet))
         let room = FakeRoomConnection()
         let service = VoiceRoomService(
-            tokenFetcher: tokenFetcher, micPermission: FakeMicPermission(), room: room
+            tokenFetcher: tokenFetcher, micPermission: FakeMicPermission(),
+            audioSession: SpyAudioSession(), room: room
         )
 
         let sessionID = UUID()
@@ -233,7 +265,8 @@ final class VoiceRoomServiceTests: XCTestCase {
 
     func testRetryIsNoOpWhenNotUnavailable() async throws {
         let service = VoiceRoomService(
-            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(), room: FakeRoomConnection()
+            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(),
+            audioSession: SpyAudioSession(), room: FakeRoomConnection()
         )
         await service.retry() // never joined — must not crash or change state
         guard case .idle = service.state else { XCTFail("expected .idle, got \(service.state)"); return }
@@ -244,7 +277,8 @@ final class VoiceRoomServiceTests: XCTestCase {
     func testBeginAndEndTransmitDriveMuteNotPublish() async throws {
         let room = FakeRoomConnection()
         let service = VoiceRoomService(
-            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(), room: room
+            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(),
+            audioSession: SpyAudioSession(), room: room
         )
         await service.join(sessionID: UUID())
 
@@ -264,7 +298,8 @@ final class VoiceRoomServiceTests: XCTestCase {
 
     func testBeginTransmitIsNoOpWhenNotConnected() async throws {
         let service = VoiceRoomService(
-            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(), room: FakeRoomConnection()
+            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(),
+            audioSession: SpyAudioSession(), room: FakeRoomConnection()
         )
         await service.beginTransmit()
         guard case .idle = service.state else {
@@ -275,7 +310,8 @@ final class VoiceRoomServiceTests: XCTestCase {
     func testEndTransmitIsNoOpWhenAlreadyMuted() async throws {
         let room = FakeRoomConnection()
         let service = VoiceRoomService(
-            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(), room: room
+            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(),
+            audioSession: SpyAudioSession(), room: room
         )
         await service.join(sessionID: UUID())
         await service.endTransmit() // already muted
@@ -286,7 +322,8 @@ final class VoiceRoomServiceTests: XCTestCase {
         let room = FakeRoomConnection()
         room.muteError = URLError(.timedOut)
         let service = VoiceRoomService(
-            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(), room: room
+            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(),
+            audioSession: SpyAudioSession(), room: room
         )
         await service.join(sessionID: UUID())
         await service.beginTransmit()
@@ -299,7 +336,8 @@ final class VoiceRoomServiceTests: XCTestCase {
     func testEndTransmitAlwaysReturnsToMutedEvenOnMuteFailure() async throws {
         let room = FakeRoomConnection()
         let service = VoiceRoomService(
-            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(), room: room
+            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(),
+            audioSession: SpyAudioSession(), room: room
         )
         await service.join(sessionID: UUID())
         await service.beginTransmit()
@@ -319,11 +357,12 @@ final class VoiceRoomServiceTests: XCTestCase {
 
     func testLeaveDisconnectsRestoresAudioAndReturnsIdle() async throws {
         let room = FakeRoomConnection()
+        let audio = SpyAudioSession()
         let service = VoiceRoomService(
-            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(), room: room
+            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(), audioSession: audio, room: room
         )
         await service.join(sessionID: UUID())
-        XCTAssertTrue(AudioSessionManager.shared.isInVoiceMode)
+        XCTAssertTrue(audio.isInVoiceMode)
 
         await service.leave()
 
@@ -332,28 +371,29 @@ final class VoiceRoomServiceTests: XCTestCase {
         }
         XCTAssertEqual(room.disconnectCallCount, 1)
         XCTAssertTrue(service.speakingParticipantIDs.isEmpty)
-        XCTAssertFalse(AudioSessionManager.shared.isInVoiceMode)
-        XCTAssertEqual(AVAudioSession.sharedInstance().category, .ambient)
-        XCTAssertTrue(AVAudioSession.sharedInstance().categoryOptions.contains(.mixWithOthers))
+        XCTAssertFalse(audio.isInVoiceMode)
+        XCTAssertEqual(audio.exitCallCount, 1, "leave must exit voice mode exactly once")
     }
 
     func testLeaveWithoutPriorJoinIsHarmless() async throws {
         let room = FakeRoomConnection()
+        let audio = SpyAudioSession()
         let service = VoiceRoomService(
-            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(), room: room
+            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(), audioSession: audio, room: room
         )
         await service.leave()
         guard case .idle = service.state else {
             XCTFail("expected .idle, got \(service.state)"); return
         }
         XCTAssertEqual(room.disconnectCallCount, 1)
-        XCTAssertFalse(AudioSessionManager.shared.isInVoiceMode)
+        XCTAssertFalse(audio.isInVoiceMode)
     }
 
     func testJoinAfterLeaveCanReconnect() async throws {
         let room = FakeRoomConnection()
         let service = VoiceRoomService(
-            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(), room: room
+            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(),
+            audioSession: SpyAudioSession(), room: room
         )
         await service.join(sessionID: UUID())
         await service.leave()
@@ -370,7 +410,8 @@ final class VoiceRoomServiceTests: XCTestCase {
     func testSpeakingParticipantsChangedCallbackUpdatesPublishedSet() async throws {
         let room = FakeRoomConnection()
         let service = VoiceRoomService(
-            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(), room: room
+            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(),
+            audioSession: SpyAudioSession(), room: room
         )
         await service.join(sessionID: UUID())
 
