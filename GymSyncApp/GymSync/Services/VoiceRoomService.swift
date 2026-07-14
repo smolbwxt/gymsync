@@ -153,12 +153,22 @@ final class VoiceRoomService {
         tokenFetcher: VoiceTokenFetching = SupabaseVoiceTokenFetcher(),
         micPermission: MicPermissionChecking = SystemMicPermissionChecker(),
         audioSession: AudioSessionManager = .shared,
-        room: VoiceRoomConnecting = LiveKitRoomConnection()
+        room: VoiceRoomConnecting? = nil
     ) {
         self.tokenFetcher = tokenFetcher
         self.micPermission = micPermission
         self.audioSession = audioSession
-        self.room = room
+        // `LiveKitRoomConnection()` is @MainActor-isolated (Dossier §B.4's
+        // `Room`/`AudioManager` surface is iOS/visionOS/tvOS-only and this
+        // adapter is written assuming MainActor). Constructing it here, in
+        // the init BODY, rather than as the parameter's default-value
+        // expression, is required: default-argument expressions are
+        // evaluated in a synchronous nonisolated context even when the
+        // enclosing initializer's type is @MainActor, so
+        // `= LiveKitRoomConnection()` directly on the parameter fails to
+        // compile ("call to main actor-isolated initializer in a
+        // synchronous nonisolated context").
+        self.room = room ?? LiveKitRoomConnection()
         self.room.onSpeakingParticipantsChanged = { [weak self] identities in
             self?.speakingParticipantIDs = identities
         }
