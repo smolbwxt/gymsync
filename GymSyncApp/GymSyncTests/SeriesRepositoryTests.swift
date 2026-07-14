@@ -98,6 +98,63 @@ final class SeriesRepositoryTests: XCTestCase {
         }
     }
 
+    // MARK: - Hermetic: until-day boundary (regression, CI run 29307177206)
+
+    /// Pinned-date lock on the until-boundary semantics: an occurrence ON the
+    /// until-day counts even when its time-of-day is later than until's clock
+    /// time (day-inclusive, Teams-style). First caught live on 2026-07-14,
+    /// when the live test's now+13d anchor landed on a series Monday for the
+    /// first time since the test was written.
+    func testOccurrenceDatesIncludesOccurrenceOnUntilDay() throws {
+        let tz = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = tz
+
+        // from: Tue 2026-07-14 01:00 ET; until: Mon 2026-07-27 01:00 ET.
+        // Mon(2)+Wed(4) 18:00 → Wed 15, Mon 20, Wed 22, and Mon 27 18:00 —
+        // the last is AFTER until's 01:00 clock time but ON the until day.
+        let from = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 7, day: 14, hour: 1)))
+        let until = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 7, day: 27, hour: 1)))
+        let days: [SeriesDayInput] = [
+            SeriesDayInput(weekday: 2, hour: 18, minute: 0, routineID: nil),
+            SeriesDayInput(weekday: 4, hour: 18, minute: 0, routineID: nil)
+        ]
+
+        let dates = SeriesRepository.occurrenceDates(days: days, from: from, until: until, timezone: tz).map(\.date)
+
+        XCTAssertEqual(dates.count, 4, "the until-day occurrence must be included (day-inclusive)")
+        let last = try XCTUnwrap(dates.last)
+        XCTAssertEqual(cal.component(.month, from: last), 7)
+        XCTAssertEqual(cal.component(.day, from: last), 27)
+        XCTAssertEqual(cal.component(.hour, from: last), 18)
+    }
+
+    /// The DATE column round-trip must reproduce the same calendar day in the
+    /// series' own timezone. A UTC-pinned parse turned "2026-07-27" into
+    /// Jul 26 20:00 ET — materialization then dropped the final Monday and
+    /// SeriesEditorView prefilled its picker a day early.
+    func testUntilDateRoundTripPreservesDayInSeriesTimezone() throws {
+        let tz = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = tz
+
+        let series = SessionSeries(
+            id: UUID(), groupID: UUID(), organizerID: UUID(),
+            timezone: "America/New_York",
+            untilDateString: "2026-07-27",
+            endedAt: nil, createdAt: Date()
+        )
+        XCTAssertEqual(cal.component(.year, from: series.untilDate), 2026)
+        XCTAssertEqual(cal.component(.month, from: series.untilDate), 7)
+        XCTAssertEqual(cal.component(.day, from: series.untilDate), 27,
+                       "untilDate must land on the stored day in the series timezone, not UTC")
+
+        // Write path mirrors: any moment within the day formats to that day.
+        let lateEvening = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 7, day: 27, hour: 21)))
+        XCTAssertEqual(SessionSeries.dayString(for: lateEvening, in: tz), "2026-07-27",
+                       "21:00 ET must not format as the next UTC day")
+    }
+
     // MARK: - Live DB tests
 
     func testCreateSeriesAndCancelForward() async throws {
