@@ -19,6 +19,8 @@ struct RoutineBuilderView: View {
     @State private var showExercisePicker = false
     @State private var errorText: String?
     @State private var allExercises: [Exercise] = []
+    // Save honors this (private vs public); UI toggle lands in Task 4.
+    @State private var publishAsFeatured = false
 
     var body: some View {
         ScrollView {
@@ -363,7 +365,7 @@ struct RoutineBuilderView: View {
             ownerID: ownerID,
             name: name.trimmingCharacters(in: .whitespaces),
             description: description.isEmpty ? nil : description,
-            visibility: "private",
+            visibility: publishAsFeatured ? "public" : "private",
             createdAt: editing?.createdAt ?? now,
             updatedAt: now
         )

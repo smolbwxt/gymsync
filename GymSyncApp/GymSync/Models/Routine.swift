@@ -79,6 +79,60 @@ enum RoutineRepository {
         } catch { throw ErrorMapping.map(error) }
     }
 
+    /// Public (curator-published) routines with their owner's username, for
+    /// the Library "Featured" shelf. Newest first — frame 3's hero is the
+    /// newest publication.
+    static func publicRoutines() async throws -> [(routine: Routine, ownerUsername: String)] {
+        do {
+            struct RowWithOwner: Decodable {
+                let routine: Routine
+                let owner: OwnerRef
+                struct OwnerRef: Decodable { let username: String }
+                init(from decoder: Decoder) throws {
+                    routine = try Routine(from: decoder)
+                    let c = try decoder.container(keyedBy: JoinKeys.self)
+                    owner = try c.decode(OwnerRef.self, forKey: .profiles)
+                }
+                enum JoinKeys: String, CodingKey { case profiles }
+            }
+            let rows: [RowWithOwner] = try await client
+                .from("routines")
+                .select("*, profiles!routines_owner_id_fkey(username)")
+                .eq("visibility", value: "public")
+                .order("created_at", ascending: false)
+                .execute()
+                .value
+            return rows.map { ($0.routine, $0.owner.username) }
+        } catch { throw ErrorMapping.map(error) }
+    }
+
+    /// "Add to my routines": copies a (public) routine + its exercises into a
+    /// new private routine owned by the caller. Reads are allowed by the
+    /// public-visibility RLS; writes are plain own-row inserts.
+    static func clone(routineID: UUID) async throws -> Routine {
+        guard let userID = await SupabaseService.shared.currentUserID() else {
+            throw GymSyncError.unauthorized
+        }
+        guard let (source, exercises) = try await fetch(id: routineID) else {
+            throw GymSyncError.notFound
+        }
+        let copy = Routine(
+            id: UUID(), ownerID: userID, name: source.name,
+            description: source.description, visibility: "private",
+            createdAt: Date(), updatedAt: Date()
+        )
+        let copiedExercises = exercises.map { ex in
+            RoutineExercise(
+                id: UUID(), routineID: copy.id, exerciseID: ex.exerciseID,
+                position: ex.position, targetSets: ex.targetSets,
+                targetReps: ex.targetReps, targetWeight: ex.targetWeight,
+                restSeconds: ex.restSeconds, notes: ex.notes
+            )
+        }
+        try await save(copy, exercises: copiedExercises)
+        return copy
+    }
+
     /// Bulk routine_exercises lookup — backs the Library list's card body/tags/meta
     /// (needs every visible routine's exercises without N per-routine round-trips).
     static func exercisesForRoutines(ids: [UUID]) async throws -> [RoutineExercise] {
