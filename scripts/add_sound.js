@@ -34,7 +34,14 @@ if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
   process.exit(1);
 }
 
-const [, , filePath, displayName, slugArg] = process.argv;
+// Filter out `--flag value` pairs before the positional destructure, so
+// flags can appear anywhere on the command line without shifting positions.
+const positional = [];
+for (let i = 0; i < process.argv.length; i++) {
+  if (process.argv[i].startsWith('--')) { i++; continue; }
+  positional.push(process.argv[i]);
+}
+const [, , filePath, displayName, slugArg] = positional;
 if (!filePath || !displayName) {
   console.error('Usage: node scripts/add_sound.js <path-to-audio> "<Display Name>" [slug]');
   process.exit(1);
@@ -56,6 +63,33 @@ const slug = (slugArg || displayName)
   .replace(/[^a-z0-9]+/g, '-')
   .replace(/^-+|-+$/g, '');
 const storagePath = `${slug}${ext}`;
+
+const flag = (name) => {
+  const i = process.argv.indexOf(`--${name}`);
+  return i >= 0 ? process.argv[i + 1] : undefined;
+};
+const icon = flag('icon') ?? null;          // e.g. --icon 🥁
+const category = flag('category') ?? null;  // hype|funny|fx
+if (category && !['hype', 'funny', 'fx'].includes(category)) {
+  console.error(`--category must be hype|funny|fx, got "${category}"`);
+  process.exit(1);
+}
+
+// Real duration for PCM WAVs (replaces the hardcoded 1000; non-WAV → null):
+function wavDurationMs(buf) {
+  try {
+    if (buf.toString('ascii', 0, 4) !== 'RIFF' || buf.toString('ascii', 8, 12) !== 'WAVE') return null;
+    let off = 12, byteRate = null;
+    while (off + 8 <= buf.length) {
+      const id = buf.toString('ascii', off, off + 4);
+      const size = buf.readUInt32LE(off + 4);
+      if (id === 'fmt ') byteRate = buf.readUInt32LE(off + 16);
+      if (id === 'data' && byteRate) return Math.round((size / byteRate) * 1000);
+      off += 8 + size + (size % 2);
+    }
+    return null;
+  } catch { return null; }
+}
 
 const headers = {
   apikey: SUPABASE_SECRET_KEY,
@@ -80,7 +114,11 @@ const headers = {
   const db = await fetch(`${SUPABASE_URL}/rest/v1/soundboard_sounds?on_conflict=slug`, {
     method: 'POST',
     headers: { ...headers, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates' },
-    body: JSON.stringify({ slug, display_name: displayName, storage_path: storagePath, duration_ms: 1000 }),
+    body: JSON.stringify({
+      slug, display_name: displayName, storage_path: storagePath,
+      duration_ms: ext === '.wav' ? wavDurationMs(fs.readFileSync(filePath)) : null,
+      icon, category,
+    }),
   });
   if (!db.ok) {
     console.error(`  DB upsert failed: ${db.status} ${await db.text()}`);
