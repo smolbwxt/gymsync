@@ -71,7 +71,8 @@ final class CurationRepositoryTests: XCTestCase {
 
         XCTAssertEqual(copy.visibility, "private")
         XCTAssertEqual(copy.name, "Clone Source")
-        let (_, copiedEx) = try XCTUnwrap(try await RoutineRepository.fetch(id: copy.id))
+        let fetchedCopy = try await RoutineRepository.fetch(id: copy.id)
+        let (_, copiedEx) = try XCTUnwrap(fetchedCopy)
         XCTAssertEqual(copiedEx.count, 1)
         XCTAssertEqual(copiedEx.first?.targetReps, "10")
     }
