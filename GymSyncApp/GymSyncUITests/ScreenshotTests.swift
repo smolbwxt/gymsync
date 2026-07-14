@@ -55,6 +55,12 @@ final class ScreenshotTests: XCTestCase {
     private func waitForTabBar(_ app: XCUIApplication) -> Bool {
         let homeTab = app.buttons["Home"]
         let appeared = homeTab.waitForExistence(timeout: launchTimeout)
+        if !appeared {
+            // Ship a PNG of whatever screen the app is stuck on — the first
+            // pipeline failure was only diagnosable by frame-extracting the
+            // failure .mp4s; this puts the answer straight in the artifact.
+            attachScreenshot(app, named: "launch-failed.png")
+        }
         XCTAssertTrue(appeared, "Tab bar did not appear within \(launchTimeout)s — autologin, profile load, or app launch may have failed")
         return appeared
     }

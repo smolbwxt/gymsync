@@ -113,9 +113,16 @@ jobs:
 
       - name: Run screenshot UI tests
         working-directory: GymSyncApp
+        # TEST_RUNNER_ prefix required: xcodebuild does NOT pass its own
+        # environment into the UI test runner process on the simulator. It
+        # strips this prefix and injects the remainder (UITEST_EMAIL/
+        # UITEST_PASSWORD) into the runner, where ScreenshotTests reads
+        # ProcessInfo and forwards them via launchEnvironment. Without the
+        # prefix the app sits at Sign in with Apple and every test times out
+        # (run 29297982021).
         env:
-          UITEST_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
-          UITEST_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+          TEST_RUNNER_UITEST_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+          TEST_RUNNER_UITEST_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
         run: |
           # Same simulator-selection logic as build-test.
           DEST=$(xcrun simctl list devices available | grep -E 'iPhone' | head -1 \
