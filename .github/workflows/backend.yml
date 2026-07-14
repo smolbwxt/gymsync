@@ -28,9 +28,12 @@ jobs:
 
   deno-test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        function: [push-dispatcher, livekit-token]
     defaults:
       run:
-        working-directory: supabase/functions/push-dispatcher
+        working-directory: supabase/functions/${{ matrix.function }}
     steps:
       - uses: actions/checkout@v4
       - uses: denoland/setup-deno@v2
@@ -61,6 +64,6 @@ jobs:
         if: env.SUPABASE_ACCESS_TOKEN != ''
         with:
           version: latest
-      - name: Deploy push-dispatcher
+      - name: Deploy push-dispatcher and livekit-token
         if: env.SUPABASE_ACCESS_TOKEN != ''
-        run: supabase functions deploy push-dispatcher --project-ref chjkkwqwdlmaxacwglzm
+        run: supabase functions deploy push-dispatcher livekit-token --project-ref chjkkwqwdlmaxacwglzm
