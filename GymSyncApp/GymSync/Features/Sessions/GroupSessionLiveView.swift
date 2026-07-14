@@ -18,8 +18,11 @@ import SwiftUI
 //   • Penalty banner (accent fill, unchanged): "YOU OWE N burpees" + Log burpees button
 //     (still opens LogSetSheet — burpee logging is out of the proof's scope for this view).
 //   • Set feed: reverse-chron rows, cap 30, penalty rows tagged (unchanged).
-//   • Soundboard dock (unchanged, Task 3c): horizontally scrolling sound tiles (4 slugs)
-//     + reaction pills (🔥💪😂👏), tapping plays locally + broadcasts.
+//   • Soundboard dock — favorites ribbon (Content Curation Task 3): "YOUR SOUNDS"
+//     kicker + Edit row, up to 4 favorite tiles (or the first 4 curated catalog
+//     sounds until favorites are chosen) + dashed "All" tile, both opening
+//     SoundLibrarySheet; tapping a tile plays locally + broadcasts (unchanged
+//     send path). Reaction pills (🔥💪😂👏) unchanged, below the ribbon.
 //   • Reaction overlay: incoming reactions float up as emoji pills (2s, opacity + offset).
 //   • Soundboard overlay: incoming sounds show transient "{username} 🔊 {name}" line.
 //   • PR Celebration: full-screen, USER-DISMISSED moment (p29) — replaces the old
@@ -49,8 +52,16 @@ struct GroupSessionLiveView: View {
     // MARK: - Soundboard & broadcast state
 
     @State private var broadcastService = SessionBroadcastService()
-    /// Catalog of (slug, displayName) pairs, populated async on first appear.
-    @State private var soundCatalog: [(slug: String, name: String)] = []
+    /// Full sound catalog (Task 3 — favorites ribbon + library sheet), populated
+    /// async on first appear. Failures degrade to an empty catalog silently —
+    /// `dockSounds` below falls back to the curated-first-4 behavior either way.
+    @State private var soundCatalog: [SoundboardSound] = []
+    /// User's chosen favorite slugs (ordered, max 4), populated async on first
+    /// appear from `SoundboardFavoritesRepository.get()`. Empty until chosen.
+    @State private var soundFavorites: [String] = []
+    /// Presents `SoundLibrarySheet` — both the dock's "Edit" and "All" affordances
+    /// open the same sheet.
+    @State private var showSoundLibrary = false
     /// 1-second local gate: prevents double-fire and keeps local + remote in sync.
     @State private var lastSoundTapAt: Date = .distantPast
     /// Transient incoming-sound overlay: "{username} 🔊 {name}" — cleared after 2.5s.
@@ -110,16 +121,14 @@ struct GroupSessionLiveView: View {
     @State private var prOverlayPriorBest: Decimal = 0
     @State private var prOverlayMonthlyCount: Int? = nil
 
-    /// Fixed slug list — display names fetched async from the catalog.
-    private let soundSlugs = ["airhorn", "lets-go", "ding", "boo"]
-    /// Per-slug icon so soundboard tiles are visually differentiated (per proof) —
-    /// client-side mapping only; does not touch the `soundboard_sounds` catalog content.
-    private let soundIcons: [String: String] = [
-        "airhorn": "megaphone.fill",
-        "lets-go": "bolt.fill",
-        "ding":    "bell.fill",
-        "boo":     "hand.thumbsdown.fill"
-    ]
+    /// Frame 1: the dock shows the user's 4 favorites; before any are chosen,
+    /// the first four curated catalog sounds (matches today's fixed set).
+    private var dockSounds: [SoundboardSound] {
+        let bySlug = Dictionary(uniqueKeysWithValues: soundCatalog.map { ($0.slug, $0) })
+        let chosen = soundFavorites.compactMap { bySlug[$0] }
+        if !chosen.isEmpty { return Array(chosen.prefix(4)) }
+        return Array(soundCatalog.filter(\.isCurated).prefix(4))
+    }
     /// Reaction emojis per canvas reaction strip.
     private let reactionEmojis = ["🔥", "💪", "😂", "👏"]
 
@@ -568,50 +577,82 @@ struct GroupSessionLiveView: View {
     }
 
     // MARK: - Soundboard Dock
-    // Canvas gs-dock-scroll strip: HYPE kicker + sound tiles + divider + reaction pills.
+    // Frame 1 (favorites ribbon): "YOUR SOUNDS" kicker + Edit row, 4 favorite
+    // tiles + dashed "All" expand button — sits above the reaction-pill strip
+    // (unchanged) and the PTT dock. Both Edit and All open SoundLibrarySheet.
 
     private var soundboardDock: some View {
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 10) {
             GSDivider()
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 5) {
-                    // Section kicker
-                    Text("HYPE")
-                        .font(GSFont.bold(9, relativeTo: .caption2))
-                        .tracking(0.8)
-                        .foregroundStyle(theme.neutral500)
-                        .fixedSize()
 
-                    // Sound tiles
-                    ForEach(soundSlugs, id: \.self) { slug in
-                        let name = soundCatalog.first(where: { $0.slug == slug })?.name
-                            ?? slug.uppercased()
+            VStack(alignment: .leading, spacing: 10) {
+                // "YOUR SOUNDS" kicker + Edit
+                HStack {
+                    Text("YOUR SOUNDS")
+                        .font(GSFont.bold(9, relativeTo: .caption2))
+                        .tracking(0.9)
+                        .foregroundStyle(theme.neutral500)
+                    Spacer()
+                    Button {
+                        showSoundLibrary = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text("Edit")
+                                .font(GSFont.bold(11, relativeTo: .caption))
+                            Image(systemName: "viewfinder")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .foregroundStyle(theme.accent700)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                // Favorite tiles + "All" expand button
+                HStack(spacing: 6) {
+                    ForEach(dockSounds) { sound in
                         Button {
-                            Task { await tapSound(slug: slug) }
+                            Task { await tapSound(slug: sound.slug) }
                         } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: soundIcons[slug] ?? "speaker.wave.1")
-                                    .font(.system(size: 9, weight: .semibold))
-                                Text(name.uppercased())
+                            VStack(spacing: 4) {
+                                Text(sound.icon ?? "🔊")
+                                    .font(.system(size: 22))
+                                Text(sound.label)
                                     .font(GSFont.bold(10, relativeTo: .caption2))
+                                    .lineLimit(1)
                             }
-                            .foregroundStyle(theme.accent)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 6)
-                            .background(theme.accent100)
-                            .overlay(Rectangle().strokeBorder(theme.accent, lineWidth: 1))
+                            .foregroundStyle(theme.text)
+                            .frame(maxWidth: .infinity, minHeight: 44)
+                            .padding(.vertical, 10)
+                            .padding(.horizontal, 4)
+                            .background(theme.surface)
+                            .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
                         }
                         .buttonStyle(.plain)
-                        .fixedSize()
                     }
 
-                    // Vertical separator
-                    Rectangle()
-                        .fill(theme.divider)
-                        .frame(width: 1, height: 20)
-                        .fixedSize()
+                    Button {
+                        showSoundLibrary = true
+                    } label: {
+                        VStack(spacing: 4) {
+                            Image(systemName: "square.grid.2x2")
+                                .font(.system(size: 16, weight: .semibold))
+                            Text("All")
+                                .font(GSFont.bold(9, relativeTo: .caption2))
+                        }
+                        .foregroundStyle(theme.accent)
+                        .frame(width: 52, minHeight: 44)
+                        .overlay(Rectangle().strokeBorder(theme.accent, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Open sound library")
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 9)
 
-                    // Reaction pills
+            // Reaction pills (unchanged — out of Task 3's scope).
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 5) {
                     ForEach(reactionEmojis, id: \.self) { emoji in
                         Button {
                             Task { await tapReaction(emoji: emoji) }
@@ -628,9 +669,20 @@ struct GroupSessionLiveView: View {
                     }
                 }
                 .padding(.horizontal, 12)
-                .padding(.vertical, 9)
             }
-            .background(theme.bg)
+            .padding(.bottom, 9)
+        }
+        .background(theme.bg)
+        .sheet(isPresented: $showSoundLibrary) {
+            SoundLibrarySheet(
+                catalog: soundCatalog,
+                favorites: soundFavorites,
+                onFavoritesChanged: { updated in
+                    soundFavorites = updated
+                    Task { try? await SoundboardFavoritesRepository.set(updated) }
+                },
+                onSend: { slug in Task { await tapSound(slug: slug) } }
+            )
         }
     }
 
@@ -1470,25 +1522,16 @@ struct GroupSessionLiveView: View {
                 }
             }
         )
-        // Pre-fetch sound catalog display names and subscribe to broadcast.
-        await loadSoundCatalog()
+        // Favorites ribbon (Task 3): catalog + chosen favorites. Failures degrade
+        // to the curated-first-4 fallback in `dockSounds` — never blocks the session.
+        soundCatalog = (try? await SoundboardRepository.fetchCatalog()) ?? []
+        soundFavorites = (try? await SoundboardFavoritesRepository.get()) ?? []
         await subscribeBroadcast()
         if isMyTurn { prefillLogInputs() }
         // Initial heartbeat — the scenePhase→active heartbeat above only
         // fires on a later transition, so this covers "already foreground,
         // just opened the session" (push-dossier.md §A.4).
         try? await SessionRepository.touchActivity(sessionID: liveSession.id)
-    }
-
-    /// Fetch display names for the 4 known slugs so tiles render correctly before any tap.
-    @MainActor
-    private func loadSoundCatalog() async {
-        var entries: [(slug: String, name: String)] = []
-        for slug in soundSlugs {
-            let name = await SoundboardPlayer.shared.displayName(for: slug)
-            entries.append((slug: slug, name: name))
-        }
-        soundCatalog = entries
     }
 
     /// Subscribe to broadcast events (soundboard + reaction). Mirrors the SessionLiveService
