@@ -640,7 +640,8 @@ struct GroupSessionLiveView: View {
                                 .font(GSFont.bold(9, relativeTo: .caption2))
                         }
                         .foregroundStyle(theme.accent)
-                        .frame(width: 52, minHeight: 44)
+                        .frame(width: 52)
+                        .frame(minHeight: 44)
                         .overlay(Rectangle().strokeBorder(theme.accent, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
                     }
                     .buttonStyle(.plain)
