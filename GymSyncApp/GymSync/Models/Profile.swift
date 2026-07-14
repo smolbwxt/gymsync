@@ -8,6 +8,7 @@ struct Profile: Codable, Identifiable, Sendable, Equatable {
     let avatarURL: URL?
     let createdAt: Date
     let lifetimeVolumeLifted: Decimal
+    let isCurator: Bool
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -16,6 +17,22 @@ struct Profile: Codable, Identifiable, Sendable, Equatable {
         case avatarURL = "avatar_url"
         case createdAt = "created_at"
         case lifetimeVolumeLifted = "lifetime_volume_lifted"
+        case isCurator = "is_curator"
+    }
+
+    // Custom decode so any pre-migration cached JSON (no is_curator key yet)
+    // still decodes safely, defaulting to false. No callers construct
+    // `Profile(...)` directly (verified via grep before this change), so the
+    // synthesized memberwise init is not needed elsewhere.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        username = try c.decode(String.self, forKey: .username)
+        displayName = try c.decodeIfPresent(String.self, forKey: .displayName)
+        avatarURL = try c.decodeIfPresent(URL.self, forKey: .avatarURL)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        lifetimeVolumeLifted = try c.decode(Decimal.self, forKey: .lifetimeVolumeLifted)
+        isCurator = try c.decodeIfPresent(Bool.self, forKey: .isCurator) ?? false
     }
 }
 
