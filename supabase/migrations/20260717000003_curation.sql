@@ -40,33 +40,12 @@ ALTER TABLE public.profiles
   ADD COLUMN is_curator boolean NOT NULL DEFAULT false;
 REVOKE UPDATE (is_curator) ON public.profiles FROM authenticated, anon;
 
--- NOTE: the column-level REVOKE above is defense-in-depth documentation of
--- intent, but is NOT sufficient by itself in this project — verified against
--- the live DB (information_schema.role_table_grants) that `authenticated`
--- and `anon` already hold TABLE-WIDE UPDATE on public.profiles via this
--- project's default privileges. A column REVOKE cannot subtract from a
--- table-wide GRANT (Postgres ORs table-level and column-level ACLs), so
--- without the trigger below the column REVOKE is a silent no-op and
--- self-promotion succeeds. The trigger is the actual enforcement point,
--- keyed off the `role` GUC (matches `authenticated`/`anon` set via
--- `SET LOCAL ROLE` for both PostgREST requests and pgTAP tests); `postgres`
--- and `service_role` (both rolbypassrls=true, neither in this block list)
--- can still update the flag directly.
-CREATE OR REPLACE FUNCTION public.guard_is_curator()
-RETURNS trigger LANGUAGE plpgsql AS $$
-BEGIN
-  IF NEW.is_curator IS DISTINCT FROM OLD.is_curator
-     AND current_setting('role', true) IN ('authenticated', 'anon') THEN
-    RAISE EXCEPTION 'is_curator is not client-writable'
-      USING ERRCODE = '42501';
-  END IF;
-  RETURN NEW;
-END;
-$$;
-
-CREATE TRIGGER profiles_guard_is_curator
-  BEFORE UPDATE ON public.profiles
-  FOR EACH ROW EXECUTE FUNCTION public.guard_is_curator();
+-- NOTE: the column-level REVOKE above is intent documentation only — it is
+-- NOT sufficient in this project (authenticated/anon hold table-wide UPDATE;
+-- Postgres ORs table- and column-level ACLs, so the REVOKE is a no-op).
+-- The real enforcement is the guard trigger in 20260717000004 — kept as a
+-- separate migration so this file matches exactly what was applied under
+-- this version (append-only provenance).
 
 -- ── 4. Curator-gated publishing: replace routines INSERT/UPDATE policies so
 --       visibility='public' requires is_curator. 'private'/'shared' behavior
