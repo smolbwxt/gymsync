@@ -1073,38 +1073,101 @@ struct GSVoiceUnavailableBanner: View {
     }
 }
 
+// MARK: - GSExpandingRing
+//
+// One expanding, fading circular stroke — the blessed frames' `gsRing` motif
+// (`docs/design/sections/2026-07-live-voice.dc.html:24`: scale 0.7 -> 1.6,
+// opacity .6 -> 0, 1.4s ease-out, infinite, non-reversing). Rendered behind
+// the round PTT mic while the mic is open or held; the held state layers two
+// of these with the frame's exact 0.7s stagger. Deliberately draws OUTSIDE
+// its nominal frame (scaleEffect > 1) — ZStack doesn't clip, matching the
+// frames where the rings overflow the 80px button freely.
+
+struct GSExpandingRing: View {
+    let color: Color
+    var delay: Double = 0
+
+    @State private var animate = false
+
+    var body: some View {
+        Circle()
+            .stroke(color, lineWidth: 2)
+            .scaleEffect(animate ? 1.6 : 0.7)
+            .opacity(animate ? 0 : 0.6)
+            .animation(
+                .easeOut(duration: 1.4)
+                    .repeatForever(autoreverses: false)
+                    .delay(delay),
+                value: animate
+            )
+            .onAppear { animate = true }
+    }
+}
+
 // MARK: - PTTDockRow
 //
 // Shared live-voice push-to-talk dock control for LobbyView +
-// GroupSessionLiveView (Dossier §A.2: "the same idle/connecting/unavailable/
-// denied states that live in the lobby, shown in the live-session dock").
-// Fully self-contained — reads/drives `VoiceRoomService.shared` directly, no
-// parameters needed (mirrors `GSTabBar`'s note above: `VoiceRoomState`/
-// `TransmitState` are internal types, so this type and its properties are
-// deliberately NOT `public`, same access-level reasoning). Renders one of the
-// task brief's "four states exactly":
-//   .idle / .connected(.muted)   -> "idle" row (mic outline, tap/hold hint)
-//   .connected(.transmitting)    -> "transmitting" row (accent fill, bars)
-//   .connecting                  -> "connecting" row (dimmed, spinner)
-//   .micDenied                   -> single full-width "open Settings" row
-//   .unavailable                 -> dashed, muted "Voice unavailable" row
-//     (pairs with `GSVoiceUnavailableBanner`, shown by the caller above the
-//     dock per the degraded-banner frame)
+// GroupSessionLiveView. Fully self-contained — reads/drives
+// `VoiceRoomService.shared` directly, no parameters needed (mirrors
+// `GSTabBar`'s note above: `VoiceRoomState`/`TransmitState` are internal
+// types, so this type and its properties are deliberately NOT `public`, same
+// access-level reasoning).
 //
-// Gesture (Task 4 AMENDMENT, 2026-07-14 — overrides the brief's hold-only
-// text): the mic control supports BOTH tap-to-toggle (mic stays open
-// hands-free until tapped again) and hold-to-talk (walkie-talkie; release
-// ALWAYS mutes a HELD transmission, never a toggled-open one). Built on
-// `onLongPressGesture(minimumDuration:pressing:perform:)` — the same gesture
+// SHAPE (blessed frames, 2026-07-14 review round — these override the older
+// canvas's merged rectangular row): a round 44pt mic BUTTON beside a
+// SEPARATE bordered status bar (`docs/design/sections/2026-07-curation.dc.html`
+// frame 1's dock row + the coach-mark frame in `2026-07-live-voice.dc.html`).
+// Per state:
+//   .idle / .connected(.muted)  -> secondary-style round mic (accent stroke,
+//       accent glyph) + bar "Tap to talk · hold to talk live"
+//   .connected(.transmitting), toggled open -> accent-FILLED round mic + one
+//       gsRing + bar "MIC OPEN · TAP TO MUTE" over sub-caption "Tap toggles ·
+//       press-and-hold for walkie-talkie" (live-voice frame 2)
+//   .connected(.transmitting), held -> accent-filled round mic + TWO gsRings
+//       (0.7s stagger) + bar "HOLDING · {elapsed} — RELEASE TO STOP" with a
+//       LIVE elapsed timer (live-voice frame 1; timer is UI-side only —
+//       Text(timerInterval:), zero service-side timers)
+//   .connecting -> dimmed secondary mic + spinner bar "Connecting voice…"
+//   .unavailable -> dashed muted mic + muted bar (pairs with
+//       `GSVoiceUnavailableBanner`, shown by the caller above the dock)
+//   .micDenied -> the whole row is a single full-width open-Settings button
+//       (unchanged from the earlier canvas live-dock frame; the blessed
+//       frames don't redraw denied)
+//
+// OPEN-vs-HELD is DERIVED, not stored: `.connected(.transmitting)` renders
+// the holding UI iff `isHeldTransmitOwnedByThisPress` (this press began and
+// owns the walkie-talkie transmission) and the open UI otherwise. A fresh
+// view instance (e.g. Lobby -> live-session push, where the room connection
+// deliberately survives) therefore correctly shows "MIC OPEN · TAP TO MUTE"
+// for a transmission it didn't start — the only way to be transmitting with
+// no finger down is hands-free.
+//
+// GESTURE (Task 4 AMENDMENT, 2026-07-14 — overrides the brief's hold-only
+// text): the mic supports BOTH tap-to-toggle (mic stays open hands-free
+// until tapped again) and hold-to-talk (walkie-talkie; release ALWAYS mutes
+// a HELD transmission, never a toggled-open one). Built on
+// `onLongPressGesture(minimumDuration:pressing:perform:)` — the same
 // primitive ChatView's `micButton` (Task 3c) uses — with `minimumDuration`
-// serving as the tap/hold cutoff: `perform` fires exactly when a press
-// crosses the hold threshold while still down (walkie-talkie begins then);
-// `pressing(false)` fires on EVERY release regardless of whether `perform`
-// ever fired, which is what lets a plain tap be told apart from a hold
-// release after the fact, via `isHeldTransmitOwnedByThisPress`.
+// as the tap/hold cutoff: `perform` fires exactly when a press crosses the
+// hold threshold while still down; `pressing(false)` fires on EVERY release
+// regardless of whether `perform` ever fired.
 
 struct PTTDockRow: View {
     @Environment(\.gsTheme) private var theme
+
+    /// Monotonic per-press identity. Bumped on every press-down; captured by
+    /// the threshold handler and the release handler, and re-checked before
+    /// any of them consumes or clears the shared per-press state below.
+    /// Without it, the shared state is corrupted by OVERLAPPING press
+    /// cycles (review round 1, Important 1): hold #1 released right at the
+    /// threshold parks its release Task on the in-flight `beginTransmit()`;
+    /// the user immediately holds again; press #1's stale release then used
+    /// to nil press #2's `holdBeginTask` reference and consume its flags —
+    /// leaving press #2's release with nothing to await and nothing to end:
+    /// mic stranded open. Now every deferred continuation guards on
+    /// `capturedGen == pressGeneration` and simply stands down when a newer
+    /// press owns the state.
+    @State private var pressGeneration = 0
 
     /// True from the moment THIS press crosses the hold threshold (`perform`
     /// fired) until the next press-down resets it — regardless of whether
@@ -1115,30 +1178,36 @@ struct PTTDockRow: View {
     /// fall through to tap-toggle (see `handleRelease`).
     @State private var holdThresholdCrossedThisPress = false
 
-    /// True once THIS press has actually begun a walkie-talkie transmission
-    /// (i.e. the hold threshold fired AND the mic was muted at that moment,
-    /// so `beginTransmit()` actually ran and actually flipped the service to
-    /// `.transmitting`). Only when this is true does release call
-    /// `endTransmit()` — a hold gesture that starts while the mic is ALREADY
-    /// tap-toggled open must never mute it on release (amendment: "a
-    /// tap-toggled-open mic is never auto-muted by release").
+    /// True while a press owns a live walkie-talkie transmission (the hold
+    /// threshold fired AND `beginTransmit()`/adoption actually took effect).
+    /// Doubles as the open-vs-held display discriminator (see the type doc
+    /// comment). Only when this is true does release call `endTransmit()` —
+    /// a hold that starts while the mic is ALREADY tap-toggled open must
+    /// never mute it on release (amendment: "a tap-toggled-open mic is never
+    /// auto-muted by release").
     @State private var isHeldTransmitOwnedByThisPress = false
 
+    /// When the current held transmission started — feeds the holding bar's
+    /// live elapsed timer (`Text(timerInterval:)`, UI-side only). Set exactly
+    /// when ownership is claimed, cleared exactly when it's released/reset.
+    @State private var heldStartedAt: Date?
+
     /// The in-flight `beginTransmit()` attempt kicked off by the current
-    /// press's hold-threshold crossing, if any. `handleRelease` awaits this
-    /// before deciding what release means — without it, a hold released a
-    /// few milliseconds after crossing the threshold could read
-    /// `isHeldTransmitOwnedByThisPress` before the begin-transmit `Task` has
-    /// actually finished setting it, take the "no-op" branch, and leave the
-    /// mic stuck open (nothing else would ever call `endTransmit()` for that
-    /// press).
+    /// press's hold-threshold crossing, if any. `handleRelease` captures this
+    /// into a press-local `let` and awaits it before deciding what release
+    /// means — without the await, a hold released a few ms after crossing
+    /// the threshold could read `isHeldTransmitOwnedByThisPress` before the
+    /// begin-transmit Task finished setting it and strand the mic open. The
+    /// shared slot itself is only nil'd behind a generation check, so a
+    /// stale release can never drop a newer press's task reference.
     @State private var holdBeginTask: Task<Void, Never>?
 
-    /// True while the mic is open via TAP (hands-free, sustained) rather
-    /// than an in-progress hold. Purely a copy/label switch for the
-    /// "transmitting" row — `VoiceRoomService` itself has no concept of WHY
-    /// it's transmitting, only that it is (see its state machine doc
-    /// comment), so this distinction lives entirely in this view.
+    /// True while the mic is open via TAP (hands-free, sustained). Used ONLY
+    /// by the gesture logic (to protect a toggled-open mic from hold
+    /// adoption/muting) — the DISPLAYED open-vs-held choice is derived from
+    /// `isHeldTransmitOwnedByThisPress` instead, so a fresh view instance
+    /// renders a carried-over open mic correctly even though this flag
+    /// resets (review round 1, minor (b)).
     @State private var isToggledOpen = false
 
     private static let holdThreshold: TimeInterval = 0.35
@@ -1146,86 +1215,191 @@ struct PTTDockRow: View {
     private var voice: VoiceRoomService { .shared }
 
     var body: some View {
-        switch voice.state {
-        case .micDenied:
-            deniedRow
-        case .unavailable:
-            unavailableRow
-        case .connecting:
-            connectingRow
-        case .connected(.transmitting):
-            transmittingRow
-        case .idle, .connected(.muted):
-            idleRow
+        VStack(spacing: 0) {
+            GSDivider()
+            Group {
+                switch voice.state {
+                case .micDenied:
+                    deniedRow
+                case .unavailable:
+                    micAndBar(mic: { unavailableMic }, bar: { unavailableBar })
+                case .connecting:
+                    micAndBar(mic: { connectingMic }, bar: { connectingBar })
+                        .opacity(0.75)
+                case .idle, .connected:
+                    interactiveRow
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+        }
+        .background(theme.bg)
+    }
+
+    private var isTransmitting: Bool {
+        if case .connected(.transmitting) = voice.state { return true }
+        return false
+    }
+
+    private var pressGesture: PTTPressGesture {
+        PTTPressGesture(threshold: Self.holdThreshold,
+                        onPressBegan: handlePressBegan,
+                        onHoldThresholdCrossed: handleHoldThresholdCrossed,
+                        onRelease: handleRelease)
+    }
+
+    // MARK: Row scaffold — round mic + separate bordered status bar
+
+    private func micAndBar<Mic: View, Bar: View>(
+        @ViewBuilder mic: () -> Mic,
+        @ViewBuilder bar: () -> Bar
+    ) -> some View {
+        HStack(spacing: 8) {
+            mic()
+            bar()
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .background(theme.surface)
+                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
         }
     }
 
-    // MARK: Idle — canvas "Hold to talk"; amendment copy below
+    // MARK: Interactive row (idle/muted/open/held — ONE stable view identity)
+    //
+    // All the gesture-bearing display states render through this single
+    // structural branch, deliberately: the moment a hold's `beginTransmit()`
+    // lands, the state flips muted -> transmitting and the body re-renders.
+    // If that flip swapped in a different row view (as separate switch
+    // branches would), SwiftUI would tear down the gesture's host view
+    // mid-press, the in-progress long-press would be cancelled with it, and
+    // the release callback could never fire — stranding the mic open with
+    // no press left to end it. Conditional CHILDREN (rings, bar copy) may
+    // change freely across the flip; the gesture-carrying ZStack itself must
+    // keep its structural identity.
+    //
+    // Mic visual: 44pt round (curation frame 1's dock size) — secondary
+    // style (accent stroke, accent glyph) while muted; accent-filled with
+    // expanding gsRings while transmitting (1 ring = toggled open, 2 with
+    // the frames' 0.7s stagger = held).
 
-    private var idleRow: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "mic")
+    private var interactiveRow: some View {
+        micAndBar(mic: {
+            ZStack {
+                if isTransmitting {
+                    GSExpandingRing(color: theme.accent)
+                    if isHeldTransmitOwnedByThisPress {
+                        GSExpandingRing(color: theme.accent, delay: 0.7)
+                    }
+                }
+                Circle().fill(isTransmitting ? theme.accent : theme.bg)
+                if !isTransmitting {
+                    Circle().strokeBorder(theme.accent, lineWidth: 1)
+                }
+                micGlyph(color: isTransmitting ? theme.bg : theme.accent)
+            }
+            .frame(width: 44, height: 44)
+            .contentShape(Circle())
+            .modifier(pressGesture)
+        }, bar: {
+            if isTransmitting {
+                if isHeldTransmitOwnedByThisPress {
+                    holdingBar
+                } else {
+                    openBar
+                }
+            } else {
+                idleBar
+            }
+        })
+    }
+
+    // MARK: Non-interactive mic variants
+
+    private var connectingMic: some View {
+        ZStack {
+            Circle().fill(theme.bg)
+            Circle().strokeBorder(theme.accent, lineWidth: 1)
+            micGlyph(color: theme.accent)
+        }
+        .frame(width: 44, height: 44)
+    }
+
+    private var unavailableMic: some View {
+        ZStack {
+            Circle().strokeBorder(theme.neutral400, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            Image(systemName: "mic.slash")
                 .font(.system(size: 17, weight: .regular))
-                .foregroundStyle(theme.accent)
-            Text("Tap to talk · hold to talk live")
-                .font(GSFont.bold(14, relativeTo: .body))
-                .foregroundStyle(theme.text)
-            Spacer()
+                .foregroundStyle(theme.neutral500)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 13)
-        .frame(minHeight: 44)
-        .background(theme.surface)
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
-        .contentShape(Rectangle())
-        .modifier(PTTPressGesture(threshold: Self.holdThreshold,
-                                   onPressBegan: handlePressBegan,
-                                   onHoldThresholdCrossed: handleHoldThresholdCrossed,
-                                   onRelease: handleRelease))
+        .frame(width: 44, height: 44)
     }
 
-    // MARK: Transmitting — canvas "Release to stop"; amendment "Mic open · tap to mute"
-
-    private var transmittingRow: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "mic.fill")
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(theme.bg)
-            Text(isToggledOpen ? "Mic open · tap to mute" : "Release to stop")
-                .font(GSFont.bold(14, relativeTo: .body))
-                .foregroundStyle(theme.bg)
-            Spacer()
-            GSTalkingBars(color: theme.bg, barWidth: 3, maxHeight: 14)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 13)
-        .frame(minHeight: 44)
-        .background(theme.accent)
-        .contentShape(Rectangle())
-        .modifier(PTTPressGesture(threshold: Self.holdThreshold,
-                                   onPressBegan: handlePressBegan,
-                                   onHoldThresholdCrossed: handleHoldThresholdCrossed,
-                                   onRelease: handleRelease))
+    private func micGlyph(color: Color) -> some View {
+        Image(systemName: "mic")
+            .font(.system(size: 18, weight: .regular))
+            .foregroundStyle(color)
     }
 
-    // MARK: Connecting — canvas: secondary style, 75% opacity, spinner
+    // MARK: Status bar variants
 
-    private var connectingRow: some View {
-        HStack(spacing: 10) {
+    private var idleBar: some View {
+        Text("Tap to talk · hold to talk live")
+            .font(GSFont.bold(13, relativeTo: .body))
+            .foregroundStyle(theme.text.opacity(0.6))
+    }
+
+    /// "MIC OPEN · TAP TO MUTE" + REQUIRED sub-caption, per live-voice
+    /// frame 2's dock (`:216,223`).
+    private var openBar: some View {
+        VStack(spacing: 2) {
+            Text("MIC OPEN · TAP TO MUTE")
+                .font(GSFont.bold(12, relativeTo: .caption))
+                .tracking(1.0)
+                .foregroundStyle(theme.accent700)
+            Text("Tap toggles · press-and-hold for walkie-talkie")
+                .font(GSFont.body(10, relativeTo: .caption2))
+                .foregroundStyle(theme.neutral500)
+        }
+        .padding(.vertical, 6)
+    }
+
+    /// "HOLDING · {elapsed} — RELEASE TO STOP" with a live counting-up
+    /// timer, per live-voice frame 1's dock (`:138`). Composed as sibling
+    /// Texts in an HStack (not Text concatenation) so the timer-styled Text
+    /// keeps its own self-updating rendering. UI-side only — no Timer, no
+    /// service involvement (same doctrine as the chess clock's
+    /// `Text(_, style: .timer)`).
+    private var holdingBar: some View {
+        HStack(spacing: 0) {
+            Text("HOLDING · ")
+            if let heldStartedAt {
+                Text(timerInterval: heldStartedAt...Date.distantFuture,
+                     countsDown: false, showsHours: false)
+                    .monospacedDigit()
+            }
+            Text(" — RELEASE TO STOP")
+        }
+        .font(GSFont.bold(12, relativeTo: .caption))
+        .tracking(0.5)
+        .foregroundStyle(theme.accent700)
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
+    }
+
+    private var connectingBar: some View {
+        HStack(spacing: 8) {
             ProgressView()
                 .controlSize(.small)
                 .tint(theme.accent)
             Text("Connecting voice…")
-                .font(GSFont.bold(14, relativeTo: .body))
+                .font(GSFont.bold(13, relativeTo: .body))
                 .foregroundStyle(theme.text)
-            Spacer()
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 13)
-        .frame(minHeight: 44)
-        .background(theme.surface)
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
-        .opacity(0.75)
+    }
+
+    private var unavailableBar: some View {
+        Text("Voice unavailable")
+            .font(GSFont.bold(13, relativeTo: .body))
+            .foregroundStyle(theme.neutral500)
     }
 
     // MARK: Mic denied — entire row becomes one "open Settings" button
@@ -1258,82 +1432,101 @@ struct PTTDockRow: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: Unavailable — dashed, muted; pairs with `GSVoiceUnavailableBanner` above the dock
-
-    private var unavailableRow: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "mic.slash")
-                .font(.system(size: 17, weight: .regular))
-                .foregroundStyle(theme.neutral500)
-            Text("Voice unavailable")
-                .font(GSFont.bold(14, relativeTo: .body))
-                .foregroundStyle(theme.neutral500)
-            Spacer()
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 13)
-        .frame(minHeight: 44)
-        .background(theme.surface)
-        .overlay(
-            Rectangle()
-                .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                .foregroundStyle(theme.neutral400)
-        )
-    }
-
     // MARK: - Gesture handlers
     //
-    // Edge cases double-checked (Task 4 self-review contract):
-    //   - tap while held-transmitting: not reachable through a single
+    // Edge cases verified for OVERLAPPING press cycles, not just single-press
+    // ordering (review round 1):
+    //   - Coordinator's exact race (hold #1 released at threshold, immediate
+    //     hold #2): press #1's stale release Task resumes after press #2
+    //     began -> its `gen == pressGeneration` guard fails -> it touches
+    //     NOTHING (neither the flags nor the `holdBeginTask` slot). Press
+    //     #2's own threshold handler either began a fresh transmission (if
+    //     #1's begin hadn't landed yet, state was still .muted) or ADOPTS
+    //     the already-live non-toggled transmission (if #1's begin landed
+    //     first) — either way #2 ends up owning it, and #2's release ends it.
+    //   - Orphan recovery: if a superseded press leaves an unowned, non-
+    //     toggled transmission live (its ownership was reset by a newer
+    //     press-down), the UI honestly shows the hands-free open state, a
+    //     TAP mutes it, and a HOLD adopts it (walkie-talkie: that hold's
+    //     release then mutes). The only transmissions release must never
+    //     mute are TAP-toggled ones — `isToggledOpen` gates adoption.
+    //   - Tap while held-transmitting: not reachable through a single
     //     press/release cycle on one button — a "tap" IS a full press+
     //     release under threshold, so it can't overlap a still-down hold.
-    //   - hold while toggled-open: `handleHoldThresholdCrossed`'s guard
-    //     requires `.connected(.muted)`, so it never sets
-    //     `isHeldTransmitOwnedByThisPress` here; `handleRelease` falls to
+    //   - Hold while toggled-open: the adoption branch requires
+    //     `!isToggledOpen`, so ownership is never claimed; release falls to
     //     the "threshold crossed but not owned" no-op branch, leaving the
     //     toggled-open mic untouched.
-    //   - release ordering: `handleRelease` awaits `holdBeginTask` (the
-    //     in-flight `beginTransmit()` from this same press) before reading
-    //     `isHeldTransmitOwnedByThisPress`, so a release that lands a few ms
-    //     after the threshold fires can never observe a mid-flight value and
-    //     strand the mic open.
-    //   - disappear during transmit: handled at the service layer, not
-    //     here — `VoiceRoomService.leave()` unconditionally restores `.idle`
-    //     regardless of transmit state, and any stale `endTransmit()` this
-    //     view's Task still fires afterward is a guarded no-op (state is no
-    //     longer `.connected`). See `LobbyView`/`GroupSessionLiveView`'s
-    //     `onDisappear`.
+    //   - Release ordering: release captures `holdBeginTask` into a local
+    //     `let` and awaits THAT (not the shared slot, which a newer press
+    //     may have overwritten), so it can never observe the ownership flag
+    //     mid-flight for its own press.
+    //   - Disappear during transmit: handled at the service layer —
+    //     `VoiceRoomService.leave()` unconditionally restores `.idle`, and
+    //     any stale `endTransmit()`/`beginTransmit()` these Tasks fire
+    //     afterward is a guarded no-op inside the service.
 
     private func handlePressBegan() {
+        pressGeneration += 1
         holdThresholdCrossedThisPress = false
+        // A new press always takes over the per-press flags. If a superseded
+        // press's transmission is still live it becomes an unowned orphan —
+        // recoverable by this press (tap mutes, hold adopts; see above).
         isHeldTransmitOwnedByThisPress = false
+        heldStartedAt = nil
     }
 
     private func handleHoldThresholdCrossed() {
         holdThresholdCrossedThisPress = true
+        let gen = pressGeneration
         holdBeginTask = Task {
-            guard case .connected(.muted) = voice.state else { return }
-            await voice.beginTransmit()
-            if case .connected(.transmitting) = voice.state {
+            switch voice.state {
+            case .connected(.muted):
+                await voice.beginTransmit()
+                // A newer press owns the shared flags now — a stale hold
+                // must not claim ownership on its behalf.
+                guard gen == pressGeneration else { return }
+                if case .connected(.transmitting) = voice.state {
+                    isHeldTransmitOwnedByThisPress = true
+                    heldStartedAt = Date()
+                }
+            case .connected(.transmitting):
+                // Adopt an unowned, non-toggled live transmission (orphaned
+                // by a superseded earlier press) — walkie-talkie semantics:
+                // this press's release stops it. Never adopts a tap-toggled
+                // open mic.
+                guard gen == pressGeneration,
+                      !isToggledOpen,
+                      !isHeldTransmitOwnedByThisPress else { return }
                 isHeldTransmitOwnedByThisPress = true
+                heldStartedAt = Date()
+            default:
+                break
             }
         }
     }
 
     private func handleRelease() {
+        let gen = pressGeneration
+        // Press-local capture: the shared slot may be overwritten by a newer
+        // press while this Task is suspended; awaiting the captured
+        // reference settles OUR press's in-flight begin without touching
+        // anyone else's.
+        let inFlightBegin = holdBeginTask
         Task {
-            // Settle any in-flight begin-transmit from this same press
-            // before deciding what release means (see doc comment above).
-            await holdBeginTask?.value
+            await inFlightBegin?.value
+            // A newer press has taken over — stand down completely (don't
+            // consume flags, don't clear the slot; they're not ours anymore).
+            guard gen == pressGeneration else { return }
             holdBeginTask = nil
 
             if isHeldTransmitOwnedByThisPress {
                 isHeldTransmitOwnedByThisPress = false
+                heldStartedAt = nil
                 await voice.endTransmit()
             } else if holdThresholdCrossedThisPress {
                 // Hold crossed the threshold but never owned a transmission
-                // (mic was already toggled open) — release must not touch
-                // mute state at all.
+                // (mic was toggled open) — release must not touch mute state.
             } else {
                 await handleTapToggle()
             }
@@ -1349,7 +1542,16 @@ struct PTTDockRow: View {
             }
         case .connected(.transmitting):
             await voice.endTransmit()
+            // Cleared on every outcome, deliberately without an
+            // `if case .connected(.muted)` re-check mirroring the branch
+            // above (review round 1, minor (a)): after `endTransmit()` the
+            // state is either `.connected(.muted)` (success — no toggled-
+            // open mic remains) or a `leave()` interleaved and the room is
+            // gone (no mic at all) — `false` is the correct value on every
+            // reachable outcome, so a conditional re-check could only ever
+            // leave a stale `true` behind on the interleave path.
             isToggledOpen = false
+            heldStartedAt = nil
         default:
             break
         }
@@ -1359,10 +1561,10 @@ struct PTTDockRow: View {
 // MARK: - PTTPressGesture
 //
 // Wraps `onLongPressGesture(minimumDuration:pressing:perform:)` so
-// `PTTDockRow`'s two interactive rows (idle/transmitting) share one gesture
-// wiring instead of duplicating the modifier call — see `PTTDockRow`'s doc
-// comment for why a single `onLongPressGesture` is enough to derive both tap
-// and hold behavior.
+// `PTTDockRow`'s interactive mic variants share one gesture wiring instead
+// of duplicating the modifier call — see `PTTDockRow`'s doc comment for why
+// a single `onLongPressGesture` is enough to derive both tap and hold
+// behavior.
 
 private struct PTTPressGesture: ViewModifier {
     let threshold: TimeInterval

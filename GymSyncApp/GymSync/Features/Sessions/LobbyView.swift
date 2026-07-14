@@ -588,6 +588,17 @@ struct LobbyView: View {
                         .font(GSFont.bold(11, relativeTo: .caption2))
                         .foregroundStyle(theme.bg)
                 }
+                // Avatar glow while talking — the blessed frames' solid 3px
+                // accent-30% spread (`box-shadow:0 0 0 3px`, live-voice
+                // frame 2's audible-now rows), drawn as an oversized
+                // background rect since the avatars are square/zero-radius.
+                .background {
+                    if isSpeaking {
+                        Rectangle()
+                            .fill(theme.accent.opacity(0.3))
+                            .frame(width: 38, height: 38)
+                    }
+                }
 
                 // Presence online dot
                 Circle()

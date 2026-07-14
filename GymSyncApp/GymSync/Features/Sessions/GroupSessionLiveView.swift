@@ -1002,6 +1002,17 @@ struct GroupSessionLiveView: View {
                         .font(GSFont.bold(10, relativeTo: .caption2))
                         .foregroundStyle(isLifting ? theme.bg : theme.text)
                 }
+                // Avatar glow while talking — blessed frames' solid 3px
+                // accent-30% spread (live-voice frame 2's audible-now rows);
+                // bg-tinted on the accent-filled lifting card so it stays
+                // visible against the accent fill.
+                .background {
+                    if isSpeaking {
+                        Rectangle()
+                            .fill((isLifting ? theme.bg : theme.accent).opacity(0.3))
+                            .frame(width: 32, height: 32)
+                    }
+                }
                 Text(item.participant.userID == selfID ? "You" : item.profile.username)
                     .font(GSFont.bold(13, relativeTo: .body))
                     .foregroundStyle(isLifting ? theme.bg : theme.text)
