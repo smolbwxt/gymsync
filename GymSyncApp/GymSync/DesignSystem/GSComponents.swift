@@ -420,14 +420,14 @@ public struct GSSettingsRow: View {
             }
         }
         .buttonStyle(.plain)
-        // Collapses icon+title+value+chevron into one accessibility element
-        // labeled by `title` alone (ignores the mutable trailing `value`,
-        // e.g. the current palette name) — same idiom as
-        // AppearanceView.paletteRow, and what lets the GymSyncScreenshots UI
-        // test target find this row via an exact `app.buttons["Appearance"]`
-        // query regardless of its current preview value.
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(title)
+        // No accessibility flattening here: the Button's derived label is
+        // "{title}, {value}" (e.g. "Appearance, Ink"), which is the right
+        // VoiceOver experience — the row announces its current value. UI
+        // tests must match with a BEGINSWITH predicate, not an exact label.
+        // (An .accessibilityElement(children:.ignore) wrapper was tried and
+        // reverted: applied outside a Button it adds a non-interactive Other
+        // element AROUND the button instead of relabeling it — CI run
+        // 29298949155's hierarchy dump has the evidence.)
     }
 }
 

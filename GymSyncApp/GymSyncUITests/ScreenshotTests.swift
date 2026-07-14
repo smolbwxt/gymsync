@@ -138,7 +138,12 @@ final class ScreenshotTests: XCTestCase {
         selectTab(app, label: "You")
         settle()
 
-        let appearanceRow = app.buttons["Appearance"]
+        // GSSettingsRow buttons carry a derived label of "{title}, {value}"
+        // (e.g. "Appearance, Ink" — value = current palette, mutable), so an
+        // exact buttons["Appearance"] never matches. Prefix-match instead.
+        let appearanceRow = app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH 'Appearance'")
+        ).firstMatch
         guard appearanceRow.waitForExistence(timeout: 15) else {
             XCTFail("Appearance settings row not found on You tab")
             return
