@@ -27,6 +27,14 @@ final class ScreenshotTests: XCTestCase {
     // "Home" button exists — see AuthService.bootstrap() / OnboardingCoordinator.
     private let launchTimeout: TimeInterval = 60
 
+    override func setUp() {
+        super.setUp()
+        // Abort a test at its first failure: without this, XCTFail (e.g. the
+        // missing-credentials guard in launchApp) records the failure but the
+        // test keeps running into the 60s tab-bar wait it was meant to skip.
+        continueAfterFailure = false
+    }
+
     // MARK: - Launch
 
     private func launchApp() -> XCUIApplication {
@@ -37,10 +45,16 @@ final class ScreenshotTests: XCTestCase {
         // into ProcessInfo.processInfo.environment on the Mac running the
         // test bundle. We must explicitly forward them into
         // `launchEnvironment` for the simulated app process to see them.
-        if let email = ProcessInfo.processInfo.environment["UITEST_EMAIL"] {
+        //
+        // Fail FAST on missing/empty credentials: on fork PRs GitHub resolves
+        // secrets to empty strings (not unset), which would otherwise send
+        // every test into a doomed 60s wait at the sign-in screen.
+        let email = ProcessInfo.processInfo.environment["UITEST_EMAIL"] ?? ""
+        let password = ProcessInfo.processInfo.environment["UITEST_PASSWORD"] ?? ""
+        if email.isEmpty || password.isEmpty {
+            XCTFail("UITEST_EMAIL/UITEST_PASSWORD not set or empty — repo secrets unavailable (fork PR?); screenshots require them")
+        } else {
             env["UITEST_EMAIL"] = email
-        }
-        if let password = ProcessInfo.processInfo.environment["UITEST_PASSWORD"] {
             env["UITEST_PASSWORD"] = password
         }
         app.launchEnvironment = env
