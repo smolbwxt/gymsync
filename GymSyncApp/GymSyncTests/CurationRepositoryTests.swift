@@ -76,4 +76,24 @@ final class CurationRepositoryTests: XCTestCase {
         XCTAssertEqual(copiedEx.count, 1)
         XCTAssertEqual(copiedEx.first?.targetReps, "10")
     }
+
+    /// Smoke test for `publicRoutines()`'s double-container PostgREST embed
+    /// decode. Its failure mode is SILENT — a decode or FK-hint regression
+    /// just makes the Library Featured shelf vanish with no surfaced error
+    /// (final review flagged this as priority coverage). The bare call throws
+    /// on an FK/decode regression; the assertions prove the joined owner
+    /// username actually populates and ordering holds. Coverage is real while
+    /// ≥1 curator-seeded public routine exists; if the shelf is ever emptied
+    /// this passes without false-failing.
+    func testPublicRoutinesDecodesEmbeddedOwner() async throws {
+        let rows = try await RoutineRepository.publicRoutines()
+        for (routine, ownerUsername) in rows {
+            XCTAssertEqual(routine.visibility, "public",
+                           "publicRoutines must only return public routines")
+            XCTAssertFalse(ownerUsername.isEmpty,
+                           "embedded owner username must decode from the join, not come back empty")
+        }
+        let dates = rows.map(\.routine.createdAt)
+        XCTAssertEqual(dates, dates.sorted(by: >), "publicRoutines must be newest-first")
+    }
 }

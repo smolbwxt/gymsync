@@ -44,7 +44,11 @@ const headers = {
 async function rest(pathAndQuery, opts = {}) {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${pathAndQuery}`, { headers, ...opts, headers: { ...headers, ...(opts.headers || {}) } });
   if (!res.ok) throw new Error(`${pathAndQuery}: ${res.status} ${await res.text()}`);
-  return res.status === 204 ? null : res.json();
+  // Inserts without Prefer: return=representation come back 201 with an
+  // EMPTY body — res.json() on that throws "Unexpected end of JSON input"
+  // (bit us mid-seed: routine 1 landed fully, the loop died before 2).
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
 }
 
 (async () => {
