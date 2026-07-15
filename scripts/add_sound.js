@@ -34,14 +34,18 @@ if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
   process.exit(1);
 }
 
-// Filter out `--flag value` pairs before the positional destructure, so
-// flags can appear anywhere on the command line without shifting positions.
+// Argument parsing. A `--flag`'s value is the following token UNLESS that
+// token is itself a flag (or absent) — otherwise `--icon --category hype`
+// reads "--category" as the icon AND swallows a positional (final-review
+// follow-up f). The positional stripper and flag() below share this rule.
+const argv = process.argv.slice(2);
+const hasValue = (i) => argv[i + 1] !== undefined && !argv[i + 1].startsWith('--');
 const positional = [];
-for (let i = 0; i < process.argv.length; i++) {
-  if (process.argv[i].startsWith('--')) { i++; continue; }
-  positional.push(process.argv[i]);
+for (let i = 0; i < argv.length; i++) {
+  if (argv[i].startsWith('--')) { if (hasValue(i)) i++; continue; }
+  positional.push(argv[i]);
 }
-const [, , filePath, displayName, slugArg] = positional;
+const [filePath, displayName, slugArg] = positional;
 if (!filePath || !displayName) {
   console.error('Usage: node scripts/add_sound.js <path-to-audio> "<Display Name>" [slug]');
   process.exit(1);
@@ -65,8 +69,8 @@ const slug = (slugArg || displayName)
 const storagePath = `${slug}${ext}`;
 
 const flag = (name) => {
-  const i = process.argv.indexOf(`--${name}`);
-  return i >= 0 ? process.argv[i + 1] : undefined;
+  const i = argv.indexOf(`--${name}`);
+  return i >= 0 && hasValue(i) ? argv[i + 1] : undefined;
 };
 const icon = flag('icon') ?? null;          // e.g. --icon 🥁
 const category = flag('category') ?? null;  // hype|funny|fx
