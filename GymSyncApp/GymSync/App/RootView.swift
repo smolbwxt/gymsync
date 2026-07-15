@@ -35,6 +35,13 @@ struct RootView: View {
         // luminance-based determination.
         .preferredColorScheme(themeStore.current.isDark ? .dark : .light)
         .environment(\.gsTheme, themeStore.current)
+        // Tint every NavigationStack's bar items — chiefly the back button —
+        // with the theme accent. Without this, SwiftUI falls back to the
+        // system-blue environment tint, so pushed screens (Appearance,
+        // Notifications, …) showed an iOS-blue "‹ Back" against the themed
+        // chrome. UINavigationBar.appearance().tintColor alone does NOT reach
+        // the SwiftUI back button; this environment tint does.
+        .tint(themeStore.current.accent)
         .background(themeStore.current.bg.ignoresSafeArea())
     }
 }
