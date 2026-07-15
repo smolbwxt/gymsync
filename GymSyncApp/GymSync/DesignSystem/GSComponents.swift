@@ -40,8 +40,12 @@ public struct GSPrimaryButtonStyle: ButtonStyle {
 
 // MARK: - GSSecondaryButtonStyle
 //
-// 1px accent border, transparent fill, flush-left label.
-// Pressed state: accent100 fill tint + accent600 border.
+// Matches the design system's `.btn-secondary` (verified against the rendered
+// canvas component sheet): a 1px DIVIDER-gray border with TEXT-color label —
+// a quiet outline that recedes on the surface, NOT the accent. Earlier this
+// drew border + label in `theme.accent`, which read as a prominent navy
+// rectangle everywhere it was used (the You-tab "Edit" button et al).
+// Pressed state: a faint text-tint fill, per the DS hover/active treatment.
 
 public struct GSSecondaryButtonStyle: ButtonStyle {
     @Environment(\.gsTheme) private var theme
@@ -66,17 +70,13 @@ public struct GSSecondaryButtonStyle: ButtonStyle {
             Spacer(minLength: 0)
         }
         .font(GSFont.bold(fontSize, relativeTo: .body))
-        .foregroundColor(configuration.isPressed ? theme.accent600 : theme.accent)
+        .foregroundColor(theme.text)
         .padding(.horizontal, horizontalPadding)
         .padding(.vertical, verticalPadding)
-        .background(configuration.isPressed ? theme.accent100 : Color.clear)
+        .background(configuration.isPressed ? theme.text.opacity(0.08) : Color.clear)
         .cornerRadius(0)
         .overlay(
-            Rectangle()
-                .strokeBorder(
-                    configuration.isPressed ? theme.accent600 : theme.accent,
-                    lineWidth: 1
-                )
+            Rectangle().strokeBorder(theme.divider, lineWidth: 1)
         )
         .contentShape(Rectangle())
         .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
