@@ -36,6 +36,7 @@ struct GSDemoView: View {
         .task(id: url) { await load() }
     }
 
+    @MainActor
     private func load() async {
         frame0 = nil
         frame1 = nil
