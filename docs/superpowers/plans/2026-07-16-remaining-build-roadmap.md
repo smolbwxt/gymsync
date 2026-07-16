@@ -1,6 +1,7 @@
 # Remaining Build Roadmap — 2026-07-16
 
 **Status:** approved scope (user, 2026-07-16): finish harness merge + ExerciseDB media + PR-celebration takeover + unbuilt design frames + P6 Streaks, then release the QA build.
+**Amended (user, 2026-07-16):** coverage audit of the original master design (`docs/superpowers/specs/2026-06-28-gymsync-design.md`) found 13 spec'd tables and several iOS integrations never built. User decision: **add all recovered features — nothing from the original design is dropped.** Full order: **E → P → U → S → M → L → H → O → W → C → V** (new phases defined below). Phase M is the gate before any public App Store submission.
 
 **Method:** each phase runs subagent-driven development on its own feature branch: spec → plan (writing-plans) → fresh implementer subagent per task → task review → CI gate → whole-branch review → merge to `master`. Every `master` merge auto-deploys a TestFlight build (`CURRENT_PROJECT_VERSION = github.run_number`); the last merge is the designated QA build.
 
@@ -25,10 +26,11 @@ Final whole-branch review (running) → fix wave if findings → merge `feature/
 - Hosting: **mirror into Supabase Storage** (one-time import script downloads matched GIFs into a public bucket; app loads from our storage CDN). No third-party runtime dependency, no hotlink/ToS exposure.
 
 **Scope:**
-1. Migration: `exercises.demo_media_path` (nullable text) + a public-read storage bucket `exercise-media`.
-2. `scripts/import_exercise_media.js` — maps our slugs → ExerciseDB entries (name/equipment/target matching, with a reviewable mapping file for ambiguous cases), downloads GIFs, uploads to the bucket, writes `demo_media_path`. Idempotent (skip already-populated rows). Same `.env.local` service-key pattern as `seed_qa_fixtures.js`.
-3. iOS: Exercise Detail renders the GIF (animated, `GSCard`-framed, placeholder when null). SwiftUI has no native GIF view — decode via `CGImageSource` frames or `WKWebView`; the phase spec picks one (lean: CGImageSource-based `GSGifView`).
-4. Parity: Exercise Detail already has canvas frame 14 — add the capture + map entry if not present.
+1. Storage: a public-read bucket `exercise-media`. Reuse the EXISTING `exercises.demo_video_url` column (present since migration 20260709000002) — no new column unless the phase spec finds a reason.
+2. `scripts/import_exercise_media.js` — maps our slugs → ExerciseDB entries (name/equipment/target matching, with a reviewable mapping file for ambiguous cases), downloads GIFs, uploads to the bucket, writes the media URL. Idempotent (skip already-populated rows). Same `.env.local` service-key pattern as `seed_qa_fixtures.js`.
+3. **Library expansion (coverage-audit addition):** the master spec targets a 150–300 exercise curated library; we have 30 seeded. The same import pipeline seeds new `exercises` rows (name/slug/category/muscles/equipment from ExerciseDB) up to a curated ~150–300 set, each with media.
+4. iOS: Exercise Detail renders the GIF (animated, `GSCard`-framed, placeholder when null). SwiftUI has no native GIF view — decode via `CGImageSource` frames or `WKWebView`; the phase spec picks one (lean: CGImageSource-based `GSGifView`).
+5. Parity: Exercise Detail already has canvas frame 14 — add the capture + map entry if not present.
 
 **Verification:** unit tests for the mapping logic; import run evidence (counts: matched/ambiguous/missing); CI screenshot of Exercise Detail with media.
 
@@ -60,15 +62,70 @@ Final whole-branch review (running) → fix wave if findings → merge `feature/
 
 **Scope:** migration + trigger functions + pgTAP tests (backend), streak display UI (frontend), fixture-seed extension so the harness captures populated streak UI. No canvas frame exists for streak UI — design from the established system (GSTheme/GSCard/GSStatTile), file a designer note for post-hoc blessing, and record the deviation in `accepted-deviations.json` until blessed.
 
+---
+
+# Recovered phases (coverage audit, 2026-07-16)
+
+The 2026-06-28 master design's v1 list was audited against migrations + Swift source. Everything below was spec'd for v1, never built, and is now committed roadmap. (The spec's own v2 deferrals — badges, supersets, ledger search, progress photos, custom exercises, etc. — remain correctly deferred and are NOT in scope.)
+
+## Phase M — Moderation & compliance (App Store gate)
+
+**Why first among recovered phases:** both items are App Store review requirements for UGC apps; no public submission can happen until M ships. TestFlight is unaffected.
+1. **Block / report** (spec §Moderation): `user_reports` + `blocked_users` tables + RLS; Block/Report actions on profiles, chat messages, published routines; block enforcement at query level (chat filtered, friend requests rejected, blocked users excluded everywhere). `app_admin` role granted via SQL; moderation queue UI stays v2.
+2. **Account deletion cascade** (spec §6.2): `account-deletion-cascade` Edge Function + "Delete Account" in You tab; cascades owned data, tombstones shared records ("Deleted User").
+3. **Solo-workout privacy opt-in**: surface `profiles.show_solo_workouts` (spec'd column) in settings; enforce in `set_logs` RLS read policy.
+
+## Phase L — Discover + public workout leaderboards (largest missing pillar)
+
+Spec Flow 4 + §Public Workout Repository:
+1. Tables: `workout_attempts`, `leaderboard_entries` + `leaderboard-recompute` (trigger or Edge Function).
+2. Library gains the **Discover** sub-tab: public workout detail (description, scoring metrics, sortable leaderboard — Time / Volume / Top Set / Recent), Attempt Solo / Attempt with Friends CTAs, per-attempt opt-in leaderboard toggle.
+3. Routine publishing extended with public-workout fields (`is_featured`, `default_sort`, `scoring_metrics`, `scoring_top_set_exercise_id` — spec'd, unbuilt).
+4. **Top Lifters** global leaderboard on lifetime volume; leaderboard system messages (`system_leaderboard`) + `leaderboard_passed` push.
+5. Duration-edit interaction honored: leaderboard time locked to original, "✏️ edited" indicator.
+6. Content: seed featured workouts ("The Murph", strength templates) — pairs with Phase E's expanded library.
+
+## Phase H — Health & calendar integrations
+
+1. **Apple Health export** (spec §2, Flow 2 step 8): `HealthKitBridge`; completed sessions written as `HKWorkout` (`.functionalStrengthTraining`); toggle in You tab (the designed Apple Health row becomes functional); re-write on duration edit.
+2. **iOS Calendar sync** (EventKit): scheduled sessions → calendar events; update/delete on reschedule/cancel.
+3. **Body weight log + trend** (spec'd `body_weight_logs` + Stats trend chart).
+4. **Plate-math helper** (spec v1 list): target weight + bar → plate stack; surfaced from the live set UI.
+5. **Google Calendar sync (sub-phase, gated on OAuth consent approval ~1-2 weeks — start the Google Cloud verification at Phase H kickoff):** `connected_accounts` (Vault-encrypted tokens) + `session_calendar_syncs` + Edge Function sync per spec Flow 10.
+
+## Phase O — Reliability
+
+1. **Offline-first set logging** (spec §6.4): SwiftData local store + pending-writes queue (client-generated UUID PKs make retries idempotent — already true); optimistic UI with syncing indicator; 90-day cache window.
+2. **Sentry** crash reporting + sanitized session-state snapshots (spec §6.8.5).
+
+## Phase W — Apple Watch companion + heart rate broadcast
+
+The spec's "true differentiator." New watchOS target (CI builds it like the iOS app):
+1. Watch app: whose-turn indicator, soundboard buttons, tap-to-log-set, ledger glance (WatchConnectivity sync).
+2. **Heart rate broadcast** (spec §6.5, wire shape §5): opt-in `share_heart_rate`, `HKAnchoredObjectQuery` on Watch → phone → `session:{id}:hr` broadcast at 1/5s, zone-colored HR pills (canvas Live frames already show "BPM · LIVE"), ephemeral only — never persisted.
+
+## Phase C — Seasonal campaigns
+
+Spec Flow 8: `campaigns`/`campaign_participants`/`campaign_progress` tables + progress trigger; Library **Campaigns** sub-tab + Home carousel; community progress bar (live via postgres_changes); per-campaign leaderboard; completion badge + system message. Ops prerequisite: team-curated campaign calendar (content work — user).
+
+## Phase V — Local venue hubs (18+, last)
+
+Spec Flow 9 + §6.7: `venues`/`venue_users`/`venue_join_requests`; QR scan flow; Gym Hub view (local leaderboard, open crews, anonymized activity); crew join requests. **Prerequisites before build:** Twilio Verify account (phone verification), age-gate copy, privacy-policy update + legal review for phone-number handling, venue seeding strategy. Safety measures per spec are mandatory scope, not optional.
+
+---
+
 ## Release
 
-After Phase S merges: confirm the final TestFlight build number, run the parity report against it, hand the user a consolidated device-QA checklist covering: ExerciseDB GIFs, PR takeover, stat-tile states, Activity Feed, streak lifecycle (needs a planned session completed/missed), plus the standing build-200 items (voice, soundboard, Library/Social/gym-search fixes).
+Two release gates instead of one:
+1. **QA build** after Phase S (as originally planned): consolidated device-QA checklist — ExerciseDB GIFs + expanded library, PR takeover, stat-tile states, Activity Feed, streak lifecycle, plus standing build-200 items (voice, soundboard, Library/Social/gym-search).
+2. **App-Store-ready milestone** after Phase M (plus whatever else has merged): block/report + account deletion verified — the compliance gate for public submission.
 
 ---
 
 ## Sequencing rationale
 
-E → P → U → S: front-load the independent, high-user-value phase (E) while it can't conflict with UI phases; P is a one-screen win that retires the harness's top finding; U closes the design backlog; S is the largest and benefits from everything before it (fixture seed extension, harness coverage, populated feed). Each phase merges independently — nothing blocks on the whole sequence.
+E → P → U → S (original four): front-load the independent, high-user-value phase (E) while it can't conflict with UI phases; P is a one-screen win that retires the harness's top finding; U closes the design backlog; S is the largest of the four and benefits from everything before it.
+Then M → L → H → O → W → C → V (recovered): M is small and unblocks the store; L is the biggest missing product pillar; H and O are medium integrations; W opens a new platform target; C and V close the list — both need ops/legal/content setup beyond code (campaign calendar; Twilio + privacy review), so their lead time runs in parallel while earlier phases build. Each phase merges independently — nothing blocks on the whole sequence.
 
 ## Standing constraints (all phases)
 
