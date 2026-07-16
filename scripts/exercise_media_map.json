@@ -1,7 +1,7 @@
 {
   "back-squat": {
     "match_key": "Barbell_Squat",
-    "score": 1,
+    "score": null,
     "needsReview": false,
     "adjudicated": true,
     "adjudicatedBy": "controller",
@@ -9,7 +9,7 @@
   },
   "ohp": {
     "match_key": "Standing_Military_Press",
-    "score": 1,
+    "score": null,
     "needsReview": false,
     "adjudicated": true,
     "adjudicatedBy": "controller",
@@ -17,7 +17,7 @@
   },
   "bench-press": {
     "match_key": "Barbell_Bench_Press_-_Medium_Grip",
-    "score": 1,
+    "score": null,
     "needsReview": false,
     "adjudicated": true,
     "adjudicatedBy": "controller",
@@ -25,7 +25,7 @@
   },
   "sumo-deadlift": {
     "match_key": "Sumo_Deadlift",
-    "score": 0.8,
+    "score": null,
     "needsReview": false,
     "adjudicated": true,
     "adjudicatedBy": "controller",
@@ -33,7 +33,7 @@
   },
   "pull-up": {
     "match_key": "Pullups",
-    "score": 1,
+    "score": null,
     "needsReview": false,
     "adjudicated": true,
     "adjudicatedBy": "controller",
@@ -41,7 +41,7 @@
   },
   "deadlift": {
     "match_key": "Barbell_Deadlift",
-    "score": 1,
+    "score": null,
     "needsReview": false,
     "adjudicated": true,
     "adjudicatedBy": "controller",
@@ -49,7 +49,7 @@
   },
   "lat-pulldown": {
     "match_key": "Wide-Grip_Lat_Pulldown",
-    "score": 1,
+    "score": null,
     "needsReview": false,
     "adjudicated": true,
     "adjudicatedBy": "controller",
@@ -57,7 +57,7 @@
   },
   "hammer-curl": {
     "match_key": "Hammer_Curls",
-    "score": 0.8,
+    "score": null,
     "needsReview": false,
     "adjudicated": true,
     "adjudicatedBy": "controller",
@@ -65,7 +65,7 @@
   },
   "oh-tricep-ext": {
     "match_key": "Standing_Dumbbell_Triceps_Extension",
-    "score": 1,
+    "score": null,
     "needsReview": false,
     "adjudicated": true,
     "adjudicatedBy": "controller",
@@ -73,7 +73,7 @@
   },
   "tricep-pushdown": {
     "match_key": "Triceps_Pushdown",
-    "score": 1,
+    "score": null,
     "needsReview": false,
     "adjudicated": true,
     "adjudicatedBy": "controller",
@@ -81,7 +81,7 @@
   },
   "lat-raise": {
     "match_key": "Side_Lateral_Raise",
-    "score": 0.8,
+    "score": null,
     "needsReview": false,
     "adjudicated": true,
     "adjudicatedBy": "controller",
@@ -89,7 +89,7 @@
   },
   "leg-curl": {
     "match_key": "Lying_Leg_Curls",
-    "score": 0.8,
+    "score": null,
     "needsReview": false,
     "adjudicated": true,
     "adjudicatedBy": "controller",
@@ -117,7 +117,7 @@
   },
   "leg-extension": {
     "match_key": "Leg_Extensions",
-    "score": 0.6,
+    "score": null,
     "needsReview": false,
     "adjudicated": true,
     "adjudicatedBy": "controller",
@@ -125,7 +125,7 @@
   },
   "incline-bench-press": {
     "match_key": "Barbell_Incline_Bench_Press_-_Medium_Grip",
-    "score": 1,
+    "score": null,
     "needsReview": false,
     "adjudicated": true,
     "adjudicatedBy": "controller",
@@ -133,7 +133,7 @@
   },
   "goblet-squat": {
     "match_key": "Goblet_Squat",
-    "score": 0.8,
+    "score": null,
     "needsReview": false,
     "adjudicated": true,
     "adjudicatedBy": "controller",
@@ -141,7 +141,7 @@
   },
   "cable-row": {
     "match_key": "Seated_Cable_Rows",
-    "score": 1,
+    "score": null,
     "needsReview": false,
     "adjudicated": true,
     "adjudicatedBy": "controller",
@@ -149,7 +149,7 @@
   },
   "db-row": {
     "match_key": "One-Arm_Dumbbell_Row",
-    "score": 1,
+    "score": null,
     "needsReview": false,
     "adjudicated": true,
     "adjudicatedBy": "controller",
@@ -157,7 +157,7 @@
   },
   "bicep-curl": {
     "match_key": "Dumbbell_Bicep_Curl",
-    "score": 0.8,
+    "score": null,
     "needsReview": false,
     "adjudicated": true,
     "adjudicatedBy": "controller",
@@ -165,7 +165,7 @@
   },
   "push-up": {
     "match_key": "Pushups",
-    "score": 0.8,
+    "score": null,
     "needsReview": false,
     "adjudicated": true,
     "adjudicatedBy": "controller",
@@ -173,7 +173,7 @@
   },
   "barbell-row": {
     "match_key": "Bent_Over_Barbell_Row",
-    "score": 1,
+    "score": null,
     "needsReview": false,
     "adjudicated": true,
     "adjudicatedBy": "controller",
@@ -181,7 +181,7 @@
   },
   "calf-raise": {
     "match_key": "Standing_Calf_Raises",
-    "score": 0.8,
+    "score": null,
     "needsReview": false,
     "adjudicated": true,
     "adjudicatedBy": "controller",
@@ -189,7 +189,7 @@
   },
   "face-pull": {
     "match_key": "Face_Pull",
-    "score": 0.8,
+    "score": null,
     "needsReview": false,
     "adjudicated": true,
     "adjudicatedBy": "controller",

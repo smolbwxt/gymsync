@@ -179,6 +179,7 @@ async function main() {
   console.log(`  ${newPackRows.length} new, ${alreadyInCatalog} already in catalog (skipped, no identity update)`);
 
   let insertedRows = [];
+  const insertFailedSlugs = [];
   for (let i = 0; i < newPackRows.length; i++) {
     const e = newPackRows[i];
     const body = {
@@ -193,16 +194,22 @@ async function main() {
     };
     console.log(`  [insert ${i + 1}/${newPackRows.length}] ${e.slug} (${e.name})`);
     if (!dryRun) {
-      const [created] = await rest('exercises', { method: 'POST', headers: rep, body: JSON.stringify(body) });
-      insertedRows.push(created);
+      try {
+        const [created] = await rest('exercises', { method: 'POST', headers: rep, body: JSON.stringify(body) });
+        insertedRows.push(created);
+      } catch (err) {
+        console.error(`  [insert ${i + 1}/${newPackRows.length}] ${e.slug}: FAILED (${err.message})`);
+        insertFailedSlugs.push(e.slug);
+        continue;
+      }
     } else {
       insertedRows.push({ id: null, slug: e.slug, name: e.name, category: e.category,
         primary_muscle: e.primary_muscle, secondary_muscles: e.secondary_muscles || [],
         equipment: e.equipment, demo_video_url: null });
     }
   }
-  const expandedCount = newPackRows.length;
-  console.log(`  expanded: ${expandedCount}`);
+  const expandedCount = insertedRows.length;
+  console.log(`  expanded: ${expandedCount}${insertFailedSlugs.length ? ` (${insertFailedSlugs.length} failed: ${insertFailedSlugs.join(', ')})` : ''}`);
 
   // Full post-expand row set (re-query live to get authoritative state; in
   // dry-run there's nothing new in the DB, so splice in the simulated rows).
@@ -221,15 +228,20 @@ async function main() {
   const mapPath = path.join(__dirname, 'exercise_media_map.json');
   let existingMap = {};
   if (fs.existsSync(mapPath)) {
-    try { existingMap = JSON.parse(fs.readFileSync(mapPath, 'utf8')); } catch { existingMap = {}; }
+    try {
+      existingMap = JSON.parse(fs.readFileSync(mapPath, 'utf8'));
+    } catch (err) {
+      console.error(`Fatal: ${mapPath} exists but failed to parse (${err.message}). This file holds manually-adjudicated matches (controller review) — refusing to silently recompute them. Fix or restore the file, then re-run.`);
+      process.exit(1);
+    }
   }
   const map = {};
   for (const row of originalRows) {
-    const existing = existingMap[row.slug];
+    const mapEntry = existingMap[row.slug];
     let resolution;
     let flag;
-    if (existing && existing.adjudicated === true && existing.match_key) {
-      resolution = existing;
+    if (mapEntry && mapEntry.adjudicated === true && mapEntry.match_key) {
+      resolution = mapEntry;
       flag = 'adjudicated';
     } else {
       resolution = resolveOriginal(row, candidates);
@@ -313,9 +325,15 @@ async function main() {
     }
 
     if (!dryRun) {
-      await rest(`exercises?slug=eq.${encodeURIComponent(row.slug)}`, {
-        method: 'PATCH', body: JSON.stringify({ demo_video_url: publicUrl(row.slug) }),
-      });
+      try {
+        await rest(`exercises?slug=eq.${encodeURIComponent(row.slug)}`, {
+          method: 'PATCH', body: JSON.stringify({ demo_video_url: publicUrl(row.slug) }),
+        });
+      } catch (err) {
+        console.error(`  [${idx}/${total}] ${row.slug}: FAILED (demo_video_url PATCH: ${err.message})`);
+        unmatchedSlugs.push(row.slug);
+        return;
+      }
       console.log(`  [${idx}/${total}] ${row.slug}: demo_video_url set`);
       uploadedFiles += 2;
     } else {
@@ -327,7 +345,8 @@ async function main() {
   await Promise.all(toBackfill.map((row, i) => processRow(row, i + 1, toBackfill.length)));
 
   const skipped = alreadyPopulated + needsReviewSlugs.length;
-  const summary = `expanded ${expandedCount} · matched ${matched} · uploaded ${uploadedFiles}(files) · skipped ${skipped} · needsReview: [${needsReviewSlugs.join(', ')}] · UNMATCHED: [${unmatchedSlugs.join(', ')}]`;
+  const allUnmatched = unmatchedSlugs.concat(insertFailedSlugs);
+  const summary = `expanded ${expandedCount} · matched ${matched} · uploaded ${uploadedFiles}(files) · skipped ${skipped} · needsReview: [${needsReviewSlugs.join(', ')}] · UNMATCHED: [${allUnmatched.join(', ')}]`;
   console.log(`\n${summary}`);
 }
 
