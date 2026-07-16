@@ -425,8 +425,17 @@ struct GroupSessionLiveView: View {
 
             // ── PR CELEBRATION (full-screen, user-dismissed — p29) ─────────
             if isPROverlay {
-                prCelebrationOverlay
-                    .transition(.opacity)
+                PRCelebrationOverlay(
+                    exerciseName: prOverlayExerciseName,
+                    weight: prOverlayWeight,
+                    reps: prOverlayReps,
+                    priorBest: prOverlayPriorBest,
+                    monthlyCount: prOverlayMonthlyCount,
+                    onDismiss: {
+                        withAnimation(.easeIn(duration: 0.2)) { isPROverlay = false }
+                    }
+                )
+                .transition(.opacity)
             }
 
             // ── REACTION OVERLAY (floating emoji pill) ───────────────────
@@ -1328,91 +1337,6 @@ struct GroupSessionLiveView: View {
                 .font(GSFont.body(10, relativeTo: .caption2))
                 .foregroundStyle(theme.neutral500)
         }
-    }
-
-    // MARK: - PR celebration overlay (full-screen, user-dismissed) — p29
-
-    private var prCelebrationOverlay: some View {
-        ZStack {
-            theme.accent.ignoresSafeArea()
-
-            // Concentric target-ring background (canvas chrome, approximated with two
-            // static strokes — no animation/particle system exists in this app).
-            ZStack {
-                Circle().stroke(theme.bg.opacity(0.22), lineWidth: 1).frame(width: 340, height: 340)
-                Circle().stroke(theme.bg.opacity(0.32), lineWidth: 1).frame(width: 230, height: 230)
-            }
-
-            VStack(spacing: 16) {
-                Spacer()
-
-                Text("🔥")
-                    .font(.system(size: 44))
-
-                Text("NEW PERSONAL RECORD")
-                    .font(GSFont.bold(13, relativeTo: .caption))
-                    .tracking(3.0)
-                    .foregroundStyle(theme.bg.opacity(0.9))
-
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(decimalString(prOverlayWeight))
-                        .font(.custom("Archivo-Bold", size: 56))
-                        .foregroundStyle(theme.bg)
-                    Text("lbs")
-                        .font(GSFont.bold(18, relativeTo: .title3))
-                        .foregroundStyle(theme.bg.opacity(0.85))
-                }
-
-                Text("\(prOverlayExerciseName) × \(prOverlayReps)")
-                    .font(GSFont.heading(20, relativeTo: .title3))
-                    .foregroundStyle(theme.bg)
-                    .multilineTextAlignment(.center)
-
-                Text("▲ Beat your best by \(decimalString(prOverlayWeight - prOverlayPriorBest)) lbs")
-                    .font(GSFont.bodyMedium(14, relativeTo: .body))
-                    .foregroundStyle(theme.bg.opacity(0.9))
-
-                if let count = prOverlayMonthlyCount, count > 0 {
-                    Text("🏆 \(ordinal(count)) PR this month")
-                        .font(GSFont.bold(12, relativeTo: .caption))
-                        .foregroundStyle(theme.bg)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(theme.bg.opacity(0.18))
-                }
-
-                Spacer()
-
-                HStack(spacing: 10) {
-                    ShareLink(item: prShareText) {
-                        Text("Share")
-                            .font(GSFont.bold(15, relativeTo: .body))
-                            .foregroundStyle(theme.bg)
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                    }
-                    .overlay(Rectangle().strokeBorder(theme.bg.opacity(0.6), lineWidth: 1))
-
-                    Button {
-                        withAnimation(.easeIn(duration: 0.2)) { isPROverlay = false }
-                    } label: {
-                        Text("Keep Lifting")
-                            .font(GSFont.bold(15, relativeTo: .body))
-                            .foregroundStyle(theme.accent)
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                    }
-                    .buttonStyle(.plain)
-                    .background(theme.bg)
-                }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 24)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .zIndex(10)
-    }
-
-    private var prShareText: String {
-        "New PR! \(prOverlayExerciseName) — \(decimalString(prOverlayWeight)) lbs × \(prOverlayReps) on GymSync."
     }
 
     // MARK: - LogSetSheet content (penalty / burpee logging only — normal sets log inline)
