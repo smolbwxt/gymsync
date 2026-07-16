@@ -22,5 +22,6 @@
   "lobby": { "frame": 5, "title": "Lobby" },
   "chat": { "frame": 21, "title": "Group Chat" },
   "session-recap": { "frame": 34, "title": "Session Detail" },
-  "friends": { "frame": 19, "title": "Friends" }
+  "friends": { "frame": 19, "title": "Friends" },
+  "exercise-detail": { "frame": 14, "title": "Exercise Detail" }
 }

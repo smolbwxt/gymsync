@@ -54,22 +54,14 @@ struct ExerciseDetailView: View {
                         .foregroundStyle(theme.text)
                 }
 
-                // Canvas: demo placeholder block (no photos yet — grayscale rule N/A)
-                ZStack {
-                    theme.surface
-                    VStack(spacing: 6) {
-                        Image(systemName: "play.circle")
-                            .font(.system(size: 34, weight: .light))
-                            .foregroundStyle(theme.neutral500)
-                        Text("WATCH DEMO")
-                            .font(GSFont.bodyMedium(11, relativeTo: .caption2))
-                            .tracking(1.2)
-                            .foregroundStyle(theme.neutral500)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 150)
-                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                // Phase E: two-frame animated demo (supersedes the earlier
+                // "no photos yet" placeholder block — GSDemoView shows its
+                // own photo-glyph placeholder while loading or if url is nil).
+                GSDemoView(url: exercise.demoVideoURL)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 220)
+                    .clipped()
+                    .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
 
                 // Canvas: Muscles worked section header + accent/neutral tags
                 VStack(alignment: .leading, spacing: 8) {
