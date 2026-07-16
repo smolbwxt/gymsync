@@ -8,7 +8,7 @@
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "test:parity": "node --test scripts/tests/"
+    "test:parity": "node --test"
   },
   "keywords": [],
   "author": "",

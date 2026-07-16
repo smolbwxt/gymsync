@@ -65,6 +65,7 @@ const MIME = {
   '.js': 'text/javascript', '.css': 'text/css', '.html': 'text/html',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.json': 'application/json',
   '.jsx': 'text/javascript', '.woff2': 'font/woff2', '.woff': 'font/woff',
+  '.svg': 'image/svg+xml',
 };
 
 async function main() {
@@ -112,13 +113,12 @@ async function main() {
     await page.goto(`http://localhost:${port}/__frame.html`, { waitUntil: 'networkidle0' });
     await new Promise((r) => setTimeout(r, 500)); // settle dc-runtime paint
     const el = await page.$('.gs-theme');
+    if (!el) {
+      throw new Error(`frame ${p.idx} (${p.title}): '.gs-theme' not found — refusing to substitute a full-page crop`);
+    }
     const nn = String(p.idx).padStart(2, '0');
     const file = `proof-frame-${nn}.png`;
-    if (el) {
-      await el.screenshot({ path: path.join(outDir, file) });
-    } else {
-      await page.screenshot({ path: path.join(outDir, file) });
-    }
+    await el.screenshot({ path: path.join(outDir, file) });
     manifest.push({ idx: p.idx, title: p.title, name: p.name, file });
     console.log(`  rendered ${file}  ·  ${p.title}`);
   }
