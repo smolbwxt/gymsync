@@ -22,5 +22,9 @@
   {
     "screenId": "tab-stats",
     "reason": "Stats tab gains current + longest streak tiles (Phase S Task 5, `user_streaks`) — a system-designed addition (GSCard/GSSectionHeader/GSStatTile idiom, matching the weekly-volume/recent-PRs card rhythm already on this screen; flame glyph for a live streak) with no canvas frame of its own yet. Awaiting a designer frame; capture will need refreshing once one exists."
+  },
+  {
+    "screenId": "_streaks-group-abandoned-rule",
+    "reason": "BEHAVIOR (not visual): migration 20260719000007 breaks the GROUP streak on a bare abandoned transition with an absent member — beyond Flow 7 literal text (group rule lists only no_show) but converging to product intent; removes an unenforced config-ordering dependency. Whole-branch review 2026-07-16 recommended recording it here for traceability."
   }
 ]
