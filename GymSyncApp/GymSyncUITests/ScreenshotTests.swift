@@ -345,4 +345,38 @@ final class ScreenshotTests: XCTestCase {
         }
         attachScreenshot(app, named: "app-routine-detail.png")
     }
+
+    func testExerciseDetail() {
+        let app = launchApp()
+        guard waitForTabBar(app) else { return }
+        selectTab(app, label: "Library")
+        settle()
+
+        // Library defaults to the Routines sub-tab — switch to Exercises
+        // (`LibraryTabView.segmentOption`'s label is a plain "Exercises" Text,
+        // so an exact buttons["Exercises"] query is reliable, unlike the
+        // composed labels elsewhere in this file).
+        let exercisesSegment = app.buttons["Exercises"]
+        if exercisesSegment.waitForExistence(timeout: 10) {
+            exercisesSegment.tap()
+            settle()
+        }
+
+        // Unlike the seeded "[QA] Push Day" routine above, exercise rows have
+        // no stable predictable name to match on (the live catalog, not a QA
+        // fixture) — grab the first List row directly. `ExercisesListView`
+        // renders rows via `List(filtered) { NavigationLink { ... } }`, which
+        // backs a table, so `app.cells` (not `app.buttons`, which would also
+        // catch the muscle-filter chip row above the list) finds it.
+        let firstExercise = app.cells.firstMatch
+        if firstExercise.waitForExistence(timeout: 15) {
+            firstExercise.tap()
+        }
+
+        // Demo frames download over the network — two settle cycles (mirrors
+        // captureCatalog's double-settle for async image loads) before capture.
+        settle()
+        settle()
+        attachScreenshot(app, named: "app-exercise-detail.png")
+    }
 }

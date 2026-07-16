@@ -30,7 +30,7 @@ struct ExercisesListView: View {
                         muscleFilter = nil
                     }
                     ForEach(muscles, id: \.self) { m in
-                        filterChip(label: m.capitalized, selected: muscleFilter == m) {
+                        filterChip(label: m.replacingOccurrences(of: "_", with: " ").capitalized, selected: muscleFilter == m) {
                             muscleFilter = (muscleFilter == m) ? nil : m
                         }
                     }
