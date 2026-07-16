@@ -1,26 +1,29 @@
-# Unbuilt design frames — held for a future phase
+# Unbuilt design frames — resolution record
 
 The full-frame design-parity QA (2026-07-15) originally found four canvas frames
-with no implementation. Two have since shipped: frame 42 (MKLocalSearch home-gym
-search) is built and now regression-guarded by the parity harness
-(`onboarding-homegym-searching → 42` in `docs/design/frame-map.json`), and frame 26
-turned out to be chat rich states (images/reactions/typing indicator), not Home
-stat-tile states — those shipped in Phase 2.5. Frames 41 and 45 remain genuinely
-unbuilt; they were always queued as "brief-#1 leftovers" and never built. The
-user's call (2026-07-15) for what's left: **hold onto the proofs; build them out
-later if the features prove desirable.**
-
-These PNGs are authoritative renders (canvas → dc-runtime, Ink palette). The live
-source of truth is the canvas itself — `docs/design/Gym Sync App Designs.dc.html`,
-frames listed below — re-render with the method recorded in the project memory.
+with no implementation. **As of Phase U (2026-07-16), every frame in this
+directory is resolved** — the directory is retained as the historical record of
+the finding and the authoritative proof renders.
 
 | Proof | Canvas frame | What it is | Status |
 |-------|-------------|------------|--------|
-| `26-rich-states.png` | 26 · Rich states | Chat rich states (images / reactions / typing indicator) | **Built** (Phase 2.5) — not a Home stat-tile state as previously miscatalogued here |
-| `41-stat-tiles-states.png` | 41 · Stat Tiles states | Redacted / loading / populated stat tiles | Unbuilt — `GSStatTile` / `HomeView` |
-| `42-gym-setup-searching.png` | 42 · Gym Setup · searching | Live search-results state while picking a home gym | **Built** (MKLocalSearch) — regression-guarded by `onboarding-homegym-searching → 42` in the parity harness |
-| `45-activity-feed.png` | 45 · Activity Feed | Dedicated scrollable activity feed | Unbuilt — new view; today Stats only has "Recent Activity → View sessions" |
+| `26-rich-states.png` | 26 · Rich states | Chat rich states (images / reactions / typing indicator) | **Built** (Phase 2.5) — was miscatalogued here as Home stat-tile states |
+| `41-stat-tiles-states.png` | 41 · Stat Tiles states | Loaded / skeleton / first-session-zero / offline-stale stat tiles | **Built** (Phase U — `StatTilesRow`); parity-guarded via `stattile-* → 41` |
+| `42-gym-setup-searching.png` | 42 · Gym Setup · searching | Live search-results state while picking a home gym | **Built** (MKLocalSearch); parity-guarded via `onboarding-homegym-searching → 42` |
+| `45-activity-feed.png` | 45 · Activity Feed | Dedicated scrollable activity feed | **Built** (Phase U — `ActivityFeedView` + `activity_feed` RPC); parity-guarded via `activity-feed → 45` |
 
-The complete frame-by-frame QA matrix (built screens all verified faithful; two
-systematic divergences fixed in PR #22) is summarized in the project memory and
-was tracked in `.superpowers/qa/frame-parity.md` (git-ignored scratch).
+Related frames adjudicated during Phase U (proofs render on demand via
+`scripts/render_proofs.js`; not stored here):
+
+- **Frame 17 · Workout Complete** — solo recap. **Built** (Phase U — `SoloRecapView`,
+  parity `recap-solo → 17`). The frame's "Synced to Apple Health" card is
+  deliberately omitted until Phase H restores it.
+- **Frame 8 · Session Complete** — group end-of-session celebration (leaderboard,
+  kudos). **Queued for Phase F** — depends on the kudos backend, per the
+  remaining-build roadmap.
+- **Frame 34 · Session Detail** — from-history detail. Built (`CompletedSessionView`,
+  parity `session-recap → 34`).
+
+These PNGs are authoritative renders (canvas → dc-runtime, Ink palette). The live
+source of truth is the canvas itself — `docs/design/Gym Sync App Designs.dc.html` —
+re-render with `scripts/render_proofs.js`.
