@@ -1,3 +1,4 @@
+import Foundation
 import SwiftUI
 
 @main
@@ -13,8 +14,19 @@ struct GymSyncApp: App {
     }
     var body: some Scene {
         WindowGroup {
+            #if DEBUG
+            if let id = ProcessInfo.processInfo.environment["UITEST_CATALOG"],
+               let screen = CatalogScreen(rawValue: id) {
+                CatalogHostView(screen: screen)
+                    .environment(\.gsTheme, ThemeStore.shared.current)
+            } else {
+                RootView()
+                    .environment(AuthService.shared)
+            }
+            #else
             RootView()
                 .environment(AuthService.shared)
+            #endif
         }
     }
 }

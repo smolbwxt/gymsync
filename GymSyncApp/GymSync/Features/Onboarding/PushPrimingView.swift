@@ -34,6 +34,17 @@ struct PushPrimingView: View {
 
     @State private var isRequesting = false
 
+    #if DEBUG
+    /// Debug-only: when true (screen catalog only, via the fixture init
+    /// below), `body`'s `.task` skips `checkInitialState()`'s live
+    /// UNUserNotificationCenter query, which would otherwise immediately
+    /// overwrite a forced `PushReceiver.shared.authorizationStatus` with the
+    /// simulator's real permission decision. Always false in every other
+    /// path (including normal debug builds); compiled out of release
+    /// entirely.
+    private var catalogSkipCheckInitialState = false
+    #endif
+
     private var pushReceiver: PushReceiver { PushReceiver.shared }
 
     private var isDenied: Bool {
@@ -76,7 +87,12 @@ struct PushPrimingView: View {
         // GSComponents.swift's GSHidesDock. No-op during onboarding, since
         // OnboardingCoordinator renders outside MainTabView's dock entirely.
         .gsHidesDock()
-        .task { await checkInitialState() }
+        .task {
+            #if DEBUG
+            if catalogSkipCheckInitialState { return }
+            #endif
+            await checkInitialState()
+        }
         .onChange(of: scenePhase) {
             guard scenePhase == .active else { return }
             Task { await handleForegroundReturn() }
@@ -312,3 +328,22 @@ struct PushPrimingView: View {
         }
     }
 }
+
+#if DEBUG
+extension PushPrimingView {
+    /// Debug-only seam for the design-parity screen catalog (Task 4): forces
+    /// `PushReceiver.shared.authorizationStatus` (via the `debugSet
+    /// AuthorizationStatus(_:)` seam on PushReceiver.swift) and skips
+    /// `checkInitialState()` (see `catalogSkipCheckInitialState` above), so
+    /// `CatalogHostView` can render the pre-prompt and denied states
+    /// deterministically. Added here (rather than in CatalogHostView.swift)
+    /// because `_isRequesting` is `private` @State — this extension can
+    /// touch it only because it lives in the SAME FILE as that declaration.
+    /// Compiled out of release entirely.
+    init(catalogAuthorizationStatus status: UNAuthorizationStatus) {
+        self.init(isOnboarding: true)
+        PushReceiver.shared.debugSetAuthorizationStatus(status)
+        catalogSkipCheckInitialState = true
+    }
+}
+#endif
