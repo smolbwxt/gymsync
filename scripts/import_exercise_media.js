@@ -210,18 +210,34 @@ async function main() {
 
   // --- resolve ALL original-30 rows against the dataset (for the human-
   // reviewed map file — independent of whether they still need backfill
-  // this run, so the file stays a complete, stable audit trail). -----------
+  // this run, so the file stays a complete, stable audit trail). Rows a
+  // human has already adjudicated (`adjudicated: true` + `match_key` in the
+  // existing map file) are carried forward as-is — no bestMatch recompute,
+  // no needsReview gating — so a controller's decision can't be silently
+  // overwritten by the next automated run. -----------------------------------
   console.log(`\n--- resolving original catalog rows (bestMatch vs dataset) ---`);
   const candidates = buildCandidates(datasetList);
   const originalRows = allRows.filter((r) => !packSlugSet.has(r.slug));
+  const mapPath = path.join(__dirname, 'exercise_media_map.json');
+  let existingMap = {};
+  if (fs.existsSync(mapPath)) {
+    try { existingMap = JSON.parse(fs.readFileSync(mapPath, 'utf8')); } catch { existingMap = {}; }
+  }
   const map = {};
   for (const row of originalRows) {
-    const resolution = resolveOriginal(row, candidates);
+    const existing = existingMap[row.slug];
+    let resolution;
+    let flag;
+    if (existing && existing.adjudicated === true && existing.match_key) {
+      resolution = existing;
+      flag = 'adjudicated';
+    } else {
+      resolution = resolveOriginal(row, candidates);
+      flag = resolution.unmatched ? 'UNMATCHED' : resolution.needsReview ? 'needsReview' : 'ok';
+    }
     map[row.slug] = resolution;
-    const flag = resolution.unmatched ? 'UNMATCHED' : resolution.needsReview ? 'needsReview' : 'ok';
     console.log(`  ${row.slug} -> ${resolution.match_key || '(none)'} score=${resolution.score} [${flag}]`);
   }
-  const mapPath = path.join(__dirname, 'exercise_media_map.json');
   fs.writeFileSync(mapPath, JSON.stringify(map, null, 2) + '\n');
   console.log(`  wrote ${mapPath} (${originalRows.length} entries)`);
 
