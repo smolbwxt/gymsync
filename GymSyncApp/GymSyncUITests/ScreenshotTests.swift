@@ -428,6 +428,16 @@ final class ScreenshotTests: XCTestCase {
             NSPredicate(format: "label CONTAINS 'Activity'")
         ).firstMatch
         if activityRow.waitForExistence(timeout: 15) {
+            // The new Stats streak card may push Activity below the fold;
+            // scroll to bring it into view if needed before tapping.
+            if !activityRow.isHittable {
+                app.swipeUp()
+                settle()
+                if !activityRow.isHittable {
+                    app.swipeUp()
+                    settle()
+                }
+            }
             activityRow.tap()
         }
 
