@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(16);
+SELECT plan(17);
 
 -- ── Fixtures ──────────────────────────────────────────────────────────────────
 -- U (caller), T (teammate, owns a private routine used in a non-group session
@@ -209,6 +209,11 @@ SELECT results_eq(
   $$SELECT session_id FROM public.activity_feed(10)$$,
   ARRAY['00000000-0000-0000-0000-0000000af305'::uuid],
   'O''s feed contains only O''s own solo session, not U''s sessions');
+
+SELECT results_eq(
+  $$SELECT display_name FROM public.activity_feed(10)
+      WHERE session_id = '00000000-0000-0000-0000-0000000af305'$$,
+  ARRAY['Workout'], 'S5 display_name = Workout (fallback for solo session with no routine)');
 
 SELECT * FROM finish();
 ROLLBACK;
