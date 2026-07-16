@@ -29,5 +29,7 @@
   "stattile-error": { "frame": 41, "title": "Stat Tiles states" },
   "stattile-empty": { "frame": 41, "title": "Stat Tiles states" },
 
-  "activity-feed": { "frame": 45, "title": "Activity Feed" }
+  "activity-feed": { "frame": 45, "title": "Activity Feed" },
+
+  "recap-solo": { "frame": 17, "title": "Recap" }
 }

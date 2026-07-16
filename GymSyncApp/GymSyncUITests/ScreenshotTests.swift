@@ -208,6 +208,7 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogStatTileLoading()    { captureCatalog("stattile-loading") }
     func testCatalogStatTileError()      { captureCatalog("stattile-error") }
     func testCatalogStatTileEmpty()      { captureCatalog("stattile-empty") }
+    func testCatalogRecapSolo()          { captureCatalog("recap-solo") }
 
     // MARK: - Seeded deep-screen captures
     //
