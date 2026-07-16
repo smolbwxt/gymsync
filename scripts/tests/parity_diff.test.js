@@ -46,3 +46,9 @@ test('buildReportHtml emits one row per pair, worst-first, flagging accepted', (
   assert.ok(html.includes('accepted'));
   assert.ok(html.includes('stat tiles are a recorded deviation'));
 });
+
+test('buildReportHtml footers unmapped captures with no authoritative frame', () => {
+  const html = buildReportHtml([], ['voice-transmitting']);
+  assert.ok(html.includes('Unmapped captures — no authoritative frame'));
+  assert.ok(html.includes('voice-transmitting'));
+});

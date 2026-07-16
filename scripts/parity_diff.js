@@ -74,8 +74,11 @@ function esc(s) {
 }
 
 /** Self-contained report. Rows sorted worst-first; accepted rows carry an
- *  `accepted` class so the template can separate known-OK divergence. */
-function buildReportHtml(rows) {
+ *  `accepted` class so the template can separate known-OK divergence.
+ *  `unmapped` lists screen-ids captured by the app but absent from the
+ *  frame map (no authoritative proof to diff against) — rendered as a
+ *  small footer so they aren't silently dropped from the report. */
+function buildReportHtml(rows, unmapped = []) {
   const sorted = [...rows].sort((x, y) => y.score - x.score);
   const pct = (s) => (s * 100).toFixed(1) + '%';
   const cards = sorted.map((r) => `
@@ -92,6 +95,11 @@ function buildReportHtml(rows) {
     </div>
     ${r.accepted ? `<p class="reason">${esc(r.acceptedReason)}</p>` : ''}
   </article>`).join('');
+  const unmappedSection = unmapped.length ? `
+<footer class="unmapped">
+  <h2>Unmapped captures — no authoritative frame</h2>
+  <ul>${unmapped.map((id) => `<li>${esc(id)}</li>`).join('')}</ul>
+</footer>` : '';
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <title>GymSync Design Parity</title>
 <style>
@@ -116,21 +124,37 @@ h1{font-size:32px;font-weight:800;letter-spacing:-.02em;margin:0 0 8px}
 .shots img{width:100%;display:block;border:1px solid var(--line)}
 figcaption{font-size:11px;color:var(--muted);text-align:center;margin-top:5px}
 .reason{font-size:13px;color:var(--muted);margin:12px 2px 2px}
+.unmapped{margin-top:32px;padding-top:16px;border-top:1px solid var(--line)}
+.unmapped h2{font-size:15px;font-weight:700;color:var(--muted);margin:0 0 8px}
+.unmapped ul{margin:0;padding-left:20px;color:var(--muted);font-size:13px}
 </style></head>
 <body><div class="wrap">
 <h1>GymSync Design Parity</h1>
 <p class="lede">Every captured app screen vs. its authoritative Ink-palette proof, sorted worst-divergence first. Score is a coarse structural delta — high means "look at this," not "failed." Accepted deviations are dimmed and sorted with their score but flagged.</p>
 <div class="pairs">${cards}</div>
+${unmappedSection}
 </div></body></html>`;
 }
 
-module.exports = { normalize, scorePair, heatmap, buildReportHtml };
+module.exports = { normalize, scorePair, heatmap, buildReportHtml, findUnmappedCaptures };
 
 function readPng(fp) {
   return PNG.sync.read(fs.readFileSync(fp));
 }
 function b64Png(png) {
   return 'data:image/png;base64,' + PNG.sync.write(png).toString('base64');
+}
+
+/** Screen-ids captured under `app-<screen-id>.png` in `appDir` that have no
+ *  corresponding entry in the frame map — i.e. no authoritative proof frame
+ *  to diff against. These would otherwise be silently skipped. */
+function findUnmappedCaptures(appDir, frameMap) {
+  const mapped = new Set(Object.keys(frameMap));
+  return fs.readdirSync(appDir)
+    .filter((f) => f.startsWith('app-') && f.endsWith('.png'))
+    .map((f) => f.slice('app-'.length, -'.png'.length))
+    .filter((screenId) => !mapped.has(screenId))
+    .sort();
 }
 
 function main() {
@@ -171,7 +195,12 @@ function main() {
     console.log(`  ${screenId}: ${(score * 100).toFixed(1)}%${screenId in acceptedById ? ' (accepted)' : ''}`);
   }
 
-  fs.writeFileSync(path.join(outDir, 'parity-report.html'), buildReportHtml(rows));
+  const unmapped = findUnmappedCaptures(values.app, frameMap);
+  for (const screenId of unmapped) {
+    console.warn(`unmapped capture (no frame-map entry): ${screenId}`);
+  }
+
+  fs.writeFileSync(path.join(outDir, 'parity-report.html'), buildReportHtml(rows, unmapped));
   console.log(`\ndone — ${rows.length} pairs -> ${path.join(outDir, 'parity-report.html')}`);
 }
 

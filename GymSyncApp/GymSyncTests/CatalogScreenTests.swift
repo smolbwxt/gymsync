@@ -19,6 +19,7 @@ final class CatalogScreenTests: XCTestCase {
         for id in ids {
             XCTAssertNotNil(CatalogScreen(rawValue: id), "missing catalog case: \(id)")
         }
+        XCTAssertEqual(CatalogScreen.allCases.count, ids.count, "new CatalogScreen case added without updating the documented id list — also add a ScreenshotTests capture + frame-map entry")
     }
 
     func testAllCasesHaveUniqueRawValues() {

@@ -121,8 +121,13 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           CI_TEST_USERNAME: ${{ secrets.CI_TEST_USERNAME }}
+          # seed_qa_fixtures.js uses only node builtins — skip puppeteer's
+          # ~150MB Chromium download here (the parity job below needs it,
+          # this one doesn't).
+          PUPPETEER_SKIP_DOWNLOAD: 1
         run: |
           if [ -n "$SUPABASE_SECRET_KEY" ]; then
+            trap 'rm -f .env.local' EXIT
             printf 'SUPABASE_URL=%s\nSUPABASE_SECRET_KEY=%s\n' "$SUPABASE_URL" "$SUPABASE_SECRET_KEY" > .env.local
             npm ci
             node scripts/seed_qa_fixtures.js --username "$CI_TEST_USERNAME"
@@ -204,6 +209,9 @@ jobs:
 
       - name: Install harness deps
         run: npm ci
+
+      - name: Run harness unit tests
+        run: npm run test:parity
 
       - name: Download app screenshots
         uses: actions/download-artifact@v4
