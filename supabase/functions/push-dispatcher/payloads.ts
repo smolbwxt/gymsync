@@ -34,6 +34,9 @@ export interface NotificationContent {
  *                                                    in the brief's list, so
  *                                                    it shares the generic
  *                                                    "open and look" bucket)
+ *                    streak_milestone               (View — Phase S, no
+ *                                                    bespoke action either)
+ *                    streak_at_risk                 (View)
  *   OPEN_LOBBY      — session_lobby_open           (Open Lobby)
  *   OPEN_SESSION    — your_turn                    (Open Session)
  *   ROAST           — lateness_chirp               (Roast)
@@ -55,6 +58,11 @@ type PushPayload = Record<string, unknown>;
 function str(payload: PushPayload, key: string): string | undefined {
   const v = payload[key];
   return typeof v === "string" && v.length > 0 ? v : undefined;
+}
+
+function num(payload: PushPayload, key: string): number | undefined {
+  const v = payload[key];
+  return typeof v === "number" ? v : undefined;
 }
 
 /**
@@ -183,6 +191,49 @@ export function buildNotificationPayload(
         body: "You were mentioned in chat.",
         category: CATEGORY.SESSION_VIEW,
         threadId: groupId,
+      };
+    }
+
+    case "streak_milestone": {
+      // Payload (20260719000008_streak_pushes.sql):
+      //   user  case: { streak, kind: 'user' }
+      //   group case: { streak, kind: 'group', group_id }
+      // Both raw event names share one notification_prefs category ('streak')
+      // — same "shared toggle, distinct raw events" precedent as
+      // session_idle_30min/60min above — but the copy differs by whose
+      // streak it is, so that's branched on here, not in the DB layer.
+      const streak = num(payload, "streak");
+      const isGroup = payload["kind"] === "group";
+      const groupId = str(payload, "group_id");
+      const body = isGroup
+        ? `Your crew just hit a ${streak ?? "new"}-session streak!`
+        : `You just hit a ${streak ?? "new"}-session streak!`;
+      return {
+        title: "Streak Milestone",
+        body,
+        category: CATEGORY.SESSION_VIEW,
+        ...(isGroup && groupId ? { threadId: groupId } : {}),
+      };
+    }
+
+    case "streak_at_risk": {
+      // COPY NOTE: Flow 7's tunables example is "🔥 Your 12-session streak
+      // needs you. Push Day starts soon." — "Push Day" was the mockup's
+      // routine name, and (per the other COPY NOTEs above) the enqueuer's
+      // payload (enqueue_streak_at_risk_pushes, 20260719000008) only carries
+      // { session_id, streak }, not a routine name, so generic "your
+      // session" substitutes. The leading emoji is also dropped here,
+      // matching every other case in this file — none of the 10 original
+      // events carry emoji in push copy (only chat_messages system rows do),
+      // so this stays consistent with that established convention rather
+      // than the mockup's literal text.
+      const sessionId = str(payload, "session_id");
+      const streak = num(payload, "streak");
+      return {
+        title: "Streak at Risk",
+        body: `Your ${streak ?? "current"}-session streak needs you. Your session starts soon.`,
+        category: CATEGORY.SESSION_VIEW,
+        threadId: sessionId,
       };
     }
 
