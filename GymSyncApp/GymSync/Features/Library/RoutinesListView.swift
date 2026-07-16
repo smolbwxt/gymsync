@@ -3,6 +3,13 @@ import SwiftUI
 // Canvas: Library Routines tab — cards with title, exercise list preview body,
 // accent+neutral tags (category · equipment), meta "N exercises · ~X min" kicker.
 struct RoutinesListView: View {
+    /// Optional Featured shelf rendered as the FIRST scrolling row of the
+    /// routines list, so the whole screen (Featured + "Your routines")
+    /// scrolls as one instead of the shelf pinning a cramped list below it.
+    /// Passed from `LibraryTabView`, which owns the Featured data + clone
+    /// actions; `nil` when there's nothing featured.
+    var featuredHeader: AnyView? = nil
+
     @Environment(AppState.self) private var appState
     @Environment(\.gsTheme) private var theme
     @State private var routines: [Routine] = []
@@ -14,25 +21,32 @@ struct RoutinesListView: View {
     @State private var editing: Routine?
 
     var body: some View {
-        Group {
-            if loading {
-                VStack { Spacer(); ProgressView().tint(theme.accent); Spacer() }
-                    .background(theme.bg)
-            } else if let errorText {
-                VStack { Spacer()
-                    Text(errorText).font(GSFont.body(14)).foregroundStyle(.red).padding()
-                    Spacer()
-                }.background(theme.bg)
-            } else if routines.isEmpty {
-                ContentUnavailableView(
-                    "No routines yet",
-                    systemImage: "list.clipboard",
-                    description: Text("Tap + to build your first workout.")
-                )
-                .background(theme.bg)
-            } else {
-                // Keep List so onDelete swipe continues to work (plan constraint)
-                List {
+        // One List for the whole tab: Featured header (if any) scrolls with
+        // the routines, and the "Your routines" section header carries a
+        // prominent "+ New" button (the toolbar + alone was easy to miss).
+        List {
+            if let featuredHeader {
+                featuredHeader
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(theme.bg)
+                    .listRowSeparator(.hidden)
+            }
+
+            Section {
+                if loading {
+                    HStack { Spacer(); ProgressView().tint(theme.accent); Spacer() }
+                        .padding(.vertical, 24)
+                        .listRowBackground(theme.bg).listRowSeparator(.hidden)
+                } else if let errorText {
+                    Text(errorText)
+                        .font(GSFont.body(14)).foregroundStyle(.red)
+                        .padding(.vertical, 16)
+                        .listRowBackground(theme.bg).listRowSeparator(.hidden)
+                } else if routines.isEmpty {
+                    emptyRoutinesRow
+                        .listRowBackground(theme.bg).listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 12, trailing: 16))
+                } else {
                     ForEach(routines) { routine in
                         NavigationLink {
                             RoutineDetailChoice(routine: routine,
@@ -46,19 +60,13 @@ struct RoutinesListView: View {
                     }
                     .onDelete(perform: delete)
                 }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
-                .background(theme.bg)
+            } header: {
+                yourRoutinesHeader
             }
         }
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button {
-                    showingBuilder = true
-                } label: { Image(systemName: "plus") }
-                    .tint(theme.accent)
-            }
-        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(theme.bg)
         .sheet(isPresented: $showingBuilder) {
             NavigationStack {
                 RoutineBuilderView(editing: nil) { _ in
@@ -68,6 +76,47 @@ struct RoutinesListView: View {
             }
         }
         .task { await load() }
+    }
+
+    // "YOUR ROUTINES" kicker + a discoverable "+ New" button — the primary
+    // way to add a routine, in-content rather than a lone corner glyph.
+    private var yourRoutinesHeader: some View {
+        HStack {
+            Text("Your routines")
+                .font(GSFont.bold(12, relativeTo: .caption2))
+                .tracking(0.6)
+                .foregroundStyle(theme.text.opacity(0.6))
+                .textCase(nil)
+            Spacer()
+            Button {
+                showingBuilder = true
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "plus").font(.system(size: 12, weight: .bold))
+                    Text("New").font(GSFont.bold(13, relativeTo: .subheadline))
+                }
+                .foregroundStyle(theme.accent)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .overlay(Rectangle().strokeBorder(theme.accent, lineWidth: 1))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 4)
+    }
+
+    private var emptyRoutinesRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("No routines yet")
+                .font(GSFont.heading(16, relativeTo: .headline))
+                .foregroundStyle(theme.text)
+            Text("Tap “New” above to build your first workout, or add a featured pack.")
+                .font(GSFont.body(13, relativeTo: .subheadline))
+                .foregroundStyle(theme.neutral700)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // Canvas: GSCard with title + exercise-name preview + tags + meta row

@@ -1,6 +1,7 @@
 import CoreLocation
 import MapKit
 import SwiftUI
+import UIKit
 
 /// "Set your home gym" — onboarding step 3 of 3 (Dossier §A.7, canvas lines
 /// 1053-1129). Also reused as the You-tab's Home Gym editor
@@ -33,6 +34,16 @@ struct HomeGymSetupView: View {
     @State private var isSaving = false
     @State private var errorText: String?
 
+    // Gym / address search (canvas frame 42) — type a name or address and
+    // pick from MapKit local-search results, instead of panning the map in
+    // from space. Selecting a result drops the map onto it; the map stays for
+    // confirmation and fine-tuning the exact spot.
+    @State private var searchQuery = ""
+    @State private var searchResults: [MKMapItem] = []
+    @State private var isSearching = false
+    @State private var searchTask: Task<Void, Never>?
+    @State private var userLocation: CLLocation?
+
     private static let defaultRegion = MKCoordinateRegion(
         // Continental-US fallback used when the one-shot location request is
         // denied or times out — the flow must remain completable either way.
@@ -53,9 +64,20 @@ struct HomeGymSetupView: View {
                     }
 
                     header
-                    mapSection
+
+                    searchSection
                         .padding(.horizontal, 20)
                         .padding(.top, 18)
+
+                    if !searchResults.isEmpty {
+                        searchResultsList
+                            .padding(.horizontal, 20)
+                            .padding(.top, 8)
+                    }
+
+                    mapSection
+                        .padding(.horizontal, 20)
+                        .padding(.top, 14)
 
                     gymCard
                         .padding(.horizontal, 20)
@@ -144,6 +166,85 @@ struct HomeGymSetupView: View {
         .frame(height: 230)
         .clipped()
         .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+    }
+
+    // MARK: - Search (canvas frame 42)
+
+    private var searchSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Search for a gym or address")
+                .font(GSFont.bodyMedium(11, relativeTo: .caption2))
+                .tracking(0.5)
+                .foregroundColor(theme.neutral700)
+
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 15, weight: .regular))
+                    .foregroundColor(theme.neutral500)
+
+                TextField("e.g. Powerhouse Gym, or 88 Market St", text: $searchQuery)
+                    .font(GSFont.body(15, relativeTo: .body))
+                    .foregroundColor(theme.text)
+                    .autocorrectionDisabled()
+                    .submitLabel(.search)
+                    .onChange(of: searchQuery) { _, q in scheduleSearch(q) }
+
+                if isSearching {
+                    ProgressView().controlSize(.small).tint(theme.accent)
+                } else if !searchQuery.isEmpty {
+                    Button {
+                        searchQuery = ""
+                        searchResults = []
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(theme.neutral400)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 48)
+            .background(theme.surface)
+            .overlay(
+                Rectangle().strokeBorder(
+                    searchQuery.isEmpty ? theme.divider : theme.accent, lineWidth: 1
+                )
+            )
+        }
+    }
+
+    private var searchResultsList: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(searchResults.prefix(6).enumerated()), id: \.offset) { index, item in
+                Button {
+                    selectResult(item)
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "mappin.circle")
+                            .font(.system(size: 18))
+                            .foregroundColor(theme.accent)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.name ?? "Unknown")
+                                .font(GSFont.bold(14, relativeTo: .subheadline))
+                                .foregroundColor(theme.text)
+                            Text(resultDetail(item))
+                                .font(GSFont.body(12, relativeTo: .caption))
+                                .foregroundColor(theme.neutral500)
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.vertical, 11)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                if index < min(searchResults.count, 6) - 1 {
+                    Rectangle().fill(theme.divider).frame(height: 1)
+                }
+            }
+        }
     }
 
     // MARK: - Gym card
@@ -253,6 +354,7 @@ struct HomeGymSetupView: View {
         // the continental-US default region already set — the flow stays
         // completable either way.
         if let location = try? await CheckInService.requestLocation() {
+            userLocation = location
             setCamera(center: location.coordinate)
         }
     }
@@ -260,5 +362,82 @@ struct HomeGymSetupView: View {
     private func setCamera(center: CLLocationCoordinate2D) {
         mapCenter = center
         cameraPosition = .region(MKCoordinateRegion(center: center, span: Self.focusedSpan))
+    }
+
+    // MARK: - Search actions
+
+    /// Debounced: MapKit local search is rate-limited and every keystroke
+    /// would otherwise fire a request. Waits 300 ms of quiet before searching.
+    private func scheduleSearch(_ query: String) {
+        searchTask?.cancel()
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard q.count >= 2 else {
+            searchResults = []
+            isSearching = false
+            return
+        }
+        searchTask = Task {
+            try? await Task.sleep(for: .milliseconds(300))
+            if Task.isCancelled { return }
+            await runSearch(q)
+        }
+    }
+
+    @MainActor
+    private func runSearch(_ query: String) async {
+        isSearching = true
+        defer { isSearching = false }
+        let request = MKLocalSearch.Request()
+        request.naturalLanguageQuery = query
+        // Bias toward the map's current area so nearby gyms rank first.
+        request.region = MKCoordinateRegion(
+            center: mapCenter,
+            span: MKCoordinateSpan(latitudeDelta: 0.6, longitudeDelta: 0.6)
+        )
+        do {
+            let response = try await MKLocalSearch(request: request).start()
+            if !Task.isCancelled { searchResults = response.mapItems }
+        } catch {
+            searchResults = []
+        }
+    }
+
+    /// Picking a result drops the map onto it and prefills the name (only if
+    /// the user hasn't typed their own), then clears the search.
+    private func selectResult(_ item: MKMapItem) {
+        let coordinate = item.placemark.coordinate
+        if gymName.trimmingCharacters(in: .whitespaces).isEmpty, let name = item.name {
+            gymName = name
+        }
+        setCamera(center: coordinate)
+        searchResults = []
+        searchQuery = ""
+        // Dismiss the keyboard so the map + confirmation are fully visible.
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil
+        )
+    }
+
+    /// Address line + distance from the user (when location is available —
+    /// otherwise name-only, matching the frame's "location is off" note).
+    private func resultDetail(_ item: MKMapItem) -> String {
+        let placemark = item.placemark
+        var parts: [String] = []
+        if let street = placemark.thoroughfare {
+            parts.append(placemark.subThoroughfare.map { "\($0) \(street)" } ?? street)
+        }
+        if let city = placemark.locality {
+            parts.append(city)
+        }
+        var line = parts.joined(separator: ", ")
+        if let userLocation {
+            let meters = userLocation.distance(from: CLLocation(
+                latitude: placemark.coordinate.latitude,
+                longitude: placemark.coordinate.longitude
+            ))
+            let miles = meters / 1609.34
+            line += (line.isEmpty ? "" : " · ") + String(format: "%.1f mi", miles)
+        }
+        return line.isEmpty ? "Tap to use this location" : line
     }
 }

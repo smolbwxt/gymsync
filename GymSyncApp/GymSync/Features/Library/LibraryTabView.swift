@@ -37,20 +37,24 @@ struct LibraryTabView: View {
 
                 switch selection {
                 case .routines:
-                    VStack(spacing: 0) {
-                        if !featured.isEmpty {
-                            featuredShelf
-                            GSDivider()
-                        }
-                        RoutinesListView()
-                            .id(routinesRefreshToken)
-                    }
+                    // Featured shelf rides INSIDE the routines list as its
+                    // header, so the whole tab scrolls as one (was: fixed
+                    // shelf pinning a cramped list below it).
+                    RoutinesListView(
+                        featuredHeader: featured.isEmpty ? nil : AnyView(
+                            VStack(spacing: 0) { featuredShelf; GSDivider() }
+                        )
+                    )
+                    .id(routinesRefreshToken)
                 case .exercises:
                     ExercisesListView()
                 }
             }
             .background(theme.bg)
             .navigationTitle("Library")
+            // Inline (compact) title — the large-title bar left ~15% of the
+            // screen blank above the content.
+            .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(theme.surface, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
         }
