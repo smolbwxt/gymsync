@@ -68,6 +68,19 @@ final class PushReceiver {
         AppLogger.push.error("didFailToRegisterForRemoteNotifications: \(error, privacy: .public)")
     }
 
+    #if DEBUG
+    /// Debug-only seam for the design-parity screen catalog (Task 4): forces
+    /// `authorizationStatus` so `CatalogHostView` can force-present
+    /// `PushPrimingView`'s pre-prompt and denied states without a real
+    /// UNUserNotificationCenter permission decision. `authorizationStatus`
+    /// is `private(set)` above; this compiles here because it's the SAME
+    /// FILE as that declaration (Swift's `private` access rule). Compiled
+    /// out of release entirely.
+    func debugSetAuthorizationStatus(_ status: UNAuthorizationStatus) {
+        authorizationStatus = status
+    }
+    #endif
+
     // MARK: - Idle-ladder actions (IDLE_ACTIONS: Wrap Up / Still Going)
     //
     // DECISION (recorded per task brief — see task-5-report.md for the full

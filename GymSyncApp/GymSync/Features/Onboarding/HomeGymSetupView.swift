@@ -44,6 +44,17 @@ struct HomeGymSetupView: View {
     @State private var searchTask: Task<Void, Never>?
     @State private var userLocation: CLLocation?
 
+    #if DEBUG
+    /// Debug-only: when true (screen catalog only, via the fixture init
+    /// below), `body`'s `.task` skips `loadInitial()`'s live CheckInService
+    /// network call + CLLocationManager one-shot request (10s hard
+    /// timeout), so the catalog's forced search fixture renders
+    /// deterministically instead of being raced/overwritten by a real
+    /// response. Always false in every other path (including normal debug
+    /// builds); compiled out of release entirely.
+    var catalogSkipLoadInitial = false
+    #endif
+
     private static let defaultRegion = MKCoordinateRegion(
         // Continental-US fallback used when the one-shot location request is
         // denied or times out — the flow must remain completable either way.
@@ -97,7 +108,12 @@ struct HomeGymSetupView: View {
 
             footer
         }
-        .task { await loadInitial() }
+        .task {
+            #if DEBUG
+            if catalogSkipLoadInitial { return }
+            #endif
+            await loadInitial()
+        }
     }
 
     // MARK: - Step indicator
@@ -441,3 +457,24 @@ struct HomeGymSetupView: View {
         return line.isEmpty ? "Tap to use this location" : line
     }
 }
+
+#if DEBUG
+extension HomeGymSetupView {
+    /// Debug-only seam for the design-parity screen catalog (Task 4):
+    /// force-seeds the map-search fixture (query + results + spinner) and
+    /// skips `loadInitial()`'s live network/location calls (see
+    /// `catalogSkipLoadInitial` above), so `CatalogHostView` can render both
+    /// the plain and "searching" home-gym states deterministically. Added
+    /// here (rather than in CatalogHostView.swift) because `_searchQuery`/
+    /// `_searchResults`/`_isSearching` are `private` @State — this extension
+    /// can assign them only because it lives in the SAME FILE as those
+    /// declarations. Compiled out of release entirely.
+    init(catalogSearchQuery: String, catalogSearchResults: [MKMapItem], catalogIsSearching: Bool) {
+        self.init(isOnboarding: true)
+        _searchQuery = State(initialValue: catalogSearchQuery)
+        _searchResults = State(initialValue: catalogSearchResults)
+        _isSearching = State(initialValue: catalogIsSearching)
+        catalogSkipLoadInitial = true
+    }
+}
+#endif

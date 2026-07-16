@@ -331,3 +331,18 @@ final class VoiceRoomService {
         await room.disconnect()
     }
 }
+
+#if DEBUG
+extension VoiceRoomService {
+    /// Debug-only seam for the design-parity screen catalog (Task 4):
+    /// forces `state` so `CatalogHostView` can force-present each of
+    /// `PTTDockRow`'s 5 button variants (GSComponents.swift:1155) without a
+    /// live LiveKit connection. `state` is `private(set)` above; this
+    /// extension can assign it only because it lives in the SAME FILE as
+    /// that declaration (Swift's `private` access rule). Compiled out of
+    /// release entirely.
+    func debugSetState(_ newState: VoiceRoomState) {
+        state = newState
+    }
+}
+#endif
