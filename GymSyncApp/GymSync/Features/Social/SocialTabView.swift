@@ -56,7 +56,13 @@ struct SocialTabView: View {
                         // below (in the `else` branch) rather than being
                         // masked by this friendlier empty state.
                         if groups.isEmpty && friendCount == 0 && errorText == nil {
+                            // Anchor the empty state in the upper-middle (~28%
+                            // from the top) rather than dead-center: on a tall
+                            // device, full-height centering left it floating in
+                            // a void above and below. Capping the top spacer
+                            // keeps it proportional across screen sizes.
                             Spacer(minLength: 0)
+                                .frame(maxHeight: proxy.size.height * 0.28)
                             GSEmptyState(
                                 icon: "person.2",
                                 title: "No crew yet",
@@ -199,6 +205,9 @@ struct SocialTabView: View {
             .background(theme.bg)
             .scrollContentBackground(.hidden)
             .navigationTitle("Social")
+            // Inline (compact) title — the large-title bar left the top of the
+            // screen blank above the content (same fix as Library).
+            .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $showCreateGroup) {
                 CreateGroupView { newGroup in
                     groups.insert(newGroup, at: 0)
