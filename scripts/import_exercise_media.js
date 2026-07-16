@@ -32,7 +32,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { parseArgs } = require('node:util');
-const { bestMatch, scoreMatch, normalizeName } = require('./lib/exercise_match.js');
+const { bestMatch, scoreMatch, normalizeName, validatePack } = require('./lib/exercise_match.js');
 
 // --- env + REST helpers (mirrors scripts/seed_qa_fixtures.js) --------------
 const env = fs.readFileSync(path.join(__dirname, '..', '.env.local'), 'utf8');
@@ -155,7 +155,20 @@ async function main() {
 
   // --- load pack + dataset -------------------------------------------------
   const packRaw = JSON.parse(fs.readFileSync(packPath, 'utf8'));
-  const meta = packRaw.find((e) => e && e._meta)._meta;
+
+  const packErrors = validatePack(packRaw);
+  if (packErrors.length > 0) {
+    console.error(`Pack validation failed (${packErrors.length} error(s)) — refusing to import:`);
+    for (const err of packErrors) console.error(`  - ${err}`);
+    process.exit(1);
+  }
+
+  const metaEntry = packRaw.find((e) => e && e._meta);
+  const meta = metaEntry && metaEntry._meta;
+  if (!meta || !meta.license) {
+    console.error(`Fatal: pack ${packPath} has no _meta.license block — cannot verify usage rights for the media this run would import. Refusing to proceed.`);
+    process.exit(1);
+  }
   const packEntries = packRaw.filter((e) => !(e && e._meta));
   console.log(`  pack entries: ${packEntries.length} (+_meta: dataset=${meta.dataset})`);
 
@@ -171,7 +184,10 @@ async function main() {
   const packBySlug = new Map(packEntries.map((e) => [e.slug, e]));
 
   // --- Pass 1: expand -------------------------------------------------------
-  const existing = await rest('exercises?select=id,slug,name,category,primary_muscle,secondary_muscles,equipment,demo_video_url');
+  // is_user_defined=eq.false: this select feeds both the Pass 1 dedup check
+  // and (via allRows below) the backfill/map — user-created rows (v2 hook,
+  // always false today) should never be fuzzy-matched against the dataset.
+  const existing = await rest('exercises?select=id,slug,name,category,primary_muscle,secondary_muscles,equipment,demo_video_url&is_user_defined=eq.false');
   const existingSlugSet = new Set(existing.map((e) => e.slug));
   const newPackRows = packEntries.filter((e) => !existingSlugSet.has(e.slug));
   const alreadyInCatalog = packEntries.length - newPackRows.length;
@@ -213,7 +229,7 @@ async function main() {
 
   // Full post-expand row set (re-query live to get authoritative state; in
   // dry-run there's nothing new in the DB, so splice in the simulated rows).
-  const allRows = dryRun ? existing.concat(insertedRows) : await rest('exercises?select=id,slug,name,category,primary_muscle,secondary_muscles,equipment,demo_video_url');
+  const allRows = dryRun ? existing.concat(insertedRows) : await rest('exercises?select=id,slug,name,category,primary_muscle,secondary_muscles,equipment,demo_video_url&is_user_defined=eq.false');
 
   // --- resolve ALL original-30 rows against the dataset (for the human-
   // reviewed map file — independent of whether they still need backfill
@@ -236,13 +252,34 @@ async function main() {
     }
   }
   const map = {};
+  // Slugs with no entry in the committed map at all — not the current pack,
+  // not the pinned original-30 registry either, so most likely a row left
+  // over from a PRIOR pack's Pass 1 (a different run's expansion). Fuzzy-
+  // matching these against the full dataset here would silently re-balloon
+  // the map with unreviewed guesses for rows nobody has vetted for this map.
+  // Per the final-review rule: fuzzy-resolve ONLY slugs that already have an
+  // entry in exercise_media_map.json (the original 30's pinned registry) —
+  // everything else is reported unmatched and requires an explicit
+  // adjudication entry before it's ever touched.
+  const noAdjudicationEntrySlugs = new Set();
   for (const row of originalRows) {
     const mapEntry = existingMap[row.slug];
+    if (!mapEntry) {
+      noAdjudicationEntrySlugs.add(row.slug);
+      console.log(`  ${row.slug} -> (none) [UNMATCHED: no pack entry / not in adjudication map]`);
+      continue;
+    }
     let resolution;
     let flag;
-    if (mapEntry && mapEntry.adjudicated === true && mapEntry.match_key) {
+    if (mapEntry.adjudicated === true && mapEntry.match_key) {
+      // Locked-in human match. Never recomputed.
       resolution = mapEntry;
       flag = 'adjudicated';
+    } else if (mapEntry.adjudicated === true && !mapEntry.match_key) {
+      // Locked-in human "no match" verdict (adjudicated: true, match_key:
+      // null) — a hard skip. Leave NULL forever; never recompute.
+      resolution = { match_key: null, score: null, unmatched: true, adjudicated: true };
+      flag = 'adjudicated-skip';
     } else {
       resolution = resolveOriginal(row, candidates);
       flag = resolution.unmatched ? 'UNMATCHED' : resolution.needsReview ? 'needsReview' : 'ok';
@@ -250,8 +287,12 @@ async function main() {
     map[row.slug] = resolution;
     console.log(`  ${row.slug} -> ${resolution.match_key || '(none)'} score=${resolution.score} [${flag}]`);
   }
-  fs.writeFileSync(mapPath, JSON.stringify(map, null, 2) + '\n');
-  console.log(`  wrote ${mapPath} (${originalRows.length} entries)`);
+  if (!dryRun) {
+    fs.writeFileSync(mapPath, JSON.stringify(map, null, 2) + '\n');
+    console.log(`  wrote ${mapPath} (${Object.keys(map).length} entries)`);
+  } else {
+    console.log(`  (dry-run) would write ${mapPath} (${Object.keys(map).length} entries) — map file untouched`);
+  }
 
   // --- Pass 2: backfill -----------------------------------------------------
   console.log(`\n--- Pass 2: backfill ---`);
@@ -264,6 +305,7 @@ async function main() {
   let uploadedFiles = 0;
   const needsReviewSlugs = [];
   const unmatchedSlugs = [];
+  const adjudicatedSkipSlugs = [];
 
   async function downloadImage(url) {
     const res = await fetch(url);
@@ -281,11 +323,20 @@ async function main() {
         unmatchedSlugs.push(row.slug);
         return;
       }
+    } else if (noAdjudicationEntrySlugs.has(row.slug)) {
+      console.log(`  [${idx}/${total}] ${row.slug}: UNMATCHED (no pack entry / not in adjudication map)`);
+      unmatchedSlugs.push(row.slug);
+      return;
     } else {
       const resolution = map[row.slug];
       if (!resolution || resolution.unmatched) {
-        console.log(`  [${idx}/${total}] ${row.slug}: UNMATCHED (no bestMatch candidate cleared threshold)`);
-        unmatchedSlugs.push(row.slug);
+        if (resolution && resolution.adjudicated) {
+          console.log(`  [${idx}/${total}] ${row.slug}: adjudicated-skip (human-reviewed no-match, left NULL)`);
+          adjudicatedSkipSlugs.push(row.slug);
+        } else {
+          console.log(`  [${idx}/${total}] ${row.slug}: UNMATCHED (no bestMatch candidate cleared threshold)`);
+          unmatchedSlugs.push(row.slug);
+        }
         return;
       }
       if (resolution.needsReview) {
@@ -344,9 +395,9 @@ async function main() {
 
   await Promise.all(toBackfill.map((row, i) => processRow(row, i + 1, toBackfill.length)));
 
-  const skipped = alreadyPopulated + needsReviewSlugs.length;
+  const skipped = alreadyPopulated + needsReviewSlugs.length + adjudicatedSkipSlugs.length;
   const allUnmatched = unmatchedSlugs.concat(insertFailedSlugs);
-  const summary = `expanded ${expandedCount} · matched ${matched} · uploaded ${uploadedFiles}(files) · skipped ${skipped} · needsReview: [${needsReviewSlugs.join(', ')}] · UNMATCHED: [${allUnmatched.join(', ')}]`;
+  const summary = `expanded ${expandedCount} · matched ${matched} · uploaded ${uploadedFiles}(files) · skipped ${skipped} · needsReview: [${needsReviewSlugs.join(', ')}] · adjudicated-skip: [${adjudicatedSkipSlugs.join(', ')}] · UNMATCHED: [${allUnmatched.join(', ')}]`;
   console.log(`\n${summary}`);
 }
 

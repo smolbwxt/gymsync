@@ -71,10 +71,10 @@ struct ExerciseDetailView: View {
                         .foregroundStyle(theme.neutral700)
 
                     FlowLayout(spacing: 6) {
-                        GSTag(text: "\(exercise.primaryMuscle.capitalized) · primary",
+                        GSTag(text: "\(exercise.primaryMuscle.replacingOccurrences(of: "_", with: " ").capitalized) · primary",
                               style: .accent)
                         ForEach(exercise.secondaryMuscles, id: \.self) { m in
-                            GSTag(text: m.localizedCapitalized, style: .neutral)
+                            GSTag(text: m.replacingOccurrences(of: "_", with: " ").localizedCapitalized, style: .neutral)
                         }
                     }
                 }
@@ -91,15 +91,6 @@ struct ExerciseDetailView: View {
                     data: trendChartData,
                     deltaText: trendDeltaText
                 )
-
-                if let url = exercise.demoVideoURL {
-                    Button {
-                        UIApplication.shared.open(url)
-                    } label: {
-                        Text("Watch Demo")
-                    }
-                    .buttonStyle(GSGhostButtonStyle())
-                }
 
                 Spacer(minLength: 32)
             }

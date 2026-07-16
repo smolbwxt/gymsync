@@ -71,6 +71,15 @@ private struct AnimatedDemoImageView: UIViewRepresentable {
     let frame0: UIImage
     let frame1: UIImage
 
+    // Stashes the frames last committed to the UIImageView so updateUIView
+    // can tell a genuine frame change from an unrelated parent re-render.
+    final class Coordinator {
+        var frame0: UIImage?
+        var frame1: UIImage?
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func makeUIView(context: Context) -> UIImageView {
         let v = UIImageView()
         v.contentMode = .scaleAspectFit
@@ -84,6 +93,18 @@ private struct AnimatedDemoImageView: UIViewRepresentable {
     }
 
     func updateUIView(_ v: UIImageView, context: Context) {
+        // Guard: only reassign animationImages / restart the animation when
+        // the frames actually changed. Without this, an unrelated parent
+        // re-render (e.g. the detail screen's async stats landing) calls
+        // updateUIView with the same frame0/frame1 instances, and
+        // unconditionally stop/restarting resets the animation phase —
+        // a visible flicker.
+        guard context.coordinator.frame0 !== frame0 || context.coordinator.frame1 !== frame1 else {
+            return
+        }
+        context.coordinator.frame0 = frame0
+        context.coordinator.frame1 = frame1
+
         v.stopAnimating()
         v.animationImages = [frame0, frame1]
         v.animationDuration = 2.0

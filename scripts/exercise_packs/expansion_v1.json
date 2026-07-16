@@ -470,7 +470,6 @@
     "match_key": "Bent-Arm_Barbell_Pullover",
     "secondary_muscles": [
       "chest",
-      "lats",
       "rear_delts",
       "triceps"
     ]
@@ -1045,8 +1044,7 @@
     "secondary_muscles": [
       "calves",
       "glutes",
-      "hamstrings",
-      "quads"
+      "hamstrings"
     ]
   },
   {
