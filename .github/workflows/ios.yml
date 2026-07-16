@@ -111,6 +111,26 @@ jobs:
       - name: Generate Xcode project from project.yml
         run: xcodegen generate --spec GymSyncApp/project.yml --project GymSyncApp
 
+      # Seeds a deterministic fixture world (group, sessions, chat, friends,
+      # routine library, featured routine) into the CI test account so app
+      # captures below reflect populated states instead of empty ones.
+      # Guarded on SUPABASE_SECRET_KEY: fork PRs don't have repo secrets, so
+      # this step is skipped there rather than failing the job.
+      - name: Seed QA fixture world
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CI_TEST_USERNAME: ${{ secrets.CI_TEST_USERNAME }}
+        run: |
+          if [ -n "$SUPABASE_SECRET_KEY" ]; then
+            printf 'SUPABASE_URL=%s\nSUPABASE_SECRET_KEY=%s\n' "$SUPABASE_URL" "$SUPABASE_SECRET_KEY" > .env.local
+            npm ci
+            node scripts/seed_qa_fixtures.js --username "$CI_TEST_USERNAME"
+            rm -f .env.local
+          else
+            echo "No SUPABASE_SECRET_KEY (fork PR) — skipping seed; captures will show empty states."
+          fi
+
       - name: Run screenshot UI tests
         working-directory: GymSyncApp
         # TEST_RUNNER_ prefix required: xcodebuild does NOT pass its own
@@ -163,6 +183,71 @@ jobs:
         with:
           name: app-screenshots
           path: ${{ runner.temp }}/screens
+          if-no-files-found: warn
+
+  # Design-parity harness: renders the design canvas's proof frames, diffs
+  # them against the app-screenshots artifact from the `screenshots` job
+  # above, and uploads a side-by-side parity-report.html. Report-only
+  # (`continue-on-error`) — this never blocks a merge, it just surfaces
+  # divergence for a human to look at.
+  parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: screenshots
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install harness deps
+        run: npm ci
+
+      - name: Download app screenshots
+        uses: actions/download-artifact@v4
+        with:
+          name: app-screenshots
+          path: app-shots
+
+      # xcresulttool/xcparse export attachments as UUID-named files plus a
+      # manifest.json mapping each exportedFileName to a
+      # suggestedHumanReadableName like `app-tab-library_0_<UUID>.png`.
+      # parity_diff.js needs real `app-<id>.png` names, so recover them here
+      # before diffing.
+      - name: Rename app screenshots to app-<id>.png
+        run: node scripts/rename_app_shots.js app-shots app-shots-renamed
+
+      # `npm ci`'s puppeteer postinstall usually fetches Chromium, but this
+      # is a fresh Linux runner (not the macOS runners the rest of this
+      # workflow uses) — install explicitly so a skipped postinstall doesn't
+      # silently sink "Render proofs". No-op if Chromium is already present.
+      - name: Ensure Chromium is installed for Puppeteer
+        run: npx puppeteer browsers install chrome
+
+      - name: Render proofs
+        run: |
+          node scripts/render_proofs.js \
+            --canvas "docs/design/Gym Sync App Designs.dc.html" \
+            --design-dir docs/design \
+            --out proofs
+
+      - name: Diff and report
+        run: |
+          node scripts/parity_diff.js \
+            --app app-shots-renamed \
+            --proofs proofs \
+            --map docs/design/frame-map.json \
+            --accepted docs/design/accepted-deviations.json \
+            --out parity-out
+
+      - name: Upload parity report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: parity-report
+          path: parity-out
           if-no-files-found: warn
 
   deploy-testflight:
