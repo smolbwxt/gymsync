@@ -15,7 +15,7 @@
     "equipment": "barbell",
     "match_key": "Decline_Barbell_Bench_Press",
     "secondary_muscles": [
-      "shoulders",
+      "front_delts",
       "triceps"
     ]
   },
@@ -27,7 +27,7 @@
     "equipment": "barbell",
     "match_key": "Wide-Grip_Barbell_Bench_Press",
     "secondary_muscles": [
-      "shoulders",
+      "front_delts",
       "triceps"
     ]
   },
@@ -39,7 +39,7 @@
     "equipment": "barbell",
     "match_key": "Barbell_Guillotine_Bench_Press",
     "secondary_muscles": [
-      "shoulders",
+      "front_delts",
       "triceps"
     ]
   },
@@ -51,7 +51,7 @@
     "equipment": "dumbbell",
     "match_key": "Incline_Dumbbell_Press",
     "secondary_muscles": [
-      "shoulders",
+      "front_delts",
       "triceps"
     ]
   },
@@ -63,7 +63,7 @@
     "equipment": "dumbbell",
     "match_key": "Decline_Dumbbell_Bench_Press",
     "secondary_muscles": [
-      "shoulders",
+      "front_delts",
       "triceps"
     ]
   },
@@ -83,7 +83,7 @@
     "equipment": "dumbbell",
     "match_key": "One_Arm_Dumbbell_Bench_Press",
     "secondary_muscles": [
-      "shoulders",
+      "front_delts",
       "triceps"
     ]
   },
@@ -95,7 +95,7 @@
     "equipment": "cable",
     "match_key": "Cable_Crossover",
     "secondary_muscles": [
-      "shoulders"
+      "front_delts"
     ]
   },
   {
@@ -106,7 +106,7 @@
     "equipment": "cable",
     "match_key": "Cable_Chest_Press",
     "secondary_muscles": [
-      "shoulders",
+      "front_delts",
       "triceps"
     ]
   },
@@ -118,7 +118,7 @@
     "equipment": "cable",
     "match_key": "Low_Cable_Crossover",
     "secondary_muscles": [
-      "shoulders"
+      "front_delts"
     ]
   },
   {
@@ -129,7 +129,7 @@
     "equipment": "machine",
     "match_key": "Machine_Bench_Press",
     "secondary_muscles": [
-      "shoulders",
+      "front_delts",
       "triceps"
     ]
   },
@@ -149,7 +149,7 @@
     "equipment": "machine",
     "match_key": "Leverage_Incline_Chest_Press",
     "secondary_muscles": [
-      "shoulders",
+      "front_delts",
       "triceps"
     ]
   },
@@ -162,7 +162,7 @@
     "match_key": "Push-Up_Wide",
     "secondary_muscles": [
       "core",
-      "shoulders",
+      "front_delts",
       "triceps"
     ]
   },
@@ -174,7 +174,7 @@
     "equipment": "bodyweight",
     "match_key": "Push-Ups_With_Feet_Elevated",
     "secondary_muscles": [
-      "shoulders",
+      "front_delts",
       "triceps"
     ]
   },
@@ -186,7 +186,7 @@
     "equipment": "bodyweight",
     "match_key": "Single-Arm_Push-Up",
     "secondary_muscles": [
-      "shoulders",
+      "front_delts",
       "triceps"
     ]
   },
@@ -198,7 +198,7 @@
     "equipment": "bodyweight",
     "match_key": "Clock_Push-Up",
     "secondary_muscles": [
-      "shoulders",
+      "front_delts",
       "triceps"
     ]
   },
@@ -224,7 +224,7 @@
     "secondary_muscles": [
       "biceps",
       "lats",
-      "shoulders"
+      "rear_delts"
     ]
   },
   {
@@ -249,7 +249,7 @@
     "secondary_muscles": [
       "biceps",
       "lats",
-      "shoulders"
+      "rear_delts"
     ]
   },
   {
@@ -263,7 +263,7 @@
       "biceps",
       "forearms",
       "lats",
-      "shoulders"
+      "rear_delts"
     ]
   },
   {
@@ -288,7 +288,7 @@
     "secondary_muscles": [
       "biceps",
       "lats",
-      "shoulders"
+      "rear_delts"
     ]
   },
   {
@@ -326,7 +326,7 @@
     "secondary_muscles": [
       "biceps",
       "lats",
-      "shoulders"
+      "rear_delts"
     ]
   },
   {
@@ -361,7 +361,7 @@
     "secondary_muscles": [
       "biceps",
       "back",
-      "shoulders"
+      "rear_delts"
     ]
   },
   {
@@ -374,7 +374,7 @@
     "secondary_muscles": [
       "biceps",
       "back",
-      "shoulders"
+      "rear_delts"
     ]
   },
   {
@@ -387,7 +387,7 @@
     "secondary_muscles": [
       "biceps",
       "back",
-      "shoulders"
+      "rear_delts"
     ]
   },
   {
@@ -408,7 +408,7 @@
     "secondary_muscles": [
       "biceps",
       "back",
-      "shoulders"
+      "rear_delts"
     ]
   },
   {
@@ -445,7 +445,7 @@
     "secondary_muscles": [
       "biceps",
       "back",
-      "shoulders"
+      "rear_delts"
     ]
   },
   {
@@ -458,7 +458,7 @@
     "secondary_muscles": [
       "biceps",
       "back",
-      "shoulders"
+      "rear_delts"
     ]
   },
   {
@@ -471,7 +471,7 @@
     "secondary_muscles": [
       "chest",
       "lats",
-      "shoulders",
+      "rear_delts",
       "triceps"
     ]
   },
@@ -656,15 +656,12 @@
     ]
   },
   {
-    "slug": "seated-front-deltoid-hold",
-    "name": "Seated Front Deltoid Raise",
+    "slug": "incline-db-front-raise",
+    "name": "Front Incline Dumbbell Raise",
     "category": "isolation",
     "primary_muscle": "shoulders",
-    "equipment": "bodyweight",
-    "match_key": "Seated_Front_Deltoid",
-    "secondary_muscles": [
-      "chest"
-    ]
+    "equipment": "dumbbell",
+    "match_key": "Front_Incline_Dumbbell_Raise"
   },
   {
     "slug": "barbell-rear-delt-row",
@@ -854,16 +851,12 @@
     "match_key": "Machine_Bicep_Curl"
   },
   {
-    "slug": "seated-biceps-flex",
-    "name": "Seated Biceps Flex",
+    "slug": "machine-preacher-curl",
+    "name": "Machine Preacher Curls",
     "category": "isolation",
     "primary_muscle": "biceps",
-    "equipment": "bodyweight",
-    "match_key": "Seated_Biceps",
-    "secondary_muscles": [
-      "chest",
-      "shoulders"
-    ]
+    "equipment": "machine",
+    "match_key": "Machine_Preacher_Curls"
   },
   {
     "slug": "close-grip-bench-press",
@@ -874,7 +867,7 @@
     "match_key": "Close-Grip_Barbell_Bench_Press",
     "secondary_muscles": [
       "chest",
-      "shoulders"
+      "front_delts"
     ]
   },
   {
@@ -897,7 +890,7 @@
     "match_key": "JM_Press",
     "secondary_muscles": [
       "chest",
-      "shoulders"
+      "front_delts"
     ]
   },
   {
@@ -909,7 +902,7 @@
     "match_key": "Lying_Dumbbell_Tricep_Extension",
     "secondary_muscles": [
       "chest",
-      "shoulders"
+      "front_delts"
     ]
   },
   {
@@ -937,7 +930,7 @@
     "match_key": "Close-Grip_Dumbbell_Press",
     "secondary_muscles": [
       "chest",
-      "shoulders"
+      "front_delts"
     ]
   },
   {
@@ -949,7 +942,7 @@
     "match_key": "Tate_Press",
     "secondary_muscles": [
       "chest",
-      "shoulders"
+      "front_delts"
     ]
   },
   {
@@ -993,7 +986,7 @@
     "match_key": "Dip_Machine",
     "secondary_muscles": [
       "chest",
-      "shoulders"
+      "front_delts"
     ]
   },
   {
@@ -1013,7 +1006,7 @@
     "match_key": "Bench_Dips",
     "secondary_muscles": [
       "chest",
-      "shoulders"
+      "front_delts"
     ]
   },
   {
@@ -1111,7 +1104,7 @@
       "glutes",
       "hamstrings",
       "lower_back",
-      "shoulders",
+      "front_delts",
       "triceps"
     ]
   },
@@ -1181,12 +1174,17 @@
     ]
   },
   {
-    "slug": "cable-hip-adduction",
-    "name": "Cable Hip Adduction",
-    "category": "isolation",
+    "slug": "smith-machine-pistol-squat",
+    "name": "Smith Machine Pistol Squat",
+    "category": "compound",
     "primary_muscle": "quads",
-    "equipment": "cable",
-    "match_key": "Cable_Hip_Adduction"
+    "equipment": "machine",
+    "match_key": "Smith_Machine_Pistol_Squat",
+    "secondary_muscles": [
+      "calves",
+      "glutes",
+      "hamstrings"
+    ]
   },
   {
     "slug": "single-leg-extension",
@@ -1365,7 +1363,7 @@
       "lower_back",
       "back",
       "quads",
-      "shoulders",
+      "front_delts",
       "traps",
       "triceps"
     ]
@@ -1384,7 +1382,7 @@
       "glutes",
       "lower_back",
       "quads",
-      "shoulders",
+      "front_delts",
       "traps"
     ]
   },
@@ -1444,7 +1442,7 @@
       "glutes",
       "lower_back",
       "quads",
-      "shoulders",
+      "front_delts",
       "traps"
     ]
   },
@@ -1618,14 +1616,16 @@
     ]
   },
   {
-    "slug": "lying-glute-raise",
-    "name": "Lying Glute Raise",
-    "category": "isolation",
+    "slug": "kneeling-squat",
+    "name": "Kneeling Squat",
+    "category": "compound",
     "primary_muscle": "glutes",
-    "equipment": "bodyweight",
-    "match_key": "Lying_Glute",
+    "equipment": "barbell",
+    "match_key": "Kneeling_Squat",
     "secondary_muscles": [
-      "abductors"
+      "core",
+      "hamstrings",
+      "lower_back"
     ]
   },
   {
@@ -1782,7 +1782,7 @@
     "equipment": "bodyweight",
     "match_key": "Side_Bridge",
     "secondary_muscles": [
-      "shoulders"
+      "front_delts"
     ]
   },
   {
@@ -1826,7 +1826,7 @@
     "match_key": "Pallof_Press",
     "secondary_muscles": [
       "chest",
-      "shoulders",
+      "front_delts",
       "triceps"
     ]
   },
@@ -1838,7 +1838,7 @@
     "equipment": "cable",
     "match_key": "Standing_Cable_Wood_Chop",
     "secondary_muscles": [
-      "shoulders"
+      "front_delts"
     ]
   },
   {
@@ -1866,7 +1866,7 @@
     "match_key": "Barbell_Ab_Rollout",
     "secondary_muscles": [
       "lower_back",
-      "shoulders"
+      "front_delts"
     ]
   },
   {
@@ -1879,7 +1879,7 @@
     "secondary_muscles": [
       "glutes",
       "lower_back",
-      "shoulders"
+      "front_delts"
     ]
   },
   {
