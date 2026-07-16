@@ -74,27 +74,54 @@ struct WorkoutSessionView: View {
     }
 
     var body: some View {
-        Group {
-            if completed {
-                // Canvas: "Workout Complete" recap (frame 17) — extracted to
-                // `SoloRecapView` (Phase U Task 4) so the debug catalog can
-                // construct it directly with fixture data; see that type for
-                // the full layout. Every value below is derived from state
-                // this view already holds (§B.10) — no new queries.
-                SoloRecapView(
-                    kicker: recapKicker,
-                    durationText: recapDurationText,
-                    subline: recapSubline,
-                    totalLbsText: recapTotalLbsHeroText,
-                    setCount: recapNonPenaltySets.count,
-                    prCount: sessionPRs.count,
-                    heaviestPR: recapHeaviestPR,
-                    exerciseSummaries: exerciseSummaries,
-                    shareSummary: recapShareSummary,
-                    onDone: { dismiss() }
+        ZStack {
+            Group {
+                if completed {
+                    // Canvas: "Workout Complete" recap (frame 17) — extracted to
+                    // `SoloRecapView` (Phase U Task 4) so the debug catalog can
+                    // construct it directly with fixture data; see that type for
+                    // the full layout. Every value below is derived from state
+                    // this view already holds (§B.10) — no new queries.
+                    SoloRecapView(
+                        kicker: recapKicker,
+                        durationText: recapDurationText,
+                        subline: recapSubline,
+                        totalLbsText: recapTotalLbsHeroText,
+                        setCount: recapNonPenaltySets.count,
+                        prCount: sessionPRs.count,
+                        heaviestPR: recapHeaviestPR,
+                        exerciseSummaries: exerciseSummaries,
+                        shareSummary: recapShareSummary,
+                        onDone: { dismiss() }
+                    )
+                } else {
+                    liveSessionBody
+                }
+            }
+
+            // ── PR CELEBRATION (full-screen, user-dismissed — p29) ─────────
+            // Sibling of the completed/live `Group` above — NOT a child of
+            // `liveSessionBody`'s own ZStack — so it survives the `completed`
+            // transition. When the session's LAST set is also a PR, `log()` sets
+            // `isPROverlay = true` and then `endSession()` flips `completed = true`,
+            // which structurally unmounts `liveSessionBody`; an overlay nested
+            // inside it would vanish before the user could dismiss it (bug found
+            // in Phase U Task 4 review — pre-refactor this was a flat ZStack
+            // sibling too, which is why it survived back then). Same "direct
+            // ZStack child gated on its own bool" idiom as GroupSessionLiveView;
+            // user-dismissed only, no auto-timeout.
+            if isPROverlay {
+                PRCelebrationOverlay(
+                    exerciseName: prOverlayExerciseName,
+                    weight: prOverlayWeight,
+                    reps: prOverlayReps,
+                    priorBest: prOverlayPriorBest,
+                    monthlyCount: prOverlayMonthlyCount,
+                    onDismiss: {
+                        withAnimation(.easeIn(duration: 0.2)) { isPROverlay = false }
+                    }
                 )
-            } else {
-                liveSessionBody
+                .transition(.opacity)
             }
         }
         .background(theme.bg)
@@ -157,12 +184,16 @@ struct WorkoutSessionView: View {
     }
 
     // Canvas: "In Progress" live session — exercise header/table/rest-timer,
-    // freeform empty state, loading spinner, sticky "Log Set N" footer, and the
-    // PR celebration overlay. Byte-identical to the pre-Task-4 `body`'s content
-    // for the `!completed` case — Phase U Task 4 only restructured the
-    // `completed` branch (now `SoloRecapView`, above) out of this ZStack; the
-    // `!completed` guard on the sticky "Log Set N" button was dropped since
-    // this whole computed property only ever renders while `!completed`.
+    // freeform empty state, loading spinner, and sticky "Log Set N" footer.
+    // The `!completed` guard on the sticky "Log Set N" button was dropped
+    // since this whole computed property only ever renders while `!completed`.
+    // The PR celebration overlay used to live in this ZStack too (pre-Task-4
+    // and through the first cut of Phase U Task 4), but a last-set PR could
+    // set `isPROverlay = true` right before `endSession()` set `completed =
+    // true`, unmounting this whole view out from under the still-undismissed
+    // overlay. It now lives one level up, as a sibling of the `completed` ?
+    // `SoloRecapView` : `liveSessionBody` switch in `body` — see the comment
+    // there.
     private var liveSessionBody: some View {
         ZStack(alignment: .bottom) {
             // Main scrollable content
@@ -214,23 +245,6 @@ struct WorkoutSessionView: View {
                     .padding(.bottom, 22)
                 }
                 .background(theme.bg)
-            }
-
-            // ── PR CELEBRATION (full-screen, user-dismissed — p29) ─────────
-            // Same layer idiom as GroupSessionLiveView: a direct ZStack child, gated on
-            // its own bool, rendered after the rest of body's content so it sits on top.
-            if isPROverlay {
-                PRCelebrationOverlay(
-                    exerciseName: prOverlayExerciseName,
-                    weight: prOverlayWeight,
-                    reps: prOverlayReps,
-                    priorBest: prOverlayPriorBest,
-                    monthlyCount: prOverlayMonthlyCount,
-                    onDismiss: {
-                        withAnimation(.easeIn(duration: 0.2)) { isPROverlay = false }
-                    }
-                )
-                .transition(.opacity)
             }
         }
     }
