@@ -1,6 +1,7 @@
 # Phase E — Exercise Demonstration Media + Library Expansion — Design
 
-**Status:** approved decisions (user, 2026-07-16): source = ExerciseDB open dataset; hosting = mirror into Supabase Storage; expansion folded in (roadmap amendment).
+**Status:** approved decisions (user, 2026-07-16): hosting = mirror into Supabase Storage; expansion folded in (roadmap amendment).
+**Source revised (user, 2026-07-16):** ExerciseDB failed the license gate (data is RapidAPI-subscription-gated; ToS prohibits re-hosting — see Task 3 report). New source: **free-exercise-db** (github.com/yuhonas/free-exercise-db) — **Unlicense/public domain**, ~800 exercises, 2 photos each (start/end position). Media model: mirror both JPEGs per exercise to `exercise-media/<slug>/0.jpg` + `<slug>/1.jpg`; `demo_video_url` stores the public URL of `0.jpg`; the app derives frame 1 by convention and animates the pair as a 2-frame loop (~1s/frame). GIF decoding is no longer needed — `GSGifView` becomes `GSDemoView` (two-frame alternator, static fallback when frame 1 is absent). The master spec itself named Free Exercise DB as the seeding source (§future considerations), so this also realigns with the original plan.
 **Roadmap:** Phase E of `docs/superpowers/plans/2026-07-16-remaining-build-roadmap.md`.
 
 ## Goal

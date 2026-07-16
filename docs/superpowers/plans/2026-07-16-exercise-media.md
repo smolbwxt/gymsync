@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- **License gate is mandatory and blocking:** before any mass GIF download, the implementer must locate and read the ExerciseDB dataset's license and record the verdict + URL in the script header AND the mapping file header. If redistribution/mirroring is not permitted, STOP and report BLOCKED (fallback per spec: wger dataset) — do not mirror unlicensed media.
+- **SOURCE REVISED (2026-07-16, user decision after the license gate blocked ExerciseDB):** the dataset is **free-exercise-db** (github.com/yuhonas/free-exercise-db, Unlicense/public domain). Every mention of "ExerciseDB" and "GIF" below is superseded: media = the dataset's TWO JPEGs per exercise (start/end), mirrored to `exercise-media/<slug>/0.jpg` + `<slug>/1.jpg`; `demo_video_url` = public URL of `0.jpg`; frame 1 derived by convention; Task 5 builds `GSDemoView` (2-frame alternator, ~1s/frame, static fallback) instead of a GIF decoder. The license gate step remains (record the Unlicense verdict + URLs in `_meta`) — it stays a gate even when expected to pass.
 - Reuse the existing `exercises.demo_video_url` column (migration `20260709000002`). No new column.
 - Never mutate the 30 seeded exercises' identity fields (name/slug/category/muscles/equipment) — the expand pass only inserts new slugs and only fills `demo_video_url` where NULL.
 - Bucket: `exercise-media`, public read, write via service role only — follow the shape of `supabase/migrations/20260711000002_storage_buckets.sql`.
