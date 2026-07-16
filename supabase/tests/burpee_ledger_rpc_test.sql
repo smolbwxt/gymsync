@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(8);
+SELECT plan(14);
 
 -- ── Fixtures ──────────────────────────────────────────────────────────────────
 -- Organizer/admin A, existing member B, late-joining member C (added AFTER
@@ -102,6 +102,111 @@ SELECT ok(
    FROM public.group_burpee_ledger('00000000-0000-0000-0000-0000000bc201')
    WHERE user_id = '00000000-0000-0000-0000-0000000ba102'),
   'last_late_at is populated for the user whose session contributed debt');
+
+-- ── Task 2 (Phase S) — paid/settled derivation fixtures ──────────────────────
+-- Separate group so its participant/session counts don't disturb the
+-- count(*) = 2 assertion above. Three members exercise the three paid
+-- states: exact-match settlement, partial payment (with a non-penalty set
+-- logged too, to prove it's excluded), and never-paid.
+SET LOCAL role postgres;
+
+INSERT INTO auth.users (id, email) VALUES
+  ('00000000-0000-0000-0000-0000000ba201', 'bl-admin2@t.com'),
+  ('00000000-0000-0000-0000-0000000ba202', 'bl-p1@t.com'),
+  ('00000000-0000-0000-0000-0000000ba203', 'bl-p2@t.com'),
+  ('00000000-0000-0000-0000-0000000ba204', 'bl-p3@t.com');
+INSERT INTO profiles (id, username) VALUES
+  ('00000000-0000-0000-0000-0000000ba201', 'bl_admin2'),
+  ('00000000-0000-0000-0000-0000000ba202', 'bl_p1'),
+  ('00000000-0000-0000-0000-0000000ba203', 'bl_p2'),
+  ('00000000-0000-0000-0000-0000000ba204', 'bl_p3');
+
+INSERT INTO groups (id, name, created_by) VALUES
+  ('00000000-0000-0000-0000-0000000bc202',
+   'Ledger Paid Crew', '00000000-0000-0000-0000-0000000ba201');
+INSERT INTO group_members (group_id, user_id, role) VALUES
+  ('00000000-0000-0000-0000-0000000bc202',
+   '00000000-0000-0000-0000-0000000ba201', 'admin'),
+  ('00000000-0000-0000-0000-0000000bc202',
+   '00000000-0000-0000-0000-0000000ba202', 'member'),
+  ('00000000-0000-0000-0000-0000000bc202',
+   '00000000-0000-0000-0000-0000000ba203', 'member'),
+  ('00000000-0000-0000-0000-0000000bc202',
+   '00000000-0000-0000-0000-0000000ba204', 'member');
+
+INSERT INTO sessions (id, organizer_id, group_id, state, scheduled_for) VALUES
+  ('00000000-0000-0000-0000-0000000bd302',
+   '00000000-0000-0000-0000-0000000ba201',
+   '00000000-0000-0000-0000-0000000bc202',
+   'completed', now() - interval '3 days');
+
+-- P1 owes 15 and pays exactly 15 (settled boundary: paid == owed).
+-- P2 owes 30, pays only 10 via a penalty set, but ALSO logs a 50-rep
+-- normal (non-penalty) set in the same session — proves paid excludes
+-- normal work sets, not just that it sums penalty ones.
+-- P3 owes 20 and never logs any penalty set (zero-penalty member).
+INSERT INTO session_participants
+  (session_id, user_id, check_in_state, late_minutes, burpees_owed) VALUES
+  ('00000000-0000-0000-0000-0000000bd302',
+   '00000000-0000-0000-0000-0000000ba202', 'late', 3, 15),
+  ('00000000-0000-0000-0000-0000000bd302',
+   '00000000-0000-0000-0000-0000000ba203', 'late', 6, 30),
+  ('00000000-0000-0000-0000-0000000bd302',
+   '00000000-0000-0000-0000-0000000ba204', 'late', 4, 20);
+
+INSERT INTO set_logs (id, user_id, session_id, exercise_id, set_index, reps, is_penalty)
+SELECT gen_random_uuid(), '00000000-0000-0000-0000-0000000ba202',
+       '00000000-0000-0000-0000-0000000bd302', ex.id, 1, 15, true
+  FROM (SELECT id FROM exercises WHERE slug = 'bench-press' LIMIT 1) ex;
+
+INSERT INTO set_logs (id, user_id, session_id, exercise_id, set_index, reps, is_penalty)
+SELECT gen_random_uuid(), '00000000-0000-0000-0000-0000000ba203',
+       '00000000-0000-0000-0000-0000000bd302', ex.id, 1, 10, true
+  FROM (SELECT id FROM exercises WHERE slug = 'bench-press' LIMIT 1) ex;
+
+INSERT INTO set_logs (id, user_id, session_id, exercise_id, set_index, reps, is_penalty)
+SELECT gen_random_uuid(), '00000000-0000-0000-0000-0000000ba203',
+       '00000000-0000-0000-0000-0000000bd302', ex.id, 2, 50, false
+  FROM (SELECT id FROM exercises WHERE slug = 'bench-press' LIMIT 1) ex;
+
+SET LOCAL role authenticated;
+SET LOCAL request.jwt.claim.sub = '00000000-0000-0000-0000-0000000ba202';
+
+SELECT results_eq(
+  $$SELECT paid FROM public.group_burpee_ledger('00000000-0000-0000-0000-0000000bc202')
+    WHERE user_id = '00000000-0000-0000-0000-0000000ba202'$$,
+  ARRAY[15],
+  'P1 paid = 15 (sum of is_penalty reps) matching owed exactly');
+
+SELECT results_eq(
+  $$SELECT settled FROM public.group_burpee_ledger('00000000-0000-0000-0000-0000000bc202')
+    WHERE user_id = '00000000-0000-0000-0000-0000000ba202'$$,
+  ARRAY[true],
+  'P1 settled = true at the paid == owed boundary');
+
+SELECT results_eq(
+  $$SELECT paid FROM public.group_burpee_ledger('00000000-0000-0000-0000-0000000bc202')
+    WHERE user_id = '00000000-0000-0000-0000-0000000ba203'$$,
+  ARRAY[10],
+  'P2 paid = 10 — counts only the is_penalty set, excludes the 50-rep normal set logged in the same session');
+
+SELECT results_eq(
+  $$SELECT settled FROM public.group_burpee_ledger('00000000-0000-0000-0000-0000000bc202')
+    WHERE user_id = '00000000-0000-0000-0000-0000000ba203'$$,
+  ARRAY[false],
+  'P2 settled = false when paid (10) < owed (30)');
+
+SELECT results_eq(
+  $$SELECT paid FROM public.group_burpee_ledger('00000000-0000-0000-0000-0000000bc202')
+    WHERE user_id = '00000000-0000-0000-0000-0000000ba204'$$,
+  ARRAY[0],
+  'P3 paid = 0 — zero-penalty member who owes 20 but never logged a penalty set');
+
+SELECT results_eq(
+  $$SELECT settled FROM public.group_burpee_ledger('00000000-0000-0000-0000-0000000bc202')
+    WHERE user_id = '00000000-0000-0000-0000-0000000ba204'$$,
+  ARRAY[false],
+  'P3 settled = false (owed 20, paid 0)');
 
 SELECT * FROM finish();
 ROLLBACK;

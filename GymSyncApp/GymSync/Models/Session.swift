@@ -181,7 +181,8 @@ struct BurpeeLedgerRow: Decodable, Sendable {
     }
 }
 
-// MARK: - Burpee Ledger RPC row (Fix round 1 — task-3-report.md)
+// MARK: - Burpee Ledger RPC row (Fix round 1 — task-3-report.md; paid/settled
+// added Phase S Task 5)
 //
 // One row of `group_burpee_ledger(p_group)`'s SECURITY DEFINER aggregate.
 // Replaces the client-side `BurpeeLedgerRow` summation for crew debts: the
@@ -193,9 +194,19 @@ struct BurpeeLedgerRow: Decodable, Sendable {
 // else's too). The RPC is gated on current group membership instead of
 // session participation, so it sums across every session the group has run
 // regardless of who was invited to which one.
+//
+// `paid`/`settled` (20260719000005_burpee_ledger_paid.sql, RPC v2): settled
+// burpees are DERIVED, not stored — `paid` sums that user's `is_penalty =
+// true` set_logs reps across the group's sessions (no exercise-identity
+// filter; see that migration's "Burpee-identification finding" for why),
+// and `settled = paid >= total_owed`. `totalOwed` here still reports the
+// RAW lifetime sum (never decremented) — `BurpeeLedgerMath.CrewDebt.
+// outstanding` is what nets `paid` against it for display.
 struct GroupBurpeeLedgerAggregate: Decodable, Sendable {
     let userID: UUID
     let totalOwed: Int
+    let paid: Int
+    let settled: Bool
     let lateCount: Int
     let noShowCount: Int
     let lastLateAt: Date?
@@ -203,6 +214,8 @@ struct GroupBurpeeLedgerAggregate: Decodable, Sendable {
     enum CodingKeys: String, CodingKey {
         case userID = "user_id"
         case totalOwed = "total_owed"
+        case paid
+        case settled
         case lateCount = "late_count"
         case noShowCount = "no_show_count"
         case lastLateAt = "last_late_at"

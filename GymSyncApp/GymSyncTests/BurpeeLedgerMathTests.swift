@@ -47,9 +47,17 @@ final class BurpeeLedgerMathTests: XCTestCase {
     // group_burpee_ledger RPC's pre-aggregated rows — sums/counts are
     // computed server-side, so fixtures build the aggregate directly
     // instead of raw per-session participant rows.
+    //
+    // `paid`/`settled` default to 0/false (Phase S Task 5 — RPC v2,
+    // 20260719000005_burpee_ledger_paid.sql): every pre-existing call site
+    // below that doesn't care about the paid-off state gets the same
+    // behavior it always had (outstanding == totalOwed, isPaidOff == false),
+    // so none of those assertions needed to change.
     private func makeAggregate(
         userID: UUID,
         totalOwed: Int = 0,
+        paid: Int = 0,
+        settled: Bool = false,
         lateCount: Int = 0,
         noShowCount: Int = 0,
         lastLateAt: Date? = nil
@@ -57,6 +65,8 @@ final class BurpeeLedgerMathTests: XCTestCase {
         GroupBurpeeLedgerAggregate(
             userID: userID,
             totalOwed: totalOwed,
+            paid: paid,
+            settled: settled,
             lateCount: lateCount,
             noShowCount: noShowCount,
             lastLateAt: lastLateAt
@@ -111,19 +121,67 @@ final class BurpeeLedgerMathTests: XCTestCase {
         XCTAssertEqual(debts.map(\.userID), [high, low, zero])
     }
 
-    func testCrewDebts_settledParticipantReadsIdenticalToNeverLate() {
-        // Schema gap: burpees_owed is never decremented, so a user who was
-        // late in the past but whose current summed total happens to be 0
-        // (e.g. the row simply isn't in this fetch) is indistinguishable
-        // from one who was never late. Both surface as "all clear", 0 owed.
-        let neverLate = UUID(); let settledElsewhere = UUID()
+    func testCrewDebts_neverLateParticipantReadsAllClear() {
+        // A participant who genuinely never owed anything: totalOwed/paid
+        // both 0. `settled` is vacuously true from the RPC (0 >= 0), but
+        // `isPaidOff` requires `paid > 0` too, so this still reads "all
+        // clear" rather than a nonsensical "paid off 0".
+        let neverLate = UUID()
+        let debts = BurpeeLedgerMath.crewDebts(aggregates: [makeAggregate(userID: neverLate, settled: true)])
+        XCTAssertEqual(debts[0].summaryText, "all clear")
+        XCTAssertFalse(debts[0].isPaidOff)
+        XCTAssertEqual(debts[0].outstanding, 0)
+    }
+
+    // Phase S Task 5 (20260719000005_burpee_ledger_paid.sql): the schema gap
+    // the OLD version of this test named is now closed — a genuinely settled
+    // participant (paid off real debt) no longer reads identically to one
+    // who was never late; `paid`/`settled` let `CrewDebt` tell them apart.
+    func testCrewDebts_settledParticipantReadsAsPaidOff_notNeverLate() {
+        let paidOff = UUID()
+        let lastLate = date(2026, 7, 9)
+        let aggregates = [makeAggregate(
+            userID: paidOff, totalOwed: 20, paid: 20, settled: true,
+            lateCount: 1, lastLateAt: lastLate
+        )]
+        let debts = BurpeeLedgerMath.crewDebts(aggregates: aggregates)
+        XCTAssertTrue(debts[0].isPaidOff)
+        XCTAssertEqual(debts[0].outstanding, 0)
+        // "N late" (lateCount > 0) must NOT win over the paid-off state —
+        // lateCount is a raw historical count a later payment never reduces.
+        XCTAssertEqual(debts[0].summaryText, "paid off 20")
+    }
+
+    func testCrewDebts_partiallyPaidParticipantStillShowsOutstanding() {
+        // paid < totalOwed: not settled, still reads the normal owed state
+        // (not "paid off") and the displayed number nets paid against owed.
+        let stillOwing = UUID()
+        let debts = BurpeeLedgerMath.crewDebts(aggregates: [
+            makeAggregate(userID: stillOwing, totalOwed: 20, paid: 5, settled: false, lateCount: 1)
+        ])
+        XCTAssertFalse(debts[0].isPaidOff)
+        XCTAssertEqual(debts[0].outstanding, 15)
+        XCTAssertEqual(debts[0].summaryText, "1 late")
+    }
+
+    func testCrewDebts_sortsByOutstandingNotRawTotalOwed() {
+        // Mirrors proof frame 25's exact order: a fully paid-off high
+        // lifetime total (Sam: totalOwed 20, paid 20) sorts to the bottom
+        // with the never-late rows, NOT above a smaller genuine debt (You:
+        // 15, unpaid) the way sorting by raw totalOwed would rank it.
+        let sarah = UUID(); let you = UUID(); let jordan = UUID(); let sam = UUID()
         let aggregates = [
-            makeAggregate(userID: neverLate),
-            makeAggregate(userID: settledElsewhere)
+            makeAggregate(userID: sarah, totalOwed: 35, lateCount: 2, noShowCount: 3),
+            makeAggregate(userID: you, totalOwed: 15, lateCount: 1),
+            makeAggregate(userID: jordan),
+            makeAggregate(userID: sam, totalOwed: 20, paid: 20, settled: true, lateCount: 1),
         ]
         let debts = BurpeeLedgerMath.crewDebts(aggregates: aggregates)
-        XCTAssertEqual(Set(debts.map(\.summaryText)), ["all clear"])
-        XCTAssertTrue(debts.allSatisfy { $0.totalOwed == 0 })
+        XCTAssertEqual(debts.map(\.outstanding), [35, 15, 0, 0])
+        // jordan (never late) before sam (paid off) is just the userID
+        // tiebreak on a 0/0 outstanding tie — not asserting a specific
+        // product ordering between the two, only that both sort last.
+        XCTAssertEqual(Set(debts.suffix(2).map(\.userID)), [jordan, sam])
     }
 
     // MARK: - youOweSummary

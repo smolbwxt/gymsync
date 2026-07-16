@@ -165,6 +165,75 @@ async function main() {
   }
   console.log(`  sessions: ${states.join(', ')}`);
 
+  // --- streak fixture: a real live current_streak for the Stats screen ----
+  // (Phase S Task 5). `user_streaks` is populated ONLY by DB triggers
+  // (streak_bump_user / streak_break_user, 20260719000006_streaks.sql) that
+  // fire on a genuine `sessions.state` UPDATE into 'completed' (never a
+  // direct INSERT-as-completed like the lifecycle-state block just above)
+  // for a session with `scheduled_for IS NOT NULL`, crediting only
+  // participants whose row is `check_in_state = 'ready'` at that moment. So
+  // unlike every other fixture in this file, these sessions have to be
+  // walked through scheduled -> ready-checked-in -> completed for real,
+  // not synthesized already in their terminal state.
+  //
+  // Sessions have no name/title column at all (20260709000006_create_
+  // sessions.sql) — there's no literal "[QA]" prefix to stamp on a session
+  // row the way routines/groups get one. The fixed, deterministic
+  // `scheduled_for` timestamps below (never `now()`) are this block's
+  // equivalent natural-key marker: idempotent detection queries against
+  // them directly instead.
+  //
+  // Deliberately NOT placed in the "[QA] Push Crew" group: that group's
+  // sessions are unconditionally deleted and reinserted-as-already-completed
+  // every run (line ~157 above), which would mint a fresh session id each
+  // time — streak_bump_user's guard only blocks re-crediting the exact same
+  // session id, not "a session in the same group," so reusing that group
+  // would re-increment current_streak on every single run. group_id/
+  // routine_id are left null (both nullable — an ad-hoc scheduled solo
+  // session, same shape `SessionRepository.schedule(routineID: nil, ...)`
+  // already produces); the individual-streak trigger doesn't require a
+  // group at all, only the group-streak bump does.
+  const STREAK_DATES = [
+    '2026-07-10T09:00:00.000Z',
+    '2026-07-11T09:00:00.000Z',
+    '2026-07-12T09:00:00.000Z',
+  ];
+  let streakCreated = 0, streakSkipped = 0;
+  for (const iso of STREAK_DATES) {
+    const [existing] = await rest(
+      `sessions?select=id,state&organizer_id=eq.${me.id}&group_id=is.null&scheduled_for=eq.${encodeURIComponent(iso)}`);
+
+    if (existing && existing.state === 'completed') { streakSkipped++; continue; }
+
+    let session = existing;
+    if (!session) {
+      const [created] = await rest('sessions', { method: 'POST', headers: rep,
+        body: JSON.stringify({ organizer_id: me.id, state: 'scheduled', scheduled_for: iso }) });
+      session = created;
+    }
+
+    // Upsert-by-natural-key (PK is session_id+user_id) so a resumed
+    // partial run (e.g. a crash between this insert and the completion
+    // PATCH below) can safely re-POST without a 409.
+    await rest('session_participants', { method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates' },
+      body: JSON.stringify({
+        session_id: session.id, user_id: me.id,
+        check_in_state: 'ready', check_in_at: iso,
+      }) });
+
+    // scheduled -> completed: the exact transition streak_on_session_state_
+    // change() listens for (AFTER UPDATE OF state). The `state=eq.scheduled`
+    // filter makes this a no-op (0 rows) if some other process already
+    // completed it between the existence check above and here.
+    await rest(`sessions?id=eq.${session.id}&state=eq.scheduled`, { method: 'PATCH',
+      body: JSON.stringify({ state: 'completed', completed_at: iso }) });
+    streakCreated++;
+  }
+  const [streak] = await rest(`user_streaks?select=current_streak,longest_streak&user_id=eq.${me.id}`);
+  console.log(`  streak chain: ${streakCreated} completed this run, ${streakSkipped} already done — ` +
+    `current_streak=${streak?.current_streak ?? 0}, longest_streak=${streak?.longest_streak ?? 0}`);
+
   // --- chat thread: text + soundboard echo + voice-note row ---------------
   await rest(`chat_messages?group_id=eq.${group.id}`, { method: 'DELETE' });
   const messages = [

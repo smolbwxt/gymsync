@@ -96,7 +96,8 @@ function row(overrides: Partial<PushQueueRow>): PushQueueRow {
 }
 
 // ============================================================
-// payloads.ts — exact content for all 10 events (Dossier §A.6 test hook)
+// payloads.ts — exact content for all 12 events (Dossier §A.6 test hook;
+// streak_milestone/streak_at_risk added in Phase S, 20260719000008)
 // ============================================================
 
 Deno.test("payloads: friend_request", () => {
@@ -215,6 +216,39 @@ Deno.test("payloads: chat_mention", () => {
     body: "You were mentioned in chat.",
     category: "SESSION_VIEW",
     threadId: "g1",
+  });
+});
+
+Deno.test("payloads: streak_milestone (user)", () => {
+  const c = buildNotificationPayload("streak_milestone", { streak: 7, kind: "user" });
+  assertEquals(c, {
+    title: "Streak Milestone",
+    body: "You just hit a 7-session streak!",
+    category: "SESSION_VIEW",
+  });
+});
+
+Deno.test("payloads: streak_milestone (group) includes group_id as threadId", () => {
+  const c = buildNotificationPayload("streak_milestone", {
+    streak: 30,
+    kind: "group",
+    group_id: "g1",
+  });
+  assertEquals(c, {
+    title: "Streak Milestone",
+    body: "Your crew just hit a 30-session streak!",
+    category: "SESSION_VIEW",
+    threadId: "g1",
+  });
+});
+
+Deno.test("payloads: streak_at_risk", () => {
+  const c = buildNotificationPayload("streak_at_risk", { session_id: "s1", streak: 12 });
+  assertEquals(c, {
+    title: "Streak at Risk",
+    body: "Your 12-session streak needs you. Your session starts soon.",
+    category: "SESSION_VIEW",
+    threadId: "s1",
   });
 });
 

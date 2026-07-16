@@ -12,11 +12,13 @@ import SwiftUI
 //      banner, a "Crew ledger" link (only for group sessions, since ad-hoc
 //      solo/friend sessions have no `groupID`).
 //
-// SCHEMA GAP (recorded for product — full detail in BurpeeLedgerMath's doc
-// comment and task-3-report.md): the proof's crew-debt list includes a
-// "paid off 20 · Jul 9" state. No paid/cleared concept exists in the schema,
-// so this view renders owed-only — a settled participant reads identically
-// to one who was never late ("all clear").
+// SCHEMA GAP — CLOSED (Phase S Task 5, 20260719000005_burpee_ledger_paid.sql):
+// the proof's crew-debt list includes a "paid off 20 · Jul 9" state, which
+// used to be unrenderable (full history in BurpeeLedgerMath's doc comment
+// and task-3-report.md). The RPC now returns `paid`/`settled`; `crewDebtRow`
+// below renders the settled state per frame 25 — a paid-off participant
+// shows a greyed 0 with "paid off N · {date}" subtext, distinct from "all
+// clear" for one who was never late.
 //
 // SCHEMA GAP #2: the proof's late-penalty config card also shows a fixed
 // "no-show = 25" clause. `late_penalty` jsonb only ever carries `per_minute`
@@ -227,21 +229,36 @@ struct BurpeeLedgerView: View {
                 Text(displayName)
                     .font(GSFont.bold(14, relativeTo: .body))
                     .foregroundStyle(theme.text)
-                Text(debt.summaryText)
+                Text(crewDebtSubtext(debt))
                     .font(GSFont.body(11, relativeTo: .caption))
                     .foregroundStyle(theme.neutral500)
             }
 
             Spacer()
 
-            Text("\(debt.totalOwed)")
+            // Outstanding (not the raw lifetime `totalOwed`) — a paid-off
+            // debt reads 0 here, same as a never-late row (frame 25: Sam's
+            // "paid off 20" row still shows a greyed 0).
+            Text("\(debt.outstanding)")
                 .font(GSFont.bold(18, relativeTo: .title3))
-                .foregroundStyle(debt.totalOwed > 0 ? theme.accent700 : theme.neutral500.opacity(0.6))
+                .foregroundStyle(debt.outstanding > 0 ? theme.accent700 : theme.neutral500.opacity(0.6))
         }
         .padding(.vertical, 10)
         .padding(.horizontal, 4)
         .frame(minHeight: 44)
         .background(isMe ? theme.text.opacity(0.04) : Color.clear)
+    }
+
+    /// "paid off 20 · Jul 9" (frame 25's settled-row treatment) when the
+    /// debt was actually paid off, else the plain `summaryText` unchanged.
+    /// The date suffix is appended here (not inside `BurpeeLedgerMath`) for
+    /// the same reason `detailLine(_:)` above formats `mostRecentDate`
+    /// itself rather than `BurpeeLedgerMath` doing it: Math returns raw
+    /// `Date`s, the View owns presentation formatting.
+    private func crewDebtSubtext(_ debt: BurpeeLedgerMath.CrewDebt) -> String {
+        guard debt.isPaidOff else { return debt.summaryText }
+        guard let date = debt.lastLateAt else { return debt.summaryText }
+        return "\(debt.summaryText) · \(date.formatted(.dateTime.month(.abbreviated).day()))"
     }
 
     // MARK: - Late penalty config card

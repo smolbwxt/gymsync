@@ -4,6 +4,16 @@ import PhotosUI
 struct GroupView: View {
     let group: GymGroup
 
+    // Group streak placement (Phase S Task 5): `group_streaks` is live and
+    // readable (member-gated RLS, 20260719000006_streaks.sql), but there is
+    // no trivially-clean home for it among these three sub-tabs today — Chat
+    // and Members are unrelated, and Sessions already has one bolted-on
+    // non-session entry point (the Burpee Ledger row below) whose own header
+    // comment already frames it as a placeholder pending a dedicated group
+    // Stats surface. Stacking a SECOND unrelated aggregate onto that same
+    // list would compound the same judgment call rather than resolve it. A
+    // dedicated `.stats` sub-tab is explicitly Phase F scope (per task-5-
+    // brief.md) — deferred there rather than forced in here.
     private enum SubTab: String, CaseIterable {
         case chat     = "Chat"
         case members  = "Members"

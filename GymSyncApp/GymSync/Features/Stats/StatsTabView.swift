@@ -8,6 +8,7 @@ struct StatsTabView: View {
     @State private var weeklyVolumes: [Decimal] = Array(repeating: 0, count: 6)
     @State private var recentPRs: [PersonalRecord] = []
     @State private var monthTrendPercent: Double?
+    @State private var userStreak: UserStreak?
 
     var body: some View {
         NavigationStack {
@@ -38,6 +39,11 @@ struct StatsTabView: View {
 
                     // ── Weekly Volume Card ──────────────────────────────────────
                     weeklyVolumeCardView
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 16)
+
+                    // ── Streak Card (Task 5, Phase S) ───────────────────────────
+                    streakCardView
                         .padding(.horizontal, 16)
                         .padding(.bottom, 16)
 
@@ -118,12 +124,14 @@ struct StatsTabView: View {
                     refreshedProfile = try? await ProfileRepository.refresh(userID: id)
                 }
                 await loadWeeklyVolumeAndPRs()
+                await loadStreak()
             }
             .refreshable {
                 if let id = appState.currentProfile?.id {
                     refreshedProfile = try? await ProfileRepository.refresh(userID: id)
                 }
                 await loadWeeklyVolumeAndPRs()
+                await loadStreak()
             }
         }
     }
@@ -179,6 +187,68 @@ struct StatsTabView: View {
         guard maxVolume > 0 else { return 2 }
         let ratio = NSDecimalNumber(decimal: volume / maxVolume).doubleValue
         return max(CGFloat(ratio) * 76, 2)
+    }
+
+    // MARK: - Streak Card (Task 5, Phase S)
+    //
+    // Current + longest streak from `user_streaks` (StreakRepository —
+    // Models/Streak.swift), master-spec'd to live on Stats
+    // (docs/superpowers/specs/2026-06-28-gymsync-design.md:553-579 for the
+    // schema, Flow 7 for the lifecycle). No canvas frame exists for this yet
+    // — uses GSCard + GSStatTile with the canonical 20pt tile size (Home tab
+    // default, positioned between You-tab's 18pt and hero values). Recorded
+    // as an accepted deviation (docs/design/accepted-deviations.json,
+    // "tab-stats") pending a designer frame.
+    //
+    // Zero-state: no `user_streaks` row (a user who has never carried a
+    // scheduled session to a 'ready' completion) renders as a plain "0" —
+    // `userStreak` stays nil and both tiles fall back via `?? 0`, same
+    // graceful-zero pattern `volumeString`/`recentPRsCardView` already use
+    // elsewhere on this screen.
+    @ViewBuilder
+    private var streakCardView: some View {
+        GSCard(bordered: false) {
+            VStack(alignment: .leading, spacing: 10) {
+                GSSectionHeader("Streak")
+                HStack(spacing: 8) {
+                    GSStatTile(
+                        value: currentStreakValue,
+                        label: "Current streak",
+                        valueColor: streakValueColor
+                    )
+                    GSStatTile(
+                        value: "\(userStreak?.longestStreak ?? 0)",
+                        label: "Longest streak"
+                    )
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+        }
+    }
+
+    private var isStreakLive: Bool { (userStreak?.currentStreak ?? 0) > 0 }
+
+    /// Accent color for the current-streak tile's value while live, `nil`
+    /// (falls back to `GSStatTile`'s own `theme.text` default) once broken —
+    /// explicit `guard`/`return` rather than a ternary passed straight into
+    /// the optional `valueColor:` parameter, to leave no ambiguity about
+    /// which `Color?` this resolves to.
+    private var streakValueColor: Color? {
+        guard isStreakLive else { return nil }
+        return theme.accent700
+    }
+
+    /// "🔥 N" for a live streak — the same flame the backend's own
+    /// celebratory copy uses for this exact concept
+    /// (20260719000008_streak_pushes.sql's push_streak_milestone_group:
+    /// "🔥 Crew streak: N sessions strong!"), reused here rather than
+    /// inventing a different glyph for the same idea. Plain "0" (no flame)
+    /// once the streak is broken or never started — a dead streak isn't a
+    /// "live" one worth decorating.
+    private var currentStreakValue: String {
+        let current = userStreak?.currentStreak ?? 0
+        return isStreakLive ? "🔥 \(current)" : "\(current)"
     }
 
     // MARK: - Recent PRs Card (Task 6)
@@ -266,5 +336,11 @@ struct StatsTabView: View {
         weeklyVolumes = StatMath.weeklyVolumes(logs: logs, weeks: 6, calendar: .current)
         monthTrendPercent = StatMath.monthOverMonthVolumeChangePercent(logs: logs, calendar: .current)
         recentPRs = (try? await PersonalRecordRepository.recent(userID: userID, limit: 5)) ?? []
+    }
+
+    @MainActor
+    private func loadStreak() async {
+        guard let userID = appState.currentProfile?.id else { return }
+        userStreak = try? await StreakRepository.userStreak(userID: userID)
     }
 }
