@@ -1,0 +1,192 @@
+{
+  "bench-press": {
+    "match_key": null,
+    "score": null,
+    "unmatched": true
+  },
+  "incline-bench-press": {
+    "match_key": null,
+    "score": null,
+    "unmatched": true
+  },
+  "ohp": {
+    "match_key": null,
+    "score": null,
+    "unmatched": true
+  },
+  "back-squat": {
+    "match_key": null,
+    "score": null,
+    "unmatched": true
+  },
+  "goblet-squat": {
+    "match_key": "Goblet_Squat",
+    "score": 0.8,
+    "needsReview": true,
+    "runnerUp": {
+      "match_key": "Dumbbell_Squat",
+      "score": 0.6
+    }
+  },
+  "deadlift": {
+    "match_key": null,
+    "score": null,
+    "unmatched": true
+  },
+  "sumo-deadlift": {
+    "match_key": "Sumo_Deadlift",
+    "score": 0.8,
+    "needsReview": true,
+    "runnerUp": {
+      "match_key": "Reverse_Band_Sumo_Deadlift",
+      "score": 0.5
+    }
+  },
+  "pull-up": {
+    "match_key": null,
+    "score": null,
+    "unmatched": true
+  },
+  "barbell-row": {
+    "match_key": null,
+    "score": null,
+    "unmatched": true
+  },
+  "db-row": {
+    "match_key": null,
+    "score": null,
+    "unmatched": true
+  },
+  "lat-pulldown": {
+    "match_key": null,
+    "score": null,
+    "unmatched": true
+  },
+  "cable-row": {
+    "match_key": null,
+    "score": null,
+    "unmatched": true
+  },
+  "bicep-curl": {
+    "match_key": "Dumbbell_Bicep_Curl",
+    "score": 0.8,
+    "needsReview": true,
+    "runnerUp": {
+      "match_key": "Dumbbell_Alternate_Bicep_Curl",
+      "score": 0.7
+    }
+  },
+  "hammer-curl": {
+    "match_key": "Alternate_Hammer_Curl",
+    "score": 0.8,
+    "needsReview": true,
+    "runnerUp": {
+      "match_key": "Cross_Body_Hammer_Curl",
+      "score": 0.7
+    }
+  },
+  "tricep-pushdown": {
+    "match_key": null,
+    "score": null,
+    "unmatched": true
+  },
+  "oh-tricep-ext": {
+    "match_key": null,
+    "score": null,
+    "unmatched": true
+  },
+  "lat-raise": {
+    "match_key": "Side_Lateral_Raise",
+    "score": 0.8,
+    "needsReview": true,
+    "runnerUp": {
+      "match_key": "Seated_Side_Lateral_Raise",
+      "score": 0.7
+    }
+  },
+  "face-pull": {
+    "match_key": "Face_Pull",
+    "score": 0.8,
+    "needsReview": true,
+    "runnerUp": {
+      "match_key": "Pull_Through",
+      "score": 0.4
+    }
+  },
+  "leg-curl": {
+    "match_key": "Seated_Leg_Curl",
+    "score": 0.8,
+    "needsReview": true,
+    "runnerUp": {
+      "match_key": "Standing_Leg_Curl",
+      "score": 0.8
+    }
+  },
+  "leg-extension": {
+    "match_key": "Single-Leg_Leg_Extension",
+    "score": 0.8,
+    "needsReview": true,
+    "runnerUp": {
+      "match_key": "Leg_Extensions",
+      "score": 0.6
+    }
+  },
+  "calf-raise": {
+    "match_key": "Seated_Calf_Raise",
+    "score": 0.8,
+    "needsReview": true,
+    "runnerUp": {
+      "match_key": "Smith_Machine_Calf_Raise",
+      "score": 0.7
+    }
+  },
+  "push-up": {
+    "match_key": "Clock_Push-Up",
+    "score": 0.8,
+    "needsReview": true,
+    "runnerUp": {
+      "match_key": "Incline_Push-Up",
+      "score": 0.8
+    }
+  },
+  "db-bench-press": {
+    "match_key": "Dumbbell_Bench_Press",
+    "score": 1,
+    "needsReview": false
+  },
+  "chin-up": {
+    "match_key": "Chin-Up",
+    "score": 1,
+    "needsReview": false
+  },
+  "leg-press": {
+    "match_key": "Leg_Press",
+    "score": 1,
+    "needsReview": false
+  },
+  "plank": {
+    "match_key": "Plank",
+    "score": 1,
+    "needsReview": false
+  },
+  "front-squat": {
+    "match_key": "Front_Squat_Clean_Grip",
+    "score": 1,
+    "needsReview": false
+  },
+  "rdl": {
+    "match_key": "Romanian_Deadlift",
+    "score": 1,
+    "needsReview": false
+  },
+  "db-shoulder-press": {
+    "match_key": "Dumbbell_Shoulder_Press",
+    "score": 1,
+    "needsReview": false
+  },
+  "hanging-leg-raise": {
+    "match_key": "Hanging_Leg_Raise",
+    "score": 1,
+    "needsReview": false
+  }
+}
