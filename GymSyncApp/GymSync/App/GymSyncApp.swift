@@ -17,8 +17,17 @@ struct GymSyncApp: App {
             #if DEBUG
             if let id = ProcessInfo.processInfo.environment["UITEST_CATALOG"],
                let screen = CatalogScreen(rawValue: id) {
+                // Catalog mode bypasses auth entirely, so ThemeStore.shared.current
+                // never loads the CI user's persisted palette (it stays at its
+                // .midnight seed). Force Ink here instead — matches the Ink design
+                // proofs and the Ink tab captures the parity harness diffs catalog
+                // screens against. Also re-stamp the UIKit appearance proxies (same
+                // path ThemeStore.apply(paletteID:) uses on a real palette change)
+                // so any nav/tab bar chrome inside the catalog screen is Ink-toned
+                // too, instead of staying on the process-launch (.midnight) default.
+                let _ = GSAppearance.apply(theme: .ink)
                 CatalogHostView(screen: screen)
-                    .environment(\.gsTheme, ThemeStore.shared.current)
+                    .environment(\.gsTheme, .ink)
             } else {
                 RootView()
                     .environment(AuthService.shared)
