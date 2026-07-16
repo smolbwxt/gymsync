@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(27);
+SELECT plan(29);
 
 -- ============================================================
 -- Streak pushes through the outbox — Phase S Task 4
@@ -45,7 +45,8 @@ INSERT INTO auth.users (id, email) VALUES
   ('90000000-0000-0000-0000-000000000a08', 'sp_hank@t.com'),
   ('90000000-0000-0000-0000-000000000a09', 'sp_ivan@t.com'),
   ('90000000-0000-0000-0000-000000000a0a', 'sp_jack@t.com'),
-  ('90000000-0000-0000-0000-000000000a0b', 'sp_kate@t.com');
+  ('90000000-0000-0000-0000-000000000a0b', 'sp_kate@t.com'),
+  ('90000000-0000-0000-0000-000000000a0c', 'sp_leo@t.com');
 INSERT INTO profiles (id, username) VALUES
   ('90000000-0000-0000-0000-000000000a01', 'sp_alice'),
   ('90000000-0000-0000-0000-000000000a02', 'sp_bob'),
@@ -57,7 +58,8 @@ INSERT INTO profiles (id, username) VALUES
   ('90000000-0000-0000-0000-000000000a08', 'sp_hank'),
   ('90000000-0000-0000-0000-000000000a09', 'sp_ivan'),
   ('90000000-0000-0000-0000-000000000a0a', 'sp_jack'),
-  ('90000000-0000-0000-0000-000000000a0b', 'sp_kate');
+  ('90000000-0000-0000-0000-000000000a0b', 'sp_kate'),
+  ('90000000-0000-0000-0000-000000000a0c', 'sp_leo');
 
 INSERT INTO groups (id, name, created_by) VALUES
   ('90000000-0000-0000-0000-000000000b01', 'Push Crew', '90000000-0000-0000-0000-000000000a07');
@@ -224,6 +226,40 @@ SELECT results_eq(
     WHERE event = 'streak_milestone' AND user_id = '90000000-0000-0000-0000-000000000a0b'$$,
   ARRAY[0],
   'kate: non-milestone buildup (streak=2) then a break enqueues zero streak_milestone pushes'
+);
+
+
+-- ============================================================
+-- Double-break push-guard edge: leo. Bumped to a NON-milestone
+-- streak, broken once, then break called again (idempotent 0→0
+-- UPDATE). The IS DISTINCT FROM guard in the trigger must suppress
+-- the duplicate fire on the second call — no new row in push_outbox.
+-- ============================================================
+INSERT INTO sessions (id, organizer_id, state) VALUES
+  ('90000000-0000-0000-0000-000000000e11', '90000000-0000-0000-0000-000000000a0c', 'completed'),
+  ('90000000-0000-0000-0000-000000000e12', '90000000-0000-0000-0000-000000000a0c', 'completed'),
+  ('90000000-0000-0000-0000-000000000e13', '90000000-0000-0000-0000-000000000a0c', 'completed');
+
+SELECT public.streak_bump_user('90000000-0000-0000-0000-000000000a0c', '90000000-0000-0000-0000-000000000e11');
+SELECT public.streak_bump_user('90000000-0000-0000-0000-000000000a0c', '90000000-0000-0000-0000-000000000e12');
+SELECT public.streak_bump_user('90000000-0000-0000-0000-000000000a0c', '90000000-0000-0000-0000-000000000e13');
+
+SELECT public.streak_break_user('90000000-0000-0000-0000-000000000a0c', '90000000-0000-0000-0000-000000000e13');
+
+SELECT results_eq(
+  $$SELECT count(*)::int FROM push_queue
+    WHERE event = 'streak_milestone' AND user_id = '90000000-0000-0000-0000-000000000a0c'$$,
+  ARRAY[0],
+  'leo: first break (streak=3 non-milestone) enqueues zero streak_milestone pushes'
+);
+
+SELECT public.streak_break_user('90000000-0000-0000-0000-000000000a0c', '90000000-0000-0000-0000-000000000e13');
+
+SELECT results_eq(
+  $$SELECT count(*)::int FROM push_queue
+    WHERE event = 'streak_milestone' AND user_id = '90000000-0000-0000-0000-000000000a0c'$$,
+  ARRAY[0],
+  'leo: second break (idempotent 0→0 UPDATE) does not add new row via IS DISTINCT FROM guard'
 );
 
 

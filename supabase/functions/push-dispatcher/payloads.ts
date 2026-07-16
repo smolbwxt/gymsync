@@ -20,7 +20,7 @@ export interface NotificationContent {
 }
 
 /**
- * Category ids, per the task brief's 7-id list. Ten events map onto seven
+ * Category ids, per the task brief's 7-id list. Twelve events map onto seven
  * categories because the brief's id list doesn't have a 1:1 slot for every
  * event — events whose action is a plain "View"/"Reply" (no bespoke action
  * buttons beyond opening the app to the right place) all share SESSION_VIEW.
