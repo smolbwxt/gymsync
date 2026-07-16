@@ -195,12 +195,10 @@ struct StatsTabView: View {
     // Models/Streak.swift), master-spec'd to live on Stats
     // (docs/superpowers/specs/2026-06-28-gymsync-design.md:553-579 for the
     // schema, Flow 7 for the lifecycle). No canvas frame exists for this yet
-    // — built from the same GSCard/GSSectionHeader/GSStatTile idiom as the
-    // weekly-volume and recent-PRs cards immediately around it (`valueFontSize:
-    // 20`, this file's default, matching those cards' own tile rows) rather
-    // than inventing a bespoke layout. Recorded as an accepted deviation
-    // (docs/design/accepted-deviations.json, "tab-stats") pending a designer
-    // frame.
+    // — uses GSCard + GSStatTile with the canonical 20pt tile size (Home tab
+    // default, positioned between You-tab's 18pt and hero values). Recorded
+    // as an accepted deviation (docs/design/accepted-deviations.json,
+    // "tab-stats") pending a designer frame.
     //
     // Zero-state: no `user_streaks` row (a user who has never carried a
     // scheduled session to a 'ready' completion) renders as a plain "0" —
