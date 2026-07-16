@@ -249,17 +249,19 @@ struct HomeView: View {
     }
 
     /// Precedence: LOADING (cold-start fetch in flight) beats everything;
-    /// then OFFLINE·STALE-CACHE, but only when there's actually a cached
-    /// snapshot to show (an offline cold start with nothing ever cached has
-    /// no "stale" data to render, so it falls through); then
-    /// FIRST-SESSION·ZERO (no completed sessions ever — `historySessions`
-    /// is `SessionRepository.history`, filtered to `state = completed`,
-    /// HomeView.swift's `fetchHistory`); else LOADED.
+    /// then OFFLINE·STALE-CACHE, but only when there's actually cached
+    /// activity worth showing as stale (an offline cold start with nothing
+    /// ever cached — or a cache that only ever recorded zeros, e.g. a
+    /// brand-new user's first online load — has nothing meaningfully
+    /// "stale" to render, so it falls through to the friendlier zero-card
+    /// CTA below); then FIRST-SESSION·ZERO (no completed sessions ever —
+    /// `historySessions` is `SessionRepository.history`, filtered to
+    /// `state = completed`, HomeView.swift's `fetchHistory`); else LOADED.
     private var statTilesRowState: StatTilesRowState {
         if statsLoading { return .loading }
         if !connectivity.isOnline {
             let snapshot = StatTilesSnapshotStore.load()
-            if snapshot.hasAnyValue { return .offlineStale(snapshot) }
+            if snapshot.hasActivity { return .offlineStale(snapshot) }
         }
         if historySessions.isEmpty { return .firstSessionZero }
         return .loaded(

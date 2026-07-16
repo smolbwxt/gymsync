@@ -75,6 +75,12 @@ final class AuthService {
         // joined (VoiceRoomService.leave() is idempotent from `.idle`).
         await VoiceRoomService.shared.leave()
         try await SupabaseService.shared.signOut()
+        // Phase U (Task 1 fix): wipe the cached stat-tile snapshot so a
+        // second user signing into a shared device doesn't see the first
+        // user's numbers rendered as their own OFFLINE·STALE-CACHE row.
+        // UserDefaults-backed and synchronous — unlike the cleanups above,
+        // this can't fail, so there's no try? to swallow.
+        StatTilesSnapshotStore.clear()
         state = .signedOut
     }
 

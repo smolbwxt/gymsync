@@ -137,7 +137,8 @@ struct StatTilesRow: View {
                 )
                 GSStatTile(
                     value: staleValue(snapshot.prsThisMonth.map { "\($0)" }),
-                    label: "PRs this month"
+                    label: "PRs this month",
+                    valueColor: theme.accent700
                 )
             }
             Text("· = last synced value · dashes couldn't load")

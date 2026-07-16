@@ -24,13 +24,18 @@ struct StatTilesSnapshot: Codable, Equatable {
 
     static let empty = StatTilesSnapshot()
 
-    /// True once at least one field has ever been cached. Gates whether
-    /// OFFLINE·STALE-CACHE has anything to show at all — an offline cold
-    /// start with no prior successful load has nothing "stale" to render, so
-    /// `HomeView.statTilesRowState` falls through to FIRST-SESSION·ZERO (or
-    /// LOADED-with-zeros, if history is non-empty) instead.
-    var hasAnyValue: Bool {
-        workoutsThisWeek != nil || lifetimeLbs != nil || prsThisMonth != nil
+    /// True when at least one cached field is meaningfully non-zero. Gates
+    /// whether OFFLINE·STALE-CACHE has anything worth showing as "stale" —
+    /// a cache that only ever recorded zeros (e.g. a brand-new user's first
+    /// online load, before they've logged a single workout) doesn't count,
+    /// since a genuinely-zero offline user is better served by the
+    /// FIRST-SESSION·ZERO CTA than by "0· 0· —" (the numbers are identical
+    /// either way — `hasActivity` decides purely which state is friendlier).
+    /// Replaces the old `hasAnyValue` (true for cached zeros too), which is
+    /// why that one's been removed as an orphan — see
+    /// `HomeView.statTilesRowState`, its only call site.
+    var hasActivity: Bool {
+        (workoutsThisWeek ?? 0) > 0 || (lifetimeLbs ?? 0) > 0 || (prsThisMonth ?? 0) > 0
     }
 }
 
@@ -62,5 +67,13 @@ enum StatTilesSnapshotStore {
         if let prsThisMonth { snapshot.prsThisMonth = prsThisMonth }
         guard let data = try? JSONEncoder().encode(snapshot) else { return }
         UserDefaults.standard.set(data, forKey: defaultsKey)
+    }
+
+    /// Wipes the cached snapshot. `UserDefaults` keys this globally (not
+    /// per-user), so without this a second user signing into a shared
+    /// device would see the first user's cached stats rendered as their own
+    /// OFFLINE·STALE-CACHE row. Call on sign-out — see `AuthService.signOut()`.
+    static func clear() {
+        UserDefaults.standard.removeObject(forKey: defaultsKey)
     }
 }
