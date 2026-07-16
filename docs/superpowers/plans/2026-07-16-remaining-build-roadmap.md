@@ -104,7 +104,9 @@ Spec Flow 4 + §Public Workout Repository:
 
 ## Phase H — Health & calendar integrations
 
-1. **Apple Health export** (spec §2, Flow 2 step 8): `HealthKitBridge`; completed sessions written as `HKWorkout` (`.functionalStrengthTraining`); toggle in You tab (the designed Apple Health row becomes functional); re-write on duration edit.
+**Correction (2026-07-16):** the coverage audit's original greps used `\|` inside `grep -E` (literal pipe — matched nothing), falsely reporting ALL iOS integrations absent. Re-run with correct syntax: **HealthKit export is BUILT** (`Services/HealthKitBridge.swift`: `requestPermission`/`exportWorkout`, wired in session end paths since 3b) — every other absence (EventKit, Sentry, WatchConnectivity, SwiftData store, body-weight log, solo-privacy, block/report) re-confirmed genuinely missing.
+
+1. **Apple Health gaps** (export itself is built): HKWorkout re-write on duration edit (deferred 3b ticket); restore the frame-17 "Synced to Apple Health" recap card (omitted during the Phase U recap alignment); verify the You-tab Health row/permission flow end-to-end.
 2. **iOS Calendar sync** (EventKit): scheduled sessions → calendar events; update/delete on reschedule/cancel.
 3. **Body weight log + trend** (spec'd `body_weight_logs` + Stats trend chart).
 4. **Plate-math helper** (spec v1 list): target weight + bar → plate stack; surfaced from the live set UI.

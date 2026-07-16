@@ -18,6 +18,7 @@ enum HealthKitBridge {
     /// Health card — no per-user bodyweight is stored anywhere in the app,
     /// so this uses a flat ~7.5 kcal/min (moderate-intensity weight training,
     /// average adult) rather than a full MET × bodyweight × duration formula.
+    /// Currently unreferenced — the recap's Apple Health card (Phase H) consumes this again.
     static func estimatedCalories(minutes: Double) -> Int {
         Int((max(0, minutes) * 7.5).rounded())
     }

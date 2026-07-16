@@ -48,8 +48,11 @@ struct WorkoutSessionView: View {
     /// The completed session record (has `completedAt`) — captured by `endSession()`
     /// so the recap's duration hero can compute `completedAt - startedAt`.
     @State private var completedSession: WorkoutSession?
-    /// True only when `HealthKitBridge.exportWorkout` succeeded — surfaces sync
-    /// state to the recap's Apple Health card (never blocks completion on failure).
+    /// True only when `HealthKitBridge.exportWorkout` succeeded. The recap no
+    /// longer renders a "Synced to Apple Health" card (Phase U Task 4 —
+    /// suppressed until Phase H per the design doc), so this is currently
+    /// write-only; kept for that future phase to read. Export itself never
+    /// blocks completion on failure.
     @State private var healthSynced: Bool = false
     /// Fallback rest duration for exercises with no per-exercise `restSeconds`
     /// configured (e.g. a routine item where rest was left unset) — read from
@@ -71,82 +74,42 @@ struct WorkoutSessionView: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            // Main scrollable content
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    if let ex = currentExercise, let re = currentRoutineExercise {
-                        // Canvas: accent-filled exercise header card
-                        exerciseHeaderCard(ex: ex, re: re)
-
-                        // Canvas: logged sets table
-                        loggedSetsTable
-
-                        restTimerRow
-
-                    } else if completed {
-                        recapHeader
-                        recapBody
-                    } else if session != nil && routineExercises.isEmpty {
-                        freeformEmptyState
-                    } else {
-                        HStack { Spacer(); ProgressView().tint(theme.accent); Spacer() }
-                            .padding(.top, 40)
-                    }
-
-                    if let errorText {
-                        Text(errorText)
-                            .font(GSFont.body(13, relativeTo: .caption))
-                            .foregroundStyle(.red)
-                            .padding(.horizontal, 16)
-                    }
+        ZStack {
+            Group {
+                if completed {
+                    // Canvas: "Workout Complete" recap (frame 17) — extracted to
+                    // `SoloRecapView` (Phase U Task 4) so the debug catalog can
+                    // construct it directly with fixture data; see that type for
+                    // the full layout. Every value below is derived from state
+                    // this view already holds (§B.10) — no new queries.
+                    SoloRecapView(
+                        kicker: recapKicker,
+                        durationText: recapDurationText,
+                        subline: recapSubline,
+                        totalLbsText: recapTotalLbsHeroText,
+                        setCount: recapNonPenaltySets.count,
+                        prCount: sessionPRs.count,
+                        heaviestPR: recapHeaviestPR,
+                        exerciseSummaries: exerciseSummaries,
+                        shareSummary: recapShareSummary,
+                        onDone: { dismiss() }
+                    )
+                } else {
+                    liveSessionBody
                 }
-                .padding(.top, 14)
-                // bottom padding so content isn't hidden behind sticky Log Set button
-                .padding(.bottom, 88)
-            }
-
-            // Canvas: sticky "Log Set N" button anchored at screen bottom
-            if !completed, currentExercise != nil {
-                VStack(spacing: 0) {
-                    GSDivider()
-                    Button {
-                        setStartedAt = .now
-                        restEndAt = nil
-                        showLogSheet = true
-                    } label: {
-                        Text("Log Set \(currentSetIndex)")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(GSPrimaryButtonStyle())
-                    .padding(.horizontal, 16)
-                    .padding(.top, 10)
-                    .padding(.bottom, 22)
-                }
-                .background(theme.bg)
-            }
-
-            // Canvas: recap sticky footer — single centered "Done" CTA (Dossier §A.4).
-            if completed {
-                VStack(spacing: 0) {
-                    GSDivider()
-                    Button {
-                        dismiss()
-                    } label: {
-                        Text("Done")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(GSPrimaryButtonStyle(fontSize: 15, verticalPadding: 14))
-                    .padding(.horizontal, 12)
-                    .padding(.top, 10)
-                    .padding(.bottom, 22)
-                }
-                .background(theme.bg)
             }
 
             // ── PR CELEBRATION (full-screen, user-dismissed — p29) ─────────
-            // Same layer idiom as GroupSessionLiveView: a direct ZStack child, gated on
-            // its own bool, rendered after the rest of body's content so it sits on top.
+            // Sibling of the completed/live `Group` above — NOT a child of
+            // `liveSessionBody`'s own ZStack — so it survives the `completed`
+            // transition. When the session's LAST set is also a PR, `log()` sets
+            // `isPROverlay = true` and then `endSession()` flips `completed = true`,
+            // which structurally unmounts `liveSessionBody`; an overlay nested
+            // inside it would vanish before the user could dismiss it (bug found
+            // in Phase U Task 4 review — pre-refactor this was a flat ZStack
+            // sibling too, which is why it survived back then). Same "direct
+            // ZStack child gated on its own bool" idiom as GroupSessionLiveView;
+            // user-dismissed only, no auto-timeout.
             if isPROverlay {
                 PRCelebrationOverlay(
                     exerciseName: prOverlayExerciseName,
@@ -216,6 +179,72 @@ struct WorkoutSessionView: View {
                     Task { await log(reps: reps, weight: weight, rpe: rpe,
                                      isFailed: isFailed, note: note) }
                 }
+            }
+        }
+    }
+
+    // Canvas: "In Progress" live session — exercise header/table/rest-timer,
+    // freeform empty state, loading spinner, and sticky "Log Set N" footer.
+    // The `!completed` guard on the sticky "Log Set N" button was dropped
+    // since this whole computed property only ever renders while `!completed`.
+    // The PR celebration overlay used to live in this ZStack too (pre-Task-4
+    // and through the first cut of Phase U Task 4), but a last-set PR could
+    // set `isPROverlay = true` right before `endSession()` set `completed =
+    // true`, unmounting this whole view out from under the still-undismissed
+    // overlay. It now lives one level up, as a sibling of the `completed` ?
+    // `SoloRecapView` : `liveSessionBody` switch in `body` — see the comment
+    // there.
+    private var liveSessionBody: some View {
+        ZStack(alignment: .bottom) {
+            // Main scrollable content
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    if let ex = currentExercise, let re = currentRoutineExercise {
+                        // Canvas: accent-filled exercise header card
+                        exerciseHeaderCard(ex: ex, re: re)
+
+                        // Canvas: logged sets table
+                        loggedSetsTable
+
+                        restTimerRow
+
+                    } else if session != nil && routineExercises.isEmpty {
+                        freeformEmptyState
+                    } else {
+                        HStack { Spacer(); ProgressView().tint(theme.accent); Spacer() }
+                            .padding(.top, 40)
+                    }
+
+                    if let errorText {
+                        Text(errorText)
+                            .font(GSFont.body(13, relativeTo: .caption))
+                            .foregroundStyle(.red)
+                            .padding(.horizontal, 16)
+                    }
+                }
+                .padding(.top, 14)
+                // bottom padding so content isn't hidden behind sticky Log Set button
+                .padding(.bottom, 88)
+            }
+
+            // Canvas: sticky "Log Set N" button anchored at screen bottom
+            if currentExercise != nil {
+                VStack(spacing: 0) {
+                    GSDivider()
+                    Button {
+                        setStartedAt = .now
+                        restEndAt = nil
+                        showLogSheet = true
+                    } label: {
+                        Text("Log Set \(currentSetIndex)")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(GSPrimaryButtonStyle())
+                    .padding(.horizontal, 16)
+                    .padding(.top, 10)
+                    .padding(.bottom, 22)
+                }
+                .background(theme.bg)
             }
         }
     }
@@ -362,168 +391,18 @@ struct WorkoutSessionView: View {
         }
     }
 
-    // MARK: - Recap (Dossier §A.4) — replaces the old completionCard.
-    // All data below is already in view state (§B.10): no new queries.
-
-    // Canvas: recap header bar — "Workout Complete" title + share button, border-bottom divider.
-    private var recapHeader: some View {
-        HStack {
-            Text("Workout Complete")
-                .font(GSFont.bold(14, relativeTo: .subheadline))
-                .foregroundStyle(theme.text)
-            Spacer()
-            ShareLink(item: recapShareSummary) {
-                Image(systemName: "square.and.arrow.up")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(theme.accent)
-                    .frame(width: 30, height: 30)
-                    .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 12)
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(theme.divider).frame(height: 2)
-        }
-    }
-
-    // Canvas: recap body — accent hero, PR card, by-exercise breakdown, Apple Health card.
-    private var recapBody: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            recapHero
-
-            if let pr = heaviestSessionPR {
-                prCelebrationCard(pr)
-            }
-
-            if !exerciseSummaries.isEmpty {
-                exerciseBreakdown
-            }
-
-            if healthSynced {
-                appleHealthCard
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 14)
-    }
-
-    // Canvas: accent hero block — routine kicker, duration hero (52pt), subline, 3-cell stat row.
-    private var recapHero: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(recapKicker)
-                .font(GSFont.bodyMedium(10, relativeTo: .caption2))
-                .tracking(1.4)
-                .foregroundStyle(theme.bg.opacity(0.85))
-
-            Text(recapDurationText)
-                .font(GSFont.heading(52, relativeTo: .largeTitle))
-                .tracking(-0.4)
-                .foregroundStyle(theme.bg)
-
-            Text(recapSubline)
-                .font(GSFont.body(12, relativeTo: .caption))
-                .foregroundStyle(theme.bg.opacity(0.9))
-
-            HStack(spacing: 8) {
-                heroStatCell(value: recapTotalLbsHeroText, label: "TOTAL LBS")
-                heroStatCell(value: "\(recapNonPenaltySets.count)", label: "SETS")
-                heroStatCell(value: "\(sessionPRs.count)", label: "PR")
-            }
-            .padding(.top, 14)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.accent)
-    }
-
-    private func heroStatCell(value: String, label: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(value)
-                .font(GSFont.bold(20, relativeTo: .title3))
-                .foregroundStyle(theme.bg)
-            Text(label)
-                .font(GSFont.bold(9, relativeTo: .caption2))
-                .tracking(1.0)
-                .foregroundStyle(theme.bg.opacity(0.85))
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    // Canvas: PR celebration card — accent100 fill, shown for the heaviest PR this session.
-    private func prCelebrationCard(_ pr: PersonalRecord) -> some View {
-        let exerciseName = allExercises.first { $0.id == pr.exerciseID }?.name ?? "Exercise"
-        let delta = pr.weight - pr.previousBest
-        return GSCard(backgroundColor: theme.accent100) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("🔥 New personal record")
-                    .font(GSFont.bodyMedium(11, relativeTo: .caption))
-                    .foregroundStyle(theme.accent)
-                Text("\(exerciseName) — \(decimalString(pr.weight)) lbs × \(pr.reps)")
-                    .font(GSFont.bold(15, relativeTo: .body))
-                    .foregroundStyle(theme.text)
-                Text("▲ Beat previous best by \(decimalString(delta)) lbs")
-                    .font(GSFont.body(11, relativeTo: .caption))
-                    .foregroundStyle(theme.accent700)
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    // Canvas: "By exercise" breakdown — grouped by first-logged order, 1px dividers, PR tags.
-    private var exerciseBreakdown: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            GSSectionHeader("By exercise")
-                .padding(.bottom, 8)
-
-            ForEach(Array(exerciseSummaries.enumerated()), id: \.element.id) { index, summary in
-                HStack(alignment: .center) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(summary.name)
-                            .font(GSFont.bold(14, relativeTo: .body))
-                            .foregroundStyle(theme.text)
-                        Text(summary.metaText)
-                            .font(GSFont.body(11, relativeTo: .caption))
-                            .foregroundStyle(theme.neutral700)
-                    }
-                    Spacer()
-                    if summary.isPR {
-                        GSTag(text: "PR", style: .accent)
-                    }
-                }
-                .padding(.vertical, 10)
-                .padding(.horizontal, 4)
-
-                if index < exerciseSummaries.count - 1 {
-                    Rectangle().fill(theme.divider).frame(height: 1)
-                }
-            }
-        }
-    }
-
-    // Canvas: Apple Health sync card — only rendered when export actually succeeded.
-    private var appleHealthCard: some View {
-        GSCard {
-            HStack(spacing: 10) {
-                Image(systemName: "plus.circle")
-                    .font(.system(size: 20, weight: .semibold))
-                    .foregroundStyle(theme.accent)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Synced to Apple Health")
-                        .font(GSFont.bold(13, relativeTo: .subheadline))
-                        .foregroundStyle(theme.text)
-                    Text(appleHealthMetaText)
-                        .font(GSFont.body(11, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral700)
-                }
-                Spacer()
-            }
-            .padding(12)
-        }
-    }
+    // MARK: - Recap (Dossier §A.4)
+    //
+    // The recap's rendering (header, accent hero, PR card, by-exercise
+    // breakdown, Done footer) moved to `SoloRecapView.swift` in Phase U Task 4
+    // (canvas frame 17 alignment) — `body`, above, constructs it from the
+    // computed properties in the "Recap data" section below. The "Synced to
+    // Apple Health" card that used to live here (`appleHealthCard`,
+    // `appleHealthMetaText`) was removed rather than moved: the design doc's
+    // "Recap adjudication" explicitly calls for that row to render absent
+    // until Phase H ships. `healthSynced` (below) and
+    // `HealthKitBridge.exportWorkout` in `endSession()` are unchanged — that
+    // write is unrelated to recap layout.
 
     // Canvas: "No routine" (freeform) session — no set-logging UI exists yet.
     // Replaces the indefinite spinner (which read as broken, per Task 5
@@ -545,30 +424,16 @@ struct WorkoutSessionView: View {
 
     // MARK: - Recap data (Dossier §B.10 — derived from state already held by the view)
 
-    /// One row of the "By exercise" breakdown: name, set count, top set, PR flag.
-    private struct ExerciseSummary: Identifiable {
-        let id: UUID
-        let name: String
-        let setCount: Int
-        let topWeight: Decimal?
-        let topReps: Int?
-        let isPR: Bool
-
-        var metaText: String {
-            if let topWeight, let topReps {
-                return "\(setCount) sets · top \(topWeight) × \(topReps)"
-            }
-            return "\(setCount) sets"
-        }
-    }
-
-    /// Non-penalty sets logged this session — backs the hero SETS stat and Apple Health meta.
+    /// Non-penalty sets logged this session — backs the hero SETS stat.
     private var recapNonPenaltySets: [SetLog] {
         loggedSets.filter { !$0.isPenalty }
     }
 
-    /// `loggedSets` grouped by exercise (excluding penalty), preserving first-logged order.
-    private var exerciseSummaries: [ExerciseSummary] {
+    /// `loggedSets` grouped by exercise (excluding penalty), preserving first-logged
+    /// order. Builds `SoloRecapView.ExerciseSummary` rows directly (that type used to
+    /// be a private nested struct on this view — moved to `SoloRecapView.swift` in
+    /// Phase U Task 4 so the catalog can construct fixture rows from outside this view).
+    private var exerciseSummaries: [SoloRecapView.ExerciseSummary] {
         var order: [UUID] = []
         var setsByExercise: [UUID: [SetLog]] = [:]
         for log in loggedSets where !log.isPenalty {
@@ -585,7 +450,7 @@ struct WorkoutSessionView: View {
             // Top-set value derives from completed sets only (excludes isFailed) — set
             // COUNT above still includes failed sets, matching penalty exclusion as-is.
             let topSet = sets.filter { !$0.isFailed }.max { ($0.weight ?? 0) < ($1.weight ?? 0) }
-            return ExerciseSummary(
+            return SoloRecapView.ExerciseSummary(
                 id: exerciseID,
                 name: name,
                 setCount: sets.count,
@@ -599,6 +464,18 @@ struct WorkoutSessionView: View {
     /// The heaviest PR this session — the only one the recap's celebration card shows.
     private var heaviestSessionPR: PersonalRecord? {
         sessionPRs.max { $0.weight < $1.weight }
+    }
+
+    /// Adapts `heaviestSessionPR` (+ the `allExercises` name lookup the old inline
+    /// `prCelebrationCard(_:)` used) into `SoloRecapView`'s display-ready shape.
+    private var recapHeaviestPR: SoloRecapView.HeaviestPR? {
+        guard let pr = heaviestSessionPR else { return nil }
+        return SoloRecapView.HeaviestPR(
+            exerciseName: exerciseName(for: pr.exerciseID),
+            weight: pr.weight,
+            reps: pr.reps,
+            previousBest: pr.previousBest
+        )
     }
 
     private var recapKicker: String {
@@ -635,13 +512,6 @@ struct WorkoutSessionView: View {
         return formatter.string(from: NSNumber(value: raw)) ?? "0"
     }
 
-    private var appleHealthMetaText: String {
-        let minutesDouble = recapDurationInterval / 60
-        let minutes = Int(minutesDouble.rounded())
-        let calories = HealthKitBridge.estimatedCalories(minutes: minutesDouble)
-        return "\(minutes) min · \(calories) kcal"
-    }
-
     private var recapShareSummary: String {
         let title = routine?.name ?? "Solo Workout"
         return "\(title) — \(recapDurationText), \(recapTotalLbsText) lbs, \(recapNonPenaltySets.count) sets"
@@ -676,14 +546,6 @@ struct WorkoutSessionView: View {
 
     private func exerciseName(for exerciseID: UUID) -> String {
         allExercises.first { $0.id == exerciseID }?.name ?? "Exercise"
-    }
-
-    /// Trims a trailing ".0"/zero fraction so whole-number weights read as "190" not "190.0".
-    private func decimalString(_ value: Decimal) -> String {
-        var value = value
-        var rounded = Decimal()
-        NSDecimalRound(&rounded, &value, 0, .plain)
-        return rounded == value ? "\(rounded)" : "\(value)"
     }
 
     @MainActor
@@ -823,8 +685,9 @@ struct WorkoutSessionView: View {
             // Permission failure must never block completion — `try?` stays here.
             try? await HealthKitBridge.requestPermission()
 
-            // Export result IS surfaced (recap's Apple Health card needs to know),
-            // but a failure still must not block completion — do/catch, not `throw`.
+            // Export result IS surfaced (into `healthSynced`, for Phase H to read
+            // later — see that property's doc comment), but a failure still must
+            // not block completion — do/catch, not `throw`.
             do {
                 try await HealthKitBridge.exportWorkout(session: completedResult, setLogs: logs)
                 healthSynced = true

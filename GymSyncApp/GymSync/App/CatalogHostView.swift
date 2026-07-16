@@ -30,6 +30,7 @@ enum CatalogScreen: String, CaseIterable {
     case statTileLoading = "stattile-loading"
     case statTileError = "stattile-error"
     case statTileEmpty = "stattile-empty"
+    case recapSolo = "recap-solo"
 }
 
 struct CatalogHostView: View {
@@ -52,9 +53,10 @@ struct CatalogHostView: View {
             case .onboardingDone:             content_onboardingDone
             case .onboardingPushPriming:      content_pushPriming
             case .onboardingPushDenied:       content_pushDenied
-            case .statTileLoading:            content_statTile(.loading)
-            case .statTileError:              content_statTile(.error)
-            case .statTileEmpty:              content_statTile(.empty)
+            case .statTileLoading:            StatTilesRow(state: .loading)
+            case .statTileError:              StatTilesRow(state: .offlineStale(Self.statTileOfflineFixture))
+            case .statTileEmpty:              StatTilesRow(state: .firstSessionZero)
+            case .recapSolo:                  content_recapSolo
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -181,48 +183,79 @@ struct CatalogHostView: View {
         PushPrimingView(catalogAuthorizationStatus: .denied)
     }
 
-    // MARK: - Stat tile (loading / error / empty)
+    // MARK: - Stat tiles (loading / offline-stale / first-session-zero)
     //
-    // GSStatTile (DesignSystem/GSComponents.swift:479) itself has no
-    // loading/error/empty API — every real call site (HomeView.swift:231,
-    // YouTabView.swift:174, ExerciseHistoryView.swift:136,
-    // CompletedSessionView.swift:186) renders it as a plain value+label and
-    // handles those 3 states OUTSIDE the tile: a "—" placeholder value for
-    // empty (ExerciseHistoryView.swift:137), a separate red Text for error
-    // (CompletedSessionView.swift:91, `.foregroundStyle(.red)` /
-    // `.foregroundColor(.red)` elsewhere), and a swapped-in ProgressView/
-    // isLoading flag for loading. Reproduced with those same conventions —
-    // loading additionally uses SwiftUI's stock `.redacted(reason:
-    // .placeholder)`, which needs no change to GSStatTile at all.
-    private enum StatTileFixture: Equatable { case loading, error, empty }
+    // Phase U Task 1 (frame 41): these 3 ids now render the REAL
+    // `StatTilesRow` (Features/Home/StatTilesRow.swift) forced into a
+    // specific `StatTilesRowState`, replacing the hand-built 3-GSStatTile
+    // reproduction that used to live here (a `StatTileFixture` enum +
+    // `statValue(_:real:)` helper — see prior revisions of this file).
+    //
+    // RENAMED SEMANTICS, ids kept stable: `stattile-error`'s raw value is
+    // unchanged (`ScreenshotTests.swift`/`CatalogScreenTests.swift` key off
+    // the exact string — the Global Constraints forbid renaming it), but it
+    // now forces OFFLINE·STALE-CACHE rather than a generic "couldn't load"
+    // look. Frame 41 only specifies 4 states — LOADED / LOADING·SKELETON /
+    // FIRST-SESSION·ZERO / OFFLINE·STALE-CACHE — there is no separate
+    // "error" state in the design, so OFFLINE·STALE-CACHE (which the old
+    // reproduction's red "Couldn't load stats." text was already gesturing
+    // at) is the real state this id maps to now.
+    //   stattile-loading -> .loading
+    //   stattile-error   -> .offlineStale(fixture)   [renamed semantics, see above]
+    //   stattile-empty   -> .firstSessionZero
+    //
+    // The offline fixture below reuses frame 41's own sample values verbatim
+    // (proof-frame-41.png's OFFLINE·STALE-CACHE row: "4·" / "312k·" / "—")
+    // so the catalog capture matches the canvas one-for-one: workouts=4 and
+    // lifetimeLbs=312_000 are cached (render with the "·" marker),
+    // prsThisMonth was never cached (renders as the em-dash).
+    private static let statTileOfflineFixture = StatTilesSnapshot(
+        workoutsThisWeek: 4,
+        lifetimeLbs: 312_000,
+        prsThisMonth: nil
+    )
 
-    private func content_statTile(_ fixture: StatTileFixture) -> some View {
-        let row = HStack(spacing: 8) {
-            GSStatTile(value: statValue(fixture, real: "12"), label: "Workouts this week")
-            GSStatTile(value: statValue(fixture, real: "48.2k"), label: "Lifetime lbs")
-            GSStatTile(
-                value: statValue(fixture, real: "3"),
-                label: "PRs this month",
-                valueColor: theme.accent700
-            )
-        }
-        return VStack(alignment: .leading, spacing: 8) {
-            if fixture == .loading {
-                row.redacted(reason: .placeholder)
-            } else {
-                row
-            }
-            if fixture == .error {
-                Text("Couldn't load stats.")
-                    .font(GSFont.body(13, relativeTo: .footnote))
-                    .foregroundColor(.red)
-            }
-        }
-        .padding(16)
-    }
-
-    private func statValue(_ fixture: StatTileFixture, real: String) -> String {
-        (fixture == .empty || fixture == .error) ? "—" : real
+    // MARK: - Solo recap (frame 17)
+    //
+    // Renders the real `SoloRecapView` (Features/Workout/SoloRecapView.swift,
+    // extracted from `WorkoutSessionView` in Phase U Task 4) with fixture
+    // values copied verbatim from proof-frame-17.png so the catalog capture
+    // matches the canvas one-for-one: kicker "PUSH DAY A", duration 42:06,
+    // "Friday, July 11 · solo", hero stats 7,240 / 10 / 1, PR card
+    // Bench Press 190×5 (beat a 185 prior best by 5 lbs), and three exercise
+    // rows (Bench Press 4 sets·top 190×5, PR chip / Overhead Press 3 sets·top
+    // 95×8 / Tricep Pushdown 3 sets·top 50×12). No Apple Health row —
+    // `SoloRecapView` never renders one (see its type doc comment).
+    private var content_recapSolo: some View {
+        SoloRecapView(
+            kicker: "PUSH DAY A",
+            durationText: "42:06",
+            subline: "Friday, July 11 · solo",
+            totalLbsText: "7,240",
+            setCount: 10,
+            prCount: 1,
+            heaviestPR: SoloRecapView.HeaviestPR(
+                exerciseName: "Bench Press",
+                weight: 190,
+                reps: 5,
+                previousBest: 185
+            ),
+            exerciseSummaries: [
+                SoloRecapView.ExerciseSummary(
+                    id: UUID(), name: "Bench Press", setCount: 4,
+                    topWeight: 190, topReps: 5, isPR: true
+                ),
+                SoloRecapView.ExerciseSummary(
+                    id: UUID(), name: "Overhead Press", setCount: 3,
+                    topWeight: 95, topReps: 8, isPR: false
+                ),
+                SoloRecapView.ExerciseSummary(
+                    id: UUID(), name: "Tricep Pushdown", setCount: 3,
+                    topWeight: 50, topReps: 12, isPR: false
+                )
+            ],
+            shareSummary: "Push Day A — 42:06, 7,240 lbs, 10 sets"
+        )
     }
 }
 

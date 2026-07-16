@@ -15,6 +15,7 @@ final class CatalogScreenTests: XCTestCase {
             "onboarding-homegym-searching", "onboarding-done",
             "onboarding-push-priming", "onboarding-push-denied",
             "stattile-loading", "stattile-error", "stattile-empty",
+            "recap-solo",
         ]
         for id in ids {
             XCTAssertNotNil(CatalogScreen(rawValue: id), "missing catalog case: \(id)")

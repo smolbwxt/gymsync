@@ -26,6 +26,19 @@ struct HomeView: View {
     @State private var showRoutinePicker = false
     @State private var routinePickerPreselected: Routine?
 
+    // MARK: - Stat-tile row state (Phase U Task 5 / frame 41)
+    //
+    // `statsLoading` starts `true` and flips to `false` once `refresh()`'s
+    // first pass completes (success or failure) — it only gates the
+    // LOADING·SKELETON state for the initial cold-start fetch, matching the
+    // frame's "while the stats fetch is in flight" wording; a later
+    // pull-to-refresh already has SwiftUI's native refresh spinner and
+    // doesn't re-show the skeleton (see `statTilesRowState`'s doc comment).
+    // `connectivity` follows the same `@State = .shared` idiom SocialTabView
+    // already uses for `ConnectivityMonitor.shared` (SocialTabView.swift:16).
+    @State private var statsLoading = true
+    @State private var connectivity = ConnectivityMonitor.shared
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -224,26 +237,38 @@ struct HomeView: View {
         return "\(shown) +\(names.count - 3) more"
     }
 
-    // MARK: - Stat Tile Row (Task 5 — canvas content)
+    // MARK: - Stat Tile Row (Task 5 canvas content; states = Phase U frame 41)
 
     private var statTileRow: some View {
-        HStack(spacing: 8) {
-            GSStatTile(
-                value: "\(StatMath.workoutsThisWeek(sessions: historySessions))",
-                label: "Workouts this week"
-            )
-            GSStatTile(
-                value: StatMath.compactNumber(profile?.lifetimeVolumeLifted ?? 0),
-                label: "Lifetime lbs"
-            )
-            GSStatTile(
-                value: "\(prsThisMonth)",
-                label: "PRs this month",
-                valueColor: theme.accent700
-            )
+        StatTilesRow(state: statTilesRowState) {
+            // Same action as `startSoloWorkoutButton` below — no new
+            // session-start path, just the existing routine-picker sheet.
+            routinePickerPreselected = nil
+            showRoutinePicker = true
         }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 16)
+    }
+
+    /// Precedence: LOADING (cold-start fetch in flight) beats everything;
+    /// then OFFLINE·STALE-CACHE, but only when there's actually cached
+    /// activity worth showing as stale (an offline cold start with nothing
+    /// ever cached — or a cache that only ever recorded zeros, e.g. a
+    /// brand-new user's first online load — has nothing meaningfully
+    /// "stale" to render, so it falls through to the friendlier zero-card
+    /// CTA below); then FIRST-SESSION·ZERO (no completed sessions ever —
+    /// `historySessions` is `SessionRepository.history`, filtered to
+    /// `state = completed`, HomeView.swift's `fetchHistory`); else LOADED.
+    private var statTilesRowState: StatTilesRowState {
+        if statsLoading { return .loading }
+        if !connectivity.isOnline {
+            let snapshot = StatTilesSnapshotStore.load()
+            if snapshot.hasActivity { return .offlineStale(snapshot) }
+        }
+        if historySessions.isEmpty { return .firstSessionZero }
+        return .loaded(
+            workoutsThisWeek: StatMath.workoutsThisWeek(sessions: historySessions),
+            lifetimeLbs: profile?.lifetimeVolumeLifted ?? 0,
+            prsThisMonth: prsThisMonth
+        )
     }
 
     // MARK: - Schedule Button
@@ -406,12 +431,29 @@ struct HomeView: View {
 
         if let sessions = try? await sessionsFetch { upcomingSessions = sessions }
         if let fetchedGroups = try? await groupsFetch { groups = fetchedGroups }
-        if let history = await historyFetch { historySessions = history }
+        let history = await historyFetch
+        if let history { historySessions = history }
         if let routines = await routinesFetch { ownedRoutines = routines }
         if let exercises = await exercisesFetch { allExercises = exercises }
         if let prs = await prsFetch { recentPRs = prs }
-        if let prCount = await prCountFetch { prsThisMonth = prCount }
-        if let refreshedProfile = await profileFetch { profile = refreshedProfile }
+        let prCount = await prCountFetch
+        if let prCount { prsThisMonth = prCount }
+        let refreshedProfile = await profileFetch
+        if let refreshedProfile { profile = refreshedProfile }
+
+        // Phase U frame 41 (OFFLINE·STALE-CACHE): cache whichever of the 3
+        // stat-tile fields succeeded THIS pass — `nil` means that fetch
+        // failed/was skipped (e.g. signed out), and
+        // `StatTilesSnapshotStore.save` preserves whatever was already
+        // cached for that field rather than clobbering it. `statsLoading`
+        // drops to `false` after this first pass regardless of success —
+        // see its declaration's doc comment for why it never flips back.
+        StatTilesSnapshotStore.save(
+            workoutsThisWeek: history.map { StatMath.workoutsThisWeek(sessions: $0) },
+            lifetimeLbs: refreshedProfile?.lifetimeVolumeLifted,
+            prsThisMonth: prCount
+        )
+        statsLoading = false
 
         // Matches the previous early-return guard: the Task 5 additions (and
         // the routine lookup that depends on them) only ran when signed in.

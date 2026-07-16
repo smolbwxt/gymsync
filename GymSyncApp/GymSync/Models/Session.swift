@@ -208,3 +208,41 @@ struct GroupBurpeeLedgerAggregate: Decodable, Sendable {
         case lastLateAt = "last_late_at"
     }
 }
+
+// MARK: - Activity Feed RPC row (Canvas frame 45, Task 3)
+//
+// One row of `activity_feed(p_limit)`'s SECURITY DEFINER aggregate
+// (`20260719000002_activity_feed_rpc.sql`) — same Decodable-only,
+// snake_case-CodingKeys idiom as `GroupBurpeeLedgerAggregate` above (this
+// is a read-only RPC projection, never re-encoded, so `Decodable` rather
+// than `Codable`).
+//
+// `startedAt` is decoded optionally even though the RPC only ever returns
+// `state = 'completed'` sessions (which `SessionRepository.complete()`
+// always pairs with a `completed_at` write — see that function): a defensive
+// nil here just blanks the duration in the feed row rather than throwing
+// away the ENTIRE array decode over one unexpected null, matching
+// `WorkoutSession.startedAt`'s own optionality for the same column elsewhere.
+struct ActivityFeedRow: Decodable, Identifiable, Sendable {
+    let sessionID: UUID
+    let startedAt: Date?
+    let completedAt: Date
+    let isGroup: Bool
+    let displayName: String
+    let setCount: Int
+    let volume: Decimal
+    let prCount: Int
+
+    var id: UUID { sessionID }
+
+    enum CodingKeys: String, CodingKey {
+        case sessionID = "session_id"
+        case startedAt = "started_at"
+        case completedAt = "completed_at"
+        case isGroup = "is_group"
+        case displayName = "display_name"
+        case setCount = "set_count"
+        case volume
+        case prCount = "pr_count"
+    }
+}

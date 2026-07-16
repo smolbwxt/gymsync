@@ -6,5 +6,17 @@
   {
     "screenId": "exercise-detail",
     "reason": "Demo card shows a real mirrored photograph (free-exercise-db); the canvas frame 14 mock uses placeholder art — photographic content can never pixel-match a mock. Layout structure verified faithful (2026-07-16)."
+  },
+  {
+    "screenId": "stattile-loading",
+    "reason": "Catalog capture shows ONE forced state; canvas frame 41 is a four-state sheet — a constant structural offset is expected. Per-state fidelity verified in review (copy byte-exact)."
+  },
+  {
+    "screenId": "stattile-error",
+    "reason": "Catalog capture shows ONE forced state; canvas frame 41 is a four-state sheet — a constant structural offset is expected. Per-state fidelity verified in review (copy byte-exact)."
+  },
+  {
+    "screenId": "stattile-empty",
+    "reason": "Catalog capture shows ONE forced state; canvas frame 41 is a four-state sheet — a constant structural offset is expected. Per-state fidelity verified in review (copy byte-exact)."
   }
 ]
