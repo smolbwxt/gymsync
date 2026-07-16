@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(38);
+SELECT plan(51);
 
 -- ============================================================
 -- user_streaks / group_streaks — Phase S Task 3
@@ -37,6 +37,24 @@ SELECT plan(38);
 -- quinn = dedicated idempotency fixture (Q1): completes once, then two
 --         different "double-fire" shapes are replayed and must not
 --         double-increment.
+--
+-- ── Fix-forward fixtures (20260719000007) ───────────────────────────────────
+-- gus/holly = "Gap Crew" (G3): baseline all-ready completion, then a bare
+--         `abandoned` transition (holly never checks in, NO no_show flip
+--         ever fires) — proves Finding 2's defensive streak_break_group
+--         call closes the gap on its own.
+-- ivy/jill  = "Gap Crew 2" (G4): baseline all-ready completion, then jill is
+--         flipped to no_show (existing mechanism breaks the group first),
+--         and THEN the same session reaches `abandoned` (Finding 2's new
+--         call fires again, redundantly) — proves the double-break is a
+--         harmless no-op, not a double-decrement.
+-- sam       = Finding 1(b) structural guard fixture. Broken by a session's
+--         no_show flip, then legitimately rejoins ('ready', per Flow 6's
+--         no_show -> ready path) and that SAME session reaches `completed`.
+--         This replays the race's commit order directly (break commits,
+--         THEN the completion path evaluates readiness) without needing two
+--         concurrent transactions — asserts current_streak stays 0 and
+--         last_streak_session_id is never set to the breaking session.
 -- ============================================================
 
 INSERT INTO auth.users (id, email) VALUES
@@ -49,7 +67,12 @@ INSERT INTO auth.users (id, email) VALUES
   ('c0000000-0000-0000-0000-0000000000c7', 'sk_faye@t.com'),
   ('c0000000-0000-0000-0000-0000000000c8', 'sk_iris@t.com'),
   ('c0000000-0000-0000-0000-0000000000c9', 'sk_grace@t.com'),
-  ('c0000000-0000-0000-0000-0000000000ca', 'sk_quinn@t.com');
+  ('c0000000-0000-0000-0000-0000000000ca', 'sk_quinn@t.com'),
+  ('c0000000-0000-0000-0000-0000000000cb', 'sk_gus@t.com'),
+  ('c0000000-0000-0000-0000-0000000000cc', 'sk_holly@t.com'),
+  ('c0000000-0000-0000-0000-0000000000cd', 'sk_ivy@t.com'),
+  ('c0000000-0000-0000-0000-0000000000ce', 'sk_jill@t.com'),
+  ('c0000000-0000-0000-0000-0000000000cf', 'sk_sam@t.com');
 INSERT INTO profiles (id, username) VALUES
   ('c0000000-0000-0000-0000-0000000000c1', 'sk_alice'),
   ('c0000000-0000-0000-0000-0000000000c2', 'sk_bob'),
@@ -60,7 +83,12 @@ INSERT INTO profiles (id, username) VALUES
   ('c0000000-0000-0000-0000-0000000000c7', 'sk_faye'),
   ('c0000000-0000-0000-0000-0000000000c8', 'sk_iris'),
   ('c0000000-0000-0000-0000-0000000000c9', 'sk_grace'),
-  ('c0000000-0000-0000-0000-0000000000ca', 'sk_quinn');
+  ('c0000000-0000-0000-0000-0000000000ca', 'sk_quinn'),
+  ('c0000000-0000-0000-0000-0000000000cb', 'sk_gus'),
+  ('c0000000-0000-0000-0000-0000000000cc', 'sk_holly'),
+  ('c0000000-0000-0000-0000-0000000000cd', 'sk_ivy'),
+  ('c0000000-0000-0000-0000-0000000000ce', 'sk_jill'),
+  ('c0000000-0000-0000-0000-0000000000cf', 'sk_sam');
 
 -- alice <-> faye: accepted friendship (RLS positive-read fixture).
 INSERT INTO friendships (user_id, friend_id, status) VALUES
@@ -80,6 +108,21 @@ INSERT INTO groups (id, name, created_by) VALUES
   ('d0000000-0000-0000-0000-000000000002', 'Empty Crew', 'c0000000-0000-0000-0000-0000000000c4');
 INSERT INTO group_members (group_id, user_id, role) VALUES
   ('d0000000-0000-0000-0000-000000000002', 'c0000000-0000-0000-0000-0000000000c4', 'admin');
+
+-- Group "Gap Crew" (G3): gus (admin), holly. Finding 2 — bare abandoned gap.
+INSERT INTO groups (id, name, created_by) VALUES
+  ('d0000000-0000-0000-0000-000000000003', 'Gap Crew', 'c0000000-0000-0000-0000-0000000000cb');
+INSERT INTO group_members (group_id, user_id, role) VALUES
+  ('d0000000-0000-0000-0000-000000000003', 'c0000000-0000-0000-0000-0000000000cb', 'admin'),
+  ('d0000000-0000-0000-0000-000000000003', 'c0000000-0000-0000-0000-0000000000cc', 'member');
+
+-- Group "Gap Crew 2" (G4): ivy (admin), jill. Finding 2 — no_show-then-
+-- abandoned double-break idempotency.
+INSERT INTO groups (id, name, created_by) VALUES
+  ('d0000000-0000-0000-0000-000000000004', 'Gap Crew 2', 'c0000000-0000-0000-0000-0000000000cd');
+INSERT INTO group_members (group_id, user_id, role) VALUES
+  ('d0000000-0000-0000-0000-000000000004', 'c0000000-0000-0000-0000-0000000000cd', 'admin'),
+  ('d0000000-0000-0000-0000-000000000004', 'c0000000-0000-0000-0000-0000000000ce', 'member');
 
 
 -- ============================================================
@@ -444,6 +487,203 @@ SELECT results_eq(
     WHERE user_id = 'c0000000-0000-0000-0000-0000000000ca'$$,
   $$VALUES (1, 1, 'e0000000-0000-0000-0000-00000000000b'::uuid)$$,
   'quinn: direct duplicate streak_bump_user call for the same session is a no-op'
+);
+
+
+-- ============================================================
+-- Fix-forward (20260719000007) — Finding 2: Gap Crew (G3).
+-- Baseline all-ready completion, then a bare `abandoned` transition where
+-- holly never checks in and NO no_show flip ever fires (unlike GS2 above,
+-- where frank was explicitly flipped to no_show mid-session). Before
+-- 20260719000007 the abandoned branch never called streak_break_group, so
+-- this session reaching 'abandoned' would have left the group streak
+-- standing at 1 forever. Proves the defensive call closes that gap on its
+-- own, without relying on a prior no_show.
+-- ============================================================
+
+INSERT INTO sessions (id, organizer_id, group_id, state, scheduled_for, started_at) VALUES
+  ('e0000000-0000-0000-0000-00000000000c', 'c0000000-0000-0000-0000-0000000000cb',
+   'd0000000-0000-0000-0000-000000000003',
+   'in_progress', now() - interval '3 hours', now() - interval '2 hours 50 minutes');
+INSERT INTO session_participants (session_id, user_id, check_in_state, check_in_at) VALUES
+  ('e0000000-0000-0000-0000-00000000000c', 'c0000000-0000-0000-0000-0000000000cb', 'ready', now() - interval '2 hours 55 minutes'),
+  ('e0000000-0000-0000-0000-00000000000c', 'c0000000-0000-0000-0000-0000000000cc', 'ready', now() - interval '2 hours 54 minutes');
+UPDATE sessions SET state = 'completed', completed_at = now() - interval '1 hour'
+  WHERE id = 'e0000000-0000-0000-0000-00000000000c';
+
+SELECT results_eq(
+  $$SELECT current_streak, longest_streak, last_streak_session_id FROM group_streaks
+    WHERE group_id = 'd0000000-0000-0000-0000-000000000003'$$,
+  $$VALUES (1, 1, 'e0000000-0000-0000-0000-00000000000c'::uuid)$$,
+  'Gap Crew: baseline all-ready completion -> group streak increments to 1'
+);
+
+-- Holly never checks in (check_in_at stays NULL); the session goes straight
+-- to 'abandoned' with NO no_show flip ever applied to her row.
+INSERT INTO sessions (id, organizer_id, group_id, state, scheduled_for, started_at) VALUES
+  ('e0000000-0000-0000-0000-00000000000d', 'c0000000-0000-0000-0000-0000000000cb',
+   'd0000000-0000-0000-0000-000000000003',
+   'in_progress', now() - interval '3 hours', now() - interval '2 hours 50 minutes');
+INSERT INTO session_participants (session_id, user_id, check_in_state, check_in_at) VALUES
+  ('e0000000-0000-0000-0000-00000000000d', 'c0000000-0000-0000-0000-0000000000cb', 'ready', now() - interval '2 hours 55 minutes'),
+  ('e0000000-0000-0000-0000-00000000000d', 'c0000000-0000-0000-0000-0000000000cc', 'invited', NULL);
+UPDATE sessions SET state = 'abandoned', completed_at = now()
+  WHERE id = 'e0000000-0000-0000-0000-00000000000d';
+
+SELECT results_eq(
+  $$SELECT current_streak, longest_streak, last_streak_session_id FROM group_streaks
+    WHERE group_id = 'd0000000-0000-0000-0000-000000000003'$$,
+  $$VALUES (0, 1, 'e0000000-0000-0000-0000-00000000000c'::uuid)$$,
+  'Gap Crew: bare abandoned transition (holly never checked in, no no_show ever fired) breaks the group streak'
+);
+SELECT results_eq(
+  $$SELECT broken_by_session_id FROM group_streaks
+    WHERE group_id = 'd0000000-0000-0000-0000-000000000003'$$,
+  $$VALUES ('e0000000-0000-0000-0000-00000000000d'::uuid)$$,
+  'Gap Crew: broken_by_session_id records the bare-abandoned session'
+);
+SELECT results_eq(
+  $$SELECT (broken_at IS NOT NULL) FROM group_streaks
+    WHERE group_id = 'd0000000-0000-0000-0000-000000000003'$$,
+  ARRAY[true],
+  'Gap Crew: broken_at is stamped by the defensive abandoned-branch group break'
+);
+
+
+-- ============================================================
+-- Fix-forward (20260719000007) — Finding 2 idempotency: Gap Crew 2 (G4).
+-- Baseline all-ready completion, then jill is flipped to no_show (existing
+-- mechanism breaks the group first, exactly like GS2's frank above), and
+-- THEN the SAME session transitions to 'abandoned' (the new defensive call
+-- fires again, redundantly, for a session that already broke this group).
+-- Must land in the identical broken state either write alone would produce
+-- — no double-decrement, no corruption of the longest_streak watermark.
+-- ============================================================
+
+INSERT INTO sessions (id, organizer_id, group_id, state, scheduled_for, started_at) VALUES
+  ('e0000000-0000-0000-0000-00000000000e', 'c0000000-0000-0000-0000-0000000000cd',
+   'd0000000-0000-0000-0000-000000000004',
+   'in_progress', now() - interval '3 hours', now() - interval '2 hours 50 minutes');
+INSERT INTO session_participants (session_id, user_id, check_in_state, check_in_at) VALUES
+  ('e0000000-0000-0000-0000-00000000000e', 'c0000000-0000-0000-0000-0000000000cd', 'ready', now() - interval '2 hours 55 minutes'),
+  ('e0000000-0000-0000-0000-00000000000e', 'c0000000-0000-0000-0000-0000000000ce', 'ready', now() - interval '2 hours 54 minutes');
+UPDATE sessions SET state = 'completed', completed_at = now() - interval '1 hour'
+  WHERE id = 'e0000000-0000-0000-0000-00000000000e';
+
+SELECT results_eq(
+  $$SELECT current_streak, longest_streak, last_streak_session_id FROM group_streaks
+    WHERE group_id = 'd0000000-0000-0000-0000-000000000004'$$,
+  $$VALUES (1, 1, 'e0000000-0000-0000-0000-00000000000e'::uuid)$$,
+  'Gap Crew 2: baseline all-ready completion -> group streak increments to 1'
+);
+
+INSERT INTO sessions (id, organizer_id, group_id, state, scheduled_for, started_at) VALUES
+  ('e0000000-0000-0000-0000-00000000000f', 'c0000000-0000-0000-0000-0000000000cd',
+   'd0000000-0000-0000-0000-000000000004',
+   'in_progress', now() - interval '3 hours', now() - interval '2 hours 50 minutes');
+INSERT INTO session_participants (session_id, user_id, check_in_state, check_in_at) VALUES
+  ('e0000000-0000-0000-0000-00000000000f', 'c0000000-0000-0000-0000-0000000000cd', 'ready', now() - interval '2 hours 55 minutes'),
+  ('e0000000-0000-0000-0000-00000000000f', 'c0000000-0000-0000-0000-0000000000ce', 'invited', NULL);
+
+-- Jill never checked in; flipped to no_show first (mark_no_shows-style
+-- direct UPDATE) — this independently breaks the group via the EXISTING
+-- streak_on_no_show trigger, same as frank in GS2.
+UPDATE session_participants SET check_in_state = 'no_show'
+  WHERE session_id = 'e0000000-0000-0000-0000-00000000000f'
+    AND user_id = 'c0000000-0000-0000-0000-0000000000ce';
+
+SELECT results_eq(
+  $$SELECT current_streak, longest_streak, last_streak_session_id FROM group_streaks
+    WHERE group_id = 'd0000000-0000-0000-0000-000000000004'$$,
+  $$VALUES (0, 1, 'e0000000-0000-0000-0000-00000000000e'::uuid)$$,
+  'Gap Crew 2: jill''s no_show breaks the group streak (existing mechanism, pre-abandon)'
+);
+SELECT results_eq(
+  $$SELECT broken_by_session_id FROM group_streaks
+    WHERE group_id = 'd0000000-0000-0000-0000-000000000004'$$,
+  $$VALUES ('e0000000-0000-0000-0000-00000000000f'::uuid)$$,
+  'Gap Crew 2: broken_by_session_id records the no_show session before abandon'
+);
+
+-- The SAME session now reaches 'abandoned' — the new defensive
+-- streak_break_group call fires again for a group already broken by this
+-- exact session.
+UPDATE sessions SET state = 'abandoned', completed_at = now()
+  WHERE id = 'e0000000-0000-0000-0000-00000000000f';
+
+SELECT results_eq(
+  $$SELECT current_streak, longest_streak, last_streak_session_id FROM group_streaks
+    WHERE group_id = 'd0000000-0000-0000-0000-000000000004'$$,
+  $$VALUES (0, 1, 'e0000000-0000-0000-0000-00000000000e'::uuid)$$,
+  'Gap Crew 2: redundant abandoned-branch break is a no-op — current/longest/last unchanged'
+);
+SELECT results_eq(
+  $$SELECT broken_by_session_id FROM group_streaks
+    WHERE group_id = 'd0000000-0000-0000-0000-000000000004'$$,
+  $$VALUES ('e0000000-0000-0000-0000-00000000000f'::uuid)$$,
+  'Gap Crew 2: broken_by_session_id still names the same session — no double-break corruption'
+);
+
+
+-- ============================================================
+-- Fix-forward (20260719000007) — Finding 1(b) structural guard: sam.
+-- Replays the race's commit order directly (can't exercise the true
+-- concurrent race in single-transaction pgTAP): sam's streak is broken by a
+-- no_show for session X, then she legitimately rejoins ('ready' — Flow 6's
+-- own no_show -> ready path, established in 20260719000003's header) and
+-- that SAME session X reaches 'completed'. Without the broken_by_session_id
+-- guard added to streak_bump_user in this migration, the completion
+-- trigger's readiness loop would find her genuinely 'ready' (not a stale
+-- read — the FOR UPDATE fix alone cannot prevent this, since nothing is
+-- concurrent at this point) and streak_bump_user's last_streak_session_id
+-- guard would not block it (breaks never touch that column), silently
+-- re-crediting current_streak using session X.
+-- ============================================================
+
+INSERT INTO sessions (id, organizer_id, state, scheduled_for, started_at) VALUES
+  ('e0000000-0000-0000-0000-000000000010', 'c0000000-0000-0000-0000-0000000000cf',
+   'in_progress', now() - interval '20 minutes', now() - interval '19 minutes');
+INSERT INTO session_participants (session_id, user_id, check_in_state, check_in_at) VALUES
+  ('e0000000-0000-0000-0000-000000000010', 'c0000000-0000-0000-0000-0000000000cf',
+   'invited', NULL);
+
+-- Break lands first (simulates mark_no_shows()'s commit winning the race).
+UPDATE session_participants SET check_in_state = 'no_show'
+  WHERE session_id = 'e0000000-0000-0000-0000-000000000010'
+    AND user_id = 'c0000000-0000-0000-0000-0000000000cf';
+
+SELECT results_eq(
+  $$SELECT current_streak, longest_streak, last_streak_session_id FROM user_streaks
+    WHERE user_id = 'c0000000-0000-0000-0000-0000000000cf'$$,
+  $$VALUES (0, 0, NULL::uuid)$$,
+  'sam: no_show breaks (never had a prior streak) -> current/longest/last all zero/null'
+);
+SELECT results_eq(
+  $$SELECT broken_by_session_id FROM user_streaks
+    WHERE user_id = 'c0000000-0000-0000-0000-0000000000cf'$$,
+  $$VALUES ('e0000000-0000-0000-0000-000000000010'::uuid)$$,
+  'sam: broken_by_session_id records the no_show session'
+);
+
+-- Sam legitimately rejoins (Flow 6: "she can still join late") for the
+-- SAME session, then it completes with her 'ready'.
+UPDATE session_participants SET check_in_state = 'ready', check_in_at = now()
+  WHERE session_id = 'e0000000-0000-0000-0000-000000000010'
+    AND user_id = 'c0000000-0000-0000-0000-0000000000cf';
+UPDATE sessions SET state = 'completed', completed_at = now()
+  WHERE id = 'e0000000-0000-0000-0000-000000000010';
+
+SELECT results_eq(
+  $$SELECT current_streak, longest_streak, last_streak_session_id FROM user_streaks
+    WHERE user_id = 'c0000000-0000-0000-0000-0000000000cf'$$,
+  $$VALUES (0, 0, NULL::uuid)$$,
+  'sam: completing the SAME session she was no_show-broken by does NOT re-credit — current stays 0, last_streak_session_id stays NULL'
+);
+SELECT results_eq(
+  $$SELECT broken_by_session_id FROM user_streaks
+    WHERE user_id = 'c0000000-0000-0000-0000-0000000000cf'$$,
+  $$VALUES ('e0000000-0000-0000-0000-000000000010'::uuid)$$,
+  'sam: broken_by_session_id is unchanged after the guarded completion'
 );
 
 
