@@ -69,56 +69,21 @@ struct CatalogHostView: View {
 
     // MARK: - PR celebration
     //
-    // WorkoutSessionView.prCelebrationCard(_:) (Features/Workout/
-    // WorkoutSessionView.swift:449-467) is a `private` INSTANCE method that
-    // reads `self.allExercises`/`self.theme` — not reachable without either
-    // constructing a full WorkoutSessionView (routine + routineExercises +
-    // AppState + a live session) or widening its access. Reproduced here
-    // verbatim instead (same GSCard(backgroundColor: theme.accent100) shape,
-    // same 3 Texts/fonts/colors, same decimalString trimming logic) so
-    // WorkoutSessionView.swift itself is untouched.
+    // Renders the real `PRCelebrationOverlay` (Features/Sessions/
+    // PRCelebrationOverlay.swift:26-33) instead of a hand-built
+    // reproduction. Fixture values exercise every rendered element:
+    // weight=205/reps=5/priorBest=200 drives the headline weight, the
+    // "Bench Press × 5" line, and the "beat your best by 5 lbs" delta;
+    // monthlyCount=3 (non-nil, > 0) surfaces the "3rd PR this month" badge.
     private var content_prCelebration: some View {
-        let pr = PersonalRecord(
-            id: UUID(),
-            userID: UUID(),
-            exerciseID: UUID(),
-            weight: 225,
+        PRCelebrationOverlay(
+            exerciseName: "Bench Press",
+            weight: 205,
             reps: 5,
-            previousBest: 205,
-            sessionID: nil,
-            achievedAt: .now
+            priorBest: 200,
+            monthlyCount: 3,
+            onDismiss: {}
         )
-        let exerciseName = "Bench Press"
-        let delta = pr.weight - pr.previousBest
-        return VStack(alignment: .leading, spacing: 0) {
-            GSCard(backgroundColor: theme.accent100) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("🔥 New personal record")
-                        .font(GSFont.bodyMedium(11, relativeTo: .caption))
-                        .foregroundStyle(theme.accent)
-                    Text("\(exerciseName) — \(catalogDecimalString(pr.weight)) lbs × \(pr.reps)")
-                        .font(GSFont.bold(15, relativeTo: .body))
-                        .foregroundStyle(theme.text)
-                    Text("▲ Beat previous best by \(catalogDecimalString(delta)) lbs")
-                        .font(GSFont.body(11, relativeTo: .caption))
-                        .foregroundStyle(theme.accent700)
-                }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 14)
-    }
-
-    /// Mirrors WorkoutSessionView.decimalString(_:) (same file, line ~675):
-    /// trims a trailing ".0" so whole-number weights read as "190" not "190.0".
-    private func catalogDecimalString(_ value: Decimal) -> String {
-        var value = value
-        var rounded = Decimal()
-        NSDecimalRound(&rounded, &value, 0, .plain)
-        return rounded == value ? "\(rounded)" : "\(value)"
     }
 
     // MARK: - Voice dock

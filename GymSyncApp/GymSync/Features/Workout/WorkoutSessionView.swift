@@ -25,7 +25,18 @@ struct WorkoutSessionView: View {
     @State private var showLogSheet = false
     @State private var errorText: String?
     @State private var completed = false
-    @State private var isPRToast: Bool = false
+    // Full-screen, USER-DISMISSED PR celebration (p29) — shared with GroupSessionLiveView
+    // via PRCelebrationOverlay (Phase P Task 1). Replaces the old 2s auto-dismissing
+    // "isPRToast" banner, mirroring the same takeover GroupSessionLiveView already did.
+    @State private var isPROverlay = false
+    @State private var prOverlayExerciseName: String = ""
+    @State private var prOverlayWeight: Decimal = 0
+    @State private var prOverlayReps: Int = 0
+    @State private var prOverlayPriorBest: Decimal = 0
+    /// Always nil in the solo path — mirrors `GroupSessionLiveView`'s pre-resolution state.
+    /// Solo has no established `countSince` plumbing wired to this view; see Task 2 report
+    /// for the decision not to invent that ordering here (badge suppressed, by design).
+    @State private var prOverlayMonthlyCount: Int? = nil
     @State private var setStartedAt: Date = .now
     /// End of the current rest window (started right after a set is logged,
     /// using that exercise's `restSeconds`). Cleared once the lifter starts
@@ -133,25 +144,21 @@ struct WorkoutSessionView: View {
                 .background(theme.bg)
             }
 
-            // Canvas: PR toast — top-anchored two-line accent banner with the
-            // triggering PersonalRecord's weight/reps/exercise/delta (was a
-            // bottom-pinned single-line "NEW PR" pill with no detail).
-            if isPRToast, let pr = sessionPRs.last {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("🔥 NEW PR — \(decimalString(pr.weight)) × \(pr.reps)")
-                        .font(GSFont.bold(15, relativeTo: .headline))
-                        .foregroundStyle(theme.bg)
-                    Text("\(exerciseName(for: pr.exerciseID)) · beat your best by \(decimalString(pr.weight - pr.previousBest)) lbs")
-                        .font(GSFont.body(12, relativeTo: .caption))
-                        .foregroundStyle(theme.bg.opacity(0.9))
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(theme.accent)
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .padding(.top, 8)
+            // ── PR CELEBRATION (full-screen, user-dismissed — p29) ─────────
+            // Same layer idiom as GroupSessionLiveView: a direct ZStack child, gated on
+            // its own bool, rendered after the rest of body's content so it sits on top.
+            if isPROverlay {
+                PRCelebrationOverlay(
+                    exerciseName: prOverlayExerciseName,
+                    weight: prOverlayWeight,
+                    reps: prOverlayReps,
+                    priorBest: prOverlayPriorBest,
+                    monthlyCount: prOverlayMonthlyCount,
+                    onDismiss: {
+                        withAnimation(.easeIn(duration: 0.2)) { isPROverlay = false }
+                    }
+                )
+                .transition(.opacity)
             }
         }
         .background(theme.bg)
@@ -715,7 +722,7 @@ struct WorkoutSessionView: View {
             // Prior max MUST be captured BEFORE the insert below — querying it after
             // logSet() would fold the just-inserted set's own weight into the max
             // (self-comparison), making `weight > priorBest` always false for a
-            // genuine new max and silently suppressing the PR toast. Mirrors
+            // genuine new max and silently suppressing the PR celebration. Mirrors
             // GroupSessionLiveView.logSetAndAdvance's identical ordering.
             var isPR = false
             var priorBest: Decimal = 0
@@ -729,14 +736,19 @@ struct WorkoutSessionView: View {
             loggedSets.append(log)
 
             if isPR, let weight {
-                withAnimation { isPRToast = true }
+                let repsForOverlay = reps ?? 0
+                // Full-screen, user-dismissed celebration (p29) — content comes from data
+                // already known at this point (no need to wait on the record insert below),
+                // same as GroupSessionLiveView.showPROverlay.
+                showPROverlay(exerciseName: exerciseName(for: re.exerciseID), weight: weight,
+                              reps: repsForOverlay, priorBest: priorBest)
                 // Best-effort PR record — a failed insert must never block or delay
                 // set logging (which already happened above). Fall back to a local
                 // record so the recap (Task 9) still has the PR if the write failed.
                 if let record = try? await PersonalRecordRepository.record(
                     exerciseID: re.exerciseID,
                     weight: weight,
-                    reps: reps ?? 0,
+                    reps: repsForOverlay,
                     previousBest: priorBest,
                     sessionID: session.id
                 ) {
@@ -747,14 +759,12 @@ struct WorkoutSessionView: View {
                         userID: userID,
                         exerciseID: re.exerciseID,
                         weight: weight,
-                        reps: reps ?? 0,
+                        reps: repsForOverlay,
                         previousBest: priorBest,
                         sessionID: session.id,
                         achievedAt: Date()
                     ))
                 }
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
-                withAnimation { isPRToast = false }
             }
 
             let targetSets = re.targetSets ?? 1
@@ -777,6 +787,19 @@ struct WorkoutSessionView: View {
                 }
             }
         } catch { errorText = ErrorMapping.map(error).errorDescription }
+    }
+
+    /// Show the full-screen, USER-DISMISSED PR celebration (p29) — no auto-timeout.
+    /// Mirrors `GroupSessionLiveView.showPROverlay`'s field-setting shape; `monthlyCount`
+    /// stays `nil` here (see `prOverlayMonthlyCount`'s declaration for why).
+    @MainActor
+    private func showPROverlay(exerciseName: String, weight: Decimal, reps: Int, priorBest: Decimal) {
+        prOverlayExerciseName = exerciseName
+        prOverlayWeight = weight
+        prOverlayReps = reps
+        prOverlayPriorBest = priorBest
+        prOverlayMonthlyCount = nil
+        withAnimation(.easeOut(duration: 0.25)) { isPROverlay = true }
     }
 
     private func priorMax(exerciseID: UUID, weight: Decimal, userID: UUID) async throws -> Decimal {

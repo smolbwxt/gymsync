@@ -2,5 +2,9 @@
   {
     "screenId": "tab-you",
     "reason": "You tab implements the newer Settings Hub with added stat tiles + Apple Health row — a recorded deviation ahead of the superseded canvas 'You' frame, awaiting design sign-off."
+  },
+  {
+    "screenId": "exercise-detail",
+    "reason": "Demo card shows a real mirrored photograph (free-exercise-db); the canvas frame 14 mock uses placeholder art — photographic content can never pixel-match a mock. Layout structure verified faithful (2026-07-16)."
   }
 ]
