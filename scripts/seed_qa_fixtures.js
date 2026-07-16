@@ -11,7 +11,10 @@
  * (keyed on a stable marker — a `[QA]` name prefix, or — for the group,
  * whose id other fixture rows point at — a stable id found via natural key
  * rather than re-generated every run) then re-inserts, so re-running
- * converges to the same state instead of duplicating.
+ * converges to the same state instead of duplicating. The personal_records
+ * block is the exception: that table is append-only with no fixture marker,
+ * so it inserts-if-absent instead of deleting, and never touches a
+ * pre-existing row.
  *
  * Usage:  node scripts/seed_qa_fixtures.js --username <ci_test_user>
  * Requires SUPABASE_URL + SUPABASE_SECRET_KEY (+ SUPABASE_DB_PASSWORD, only
@@ -218,15 +221,28 @@ async function main() {
   console.log(`  routines: ${ROUTINE_PACK.map((r) => r.name).join(', ')}`);
 
   // --- personal_records for the Stats hero + Recent PRs table -------------
+  // personal_records is append-only with no fixture-marker column and no
+  // unique constraint on (user_id, exercise_id) — a real PR the CI account
+  // set on one of these exercises outside this script would live in the
+  // same rows a delete-by-(user_id, exercise_id) would target, so deleting
+  // here would destroy real history, not just fixture rows. Insert-if-absent
+  // instead: find which fixture exercises already have a row for this user
+  // and only insert the ones that don't. A pre-existing real PR is left in
+  // place — the Stats screen still renders a populated PR row either way.
   const prExerciseIds = PR_EXERCISES.map((p) => bySlug[p.slug]);
-  await rest(`personal_records?user_id=eq.${me.id}&exercise_id=in.(${prExerciseIds.join(',')})`, { method: 'DELETE' });
-  await rest('personal_records', { method: 'POST', body: JSON.stringify(
-    PR_EXERCISES.map((p) => ({
-      user_id: me.id, exercise_id: bySlug[p.slug],
-      weight: p.weight, reps: p.reps, previous_best: p.previous_best,
-    })),
-  ) });
-  console.log(`  personal records: ${PR_EXERCISES.map((p) => p.slug).join(', ')}`);
+  const existingPRs = await rest(`personal_records?select=exercise_id&user_id=eq.${me.id}&exercise_id=in.(${prExerciseIds.join(',')})`);
+  const existingPRExerciseIds = new Set(existingPRs.map((r) => r.exercise_id));
+  const missingPRs = PR_EXERCISES.filter((p) => !existingPRExerciseIds.has(bySlug[p.slug]));
+  if (missingPRs.length) {
+    await rest('personal_records', { method: 'POST', body: JSON.stringify(
+      missingPRs.map((p) => ({
+        user_id: me.id, exercise_id: bySlug[p.slug],
+        weight: p.weight, reps: p.reps, previous_best: p.previous_best,
+      })),
+    ) });
+  }
+  const skipped = PR_EXERCISES.length - missingPRs.length;
+  console.log(`  personal records: ${PR_EXERCISES.map((p) => p.slug).join(', ')}${skipped ? ` (${skipped} already existed, left as-is)` : ''}`);
 
   // --- one published/featured routine for the Library Featured shelf ------
   // Publishing visibility='public' is curator-gated by RLS (routines
