@@ -307,6 +307,38 @@ final class ScreenshotTests: XCTestCase {
         attachScreenshot(app, named: "app-session-recap.png")
     }
 
+    func testBurpeeLedger() {
+        let app = launchApp()
+        guard waitForTabBar(app) else { return }
+        selectTab(app, label: "Social")
+        settle()
+        openPushCrew(app)
+
+        let sessionsTab = app.buttons["Sessions"]
+        if sessionsTab.waitForExistence(timeout: 10) {
+            sessionsTab.tap()
+            settle()
+        }
+
+        // The Burpee Ledger row is GroupView.sessionsList's first Section,
+        // always present regardless of the seeded world's upcoming/past
+        // session mix (unlike testLobby's "Lobby Open"/testSessionRecap's
+        // "Completed" caption matches, which depend on a specific session
+        // existing in that state). CONTAINS (not an exact/BEGINSWITH match)
+        // for the same reason testFriends/testRoutineDetail/testActivityFeed
+        // use it above: the row's composed accessibility label prepends an
+        // SF Symbol icon ahead of the "Burpee Ledger" Text, and whether/how
+        // that icon contributes to the composed label isn't guaranteed.
+        let ledgerRow = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS 'Burpee Ledger'")
+        ).firstMatch
+        if ledgerRow.waitForExistence(timeout: 10) {
+            ledgerRow.tap()
+            settle()
+        }
+        attachScreenshot(app, named: "app-burpee-ledger.png")
+    }
+
     func testFriends() {
         let app = launchApp()
         guard waitForTabBar(app) else { return }

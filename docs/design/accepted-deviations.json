@@ -18,5 +18,9 @@
   {
     "screenId": "stattile-empty",
     "reason": "Catalog capture shows ONE forced state; canvas frame 41 is a four-state sheet — a constant structural offset is expected. Per-state fidelity verified in review (copy byte-exact)."
+  },
+  {
+    "screenId": "tab-stats",
+    "reason": "Stats tab gains current + longest streak tiles (Phase S Task 5, `user_streaks`) — a system-designed addition (GSCard/GSSectionHeader/GSStatTile idiom, matching the weekly-volume/recent-PRs card rhythm already on this screen; flame glyph for a live streak) with no canvas frame of its own yet. Awaiting a designer frame; capture will need refreshing once one exists."
   }
 ]
