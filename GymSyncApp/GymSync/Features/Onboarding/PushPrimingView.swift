@@ -42,7 +42,7 @@ struct PushPrimingView: View {
     /// simulator's real permission decision. Always false in every other
     /// path (including normal debug builds); compiled out of release
     /// entirely.
-    private var catalogSkipCheckInitialState = false
+    var catalogSkipCheckInitialState = false
     #endif
 
     private var pushReceiver: PushReceiver { PushReceiver.shared }

@@ -52,7 +52,7 @@ struct HomeGymSetupView: View {
     /// deterministically instead of being raced/overwritten by a real
     /// response. Always false in every other path (including normal debug
     /// builds); compiled out of release entirely.
-    private var catalogSkipLoadInitial = false
+    var catalogSkipLoadInitial = false
     #endif
 
     private static let defaultRegion = MKCoordinateRegion(
