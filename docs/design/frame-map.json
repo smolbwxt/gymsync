@@ -23,5 +23,9 @@
   "chat": { "frame": 21, "title": "Group Chat" },
   "session-recap": { "frame": 34, "title": "Session Detail" },
   "friends": { "frame": 19, "title": "Friends" },
-  "exercise-detail": { "frame": 14, "title": "Exercise Detail" }
+  "exercise-detail": { "frame": 14, "title": "Exercise Detail" },
+
+  "stattile-loading": { "frame": 41, "title": "Stat Tiles states" },
+  "stattile-error": { "frame": 41, "title": "Stat Tiles states" },
+  "stattile-empty": { "frame": 41, "title": "Stat Tiles states" }
 }
