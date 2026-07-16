@@ -1,7 +1,8 @@
 # Remaining Build Roadmap — 2026-07-16
 
 **Status:** approved scope (user, 2026-07-16): finish harness merge + ExerciseDB media + PR-celebration takeover + unbuilt design frames + P6 Streaks, then release the QA build.
-**Amended (user, 2026-07-16):** coverage audit of the original master design (`docs/superpowers/specs/2026-06-28-gymsync-design.md`) found 13 spec'd tables and several iOS integrations never built. User decision: **add all recovered features — nothing from the original design is dropped.** Full order: **E → P → U → S → M → L → H → O → W → C → V** (new phases defined below). Phase M is the gate before any public App Store submission.
+**Amended (user, 2026-07-16):** coverage audit of the original master design (`docs/superpowers/specs/2026-06-28-gymsync-design.md`) found 13 spec'd tables and several iOS integrations never built. User decision: **add all recovered features — nothing from the original design is dropped.** Phase M is the gate before any public App Store submission.
+**Amended again (plan-leakage audit, 2026-07-16):** a sweep of all 15 historical phase plans + the execution ledger (114 items adjudicated) surfaced deferrals that had escaped every phase. Recovered here: **Phase F** (session sub-thread chat, group Stats sub-tab, Edit Profile + user avatars); Phase S gains no_show production wiring + burpee settlement + streak pushes; Phase U gains the recap-celebration adjudication + backend-gap canvas features; Phase O gains the named 3e follow-up queue + reliability debt list. Full order: **E → P → U → S → F → M → L → H → O → W → C → V**.
 
 **Method:** each phase runs subagent-driven development on its own feature branch: spec → plan (writing-plans) → fresh implementer subagent per task → task review → CI gate → whole-branch review → merge to `master`. Every `master` merge auto-deploys a TestFlight build (`CURRENT_PROJECT_VERSION = github.run_number`); the last merge is the designated QA build.
 
@@ -52,6 +53,10 @@ Final whole-branch review (running) → fix wave if findings → merge `feature/
 2. **Activity Feed (frame 45):** dedicated scrollable feed (sessions, PRs, friend events) — today Stats only links "View sessions". New view reachable from Stats (and/or Home), fed by existing tables (`sessions`, `personal_records`, friendships) — the phase spec defines the query/RLS shape.
 3. README + `frame-map.json` reconciliation: map `stattile-*` and the new feed screen; retire `docs/design/unbuilt-frames/` once all its frames are built or reclassified.
 
+**Leakage-audit additions (2026-07-16):**
+4. **Recap-celebration adjudication:** canvas frames 8 and 17 are full-screen "Session Complete" celebrations (kudos, session leaderboard) — the app implements the quieter Session Detail (frame 34). Adjudicate which the design intends for group-session end (likely: celebration at session end, Session Detail from history), build what's missing, map the frames.
+5. **Backend-gap canvas features** (parked during visual-parity because the schema lacked them): proposal countdown/expiry, kudos, presence/last-active, exercise swap proposals, lobby voice card, countdown hero. Re-inventory each against the CURRENT schema (several gaps have since closed); build the ones now buildable, record the rest with their missing prerequisite.
+
 ## Phase S — P6 Streaks (largest)
 
 **Goal:** schedule-based streaks per the master spec (`docs/superpowers/specs/2026-06-28-gymsync-design.md` §Streaks + Flow 7) — already product-speced there:
@@ -62,11 +67,23 @@ Final whole-branch review (running) → fix wave if findings → merge `feature/
 
 **Scope:** migration + trigger functions + pgTAP tests (backend), streak display UI (frontend), fixture-seed extension so the harness captures populated streak UI. No canvas frame exists for streak UI — design from the established system (GSTheme/GSCard/GSStatTile), file a designer note for post-hoc blessing, and record the deviation in `accepted-deviations.json` until blessed.
 
+**Leakage-audit additions (2026-07-16) — prerequisites and spec'd companions:**
+- **`no_show` production wiring (BLOCKING prerequisite):** no code path ever sets `check_in_state='no_show'` today (ledger product gap), yet the spec's streak-break rule fires on exactly that transition. Wire the lateness threshold (default 15 min → no_show, spec Flow 6) server-side before the streak triggers land, or streaks can never break.
+- **Burpee settlement:** `burpees_owed` never decrements — no settled state exists (Burpee Ledger renders owed-only). Add the settlement mechanism (penalty set_logs with `is_penalty=true` decrementing owed, or a `burpees_paid` counter — phase spec decides with product rationale recorded).
+- **Streak pushes (spec Flow 7 notifications, deferred from 3d):** milestone pushes (7/14/30/60/90/180/365), streak-at-risk push (30 min before `scheduled_for`, not checked in), silent on break. The 3d push-dispatcher taxonomy already reserved these.
+
 ---
 
 # Recovered phases (coverage audit, 2026-07-16)
 
 The 2026-06-28 master design's v1 list was audited against migrations + Swift source. Everything below was spec'd for v1, never built, and is now committed roadmap. (The spec's own v2 deferrals — badges, supersets, ledger search, progress photos, custom exercises, etc. — remain correctly deferred and are NOT in scope.)
+
+## Phase F — Social finishers (plan-leakage recoveries)
+
+Three spec'd v1 social features that were deferred phase-to-phase and escaped every net:
+1. **Session sub-thread chat** (spec §Chat: `chat_messages.session_id` sub-threads; deferred at 3a → 3b → 3c): per-session chat thread inside the session/lobby surfaces, distinct from group-level chat. Schema already has the column shape spec'd; comms migration currently lacks it — extend + wire read/send + realtime.
+2. **Group Stats sub-tab** (spec Flow 5; GroupView today has only Chat + Sessions): collective metrics (total sessions, PRs, volume) + per-member leaderboards for the group.
+3. **Edit Profile + user avatars** (Phase 2.5 deferral; You-tab "Edit" button is currently inert): display-name edit, avatar upload (Storage `avatars` bucket precedent exists from group avatars), avatar rendering across chat/roster/leaderboards; avatar picker in CreateGroupView while in there.
 
 ## Phase M — Moderation & compliance (App Store gate)
 
@@ -93,10 +110,12 @@ Spec Flow 4 + §Public Workout Repository:
 4. **Plate-math helper** (spec v1 list): target weight + bar → plate stack; surfaced from the live set UI.
 5. **Google Calendar sync (sub-phase, gated on OAuth consent approval ~1-2 weeks — start the Google Cloud verification at Phase H kickoff):** `connected_accounts` (Vault-encrypted tokens) + `session_calendar_syncs` + Edge Function sync per spec Flow 10.
 
-## Phase O — Reliability
+## Phase O — Reliability + accumulated polish debt
 
 1. **Offline-first set logging** (spec §6.4): SwiftData local store + pending-writes queue (client-generated UUID PKs make retries idempotent — already true); optimistic UI with syncing indicator; 90-day cache window.
 2. **Sentry** crash reporting + sanitized session-state snapshots (spec §6.8.5).
+3. **3e voice follow-up queue** (canonical 8-item backlog, priority order per its triage): sign-out bounded `leave()` timeout; chat mic gate during `.connecting`; join session-scope guard; muted-others roster rows; coach mark + "voice connected" toast + voice mixer sheet + transmit hero/80pt dock variant (designer-proposed); Lobby↔Live back-nav rejoin blip; restore-helper DRY; SeriesEditorView device-tz picker residual.
+4. **Reliability/debt roll-up** (from the plan-leakage audit — each small, none forgotten): storage orphan cleanup + signed-URL re-resolution (chat/avatars); tab-switch transient-state loss (design discussion: lift to AppState vs keep-alive); series ops transactionality (client-orchestrated today) + until-date inclusive semantics (Teams parity) ; chat_read_state UPDATE policy membership re-check + DB-level lowercase-username constraint; PushPrimingView re-entry dead code (wire or delete) + `.restricted` auth no-op CTA; friend_request threadId passthrough + deep-link re-push dedupe; soundboard favorites `updated_at` bump; `publicRoutines()` smoke test; demoted-curator republish lock (document or add demotion flow); chat foreground-refetch confirmation (key screens have scenePhase handling; verify chat).
 
 ## Phase W — Apple Watch companion + heart rate broadcast
 
@@ -125,7 +144,11 @@ Two release gates instead of one:
 ## Sequencing rationale
 
 E → P → U → S (original four): front-load the independent, high-user-value phase (E) while it can't conflict with UI phases; P is a one-screen win that retires the harness's top finding; U closes the design backlog; S is the largest of the four and benefits from everything before it.
-Then M → L → H → O → W → C → V (recovered): M is small and unblocks the store; L is the biggest missing product pillar; H and O are medium integrations; W opens a new platform target; C and V close the list — both need ops/legal/content setup beyond code (campaign calendar; Twilio + privacy review), so their lead time runs in parallel while earlier phases build. Each phase merges independently — nothing blocks on the whole sequence.
+Then F → M → L → H → O → W → C → V (recovered): F is a small social-completion sprint right after S (its features share S's session/social surfaces); M is small and unblocks the store; L is the biggest missing product pillar; H and O are medium integrations; W opens a new platform target; C and V close the list — both need ops/legal/content setup beyond code (campaign calendar; Twilio + privacy review), so their lead time runs in parallel while earlier phases build. Each phase merges independently — nothing blocks on the whole sequence.
+
+## Content backlog (not code — user/designer)
+
+From the leakage audit, tracked so they don't silently drop: featured-pack artwork + an asset pipeline (packs render placeholder blocks today); additional soundboard sounds the designer proposed (Drumroll, Clap, Dig in, Lightweight) via `scripts/add_sound.js`; the multi-routine "packs" product concept (v1 deliberately ships single routines); the seasonal campaign calendar (Phase C prerequisite); real featured-workout seed set for Phase L ("The Murph" etc. — shared with L's scope).
 
 ## Standing constraints (all phases)
 
