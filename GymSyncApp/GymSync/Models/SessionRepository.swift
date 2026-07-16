@@ -596,6 +596,25 @@ enum SessionRepository {
         } catch { throw ErrorMapping.map(error) }
     }
 
+    // MARK: - Canvas Task 3: Activity Feed (frame 45)
+
+    /// The calling user's completed sessions, month-groupable client-side
+    /// from `completed_at` — powers `ActivityFeedView`. Calls the
+    /// `activity_feed` SECURITY DEFINER RPC (same precedent as
+    /// `burpeeLedger` above, `20260719000002_activity_feed_rpc.sql`) instead
+    /// of a direct `sessions` query: the RPC aggregates each row's set count,
+    /// volume, and PR count server-side via lateral joins against
+    /// `set_logs`/`personal_records`, which a client-side fetch would
+    /// otherwise need an extra round-trip per session for.
+    static func activityFeed(limit: Int = 50) async throws -> [ActivityFeedRow] {
+        do {
+            let rows: [ActivityFeedRow] = try await client
+                .rpc("activity_feed", params: ["p_limit": limit])
+                .execute().value
+            return rows
+        } catch { throw ErrorMapping.map(error) }
+    }
+
     /// All set_logs for a session ordered by logged_at ascending.
     static func sessionSets(sessionID: UUID) async throws -> [SetLog] {
         do {

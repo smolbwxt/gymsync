@@ -379,4 +379,29 @@ final class ScreenshotTests: XCTestCase {
         settle()
         attachScreenshot(app, named: "app-exercise-detail.png")
     }
+
+    func testActivityFeed() {
+        let app = launchApp()
+        guard waitForTabBar(app) else { return }
+        selectTab(app, label: "Stats")
+        settle()
+
+        // StatsTabView's "Recent Activity" row is a NavigationLink labeled
+        // "Activity" (retitled from "View sessions" for this frame) + a
+        // trailing chevron — CONTAINS mirrors testFriends'/testRoutineDetail's
+        // defensive row queries above since the chevron's contribution to the
+        // composed label isn't guaranteed.
+        let activityRow = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS 'Activity'")
+        ).firstMatch
+        if activityRow.waitForExistence(timeout: 15) {
+            activityRow.tap()
+        }
+
+        // Two settle cycles (mirrors testExerciseDetail's double-settle) —
+        // the feed's `.task` issues a network RPC call before rows render.
+        settle()
+        settle()
+        attachScreenshot(app, named: "app-activity-feed.png")
+    }
 }

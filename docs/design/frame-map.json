@@ -27,5 +27,7 @@
 
   "stattile-loading": { "frame": 41, "title": "Stat Tiles states" },
   "stattile-error": { "frame": 41, "title": "Stat Tiles states" },
-  "stattile-empty": { "frame": 41, "title": "Stat Tiles states" }
+  "stattile-empty": { "frame": 41, "title": "Stat Tiles states" },
+
+  "activity-feed": { "frame": 45, "title": "Activity Feed" }
 }

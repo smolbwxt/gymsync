@@ -53,7 +53,7 @@ struct StatsTabView: View {
 
                     NavigationLink { ActivityFeedView() } label: {
                         HStack {
-                            Text("View sessions")
+                            Text("Activity")
                                 .font(GSFont.bodyMedium(15, relativeTo: .body))
                                 .foregroundStyle(theme.accent)
                             Spacer()
