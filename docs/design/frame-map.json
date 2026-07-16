@@ -1,0 +1,8 @@
+{
+  "tab-home": { "frame": 0, "title": "Home" },
+  "tab-library": { "frame": 1, "title": "Library" },
+  "tab-social": { "frame": 2, "title": "Social" },
+  "tab-stats": { "frame": 3, "title": "Stats" },
+  "tab-you": { "frame": 35, "title": "Settings Hub" },
+  "you-appearance": { "frame": 33, "title": "Theme Picker" }
+}
