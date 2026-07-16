@@ -109,7 +109,7 @@ final class ScreenshotTests: XCTestCase {
         let app = launchApp()
         guard waitForTabBar(app) else { return }
         settle()
-        attachScreenshot(app, named: "tab-home.png")
+        attachScreenshot(app, named: "app-tab-home.png")
     }
 
     func testLibraryTab() {
@@ -117,7 +117,7 @@ final class ScreenshotTests: XCTestCase {
         guard waitForTabBar(app) else { return }
         selectTab(app, label: "Library")
         settle()
-        attachScreenshot(app, named: "tab-library.png")
+        attachScreenshot(app, named: "app-tab-library.png")
     }
 
     func testSocialTab() {
@@ -125,7 +125,7 @@ final class ScreenshotTests: XCTestCase {
         guard waitForTabBar(app) else { return }
         selectTab(app, label: "Social")
         settle()
-        attachScreenshot(app, named: "tab-social.png")
+        attachScreenshot(app, named: "app-tab-social.png")
     }
 
     func testStatsTab() {
@@ -133,7 +133,7 @@ final class ScreenshotTests: XCTestCase {
         guard waitForTabBar(app) else { return }
         selectTab(app, label: "Stats")
         settle()
-        attachScreenshot(app, named: "tab-stats.png")
+        attachScreenshot(app, named: "app-tab-stats.png")
     }
 
     func testYouTab() {
@@ -141,7 +141,7 @@ final class ScreenshotTests: XCTestCase {
         guard waitForTabBar(app) else { return }
         selectTab(app, label: "You")
         settle()
-        attachScreenshot(app, named: "tab-you.png")
+        attachScreenshot(app, named: "app-tab-you.png")
     }
 
     // MARK: - You -> Appearance
@@ -164,6 +164,185 @@ final class ScreenshotTests: XCTestCase {
         }
         appearanceRow.tap()
         settle()
-        attachScreenshot(app, named: "you-appearance.png")
+        attachScreenshot(app, named: "app-you-appearance.png")
+    }
+
+    // MARK: - Debug catalog captures
+    //
+    // `CatalogHostView` (Task 4, `#if DEBUG` only) presents a single target
+    // view directly when `UITEST_CATALOG=<id>` is set, bypassing auth
+    // entirely — no `launchApp()`/`waitForTabBar()` here, those are for the
+    // real sign-in flow. One test method per catalog id (not a single
+    // mega-walk) so one flaky/missing state doesn't swallow the rest, same
+    // rationale as the per-tab methods above. The ids below are copied
+    // verbatim from `CatalogScreen`'s raw values in
+    // `GymSyncApp/GymSync/App/CatalogHostView.swift` — that enum is the
+    // fixed contract; a typo'd id here silently renders nothing (the launch
+    // hook only routes on `CatalogScreen(rawValue:)` success).
+
+    /// Launches directly into a debug catalog screen and captures it.
+    private func captureCatalog(_ id: String) {
+        let app = XCUIApplication()
+        var env = app.launchEnvironment
+        env["UITEST_CATALOG"] = id
+        app.launchEnvironment = env
+        app.launch()
+        settle()
+        settle()
+        attachScreenshot(app, named: "app-\(id).png")
+    }
+
+    func testCatalogPRCelebration()      { captureCatalog("pr-celebration") }
+    func testCatalogVoiceIdle()          { captureCatalog("voice-idle") }
+    func testCatalogVoiceConnecting()    { captureCatalog("voice-connecting") }
+    func testCatalogVoiceTransmitting()  { captureCatalog("voice-transmitting") }
+    func testCatalogVoiceMicDenied()     { captureCatalog("voice-mic-denied") }
+    func testCatalogVoiceUnavailable()   { captureCatalog("voice-unavailable") }
+    func testCatalogOnboardingSignIn()   { captureCatalog("onboarding-signin") }
+    func testCatalogOnboardingUsername() { captureCatalog("onboarding-username") }
+    func testCatalogOnboardingHomeGym()  { captureCatalog("onboarding-homegym") }
+    func testCatalogOnboardingHomeGymSearching() { captureCatalog("onboarding-homegym-searching") }
+    func testCatalogOnboardingDone()     { captureCatalog("onboarding-done") }
+    func testCatalogPushPriming()        { captureCatalog("onboarding-push-priming") }
+    func testCatalogPushDenied()         { captureCatalog("onboarding-push-denied") }
+    func testCatalogStatTileLoading()    { captureCatalog("stattile-loading") }
+    func testCatalogStatTileError()      { captureCatalog("stattile-error") }
+    func testCatalogStatTileEmpty()      { captureCatalog("stattile-empty") }
+
+    // MARK: - Seeded deep-screen captures
+    //
+    // Reachable via the deterministic `ci_test_user_2` fixture world (Task 3,
+    // `scripts/seed_qa_fixtures.js`): a group named "[QA] Push Crew" with one
+    // session in every state (scheduled/lobby_open/voting/locked/in_progress/
+    // completed), a 3-message chat thread, one accepted + one pending friend,
+    // and three private routines ("[QA] Push Day/Pull Day/Leg Day").
+    //
+    // Every navigation step below is defensive (guarded `waitForExistence`,
+    // no `XCTFail`) rather than the hard-fail style `selectTab` uses for the
+    // tab bar itself — the `screenshots` CI job is `continue-on-error`, and a
+    // missed accessibility-label query one navigation level down should still
+    // attach whatever screen the app landed on instead of aborting the test
+    // with no PNG at all.
+
+    /// Taps the Social tab's "[QA] Push Crew" group row. Deliberately CONTAINS
+    /// rather than BEGINSWITH: `SocialTabView.groupRow(_:)` renders a square
+    /// initials-avatar `Text` ("PC") ahead of the group-name `Text` in the
+    /// same `HStack`, so the row's default composed accessibility label is
+    /// "PC, [QA] Push Crew, …" — a BEGINSWITH query against the group name
+    /// would never match.
+    private func openPushCrew(_ app: XCUIApplication) {
+        let crew = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS '[QA] Push Crew'")
+        ).firstMatch
+        if crew.waitForExistence(timeout: 15) {
+            crew.tap()
+            settle()
+        }
+    }
+
+    func testChat() {
+        let app = launchApp()
+        guard waitForTabBar(app) else { return }
+        selectTab(app, label: "Social")
+        settle()
+        // GroupView's `subTab` defaults to `.chat`, so tapping into the crew
+        // lands directly on ChatView — no further navigation needed.
+        openPushCrew(app)
+        attachScreenshot(app, named: "app-chat.png")
+    }
+
+    func testLobby() {
+        let app = launchApp()
+        guard waitForTabBar(app) else { return }
+        selectTab(app, label: "Social")
+        settle()
+        openPushCrew(app)
+
+        let sessionsTab = app.buttons["Sessions"]
+        if sessionsTab.waitForExistence(timeout: 10) {
+            sessionsTab.tap()
+            settle()
+        }
+
+        // The seeded world has exactly one session per state; "Lobby Open"
+        // is `"lobby_open".replacingOccurrences(of: "_", with: " ").capitalized`
+        // — the state caption GroupView.sessionRow renders below "Workout".
+        // All non-completed/abandoned sessions push LobbyView, so matching
+        // this specific caption (rather than "Workout" alone, which every
+        // row shares) is what picks the lobby-eligible row deterministically.
+        let lobbySession = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS 'Lobby Open'")
+        ).firstMatch
+        if lobbySession.waitForExistence(timeout: 10) {
+            lobbySession.tap()
+            settle()
+        }
+        attachScreenshot(app, named: "app-lobby.png")
+    }
+
+    func testSessionRecap() {
+        let app = launchApp()
+        guard waitForTabBar(app) else { return }
+        selectTab(app, label: "Social")
+        settle()
+        openPushCrew(app)
+
+        let sessionsTab = app.buttons["Sessions"]
+        if sessionsTab.waitForExistence(timeout: 10) {
+            sessionsTab.tap()
+            settle()
+        }
+
+        // The seeded world's one "completed" session is the only row whose
+        // state caption reads "Completed" — it's in the "Past" section and
+        // pushes CompletedSessionView (GroupView.sessionsList).
+        let completedSession = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS 'Completed'")
+        ).firstMatch
+        if completedSession.waitForExistence(timeout: 10) {
+            completedSession.tap()
+            settle()
+        }
+        attachScreenshot(app, named: "app-session-recap.png")
+    }
+
+    func testFriends() {
+        let app = launchApp()
+        guard waitForTabBar(app) else { return }
+        selectTab(app, label: "Social")
+        settle()
+
+        // SocialTabView's "Friends" row is a NavigationLink whose label
+        // composes an icon + "Friends" + optional "N new" tag + count +
+        // chevron; CONTAINS is used since the exact composed string (and
+        // whether the icon contributes spoken text) isn't guaranteed.
+        let friendsRow = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS 'Friends'")
+        ).firstMatch
+        if friendsRow.waitForExistence(timeout: 15) {
+            friendsRow.tap()
+            settle()
+        }
+        attachScreenshot(app, named: "app-friends.png")
+    }
+
+    func testRoutineDetail() {
+        let app = launchApp()
+        guard waitForTabBar(app) else { return }
+        selectTab(app, label: "Library")
+        settle()
+
+        // Library's Routines sub-tab is the default. The seeded "[QA] Push
+        // Day" routine card's name Text is the FIRST element in its VStack
+        // (no avatar ahead of it, unlike the group row above), so BEGINSWITH
+        // is reliable here.
+        let pushDay = app.buttons.matching(
+            NSPredicate(format: "label BEGINSWITH '[QA] Push Day'")
+        ).firstMatch
+        if pushDay.waitForExistence(timeout: 15) {
+            pushDay.tap()
+            settle()
+        }
+        attachScreenshot(app, named: "app-routine-detail.png")
     }
 }
