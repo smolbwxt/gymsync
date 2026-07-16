@@ -1,12 +1,28 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(14);
+SELECT plan(16);
 
 -- ============================================================
--- mark_no_shows() — Phase S Task 1 (20260719000003_mark_no_shows.sql)
+-- mark_no_shows() — Phase S Task 1 (20260719000003_mark_no_shows.sql),
+-- fixed forward by 20260719000004_mark_no_shows_absence_fix.sql
 -- Design doc Flow 6: "If late_minutes exceeds threshold (default 15),
 -- check_in_state → no_show ... She can still join late but burpees
 -- compound."
+--
+-- Finding 1 (Critical) regression coverage: 'late' means PRESENT in this
+-- schema — evaluate_lateness (20260714000001_session_engine_rpcs.sql,
+-- lines 29-31) only sets check_in_state='late' when check_in_at IS NOT
+-- NULL. A participant who has actually checked in must never be flipped to
+-- no_show, no matter how far past threshold her session is. Fixture ns6
+-- kate below now carries check_in_at (as production's evaluate_lateness
+-- always does before this state exists) and the assertion direction is
+-- flipped accordingly: she stays 'late', she does not flip.
+--
+-- Finding 2 (Important) regression coverage: fixture nsb leo's session
+-- carries a malformed late_penalty->>'no_show_after_minutes' ('abc'). The
+-- cron tick must not raise, must fall back to the default 15-minute
+-- threshold for that session, and must not prevent any other session in
+-- the same batch from being processed.
 -- ============================================================
 
 -- ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -15,14 +31,21 @@ SELECT plan(14);
 --              the caller for the "clients can't invoke this directly" check
 -- ns3 carol  = ready, in_progress, far past threshold -> must NEVER flip
 -- ns4 dana   = online, over-threshold session -> flips to no_show
--- ns5 erin   = late, UNDER-threshold session -> stays 'late' (no flip)
--- ns6 kate   = late, over-threshold session -> flips to no_show
+-- ns5 erin   = late WITH check_in_at (present), UNDER-threshold session ->
+--              stays 'late' (no flip)
+-- ns6 kate   = late WITH check_in_at (present), OVER-threshold session ->
+--              stays 'late', must NEVER flip (Finding 1: late = present in
+--              this schema, absence is the real criterion)
 -- ns7 frank  = invited, ad-hoc session (scheduled_for NULL) -> unaffected
 -- ns8 grace  = invited, completed session -> unaffected
 -- ns9 henry  = invited, abandoned session -> unaffected
 -- nsa iris   = invited, re-join fixture -> flips to no_show, then re-checks
 --              in (Flow 6 late rejoin), then must stay 'ready' on a later
 --              mark_no_shows() run
+-- nsb leo    = invited, session whose late_penalty->>'no_show_after_minutes'
+--              is malformed ('abc') -> falls back to the default 15-minute
+--              threshold, flips to no_show; proves Finding 2's defensive
+--              cast doesn't raise and doesn't block other sessions' rows
 
 INSERT INTO auth.users (id, email) VALUES
   ('a0000000-0000-0000-0000-0000000000a1', 'ns_alice@t.com'),
@@ -34,7 +57,8 @@ INSERT INTO auth.users (id, email) VALUES
   ('a0000000-0000-0000-0000-0000000000a7', 'ns_frank@t.com'),
   ('a0000000-0000-0000-0000-0000000000a8', 'ns_grace@t.com'),
   ('a0000000-0000-0000-0000-0000000000a9', 'ns_henry@t.com'),
-  ('a0000000-0000-0000-0000-0000000000aa', 'ns_iris@t.com');
+  ('a0000000-0000-0000-0000-0000000000aa', 'ns_iris@t.com'),
+  ('a0000000-0000-0000-0000-0000000000ab', 'ns_leo@t.com');
 INSERT INTO profiles (id, username) VALUES
   ('a0000000-0000-0000-0000-0000000000a1', 'ns_alice'),
   ('a0000000-0000-0000-0000-0000000000a2', 'ns_bob'),
@@ -45,7 +69,8 @@ INSERT INTO profiles (id, username) VALUES
   ('a0000000-0000-0000-0000-0000000000a7', 'ns_frank'),
   ('a0000000-0000-0000-0000-0000000000a8', 'ns_grace'),
   ('a0000000-0000-0000-0000-0000000000a9', 'ns_henry'),
-  ('a0000000-0000-0000-0000-0000000000aa', 'ns_iris');
+  ('a0000000-0000-0000-0000-0000000000aa', 'ns_iris'),
+  ('a0000000-0000-0000-0000-0000000000ab', 'ns_leo');
 
 -- ============================================================
 -- RLS negative, checked FIRST (before any threshold has even elapsed for
@@ -64,22 +89,29 @@ SELECT throws_ok(
 SET LOCAL role postgres;
 
 -- OVER-threshold session: scheduled 16 minutes ago (exceeds the 15-minute
--- default) — bob (invited), dana (online), kate (late) all flip.
+-- default) — bob (invited), dana (online) flip; kate (late, but WITH
+-- check_in_at set — she is present, per evaluate_lateness's own semantics)
+-- must NOT flip (Finding 1 regression).
 INSERT INTO sessions (id, organizer_id, state, scheduled_for) VALUES
   ('b0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-0000000000a1',
    'lobby_open', now() - interval '16 minutes');
-INSERT INTO session_participants (session_id, user_id, check_in_state) VALUES
-  ('b0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-0000000000a2', 'invited'),
-  ('b0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-0000000000a4', 'online'),
-  ('b0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-0000000000a6', 'late');
+INSERT INTO session_participants (session_id, user_id, check_in_state, check_in_at) VALUES
+  ('b0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-0000000000a2', 'invited', NULL),
+  ('b0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-0000000000a4', 'online', NULL),
+  -- kate checked in 15 minutes ago (1 minute after scheduled_for) — present,
+  -- marked 'late' by evaluate_lateness the way production actually produces
+  -- this state. The impossible fixture (check_in_at NULL on a 'late' row)
+  -- from 20260719000003's test is fixed here per the review finding.
+  ('b0000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-0000000000a6', 'late', now() - interval '15 minutes');
 
 -- UNDER-threshold session: scheduled 14 minutes ago (under the 15-minute
--- default) — erin (late) must stay 'late'.
+-- default) — erin (late, WITH check_in_at — present) must stay 'late'.
 INSERT INTO sessions (id, organizer_id, state, scheduled_for) VALUES
   ('b0000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-0000000000a1',
    'lobby_open', now() - interval '14 minutes');
-INSERT INTO session_participants (session_id, user_id, check_in_state) VALUES
-  ('b0000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-0000000000a5', 'late');
+INSERT INTO session_participants (session_id, user_id, check_in_state, check_in_at) VALUES
+  -- erin checked in 13 minutes ago (1 minute after scheduled_for) — present.
+  ('b0000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-0000000000a5', 'late', now() - interval '13 minutes');
 
 -- READY guard: in_progress, scheduled 45 minutes ago (well past threshold)
 -- — carol (ready) must NEVER be flipped regardless of elapsed time.
@@ -119,11 +151,27 @@ INSERT INTO sessions (id, organizer_id, state, scheduled_for, started_at) VALUES
 INSERT INTO session_participants (session_id, user_id, check_in_state) VALUES
   ('b0000000-0000-0000-0000-000000000007', 'a0000000-0000-0000-0000-0000000000aa', 'invited');
 
+-- Malformed-threshold session (Finding 2 regression): scheduled 20 minutes
+-- ago, late_penalty->>'no_show_after_minutes' is the non-numeric 'abc'.
+-- The defensive cast must fall back to the default 15-minute threshold
+-- (20 > 15, so leo flips) instead of raising and aborting the whole
+-- UPDATE — which would otherwise take every other session's flips down
+-- with it in the same statement.
+INSERT INTO sessions (id, organizer_id, state, scheduled_for, late_penalty) VALUES
+  ('b0000000-0000-0000-0000-000000000008', 'a0000000-0000-0000-0000-0000000000a1',
+   'lobby_open', now() - interval '20 minutes',
+   '{"exercise":"burpee","per_minute":5,"no_show_after_minutes":"abc"}'::jsonb);
+INSERT INTO session_participants (session_id, user_id, check_in_state) VALUES
+  ('b0000000-0000-0000-0000-000000000008', 'a0000000-0000-0000-0000-0000000000ab', 'invited');
+
 
 -- ============================================================
 -- mark_no_shows(): first invocation
 -- ============================================================
-SELECT public.mark_no_shows();
+SELECT lives_ok(
+  $$SELECT public.mark_no_shows()$$,
+  'cron tick does not raise despite malformed no_show_after_minutes on another session (Finding 2)'
+);
 
 SELECT results_eq(
   $$SELECT check_in_state FROM session_participants
@@ -145,8 +193,8 @@ SELECT results_eq(
   $$SELECT check_in_state FROM session_participants
     WHERE session_id = 'b0000000-0000-0000-0000-000000000001'
       AND user_id = 'a0000000-0000-0000-0000-0000000000a6'$$,
-  $$VALUES ('no_show')$$,
-  'over-threshold (16min): late participant flips to no_show'
+  $$VALUES ('late')$$,
+  'over-threshold (16min): late participant WITH check_in_at (present) stays late, does NOT flip to no_show (Finding 1)'
 );
 
 SELECT results_eq(
@@ -154,7 +202,15 @@ SELECT results_eq(
     WHERE session_id = 'b0000000-0000-0000-0000-000000000002'
       AND user_id = 'a0000000-0000-0000-0000-0000000000a5'$$,
   $$VALUES ('late')$$,
-  'under-threshold (14min): late participant stays late, does not flip'
+  'under-threshold (14min): late participant WITH check_in_at (present) stays late, does not flip'
+);
+
+SELECT results_eq(
+  $$SELECT check_in_state FROM session_participants
+    WHERE session_id = 'b0000000-0000-0000-0000-000000000008'
+      AND user_id = 'a0000000-0000-0000-0000-0000000000ab'$$,
+  $$VALUES ('no_show')$$,
+  'malformed no_show_after_minutes (''abc''): falls back to default 15min threshold, invited participant flips (Finding 2)'
 );
 
 SELECT results_eq(
