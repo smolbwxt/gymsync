@@ -264,10 +264,16 @@ struct CreateGroupView: View {
         // the photo immediately rather than only after a manual refresh.
         // GymGroup has no custom initializer (unlike Profile/ChatMessage),
         // so the synthesized memberwise init is available here.
-        if let pendingAvatarData,
-           let url = try? await GroupRepository.setAvatar(groupID: group.id, imageData: pendingAvatarData) {
-            group = GymGroup(id: group.id, name: group.name, avatarURL: url,
-                              createdBy: group.createdBy, createdAt: group.createdAt)
+        var uploadFailures: [String] = []
+        if let pendingAvatarData {
+            do {
+                if let url = try await GroupRepository.setAvatar(groupID: group.id, imageData: pendingAvatarData) {
+                    group = GymGroup(id: group.id, name: group.name, avatarURL: url,
+                                      createdBy: group.createdBy, createdAt: group.createdAt)
+                }
+            } catch {
+                uploadFailures.append("photo")
+            }
         }
 
         var failedUsernames: [String] = []
@@ -281,12 +287,17 @@ struct CreateGroupView: View {
         }
 
         onCreated(group)
-        if failedUsernames.isEmpty {
+        if uploadFailures.isEmpty && failedUsernames.isEmpty {
             dismiss()
         } else {
-            errorText = "Group created, but couldn't add: "
-                + failedUsernames.joined(separator: ", ")
-                + ". You can add them from the group's Members tab."
+            var errorMessages: [String] = []
+            if !uploadFailures.isEmpty {
+                errorMessages.append("the photo upload failed — you can add it from the group screen")
+            }
+            if !failedUsernames.isEmpty {
+                errorMessages.append("couldn't add: " + failedUsernames.joined(separator: ", ") + ". You can add them from the group's Members tab.")
+            }
+            errorText = "Group created, but " + errorMessages.joined(separator: " and ")
         }
     }
 }
