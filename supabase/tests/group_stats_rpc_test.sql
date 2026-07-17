@@ -1,21 +1,31 @@
 -- group_stats / group_member_stats RPCs (20260720000003_group_stats_rpc.sql,
--- Phase F Task 5).
+-- Phase F Task 5; scoping fixed forward by
+-- 20260720000004_group_stats_scalars_all_time.sql).
 --
 -- Covers: correct scalar aggregates + per-member leaderboard rows on a
 -- multi-member fixture with penalty/failed sets excluded (checked with real
 -- numbers, not just presence/absence), an in-progress session excluded from
--- every aggregate, a departed member's historical activity excluded from
--- BOTH functions (the "current members only" design decision), the
--- sum(member rows) = scalar-totals invariant the two-function shape is
--- built to preserve, the membership-gate negative on both functions, and an
--- empty-group (no sessions/sets at all) sanity check.
+-- every aggregate, a departed member's historical activity EXCLUDED from
+-- group_member_stats (current-roster leaderboard) but COUNTED in
+-- group_stats' scalars (all-time, post-20260720000004), the membership-gate
+-- negative on both functions, and an empty-group (no sessions/sets at all)
+-- sanity check.
+--
+-- The sum(member rows) = scalar-totals equality 20260720000003 checked here
+-- is GONE (see the "Former invariant" comment below, near the fixture's
+-- former location) — it only ever held because both functions shared the
+-- same (inconsistent) current-members-only scoping. Replaced with the real
+-- post-fix relationship: total_volume >= sum(member_stats.volume), checked
+-- with this fixture's exact numbers.
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SELECT plan(18);
 
 -- ── Fixtures ─────────────────────────────────────────────────────────────
 -- Stats Crew: A (admin), B, C — current members. F joins, logs a set, then
--- LEAVES before the query runs (tests current-membership scoping). D never
+-- LEAVES before the query runs — tests that F's historical volume/PRs still
+-- COUNT in group_stats' all-time scalars (post-20260720000004) while F is
+-- excluded from group_member_stats' current-roster leaderboard rows. D never
 -- joins (outsider, negative test).
 INSERT INTO auth.users (id, email) VALUES
   ('00000000-0000-0000-0000-0000000fa101', 'gs-a@t.com'),
@@ -47,7 +57,10 @@ INSERT INTO group_members (group_id, user_id, role) VALUES
 -- S1: completed. A logs a normal set (volume 1000), a penalty set (would be
 -- +100 if wrongly included), and a failed set (would be +400 if wrongly
 -- included). B logs one normal set (volume 1000). C logs nothing. F (about
--- to depart) logs a normal set (volume 300).
+-- to depart) logs a normal set (volume 300) — this 300 now COUNTS toward
+-- group_stats.total_volume (all-time, post-20260720000004) even after F
+-- leaves below, but never appears in group_member_stats (current-roster
+-- only, unchanged).
 INSERT INTO sessions (id, organizer_id, group_id, state) VALUES
   ('00000000-0000-0000-0000-0000000fc301',
    '00000000-0000-0000-0000-0000000fa101', '00000000-0000-0000-0000-0000000fb201', 'completed');
@@ -103,9 +116,10 @@ SELECT gen_random_uuid(), '00000000-0000-0000-0000-0000000fa101',
        '00000000-0000-0000-0000-0000000fc303', ex.id, 1, 100, 100, false, false
   FROM (SELECT id FROM exercises WHERE slug = 'bench-press' LIMIT 1) ex;
 
--- F departs the group AFTER logging the S1 set above — their historical
--- 300-volume set must not count toward the current-roster totals or appear
--- as a leaderboard row.
+-- F departs the group AFTER logging the S1 set above. Post-20260720000004:
+-- their historical 300-volume set MUST still count toward group_stats'
+-- all-time total_volume, but must NOT appear as a group_member_stats
+-- leaderboard row (current-roster only, unchanged).
 DELETE FROM group_members
  WHERE group_id = '00000000-0000-0000-0000-0000000fb201'
    AND user_id = '00000000-0000-0000-0000-0000000fa105';
@@ -132,12 +146,12 @@ SELECT results_eq(
 
 SELECT results_eq(
   $$SELECT total_volume FROM public.group_stats('00000000-0000-0000-0000-0000000fb201')$$,
-  ARRAY[2500]::numeric[],
-  'total_volume = 2500 (A 1000+500, B 1000; F''s departed 300 and A''s penalty/failed 500 all excluded)');
+  ARRAY[2800]::numeric[],
+  'total_volume = 2800 (all-time, post-20260720000004: A 1000+500, B 1000, F''s departed 300 NOW COUNTED; A''s penalty/failed 500 still excluded)');
 
 SELECT results_eq(
   $$SELECT total_prs FROM public.group_stats('00000000-0000-0000-0000-0000000fb201')$$,
-  ARRAY[2], 'total_prs = 2 (A + B, one each)');
+  ARRAY[2], 'total_prs = 2 (A + B, one each; unaffected by F, who logged no personal_records row)');
 
 -- ── group_member_stats: per-member leaderboard rows ─────────────────────
 SELECT results_eq(
@@ -189,20 +203,34 @@ SELECT results_eq(
         '00000000-0000-0000-0000-0000000fa103'::uuid],
   'rows ordered by volume desc: A, B, C');
 
--- ── Invariant: the two functions' totals reconcile ──────────────────────
--- This is the exact property the two-function shape decision is built on:
--- volume/PRs are scoped identically (current members, completed sessions)
--- in both functions, so summing the leaderboard rows must equal the
--- scalar totals.
+-- ── Former invariant: the two functions' totals no longer reconcile ────────
+-- 20260720000003 checked SUM(member_stats.volume) = group_stats.total_volume
+-- (and the pr_count equivalent) as "a real invariant." That equality only
+-- ever held because both functions shared the same (inconsistent)
+-- current-members-only scoping for volume/PRs — it was a side effect of the
+-- bug 20260720000004_group_stats_scalars_all_time.sql fixes, not a property
+-- worth preserving. group_stats' scalars are now all-time while
+-- group_member_stats stays current-roster BY DESIGN (see that migration's
+-- header), so the true relationship is total >= sum(member rows), strict >
+-- whenever a departed member contributed history (F's 300 volume here).
+-- Checked below with this fixture's exact numbers, matching this file's
+-- "real numbers, not presence/absence" discipline, rather than asserting a
+-- generic >=.
 SELECT results_eq(
   $$SELECT sum(volume)::numeric FROM public.group_member_stats('00000000-0000-0000-0000-0000000fb201')$$,
-  $$SELECT total_volume FROM public.group_stats('00000000-0000-0000-0000-0000000fb201')$$,
-  'sum(member_stats.volume) = group_stats.total_volume');
+  ARRAY[2500]::numeric[],
+  'sum(member_stats.volume) is 2500 (current-roster only, F still excluded here) -- 300 LESS than group_stats.total_volume (2800) asserted above; the two no longer reconcile, by design');
 
+-- total_prs: F logged no personal_records row in this fixture, so the sum
+-- happens to still equal total_prs (2 = 2) here. That is a FIXTURE
+-- COINCIDENCE, not a restored invariant -- total_prs is all-time (no
+-- group_members join, see migration header) exactly like total_volume; a
+-- departed member WITH a PR would break this equality the same way F's 300
+-- volume breaks the volume one.
 SELECT results_eq(
   $$SELECT sum(pr_count)::int FROM public.group_member_stats('00000000-0000-0000-0000-0000000fb201')$$,
-  $$SELECT total_prs FROM public.group_stats('00000000-0000-0000-0000-0000000fb201')$$,
-  'sum(member_stats.pr_count) = group_stats.total_prs');
+  ARRAY[2],
+  'sum(member_stats.pr_count) = 2, coincidentally equal to total_prs in this fixture only (F has zero PRs) -- not a guaranteed invariant post-fix');
 
 -- ── Empty-group sanity: a group with a member but zero sessions/sets ────
 SET LOCAL request.jwt.claim.sub = '00000000-0000-0000-0000-0000000fa106';
