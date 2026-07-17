@@ -115,6 +115,15 @@ enum ModerationRepository {
     /// `FriendRepository.friends()`/`GroupRepository.members(groupID:)`
     /// rather than a PostgREST embed, matching this codebase's established
     /// idiom for turning a join table into `[Profile]`.
+    ///
+    /// `blocked_users` is fetched ordered `blocked_at DESC`, but
+    /// `ProfileRepository.fetchMany`'s `.in()` doesn't preserve input order
+    /// (PostgREST returns matches in its own order, not the ids-list order),
+    /// so the final list is re-sorted to `rows`' order here — same
+    /// dictionary-preserve pattern as `GymGroup.members(groupID:)`
+    /// (GymSyncApp/GymSync/Models/GymGroup.swift): build an id→Profile
+    /// lookup, then walk `rows` (already most-recent-first) and map each to
+    /// its profile.
     static func blockedUsers() async throws -> [Profile] {
         guard let me = await SupabaseService.shared.currentUserID() else {
             throw GymSyncError.unauthorized
@@ -127,7 +136,9 @@ enum ModerationRepository {
                 .order("blocked_at", ascending: false)
                 .execute()
                 .value
-            return try await ProfileRepository.fetchMany(ids: rows.map(\.blockedID))
+            let profiles = try await ProfileRepository.fetchMany(ids: rows.map(\.blockedID))
+            let byID = Dictionary(uniqueKeysWithValues: profiles.map { ($0.id, $0) })
+            return rows.compactMap { byID[$0.blockedID] }
         } catch {
             throw ErrorMapping.map(error)
         }

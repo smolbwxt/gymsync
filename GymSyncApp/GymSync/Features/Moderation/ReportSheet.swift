@@ -24,7 +24,11 @@ struct ReportSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.gsTheme) private var theme
 
-    @State private var selectedReason: ReportReason = .harassment
+    // Minor fix round: no reason is pre-selected — a bare tap on Submit must
+    // never silently file `.harassment` (`ReportReason`, Models/
+    // Moderation.swift). Submit stays disabled (see toolbar below) until the
+    // user actively picks one of `ReportReason.allCases`.
+    @State private var selectedReason: ReportReason?
     @State private var details = ""
     @State private var isSubmitting = false
     @State private var errorText: String?
@@ -52,8 +56,11 @@ struct ReportSheet: View {
                     ToolbarItem(placement: .confirmationAction) {
                         Button("Submit") { Task { await submit() } }
                             .font(GSFont.bold(14, relativeTo: .body))
-                            .foregroundStyle(isSubmitting ? theme.neutral500 : theme.accent)
-                            .disabled(isSubmitting)
+                            .foregroundStyle(canSubmit ? theme.accent : theme.neutral500)
+                            // Combined with the pre-existing isSubmitting guard:
+                            // Submit is unavailable both mid-flight and before
+                            // a reason is chosen.
+                            .disabled(!canSubmit)
                     }
                 }
             }
@@ -141,7 +148,15 @@ struct ReportSheet: View {
 
     // MARK: - Submit
 
+    // Gates the toolbar Submit button: a reason must be actively chosen
+    // (selectedReason starts nil — no default category), and no submit
+    // already in flight.
+    private var canSubmit: Bool {
+        selectedReason != nil && !isSubmitting
+    }
+
     private func submit() async {
+        guard let selectedReason else { return }
         isSubmitting = true
         defer { isSubmitting = false }
         let trimmedDetails = details.trimmingCharacters(in: .whitespacesAndNewlines)

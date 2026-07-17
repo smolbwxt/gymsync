@@ -27,6 +27,13 @@ struct FriendsView: View {
     @State private var reportTarget: Profile?
     @State private var blockTarget: Profile?
     @State private var showBlockConfirm = false
+    // Minor fix round: block() previously reused `errorText` — the field
+    // meant for the "Add a friend" username submission at the top of the
+    // list — so a failed block silently rendered its error next to an
+    // unrelated input instead of near the row the user acted on. Own state
+    // + `.alert` (below) keeps a block failure visibly tied to the block
+    // action itself.
+    @State private var moderationError: String?
 
     @Environment(\.gsTheme) private var theme
 
@@ -237,6 +244,23 @@ struct FriendsView: View {
         } message: {
             Text("You won't see their messages or requests.")
         }
+        // Minor fix round: block failures get their own alert instead of
+        // reusing the add-friend `errorText` near the top input — same
+        // title/message shape as the confirmationDialog above, adapted to
+        // `.alert`'s `presenting:` form since `moderationError` carries the
+        // message itself (no separate stored title).
+        .alert(
+            "Couldn't complete that action",
+            isPresented: Binding<Bool>(
+                get: { moderationError != nil },
+                set: { if !$0 { moderationError = nil } }
+            ),
+            presenting: moderationError
+        ) { _ in
+            Button("OK", role: .cancel) {}
+        } message: { message in
+            Text(message)
+        }
     }
 
     // Two-line "Display Name" / "@username" block, matching the proof's
@@ -300,11 +324,11 @@ struct FriendsView: View {
         do {
             try await ModerationRepository.block(userID: profile.id)
             friends.removeAll { $0.id == profile.id }
-            errorText = nil
+            moderationError = nil
         } catch let error as GymSyncError {
-            errorText = error.errorDescription
+            moderationError = error.errorDescription
         } catch {
-            errorText = error.localizedDescription
+            moderationError = error.localizedDescription
         }
     }
 }
