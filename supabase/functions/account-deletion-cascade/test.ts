@@ -95,6 +95,13 @@ function req(authorization?: string): Request {
 class FakeDeletionGateway implements DeletionGateway {
   calls: string[] = [];
   groupReassignments: Array<{ groupId: string; newOwnerId: string }> = [];
+  // Mirrors SupabaseDeletionGateway.reassignGroupOwner's second write (the
+  // group_members.role='admin' promotion) — see the "group ownership
+  // handoff leaves the group unadministrable" fix. The fake performs both
+  // writes in the same call, exactly like the real gateway, so tests can
+  // assert the promotion happened without needing a live DB (that live
+  // proof is account_deletion_cascade_test.sql's job).
+  groupAdminPromotions: Array<{ groupId: string; userId: string }> = [];
   sessionReassignments: Array<{ sessionId: string; newOrganizerId: string }> = [];
   seriesReassignments: Array<{ seriesId: string; newOrganizerId: string }> = [];
   avatarRemovedFor: string[] = [];
@@ -114,6 +121,10 @@ class FakeDeletionGateway implements DeletionGateway {
   reassignGroupOwner(groupId: string, newOwnerId: string): Promise<void> {
     this.calls.push(`reassignGroupOwner:${groupId}:${newOwnerId}`);
     this.groupReassignments.push({ groupId, newOwnerId });
+    // Mirrors SupabaseDeletionGateway.reassignGroupOwner: created_by
+    // handoff, then unconditionally promote the new owner to admin so the
+    // group is never left unmanageable.
+    this.groupAdminPromotions.push({ groupId, userId: newOwnerId });
     // Mutate the store so a second orchestrator pass sees nothing left to reassign.
     this.groups = this.groups.filter((g) => g.groupId !== groupId);
     return Promise.resolve();
@@ -176,6 +187,22 @@ Deno.test("runAccountDeletion: a group with another member is reassigned, not le
   assertEquals(result.groupsReassigned, 1);
 });
 
+Deno.test("runAccountDeletion: the reassigned group owner is promoted to admin, not just handed created_by", async () => {
+  // Group ownership handoff fix: group admin powers key off
+  // group_members.role='admin' (20260710000002_create_groups.sql:68-100),
+  // NOT groups.created_by. A departing sole admin must not leave the
+  // handed-off group unmanageable — reassignGroupOwner is responsible for
+  // both writes (see FakeDeletionGateway.reassignGroupOwner above).
+  const gateway = new FakeDeletionGateway([{ groupId: "g1", replacementOwnerId: "new-owner" }]);
+  await runAccountDeletion(gateway, "deleting-user");
+
+  assertEquals(
+    gateway.groupAdminPromotions,
+    [{ groupId: "g1", userId: "new-owner" }],
+    "new owner must be promoted to admin as part of the same handoff",
+  );
+});
+
 Deno.test("runAccountDeletion: a group with no other member (sole member) is left alone — natural CASCADE is correct", async () => {
   const gateway = new FakeDeletionGateway([{ groupId: "g-solo", replacementOwnerId: null }]);
   const result = await runAccountDeletion(gateway, "deleting-user");
@@ -224,6 +251,11 @@ Deno.test("runAccountDeletion: multiple owned groups/sessions/series each resolv
   assertEquals(result.groupsReassigned, 2);
   assertEquals(result.sessionsReassigned, 1);
   assertEquals(result.seriesReassigned, 0);
+  assertEquals(
+    gateway.groupAdminPromotions,
+    [{ groupId: "g1", userId: "a" }, { groupId: "g3", userId: "b" }],
+    "every reassigned group's new owner is promoted to admin (g2 has no replacement, so no promotion)",
+  );
 });
 
 // ============================================================
@@ -381,9 +413,12 @@ Deno.test("verifySupabaseJwt: tampered claims fail signature verification", asyn
 // enforced by Postgres itself the moment `auth.admin.deleteUser()` issues a
 // real `DELETE FROM auth.users` — it cannot be hermetically exercised
 // without a live migrated database (this repo has no `supabase start` +
-// `deno test --allow-net` harness, and no pgTAP file for this yet — see
-// task-3-report.md's "concerns" section for that gap and the recommended
-// follow-up).
+// `deno test --allow-net` harness). That live proof now exists as
+// `supabase/tests/account_deletion_cascade_test.sql` (pgTAP, run via
+// `node scripts/run_pgtap.js` against the deployed schema) — it replicates
+// this function's handoff SQL (including the admin-promotion write) against
+// real fixture rows and asserts the cascade/tombstone/survive outcomes
+// below actually hold in Postgres, not just in this in-memory model.
 //
 // What follows is a small in-memory model of exactly the FK actions cited
 // in index.ts's top comment (each row below cites its migration), applied
@@ -408,9 +443,14 @@ Deno.test("FK graph fixture (documentation, not a live DB proof): owned rows gon
     push_devices: [{ id: "pd1", user_id: USER }], // CASCADE — 20260716000001_push_schema.sql:11
     routines: [{ id: "r1", owner_id: USER }], // CASCADE — 20260709000005_create_routines.sql:3
     set_logs: [{ id: "sl1", user_id: USER }], // CASCADE — 20260709000007_create_set_logs.sql:3
+    // USER is the group's SOLE admin — OTHER is a plain member. This is
+    // exactly the scenario the group-ownership-handoff fix addresses: admin
+    // powers key off role, not created_by (20260710000002_create_groups.sql:
+    // 68-100), so handing off created_by alone would leave GROUP with zero
+    // admins once USER's own group_members row cascades away below.
     group_members: [
-      { group_id: GROUP, user_id: USER },
-      { group_id: GROUP, user_id: OTHER },
+      { group_id: GROUP, user_id: USER, role: "admin" },
+      { group_id: GROUP, user_id: OTHER, role: "member" },
     ], // CASCADE — 20260710000002_create_groups.sql:13
     chat_messages: [
       { id: "m1", group_id: GROUP, author_id: USER as string | null, body: "hello crew" },
@@ -420,11 +460,16 @@ Deno.test("FK graph fixture (documentation, not a live DB proof): owned rows gon
 
   // 1. This function's ownership-handoff step (runAccountDeletion's
   // group-reassignment branch): GROUP has another group_members row besides
-  // USER, so created_by is handed off instead of left to cascade.
+  // USER, so created_by is handed off instead of left to cascade — AND
+  // (the fix) the new owner is promoted to admin, since OTHER started as a
+  // plain member and created_by alone confers no privileges.
   const otherMember = state.group_members.find((m) => m.group_id === GROUP && m.user_id !== USER);
   if (otherMember) {
     state.groups = state.groups.map((g) =>
       g.id === GROUP && g.created_by === USER ? { ...g, created_by: otherMember.user_id } : g
+    );
+    state.group_members = state.group_members.map((m) =>
+      m.group_id === GROUP && m.user_id === otherMember.user_id ? { ...m, role: "admin" } : m
     );
   }
 
@@ -454,7 +499,11 @@ Deno.test("FK graph fixture (documentation, not a live DB proof): owned rows gon
   assertEquals(state.chat_messages[0].author_id, null, "chat message tombstoned (author_id -> NULL)");
   assertEquals(state.chat_messages[0].body, "hello crew", "tombstoned message body/content survives intact");
   assertEquals(state.group_members.some((m) => m.user_id === USER), false, "user's own membership row gone");
-  assertEquals(state.group_members.some((m) => m.user_id === OTHER), true, "other member's membership untouched");
+  assertEquals(
+    state.group_members.find((m) => m.user_id === OTHER),
+    { group_id: GROUP, user_id: OTHER, role: "admin" },
+    "other member's row survives AND was promoted to admin — group is not left unmanageable",
+  );
   assertEquals(state.profiles.has(USER), false, "auth user (and cascaded profile) removed");
 
   // 3. Idempotent re-invocation: applying the same WHERE-scoped filters

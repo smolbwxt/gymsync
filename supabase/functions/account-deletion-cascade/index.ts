@@ -98,13 +98,29 @@
 //    natural CASCADE is correct and desired (matches the spec's explicit
 //    "owned routines" cascade-and-delete treatment).
 //
-//    KNOWN GAP (documented, not fixed here — pre-existing, orthogonal to
-//    this task): if a group's ONLY remaining group_members row (after this
-//    user's own CASCADEs away) has zero role='admin' members, the group
-//    ends up admin-less. This is not new: the existing "self-leave or admin
-//    removes" DELETE policy on group_members (create_groups.sql) already
-//    lets a sole admin self-leave with no reassignment today. Not
-//    introduced or worsened by this function.
+//    CLOSED GAP: an earlier version of this function reassigned
+//    groups.created_by without checking group_members.role — since admin
+//    powers key off role='admin' (20260710000002_create_groups.sql:68-100
+//    — is_group_admin(), "admin updates roles", "admin can update/delete
+//    group"), NOT created_by, a departing sole-admin could leave the
+//    handed-off group permanently unmanageable. Fixed: ownedGroups() now
+//    prefers an existing admin among the remaining members when picking a
+//    replacement (falling back to any member), and reassignGroupOwner()
+//    unconditionally promotes the new owner to role='admin' after the
+//    created_by handoff (idempotent no-op if they already are one). This
+//    is orthogonal to, and does not touch, the pre-existing "self-leave or
+//    admin removes" DELETE policy on group_members, which still lets a
+//    sole admin voluntarily leave (not delete their account) with no
+//    reassignment — that is unrelated user-initiated behavior, not this
+//    function's concern.
+//
+//    Sessions and session_series have no group_members-style role concept
+//    (session_participants: session_id, user_id, turn_order, check_in_state,
+//    check_in_at, check_in_method, late_minutes, burpees_owed — no `role`
+//    column, 20260709000006_create_sessions.sql:18-24 +
+//    20260712000001_sessions_phase3_columns.sql:9-13; session_series has no
+//    membership table of its own at all, only group_id) — organizer_id
+//    reassignment alone is sufficient for both.
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { JwksCache, verifySupabaseJwt } from "./jwt.ts";
@@ -160,11 +176,19 @@ export class SupabaseDeletionGateway implements DeletionGateway {
 
     const out: OwnedGroup[] = [];
     for (const row of data ?? []) {
+      // Prefer an existing admin over a plain member: group admin powers key
+      // off group_members.role='admin' (20260710000002_create_groups.sql:68-100
+      // — is_group_admin(), "admin updates roles", "admin can update/delete
+      // group"), NOT groups.created_by. If an admin is available among the
+      // remaining members, pick them first so the handoff never needs the
+      // promotion below in the common case; 'admin' < 'member' lexically, so
+      // ascending order on role already sorts any admin first.
       const { data: member, error: mErr } = await this.client
         .from("group_members")
-        .select("user_id")
+        .select("user_id, role")
         .eq("group_id", row.id)
         .neq("user_id", userId)
+        .order("role", { ascending: true }) // 'admin' sorts before 'member'
         .order("joined_at", { ascending: true })
         .limit(1)
         .maybeSingle();
@@ -177,6 +201,17 @@ export class SupabaseDeletionGateway implements DeletionGateway {
   async reassignGroupOwner(groupId: string, newOwnerId: string): Promise<void> {
     const { error } = await this.client.from("groups").update({ created_by: newOwnerId }).eq("id", groupId);
     if (error) throw error;
+
+    // Ensure the new owner can actually administer the group they just
+    // inherited — created_by alone confers no privileges (see
+    // ownedGroups' comment above). Idempotent no-op if newOwnerId is
+    // already an admin (e.g. they were the preferred pick above).
+    const { error: roleError } = await this.client
+      .from("group_members")
+      .update({ role: "admin" })
+      .eq("group_id", groupId)
+      .eq("user_id", newOwnerId);
+    if (roleError) throw roleError;
   }
 
   async organizedSessions(userId: string): Promise<OrganizedSession[]> {
