@@ -267,10 +267,9 @@ struct CreateGroupView: View {
         var uploadFailures: [String] = []
         if let pendingAvatarData {
             do {
-                if let url = try await GroupRepository.setAvatar(groupID: group.id, imageData: pendingAvatarData) {
-                    group = GymGroup(id: group.id, name: group.name, avatarURL: url,
-                                      createdBy: group.createdBy, createdAt: group.createdAt)
-                }
+                let url = try await GroupRepository.setAvatar(groupID: group.id, imageData: pendingAvatarData)
+                group = GymGroup(id: group.id, name: group.name, avatarURL: url,
+                                  createdBy: group.createdBy, createdAt: group.createdAt)
             } catch {
                 uploadFailures.append("photo")
             }
