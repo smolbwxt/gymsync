@@ -1854,7 +1854,33 @@ struct GroupSessionLiveView: View {
     private func buildGroupRecapPayload(session: WorkoutSession, sets: [SetLog]) async -> GroupRecapPayload? {
         guard let ledgerGroup else { return nil }
 
+        // Fix round 1 (task-4-report.md Finding 1) — CRITICAL: this used to
+        // be the ONLY PR fetch here, and `sessionPRs` was (mis)used both for
+        // the caller's own heaviestPR detail below AND for every
+        // participant's PR count (prCount below, GroupRecapPayload.prCount).
+        // `PersonalRecordRepository.bySession` is gated by personal_records'
+        // SELF-ONLY SELECT RLS (20260715000002_personal_records.sql:23-25),
+        // so despite querying by session_id with no user filter it only ever
+        // returned the CALLER's own rows — a real group session rendered 0
+        // PRs for every teammate (hero "PRS" stat + every "N PR" badge),
+        // and only the catalog fixture (which bypasses the network fetch
+        // entirely) looked right.
+        //
+        // `sessionPRs` below is kept ONLY for the caller's own heaviestPR
+        // card (exercise name/weight/reps/previousBest) — that data is
+        // genuinely self-scoped by the product (frame-8 only ever shows
+        // YOUR heaviest PR), so RLS narrowing it to "my own rows" is
+        // correct there, not a bug.
+        //
+        // `prCounts`/`prCountByUser` below replace the old crew-wide use of
+        // `sessionPRs` for counting: calls the `session_pr_counts` SECURITY
+        // DEFINER RPC (20260720000002_session_pr_counts_and_kudos_guard.sql),
+        // gated on session participation, aggregating every participant's
+        // rows server-side (see `session_pr_counts_test.sql`).
         let sessionPRs = (try? await PersonalRecordRepository.bySession(sessionID: session.id)) ?? []
+        let prCounts = (try? await PersonalRecordRepository.countsBySession(sessionID: session.id)) ?? []
+        let prCountByUser: [UUID: Int] = prCounts.reduce(into: [:]) { acc, row in acc[row.userID] = row.prCount }
+
         var prExerciseNames: [UUID: String] = [:]
         for exerciseID in Set(sessionPRs.map(\.exerciseID)) {
             if let exercise = try? await ExerciseRepository.fetch(id: exerciseID) {
@@ -1878,7 +1904,7 @@ struct GroupSessionLiveView: View {
                 guard !log.isFailed, let r = log.reps, let w = log.weight else { return acc }
                 return acc + Double(r) * NSDecimalNumber(decimal: w).doubleValue
             }
-            let prCount = sessionPRs.filter { $0.userID == item.participant.userID }.count
+            let prCount = prCountByUser[item.participant.userID] ?? 0
             return Stat(profile: item.profile, userID: item.participant.userID, volume: volume, prCount: prCount)
         }
         .sorted { $0.volume > $1.volume }   // descending volume = leaderboard order
@@ -1942,7 +1968,7 @@ struct GroupSessionLiveView: View {
             subline: subline,
             totalLbsText: formatVolume(totalVolume),
             setCount: totalSets,
-            prCount: sessionPRs.count,
+            prCount: prCountByUser.values.reduce(0, +),
             leaderboard: leaderboard,
             heaviestPR: heaviestPR,
             shareSummary: shareSummary,

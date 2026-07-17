@@ -23,6 +23,21 @@ struct PersonalRecord: Codable, Identifiable, Sendable {
     }
 }
 
+/// One row of the `session_pr_counts` RPC result — a user's PR count
+/// scoped to a single session. See `PersonalRecordRepository
+/// .countsBySession` for why this exists alongside `bySession`/
+/// `PersonalRecord` (Fix round 1, task-4-report.md Finding 1,
+/// 20260720000002_session_pr_counts_and_kudos_guard.sql).
+struct SessionPRCount: Decodable, Sendable {
+    let userID: UUID
+    let prCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case userID = "user_id"
+        case prCount = "pr_count"
+    }
+}
+
 enum PersonalRecordRepository {
     private static var client: SupabaseClient { SupabaseService.shared.client }
 
@@ -81,14 +96,53 @@ enum PersonalRecordRepository {
         }
     }
 
-    /// PRs achieved within a specific session — backs the session recap's
-    /// aggregate PR count, per-lifter PR badges, and "your PR" callout.
+    /// PRs achieved within a specific session, visible to the CALLING user
+    /// only — `personal_records`' SELECT RLS is self-only (auth.uid() =
+    /// user_id, 20260715000002_personal_records.sql:23-25), so despite
+    /// filtering only on `session_id` this can never return a teammate's
+    /// row. Correct for the "your PR" callout (`CompletedSessionView`,
+    /// `SessionRecapView`, and `GroupSessionLiveView`'s own heaviestPR card)
+    /// — each of those needs exactly the caller's own PR detail (exercise/
+    /// weight/reps/previousBest) for a session they participated in, which
+    /// is inherently self-scoped by the product itself, not just by RLS.
+    ///
+    /// Do NOT use this for a crew-wide PR COUNT (total or per-participant)
+    /// — that was Finding 1 (task-4-report.md): a group recap built from
+    /// this call alone rendered 0 PRs for every teammate but whoever's
+    /// device fetched it. Use `countsBySession` for that instead.
     static func bySession(sessionID: UUID) async throws -> [PersonalRecord] {
         do {
             let rows: [PersonalRecord] = try await client
                 .from("personal_records")
                 .select()
                 .eq("session_id", value: sessionID.uuidString)
+                .execute()
+                .value
+            return rows
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
+
+    /// TRUE per-user PR counts for a session, across ALL participants —
+    /// backs the group recap's hero "PRS" total (sum) and every leaderboard
+    /// row's "N PR" badge (`GroupSessionLiveView.buildGroupRecapPayload`).
+    /// Calls the `session_pr_counts` SECURITY DEFINER RPC (Fix round 1 —
+    /// task-4-report.md Finding 1,
+    /// 20260720000002_session_pr_counts_and_kudos_guard.sql) instead of
+    /// `bySession`: `bySession` is a direct `personal_records` select gated
+    /// by SELF-ONLY SELECT RLS, so for a real multi-lifter group session the
+    /// caller only ever got back their own rows — every teammate's PRs were
+    /// silently dropped, not aggregated wrong. The RPC instead gates on
+    /// session participation and aggregates server-side across every
+    /// participant's rows (see `session_pr_counts_test.sql`). A user with
+    /// zero PRs in the session produces no row — callers should default to 0
+    /// on lookup miss, same as `SessionKudosRepository.counts`'s dictionary
+    /// shape.
+    static func countsBySession(sessionID: UUID) async throws -> [SessionPRCount] {
+        do {
+            let rows: [SessionPRCount] = try await client
+                .rpc("session_pr_counts", params: ["p_session_id": sessionID.uuidString])
                 .execute()
                 .value
             return rows

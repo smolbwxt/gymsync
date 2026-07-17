@@ -21,8 +21,11 @@ import SwiftUI
 // the real view is parameterized on plain display-ready values instead"):
 // `GroupSessionLiveView` computes the hero/leaderboard/PR-card values from
 // data it already has at completion time (`participants`, the freshly
-// fetched session sets, `ledgerGroup`, `routineName`, and a
-// `PersonalRecordRepository.bySession` fetch — see
+// fetched session sets, `ledgerGroup`, `routineName`, a
+// `PersonalRecordRepository.bySession` fetch for the caller's OWN heaviestPR
+// detail, and — since Fix round 1, task-4-report.md Finding 1 —
+// `PersonalRecordRepository.countsBySession` for the crew-wide PR counts
+// `bySession` cannot see under its self-only RLS; see
 // `buildGroupRecapPayload`), and this view does no live data-fetching of
 // its own for any of that.
 //
