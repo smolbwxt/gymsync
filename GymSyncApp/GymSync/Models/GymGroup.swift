@@ -33,6 +33,49 @@ struct GroupMember: Codable, Sendable, Equatable {
     }
 }
 
+// MARK: - Group Stats RPC rows (Phase F Task 5)
+//
+// `group_stats(p_group_id)` / `group_member_stats(p_group_id)`
+// (20260720000003_group_stats_rpc.sql) — SECURITY DEFINER aggregates
+// backing GroupView's Stats sub-tab, same membership-gated idiom as
+// `group_burpee_ledger`/`session_pr_counts` (Session.swift's
+// `GroupBurpeeLedgerAggregate` doc comment). Two functions rather than one
+// (see the migration's shape-decision comment): `group_stats` always
+// returns exactly one row once the membership gate passes (its three
+// columns are independent scalar subqueries, no FROM clause that could
+// filter to zero rows) but still decodes as an array here — RETURNS TABLE
+// always PostgREST-shapes as a JSON array, same as every other RPC call in
+// this codebase (`burpeeLedger`/`activityFeed`/`session_pr_counts`) — the
+// caller takes `.first`.
+struct GroupStats: Decodable, Sendable {
+    let sessionCount: Int
+    let totalVolume: Decimal
+    let totalPRs: Int
+
+    enum CodingKeys: String, CodingKey {
+        case sessionCount = "session_count"
+        case totalVolume = "total_volume"
+        case totalPRs = "total_prs"
+    }
+}
+
+/// One row of `group_member_stats(p_group_id)` — the per-member volume
+/// leaderboard, already ordered `volume DESC` server-side.
+struct GroupMemberStat: Decodable, Sendable, Identifiable {
+    var id: UUID { userID }
+    let userID: UUID
+    let username: String
+    let volume: Decimal
+    let prCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case userID = "user_id"
+        case username
+        case volume
+        case prCount = "pr_count"
+    }
+}
+
 enum GroupRepository {
     static func create(name: String) async throws -> GymGroup {
         guard let me = await SupabaseService.shared.currentUserID() else {
@@ -181,6 +224,39 @@ enum GroupRepository {
                 .delete()
                 .eq("id", value: groupID.uuidString)
                 .execute()
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
+
+    // MARK: - Phase F Task 5: Group Stats sub-tab
+
+    /// Collective scalar metrics for GroupView's Stats sub-tab (completed
+    /// session count, total volume, total PRs) — `group_stats` SECURITY
+    /// DEFINER RPC. Always exactly one row once the membership gate passes;
+    /// `.first` with a zero-value fallback defensively covers the
+    /// should-never-happen empty-array case rather than force-unwrapping.
+    static func stats(groupID: UUID) async throws -> GroupStats {
+        do {
+            let rows: [GroupStats] = try await SupabaseService.shared.client
+                .rpc("group_stats", params: ["p_group_id": groupID.uuidString])
+                .execute().value
+            return rows.first ?? GroupStats(sessionCount: 0, totalVolume: 0, totalPRs: 0)
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
+
+    /// Per-member volume leaderboard for GroupView's Stats sub-tab —
+    /// `group_member_stats` SECURITY DEFINER RPC (same migration/idiom as
+    /// `stats` above). Already ordered `volume DESC` server-side — no
+    /// client-side re-sort needed.
+    static func memberStats(groupID: UUID) async throws -> [GroupMemberStat] {
+        do {
+            let rows: [GroupMemberStat] = try await SupabaseService.shared.client
+                .rpc("group_member_stats", params: ["p_group_id": groupID.uuidString])
+                .execute().value
+            return rows
         } catch {
             throw ErrorMapping.map(error)
         }
