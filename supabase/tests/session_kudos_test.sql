@@ -6,9 +6,18 @@
 -- emoji outside the frame's 5-icon set rejected (CHECK constraint), and
 -- the "no update/delete v1" claim proven (0 rows affected, no policy —
 -- same idiom as personal_records_test.sql's immutability check).
+--
+-- Extended (20260720000002_session_pr_counts_and_kudos_guard.sql, Finding 2,
+-- task-4-report.md): the original migration's header (lines 22-26)
+-- documented a deliberate no-CHECK decision for self-kudos, trusting the
+-- client's crew-wide send model as the only gate. That RLS INSERT policy
+-- (sender = auth.uid() + both parties participate) never checked
+-- sender <> recipient — test 12 below proves the follow-up
+-- session_kudos_no_self CHECK now rejects a self-targeted row independent
+-- of client behavior.
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(11);
+SELECT plan(12);
 
 -- ── Fixtures ─────────────────────────────────────────────────────────────
 -- a1: organizer + participant (sender in most cases)
@@ -149,6 +158,20 @@ SELECT results_eq(
     SELECT count(*)::int FROM del$$,
   ARRAY[0],
   'kudos taps cannot be retracted — no DELETE policy, v1 (0 rows affected)');
+
+-- ── 12. Self-kudos rejected server-side (Finding 2, 23514 check_violation —
+--   session_kudos_no_self, NOT the RLS policy: sender=a1, recipient=a1
+--   passes every RLS predicate: sender_id=auth.uid() holds, and a1 IS a
+--   participant of its own session, so only the CHECK stops this) ─────────
+SET LOCAL request.jwt.claim.sub = '00000000-0000-0000-0000-0000000000a1';
+
+SELECT throws_ok(
+  $$INSERT INTO session_kudos (session_id, sender_id, recipient_id, emoji) VALUES
+    ('f3000000-0000-0000-0000-000000000001',
+     '00000000-0000-0000-0000-0000000000a1',
+     '00000000-0000-0000-0000-0000000000a1', '💪')$$,
+  '23514', NULL,
+  'self-kudos is rejected by the session_kudos_no_self CHECK constraint, independent of RLS');
 
 SELECT * FROM finish();
 ROLLBACK;
