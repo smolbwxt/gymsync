@@ -3,6 +3,7 @@ import XCTest
 
 final class ChatRepositoryTests: XCTestCase {
     private var group: GymGroup!
+    private var session: WorkoutSession!
 
     override func setUp() async throws {
         try await TestAuth.signInIfConfigured()
@@ -12,6 +13,9 @@ final class ChatRepositoryTests: XCTestCase {
     override func tearDown() async throws {
         if let group {
             try? await GroupRepository.deleteGroup(groupID: group.id)
+        }
+        if let session {
+            try? await SessionRepository.complete(sessionID: session.id)
         }
     }
 
@@ -46,5 +50,28 @@ final class ChatRepositoryTests: XCTestCase {
         try await ChatRepository.unreact(messageID: sent.id, emoji: "🔥")
         reactions = try await ChatRepository.reactions(messageIDs: [sent.id])
         XCTAssertTrue(reactions.isEmpty)
+    }
+
+    func testSessionSendFetchLifecycle() async throws {
+        session = try await SessionRepository.startSolo(routineID: nil)
+
+        // New solo session: no sub-thread messages yet
+        let empty = try await ChatRepository.sessionMessages(sessionID: session.id)
+        XCTAssertTrue(empty.isEmpty)
+
+        // Send
+        let sent = try await ChatRepository.sendSessionMessage(
+            sessionID: session.id, groupID: session.groupID, body: "hello ci session")
+        XCTAssertEqual(sent.kind, .text)
+        XCTAssertEqual(sent.body, "hello ci session")
+        XCTAssertEqual(sent.sessionID, session.id)
+        XCTAssertNil(sent.groupID, "solo session sub-thread row has group_id = NULL")
+
+        // Fetch newest-first
+        let fetched = try await ChatRepository.sessionMessages(sessionID: session.id)
+        XCTAssertEqual(fetched.first?.id, sent.id)
+        XCTAssertEqual(fetched.first?.body, "hello ci session")
+        XCTAssertEqual(fetched.first?.sessionID, session.id)
+        XCTAssertNil(fetched.first?.groupID)
     }
 }
