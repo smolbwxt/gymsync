@@ -4,20 +4,17 @@ import PhotosUI
 struct GroupView: View {
     let group: GymGroup
 
-    // Group streak placement (Phase S Task 5): `group_streaks` is live and
-    // readable (member-gated RLS, 20260719000006_streaks.sql), but there is
-    // no trivially-clean home for it among these three sub-tabs today — Chat
-    // and Members are unrelated, and Sessions already has one bolted-on
-    // non-session entry point (the Burpee Ledger row below) whose own header
-    // comment already frames it as a placeholder pending a dedicated group
-    // Stats surface. Stacking a SECOND unrelated aggregate onto that same
-    // list would compound the same judgment call rather than resolve it. A
-    // dedicated `.stats` sub-tab is explicitly Phase F scope (per task-5-
-    // brief.md) — deferred there rather than forced in here.
+    // Group streak placement (Phase S Task 5 deferred this to Phase F):
+    // `group_streaks` is live and readable (member-gated RLS,
+    // 20260719000006_streaks.sql) — it now lives in the `.stats` sub-tab's
+    // `GroupStatsView`, alongside the collective-metrics/leaderboard
+    // aggregate this same task (Phase F Task 5) adds. See that file's
+    // header comment for the full frame-check + design-idiom rationale.
     private enum SubTab: String, CaseIterable {
         case chat     = "Chat"
         case members  = "Members"
         case sessions = "Sessions"
+        case stats    = "Stats"
     }
 
     @Environment(\.dismiss) private var dismiss
@@ -47,6 +44,8 @@ struct GroupView: View {
                 membersList
             case .sessions:
                 sessionsList
+            case .stats:
+                GroupStatsView(group: group)
             }
         }
         .background(theme.bg)
@@ -61,7 +60,7 @@ struct GroupView: View {
         .toolbar {
             ToolbarItem(placement: .principal) {
                 HStack(spacing: 8) {
-                    GSInitialsAvatar(name: group.name, size: 30)
+                    GSInitialsAvatar(name: group.name, avatarURL: group.avatarURL, size: 30)
                     VStack(alignment: .leading, spacing: 0) {
                         Text(group.name)
                             .font(GSFont.bold(15, relativeTo: .headline))
@@ -117,19 +116,12 @@ struct GroupView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
 
-                // Avatar picker row
+                // Avatar picker row — Phase F Task 6: GSInitialsAvatar now
+                // renders the photo itself when avatarURL is non-nil (see
+                // its doc comment); this used to hand-roll the same
+                // AsyncImage block inline.
                 HStack(spacing: 12) {
-                    if let url = avatarURL ?? group.avatarURL {
-                        AsyncImage(url: url) { image in
-                            image.resizable().scaledToFill()
-                        } placeholder: {
-                            GSInitialsAvatar(name: group.name, size: 56)
-                        }
-                        .frame(width: 56, height: 56)
-                        .clipped()
-                    } else {
-                        GSInitialsAvatar(name: group.name, size: 56)
-                    }
+                    GSInitialsAvatar(name: group.name, avatarURL: avatarURL ?? group.avatarURL, size: 56)
 
                     PhotosPicker(selection: $avatarItem, matching: .images) {
                         Text("Change Group Photo")
@@ -193,7 +185,8 @@ struct GroupView: View {
                 VStack(spacing: 0) {
                     ForEach(members, id: \.member.userID) { entry in
                         HStack(spacing: 10) {
-                            GSInitialsAvatar(name: entry.profile.username, size: 36)
+                            GSInitialsAvatar(name: entry.profile.username,
+                                              avatarURL: entry.profile.avatarURL, size: 36)
 
                             nameBlock(entry.profile)
 

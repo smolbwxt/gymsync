@@ -73,6 +73,67 @@ final class ChatRealtimeService {
         }
     }
 
+    /// Session sub-thread variant of `subscribe(groupID:onInsert:onReaction:)`
+    /// above — same body, filtered on `session_id` instead of `group_id`
+    /// (kept as a separate method rather than an optional param so the
+    /// group-level codepath is untouched; see task-3-report.md). Channel
+    /// name is prefixed `chat:session:` (distinct from the group channel's
+    /// `chat:<uuid>`/`chat:<uuid>:typing` namespace) purely for log/debug
+    /// clarity — group and session ids are different UUID spaces so there's
+    /// no actual collision risk either way.
+    ///
+    /// Reaction inserts are subscribed unchanged (same `onReaction` signal,
+    /// no filter): `chat_message_reactions` has no session_id/group_id
+    /// column of its own, and RLS (WALRUS) already scopes delivered events
+    /// to rows the subscriber can access via `can_access_message()`
+    /// (20260719000011_chat_subthread_lock_hardening.sql #1) — this already
+    /// covers the sub-thread case.
+    ///
+    /// No typing/presence subscription here — sub-thread typing indicators
+    /// are out of v1 scope (task-3-brief.md only asks for sends/reads/
+    /// realtime message delivery). `ChatView.send()`'s `realtime.setTyping()`
+    /// calls remain safe no-ops when this method is used instead of
+    /// `subscribeTyping` — `setTyping` already guards on `typingChannel`
+    /// being non-nil.
+    func subscribe(sessionID: UUID,
+                   onInsert: @escaping @MainActor (ChatMessage) -> Void,
+                   onReaction: (@MainActor () -> Void)? = nil) async {
+        await unsubscribe()
+        let channel = SupabaseService.shared.client
+            .channel("chat:session:\(sessionID.uuidString)")
+        let inserts = channel.postgresChange(
+            InsertAction.self,
+            schema: "public",
+            table: "chat_messages",
+            filter: "session_id=eq.\(sessionID.uuidString)"
+        )
+        let reactionInserts = channel.postgresChange(
+            InsertAction.self,
+            schema: "public",
+            table: "chat_message_reactions"
+        )
+        self.channel = channel
+        await channel.subscribe()
+        streamTask = Task {
+            for await action in inserts {
+                do {
+                    let message = try action.decodeRecord(
+                        decoder: Self.postgresDecoder) as ChatMessage
+                    onInsert(message)
+                } catch {
+                    AppLogger.chat.error("realtime decode failed: \(error, privacy: .public)")
+                }
+            }
+        }
+        if let onReaction {
+            reactionTask = Task {
+                for await _ in reactionInserts {
+                    onReaction()
+                }
+            }
+        }
+    }
+
     // SDK drift note: supabase-swift 2.51 has no presenceState() method.
     // presenceChange() yields PresenceAction with .joins/.leaves diffs keyed by presence key.
     // We maintain a local [key: username] map and recompute the set on every diff.

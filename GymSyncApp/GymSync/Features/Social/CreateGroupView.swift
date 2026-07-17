@@ -1,4 +1,6 @@
 import SwiftUI
+import PhotosUI
+import UIKit
 
 struct CreateGroupView: View {
     let onCreated: (GymGroup) -> Void
@@ -10,6 +12,18 @@ struct CreateGroupView: View {
     @State private var selected: Set<UUID> = []
     @State private var isCreating = false
     @State private var errorText: String?
+    // Phase F Task 6 (2.5 deferral): avatar picker, same components as the
+    // GROUP avatar flow (GroupView.membersList) — PhotosPicker +
+    // ImageProcessor + StorageService.uploadGroupAvatar via
+    // GroupRepository.setAvatar. Deferred upload: unlike GroupView (editing
+    // an EXISTING group, so `groupID` is already known and `onChange`
+    // uploads immediately), this screen creates the group only on submit —
+    // there is no groupID to upload against until `create()` has already
+    // called `GroupRepository.create`. So the picked image is held as raw
+    // `Data` and uploaded right after that call succeeds, before
+    // `onCreated(group)` fires (see `create()`).
+    @State private var avatarItem: PhotosPickerItem?
+    @State private var pendingAvatarData: Data?
 
     var body: some View {
         NavigationStack {
@@ -23,11 +37,9 @@ struct CreateGroupView: View {
                             .padding(.top, 16)
 
                         HStack(spacing: 10) {
-                            GSInitialsAvatar(
-                                name: name.trimmingCharacters(in: .whitespaces).isEmpty
-                                    ? "New Group" : name,
-                                size: 44
-                            )
+                            PhotosPicker(selection: $avatarItem, matching: .images) {
+                                avatarPreview
+                            }
 
                             TextField("e.g. Push Crew", text: $name)
                                 .font(GSFont.body(14, relativeTo: .body))
@@ -76,7 +88,8 @@ struct CreateGroupView: View {
                                     }
                                 } label: {
                                     HStack(spacing: 10) {
-                                        GSInitialsAvatar(name: profile.username, size: 36)
+                                        GSInitialsAvatar(name: profile.username,
+                                                          avatarURL: profile.avatarURL, size: 36)
 
                                         nameBlock(profile)
 
@@ -156,6 +169,39 @@ struct CreateGroupView: View {
             .task {
                 friends = (try? await FriendRepository.friends()) ?? []
             }
+            .onChange(of: avatarItem) {
+                guard let item = avatarItem else { return }
+                avatarItem = nil
+                Task {
+                    guard let data = try? await item.loadTransferable(type: Data.self) else {
+                        errorText = "That image couldn't be loaded."
+                        return
+                    }
+                    pendingAvatarData = data
+                    errorText = nil
+                }
+            }
+        }
+    }
+
+    // 44×44 preview for the avatar-picker row above: the picked photo
+    // (decoded locally — no groupID exists yet to upload against, see
+    // `pendingAvatarData`'s doc comment) once one has been chosen, else the
+    // same live initials-of-typed-name preview this row always showed.
+    @ViewBuilder
+    private var avatarPreview: some View {
+        if let pendingAvatarData, let uiImage = UIImage(data: pendingAvatarData) {
+            Image(uiImage: uiImage)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 44, height: 44)
+                .clipped()
+        } else {
+            GSInitialsAvatar(
+                name: name.trimmingCharacters(in: .whitespaces).isEmpty
+                    ? "New Group" : name,
+                size: 44
+            )
         }
     }
 
@@ -198,7 +244,7 @@ struct CreateGroupView: View {
     private func create() async {
         isCreating = true
         defer { isCreating = false }
-        let group: GymGroup
+        var group: GymGroup
         do {
             group = try await GroupRepository.create(
                 name: name.trimmingCharacters(in: .whitespaces))
@@ -208,6 +254,25 @@ struct CreateGroupView: View {
         } catch {
             errorText = error.localizedDescription
             return
+        }
+
+        // Deferred avatar upload (see `pendingAvatarData`'s doc comment) —
+        // best-effort: a failed upload here does not block group creation,
+        // same "non-blocking secondary step" philosophy as the member-add
+        // loop below. `group` is reassigned with the fresh `avatarURL` so
+        // `onCreated(group)` — and whatever screen it pushes next — sees
+        // the photo immediately rather than only after a manual refresh.
+        // GymGroup has no custom initializer (unlike Profile/ChatMessage),
+        // so the synthesized memberwise init is available here.
+        var uploadFailures: [String] = []
+        if let pendingAvatarData {
+            do {
+                let url = try await GroupRepository.setAvatar(groupID: group.id, imageData: pendingAvatarData)
+                group = GymGroup(id: group.id, name: group.name, avatarURL: url,
+                                  createdBy: group.createdBy, createdAt: group.createdAt)
+            } catch {
+                uploadFailures.append("photo")
+            }
         }
 
         var failedUsernames: [String] = []
@@ -221,12 +286,17 @@ struct CreateGroupView: View {
         }
 
         onCreated(group)
-        if failedUsernames.isEmpty {
+        if uploadFailures.isEmpty && failedUsernames.isEmpty {
             dismiss()
         } else {
-            errorText = "Group created, but couldn't add: "
-                + failedUsernames.joined(separator: ", ")
-                + ". You can add them from the group's Members tab."
+            var errorMessages: [String] = []
+            if !uploadFailures.isEmpty {
+                errorMessages.append("the photo upload failed — you can add it from the group screen")
+            }
+            if !failedUsernames.isEmpty {
+                errorMessages.append("couldn't add: " + failedUsernames.joined(separator: ", ") + ". You can add them from the group's Members tab.")
+            }
+            errorText = "Group created, but " + errorMessages.joined(separator: " and ")
         }
     }
 }

@@ -32,5 +32,6 @@
 
   "activity-feed": { "frame": 45, "title": "Activity Feed" },
 
-  "recap-solo": { "frame": 17, "title": "Recap" }
+  "recap-solo": { "frame": 17, "title": "Recap" },
+  "group-recap": { "frame": 8, "title": "Group Recap" }
 }

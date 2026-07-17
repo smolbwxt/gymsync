@@ -278,18 +278,11 @@ struct SocialTabView: View {
     @ViewBuilder
     private func groupRow(_ group: GymGroup) -> some View {
         HStack(spacing: 10) {
-            // 36×36 square avatar
-            if let url = group.avatarURL {
-                AsyncImage(url: url) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    GSInitialsAvatar(name: group.name, size: 36)
-                }
-                .frame(width: 36, height: 36)
-                .clipped()
-            } else {
-                GSInitialsAvatar(name: group.name, size: 36)
-            }
+            // 36×36 square avatar — Phase F Task 6: GSInitialsAvatar now
+            // renders the photo itself when avatarURL is non-nil (see its
+            // doc comment); this used to hand-roll the same AsyncImage
+            // block inline.
+            GSInitialsAvatar(name: group.name, avatarURL: group.avatarURL, size: 36)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(group.name)
@@ -379,23 +372,62 @@ struct SocialTabView: View {
 
 /// Square, zero-radius initials avatar replacing the circle variant.
 /// Used in group rows (36 px) and group header (30 px inside GroupView).
+///
+/// Phase F Task 6: upgraded to avatar-or-initials. When `avatarURL` is
+/// non-nil, renders the real photo via `AsyncImage` (`.resizable()
+/// .scaledToFill()` + `.frame(size,size).clipped()` — the exact idiom
+/// `GroupView.membersList`/`SocialTabView.groupRow` already hand-rolled for
+/// group avatars pre-this-task; those two call sites were simplified to
+/// route through here instead of duplicating the same AsyncImage block a
+/// third time). `AsyncImage(url:content:placeholder:)`'s 2-closure form
+/// shows `placeholder` both while loading AND on failure (no separate error
+/// phase) — same fallback-on-failure behavior the pre-existing call sites
+/// already relied on. All pre-Task-6 call sites pass no `avatarURL` and are
+/// visually unchanged (the `if let avatarURL` branch is simply never taken).
 struct GSInitialsAvatar: View {
-    let name: String
+    private let initialsText: String
+    let avatarURL: URL?
     var size: CGFloat = 34
 
     @Environment(\.gsTheme) private var theme
 
+    /// Initials computed by splitting `name` on spaces (up to 2 words'
+    /// first letters). Every call site in this codebase uses this single
+    /// init — a precomputed-initials overload was considered for
+    /// `YouTabView`'s profile-row avatar (whose own displayName-priority
+    /// initials algorithm and 19pt `.heading` font diverge from this
+    /// component's fixed formula) but that row was left as its own local
+    /// AsyncImage-with-initials block instead, to avoid silently changing
+    /// its typography — see that file's `profileRow` doc comment. No other
+    /// caller needs anything but name-splitting, so that overload was
+    /// dropped rather than kept unused.
+    init(name: String, avatarURL: URL? = nil, size: CGFloat = 34) {
+        let parts = name.split(separator: " ").prefix(2)
+        self.initialsText = parts.map { String($0.prefix(1)).uppercased() }.joined()
+        self.avatarURL = avatarURL
+        self.size = size
+    }
+
     var body: some View {
-        Text(initials)
+        if let avatarURL {
+            AsyncImage(url: avatarURL) { image in
+                image.resizable().scaledToFill()
+            } placeholder: {
+                initialsView
+            }
+            .frame(width: size, height: size)
+            .clipped()
+        } else {
+            initialsView
+        }
+    }
+
+    private var initialsView: some View {
+        Text(initialsText)
             .font(GSFont.bold(size * 0.31, relativeTo: .caption))
             .foregroundStyle(theme.bg)
             .frame(width: size, height: size)
             .background(theme.accent)
-    }
-
-    private var initials: String {
-        let parts = name.split(separator: " ").prefix(2)
-        return parts.map { String($0.prefix(1)).uppercased() }.joined()
     }
 }
 

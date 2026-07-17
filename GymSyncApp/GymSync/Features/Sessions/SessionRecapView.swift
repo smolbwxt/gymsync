@@ -19,7 +19,29 @@ struct SessionRecapView: View {
 
     @State private var groupName: String?
     @State private var routineName: String?
+    /// Caller's OWN PRs for this session only — `personal_records`' SELECT
+    /// RLS is self-only (20260715000002_personal_records.sql:23-25), so this
+    /// is correct for `myPR`/`yourPRCallout` below (genuinely self-scoped by
+    /// the product), but must NOT be used to count a teammate's PRs. See
+    /// `PersonalRecordRepository.bySession`'s doc comment.
     @State private var sessionPRs: [PersonalRecord] = []
+    /// Per-user PR counts for this session, across ALL participants — backs
+    /// `prCount(for:)`'s leaderboard badge and the hero "PRS" pill below,
+    /// both COUNT-only uses. Sourced from `.countsBySession` (the
+    /// `session_pr_counts` SECURITY DEFINER RPC,
+    /// 20260720000002_session_pr_counts_and_kudos_guard.sql) instead of
+    /// `sessionPRs` above: `sessionPRs` is `bySession`-backed and thus
+    /// self-only, so counting from it undercounted every teammate to zero
+    /// (Fast-follow wave, Fix 1 — same bug `GroupSessionLiveView
+    /// .buildGroupRecapPayload` had before its Fix round 1; this view's
+    /// history-path counterpart was tracked as ledger DEBT, "flagged not
+    /// fixed", since F-Task 4 COMPLETE). This view is normally reached only
+    /// for solo/ad-hoc completions (a real group session routes to
+    /// `GroupRecapView` instead) but can still surface a real group
+    /// session's participants via the `GroupSessionLiveView` fetch-failure
+    /// downgrade path (Fix 3) — so the count here must be crew-wide-correct
+    /// too, not just cosmetically present.
+    @State private var prCountByUser: [UUID: Int] = [:]
     @State private var prExerciseNames: [UUID: String] = [:]
 
     // MARK: - Computed stats
@@ -81,8 +103,11 @@ struct SessionRecapView: View {
     }
 
     private func prCount(for userID: UUID) -> Int {
-        sessionPRs.filter { $0.userID == userID }.count
+        prCountByUser[userID, default: 0]
     }
+
+    /// Sum across all participants — see `prCountByUser`'s doc comment.
+    private var totalPRCount: Int { prCountByUser.values.reduce(0, +) }
 
     private var myPR: PersonalRecord? {
         guard let selfID = appState.currentProfile?.id else { return nil }
@@ -195,6 +220,8 @@ struct SessionRecapView: View {
             routineName = (try? await RoutineRepository.fetch(id: routineID))?.0.name
         }
         sessionPRs = (try? await PersonalRecordRepository.bySession(sessionID: session.id)) ?? []
+        let prCounts = (try? await PersonalRecordRepository.countsBySession(sessionID: session.id)) ?? []
+        prCountByUser = prCounts.reduce(into: [:]) { acc, row in acc[row.userID] = row.prCount }
         let unknownExerciseIDs = Set(sessionPRs.map(\.exerciseID)).subtracting(prExerciseNames.keys)
         for exerciseID in unknownExerciseIDs {
             if let exercise = try? await ExerciseRepository.fetch(id: exerciseID) {
@@ -255,7 +282,7 @@ struct SessionRecapView: View {
                 Rectangle()
                     .fill(theme.bg.opacity(0.3))
                     .frame(width: 1, height: 32)
-                statPill(value: "\(sessionPRs.count)", label: "PRS")
+                statPill(value: "\(totalPRCount)", label: "PRS")
             }
             .padding(.top, 12)
         }

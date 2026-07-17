@@ -3,7 +3,16 @@ import Supabase
 
 struct ChatMessage: Codable, Identifiable, Sendable, Equatable {
     let id: UUID
-    let groupID: UUID
+    /// Nullable since `20260719000010_session_chat_subthreads.sql` (`ALTER
+    /// TABLE chat_messages ALTER COLUMN group_id DROP NOT NULL`) — a solo
+    /// session's sub-thread row has `group_id = NULL` (no group to attach
+    /// to). Was `UUID` (non-optional) before Task 3; a required decode would
+    /// throw on the very first solo-session sub-thread row PostgREST
+    /// returns (`"group_id": null`), which is a decode this app never
+    /// exercised before session sub-threads existed. No other file in the
+    /// app reads `ChatMessage.groupID` (verified — only this decoder did),
+    /// so widening it here is safe.
+    let groupID: UUID?
     let sessionID: UUID?
     let authorID: UUID?      // nil = system message
     let kind: Kind
@@ -81,7 +90,7 @@ struct ChatMessage: Codable, Identifiable, Sendable, Equatable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id           = try  c.decode(UUID.self,   forKey: .id)
-        groupID      = try  c.decode(UUID.self,   forKey: .groupID)
+        groupID      = try? c.decodeIfPresent(UUID.self,   forKey: .groupID)
         sessionID    = try? c.decodeIfPresent(UUID.self,   forKey: .sessionID)
         authorID     = try? c.decodeIfPresent(UUID.self,   forKey: .authorID)
         kind         = try  c.decode(Kind.self,   forKey: .kind)
@@ -141,6 +150,97 @@ enum ChatRepository {
                          "author_id": me.uuidString,
                          "kind": "text",
                          "body": body])
+                .select()
+                .single()
+                .execute()
+                .value
+            return row
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
+
+    // MARK: - Session sub-thread (Task 3 — Phase F)
+    //
+    // Mirrors `messages(groupID:before:limit:)` / `send(groupID:body:)`
+    // above (new, parallel functions rather than adding an `sessionID:
+    // UUID? = nil` branch to those two — keeps the group-level codepath
+    // completely untouched, guaranteeing byte-identical group behavior; see
+    // task-3-report.md's reuse-decision comparison).
+
+    /// Session sub-thread fetch. Participants-only per RLS (`is_session_
+    /// participant`, see supabase/migrations/20260719000010_session_chat_
+    /// subthreads.sql #3) — a group member who never joined the session
+    /// gets zero rows back, not an error.
+    static func sessionMessages(sessionID: UUID, before: Date? = nil,
+                                limit: Int = 50) async throws -> [ChatMessage] {
+        do {
+            var query = SupabaseService.shared.client
+                .from("chat_messages")
+                .select()
+                .eq("session_id", value: sessionID.uuidString)
+            if let before {
+                query = query.lt("created_at", value: before.ISO8601Format(.iso8601(timeZone: TimeZone(secondsFromGMT: 0)!, includingFractionalSeconds: true)))
+            }
+            let rows: [ChatMessage] = try await query
+                .order("created_at", ascending: false)
+                .limit(limit)
+                .execute()
+                .value
+            return rows
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
+
+    /// Session sub-thread text send. `groupID` MUST be the session's own
+    /// `group_id` (nil for a solo/ad-hoc session) — the INSERT policy binds
+    /// it via `IS NOT DISTINCT FROM (SELECT s.group_id FROM sessions s
+    /// WHERE s.id = session_id)`
+    /// (20260719000011_chat_subthread_lock_hardening.sql #5); a caller that
+    /// passes a mismatched or omitted group_id gets a 42501 RLS rejection,
+    /// mapped to a `GymSyncError` like any other insert failure here — it
+    /// does not silently fall back to some other group. kind='text' only —
+    /// image/voice sub-thread sends are out of v1 scope (task-3-brief.md);
+    /// callers needing those stay on the group-level `sendImage`/`sendVoice`
+    /// above. A dedicated `Encodable` insert struct (same idiom as
+    /// `sendVoice`'s local `AudioInsert` below) is used instead of a
+    /// `[String: String]` dictionary literal because `groupID` is `UUID?`
+    /// here — a `[String: String]` literal can't hold that alongside the
+    /// insert's other non-optional string fields without widening the whole
+    /// dictionary's value type. (Synthesized `Encodable` calls
+    /// `encodeIfPresent` for the `groupID` key, so a solo session's `nil`
+    /// OMITS the key rather than writing an explicit JSON `null` — Postgres
+    /// treats an omitted nullable column the same as an explicit null on
+    /// INSERT either way, since the column has no other DEFAULT.)
+    static func sendSessionMessage(sessionID: UUID, groupID: UUID?,
+                                   body: String) async throws -> ChatMessage {
+        guard let me = await SupabaseService.shared.currentUserID() else {
+            throw GymSyncError.unauthorized
+        }
+        struct SessionTextInsert: Encodable {
+            let id: UUID
+            let sessionID: UUID
+            let groupID: UUID?
+            let authorID: UUID
+            let kind: String
+            let body: String
+
+            enum CodingKeys: String, CodingKey {
+                case id
+                case sessionID = "session_id"
+                case groupID   = "group_id"
+                case authorID  = "author_id"
+                case kind, body
+            }
+        }
+        let insert = SessionTextInsert(
+            id: UUID(), sessionID: sessionID, groupID: groupID,
+            authorID: me, kind: "text", body: body)
+        do {
+            let row: ChatMessage = try await SupabaseService.shared.client
+                .from("chat_messages")
+                .insert(insert)
                 .select()
                 .single()
                 .execute()

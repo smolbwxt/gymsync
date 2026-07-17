@@ -209,6 +209,9 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogStatTileError()      { captureCatalog("stattile-error") }
     func testCatalogStatTileEmpty()      { captureCatalog("stattile-empty") }
     func testCatalogRecapSolo()          { captureCatalog("recap-solo") }
+    func testCatalogSessionChat()        { captureCatalog("session-chat") }
+    func testCatalogGroupRecap()         { captureCatalog("group-recap") }
+    func testCatalogEditProfile()        { captureCatalog("edit-profile") }
 
     // MARK: - Seeded deep-screen captures
     //
@@ -337,6 +340,26 @@ final class ScreenshotTests: XCTestCase {
             settle()
         }
         attachScreenshot(app, named: "app-burpee-ledger.png")
+    }
+
+    func testGroupStats() {
+        let app = launchApp()
+        guard waitForTabBar(app) else { return }
+        selectTab(app, label: "Social")
+        settle()
+        openPushCrew(app)
+
+        // GroupView's themed segmented control renders each SubTab's
+        // `rawValue` as plain Text (no icon, no composed accessibility
+        // label ambiguity — unlike the icon-led "Burpee Ledger"/"Friends"
+        // rows elsewhere in this file), same as the existing `sessionsTab =
+        // app.buttons["Sessions"]` exact-match lookup above.
+        let statsTab = app.buttons["Stats"]
+        if statsTab.waitForExistence(timeout: 10) {
+            statsTab.tap()
+            settle()
+        }
+        attachScreenshot(app, named: "app-group-stats.png")
     }
 
     func testFriends() {

@@ -35,6 +35,32 @@ struct UserStreak: Decodable, Sendable, Equatable {
     }
 }
 
+// MARK: - GroupStreak (Phase F Task 5)
+//
+// One `group_streaks` row (20260719000006_streaks.sql) — RLS: "members can
+// read group streaks" (`is_group_member`), no client write policy (writes
+// happen only via the same `streak_bump_group`/`streak_break_group`
+// SECURITY DEFINER trigger helpers as `user_streaks`). Read-only DTO,
+// field-for-field parallel to `UserStreak` above (`group_id` in place of
+// `user_id`, otherwise identical shape and NULL-ability reasoning).
+struct GroupStreak: Decodable, Sendable, Equatable {
+    let groupID: UUID
+    let currentStreak: Int
+    let longestStreak: Int
+    let lastStreakSessionID: UUID?
+    let brokenAt: Date?
+    let brokenBySessionID: UUID?
+
+    enum CodingKeys: String, CodingKey {
+        case groupID = "group_id"
+        case currentStreak = "current_streak"
+        case longestStreak = "longest_streak"
+        case lastStreakSessionID = "last_streak_session_id"
+        case brokenAt = "broken_at"
+        case brokenBySessionID = "broken_by_session_id"
+    }
+}
+
 enum StreakRepository {
     private static var client: SupabaseClient { SupabaseService.shared.client }
 
@@ -51,6 +77,27 @@ enum StreakRepository {
                 .from("user_streaks")
                 .select()
                 .eq("user_id", value: userID.uuidString)
+                .single()
+                .execute()
+                .value
+            return row
+        } catch let error as PostgrestError where error.code == "PGRST116" {
+            return nil
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
+
+    /// The given group's streak row — `nil` when none exists yet, same
+    /// PGRST116 -> nil idiom as `userStreak(userID:)` (a group whose
+    /// sessions have never yet produced an all-ready completion has no
+    /// `group_streaks` row — insert-on-first-touch, same as the user table).
+    static func groupStreak(groupID: UUID) async throws -> GroupStreak? {
+        do {
+            let row: GroupStreak = try await client
+                .from("group_streaks")
+                .select()
+                .eq("group_id", value: groupID.uuidString)
                 .single()
                 .execute()
                 .value

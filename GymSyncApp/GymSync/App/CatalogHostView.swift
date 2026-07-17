@@ -31,6 +31,9 @@ enum CatalogScreen: String, CaseIterable {
     case statTileError = "stattile-error"
     case statTileEmpty = "stattile-empty"
     case recapSolo = "recap-solo"
+    case sessionChat = "session-chat"
+    case groupRecap = "group-recap"
+    case editProfile = "edit-profile"
 }
 
 struct CatalogHostView: View {
@@ -57,6 +60,9 @@ struct CatalogHostView: View {
             case .statTileError:              StatTilesRow(state: .offlineStale(Self.statTileOfflineFixture))
             case .statTileEmpty:              StatTilesRow(state: .firstSessionZero)
             case .recapSolo:                  content_recapSolo
+            case .sessionChat:                content_sessionChat
+            case .groupRecap:                 content_groupRecap
+            case .editProfile:                content_editProfile
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -257,6 +263,146 @@ struct CatalogHostView: View {
             shareSummary: "Push Day A — 42:06, 7,240 lbs, 10 sets"
         )
     }
+
+    // MARK: - Group recap (frame 8 — Phase F Task 4)
+    //
+    // Renders the real `GroupRecapView` (Features/Sessions/GroupRecapView.
+    // swift) via its `#if DEBUG` fixture initializer (`catalogFixtureKudos
+    // Counts:` — same same-file convenience-init seam as HomeGymSetupView/
+    // PushPrimingView/ChatView's catalog fixtures elsewhere in this file:
+    // skips GroupRecapView's live `.task` fetch+subscribe entirely, so the
+    // capture is hermetic — no network call for a session that doesn't
+    // exist in the DB). Fixture values copied verbatim from
+    // proof-frame-08.png so the catalog capture matches the canvas one-for-
+    // one: kicker "PUSH CREW · PUSH DAY", duration 58:12, "Thursday, July
+    // 10 · 4 lifters", hero stats 24.6k / 48 / 3, four-row leaderboard (Sam
+    // 7,420 lbs·1 PR·💪6, You 6,880 lbs·1 PR·💪5 — highlighted, Jordan 6,310
+    // lbs·1 PR·💪4, Priya 3,990 lbs·💪3 — no PR clause, matching the proof's
+    // omit-if-zero row), PR card Bench Press 190×5 (beat a 185 prior best
+    // by 5 lbs), and the frame's 5 kudos icons.
+    private static let groupRecapSamID = UUID()
+    private static let groupRecapYouID = UUID()
+    private static let groupRecapJordanID = UUID()
+    private static let groupRecapPriyaID = UUID()
+
+    private var content_groupRecap: some View {
+        GroupRecapView(
+            kicker: "PUSH CREW · PUSH DAY",
+            durationText: "58:12",
+            subline: "Thursday, July 10 · 4 lifters",
+            totalLbsText: "24.6k",
+            setCount: 48,
+            prCount: 3,
+            leaderboard: [
+                GroupRecapView.LeaderboardRow(
+                    id: Self.groupRecapSamID, initials: "SM", name: "Sam",
+                    volumeText: "7,420 lbs", prCount: 1, isYou: false
+                ),
+                GroupRecapView.LeaderboardRow(
+                    id: Self.groupRecapYouID, initials: "AJ", name: "You",
+                    volumeText: "6,880 lbs", prCount: 1, isYou: true
+                ),
+                GroupRecapView.LeaderboardRow(
+                    id: Self.groupRecapJordanID, initials: "JC", name: "Jordan",
+                    volumeText: "6,310 lbs", prCount: 1, isYou: false
+                ),
+                GroupRecapView.LeaderboardRow(
+                    id: Self.groupRecapPriyaID, initials: "PR", name: "Priya",
+                    volumeText: "3,990 lbs", prCount: 0, isYou: false
+                )
+            ],
+            heaviestPR: GroupRecapView.HeaviestPR(
+                exerciseName: "Bench Press", weight: 190, reps: 5, previousBest: 185
+            ),
+            shareSummary: "PUSH CREW · PUSH DAY — 58:12, 24.6k lbs, 48 sets.",
+            sessionID: UUID(),
+            recipientIDs: [Self.groupRecapSamID, Self.groupRecapJordanID, Self.groupRecapPriyaID],
+            catalogFixtureKudosCounts: [
+                Self.groupRecapSamID: 6,
+                Self.groupRecapYouID: 5,
+                Self.groupRecapJordanID: 4,
+                Self.groupRecapPriyaID: 3
+            ],
+            onDone: {}
+        )
+    }
+
+    // MARK: - Session chat (Task 3 — session sub-thread chat, catalog case)
+    //
+    // No canvas frame depicts a session-chat affordance (proof-frame-05/06/07
+    // — Lobby/Live Spotlight/Live Roster headers — show no chat button; see
+    // docs/design/accepted-deviations.json's "session-chat" entry). Renders
+    // the real `ChatView` scoped to a fixture session sub-thread via the
+    // same catalog-fixture seam idiom as HomeGymSetupView/PushPrimingView
+    // above: skip the live `.task { await load() }` fetch, seed `messages`/
+    // `usernames` directly (see ChatView.swift's `#if DEBUG` extension at
+    // the bottom of that file).
+    //
+    // `AppState.shared.currentProfile` is force-set to a fixture "self"
+    // profile so the outgoing/incoming bubble-alignment logic (`ChatView.
+    // messageRow`'s `mine = message.authorID == appState.currentProfile?.id`)
+    // has a real identity to compare against — CatalogHostView bypasses auth
+    // entirely (this file's own header comment), so `currentProfile` would
+    // otherwise be nil and every fixture message would render as incoming.
+    // Each `UITEST_CATALOG=<id>` capture launches a fresh app process (see
+    // ScreenshotTests.captureCatalog), so this mutation never leaks into
+    // another catalog screen's capture.
+    private static let catalogChatSelfProfile =
+        Profile(catalogFixtureUsername: "you", lifetimeVolumeLifted: 0)
+    private static let catalogChatOtherUserID = UUID()
+    private static let catalogChatSessionID = UUID()
+    private static let catalogChatGroupID = UUID()
+
+    private var content_sessionChat: some View {
+        AppState.shared.currentProfile = Self.catalogChatSelfProfile
+        return ChatView(
+            catalogFixtureMessages: [
+                ChatMessage(
+                    catalogFixtureID: UUID(), sessionID: Self.catalogChatSessionID,
+                    authorID: Self.catalogChatOtherUserID,
+                    body: "2 min out, saving you a rack",
+                    createdAt: Date().addingTimeInterval(-240)),
+                ChatMessage(
+                    catalogFixtureID: UUID(), sessionID: Self.catalogChatSessionID,
+                    authorID: Self.catalogChatSelfProfile.id,
+                    body: "Bet, starting the clock",
+                    createdAt: Date().addingTimeInterval(-120)),
+                ChatMessage(
+                    catalogFixtureID: UUID(), sessionID: Self.catalogChatSessionID,
+                    authorID: Self.catalogChatOtherUserID,
+                    body: "Pulling in now",
+                    createdAt: Date().addingTimeInterval(-30))
+            ],
+            catalogFixtureUsernames: [Self.catalogChatOtherUserID: "jordan_c"],
+            scope: .session(sessionID: Self.catalogChatSessionID, groupID: Self.catalogChatGroupID)
+        )
+    }
+
+    // MARK: - Edit Profile (Task 6 — no canvas frame, catalog case)
+    //
+    // No canvas frame depicts an Edit Profile screen (task-2-report.md's
+    // recorded deviation: "Edit Profile is a future screen" — this task
+    // fulfills it, but no designer frame was ever produced for it). See
+    // docs/design/accepted-deviations.json's "edit-profile" entry, same
+    // "no frame — system-designed" shape as "session-chat"/"group-stats"
+    // above. Renders the real `EditProfileView` directly (no `#if DEBUG`
+    // fixture seam needed, unlike ChatView/HomeGymSetupView/PushPrimingView
+    // above: `EditProfileView` sources its initial state entirely from the
+    // `profile:` parameter passed in below — no live `.task` fetch to skip —
+    // and neither persistence path fires without a user tap, so the capture
+    // makes no network call). Wrapped in its own `NavigationStack` (unlike
+    // every other case in this file) because this is the one catalog screen
+    // whose `.toolbar`/`.navigationTitle` need real nav-bar chrome to render
+    // at all — every other case is either a full-screen overlay or a
+    // top-level onboarding screen with no nav bar of its own.
+    private static let catalogEditProfileFixture =
+        Profile(catalogFixtureUsername: "alex_j", lifetimeVolumeLifted: 12480)
+
+    private var content_editProfile: some View {
+        NavigationStack {
+            EditProfileView(profile: Self.catalogEditProfileFixture, onSaved: { _ in })
+        }
+    }
 }
 
 // MARK: - Profile fixture
@@ -274,6 +420,34 @@ extension Profile {
         self.createdAt = .now
         self.lifetimeVolumeLifted = lifetimeVolumeLifted
         self.isCurator = false
+    }
+}
+
+// MARK: - ChatMessage fixture (session-chat catalog case)
+//
+// Same memberwise-init trap as `Profile` above: ChatMessage.swift's only
+// initializer is its custom `init(from decoder:)` (Codable's synthesized
+// memberwise init is suppressed by that), so there is no other way to
+// build a `ChatMessage` value directly. Every stored property is
+// non-private, so this direct-assignment init is added here rather than
+// editing ChatMessage.swift. `groupID` is fixed nil — `ChatView`'s session
+// codepath never reads a message's own `groupID` field (only `scope`'s),
+// so the fixture's own group_id shape is inert either way.
+extension ChatMessage {
+    init(catalogFixtureID id: UUID, sessionID: UUID, authorID: UUID,
+         body: String, createdAt: Date) {
+        self.id = id
+        self.groupID = nil
+        self.sessionID = sessionID
+        self.authorID = authorID
+        self.kind = .text
+        self.body = body
+        self.storagePath = nil
+        self.replyToID = nil
+        self.createdAt = createdAt
+        self.editedAt = nil
+        self.deletedAt = nil
+        self.payload = nil
     }
 }
 #endif
