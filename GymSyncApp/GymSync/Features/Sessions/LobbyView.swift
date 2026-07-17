@@ -44,6 +44,17 @@ struct LobbyView: View {
 
     @State private var showSeriesEditor = false
 
+    // MARK: - Session chat (Task 3, Phase F)
+
+    /// No canvas frame depicts a chat affordance for this screen
+    /// (proof-frame-05.png's Lobby header shows only the back chevron +
+    /// gearshape) — system-designed per task-3-brief.md: a bordered
+    /// icon-button toolbar item + sheet, reusing this file's own
+    /// `manageMenu` icon-button styling and `changeTimeSheet`'s
+    /// NavigationStack-sheet idiom. See docs/design/accepted-deviations.json's
+    /// "session-chat" entry.
+    @State private var showChatSheet = false
+
     // MARK: - Check-in window state
 
     /// Toggled exactly once, by a single scheduled `Task.sleep` (never a repeating/polling
@@ -225,6 +236,9 @@ struct LobbyView: View {
                     GSConnectingVoicePill()
                 }
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                chatButton
+            }
             if isManageVisible {
                 ToolbarItem(placement: .topBarTrailing) {
                     manageMenu
@@ -253,6 +267,10 @@ struct LobbyView: View {
         // Proposal composer sheet
         .sheet(isPresented: $showProposalComposer) {
             proposalComposerSheet
+        }
+        // Session chat sheet (Task 3)
+        .sheet(isPresented: $showChatSheet) {
+            chatSheet
         }
         // Change time sheet
         .sheet(isPresented: $showChangeTimeSheet) {
@@ -316,6 +334,44 @@ struct LobbyView: View {
         }
         .navigationDestination(isPresented: $navigateToInProgress) {
             SessionInProgressView(session: session, participants: participants)
+        }
+    }
+
+    // MARK: - Chat button + sheet (Task 3, Phase F)
+    //
+    // `effectiveSession.groupID` is passed straight through as the
+    // sub-thread's group_id — ChatView.init(sessionID:groupID:)'s doc
+    // comment explains why this MUST be the session's own group_id (nil for
+    // a solo/ad-hoc session): the sub-thread INSERT RLS binds it via
+    // `IS NOT DISTINCT FROM sessions.group_id`
+    // (20260719000011_chat_subthread_lock_hardening.sql #5).
+
+    private var chatButton: some View {
+        Button {
+            showChatSheet = true
+        } label: {
+            // Same icon-button sizing/hit-target as `manageMenu`'s gearshape
+            // below (44×44 tap target, 18pt regular-weight symbol).
+            Image(systemName: "bubble.left.and.bubble.right")
+                .font(.system(size: 18, weight: .regular))
+                .foregroundStyle(theme.text)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+        }
+    }
+
+    private var chatSheet: some View {
+        NavigationStack {
+            ChatView(sessionID: effectiveSession.id, groupID: effectiveSession.groupID)
+                .navigationTitle("Session Chat")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { showChatSheet = false }
+                            .font(GSFont.bold(14, relativeTo: .body))
+                            .foregroundStyle(theme.accent700)
+                    }
+                }
         }
     }
 

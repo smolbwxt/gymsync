@@ -82,7 +82,66 @@ final class VoiceBubblePlayer: ObservableObject {
 // MARK: - ChatView
 
 struct ChatView: View {
-    let group: GymGroup
+    /// What this chat surface is scoped to — a group's persistent chat, or
+    /// a single session's sub-thread (Task 3, Phase F). Parameterizing this
+    /// existing view (rather than a scoped sibling view) was picked because
+    /// every data/realtime/AppState call site below only ever read
+    /// `group.id` before this change — never `.name` or any other
+    /// `GymGroup` field — so the reuse is a pure scope substitution, not a
+    /// UI fork; a sibling would have had to duplicate message-bubble/
+    /// reaction/system-message rendering (~400 of this file's ~740 lines)
+    /// just to reach the same visual result. See task-3-report.md.
+    enum Scope {
+        case group(UUID)
+        case session(sessionID: UUID, groupID: UUID?)
+
+        /// group_id used for the push-suppression flag (`AppState.
+        /// activeChatGroupID`) — mirrors `push_chat_mention`'s trigger,
+        /// which always keys its enqueued push off `NEW.group_id`
+        /// regardless of whether the row is a sub-thread message
+        /// (supabase/migrations/20260716000001_push_schema.sql:311-318).
+        /// `nil` only for a solo session's sub-thread, where that trigger's
+        /// `WHERE gm.group_id = NEW.group_id` never matches a NULL group_id
+        /// anyway (20260719000010_session_chat_subthreads.sql,
+        /// "Deliberately untouched") — there is no such push to suppress.
+        var groupIDForPushSuppression: UUID? {
+            switch self {
+            case .group(let id): return id
+            case .session(_, let groupID): return groupID
+            }
+        }
+    }
+
+    let scope: Scope
+
+    init(group: GymGroup) {
+        self.scope = .group(group.id)
+    }
+
+    /// `groupID` MUST be the session's own `group_id` (nil for a solo/
+    /// ad-hoc session) — the sub-thread INSERT RLS binds it via `IS NOT
+    /// DISTINCT FROM` against `sessions.group_id`
+    /// (20260719000011_chat_subthread_lock_hardening.sql #5). Callers
+    /// (LobbyView, GroupSessionLiveView) pass `session.groupID` straight
+    /// from the `WorkoutSession` already in scope — see those files' chat
+    /// sheet definitions.
+    init(sessionID: UUID, groupID: UUID?) {
+        self.scope = .session(sessionID: sessionID, groupID: groupID)
+    }
+
+    #if DEBUG
+    /// Debug-only: true only via the catalog fixture init at the bottom of
+    /// this file — skips `load()`'s live network fetch + realtime subscribe
+    /// entirely so `CatalogHostView`'s `session-chat` state renders
+    /// deterministically from a seeded fixture instead of racing an
+    /// unauthenticated (and certain-to-fail) live query. Always false on
+    /// every other path; compiled out of release entirely. Checked inside
+    /// `load()` itself, not just at its `.task` call site, because ChatView
+    /// has a SECOND path into `load()` — `.onChange(of: scenePhase)` —
+    /// that the HomeGymSetupView precedent for this seam didn't need to
+    /// account for.
+    var catalogSkipLoad = false
+    #endif
 
     @Environment(AppState.self) private var appState
     @Environment(\.scenePhase) private var scenePhase
@@ -125,8 +184,14 @@ struct ChatView: View {
                 .onChange(of: messages.count) {
                     if let last = messages.last {
                         proxy.scrollTo(last.id, anchor: .bottom)
-                        Task { try? await ChatRepository.markRead(groupID: group.id,
-                                                                  messageID: last.id) }
+                        // chat_read_state stays group-scoped only (out of
+                        // scope for session sub-threads — see
+                        // 20260719000010_session_chat_subthreads.sql #5's
+                        // "Deliberately untouched" note).
+                        if case .group(let groupID) = scope {
+                            Task { try? await ChatRepository.markRead(groupID: groupID,
+                                                                      messageID: last.id) }
+                        }
                     }
                 }
             }
@@ -174,15 +239,21 @@ struct ChatView: View {
             Task { await load() }
         }
         .onAppear {
-            // Suppresses the push banner for this group's chat while it's
-            // open live (AppDelegate.willPresent, AppState.activeChatGroupID).
-            appState.activeChatGroupID = group.id
+            // Suppresses the push banner for this chat's group_id while it's
+            // open live (AppDelegate.willPresent, AppState.activeChatGroupID)
+            // — see Scope.groupIDForPushSuppression's doc comment for why a
+            // session sub-thread uses the SAME flag, keyed off the session's
+            // own group_id. Left unset for a solo session's sub-thread (nil)
+            // — no group-keyed push exists there to suppress.
+            if let groupID = scope.groupIDForPushSuppression {
+                appState.activeChatGroupID = groupID
+            }
         }
         .onDisappear {
             // Only clear the suppression flag if it's still pointing at THIS
-            // group's chat — see GroupSessionLiveView's identical guard on
+            // chat's group — see GroupSessionLiveView's identical guard on
             // activeSessionID for why an unconditional nil is unsafe.
-            if appState.activeChatGroupID == group.id {
+            if let groupID = scope.groupIDForPushSuppression, appState.activeChatGroupID == groupID {
                 appState.activeChatGroupID = nil
             }
             Task { await realtime.unsubscribe() }
@@ -203,18 +274,25 @@ struct ChatView: View {
                 // Recording row: elapsed timer + cancel, hides text field per canvas
                 recordingIndicator
             } else {
-                // Normal row: photo | text field | mic | send
+                // Normal row: photo | text field | mic | send (group) —
+                // text field | send only for a session sub-thread (kind=
+                // 'text' only in v1, task-3-brief.md; no frame precedent for
+                // this row's sub-thread treatment — system-designed, see
+                // docs/design/accepted-deviations.json's "session-chat"
+                // entry).
                 HStack(spacing: 8) {
                     // Photo picker icon button — 38×38, bordered per canvas
-                    PhotosPicker(selection: $pickerItem, matching: .images) {
-                        Image(systemName: "photo")
-                            .font(.system(size: 17, weight: .regular))
-                            .foregroundStyle(theme.neutral700)
-                            .frame(width: 38, height: 38)
-                            .background(theme.bg)
-                            .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                    if case .group = scope {
+                        PhotosPicker(selection: $pickerItem, matching: .images) {
+                            Image(systemName: "photo")
+                                .font(.system(size: 17, weight: .regular))
+                                .foregroundStyle(theme.neutral700)
+                                .frame(width: 38, height: 38)
+                                .background(theme.bg)
+                                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                        }
+                        .disabled(isSendingImage)
                     }
-                    .disabled(isSendingImage)
 
                     // Message field — surface bg, 1px divider border, 38px height
                     TextField("Message", text: $draft, axis: .vertical)
@@ -227,21 +305,20 @@ struct ChatView: View {
                         .background(theme.surface)
                         .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
 
-                    // Mic (empty draft) or Send (non-empty draft) — matches the proof's
-                    // idle row, which never shows a separate mic icon alongside send.
-                    if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        micButton
-                    } else {
-                        Button {
-                            Task { await send() }
-                        } label: {
-                            Image(systemName: "arrow.up")
-                                .font(.system(size: 17, weight: .semibold))
-                                .foregroundStyle(theme.bg)
-                                .frame(width: 38, height: 38)
-                                .background(theme.accent)
+                    if case .group = scope {
+                        // Mic (empty draft) or Send (non-empty draft) — matches the proof's
+                        // idle row, which never shows a separate mic icon alongside send.
+                        if draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            micButton
+                        } else {
+                            sendButton
                         }
-                        .buttonStyle(.plain)
+                    } else {
+                        // Session sub-thread: no voice recorder to swap in for
+                        // an empty draft, so the send button stays put and
+                        // just disables instead.
+                        sendButton
+                            .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
                 .padding(.horizontal, 12)
@@ -258,6 +335,26 @@ struct ChatView: View {
             pickerItem = nil
             Task { await sendImage(item) }
         }
+    }
+
+    // MARK: - Send Button
+    //
+    // Extracted from the group row's inline non-empty-draft branch (was a
+    // literal Button here, identical modifiers) so the session sub-thread
+    // row above can reuse the exact same rendering — no visual change for
+    // the group codepath.
+
+    private var sendButton: some View {
+        Button {
+            Task { await send() }
+        } label: {
+            Image(systemName: "arrow.up")
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(theme.bg)
+                .frame(width: 38, height: 38)
+                .background(theme.accent)
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Mic Button (hold to record)
@@ -566,27 +663,49 @@ struct ChatView: View {
         }
     }
 
-    // MARK: - Data Operations (all preserved byte-identical to original)
+    // MARK: - Data Operations (group codepath preserved byte-identical to original)
 
     private func load() async {
+        #if DEBUG
+        if catalogSkipLoad { return }
+        #endif
         do {
-            let page = try await ChatRepository.messages(groupID: group.id)
+            let page: [ChatMessage]
+            switch scope {
+            case .group(let groupID):
+                page = try await ChatRepository.messages(groupID: groupID)
+            case .session(let sessionID, _):
+                page = try await ChatRepository.sessionMessages(sessionID: sessionID)
+            }
             messages = page.reversed()
             await refreshReactions()
             await resolveUsernames()
             await resolveImageURLs()
-            await realtime.subscribe(groupID: group.id, onInsert: { message in
+
+            let onInsert: @MainActor (ChatMessage) -> Void = { message in
                 guard !messages.contains(where: { $0.id == message.id }) else { return }
                 messages.append(message)
                 Task { await resolveUsernames(); await resolveImageURLs() }
-            }, onReaction: {
+            }
+            let onReaction: @MainActor () -> Void = {
                 Task { await refreshReactions() }
-            })
-            if let username = appState.currentProfile?.username {
-                await realtime.subscribeTyping(groupID: group.id,
-                                               selfUsername: username) { names in
-                    typingUsers = names
+            }
+
+            switch scope {
+            case .group(let groupID):
+                await realtime.subscribe(groupID: groupID, onInsert: onInsert, onReaction: onReaction)
+                if let username = appState.currentProfile?.username {
+                    await realtime.subscribeTyping(groupID: groupID,
+                                                   selfUsername: username) { names in
+                        typingUsers = names
+                    }
                 }
+            case .session(let sessionID, _):
+                // No subscribeTyping call — sub-thread typing indicators are
+                // out of v1 scope; `realtime.setTyping()` in `.onChange(of:
+                // draft)` stays a safe no-op (see ChatRealtimeService.
+                // subscribe(sessionID:...)'s doc comment).
+                await realtime.subscribe(sessionID: sessionID, onInsert: onInsert, onReaction: onReaction)
             }
             errorText = nil
         } catch let error as GymSyncError {
@@ -602,7 +721,14 @@ struct ChatView: View {
         typingDebounce?.cancel()
         Task { await realtime.setTyping(false) }
         do {
-            let sent = try await ChatRepository.send(groupID: group.id, body: body)
+            let sent: ChatMessage
+            switch scope {
+            case .group(let groupID):
+                sent = try await ChatRepository.send(groupID: groupID, body: body)
+            case .session(let sessionID, let groupID):
+                sent = try await ChatRepository.sendSessionMessage(
+                    sessionID: sessionID, groupID: groupID, body: body)
+            }
             if !messages.contains(where: { $0.id == sent.id }) {
                 messages.append(sent)
             }
@@ -629,6 +755,12 @@ struct ChatView: View {
     }
 
     private func sendImage(_ item: PhotosPickerItem) async {
+        // Defense in depth: the photo picker button is already hidden for a
+        // session sub-thread (kind='text' only in v1) — this guard is the
+        // belt-and-suspenders backstop in case this function is ever reached
+        // another way (e.g. `.onChange(of: pickerItem)` firing on stale
+        // state), mirroring this file's other defensive guards.
+        guard case .group(let groupID) = scope else { return }
         isSendingImage = true
         defer { isSendingImage = false }
         do {
@@ -636,7 +768,7 @@ struct ChatView: View {
                 errorText = "That image couldn't be loaded."
                 return
             }
-            let sent = try await ChatRepository.sendImage(groupID: group.id, imageData: data)
+            let sent = try await ChatRepository.sendImage(groupID: groupID, imageData: data)
             if !messages.contains(where: { $0.id == sent.id }) {
                 messages.append(sent)
             }
@@ -657,11 +789,15 @@ struct ChatView: View {
     }
 
     private func sendVoice(url: URL, duration: TimeInterval) async {
+        // Defense in depth — see sendImage's identical guard above; the mic
+        // button is hidden for a session sub-thread, so this path is only
+        // reachable in group scope.
+        guard case .group(let groupID) = scope else { return }
         isSendingVoice = true
         defer { isSendingVoice = false }
         do {
             let sent = try await ChatRepository.sendVoice(
-                groupID: group.id, fileURL: url, duration: duration)
+                groupID: groupID, fileURL: url, duration: duration)
             // Dedup-guard: realtime subscription may deliver it first
             if !messages.contains(where: { $0.id == sent.id }) {
                 messages.append(sent)
@@ -733,3 +869,25 @@ private struct RecordingWaveformView: View {
         .onAppear { animate = true }
     }
 }
+
+// MARK: - Catalog fixture seam (Task 3 — `session-chat` catalog case)
+
+#if DEBUG
+extension ChatView {
+    /// Debug-only seam for the design-parity screen catalog: seeds
+    /// `messages`/`usernames` directly and sets `catalogSkipLoad` so `load()`
+    /// never fires its live fetch/subscribe. Added here (rather than a
+    /// third public init) because `_messages`/`_usernames` are `private`
+    /// `@State` — this initializer can only assign them because it lives in
+    /// the SAME FILE as those declarations (same idiom as
+    /// HomeGymSetupView.swift's `catalogSearchQuery` init).
+    init(catalogFixtureMessages messages: [ChatMessage],
+         catalogFixtureUsernames usernames: [UUID: String] = [:],
+         scope: Scope) {
+        self.scope = scope
+        _messages = State(initialValue: messages)
+        _usernames = State(initialValue: usernames)
+        catalogSkipLoad = true
+    }
+}
+#endif

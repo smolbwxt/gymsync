@@ -26,5 +26,9 @@
   {
     "screenId": "_streaks-group-abandoned-rule",
     "reason": "BEHAVIOR (not visual): migration 20260719000007 breaks the GROUP streak on a bare abandoned transition with an absent member — beyond Flow 7 literal text (group rule lists only no_show) but converging to product intent; removes an unenforced config-ordering dependency. Whole-branch review 2026-07-16 recommended recording it here for traceability."
+  },
+  {
+    "screenId": "session-chat",
+    "reason": "Phase F Task 3: no canvas frame depicts a session sub-thread chat affordance — proof-frame-05/06/07 (Lobby, Live Spotlight, Live Roster headers) show no chat button. System-designed: a bordered icon-button (LobbyView toolbar / GroupSessionLiveView headerBar, styled after each screen's own existing icon buttons) opening a sheet with the reused ChatView, text-only send row. Awaiting a designer frame."
   }
 ]

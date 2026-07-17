@@ -80,6 +80,13 @@ struct GroupSessionLiveView: View {
 
     @State private var showLogSetSheet      = false   // now penalty-only (see logSetSheetContent)
     @State private var showEndConfirmation  = false
+    /// Task 3, Phase F — no canvas frame depicts a chat affordance on either
+    /// live-session layout (proof-frame-06/07's headers show only LIVE +
+    /// routine name + timer + X). System-designed: a bordered icon-button in
+    /// `headerBar`, styled after the same header's own X button, opening a
+    /// sheet — see docs/design/accepted-deviations.json's "session-chat"
+    /// entry.
+    @State private var showChatSheet        = false
     @State private var isEnding             = false
     @State private var errorText: String?
     /// Canvas Completion Task 4 fix round 1 (proof p31-errors, "Couldn't load
@@ -515,6 +522,8 @@ struct GroupSessionLiveView: View {
         .animation(.easeInOut(duration: 0.25), value: soundOverlayText)
         // Log Set sheet — penalty (burpee) logging only now; normal sets log inline.
         .sheet(isPresented: $showLogSetSheet) { logSetSheetContent }
+        // Session chat sheet (Task 3)
+        .sheet(isPresented: $showChatSheet) { chatSheet }
         // Recap sheet
         .sheet(item: $recapData) { data in
             SessionRecapView(
@@ -734,6 +743,23 @@ struct GroupSessionLiveView: View {
                     .foregroundStyle(theme.neutral700)
                     .monospacedDigit()
             }
+
+            // Session chat (Task 3) — same bordered-square idiom as the X
+            // button beside it (30×30 glyph in a 44×44 tap target); no
+            // canvas frame shows this affordance, see `showChatSheet`'s doc
+            // comment.
+            Button {
+                showChatSheet = true
+            } label: {
+                Image(systemName: "bubble.left.and.bubble.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(theme.neutral700)
+                    .frame(width: 30, height: 30)
+                    .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
 
             Button {
                 showEndConfirmation = true
@@ -1358,6 +1384,30 @@ struct GroupSessionLiveView: View {
                                     isFailed: isFailed, note: note,
                                     exerciseID: ex.id, isPenalty: true) }
             }
+        }
+    }
+
+    // MARK: - Chat sheet (Task 3, Phase F)
+    //
+    // `liveSession.groupID` is passed straight through as the sub-thread's
+    // group_id — ChatView.init(sessionID:groupID:)'s doc comment explains
+    // why this MUST be the session's own group_id (nil for a solo/ad-hoc
+    // session): the sub-thread INSERT RLS binds it via `IS NOT DISTINCT
+    // FROM sessions.group_id`
+    // (20260719000011_chat_subthread_lock_hardening.sql #5).
+
+    private var chatSheet: some View {
+        NavigationStack {
+            ChatView(sessionID: liveSession.id, groupID: liveSession.groupID)
+                .navigationTitle("Session Chat")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { showChatSheet = false }
+                            .font(GSFont.bold(14, relativeTo: .body))
+                            .foregroundStyle(theme.accent700)
+                    }
+                }
         }
     }
 

@@ -31,6 +31,7 @@ enum CatalogScreen: String, CaseIterable {
     case statTileError = "stattile-error"
     case statTileEmpty = "stattile-empty"
     case recapSolo = "recap-solo"
+    case sessionChat = "session-chat"
 }
 
 struct CatalogHostView: View {
@@ -57,6 +58,7 @@ struct CatalogHostView: View {
             case .statTileError:              StatTilesRow(state: .offlineStale(Self.statTileOfflineFixture))
             case .statTileEmpty:              StatTilesRow(state: .firstSessionZero)
             case .recapSolo:                  content_recapSolo
+            case .sessionChat:                content_sessionChat
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -257,6 +259,57 @@ struct CatalogHostView: View {
             shareSummary: "Push Day A — 42:06, 7,240 lbs, 10 sets"
         )
     }
+
+    // MARK: - Session chat (Task 3 — session sub-thread chat, catalog case)
+    //
+    // No canvas frame depicts a session-chat affordance (proof-frame-05/06/07
+    // — Lobby/Live Spotlight/Live Roster headers — show no chat button; see
+    // docs/design/accepted-deviations.json's "session-chat" entry). Renders
+    // the real `ChatView` scoped to a fixture session sub-thread via the
+    // same catalog-fixture seam idiom as HomeGymSetupView/PushPrimingView
+    // above: skip the live `.task { await load() }` fetch, seed `messages`/
+    // `usernames` directly (see ChatView.swift's `#if DEBUG` extension at
+    // the bottom of that file).
+    //
+    // `AppState.shared.currentProfile` is force-set to a fixture "self"
+    // profile so the outgoing/incoming bubble-alignment logic (`ChatView.
+    // messageRow`'s `mine = message.authorID == appState.currentProfile?.id`)
+    // has a real identity to compare against — CatalogHostView bypasses auth
+    // entirely (this file's own header comment), so `currentProfile` would
+    // otherwise be nil and every fixture message would render as incoming.
+    // Each `UITEST_CATALOG=<id>` capture launches a fresh app process (see
+    // ScreenshotTests.captureCatalog), so this mutation never leaks into
+    // another catalog screen's capture.
+    private static let catalogChatSelfProfile =
+        Profile(catalogFixtureUsername: "you", lifetimeVolumeLifted: 0)
+    private static let catalogChatOtherUserID = UUID()
+    private static let catalogChatSessionID = UUID()
+    private static let catalogChatGroupID = UUID()
+
+    private var content_sessionChat: some View {
+        AppState.shared.currentProfile = Self.catalogChatSelfProfile
+        return ChatView(
+            catalogFixtureMessages: [
+                ChatMessage(
+                    catalogFixtureID: UUID(), sessionID: Self.catalogChatSessionID,
+                    authorID: Self.catalogChatOtherUserID,
+                    body: "2 min out, saving you a rack",
+                    createdAt: Date().addingTimeInterval(-240)),
+                ChatMessage(
+                    catalogFixtureID: UUID(), sessionID: Self.catalogChatSessionID,
+                    authorID: Self.catalogChatSelfProfile.id,
+                    body: "Bet, starting the clock",
+                    createdAt: Date().addingTimeInterval(-120)),
+                ChatMessage(
+                    catalogFixtureID: UUID(), sessionID: Self.catalogChatSessionID,
+                    authorID: Self.catalogChatOtherUserID,
+                    body: "Pulling in now",
+                    createdAt: Date().addingTimeInterval(-30))
+            ],
+            catalogFixtureUsernames: [Self.catalogChatOtherUserID: "jordan_c"],
+            scope: .session(sessionID: Self.catalogChatSessionID, groupID: Self.catalogChatGroupID)
+        )
+    }
 }
 
 // MARK: - Profile fixture
@@ -274,6 +327,34 @@ extension Profile {
         self.createdAt = .now
         self.lifetimeVolumeLifted = lifetimeVolumeLifted
         self.isCurator = false
+    }
+}
+
+// MARK: - ChatMessage fixture (session-chat catalog case)
+//
+// Same memberwise-init trap as `Profile` above: ChatMessage.swift's only
+// initializer is its custom `init(from decoder:)` (Codable's synthesized
+// memberwise init is suppressed by that), so there is no other way to
+// build a `ChatMessage` value directly. Every stored property is
+// non-private, so this direct-assignment init is added here rather than
+// editing ChatMessage.swift. `groupID` is fixed nil — `ChatView`'s session
+// codepath never reads a message's own `groupID` field (only `scope`'s),
+// so the fixture's own group_id shape is inert either way.
+extension ChatMessage {
+    init(catalogFixtureID id: UUID, sessionID: UUID, authorID: UUID,
+         body: String, createdAt: Date) {
+        self.id = id
+        self.groupID = nil
+        self.sessionID = sessionID
+        self.authorID = authorID
+        self.kind = .text
+        self.body = body
+        self.storagePath = nil
+        self.replyToID = nil
+        self.createdAt = createdAt
+        self.editedAt = nil
+        self.deletedAt = nil
+        self.payload = nil
     }
 }
 #endif
