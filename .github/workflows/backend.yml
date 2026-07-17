@@ -30,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        function: [push-dispatcher, livekit-token]
+        function: [push-dispatcher, livekit-token, account-deletion-cascade]
     defaults:
       run:
         working-directory: supabase/functions/${{ matrix.function }}
@@ -64,6 +64,6 @@ jobs:
         if: env.SUPABASE_ACCESS_TOKEN != ''
         with:
           version: latest
-      - name: Deploy push-dispatcher and livekit-token
+      - name: Deploy push-dispatcher, livekit-token, and account-deletion-cascade
         if: env.SUPABASE_ACCESS_TOKEN != ''
-        run: supabase functions deploy push-dispatcher livekit-token --project-ref chjkkwqwdlmaxacwglzm
+        run: supabase functions deploy push-dispatcher livekit-token account-deletion-cascade --project-ref chjkkwqwdlmaxacwglzm
