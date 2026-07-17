@@ -1492,7 +1492,22 @@ struct GroupSessionLiveView: View {
         await reload()
         await ExerciseNameCache.preload()
         if let groupID = liveSession.groupID {
-            ledgerGroup = try? await GroupRepository.fetch(id: groupID)
+            // Fast-follow wave, Fix 3: this used to be a bare `try?` — a
+            // fetch failure here was completely silent. `ledgerGroup` stays
+            // nil either way (unchanged fallback behavior: the burpee-ledger
+            // link stays hidden, and — per `buildGroupRecapPayload`'s guard
+            // at the bottom of this file — completion falls back to
+            // `SessionRecapView` instead of the frame-8 `GroupRecapView`,
+            // even though this genuinely IS a group session, not a solo one.
+            // That's the "silent frame-8 downgrade": no UI signal distinguishes
+            // it from an intentional solo completion. One warn line surfaces
+            // it for diagnosis without changing behavior.
+            do {
+                ledgerGroup = try await GroupRepository.fetch(id: groupID)
+            } catch {
+                AppLogger.sessions.warning(
+                    "GroupSessionLiveView openAndSubscribe: GroupRepository.fetch failed for group \(groupID, privacy: .public) on a real group session — completion will downgrade to SessionRecapView instead of frame-8 GroupRecapView: \(error, privacy: .public)")
+            }
         }
         await liveService.subscribe(
             sessionID: liveSession.id,
@@ -1840,6 +1855,11 @@ struct GroupSessionLiveView: View {
     // through this same live view are UNCHANGED — `ledgerGroup` is nil for
     // them, so this returns nil and the `.sheet` falls back to
     // `SessionRecapView`, exactly as before this task.
+    //
+    // `ledgerGroup` can ALSO be nil for a genuine group session if
+    // `GroupRepository.fetch` failed in `openAndSubscribe()` — that failure
+    // is logged there now (Fast-follow wave, Fix 3) since this guard has no
+    // way to tell that case apart from an intentional solo completion.
     //
     // The PR-celebration overlay (`isPROverlay`, a ZStack sibling — see
     // `body`) is untouched by any of this: it lives outside the `.sheet`

@@ -33,7 +33,23 @@ struct CompletedSessionView: View {
     @State private var groupName: String?
     @State private var editorName: String?
     @State private var previousDuration: (start: Date, end: Date)?
-    @State private var sessionPRs: [PersonalRecord] = []
+    /// Per-user PR counts for this session, across ALL participants (aggregate
+    /// PRS tile + every "N PR" badge below — both COUNT-only; this view has no
+    /// own-PR-detail card, so `PersonalRecordRepository.bySession` was never
+    /// needed here). Sourced from `.countsBySession`, backed by the
+    /// `session_pr_counts` SECURITY DEFINER RPC
+    /// (20260720000002_session_pr_counts_and_kudos_guard.sql) — `bySession`
+    /// is a direct `personal_records` select gated by that table's SELF-ONLY
+    /// SELECT RLS (20260715000002_personal_records.sql:23-25), so for a real
+    /// multi-lifter group session it silently returned only the viewing
+    /// user's own rows and undercounted every teammate to zero (Fast-follow
+    /// wave, Fix 1 — tracked as DEBT in the Phase F ledger since
+    /// F-Task 4 COMPLETE: "CompletedSessionView teammate-PR badges (same
+    /// latent RLS bug, flagged not fixed)"). See
+    /// `PersonalRecordRepository.countsBySession`'s doc comment for the full
+    /// history (Fix round 1 fixed the equivalent bug in
+    /// `GroupSessionLiveView.buildGroupRecapPayload`).
+    @State private var prCountByUser: [UUID: Int] = [:]
 
     // MARK: - Duration edit sheet
 
@@ -185,11 +201,14 @@ struct CompletedSessionView: View {
         HStack(spacing: 8) {
             GSStatTile(value: formatVolume(totalVolume), label: "VOLUME")
             GSStatTile(value: "\(totalSets)", label: "SETS")
-            GSStatTile(value: "\(sessionPRs.count)", label: "PRS")
+            GSStatTile(value: "\(totalPRCount)", label: "PRS")
         }
     }
 
     private var totalSets: Int { sets.filter { !$0.isPenalty }.count }
+
+    /// Sum across all participants — see `prCountByUser`'s doc comment.
+    private var totalPRCount: Int { prCountByUser.values.reduce(0, +) }
 
     private var totalVolume: Double {
         sets.filter { !$0.isPenalty }.reduce(0.0) { acc, log in
@@ -286,7 +305,7 @@ struct CompletedSessionView: View {
     }
 
     private func prCount(for userID: UUID) -> Int {
-        sessionPRs.filter { $0.userID == userID }.count
+        prCountByUser[userID, default: 0]
     }
 
     // MARK: - Helpers
@@ -377,7 +396,8 @@ struct CompletedSessionView: View {
                     previousDuration = (start: start, end: end)
                 }
             }
-            sessionPRs = (try? await PersonalRecordRepository.bySession(sessionID: liveSession.id)) ?? []
+            let prCounts = (try? await PersonalRecordRepository.countsBySession(sessionID: liveSession.id)) ?? []
+            prCountByUser = prCounts.reduce(into: [:]) { acc, row in acc[row.userID] = row.prCount }
         } catch {
             errorText = (error as? GymSyncError)?.errorDescription ?? error.localizedDescription
         }

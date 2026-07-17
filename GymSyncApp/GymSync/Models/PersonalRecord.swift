@@ -100,11 +100,19 @@ enum PersonalRecordRepository {
     /// only — `personal_records`' SELECT RLS is self-only (auth.uid() =
     /// user_id, 20260715000002_personal_records.sql:23-25), so despite
     /// filtering only on `session_id` this can never return a teammate's
-    /// row. Correct for the "your PR" callout (`CompletedSessionView`,
-    /// `SessionRecapView`, and `GroupSessionLiveView`'s own heaviestPR card)
-    /// — each of those needs exactly the caller's own PR detail (exercise/
-    /// weight/reps/previousBest) for a session they participated in, which
-    /// is inherently self-scoped by the product itself, not just by RLS.
+    /// row. Correct for the "your PR" callout (`SessionRecapView`'s `myPR`
+    /// and `GroupSessionLiveView`'s own heaviestPR card) — each needs
+    /// exactly the caller's own PR detail (exercise/weight/reps/
+    /// previousBest) for a session they participated in, which is
+    /// inherently self-scoped by the product itself, not just by RLS.
+    /// `CompletedSessionView` has no own-PR-detail card and does NOT call
+    /// this — it renders only counts, entirely via `countsBySession` below
+    /// (Fast-follow wave, Fix 1; the 20260720000002 migration's "Scope
+    /// note" — lines 28-38 — assumed CompletedSessionView/SessionRecapView
+    /// were both self-scoped-only callers safe to leave on `bySession`;
+    /// that was inaccurate for their COUNT uses, which is exactly what this
+    /// fix corrects. That migration is applied/append-only and cannot be
+    /// edited — corrected here instead).
     ///
     /// Do NOT use this for a crew-wide PR COUNT (total or per-participant)
     /// — that was Finding 1 (task-4-report.md): a group recap built from
@@ -127,6 +135,13 @@ enum PersonalRecordRepository {
     /// TRUE per-user PR counts for a session, across ALL participants —
     /// backs the group recap's hero "PRS" total (sum) and every leaderboard
     /// row's "N PR" badge (`GroupSessionLiveView.buildGroupRecapPayload`).
+    /// Also backs the equivalent COUNT-only spots in the history/legacy
+    /// recap views (`CompletedSessionView`'s PRS tile + per-member badges,
+    /// `SessionRecapView`'s PRS pill + per-member badges) as of the
+    /// Fast-follow wave, Fix 1 — those two were left on `bySession` when
+    /// this RPC was first added (see `bySession`'s doc comment) and
+    /// undercounted teammates the same way `buildGroupRecapPayload` did
+    /// before Fix round 1.
     /// Calls the `session_pr_counts` SECURITY DEFINER RPC (Fix round 1 —
     /// task-4-report.md Finding 1,
     /// 20260720000002_session_pr_counts_and_kudos_guard.sql) instead of

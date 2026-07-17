@@ -199,10 +199,27 @@ struct GroupRecapView: View {
             #if DEBUG
             if catalogFixtureKudosCounts != nil { return }
             #endif
-            kudosCounts = (try? await SessionKudosRepository.counts(sessionID: sessionID)) ?? [:]
+            // Subscribe BEFORE the initial fetch (Fast-follow wave, Fix 2) —
+            // subscribing after the fetch (the old order) left a lossy gap
+            // between the fetch's DB snapshot and the channel reaching
+            // SUBSCRIBED: any kudos tapped by another participant in that
+            // window was invisible to both the snapshot (already read) and
+            // the stream (not yet listening), permanently, since this view
+            // never refetches. Opening the stream first closes that gap.
+            //
+            // Double-count note: a kudos committed between subscribe and
+            // fetch-completion is now visible to BOTH the stream handler's
+            // `+= 1` below AND `counts()`'s snapshot (which already reflects
+            // every committed row). No dedupe-by-id was added — `counts()`'s
+            // result is assigned with `=`, not merged, so it authoritatively
+            // overwrites whatever the handler accumulated during the overlap
+            // instead of stacking on top of it. That's the smallest correct
+            // fix: the existing fetch line was already an overwrite, so
+            // reordering the two statements is the entire change.
             await kudosService.subscribe(sessionID: sessionID) { kudo in
                 kudosCounts[kudo.recipientID, default: 0] += 1
             }
+            kudosCounts = (try? await SessionKudosRepository.counts(sessionID: sessionID)) ?? [:]
         }
         .onDisappear {
             Task { await kudosService.unsubscribe() }
