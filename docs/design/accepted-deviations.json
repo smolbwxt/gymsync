@@ -34,5 +34,9 @@
   {
     "screenId": "group-stats",
     "reason": "Phase F Task 5: GroupView's new Stats sub-tab (spec Flow 5, deferred from Phase 2) — collective SESSIONS/TOTAL LBS/PRS tiles, the group streak card (deferred from Phase S), and a per-member volume leaderboard. proof-frame-22.png ('Members') and proof-frame-19.png (already mapped to 'friends' in frame-map.json) were both rendered and inspected — neither depicts a collective-metrics/leaderboard/streak surface. System-designed: GSStatTile collective-tiles row mirrors Home's StatTilesRow 3-tile idiom; the streak card mirrors StatsTabView.streakCardView verbatim (swapped to the group-scoped read); leaderboard rows mirror GroupRecapView.leaderboardRow's shape minus rank/kudos (neither applies to an all-time aggregate outside a live session). Awaiting a designer frame."
+  },
+  {
+    "screenId": "edit-profile",
+    "reason": "Phase F Task 6: Edit Profile (display name + avatar), deferred from Phase 2.5 — the You-tab Edit button was inert until this task (task-2-report.md recorded it as a future screen; no canvas frame was ever produced for it). System-designed: avatar-picker row mirrors GroupView.membersList's shape (56pt preview + accent 'Change Photo' link, upload-on-pick), display-name field mirrors CreateGroupView's bordered-TextField shape with an explicit toolbar Save. Awaiting a designer frame."
   }
 ]

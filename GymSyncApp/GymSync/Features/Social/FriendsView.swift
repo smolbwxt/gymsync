@@ -75,7 +75,7 @@ struct FriendsView: View {
                 Section {
                     ForEach(incoming) { profile in
                         HStack(spacing: 10) {
-                            GSInitialsAvatar(name: profile.username, size: 36)
+                            GSInitialsAvatar(name: profile.username, avatarURL: profile.avatarURL, size: 36)
                             nameBlock(profile)
                             Spacer()
                             Button("Accept") {
@@ -113,7 +113,7 @@ struct FriendsView: View {
                 Section {
                     ForEach(outgoing) { profile in
                         HStack(spacing: 10) {
-                            GSInitialsAvatar(name: profile.username, size: 36)
+                            GSInitialsAvatar(name: profile.username, avatarURL: profile.avatarURL, size: 36)
                             nameBlock(profile)
                             Spacer()
                             Button("Cancel") {
@@ -165,7 +165,7 @@ struct FriendsView: View {
                 } else {
                     ForEach(friends) { profile in
                         HStack(spacing: 10) {
-                            GSInitialsAvatar(name: profile.username, size: 36)
+                            GSInitialsAvatar(name: profile.username, avatarURL: profile.avatarURL, size: 36)
                             nameBlock(profile)
                         }
                         .listRowBackground(theme.surface)

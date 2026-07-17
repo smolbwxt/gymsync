@@ -72,4 +72,28 @@ enum StorageService {
             throw ErrorMapping.map(error)
         }
     }
+
+    // Phase F Task 6: per-entity path convention mirrored from
+    // `uploadGroupAvatar` above (`groups/{group_id}.jpg`), self-owned
+    // instead of admin-owned — path = `users/{user_id}.jpg`
+    // (20260720000005_user_avatar_storage.sql: filename-sans-extension must
+    // equal the uploader's own auth.uid()). Same upsert + cache-buster idiom.
+    static func uploadUserAvatar(userID: UUID, jpegData: Data) async throws -> URL {
+        let path = "users/\(userID.uuidString.lowercased()).jpg"
+        do {
+            try await SupabaseService.shared.client.storage
+                .from("avatars")
+                .upload(path, data: jpegData,
+                        options: FileOptions(contentType: "image/jpeg", upsert: true))
+            let publicURL = try SupabaseService.shared.client.storage
+                .from("avatars")
+                .getPublicURL(path: path)
+            var components = URLComponents(url: publicURL, resolvingAgainstBaseURL: false)
+            components?.queryItems = [URLQueryItem(
+                name: "v", value: String(Int(Date().timeIntervalSince1970)))]
+            return components?.url ?? publicURL
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
 }

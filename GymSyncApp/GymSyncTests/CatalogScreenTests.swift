@@ -18,6 +18,7 @@ final class CatalogScreenTests: XCTestCase {
             "recap-solo",
             "session-chat",
             "group-recap",
+            "edit-profile",
         ]
         for id in ids {
             XCTAssertNotNil(CatalogScreen(rawValue: id), "missing catalog case: \(id)")

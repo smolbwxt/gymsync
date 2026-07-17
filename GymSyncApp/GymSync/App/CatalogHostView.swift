@@ -33,6 +33,7 @@ enum CatalogScreen: String, CaseIterable {
     case recapSolo = "recap-solo"
     case sessionChat = "session-chat"
     case groupRecap = "group-recap"
+    case editProfile = "edit-profile"
 }
 
 struct CatalogHostView: View {
@@ -61,6 +62,7 @@ struct CatalogHostView: View {
             case .recapSolo:                  content_recapSolo
             case .sessionChat:                content_sessionChat
             case .groupRecap:                 content_groupRecap
+            case .editProfile:                content_editProfile
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -374,6 +376,32 @@ struct CatalogHostView: View {
             catalogFixtureUsernames: [Self.catalogChatOtherUserID: "jordan_c"],
             scope: .session(sessionID: Self.catalogChatSessionID, groupID: Self.catalogChatGroupID)
         )
+    }
+
+    // MARK: - Edit Profile (Task 6 — no canvas frame, catalog case)
+    //
+    // No canvas frame depicts an Edit Profile screen (task-2-report.md's
+    // recorded deviation: "Edit Profile is a future screen" — this task
+    // fulfills it, but no designer frame was ever produced for it). See
+    // docs/design/accepted-deviations.json's "edit-profile" entry, same
+    // "no frame — system-designed" shape as "session-chat"/"group-stats"
+    // above. Renders the real `EditProfileView` directly (no `#if DEBUG`
+    // fixture seam needed, unlike ChatView/HomeGymSetupView/PushPrimingView
+    // above: `EditProfileView` sources its initial state entirely from the
+    // `profile:` parameter passed in below — no live `.task` fetch to skip —
+    // and neither persistence path fires without a user tap, so the capture
+    // makes no network call). Wrapped in its own `NavigationStack` (unlike
+    // every other case in this file) because this is the one catalog screen
+    // whose `.toolbar`/`.navigationTitle` need real nav-bar chrome to render
+    // at all — every other case is either a full-screen overlay or a
+    // top-level onboarding screen with no nav bar of its own.
+    private static let catalogEditProfileFixture =
+        Profile(catalogFixtureUsername: "alex_j", lifetimeVolumeLifted: 12480)
+
+    private var content_editProfile: some View {
+        NavigationStack {
+            EditProfileView(profile: Self.catalogEditProfileFixture, onSaved: { _ in })
+        }
     }
 }
 

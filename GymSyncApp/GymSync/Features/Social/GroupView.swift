@@ -60,7 +60,7 @@ struct GroupView: View {
         .toolbar {
             ToolbarItem(placement: .principal) {
                 HStack(spacing: 8) {
-                    GSInitialsAvatar(name: group.name, size: 30)
+                    GSInitialsAvatar(name: group.name, avatarURL: group.avatarURL, size: 30)
                     VStack(alignment: .leading, spacing: 0) {
                         Text(group.name)
                             .font(GSFont.bold(15, relativeTo: .headline))
@@ -116,19 +116,12 @@ struct GroupView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
 
-                // Avatar picker row
+                // Avatar picker row — Phase F Task 6: GSInitialsAvatar now
+                // renders the photo itself when avatarURL is non-nil (see
+                // its doc comment); this used to hand-roll the same
+                // AsyncImage block inline.
                 HStack(spacing: 12) {
-                    if let url = avatarURL ?? group.avatarURL {
-                        AsyncImage(url: url) { image in
-                            image.resizable().scaledToFill()
-                        } placeholder: {
-                            GSInitialsAvatar(name: group.name, size: 56)
-                        }
-                        .frame(width: 56, height: 56)
-                        .clipped()
-                    } else {
-                        GSInitialsAvatar(name: group.name, size: 56)
-                    }
+                    GSInitialsAvatar(name: group.name, avatarURL: avatarURL ?? group.avatarURL, size: 56)
 
                     PhotosPicker(selection: $avatarItem, matching: .images) {
                         Text("Change Group Photo")
@@ -192,7 +185,8 @@ struct GroupView: View {
                 VStack(spacing: 0) {
                     ForEach(members, id: \.member.userID) { entry in
                         HStack(spacing: 10) {
-                            GSInitialsAvatar(name: entry.profile.username, size: 36)
+                            GSInitialsAvatar(name: entry.profile.username,
+                                              avatarURL: entry.profile.avatarURL, size: 36)
 
                             nameBlock(entry.profile)
 

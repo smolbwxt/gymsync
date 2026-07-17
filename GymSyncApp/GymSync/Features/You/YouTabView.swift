@@ -17,6 +17,7 @@ struct YouTabView: View {
     @State private var showNotificationPrefs = false
     @State private var showAppearance = false
     @State private var showRestTimerSetting = false
+    @State private var showEditProfile = false
     // Canvas Completion Task 5: singleton (matches `AppState.shared`'s
     // convention) so the Settings Hub's "Appearance" value preview reflects
     // the LIVE palette name (updates the instant `AppearanceView` calls
@@ -89,27 +90,58 @@ struct YouTabView: View {
                     userSettings = updated
                 }
             }
+            .navigationDestination(isPresented: $showEditProfile) {
+                EditProfileView(profile: profile ?? appState.currentProfile) { updated in
+                    profile = updated
+                    appState.currentProfile = updated
+                }
+            }
         }
     }
 
     // MARK: - Profile row
     //
     // Compact profile row per new-canvas-section.diff's "Settings Hub" frame:
-    // 52pt avatar square, 17pt name, muted 12pt "@username", small INERT
-    // "Edit" secondary button. Replaces the prior centered avatar card (60pt
+    // 52pt avatar square, 17pt name, muted 12pt "@username", small "Edit"
+    // secondary button. Replaces the prior centered avatar card (60pt
     // avatar + "Member since ..." subtitle) — the diff specifies this exact
     // compact shape with no member-since text, so `memberSinceText` (the old
     // helper) was removed rather than left dead.
+    //
+    // Phase F Task 6: "Edit Profile is a future screen" (task-2-report.md's
+    // recorded deviation) is now fulfilled — the button pushes the real
+    // `EditProfileView`, and the 52pt avatar square renders the real photo
+    // via AsyncImage when one is set, initials otherwise.
 
     @ViewBuilder
     private var profileRow: some View {
         let displayProfile = profile ?? appState.currentProfile
         HStack(spacing: 12) {
-            Text(initials(for: displayProfile))
-                .font(GSFont.heading(19, relativeTo: .title3))
-                .foregroundColor(theme.bg)
-                .frame(width: 52, height: 52)
-                .background(theme.accent)
+            // Deliberately NOT routed through GSInitialsAvatar: this row's
+            // initials use a displayName-priority, 2-char-single-word
+            // algorithm (`initials(for:)` below) that diverges from
+            // GSInitialsAvatar's plain name-split (which would collapse a
+            // single-word username like "alex_j" to 1 char, "A", instead of
+            // this row's existing "AL") — and its own 19pt `.heading` font
+            // differs from GSInitialsAvatar's fixed `size * 0.31 .bold`
+            // formula. Reusing the shared component here would have quietly
+            // changed both the initials and the typography. Same
+            // AsyncImage-with-initials-placeholder idiom as GSInitialsAvatar
+            // (and the group-avatar flow it was upgraded from), just kept
+            // local so this row's own algorithm/font stay intact.
+            Group {
+                if let url = displayProfile?.avatarURL {
+                    AsyncImage(url: url) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: {
+                        avatarInitials(displayProfile)
+                    }
+                    .frame(width: 52, height: 52)
+                    .clipped()
+                } else {
+                    avatarInitials(displayProfile)
+                }
+            }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(displayName(for: displayProfile))
@@ -124,17 +156,22 @@ struct YouTabView: View {
 
             Spacer()
 
-            // INERT for now (recorded deviation — see task-2-report.md): Edit
-            // Profile is a future screen. Present here for the hub's visual
-            // completeness per the diff; tapping does nothing yet.
             Button {
-                // no-op — Edit Profile screen not yet built.
+                showEditProfile = true
             } label: {
                 Text("Edit")
             }
             .buttonStyle(GSSecondaryButtonStyle(fontSize: 12, horizontalPadding: 12, verticalPadding: 6))
             .frame(minHeight: 44)
         }
+    }
+
+    private func avatarInitials(_ profile: Profile?) -> some View {
+        Text(initials(for: profile))
+            .font(GSFont.heading(19, relativeTo: .title3))
+            .foregroundColor(theme.bg)
+            .frame(width: 52, height: 52)
+            .background(theme.accent)
     }
 
     private func initials(for profile: Profile?) -> String {

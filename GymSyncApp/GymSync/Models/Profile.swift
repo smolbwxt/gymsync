@@ -128,4 +128,77 @@ enum ProfileRepository {
             throw ErrorMapping.map(error)
         }
     }
+
+    // MARK: - Phase F Task 6: Edit Profile
+
+    /// Full-row-authorized by "users can update their own profile"
+    /// (`20260709000001_create_profiles.sql`: `USING/WITH CHECK (auth.uid()
+    /// = id)`, no column restriction) — same owner-RLS shape `setAvatar`
+    /// below relies on. Always sends the trimmed string, even if empty,
+    /// rather than attempting to encode a column-clearing NULL through the
+    /// `[String: String]` update dictionary: every existing display-name
+    /// reader in this codebase (`YouTabView.displayName(for:)`,
+    /// `GroupView`/`FriendsView`/`CreateGroupView`'s `nameBlock`) already
+    /// treats an empty string exactly like `nil` (`!displayName.isEmpty`
+    /// guards), so a blank field round-trips to the same "show username
+    /// instead" behavior without needing an `Encodable` that can carry null.
+    static func updateDisplayName(_ displayName: String) async throws -> Profile {
+        guard let userID = await SupabaseService.shared.currentUserID() else {
+            throw GymSyncError.unauthorized
+        }
+        do {
+            let updated: Profile = try await client
+                .from("profiles")
+                .update(["display_name": displayName.trimmingCharacters(in: .whitespaces)])
+                .eq("id", value: userID.uuidString)
+                .select()
+                .single()
+                .execute()
+                .value
+            return updated
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
+
+    /// Mirrors `GroupRepository.setAvatar`'s upload idiom exactly (same
+    /// downscale/compress via `ImageProcessor.jpegForUpload`, same
+    /// upload-then-write-URL shape) — the group-avatar flow from Phase 2.5
+    /// is the precedent this task's brief names explicitly.
+    /// `StorageService.uploadUserAvatar` carries the per-entity path
+    /// convention (`users/{uid}.jpg` vs groups' `groups/{group_id}.jpg`);
+    /// RLS in 20260720000005_user_avatar_storage.sql.
+    ///
+    /// Return type deliberately DIVERGES from `GroupRepository.setAvatar`
+    /// (`Profile`, not bare `URL`): `Profile` has no memberwise init (only
+    /// the custom `init(from decoder:)` — see this file's decode-only
+    /// `init`, same trap `CatalogHostView.swift`'s `catalogFixtureUsername`
+    /// init documents), so a caller that needs to refresh a shared
+    /// `AppState.currentProfile` after an avatar-only change cannot hand-
+    /// build an updated `Profile` locally the way `CreateGroupView.create()`
+    /// can for `GymGroup` (which DOES have a synthesized memberwise init).
+    /// Returning the full re-selected row here sidesteps that trap entirely
+    /// — no call site ever needs to construct a `Profile` by hand.
+    static func setAvatar(imageData: Data) async throws -> Profile {
+        guard let userID = await SupabaseService.shared.currentUserID() else {
+            throw GymSyncError.unauthorized
+        }
+        guard let jpeg = ImageProcessor.jpegForUpload(from: imageData, maxDimension: 512) else {
+            throw GymSyncError.validation("That image couldn't be processed.")
+        }
+        let url = try await StorageService.uploadUserAvatar(userID: userID, jpegData: jpeg)
+        do {
+            let updated: Profile = try await client
+                .from("profiles")
+                .update(["avatar_url": url.absoluteString])
+                .eq("id", value: userID.uuidString)
+                .select()
+                .single()
+                .execute()
+                .value
+            return updated
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
 }
