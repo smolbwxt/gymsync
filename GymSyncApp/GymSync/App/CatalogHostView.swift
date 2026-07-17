@@ -32,6 +32,7 @@ enum CatalogScreen: String, CaseIterable {
     case statTileEmpty = "stattile-empty"
     case recapSolo = "recap-solo"
     case sessionChat = "session-chat"
+    case groupRecap = "group-recap"
 }
 
 struct CatalogHostView: View {
@@ -59,6 +60,7 @@ struct CatalogHostView: View {
             case .statTileEmpty:              StatTilesRow(state: .firstSessionZero)
             case .recapSolo:                  content_recapSolo
             case .sessionChat:                content_sessionChat
+            case .groupRecap:                 content_groupRecap
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -257,6 +259,69 @@ struct CatalogHostView: View {
                 )
             ],
             shareSummary: "Push Day A — 42:06, 7,240 lbs, 10 sets"
+        )
+    }
+
+    // MARK: - Group recap (frame 8 — Phase F Task 4)
+    //
+    // Renders the real `GroupRecapView` (Features/Sessions/GroupRecapView.
+    // swift) via its `#if DEBUG` fixture initializer (`catalogFixtureKudos
+    // Counts:` — same same-file convenience-init seam as HomeGymSetupView/
+    // PushPrimingView/ChatView's catalog fixtures elsewhere in this file:
+    // skips GroupRecapView's live `.task` fetch+subscribe entirely, so the
+    // capture is hermetic — no network call for a session that doesn't
+    // exist in the DB). Fixture values copied verbatim from
+    // proof-frame-08.png so the catalog capture matches the canvas one-for-
+    // one: kicker "PUSH CREW · PUSH DAY", duration 58:12, "Thursday, July
+    // 10 · 4 lifters", hero stats 24.6k / 48 / 3, four-row leaderboard (Sam
+    // 7,420 lbs·1 PR·💪6, You 6,880 lbs·1 PR·💪5 — highlighted, Jordan 6,310
+    // lbs·1 PR·💪4, Priya 3,990 lbs·💪3 — no PR clause, matching the proof's
+    // omit-if-zero row), PR card Bench Press 190×5 (beat a 185 prior best
+    // by 5 lbs), and the frame's 5 kudos icons.
+    private static let groupRecapSamID = UUID()
+    private static let groupRecapYouID = UUID()
+    private static let groupRecapJordanID = UUID()
+    private static let groupRecapPriyaID = UUID()
+
+    private var content_groupRecap: some View {
+        GroupRecapView(
+            kicker: "PUSH CREW · PUSH DAY",
+            durationText: "58:12",
+            subline: "Thursday, July 10 · 4 lifters",
+            totalLbsText: "24.6k",
+            setCount: 48,
+            prCount: 3,
+            leaderboard: [
+                GroupRecapView.LeaderboardRow(
+                    id: Self.groupRecapSamID, initials: "SM", name: "Sam",
+                    volumeText: "7,420 lbs", prCount: 1, isYou: false
+                ),
+                GroupRecapView.LeaderboardRow(
+                    id: Self.groupRecapYouID, initials: "AJ", name: "You",
+                    volumeText: "6,880 lbs", prCount: 1, isYou: true
+                ),
+                GroupRecapView.LeaderboardRow(
+                    id: Self.groupRecapJordanID, initials: "JC", name: "Jordan",
+                    volumeText: "6,310 lbs", prCount: 1, isYou: false
+                ),
+                GroupRecapView.LeaderboardRow(
+                    id: Self.groupRecapPriyaID, initials: "PR", name: "Priya",
+                    volumeText: "3,990 lbs", prCount: 0, isYou: false
+                )
+            ],
+            heaviestPR: GroupRecapView.HeaviestPR(
+                exerciseName: "Bench Press", weight: 190, reps: 5, previousBest: 185
+            ),
+            shareSummary: "PUSH CREW · PUSH DAY — 58:12, 24.6k lbs, 48 sets.",
+            sessionID: UUID(),
+            recipientIDs: [Self.groupRecapSamID, Self.groupRecapJordanID, Self.groupRecapPriyaID],
+            catalogFixtureKudosCounts: [
+                Self.groupRecapSamID: 6,
+                Self.groupRecapYouID: 5,
+                Self.groupRecapJordanID: 4,
+                Self.groupRecapPriyaID: 3
+            ],
+            onDone: {}
         )
     }
 

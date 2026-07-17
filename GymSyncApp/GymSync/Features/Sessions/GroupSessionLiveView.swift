@@ -524,14 +524,36 @@ struct GroupSessionLiveView: View {
         .sheet(isPresented: $showLogSetSheet) { logSetSheetContent }
         // Session chat sheet (Task 3)
         .sheet(isPresented: $showChatSheet) { chatSheet }
-        // Recap sheet
+        // Recap sheet — Phase F Task 4: the frame-8 group celebration
+        // (GroupRecapView) replaces this sheet's content for genuine
+        // group-backed sessions (data.groupPayload != nil); solo/ad-hoc
+        // completions through this same live view are UNCHANGED — still
+        // SessionRecapView. See `buildGroupRecapPayload`'s doc comment for
+        // the exact before/after and why.
         .sheet(item: $recapData) { data in
-            SessionRecapView(
-                session: data.session,
-                sets: data.sets,
-                participants: participants,
-                onDone: { dismiss() }
-            )
+            if let payload = data.groupPayload {
+                GroupRecapView(
+                    kicker: payload.kicker,
+                    durationText: payload.durationText,
+                    subline: payload.subline,
+                    totalLbsText: payload.totalLbsText,
+                    setCount: payload.setCount,
+                    prCount: payload.prCount,
+                    leaderboard: payload.leaderboard,
+                    heaviestPR: payload.heaviestPR,
+                    shareSummary: payload.shareSummary,
+                    sessionID: data.session.id,
+                    recipientIDs: payload.recipientIDs,
+                    onDone: { dismiss() }
+                )
+            } else {
+                SessionRecapView(
+                    session: data.session,
+                    sets: data.sets,
+                    participants: participants,
+                    onDone: { dismiss() }
+                )
+            }
         }
         // End confirmation
         .confirmationDialog(
@@ -1796,12 +1818,165 @@ struct GroupSessionLiveView: View {
             try? await HealthKitBridge.requestPermission()
             try? await HealthKitBridge.exportWorkout(session: completed, setLogs: allSets)
             await liveService.unsubscribe()
-            recapData = RecapData(session: completed, sets: allSets)
+            let groupPayload = await buildGroupRecapPayload(session: completed, sets: allSets)
+            recapData = RecapData(session: completed, sets: allSets, groupPayload: groupPayload)
         } catch let error as GymSyncError {
             errorText = error.errorDescription
         } catch {
             errorText = error.localizedDescription
         }
+    }
+
+    // MARK: - Group recap payload (Phase F Task 4 — frame 8)
+    //
+    // BEFORE this task: every completion through this view — solo, ad-hoc,
+    // or group-backed — presented the identical `SessionRecapView` sheet
+    // (leaderboard-by-volume + YOUR PR card + Share/Done, no kudos, no live
+    // updates). AFTER: a genuine group session (`liveSession.groupID !=
+    // nil`, equivalently `ledgerGroup != nil` — fetched once in
+    // `openAndSubscribe()`) instead gets `GroupRecapView` (frame 8): same
+    // leaderboard/PR-card shape plus per-recipient kudos counts (live via
+    // realtime) and the crew-wide kudos send row. Solo/ad-hoc completions
+    // through this same live view are UNCHANGED — `ledgerGroup` is nil for
+    // them, so this returns nil and the `.sheet` falls back to
+    // `SessionRecapView`, exactly as before this task.
+    //
+    // The PR-celebration overlay (`isPROverlay`, a ZStack sibling — see
+    // `body`) is untouched by any of this: it lives outside the `.sheet`
+    // entirely, so presenting either recap sheet on top of it doesn't
+    // structurally remount it (the U-Task 4 "hoisted to outer ZStack
+    // sibling" fix, progress.md:394, is what makes that safe — the overlay
+    // is never inside an if/else branch that this change alters). Tapping
+    // "Done" on either recap calls `dismiss()`, which pops this whole view
+    // off the navigation stack — that's what actually clears `isPROverlay`
+    // (view teardown), not anything this function does.
+    @MainActor
+    private func buildGroupRecapPayload(session: WorkoutSession, sets: [SetLog]) async -> GroupRecapPayload? {
+        guard let ledgerGroup else { return nil }
+
+        let sessionPRs = (try? await PersonalRecordRepository.bySession(sessionID: session.id)) ?? []
+        var prExerciseNames: [UUID: String] = [:]
+        for exerciseID in Set(sessionPRs.map(\.exerciseID)) {
+            if let exercise = try? await ExerciseRepository.fetch(id: exerciseID) {
+                prExerciseNames[exerciseID] = exercise.name
+            }
+        }
+
+        struct Stat {
+            let profile: Profile
+            let userID: UUID
+            let volume: Double
+            let prCount: Int
+        }
+        // Volume math (Σ reps×weight, excluding failed/penalty sets) mirrors
+        // SessionRecapView.stats / CompletedSessionView.stats verbatim —
+        // parallel structure, not a shared extraction (see GroupRecapView's
+        // type doc comment for why).
+        let stats: [Stat] = participants.map { item in
+            let mySets = sets.filter { $0.userID == item.participant.userID && !$0.isPenalty }
+            let volume = mySets.reduce(0.0) { acc, log in
+                guard !log.isFailed, let r = log.reps, let w = log.weight else { return acc }
+                return acc + Double(r) * NSDecimalNumber(decimal: w).doubleValue
+            }
+            let prCount = sessionPRs.filter { $0.userID == item.participant.userID }.count
+            return Stat(profile: item.profile, userID: item.participant.userID, volume: volume, prCount: prCount)
+        }
+        .sorted { $0.volume > $1.volume }   // descending volume = leaderboard order
+
+        let leaderboard = stats.map { stat in
+            GroupRecapView.LeaderboardRow(
+                id: stat.userID,
+                initials: String(stat.profile.username.prefix(2)).uppercased(),
+                name: stat.userID == selfID ? "You" : stat.profile.username,
+                volumeText: "\(formatVolumeFull(stat.volume)) lbs",
+                prCount: stat.prCount,
+                isYou: stat.userID == selfID
+            )
+        }
+
+        let totalVolume = stats.reduce(0.0) { $0 + $1.volume }
+        let totalSets = sets.filter { !$0.isPenalty }.count
+
+        let durationSeconds: TimeInterval = {
+            guard let start = session.startedAt, let end = session.completedAt else { return 0 }
+            return max(0, end.timeIntervalSince(start))
+        }()
+
+        // "Thursday, July 10" — weekday + month + day, no year (matches
+        // proof-frame-08.png's subline exactly). DateFormatter has no canned
+        // style for this combination (.long/.full both include the year),
+        // hence the explicit format string rather than reusing
+        // SessionRecapView.dateString's `.dateStyle = .long`.
+        let dateFmt = DateFormatter()
+        dateFmt.dateFormat = "EEEE, MMMM d"
+        let dateString = (session.completedAt ?? session.startedAt).map { dateFmt.string(from: $0) } ?? ""
+        let subline = "\(dateString) · \(participants.count) lifter\(participants.count == 1 ? "" : "s")"
+
+        let kicker: String = {
+            guard let routineName else { return ledgerGroup.name.uppercased() }
+            return "\(ledgerGroup.name.uppercased()) · \(routineName.uppercased())"
+        }()
+
+        let heaviestPR: GroupRecapView.HeaviestPR? = {
+            guard let selfID, let myPR = sessionPRs.first(where: { $0.userID == selfID }) else { return nil }
+            return GroupRecapView.HeaviestPR(
+                exerciseName: prExerciseNames[myPR.exerciseID] ?? "Exercise",
+                weight: myPR.weight,
+                reps: myPR.reps,
+                previousBest: myPR.previousBest
+            )
+        }()
+
+        let shareSummary = "\(kicker) — \(formatDuration(durationSeconds)), \(formatVolume(totalVolume)) lbs, \(totalSets) sets."
+
+        // Crew-wide kudos send model (documented in
+        // 20260720000001_session_kudos.sql and SessionKudosRepository.send):
+        // one row per OTHER participant per tap — never a self-kudos row.
+        let recipientIDs = participants
+            .map(\.participant.userID)
+            .filter { $0 != selfID }
+
+        return GroupRecapPayload(
+            kicker: kicker,
+            durationText: formatDuration(durationSeconds),
+            subline: subline,
+            totalLbsText: formatVolume(totalVolume),
+            setCount: totalSets,
+            prCount: sessionPRs.count,
+            leaderboard: leaderboard,
+            heaviestPR: heaviestPR,
+            shareSummary: shareSummary,
+            recipientIDs: recipientIDs
+        )
+    }
+
+    /// Hero total only — abbreviated ("24.6k"), matches SessionRecapView/
+    /// CompletedSessionView's existing `formatVolume` verbatim.
+    private func formatVolume(_ v: Double) -> String {
+        v >= 1_000 ? String(format: "%.1fk", v / 1_000) : String(format: "%.0f", v)
+    }
+
+    /// Leaderboard rows only — full, comma-grouped number (proof-frame-08.png:
+    /// "7,420 lbs", not an abbreviated "7.4k"). Verified against the same
+    /// frame's hero "24.6k" TOTAL LBS figure: the split between abbreviated
+    /// (hero) and full (rows) formatting is a deliberate reading of the
+    /// proof, not an inconsistency.
+    private func formatVolumeFull(_ v: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = 0
+        return formatter.string(from: NSNumber(value: v)) ?? String(format: "%.0f", v)
+    }
+
+    /// Mirrors SessionRecapView.durationString verbatim (h>0 -> H:MM:SS, else MM:SS).
+    private func formatDuration(_ seconds: TimeInterval) -> String {
+        let total = Int(seconds)
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        let s = total % 60
+        return h > 0
+            ? String(format: "%d:%02d:%02d", h, m, s)
+            : String(format: "%02d:%02d", m, s)
     }
 }
 
@@ -1811,4 +1986,23 @@ private struct RecapData: Identifiable {
     let id = UUID()
     let session: WorkoutSession
     let sets: [SetLog]
+    /// Non-nil for a genuine group session — routes the sheet to
+    /// `GroupRecapView` (frame 8) instead of `SessionRecapView`. See
+    /// `buildGroupRecapPayload`'s doc comment.
+    let groupPayload: GroupRecapPayload?
+}
+
+/// Display-ready values for `GroupRecapView` — computed once in
+/// `buildGroupRecapPayload` at the moment a group session completes.
+private struct GroupRecapPayload {
+    let kicker: String
+    let durationText: String
+    let subline: String
+    let totalLbsText: String
+    let setCount: Int
+    let prCount: Int
+    let leaderboard: [GroupRecapView.LeaderboardRow]
+    let heaviestPR: GroupRecapView.HeaviestPR?
+    let shareSummary: String
+    let recipientIDs: [UUID]
 }
