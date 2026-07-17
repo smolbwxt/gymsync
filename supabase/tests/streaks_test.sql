@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(51);
+SELECT plan(57);
 
 -- ============================================================
 -- user_streaks / group_streaks — Phase S Task 3
@@ -55,6 +55,22 @@ SELECT plan(51);
 --         THEN the completion path evaluates readiness) without needing two
 --         concurrent transactions — asserts current_streak stays 0 and
 --         last_streak_session_id is never set to the breaking session.
+--
+-- ── Late-counts fixtures (20260719000009, the 2026-07-16 user decision) ─────
+-- leo   = solo scheduled session completed with check_in_state='late'
+--         (check_in_at SET — production-real: a late row is present, just
+--         tardy) -> streak increments, proving the individual predicate now
+--         accepts 'late' as well as 'ready'.
+-- mia/nora/oren = "Late Crew" (G5): mia is 'late' (check_in_at set), nora
+--         and oren are 'ready'. Proves the group all-ready predicate was
+--         widened consistently with the individual one — mia's lateness no
+--         longer blocks the group's increment, AND mia's own individual
+--         streak increments too.
+-- pete  = solo scheduled session that reaches `completed` while pete's row
+--         is still 'invited' (check_in_at NULL, never checked in at all —
+--         not no_show, not abandoned, just still-invited at completion).
+--         Proves 'invited' stays excluded under the widened predicate: no
+--         user_streaks row is ever created for him, same as bystander grace.
 -- ============================================================
 
 INSERT INTO auth.users (id, email) VALUES
@@ -72,7 +88,12 @@ INSERT INTO auth.users (id, email) VALUES
   ('c0000000-0000-0000-0000-0000000000cc', 'sk_holly@t.com'),
   ('c0000000-0000-0000-0000-0000000000cd', 'sk_ivy@t.com'),
   ('c0000000-0000-0000-0000-0000000000ce', 'sk_jill@t.com'),
-  ('c0000000-0000-0000-0000-0000000000cf', 'sk_sam@t.com');
+  ('c0000000-0000-0000-0000-0000000000cf', 'sk_sam@t.com'),
+  ('c0000000-0000-0000-0000-0000000000d0', 'sk_leo@t.com'),
+  ('c0000000-0000-0000-0000-0000000000d1', 'sk_mia@t.com'),
+  ('c0000000-0000-0000-0000-0000000000d2', 'sk_nora@t.com'),
+  ('c0000000-0000-0000-0000-0000000000d3', 'sk_oren@t.com'),
+  ('c0000000-0000-0000-0000-0000000000d4', 'sk_pete@t.com');
 INSERT INTO profiles (id, username) VALUES
   ('c0000000-0000-0000-0000-0000000000c1', 'sk_alice'),
   ('c0000000-0000-0000-0000-0000000000c2', 'sk_bob'),
@@ -88,7 +109,12 @@ INSERT INTO profiles (id, username) VALUES
   ('c0000000-0000-0000-0000-0000000000cc', 'sk_holly'),
   ('c0000000-0000-0000-0000-0000000000cd', 'sk_ivy'),
   ('c0000000-0000-0000-0000-0000000000ce', 'sk_jill'),
-  ('c0000000-0000-0000-0000-0000000000cf', 'sk_sam');
+  ('c0000000-0000-0000-0000-0000000000cf', 'sk_sam'),
+  ('c0000000-0000-0000-0000-0000000000d0', 'sk_leo'),
+  ('c0000000-0000-0000-0000-0000000000d1', 'sk_mia'),
+  ('c0000000-0000-0000-0000-0000000000d2', 'sk_nora'),
+  ('c0000000-0000-0000-0000-0000000000d3', 'sk_oren'),
+  ('c0000000-0000-0000-0000-0000000000d4', 'sk_pete');
 
 -- alice <-> faye: accepted friendship (RLS positive-read fixture).
 INSERT INTO friendships (user_id, friend_id, status) VALUES
@@ -123,6 +149,15 @@ INSERT INTO groups (id, name, created_by) VALUES
 INSERT INTO group_members (group_id, user_id, role) VALUES
   ('d0000000-0000-0000-0000-000000000004', 'c0000000-0000-0000-0000-0000000000cd', 'admin'),
   ('d0000000-0000-0000-0000-000000000004', 'c0000000-0000-0000-0000-0000000000ce', 'member');
+
+-- Group "Late Crew" (G5): mia (admin), nora, oren. 20260719000009 —
+-- late-counts group fixture.
+INSERT INTO groups (id, name, created_by) VALUES
+  ('d0000000-0000-0000-0000-000000000005', 'Late Crew', 'c0000000-0000-0000-0000-0000000000d1');
+INSERT INTO group_members (group_id, user_id, role) VALUES
+  ('d0000000-0000-0000-0000-000000000005', 'c0000000-0000-0000-0000-0000000000d1', 'admin'),
+  ('d0000000-0000-0000-0000-000000000005', 'c0000000-0000-0000-0000-0000000000d2', 'member'),
+  ('d0000000-0000-0000-0000-000000000005', 'c0000000-0000-0000-0000-0000000000d3', 'member');
 
 
 -- ============================================================
@@ -684,6 +719,100 @@ SELECT results_eq(
     WHERE user_id = 'c0000000-0000-0000-0000-0000000000cf'$$,
   $$VALUES ('e0000000-0000-0000-0000-000000000010'::uuid)$$,
   'sam: broken_by_session_id is unchanged after the guarded completion'
+);
+
+
+-- ============================================================
+-- Late-counts (20260719000009) — the 2026-07-16 user decision: late-but-
+-- completed KEEPS the streak. leo: solo scheduled session completed with
+-- check_in_state='late' (check_in_at SET, production-real) -> increments,
+-- same as a 'ready' completion would.
+-- ============================================================
+
+INSERT INTO sessions (id, organizer_id, state, scheduled_for, started_at) VALUES
+  ('e0000000-0000-0000-0000-000000000011', 'c0000000-0000-0000-0000-0000000000d0',
+   'in_progress', now() - interval '3 hours', now() - interval '2 hours 50 minutes');
+INSERT INTO session_participants (session_id, user_id, check_in_state, check_in_at) VALUES
+  ('e0000000-0000-0000-0000-000000000011', 'c0000000-0000-0000-0000-0000000000d0',
+   'late', now() - interval '2 hours 40 minutes');
+UPDATE sessions SET state = 'completed', completed_at = now() - interval '1 hour'
+  WHERE id = 'e0000000-0000-0000-0000-000000000011';
+
+SELECT results_eq(
+  $$SELECT current_streak, longest_streak, last_streak_session_id FROM user_streaks
+    WHERE user_id = 'c0000000-0000-0000-0000-0000000000d0'$$,
+  $$VALUES (1, 1, 'e0000000-0000-0000-0000-000000000011'::uuid)$$,
+  'leo: solo scheduled session completed while late (check_in_at set) -> streak increments to 1'
+);
+
+
+-- ============================================================
+-- Late-counts (20260719000009) — "Late Crew" (G5): mia is late-but-present
+-- (check_in_at set), nora and oren are ready. Proves the group all-ready
+-- predicate was widened consistently with the individual one: mia's
+-- lateness no longer blocks the group's increment, AND mia's own
+-- individual streak increments same as nora/oren's.
+-- ============================================================
+
+INSERT INTO sessions (id, organizer_id, group_id, state, scheduled_for, started_at) VALUES
+  ('e0000000-0000-0000-0000-000000000012', 'c0000000-0000-0000-0000-0000000000d1',
+   'd0000000-0000-0000-0000-000000000005',
+   'in_progress', now() - interval '3 hours', now() - interval '2 hours 50 minutes');
+INSERT INTO session_participants (session_id, user_id, check_in_state, check_in_at) VALUES
+  ('e0000000-0000-0000-0000-000000000012', 'c0000000-0000-0000-0000-0000000000d1', 'late', now() - interval '2 hours 40 minutes'),
+  ('e0000000-0000-0000-0000-000000000012', 'c0000000-0000-0000-0000-0000000000d2', 'ready', now() - interval '2 hours 55 minutes'),
+  ('e0000000-0000-0000-0000-000000000012', 'c0000000-0000-0000-0000-0000000000d3', 'ready', now() - interval '2 hours 54 minutes');
+UPDATE sessions SET state = 'completed', completed_at = now() - interval '1 hour'
+  WHERE id = 'e0000000-0000-0000-0000-000000000012';
+
+SELECT results_eq(
+  $$SELECT current_streak, longest_streak, last_streak_session_id FROM user_streaks
+    WHERE user_id = 'c0000000-0000-0000-0000-0000000000d1'$$,
+  $$VALUES (1, 1, 'e0000000-0000-0000-0000-000000000012'::uuid)$$,
+  'Late Crew: mia (late, present) individual streak increments to 1'
+);
+SELECT results_eq(
+  $$SELECT current_streak, longest_streak, last_streak_session_id FROM user_streaks
+    WHERE user_id = 'c0000000-0000-0000-0000-0000000000d2'$$,
+  $$VALUES (1, 1, 'e0000000-0000-0000-0000-000000000012'::uuid)$$,
+  'Late Crew: nora (ready) individual streak increments to 1'
+);
+SELECT results_eq(
+  $$SELECT current_streak, longest_streak, last_streak_session_id FROM user_streaks
+    WHERE user_id = 'c0000000-0000-0000-0000-0000000000d3'$$,
+  $$VALUES (1, 1, 'e0000000-0000-0000-0000-000000000012'::uuid)$$,
+  'Late Crew: oren (ready) individual streak increments to 1'
+);
+SELECT results_eq(
+  $$SELECT current_streak, longest_streak, last_streak_session_id FROM group_streaks
+    WHERE group_id = 'd0000000-0000-0000-0000-000000000005'$$,
+  $$VALUES (1, 1, 'e0000000-0000-0000-0000-000000000012'::uuid)$$,
+  'Late Crew: one late-but-present member no longer blocks the group -> group streak increments to 1'
+);
+
+
+-- ============================================================
+-- Late-counts (20260719000009) — pete: session reaches `completed` while
+-- pete's row is still 'invited' (check_in_at NULL, never checked in at
+-- all — not no_show, not abandoned). Proves 'invited' stays excluded under
+-- the widened predicate: no credit, no user_streaks row ever created for
+-- him, same as bystander grace above.
+-- ============================================================
+
+INSERT INTO sessions (id, organizer_id, state, scheduled_for, started_at) VALUES
+  ('e0000000-0000-0000-0000-000000000013', 'c0000000-0000-0000-0000-0000000000d4',
+   'in_progress', now() - interval '3 hours', now() - interval '2 hours 50 minutes');
+INSERT INTO session_participants (session_id, user_id, check_in_state, check_in_at) VALUES
+  ('e0000000-0000-0000-0000-000000000013', 'c0000000-0000-0000-0000-0000000000d4',
+   'invited', NULL);
+UPDATE sessions SET state = 'completed', completed_at = now() - interval '1 hour'
+  WHERE id = 'e0000000-0000-0000-0000-000000000013';
+
+SELECT results_eq(
+  $$SELECT count(*)::int FROM user_streaks
+    WHERE user_id = 'c0000000-0000-0000-0000-0000000000d4'$$,
+  ARRAY[0],
+  'pete: still-invited (never checked in) at completion -> no credit, no user_streaks row created'
 );
 
 
