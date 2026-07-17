@@ -79,6 +79,19 @@ final class VoiceBubblePlayer: ObservableObject {
     }
 }
 
+// MARK: - ChatReportTarget
+
+/// `.sheet(item:)` payload for reporting a message (Phase M Task 2) — a
+/// small dedicated `Identifiable` rather than reusing `ChatMessage` itself,
+/// since `authorID` must be a plain non-optional `UUID` here (guaranteed by
+/// the `!mine, let authorID = message.authorID` guard at the one call site
+/// that constructs this) and a fallback like `message.authorID ?? UUID()`
+/// would be a silent-misreport smell if that guard were ever bypassed.
+private struct ChatReportTarget: Identifiable {
+    let id: UUID          // message id
+    let authorID: UUID
+}
+
 // MARK: - ChatView
 
 struct ChatView: View {
@@ -157,6 +170,11 @@ struct ChatView: View {
     @State private var pickerItem: PhotosPickerItem?
     @State private var imageURLs: [UUID: URL] = [:]
     @State private var isSendingImage = false
+
+    // Phase M Task 2 (moderation/compliance): Report/Block on message rows.
+    @State private var reportTarget: ChatReportTarget?
+    @State private var blockAuthorID: UUID?
+    @State private var showBlockConfirm = false
 
     // Voice recording state
     @ObservedObject private var voicePlayer = VoiceBubblePlayer.shared
@@ -264,6 +282,29 @@ struct ChatView: View {
         // (it covers ChatView's every sub-tab sibling too), so this is
         // belt-and-suspenders — see GSComponents.swift's GSHidesDock.
         .gsHidesDock()
+        .sheet(item: $reportTarget) { target in
+            ReportSheet(
+                reportedUserID: target.authorID,
+                contentType: .chatMessage,
+                contentID: target.id
+            )
+        }
+        // Literal text per brief: "Block @username? You won't see their
+        // messages or requests." — ChatView only has the author's id (not a
+        // Profile), so the title stays generic here (matches
+        // RoutineDetailChoice's identical "no username on hand" case below).
+        .confirmationDialog(
+            "Block this user?",
+            isPresented: $showBlockConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Block", role: .destructive) {
+                Task { await blockAuthor() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You won't see their messages or requests.")
+        }
     }
 
     // MARK: - Input Bar
@@ -482,6 +523,24 @@ struct ChatView: View {
                                         messageID: message.id, emoji: emoji)
                                     await refreshReactions()
                                 }
+                            }
+                        }
+                        // Phase M Task 2: Report/Block, incoming messages
+                        // only (can't report/block yourself; system/
+                        // soundboard-echo messages never reach this branch —
+                        // see messageRow's isSystem/soundboardEcho guards).
+                        if !mine, let authorID = message.authorID {
+                            Divider()
+                            Button {
+                                reportTarget = ChatReportTarget(id: message.id, authorID: authorID)
+                            } label: {
+                                Label("Report Message", systemImage: "flag")
+                            }
+                            Button(role: .destructive) {
+                                blockAuthorID = authorID
+                                showBlockConfirm = true
+                            } label: {
+                                Label("Block User", systemImage: "nosign")
                             }
                         }
                     }
@@ -732,6 +791,24 @@ struct ChatView: View {
             if !messages.contains(where: { $0.id == sent.id }) {
                 messages.append(sent)
             }
+        } catch let error as GymSyncError {
+            errorText = error.errorDescription
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    // Phase M Task 2: block a message's author. Spec: "chat: filter local
+    // messages" — the RLS-fixed-forward SELECT policy (Task 1) already hides
+    // this author's rows on the next fetch/realtime event, but messages
+    // already sitting in `messages` were fetched before the block existed,
+    // so they need the same client-side removal here.
+    private func blockAuthor() async {
+        guard let authorID = blockAuthorID else { return }
+        do {
+            try await ModerationRepository.block(userID: authorID)
+            messages.removeAll { $0.authorID == authorID }
+            errorText = nil
         } catch let error as GymSyncError {
             errorText = error.errorDescription
         } catch {

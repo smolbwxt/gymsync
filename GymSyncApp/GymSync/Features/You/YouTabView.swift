@@ -18,6 +18,8 @@ struct YouTabView: View {
     @State private var showAppearance = false
     @State private var showRestTimerSetting = false
     @State private var showEditProfile = false
+    // Phase M Task 2 (moderation/compliance): You-tab Blocked Users list.
+    @State private var showBlockedUsers = false
     // Canvas Completion Task 5: singleton (matches `AppState.shared`'s
     // convention) so the Settings Hub's "Appearance" value preview reflects
     // the LIVE palette name (updates the instant `AppearanceView` calls
@@ -95,6 +97,9 @@ struct YouTabView: View {
                     profile = updated
                     appState.currentProfile = updated
                 }
+            }
+            .navigationDestination(isPresented: $showBlockedUsers) {
+                BlockedUsersView()
             }
         }
     }
@@ -256,6 +261,9 @@ struct YouTabView: View {
                 value: restTimerDisplayText
             ) {
                 showRestTimerSetting = true
+            }
+            GSSettingsRow(title: "Blocked Users", icon: "person.crop.circle.badge.xmark") {
+                showBlockedUsers = true
             }
             healthSyncRow
         }

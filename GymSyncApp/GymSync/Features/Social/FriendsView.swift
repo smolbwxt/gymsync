@@ -23,6 +23,11 @@ struct FriendsView: View {
     @State private var friendsLoadFailed = false
     @FocusState private var isUsernameFieldFocused: Bool
 
+    // Phase M Task 2 (moderation/compliance): Report/Block on friends rows.
+    @State private var reportTarget: Profile?
+    @State private var blockTarget: Profile?
+    @State private var showBlockConfirm = false
+
     @Environment(\.gsTheme) private var theme
 
     var body: some View {
@@ -171,6 +176,23 @@ struct FriendsView: View {
                         .listRowBackground(theme.surface)
                         .listRowSeparatorTint(theme.divider)
                         .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+                        // Phase M Task 2: long-press menu — mirrors ChatView's
+                        // reaction .contextMenu, this codebase's established
+                        // per-row menu idiom (no swipeActions equivalent for a
+                        // non-destructive "Report" action).
+                        .contextMenu {
+                            Button {
+                                reportTarget = profile
+                            } label: {
+                                Label("Report", systemImage: "flag")
+                            }
+                            Button(role: .destructive) {
+                                blockTarget = profile
+                                showBlockConfirm = true
+                            } label: {
+                                Label("Block", systemImage: "nosign")
+                            }
+                        }
                         .swipeActions {
                             Button("Remove", role: .destructive) {
                                 Task {
@@ -195,6 +217,25 @@ struct FriendsView: View {
             if focusAddFieldOnAppear {
                 isUsernameFieldFocused = true
             }
+        }
+        .sheet(item: $reportTarget) { profile in
+            ReportSheet(reportedUserID: profile.id, contentType: .profile, contentID: profile.id)
+        }
+        // Literal text per brief: "Block @username? You won't see their
+        // messages or requests." — split title/message per this codebase's
+        // confirmationDialog idiom (LobbyView's dialogs: short question
+        // title, explanatory message).
+        .confirmationDialog(
+            "Block @\(blockTarget?.username ?? "")?",
+            isPresented: $showBlockConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Block", role: .destructive) {
+                Task { await block(blockTarget) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You won't see their messages or requests.")
         }
     }
 
@@ -248,5 +289,22 @@ struct FriendsView: View {
         }
         incoming = (try? await FriendRepository.incomingRequests()) ?? []
         outgoing = (try? await FriendRepository.outgoingRequests()) ?? []
+    }
+
+    // Phase M Task 2: block a friend — inserts `blocked_users`, then drops
+    // the row client-side (spec: "friends: drop the row" — the row is
+    // already fetched, so future RLS-driven refetches alone wouldn't hide
+    // it until the next `refresh()`).
+    private func block(_ profile: Profile?) async {
+        guard let profile else { return }
+        do {
+            try await ModerationRepository.block(userID: profile.id)
+            friends.removeAll { $0.id == profile.id }
+            errorText = nil
+        } catch let error as GymSyncError {
+            errorText = error.errorDescription
+        } catch {
+            errorText = error.localizedDescription
+        }
     }
 }
