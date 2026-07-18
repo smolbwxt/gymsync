@@ -74,6 +74,21 @@ struct PublicWorkout: Decodable, Identifiable, Sendable {
 // non-null (possibly empty `{}`) `top_sets` and a `time_seconds`/
 // `total_volume` pair that's null exactly when that metric doesn't apply to
 // this attempt (":422-423" — "if 'time' applies; else NULL").
+//
+// `isOptInLeaderboard` (review fix, Important finding 1): the spec
+// deliberately never denormalizes `is_opt_in_leaderboard` onto
+// `leaderboard_entries` (`20260723000001_public_workout_repository.sql:112-
+// 125`) — it only lives on the parent `workout_attempts` row, one join away.
+// `leaderboard_entries`' own SELECT RLS is `user_id = auth.uid() OR
+// <attempt opted in>` (same migration:134-143) — that owner branch exists so
+// a user can read their OWN history (e.g. a future "my attempts" surface),
+// NOT so their opted-out row can render on the shared Discover board. RLS is
+// a ceiling on what a query COULD return, not a filter on what a specific
+// query SHOULD return, so `PublicWorkoutRepository.leaderboard()`/
+// `attemptCounts()` must apply the opt-in restriction themselves — decoding
+// the flag here (via the same `workout_attempts!inner(...)` embed those two
+// functions now select) is what makes that restriction visible/verifiable
+// at the model layer instead of trusting an unchecked join.
 struct LeaderboardEntryRow: Decodable, Identifiable, Sendable {
     let attemptID: UUID
     let routineID: UUID?
@@ -86,6 +101,7 @@ struct LeaderboardEntryRow: Decodable, Identifiable, Sendable {
     let computedAt: Date
     let username: String
     let avatarURL: URL?
+    let isOptInLeaderboard: Bool
 
     var id: UUID { attemptID }
 
@@ -100,13 +116,22 @@ struct LeaderboardEntryRow: Decodable, Identifiable, Sendable {
         case isEdited = "is_edited"
         case computedAt = "computed_at"
     }
-    private enum JoinKeys: String, CodingKey { case profiles }
+    private enum JoinKeys: String, CodingKey {
+        case profiles
+        case workoutAttempts = "workout_attempts"
+    }
     private struct OwnerRef: Decodable {
         let username: String
         let avatarURL: URL?
         enum CodingKeys: String, CodingKey {
             case username
             case avatarURL = "avatar_url"
+        }
+    }
+    private struct AttemptRef: Decodable {
+        let isOptInLeaderboard: Bool
+        enum CodingKeys: String, CodingKey {
+            case isOptInLeaderboard = "is_opt_in_leaderboard"
         }
     }
 
@@ -126,6 +151,8 @@ struct LeaderboardEntryRow: Decodable, Identifiable, Sendable {
         let owner = try join.decode(OwnerRef.self, forKey: .profiles)
         username = owner.username
         avatarURL = owner.avatarURL
+        let attempt = try join.decode(AttemptRef.self, forKey: .workoutAttempts)
+        isOptInLeaderboard = attempt.isOptInLeaderboard
     }
 }
 
@@ -168,13 +195,29 @@ enum PublicWorkoutRepository {
     /// silently leak an in-progress attempt's stale zeroes onto the board.
     /// `limit(200)` is the "sane LIMIT, no pagination" non-goal from the
     /// Phase L design (`discover-leaderboards-design.md:32`).
+    ///
+    /// `workout_attempts!inner(is_opt_in_leaderboard)` + the trailing
+    /// `.eq("workout_attempts.is_opt_in_leaderboard", value: true)` (review
+    /// fix, Important finding 1): the RLS policy's `user_id = auth.uid()`
+    /// branch (see above) exists so a caller can read their OWN attempt rows
+    /// on some future personal-history surface — it is NOT scoped to "public
+    /// leaderboard," so without this filter a user who chose "keep private"
+    /// would see THEMSELVES appear on this board every time they revisit it.
+    /// This is the same "filter through an embedded resource via `!inner` +
+    /// dot-notation `.eq(...)`" idiom `SessionRepository.upcoming()` already
+    /// uses (`SessionRepository.swift:230-231`,
+    /// `.select("*, session_participants!inner(user_id)")` +
+    /// `.eq("session_participants.user_id", ...)`) — no schema change, no new
+    /// denormalized column, the flag is read straight off `workout_attempts`
+    /// through the FK `leaderboard_entries.attempt_id` already has.
     static func leaderboard(routineID: UUID) async throws -> [LeaderboardEntryRow] {
         do {
             let rows: [LeaderboardEntryRow] = try await client
                 .from("leaderboard_entries")
-                .select("*, profiles!leaderboard_entries_user_id_fkey(username, avatar_url)")
+                .select("*, profiles!leaderboard_entries_user_id_fkey(username, avatar_url), workout_attempts!inner(is_opt_in_leaderboard)")
                 .eq("routine_id", value: routineID)
                 .eq("is_complete", value: true)
+                .eq("workout_attempts.is_opt_in_leaderboard", value: true)
                 .order("computed_at", ascending: false)
                 .limit(200)
                 .execute()
@@ -195,6 +238,17 @@ enum PublicWorkoutRepository {
     /// exercises-count precedent above and reuses the exact same RLS
     /// (opt-in-or-owner) that the leaderboard itself relies on, so the count
     /// only ever reflects rows Discover would show anyway.
+    ///
+    /// Same `workout_attempts!inner(...)` + dot-notation `.eq(...)` opt-in
+    /// filter as `leaderboard()` above (review fix, Important finding 1 —
+    /// "mildly inflates the grid's attempt counts from their own vantage"):
+    /// without it, RLS's owner-branch would let a user's own opted-out
+    /// attempt inflate the "N attempts" chip by one every time THEY view
+    /// Discover, even though nobody else would ever see that count. `Row`
+    /// only decodes `routine_id` — the embedded `workout_attempts` object is
+    /// present in the response purely to drive the `!inner` filter and is
+    /// safely ignored by this minimal decode (extra keys a `Decodable`
+    /// container doesn't ask for are never an error).
     static func attemptCounts(routineIDs: [UUID]) async throws -> [UUID: Int] {
         guard !routineIDs.isEmpty else { return [:] }
         do {
@@ -204,8 +258,9 @@ enum PublicWorkoutRepository {
             }
             let rows: [Row] = try await client
                 .from("leaderboard_entries")
-                .select("routine_id")
+                .select("routine_id, workout_attempts!inner(is_opt_in_leaderboard)")
                 .in("routine_id", values: routineIDs.map(\.uuidString))
+                .eq("workout_attempts.is_opt_in_leaderboard", value: true)
                 .execute()
                 .value
             return Dictionary(grouping: rows.compactMap(\.routineID), by: { $0 })

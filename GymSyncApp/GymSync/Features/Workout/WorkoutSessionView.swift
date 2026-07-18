@@ -79,6 +79,16 @@ struct WorkoutSessionView: View {
     /// timer at all (`re.restSeconds.map { ... }` at the call site below was
     /// `nil`-guarded away); now they use the user's configured default.
     @State private var defaultRestSeconds: Int = 120
+    /// Minor finding 2 (review): a failed leaderboard opt-in (`start_attempt`)
+    /// used to be log-only — the user never learned their "show me on the
+    /// leaderboard" choice silently didn't take. Non-blocking transient
+    /// notice, same "@State String?, overlay + `.animation`, auto-clear after
+    /// a fixed delay" shape as `GroupSessionLiveView`'s incoming-sound pill
+    /// (`soundOverlayText` / `showSoundOverlay(_:)`,
+    /// `GroupSessionLiveView.swift:68,502-522,1577-1583) — reused rather than
+    /// inventing a new toast component. Never blocks `startIfNeeded()` or the
+    /// workout itself (see that function's catch block below).
+    @State private var attemptOptInFailedText: String? = nil
 
     private var currentRoutineExercise: RoutineExercise? {
         guard currentExerciseIndex < routineExercises.count else { return nil }
@@ -142,6 +152,28 @@ struct WorkoutSessionView: View {
             }
         }
         .background(theme.bg)
+        // Minor finding 2: non-blocking "couldn't join the leaderboard"
+        // notice — same transient-pill idiom + placement style as
+        // GroupSessionLiveView's incoming-sound overlay (that one docks at
+        // `.bottom`, above its dock area; `.top` here since this view's
+        // bottom is already occupied by the sticky "Log Set N" button).
+        .overlay(alignment: .top) {
+            if let txt = attemptOptInFailedText {
+                Text(txt)
+                    .font(GSFont.bold(11, relativeTo: .caption2))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(theme.neutral700)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 5)
+                    .background(theme.surface)
+                    .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                    .padding(.top, 8)
+                    .transition(.opacity)
+                    .id(txt)
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: attemptOptInFailedText)
         // Pushed from Home's "Start Solo Workout" / a routine's "Start Workout";
         // the sticky "Log Set N" / "Done" CTA is a bottom-pinned ZStack overlay,
         // not a safeAreaInset — see GSComponents.swift's GSHidesDock.
@@ -583,10 +615,26 @@ struct WorkoutSessionView: View {
                         routineID: routineID, sessionID: newSession.id, optIn: attemptOptIn)
                 } catch {
                     AppLogger.db.error("startAttempt failed: \(error.localizedDescription, privacy: .public)")
+                    // Minor finding 2: surface it — fire-and-forget (not
+                    // awaited) so this transient notice's own display/clear
+                    // lifecycle never delays `startIfNeeded()` returning or
+                    // blocks the workout, matching `showSoundOverlay`'s own
+                    // call sites in GroupSessionLiveView.
+                    Task { await showAttemptOptInFailedNotice() }
                 }
             }
         }
         catch { errorText = ErrorMapping.map(error).errorDescription }
+    }
+
+    /// Show the "couldn't join the leaderboard" transient notice for 3
+    /// seconds. Same shape as `GroupSessionLiveView.showSoundOverlay(_:)`.
+    @MainActor
+    private func showAttemptOptInFailedNotice() async {
+        let text = "Couldn't join the leaderboard for this attempt."
+        attemptOptInFailedText = text
+        try? await Task.sleep(nanoseconds: 3_000_000_000)
+        if attemptOptInFailedText == text { attemptOptInFailedText = nil }
     }
 
     /// Best-effort — a failed fetch must never block workout start; the

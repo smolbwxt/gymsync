@@ -669,7 +669,13 @@ extension LeaderboardEntryRow {
     init(catalogFixtureAttemptID attemptID: UUID, routineID: UUID?, userID: UUID,
          timeSeconds: Int?, totalVolume: Decimal?, topSets: [String: Decimal]?,
          isComplete: Bool, isEdited: Bool, computedAt: Date,
-         username: String, avatarURL: URL? = nil) {
+         username: String, avatarURL: URL? = nil,
+         // Defaulted true — review fix (Important finding 1) added this
+         // field to the real decode; both existing catalog rows below
+         // represent already-opted-in completed attempts (that's the only
+         // kind the real query can ever return now), so the default keeps
+         // those call sites source-compatible unchanged.
+         isOptInLeaderboard: Bool = true) {
         self.attemptID = attemptID
         self.routineID = routineID
         self.userID = userID
@@ -681,6 +687,7 @@ extension LeaderboardEntryRow {
         self.computedAt = computedAt
         self.username = username
         self.avatarURL = avatarURL
+        self.isOptInLeaderboard = isOptInLeaderboard
     }
 }
 #endif
