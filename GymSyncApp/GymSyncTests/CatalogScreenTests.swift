@@ -25,6 +25,8 @@ final class CatalogScreenTests: XCTestCase {
             "discover",
             "discover-detail",
             "top-lifters",
+            "body-weight-log",
+            "plate-math",
         ]
         for id in ids {
             XCTAssertNotNil(CatalogScreen(rawValue: id), "missing catalog case: \(id)")

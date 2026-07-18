@@ -41,6 +41,7 @@ enum CatalogScreen: String, CaseIterable {
     case discoverDetail = "discover-detail"
     case topLifters = "top-lifters"
     case bodyWeightLog = "body-weight-log"
+    case plateMath = "plate-math"
 }
 
 struct CatalogHostView: View {
@@ -77,6 +78,7 @@ struct CatalogHostView: View {
             case .discoverDetail:             content_discoverDetail
             case .topLifters:                 content_topLifters
             case .bodyWeightLog:              content_bodyWeightLog
+            case .plateMath:                  content_plateMath
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -655,6 +657,35 @@ struct CatalogHostView: View {
 
     private var content_bodyWeightLog: some View {
         BodyWeightLogSheet()
+    }
+
+    // MARK: - Plate math (Phase H Task 4 — no canvas frame, catalog case)
+    //
+    // No canvas frame depicts a plate-math affordance — see `docs/design/
+    // accepted-deviations.json`'s "plate-math" entry. Renders the real
+    // `LogSetSheet` (Features/Workout/LogSetSheet.swift) via its `#if DEBUG`
+    // `catalogFixtureExercise:` convenience init (added there — same
+    // same-file seam idiom as `HomeGymSetupView`'s `catalogSearchQuery:`
+    // init above: `_showPlateStack` is `private` @State, only reassignable
+    // from LogSetSheet.swift itself), forcing the "Plates" disclosure open
+    // with defaultWeight "185" pre-filled — deterministic per this file's
+    // own "prefer disclosure-open over closed-with-prefill" instruction.
+    // 185 lbs / 45 lb bar resolves to a clean two-denomination stack (1×45,
+    // 1×25 per side, exact — no remainder note), a representative capture
+    // that also isn't the trivial single-denomination case.
+    private static let plateMathFixtureExercise = Exercise(
+        id: UUID(), name: "Back Squat", slug: "back-squat", category: "compound",
+        primaryMuscle: "quads", secondaryMuscles: ["glutes", "hamstrings"],
+        equipment: "barbell", defaultUnit: "lbs", demoVideoURL: nil
+    )
+
+    private var content_plateMath: some View {
+        LogSetSheet(
+            catalogFixtureExercise: Self.plateMathFixtureExercise,
+            setIndex: 1,
+            defaultReps: "5",
+            defaultWeight: "185"
+        ) { _, _, _, _, _ in }
     }
 }
 

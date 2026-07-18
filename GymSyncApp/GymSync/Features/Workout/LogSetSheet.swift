@@ -24,6 +24,17 @@ struct LogSetSheet: View {
     @State private var isFailed = false
     @State private var note: String = ""
 
+    // Phase H Task 4 — plate-math disclosure toggle. `private` + `@State`
+    // with a default value, matching the shape of every other @State above:
+    // Swift's synthesized memberwise init only includes non-private stored
+    // properties (`exercise`/`setIndex`/`defaultReps`/`defaultWeight`/
+    // `onLog`), so adding this does NOT change that init's signature — the
+    // existing call sites (WorkoutSessionView.swift:224,
+    // GroupSessionLiveView.swift:1399) keep compiling unchanged. Adding a
+    // plain (non-@State, non-private) stored property here instead would
+    // have been the memberwise-init trap.
+    @State private var showPlateStack = false
+
     // Canvas RPE labels — "Very easy" .. "Max effort"
     private static let rpeLabels: [Double: String] = [
         1: "Very easy", 2: "Easy", 3: "Moderate", 4: "Somewhat hard",
@@ -89,6 +100,23 @@ struct LogSetSheet: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.bottom, 16)
+
+                    // Phase H Task 4 — "Plates" disclosure. No canvas frame
+                    // depicts a plate-math affordance (see docs/design/
+                    // accepted-deviations.json's "plate-math" entry).
+                    // Live-updates with `weight` on every keystroke since it
+                    // re-parses `weight` directly rather than caching a
+                    // snapshot. Hidden entirely for empty/invalid weight —
+                    // same `Decimal(string:)` parse idiom `commitLog()`
+                    // below and `BodyWeightLogSheet.canSubmit`
+                    // (Features/Stats/BodyWeightLogSheet.swift:82-85) already
+                    // use for this exact TextField, so "invalid weight" is
+                    // handled identically everywhere it's checked.
+                    if let targetWeight = Decimal(string: weight), targetWeight > 0 {
+                        plateStackSection(target: targetWeight)
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 16)
+                    }
 
                     // Canvas: RPE row — "RPE · how hard" label  /  "9 · Very hard" value
                     VStack(alignment: .leading, spacing: 6) {
@@ -180,7 +208,106 @@ struct LogSetSheet: View {
         )
         dismiss()
     }
+
+    // MARK: - Plate stack disclosure (Phase H Task 4)
+    //
+    // `PlateMath` (Models/PlateMath.swift) is the pure helper — this only
+    // renders its result. `target` is bar+plates in lbs (this app is
+    // lbs-only in v1 — same finding `BodyWeightLogSheet.swift:23-28`
+    // recorded before hardcoding its own "lbs" unit).
+
+    @ViewBuilder
+    private func plateStackSection(target: Decimal) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                showPlateStack.toggle()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "square.stack.3d.up")
+                        .font(.system(size: 12, weight: .regular))
+                    Text("Plates")
+                        .font(GSFont.bodyMedium(12, relativeTo: .caption))
+                    Image(systemName: showPlateStack ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 10, weight: .regular))
+                }
+                .foregroundStyle(theme.neutral500)
+            }
+            .buttonStyle(.plain)
+
+            if showPlateStack {
+                let result = PlateMath.stack(for: target)
+                let chips = plateChipLabels(result)
+
+                if chips.isEmpty {
+                    Text("Bar only (\(formattedPlateWeight(result.achievedWeight)) lbs)")
+                        .font(GSFont.body(12, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral500)
+                } else {
+                    HStack(spacing: 6) {
+                        ForEach(chips, id: \.self) { chip in
+                            GSTag(text: chip, style: .outline)
+                        }
+                        Text("per side")
+                            .font(GSFont.body(11, relativeTo: .caption2))
+                            .foregroundStyle(theme.neutral500)
+                    }
+                }
+
+                if let remainder = result.remainder {
+                    let direction = result.achievedWeight < target ? "short" : "over target"
+                    Text("Nearest: \(formattedPlateWeight(result.achievedWeight)) lbs (\(formattedPlateWeight(remainder)) \(direction))")
+                        .font(GSFont.body(11, relativeTo: .caption2))
+                        .foregroundStyle(theme.neutral500)
+                }
+            }
+        }
+    }
+
+    /// "2×45" per non-zero denomination, index-aligned to `PlateMath.
+    /// standardPlates` (the same default `plateStackSection` calls `PlateMath
+    /// .stack(for:)` with).
+    private func plateChipLabels(_ result: PlateMath.Stack) -> [String] {
+        zip(PlateMath.standardPlates, result.platesPerSide).compactMap { denomination, count in
+            guard count > 0 else { return nil }
+            return "\(formattedPlateWeight(count))×\(formattedPlateWeight(denomination))"
+        }
+    }
+
+    /// Trims trailing zeros the same way `GroupSessionLiveView.weightText`
+    /// (GroupSessionLiveView.swift:1367) already formats logged weights.
+    private func formattedPlateWeight(_ value: Decimal) -> String {
+        NSDecimalNumber(decimal: value).stringValue
+    }
 }
+
+#if DEBUG
+extension LogSetSheet {
+    /// Catalog-fixture convenience init (Phase H Task 4, `plate-math`
+    /// catalog case): forces `showPlateStack` open so `CatalogHostView` can
+    /// capture the disclosure already expanded, instead of requiring a
+    /// simulated tap. Same same-file seam idiom as `HomeGymSetupView`'s
+    /// `catalogSearchQuery:` convenience init (LogSetSheet.swift is the only
+    /// file with access to `private` `_showPlateStack`) — delegates to the
+    /// normal init first (satisfies the stored `let`s), then reassigns the
+    /// backing `State` storage. Compiled out of release entirely.
+    init(
+        catalogFixtureExercise exercise: Exercise,
+        setIndex: Int,
+        defaultReps: String?,
+        defaultWeight: String?,
+        onLog: @escaping (Int?, Decimal?, Decimal?, Bool, String?) -> Void
+    ) {
+        self.init(
+            exercise: exercise,
+            setIndex: setIndex,
+            defaultReps: defaultReps,
+            defaultWeight: defaultWeight,
+            onLog: onLog
+        )
+        _showPlateStack = State(initialValue: true)
+    }
+}
+#endif
 
 // MARK: - Shared stepper cell (Reps/Weight)
 // Canvas: stepper cell — label kicker / "−  value  +" row with borders. Shared (internal,
