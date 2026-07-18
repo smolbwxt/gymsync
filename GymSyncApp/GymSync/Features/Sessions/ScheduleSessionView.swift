@@ -680,6 +680,12 @@ struct ScheduleSessionView: View {
                 if let first = occurrences.first {
                     onScheduled(first)
                 }
+                // EventKit sync (Phase H Task 2): organizer-side, gated on
+                // the You-tab toggle. `occurrences` is exactly the series'
+                // MATERIALIZED set (bounded — `SeriesRepository.create`
+                // never open-ended-recurs), so this creates one calendar
+                // event per already-materialized session row, no more.
+                await syncScheduledSessionsToCalendar(occurrences)
                 dismiss()
             } catch let error as GymSyncError {
                 errorText = error.errorDescription
@@ -699,11 +705,35 @@ struct ScheduleSessionView: View {
                 generateRoomCode: generateRoomCode
             )
             onScheduled(session)
+            // EventKit sync (Phase H Task 2): see the series path's comment
+            // above — same helper, single-session list.
+            await syncScheduledSessionsToCalendar([session])
             dismiss()
         } catch let error as GymSyncError {
             errorText = error.errorDescription
         } catch {
             errorText = error.localizedDescription
+        }
+    }
+
+    // MARK: - Calendar sync (Phase H Task 2)
+
+    /// Best-effort EventKit sync for freshly-scheduled sessions — gated on
+    /// the You-tab toggle (`CalendarSyncPrefsStore.isEnabled()`; see
+    /// `YouTabView.calendarSyncRow`). Called ONLY after the corresponding
+    /// server write (`SessionRepository.schedule` / `SeriesRepository.
+    /// create`) has already returned successfully — a calendar failure here
+    /// can never roll back or block the session that was just created
+    /// (`EventKitBridge.syncEvent` never throws). Routine name + exercise
+    /// count come from this view's own already-loaded `routines`/
+    /// `routineExerciseCounts` state (`loadData()` above) — no extra fetch.
+    @MainActor
+    private func syncScheduledSessionsToCalendar(_ sessions: [WorkoutSession]) async {
+        guard CalendarSyncPrefsStore.isEnabled() else { return }
+        for session in sessions {
+            let routine = session.routineID.flatMap { rid in routines.first { $0.id == rid } }
+            let exerciseCount = session.routineID.flatMap { routineExerciseCounts[$0] }
+            await EventKitBridge.syncEvent(session: session, routineName: routine?.name, exerciseCount: exerciseCount)
         }
     }
 

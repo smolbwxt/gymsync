@@ -1,7 +1,7 @@
 [
   {
     "screenId": "tab-you",
-    "reason": "You tab implements the newer Settings Hub with added stat tiles + Apple Health row — a recorded deviation ahead of the superseded canvas 'You' frame, awaiting design sign-off. Phase M Task 4 adds two more rows on top of that same deviation: a \"Share Solo Workouts\" toggle (with inline caption) inside the Settings group box, and a red \"Delete Account\" row below it — both extend this entry rather than opening a new one; awaiting sign-off alongside the rest."
+    "reason": "You tab implements the newer Settings Hub with added stat tiles + Apple Health row — a recorded deviation ahead of the superseded canvas 'You' frame, awaiting design sign-off. Phase M Task 4 adds two more rows on top of that same deviation: a \"Share Solo Workouts\" toggle (with inline caption) inside the Settings group box, and a red \"Delete Account\" row below it — both extend this entry rather than opening a new one; awaiting sign-off alongside the rest. Phase H Task 2 adds one more row to the same Settings group box: \"Add my sessions to Calendar\" (default off, toggle-row-with-inline-caption shape matching \"Share Solo Workouts\"; system-denied state collapses the row into a single open-Settings tap target per `PTTDockRow.deniedRow`'s idiom) — no canvas frame depicts EventKit sync at all, so this extends the existing deviation rather than opening a new one; awaiting sign-off alongside the rest."
   },
   {
     "screenId": "exercise-detail",

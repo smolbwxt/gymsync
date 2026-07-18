@@ -1,3 +1,4 @@
+import EventKit
 import HealthKit
 import SwiftUI
 
@@ -13,6 +14,9 @@ struct YouTabView: View {
     @State private var userSettings: UserSettings?
     @State private var showHomeGymSheet = false
     @State private var healthAuthStatus: HKAuthorizationStatus = .notDetermined
+    // Phase H Task 2: "Add my sessions to Calendar" toggle state.
+    @State private var calendarSyncEnabled = false
+    @State private var calendarAuthStatus: EKAuthorizationStatus = .notDetermined
     @State private var errorText: String?
     @State private var showNotificationPrefs = false
     @State private var showAppearance = false
@@ -83,6 +87,12 @@ struct YouTabView: View {
             .onChange(of: scenePhase) {
                 guard scenePhase == .active else { return }
                 Task { await pushReceiver.refreshAuthorizationStatus() }
+                // Phase H Task 2: catch a Calendar permission change made in
+                // Settings while this screen was backgrounded — same
+                // re-check-on-foreground idiom as the push status refresh
+                // above and NotificationPreferencesView's own
+                // scenePhase-driven refresh.
+                calendarAuthStatus = EventKitBridge.authorizationStatus()
             }
             .sheet(isPresented: $showHomeGymSheet) {
                 HomeGymSetupView(isOnboarding: false, onSaved: {
@@ -278,6 +288,7 @@ struct YouTabView: View {
             }
             soloPrivacyRow
             healthSyncRow
+            calendarSyncRow
         }
         .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
     }
@@ -424,8 +435,9 @@ struct YouTabView: View {
     /// this row isn't a navigation target). Tapping re-requests permission
     /// then refreshes the displayed state. Kept as a custom row (not
     /// `GSSettingsRow`) since it has no chevron and a different action
-    /// shape; omits its own trailing divider since it's always the group
-    /// box's last row (the box's own bottom border serves that edge).
+    /// shape. Phase H Task 2: this is no longer the group box's last row
+    /// (`calendarSyncRow` was appended below it), so it now draws its own
+    /// trailing divider instead of relying on the box's bottom border.
     private var healthSyncRow: some View {
         Button {
             Task { await requestHealthPermission() }
@@ -443,6 +455,9 @@ struct YouTabView: View {
             .padding(.vertical, 14)
             .background(theme.surface)
             .contentShape(Rectangle())
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(theme.divider).frame(height: 1)
+            }
         }
         .buttonStyle(.plain)
     }
@@ -453,6 +468,165 @@ struct YouTabView: View {
         case .sharingDenied: return "Denied"
         case .notDetermined: return "Not Enabled"
         @unknown default: return "Unknown"
+        }
+    }
+
+    // MARK: - Calendar sync toggle (Phase H Task 2)
+    //
+    // "Add my sessions to Calendar" — gates every `EventKitBridge` write
+    // (`CalendarSyncPrefsStore.isEnabled()`, checked at the schedule/
+    // reschedule/cancel call sites in `ScheduleSessionView`/`LobbyView`).
+    // Default OFF (`CalendarSyncPrefsStore.isEnabled()` returns false until
+    // this row is ever turned on) — no permission prompt fires anywhere in
+    // the app except this row's own enable action, matching the same
+    // discipline `healthSyncRow` above and every push-priming surface
+    // already follow.
+    //
+    // Two render states:
+    //  - Normal (not yet denied by iOS): the same bordered
+    //    toggle-row-with-inline-caption shape as `soloPrivacyRow` above.
+    //  - System-denied: the ENTIRE row becomes one "open Settings" tap
+    //    target, borrowing `PTTDockRow.deniedRow`'s shape exactly
+    //    (`DesignSystem/GSComponents.swift:1407-1433` — icon + title +
+    //    trailing arrow.up.right, whole row tappable). That idiom (rather
+    //    than `NotificationPreferencesView.deniedBanner`'s separate
+    //    banner-above-the-group shape) fits here because this toggle is a
+    //    single settings-group row, not a whole screen — collapsing the
+    //    denied state INTO the row matches its scale.
+    @ViewBuilder
+    private var calendarSyncRow: some View {
+        if calendarAuthStatus == .denied || calendarAuthStatus == .restricted {
+            Button {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "calendar.badge.exclamationmark")
+                        .font(.system(size: 17, weight: .regular))
+                        .foregroundStyle(theme.accent)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Add my sessions to Calendar")
+                            .font(GSFont.bodyMedium(14, relativeTo: .subheadline))
+                            .foregroundColor(theme.text)
+                        Text("Calendar access off — turn on in Settings")
+                            .font(GSFont.body(11, relativeTo: .caption2))
+                            .foregroundColor(theme.neutral700)
+                    }
+                    Spacer()
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(theme.accent700)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                .background(theme.surface)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        } else {
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Add my sessions to Calendar")
+                        .font(GSFont.bodyMedium(14, relativeTo: .subheadline))
+                        .foregroundColor(theme.text)
+                    Text("Sync sessions you organize to your iOS Calendar")
+                        .font(GSFont.body(11, relativeTo: .caption2))
+                        .foregroundColor(theme.neutral700)
+                }
+                Spacer(minLength: 8)
+                GSToggle(
+                    isOn: Binding(
+                        get: { calendarSyncEnabled },
+                        set: { setCalendarSyncEnabled($0) }
+                    ),
+                    label: "Add my sessions to Calendar"
+                )
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(theme.surface)
+        }
+    }
+
+    /// Optimistic-flip shape matches `setShowSoloWorkouts` above, but the
+    /// actual work (permission request, backfill, or teardown) is genuinely
+    /// async and best-effort rather than a single repository call — see
+    /// `enableCalendarSync()`/`disableCalendarSync()` below.
+    private func setCalendarSyncEnabled(_ enabled: Bool) {
+        calendarSyncEnabled = enabled
+        Task {
+            if enabled {
+                await enableCalendarSync()
+            } else {
+                await disableCalendarSync()
+            }
+        }
+    }
+
+    /// Requests full Calendar access; if granted, persists the toggle ON and
+    /// backfills every upcoming session the current user organizes (spec:
+    /// "on enable: request permission + backfill upcoming organized
+    /// sessions"). If denied, reverts the toggle and lets `calendarAuthStatus`
+    /// drive the denied-row state on the next render.
+    @MainActor
+    private func enableCalendarSync() async {
+        do {
+            let granted = try await EventKitBridge.requestAccess()
+            calendarAuthStatus = EventKitBridge.authorizationStatus()
+            guard granted else {
+                calendarSyncEnabled = false
+                return
+            }
+            CalendarSyncPrefsStore.setEnabled(true)
+            calendarSyncEnabled = true
+            await backfillCalendarSync()
+        } catch {
+            AppLogger.calendar.error("enableCalendarSync: requestAccess failed: \(error.localizedDescription, privacy: .public)")
+            calendarSyncEnabled = false
+        }
+    }
+
+    /// Syncs every upcoming session the current user ORGANIZES (v1's
+    /// organizer-only scope — see `EventKitBridge`'s doc comment) to the
+    /// calendar. `SessionRepository.upcoming()` returns sessions the user
+    /// PARTICIPATES in across several pre-workout states, so this filters to
+    /// organizer-only + has a `scheduledFor`. Routine names/exercise counts
+    /// come from a single bulk `RoutineRepository.fetchAll(ownerID:)` +
+    /// `exercisesForRoutines(ids:)` pair — the same two-call shape
+    /// `ScheduleSessionView.loadData()` already uses — rather than an N+1
+    /// per-session `RoutineRepository.fetch(id:)` fan-out. A session whose
+    /// routine isn't in the organizer's OWN routines (e.g. a cloned/Discover
+    /// routine edge case) just falls back to `EventKitBridge`'s routine-less
+    /// title — best-effort, not a hard failure.
+    @MainActor
+    private func backfillCalendarSync() async {
+        guard let selfID = appState.currentProfile?.id else { return }
+        let upcoming = (try? await SessionRepository.upcoming()) ?? []
+        let organized = upcoming.filter { $0.organizerID == selfID && $0.scheduledFor != nil }
+        guard !organized.isEmpty else { return }
+
+        let routines = (try? await RoutineRepository.fetchAll(ownerID: selfID)) ?? []
+        let routinesByID = Dictionary(uniqueKeysWithValues: routines.map { ($0.id, $0) })
+        let exercises = (try? await RoutineRepository.exercisesForRoutines(ids: routines.map(\.id))) ?? []
+        let countsByRoutine = Dictionary(grouping: exercises, by: \.routineID).mapValues(\.count)
+
+        for session in organized {
+            let routineName = session.routineID.flatMap { routinesByID[$0]?.name }
+            let exerciseCount = session.routineID.flatMap { countsByRoutine[$0] }
+            await EventKitBridge.syncEvent(session: session, routineName: routineName, exerciseCount: exerciseCount)
+        }
+    }
+
+    /// Persists the toggle OFF, then best-effort removes every mapped event
+    /// this device has ever synced (spec: "on disable: best-effort remove
+    /// mapped events"). `SessionCalendarSyncStore.allSessionIDs()` is the
+    /// only record of what was ever synced — there's no server-side list to
+    /// cross-check against for v1's local-only mapping.
+    private func disableCalendarSync() async {
+        CalendarSyncPrefsStore.setEnabled(false)
+        for sessionID in SessionCalendarSyncStore.allSessionIDs() {
+            await EventKitBridge.removeEvent(sessionID: sessionID)
         }
     }
 
@@ -499,6 +673,12 @@ struct YouTabView: View {
 
         healthAuthStatus = HealthKitBridge.store.authorizationStatus(for: .workoutType())
         await pushReceiver.refreshAuthorizationStatus()
+
+        // Phase H Task 2: local-only, no network round-trip — see
+        // `CalendarSyncPrefsStore`'s doc comment for why this reads
+        // UserDefaults directly rather than a repository fetch.
+        calendarSyncEnabled = CalendarSyncPrefsStore.isEnabled()
+        calendarAuthStatus = EventKitBridge.authorizationStatus()
     }
 
     private func requestHealthPermission() async {

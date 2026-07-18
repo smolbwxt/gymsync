@@ -1104,6 +1104,21 @@ struct LobbyView: View {
         do {
             try await SessionRepository.reschedule(sessionID: session.id, to: changeTimeDate)
             await reload()
+            // EventKit sync (Phase H Task 2): organizer-side, gated on the
+            // You-tab toggle. Runs AFTER `reload()` so it reads the
+            // server-confirmed `scheduledFor` (via `effectiveSession`) and
+            // this screen's already-loaded `routineInfo`, rather than
+            // reconstructing a session snapshot by hand
+            // (`EventKitBridge.syncEvent` updates the mapped event in place
+            // when one already exists for this session id — see its doc
+            // comment).
+            if CalendarSyncPrefsStore.isEnabled() {
+                await EventKitBridge.syncEvent(
+                    session: effectiveSession,
+                    routineName: routineInfo?.name,
+                    exerciseCount: routineInfo?.exercises.count
+                )
+            }
         } catch let error as GymSyncError {
             errorText = error.errorDescription
         } catch {
@@ -1115,6 +1130,12 @@ struct LobbyView: View {
     private func cancelOccurrence() async {
         do {
             try await SeriesRepository.cancelOccurrence(sessionID: session.id)
+            // EventKit sync (Phase H Task 2): best-effort — no-ops quietly
+            // if this session was never synced (toggle was off, or it had
+            // no scheduledFor). Ungated on the toggle: cleanup should
+            // always run regardless of the toggle's CURRENT state, in case
+            // it was flipped off/on since this session was scheduled.
+            await EventKitBridge.removeEvent(sessionID: session.id)
             dismiss()
         } catch let error as GymSyncError {
             errorText = error.errorDescription
@@ -1137,7 +1158,26 @@ struct LobbyView: View {
     private func cancelSeriesForward() async {
         guard let sid = effectiveSeriesID else { return }
         do {
+            // Snapshot which occurrence ids are upcoming+scheduled BEFORE
+            // the server delete (same filter `loadUpcomingCount()` uses) —
+            // `SeriesRepository.cancelSeriesForward` bulk-deletes by
+            // series_id server-side and doesn't hand back which session
+            // rows it removed, so EventKit sync (below) needs its own
+            // pre-delete snapshot to know which mapped events to remove.
+            let now = Date()
+            let upcomingIDs = ((try? await SeriesRepository.occurrences(seriesID: sid)) ?? [])
+                .filter { $0.state == "scheduled" && ($0.scheduledFor ?? .distantPast) > now }
+                .map(\.id)
+
             try await SeriesRepository.cancelSeriesForward(seriesID: sid)
+
+            // EventKit sync (Phase H Task 2): best-effort remove every
+            // mapped event for the occurrences just deleted. Ungated on the
+            // toggle — same "cleanup always runs" reasoning as
+            // `cancelOccurrence()` above.
+            for sessionID in upcomingIDs {
+                await EventKitBridge.removeEvent(sessionID: sessionID)
+            }
             dismiss()
         } catch let error as GymSyncError {
             errorText = error.errorDescription
