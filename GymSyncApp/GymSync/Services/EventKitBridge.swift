@@ -23,7 +23,17 @@ import Foundation
 /// here is ever called from anywhere except: the toggle's own enable/disable
 /// actions, and the schedule/reschedule/cancel call sites that gate on the
 /// preference first (`ScheduleSessionView.schedule()`,
-/// `LobbyView.applyReschedule()/cancelOccurrence()/cancelSeriesForward()`).
+/// `LobbyView.applyReschedule()/cancelOccurrence()/cancelSeriesForward()`,
+/// `SeriesEditorView.save()`).
+///
+/// KNOWN LIMITATION (v1, controller-accepted — deferred to Phase O): the
+/// only state transitions that ever remove a mapped event are the client-
+/// initiated ones above. A session the server-side cron moves to
+/// `abandoned` with no client involvement — `enqueue_scheduled_pushes()`'s
+/// "Abandon at 6 hours" step (`supabase/migrations/20260716000004_
+/// reminder_window_fix.sql:107-124`, superseding `20260716000003_push_
+/// cron.sql`) — never has `removeEvent` called for it, so its calendar
+/// event is left behind.
 enum EventKitBridge {
     static let store = EKEventStore()
 
@@ -138,12 +148,22 @@ enum EventKitBridge {
     /// event is already gone (e.g. the user deleted it by hand in
     /// Calendar.app) — both mean "this session has no calendar footprint,"
     /// which is exactly the postcondition this function exists to guarantee.
+    ///
+    /// The mapping is cleared ONLY on those two confirmed-gone outcomes
+    /// (already-missing event, or a successful `store.remove`) — a
+    /// transient `store.remove` failure (e.g. EventKit db momentarily
+    /// locked) logs and KEEPS the mapping, so a later retry of this same
+    /// call can still find the event via `SessionCalendarSyncStore.
+    /// eventIdentifier(for:)` instead of orphaning it forever.
     static func removeEvent(sessionID: UUID) async {
         guard let identifier = SessionCalendarSyncStore.eventIdentifier(for: sessionID) else { return }
-        defer { SessionCalendarSyncStore.removeMapping(for: sessionID) }
-        guard let event = store.event(withIdentifier: identifier) else { return }
+        guard let event = store.event(withIdentifier: identifier) else {
+            SessionCalendarSyncStore.removeMapping(for: sessionID)
+            return
+        }
         do {
             try store.remove(event, span: .thisEvent)
+            SessionCalendarSyncStore.removeMapping(for: sessionID)
             AppLogger.calendar.info("Removed calendar event for session \(sessionID, privacy: .public)")
         } catch {
             AppLogger.calendar.error("removeEvent failed for session \(sessionID, privacy: .public): \(error.localizedDescription, privacy: .public)")
