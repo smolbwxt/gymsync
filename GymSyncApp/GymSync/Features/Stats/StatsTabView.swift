@@ -9,6 +9,10 @@ struct StatsTabView: View {
     @State private var recentPRs: [PersonalRecord] = []
     @State private var monthTrendPercent: Double?
     @State private var userStreak: UserStreak?
+    // Body weight card (Phase H Task 3)
+    @State private var bodyWeightLogs: [BodyWeightLog] = []
+    @State private var selectedBodyWeightRange: TrendRange = .sixMonths
+    @State private var showingBodyWeightLogSheet = false
 
     var body: some View {
         NavigationStack {
@@ -49,6 +53,11 @@ struct StatsTabView: View {
 
                     // ── Recent PRs Table ────────────────────────────────────────
                     recentPRsCardView
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 16)
+
+                    // ── Body Weight Card (Task 3, Phase H) ──────────────────────
+                    bodyWeightCardView
                         .padding(.horizontal, 16)
                         .padding(.bottom, 16)
 
@@ -125,6 +134,7 @@ struct StatsTabView: View {
                 }
                 await loadWeeklyVolumeAndPRs()
                 await loadStreak()
+                await loadBodyWeight()
             }
             .refreshable {
                 if let id = appState.currentProfile?.id {
@@ -132,6 +142,10 @@ struct StatsTabView: View {
                 }
                 await loadWeeklyVolumeAndPRs()
                 await loadStreak()
+                await loadBodyWeight()
+            }
+            .sheet(isPresented: $showingBodyWeightLogSheet) {
+                BodyWeightLogSheet(onLogged: { Task { await loadBodyWeight() } })
             }
         }
     }
@@ -301,6 +315,107 @@ struct StatsTabView: View {
         }
     }
 
+    // MARK: - Body Weight Card (Task 3, Phase H)
+    //
+    // `body_weight_logs` (20260724000001_body_weight_logs.sql) — master-spec'd
+    // to live on Stats ("body weight trend",
+    // docs/superpowers/specs/2026-06-28-gymsync-design.md:692). No canvas
+    // frame exists for this card or its log sheet — system-designed,
+    // extends the existing "tab-stats" accepted deviation (same GSCard/
+    // GSSectionHeader rhythm as the weekly-volume/streak/recent-PRs cards
+    // already on this screen); see docs/design/accepted-deviations.json.
+    // The trend chart itself reuses `TrendChartView` verbatim (Features/
+    // Stats/TrendChartView.swift:21-27's init — title/data/selectedRange —
+    // same call shape `ExerciseHistoryView` already uses for its Est. 1RM
+    // trend), and the "+ Log" header button mirrors
+    // `RoutinesListView.yourRoutinesHeader`'s "+ New" button shape
+    // (Features/Library/RoutinesListView.swift:83-104).
+    //
+    // Fix wave 1 (reviewer Findings 1 + 2): this card used to be a bare
+    // VStack sitting on top of `TrendChartView`'s own internal
+    // `GSCard(bordered: true)` — two visually disconnected pieces with a
+    // border style no sibling card on this screen uses (every sibling —
+    // `weeklyVolumeCardView` line 167, `streakCardView` line 224,
+    // `recentPRsCardView` line 272, Lifetime Volume line 22 — is ONE
+    // `GSCard(bordered: false) { header + content }.padding(16)`). Now
+    // wrapped in that same single `GSCard(bordered: false)`, with
+    // `TrendChartView(embedInCard: false, title: "")` so the chart
+    // contributes only its range picker + chart line, no nested
+    // card/border/padding and no second header of its own (fix wave 2 —
+    // see the comment at the call site below) — `ExerciseHistoryView` (the only
+    // other `TrendChartView` consumer, swift:76-78) doesn't pass
+    // `embedInCard` at all, so it keeps the default `true` and its exact
+    // prior rendering. `latestBodyWeightText` below adds the headline
+    // number this card was missing relative to its "big number" sibling,
+    // Lifetime Volume (`volumeString`, line 25-33) — wired from
+    // `StatMath.formattedBodyWeight` (Models/StatMath.swift:181), which had
+    // zero production call sites before this (Finding 2).
+    @ViewBuilder
+    private var bodyWeightCardView: some View {
+        GSCard(bordered: false) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    GSSectionHeader("Body Weight")
+                    Spacer()
+                    Button {
+                        showingBodyWeightLogSheet = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "plus").font(.system(size: 12, weight: .bold))
+                            Text("Log").font(GSFont.bold(13, relativeTo: .subheadline))
+                        }
+                        .foregroundStyle(theme.accent)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .overlay(Rectangle().strokeBorder(theme.accent, lineWidth: 1))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                if let latestBodyWeightText {
+                    Text(latestBodyWeightText)
+                        .font(GSFont.heading(34, relativeTo: .largeTitle))
+                        .foregroundStyle(theme.text)
+                        .monospacedDigit()
+                }
+
+                // `title: ""` — the card's own "Body Weight" header row
+                // above is this card's single title; a second inner "Weight"
+                // header would duplicate it (no sibling card stacks two
+                // titles). TrendChartView omits the GSSectionHeader entirely
+                // for an empty title (TrendChartView.swift:24-31), leaving
+                // the range picker right-aligned on its own row above the
+                // chart — same top-right position it occupies everywhere
+                // else (fix wave 2).
+                TrendChartView(
+                    title: "",
+                    data: bodyWeightChartData,
+                    selectedRange: $selectedBodyWeightRange,
+                    embedInCard: false
+                )
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+        }
+    }
+
+    private var bodyWeightChartData: [(Date, Double)] {
+        StatMath.bodyWeightTrendPoints(logs: bodyWeightLogs)
+    }
+
+    /// Headline "182.4 lbs" for the most recent log — `nil` (no headline)
+    /// when there are no logs yet, matching the chart's own "Not enough
+    /// data yet." empty state (TrendChartView.swift:53-56) rather than
+    /// duplicating a second empty-state message. `bodyWeightLogs` is
+    /// most-recent-first (`BodyWeightLogRepository.recent`'s documented
+    /// order, Models/BodyWeightLog.swift:31-36), so `.first` is the latest
+    /// entry without needing to re-sort.
+    private var latestBodyWeightText: String? {
+        guard let latest = bodyWeightLogs.first else { return nil }
+        return StatMath.formattedBodyWeight(latest.weight, unit: latest.unit)
+    }
+
     private func exerciseName(for id: UUID) -> String {
         exercises.first(where: { $0.id == id })?.name ?? "Exercise"
     }
@@ -342,5 +457,11 @@ struct StatsTabView: View {
     private func loadStreak() async {
         guard let userID = appState.currentProfile?.id else { return }
         userStreak = try? await StreakRepository.userStreak(userID: userID)
+    }
+
+    @MainActor
+    private func loadBodyWeight() async {
+        guard let userID = appState.currentProfile?.id else { return }
+        bodyWeightLogs = (try? await BodyWeightLogRepository.recent(userID: userID)) ?? []
     }
 }

@@ -298,6 +298,45 @@ async function main() {
   console.log(`  streak chain: ${streakCreated} completed this run, ${streakSkipped} already done — ` +
     `current_streak=${streak?.current_streak ?? 0}, longest_streak=${streak?.longest_streak ?? 0}`);
 
+  // --- body weight log series: a real trend for the Stats "Body Weight"
+  //     card (Phase H Task 3) -----------------------------------------------
+  // `body_weight_logs` (20260724000001_body_weight_logs.sql) is a plain
+  // client-writable, owner-only table — unlike the streak block above, no
+  // trigger walk-through is needed, a direct insert suffices. Same
+  // insert-if-absent-by-fixed-timestamp idiom as STREAK_DATES/
+  // MURPH_ATTEMPT_SCHEDULED_FOR above (never `now()`): `logged_at` has no
+  // fixture marker column to delete-by (same shape gap sessions has), so a
+  // fixed weekly-Friday series is this block's natural key — a resumed or
+  // repeated run only inserts whatever timestamps are still missing, never
+  // duplicates, and never touches a row this account may have logged for
+  // real outside this script (a blanket delete-by-user_id would risk that).
+  // Ten points, mildly trending down (186.2 -> 180.4 lbs) so the trend line
+  // actually slopes instead of rendering as a flat series.
+  const WEIGHT_LOG_SERIES = [
+    { loggedAt: '2026-05-15T08:00:00.000Z', weight: 186.2 },
+    { loggedAt: '2026-05-22T08:00:00.000Z', weight: 185.4 },
+    { loggedAt: '2026-05-29T08:00:00.000Z', weight: 185.0 },
+    { loggedAt: '2026-06-05T08:00:00.000Z', weight: 184.1 },
+    { loggedAt: '2026-06-12T08:00:00.000Z', weight: 183.6 },
+    { loggedAt: '2026-06-19T08:00:00.000Z', weight: 183.0 },
+    { loggedAt: '2026-06-26T08:00:00.000Z', weight: 182.2 },
+    { loggedAt: '2026-07-03T08:00:00.000Z', weight: 181.8 },
+    { loggedAt: '2026-07-10T08:00:00.000Z', weight: 181.0 },
+    { loggedAt: '2026-07-17T08:00:00.000Z', weight: 180.4 },
+  ];
+  let weightCreated = 0, weightSkipped = 0;
+  for (const point of WEIGHT_LOG_SERIES) {
+    const [existing] = await rest(
+      `body_weight_logs?select=id&user_id=eq.${me.id}&logged_at=eq.${encodeURIComponent(point.loggedAt)}`);
+    if (existing) { weightSkipped++; continue; }
+    await rest('body_weight_logs', { method: 'POST', body: JSON.stringify({
+      user_id: me.id, weight: point.weight, unit: 'lbs', logged_at: point.loggedAt,
+    }) });
+    weightCreated++;
+  }
+  console.log(`  body weight log series: ${weightCreated} inserted this run, ${weightSkipped} already present ` +
+    `(${WEIGHT_LOG_SERIES[0].weight} -> ${WEIGHT_LOG_SERIES[WEIGHT_LOG_SERIES.length - 1].weight} lbs)`);
+
   // --- chat thread: text + soundboard echo + voice-note row ---------------
   await rest(`chat_messages?group_id=eq.${group.id}`, { method: 'DELETE' });
   const messages = [

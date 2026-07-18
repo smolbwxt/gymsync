@@ -40,6 +40,8 @@ enum CatalogScreen: String, CaseIterable {
     case discover = "discover"
     case discoverDetail = "discover-detail"
     case topLifters = "top-lifters"
+    case bodyWeightLog = "body-weight-log"
+    case plateMath = "plate-math"
 }
 
 struct CatalogHostView: View {
@@ -75,6 +77,8 @@ struct CatalogHostView: View {
             case .discover:                   content_discover
             case .discoverDetail:             content_discoverDetail
             case .topLifters:                 content_topLifters
+            case .bodyWeightLog:              content_bodyWeightLog
+            case .plateMath:                  content_plateMath
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -240,10 +244,10 @@ struct CatalogHostView: View {
     // values copied verbatim from proof-frame-17.png so the catalog capture
     // matches the canvas one-for-one: kicker "PUSH DAY A", duration 42:06,
     // "Friday, July 11 · solo", hero stats 7,240 / 10 / 1, PR card
-    // Bench Press 190×5 (beat a 185 prior best by 5 lbs), and three exercise
+    // Bench Press 190×5 (beat a 185 prior best by 5 lbs), three exercise
     // rows (Bench Press 4 sets·top 190×5, PR chip / Overhead Press 3 sets·top
-    // 95×8 / Tricep Pushdown 3 sets·top 50×12). No Apple Health row —
-    // `SoloRecapView` never renders one (see its type doc comment).
+    // 95×8 / Tricep Pushdown 3 sets·top 50×12), and — Phase H — the "Synced
+    // to Apple Health" card, "42 min · 318 kcal" per the same proof render.
     private var content_recapSolo: some View {
         SoloRecapView(
             kicker: "PUSH DAY A",
@@ -272,6 +276,10 @@ struct CatalogHostView: View {
                     topWeight: 50, topReps: 12, isPR: false
                 )
             ],
+            healthSummary: SoloRecapView.HealthSummary(
+                minutesText: "42 min",
+                caloriesText: "318 kcal"
+            ),
             shareSummary: "Push Day A — 42:06, 7,240 lbs, 10 sets"
         )
     }
@@ -633,6 +641,51 @@ struct CatalogHostView: View {
         return NavigationStack {
             TopLiftersView(catalogFixtureLifters: Self.topLiftersFixtureRows)
         }
+    }
+
+    // MARK: - Body Weight log sheet (Phase H Task 3 — no canvas frame, catalog case)
+    //
+    // No canvas frame depicts a body-weight log affordance — see
+    // `docs/design/accepted-deviations.json`'s "body-weight-log" entry.
+    // `BodyWeightLogSheet` self-wraps its own `NavigationStack` (same shape
+    // as `ReportSheet`/`DeleteAccountSheet` above), so no extra wrapper is
+    // needed here. No fixture seam needed: the sheet has no live `.task`
+    // fetch to skip and its only network call (`BodyWeightLogRepository
+    // .log`) never fires without a tap on "Save", which itself stays
+    // disabled until a valid weight is entered — hermetic by construction,
+    // same reasoning `content_deleteAccount` documents above.
+
+    private var content_bodyWeightLog: some View {
+        BodyWeightLogSheet()
+    }
+
+    // MARK: - Plate math (Phase H Task 4 — no canvas frame, catalog case)
+    //
+    // No canvas frame depicts a plate-math affordance — see `docs/design/
+    // accepted-deviations.json`'s "plate-math" entry. Renders the real
+    // `LogSetSheet` (Features/Workout/LogSetSheet.swift) via its `#if DEBUG`
+    // `catalogFixtureExercise:` convenience init (added there — same
+    // same-file seam idiom as `HomeGymSetupView`'s `catalogSearchQuery:`
+    // init above: `_showPlateStack` is `private` @State, only reassignable
+    // from LogSetSheet.swift itself), forcing the "Plates" disclosure open
+    // with defaultWeight "185" pre-filled — deterministic per this file's
+    // own "prefer disclosure-open over closed-with-prefill" instruction.
+    // 185 lbs / 45 lb bar resolves to a clean two-denomination stack (1×45,
+    // 1×25 per side, exact — no remainder note), a representative capture
+    // that also isn't the trivial single-denomination case.
+    private static let plateMathFixtureExercise = Exercise(
+        id: UUID(), name: "Back Squat", slug: "back-squat", category: "compound",
+        primaryMuscle: "quads", secondaryMuscles: ["glutes", "hamstrings"],
+        equipment: "barbell", defaultUnit: "lbs", demoVideoURL: nil
+    )
+
+    private var content_plateMath: some View {
+        LogSetSheet(
+            catalogFixtureExercise: Self.plateMathFixtureExercise,
+            setIndex: 1,
+            defaultReps: "5",
+            defaultWeight: "185"
+        ) { _, _, _, _, _ in }
     }
 }
 

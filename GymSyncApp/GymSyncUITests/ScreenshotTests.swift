@@ -218,6 +218,8 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogDiscover()           { captureCatalog("discover") }
     func testCatalogDiscoverDetail()     { captureCatalog("discover-detail") }
     func testCatalogTopLifters()         { captureCatalog("top-lifters") }
+    func testCatalogBodyWeightLog()      { captureCatalog("body-weight-log") }
+    func testCatalogPlateMath()          { captureCatalog("plate-math") }
 
     // MARK: - Seeded deep-screen captures
     //

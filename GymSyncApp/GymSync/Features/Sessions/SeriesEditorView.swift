@@ -377,11 +377,57 @@ struct SeriesEditorView: View {
         }
 
         do {
+            // EventKit sync (Phase H Task 2): snapshot the future scheduled
+            // occurrences' ids BEFORE `editSeriesForward` deletes and
+            // re-materializes them with fresh UUIDs — same pre-delete-
+            // snapshot reasoning as `LobbyView.cancelSeriesForward()`
+            // (LobbyView.swift:1161-1170), since `SeriesRepository.
+            // editSeriesForward` (SessionSeries.swift:384-471) doesn't hand
+            // back which session rows it removed. Filter matches exactly
+            // what `editSeriesForward` itself deletes server-side
+            // (SessionSeries.swift:436-443: `state == "scheduled" AND
+            // scheduled_for > now`).
+            let now = Date()
+            let oldOccurrenceIDs = ((try? await SeriesRepository.occurrences(seriesID: seriesID)) ?? [])
+                .filter { $0.state == "scheduled" && ($0.scheduledFor ?? .distantPast) > now }
+                .map(\.id)
+
             try await SeriesRepository.editSeriesForward(
                 seriesID: seriesID,
                 days: days,
                 untilDate: untilDate
             )
+
+            // EventKit sync (Phase H Task 2): best-effort, server op already
+            // succeeded above so calendar failures here can never block or
+            // fail the save. Old events are stale (their session rows are
+            // gone) — remove first. Removal is ungated on the toggle, same
+            // "cleanup always runs regardless of the toggle's CURRENT
+            // state" reasoning as `LobbyView.cancelSeriesForward()`
+            // (LobbyView.swift:1174-1180). Then re-fetch and sync the
+            // freshly re-materialized occurrences, gated on
+            // `CalendarSyncPrefsStore.isEnabled()` exactly like
+            // `ScheduleSessionView.syncScheduledSessionsToCalendar`
+            // (ScheduleSessionView.swift:731-738) — filtered the same way
+            // as the pre-delete snapshot above so completed/past series
+            // occurrences (untouched by this edit) aren't touched either.
+            // `exerciseCount: nil` relies on `EventKitBridge.
+            // estimatedDuration`'s documented 60-min fallback
+            // (EventKitBridge.swift:79-95) — this view has no
+            // `routineExerciseCounts` cache to consult, unlike
+            // `ScheduleSessionView`.
+            for oldID in oldOccurrenceIDs {
+                await EventKitBridge.removeEvent(sessionID: oldID)
+            }
+            if CalendarSyncPrefsStore.isEnabled() {
+                let newOccurrences = ((try? await SeriesRepository.occurrences(seriesID: seriesID)) ?? [])
+                    .filter { $0.state == "scheduled" && ($0.scheduledFor ?? .distantPast) > now }
+                for session in newOccurrences {
+                    let routine = session.routineID.flatMap { rid in routines.first { $0.id == rid } }
+                    await EventKitBridge.syncEvent(session: session, routineName: routine?.name, exerciseCount: nil)
+                }
+            }
+
             onSaved()
             dismiss()
         } catch let error as GymSyncError {

@@ -16,8 +16,11 @@ Related frames adjudicated during Phase U (proofs render on demand via
 `scripts/render_proofs.js`; not stored here):
 
 - **Frame 17 · Workout Complete** — solo recap. **Built** (Phase U — `SoloRecapView`,
-  parity `recap-solo → 17`). The frame's "Synced to Apple Health" card is
-  deliberately omitted until Phase H restores it.
+  parity `recap-solo → 17`). The frame's "Synced to Apple Health" card —
+  deliberately omitted in Phase U pending Phase H — is now built
+  (`SoloRecapView.healthCard`, driven by `WorkoutSessionView
+  .recapHealthSummary`); the catalog's `recap-solo` fixture renders it, so
+  the parity capture is expected to match the frame more closely than before.
 - **Frame 8 · Session Complete** — group end-of-session celebration (leaderboard,
   kudos). **Queued for Phase F** — depends on the kudos backend, per the
   remaining-build roadmap.

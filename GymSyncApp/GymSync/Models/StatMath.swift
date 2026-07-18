@@ -158,4 +158,31 @@ enum StatMath {
         let delta = NSDecimalNumber(decimal: (thisMonthVolume - lastMonthVolume) / lastMonthVolume).doubleValue
         return delta * 100
     }
+
+    // MARK: - Body weight trend (Stats "Body Weight" card, Phase H Task 3)
+
+    /// Maps `logs` (any order) into `TrendChartView`'s `(Date, Double)` chart
+    /// point shape (Features/Stats/TrendChartView.swift:26), chronologically
+    /// sorted oldest-first — `BodyWeightLogRepository.recent` returns
+    /// newest-first (a display-list order), so this re-sorts before handing
+    /// data to the chart, same "sort before plotting" step
+    /// `ExerciseHistoryView.chartData` performs for the Est. 1RM trend
+    /// (Features/Stats/ExerciseHistoryView.swift:23-31).
+    static func bodyWeightTrendPoints(logs: [BodyWeightLog]) -> [(Date, Double)] {
+        logs
+            .map { ($0.loggedAt, NSDecimalNumber(decimal: $0.weight).doubleValue) }
+            .sorted { $0.0 < $1.0 }
+    }
+
+    /// "182.4 lbs" / "181 kg" — trims a trailing ".0" the same way
+    /// `ExerciseHistoryView.weightText`/`StatsTabView.trimmedDecimal` already
+    /// do for other weight displays on this screen, so a whole-number log
+    /// doesn't grow a spurious decimal.
+    static func formattedBodyWeight(_ weight: Decimal, unit: String) -> String {
+        var value = weight
+        var rounded = Decimal()
+        NSDecimalRound(&rounded, &value, 0, .plain)
+        let text = rounded == value ? "\(rounded)" : "\(value)"
+        return "\(text) \(unit)"
+    }
 }

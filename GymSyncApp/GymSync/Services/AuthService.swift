@@ -81,6 +81,17 @@ final class AuthService {
         // UserDefaults-backed and synchronous — unlike the cleanups above,
         // this can't fail, so there's no try? to swallow.
         StatTilesSnapshotStore.clear()
+        // Phase H Task 2: same "second user on a shared device must not
+        // inherit the first user's local state" reasoning as
+        // StatTilesSnapshotStore.clear() above — wipes the local
+        // session_id->eventIdentifier mapping AND the calendar-sync toggle
+        // itself, so a second user signing in sees the toggle back at its
+        // true default (OFF) rather than inheriting the first user's
+        // choice. See SessionCalendarSyncStore.swift's doc comments for why
+        // this doesn't touch the calendar itself (no bulk EKEvent deletion
+        // on sign-out).
+        SessionCalendarSyncStore.clear()
+        CalendarSyncPrefsStore.clear()
         // Compliance review fix: drop the cached profile alongside the auth
         // state change so a stale (possibly now-deleted, see
         // `forceSignedOutAfterDeletion()`) profile can't linger in the
