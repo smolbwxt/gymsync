@@ -13,14 +13,15 @@ import SwiftUI
 //
 // Layout/copy below is byte-identical to the prior inline implementation
 // (accent hero: kicker / duration / subline / TOTAL LBS·SETS·PR row; New
-// Personal Record card; "By exercise" breakdown; full-width Done bar), with
-// ONE deliberate omission: the "Synced to Apple Health" card. The design doc
-// (docs/superpowers/specs/2026-07-16-design-frames-design.md, "Recap
-// adjudication") explicitly calls for that row to render ABSENT until Phase H
-// ships, even though `HealthKitBridge` already exists in this codebase and
-// `WorkoutSessionView.endSession()` still calls `exportWorkout` — that write
-// is unrelated to recap layout and is untouched; only the card's RENDERING
-// is removed, here, by never having a code path for it in this view at all.
+// Personal Record card; "By exercise" breakdown; full-width Done bar), PLUS
+// the "Synced to Apple Health" card (Phase H — dormancy ends here). The
+// design doc (docs/superpowers/specs/2026-07-16-design-frames-design.md,
+// "Recap adjudication") had called for that row to render ABSENT until
+// Phase H shipped; canvas frame 17 (docs/design/Gym Sync App Designs.dc.html,
+// "SOLO RECAP") always included it — icon + "Synced to Apple Health" title +
+// "NN min · NNN kcal" meta line, rendered only when the export actually
+// succeeded (`healthSummary == nil` otherwise; see
+// `WorkoutSessionView.recapHealthSummary`).
 struct SoloRecapView: View {
     /// One row of the "By exercise" breakdown: name, set count, top set, PR flag.
     /// Moved here (was a private nested type on `WorkoutSessionView`) since the
@@ -53,6 +54,18 @@ struct SoloRecapView: View {
         let previousBest: Decimal
     }
 
+    /// Display-ready fields for the "Synced to Apple Health" card (Phase H).
+    /// The caller (`WorkoutSessionView.recapHealthSummary`) pre-formats both
+    /// strings — mirrors the "plain display-ready values" convention this
+    /// type already uses for `durationText`/`totalLbsText`/etc. — and
+    /// resolves to `nil` when the export didn't actually succeed
+    /// (`healthSynced == false`), so this card never claims a sync that
+    /// didn't happen.
+    struct HealthSummary {
+        let minutesText: String   // e.g. "42 min"
+        let caloriesText: String  // e.g. "318 kcal"
+    }
+
     let kicker: String
     let durationText: String
     let subline: String
@@ -61,6 +74,7 @@ struct SoloRecapView: View {
     let prCount: Int
     let heaviestPR: HeaviestPR?
     let exerciseSummaries: [ExerciseSummary]
+    let healthSummary: HealthSummary?
     let shareSummary: String
     let onDone: () -> Void
 
@@ -75,6 +89,7 @@ struct SoloRecapView: View {
         prCount: Int,
         heaviestPR: HeaviestPR?,
         exerciseSummaries: [ExerciseSummary],
+        healthSummary: HealthSummary? = nil,
         shareSummary: String,
         onDone: @escaping () -> Void = {}
     ) {
@@ -86,6 +101,7 @@ struct SoloRecapView: View {
         self.prCount = prCount
         self.heaviestPR = heaviestPR
         self.exerciseSummaries = exerciseSummaries
+        self.healthSummary = healthSummary
         self.shareSummary = shareSummary
         self.onDone = onDone
     }
@@ -135,8 +151,8 @@ struct SoloRecapView: View {
         }
     }
 
-    // Canvas: recap body — accent hero, PR card, by-exercise breakdown.
-    // (Apple Health card intentionally omitted — see type doc comment above.)
+    // Canvas: recap body — accent hero, PR card, by-exercise breakdown,
+    // Apple Health card (Phase H — see type doc comment above).
     private var content: some View {
         VStack(alignment: .leading, spacing: 14) {
             hero
@@ -147,6 +163,10 @@ struct SoloRecapView: View {
 
             if !exerciseSummaries.isEmpty {
                 breakdown
+            }
+
+            if let healthSummary {
+                healthCard(healthSummary)
             }
         }
         .padding(.horizontal, 16)
@@ -243,6 +263,33 @@ struct SoloRecapView: View {
                     Rectangle().fill(theme.divider).frame(height: 1)
                 }
             }
+        }
+    }
+
+    // Canvas: "Synced to Apple Health" card (Phase H) — surface-filled row,
+    // accent plus-in-circle icon, bold title, muted "NN min · NNN kcal" meta
+    // line. Matches the canvas's `.card.elev-sm` row (dc.html "SOLO RECAP",
+    // the card following "By exercise") — GSCard already renders flat
+    // (no shadow), matching the rest of this codebase's translation of
+    // `.elev-*` canvas classes (none of GSComponents.swift's card usages add
+    // `.shadow(...)` either).
+    private func healthCard(_ summary: HealthSummary) -> some View {
+        GSCard {
+            HStack(alignment: .center, spacing: 10) {
+                Image(systemName: "plus.circle")
+                    .font(.system(size: 20, weight: .regular))
+                    .foregroundStyle(theme.accent)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Synced to Apple Health")
+                        .font(GSFont.bold(13, relativeTo: .subheadline))
+                        .foregroundStyle(theme.text)
+                    Text("\(summary.minutesText) · \(summary.caloriesText)")
+                        .font(GSFont.body(11, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral700)
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

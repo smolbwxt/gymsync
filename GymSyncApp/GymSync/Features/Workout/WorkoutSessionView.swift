@@ -65,11 +65,12 @@ struct WorkoutSessionView: View {
     /// The completed session record (has `completedAt`) — captured by `endSession()`
     /// so the recap's duration hero can compute `completedAt - startedAt`.
     @State private var completedSession: WorkoutSession?
-    /// True only when `HealthKitBridge.exportWorkout` succeeded. The recap no
-    /// longer renders a "Synced to Apple Health" card (Phase U Task 4 —
-    /// suppressed until Phase H per the design doc), so this is currently
-    /// write-only; kept for that future phase to read. Export itself never
-    /// blocks completion on failure.
+    /// True only when `HealthKitBridge.exportWorkout` succeeded. Phase U
+    /// Task 4 suppressed the recap's "Synced to Apple Health" card until
+    /// Phase H shipped it (write-only until now); `recapHealthSummary` below
+    /// reads this to decide whether that card renders at all — a failed
+    /// export means no card, never a card claiming a sync that didn't
+    /// happen. Export itself never blocks completion on failure.
     @State private var healthSynced: Bool = false
     /// Fallback rest duration for exercises with no per-exercise `restSeconds`
     /// configured (e.g. a routine item where rest was left unset) — read from
@@ -118,6 +119,7 @@ struct WorkoutSessionView: View {
                         prCount: sessionPRs.count,
                         heaviestPR: recapHeaviestPR,
                         exerciseSummaries: exerciseSummaries,
+                        healthSummary: recapHealthSummary,
                         shareSummary: recapShareSummary,
                         onDone: { dismiss() }
                     )
@@ -443,15 +445,17 @@ struct WorkoutSessionView: View {
     // MARK: - Recap (Dossier §A.4)
     //
     // The recap's rendering (header, accent hero, PR card, by-exercise
-    // breakdown, Done footer) moved to `SoloRecapView.swift` in Phase U Task 4
-    // (canvas frame 17 alignment) — `body`, above, constructs it from the
-    // computed properties in the "Recap data" section below. The "Synced to
-    // Apple Health" card that used to live here (`appleHealthCard`,
-    // `appleHealthMetaText`) was removed rather than moved: the design doc's
-    // "Recap adjudication" explicitly calls for that row to render absent
-    // until Phase H ships. `healthSynced` (below) and
-    // `HealthKitBridge.exportWorkout` in `endSession()` are unchanged — that
-    // write is unrelated to recap layout.
+    // breakdown, Apple Health card, Done footer) lives in
+    // `SoloRecapView.swift` (extracted Phase U Task 4, canvas frame 17
+    // alignment) — `body`, above, constructs it from the computed properties
+    // in the "Recap data" section below. The original inline "Synced to
+    // Apple Health" card (`appleHealthCard`, `appleHealthMetaText`) was
+    // removed rather than moved when this view was extracted: the design
+    // doc's "Recap adjudication" called for that row to render absent until
+    // Phase H shipped it. Phase H restores it as `SoloRecapView.healthCard`,
+    // driven by `recapHealthSummary` below (built from `healthSynced` +
+    // `HealthKitBridge.estimatedCalories`) — `HealthKitBridge.exportWorkout`
+    // in `endSession()` is unchanged.
 
     // Canvas: "No routine" (freeform) session — no set-logging UI exists yet.
     // Replaces the indefinite spinner (which read as broken, per Task 5
@@ -564,6 +568,21 @@ struct WorkoutSessionView: View {
     private var recapShareSummary: String {
         let title = routine?.name ?? "Solo Workout"
         return "\(title) — \(recapDurationText), \(recapTotalLbsText) lbs, \(recapNonPenaltySets.count) sets"
+    }
+
+    /// Display-ready fields for `SoloRecapView`'s "Synced to Apple Health"
+    /// card (Phase H). `nil` — no card — when the export didn't succeed
+    /// (`healthSynced`'s doc comment); minutes/calories are independently
+    /// derived from `recapDurationInterval` via `HealthKitBridge`'s pure
+    /// helpers, same source the hero's own `recapDurationText` reads.
+    private var recapHealthSummary: SoloRecapView.HealthSummary? {
+        guard healthSynced else { return nil }
+        let minutes = recapDurationInterval / 60.0
+        let calories = HealthKitBridge.estimatedCalories(minutes: minutes)
+        return SoloRecapView.HealthSummary(
+            minutesText: "\(Int(minutes.rounded())) min",
+            caloriesText: "\(calories) kcal"
+        )
     }
 
     // MARK: - Helpers

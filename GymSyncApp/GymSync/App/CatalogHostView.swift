@@ -240,10 +240,10 @@ struct CatalogHostView: View {
     // values copied verbatim from proof-frame-17.png so the catalog capture
     // matches the canvas one-for-one: kicker "PUSH DAY A", duration 42:06,
     // "Friday, July 11 · solo", hero stats 7,240 / 10 / 1, PR card
-    // Bench Press 190×5 (beat a 185 prior best by 5 lbs), and three exercise
+    // Bench Press 190×5 (beat a 185 prior best by 5 lbs), three exercise
     // rows (Bench Press 4 sets·top 190×5, PR chip / Overhead Press 3 sets·top
-    // 95×8 / Tricep Pushdown 3 sets·top 50×12). No Apple Health row —
-    // `SoloRecapView` never renders one (see its type doc comment).
+    // 95×8 / Tricep Pushdown 3 sets·top 50×12), and — Phase H — the "Synced
+    // to Apple Health" card, "42 min · 318 kcal" per the same proof render.
     private var content_recapSolo: some View {
         SoloRecapView(
             kicker: "PUSH DAY A",
@@ -272,6 +272,10 @@ struct CatalogHostView: View {
                     topWeight: 50, topReps: 12, isPR: false
                 )
             ],
+            healthSummary: SoloRecapView.HealthSummary(
+                minutesText: "42 min",
+                caloriesText: "318 kcal"
+            ),
             shareSummary: "Push Day A — 42:06, 7,240 lbs, 10 sets"
         )
     }

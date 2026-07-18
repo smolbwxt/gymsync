@@ -487,9 +487,17 @@ private struct DurationEditSheet: View {
                                     : reason.trimmingCharacters(in: .whitespacesAndNewlines)
             )
 
-            // Re-export to HealthKit with the updated interval.
-            // KNOWN LIMITATION: HealthKitBridge has no delete/update API, so this may create
-            // a second Health entry for the same session (duplicate); acceptable for v1.
+            // Re-write the HealthKit export with the corrected interval.
+            // HealthKitBridge.replaceWorkout (Phase H) deletes the prior
+            // export — matched by the HKMetadataKeyExternalUUID stamp
+            // exportWorkout now writes — then re-exports; best-effort,
+            // logged internally, never throws. HONEST LIMITATION (see that
+            // function's doc comment): a session exported before this change
+            // has no stamp to match on, so its old sample can't be found and
+            // deleted — the edit still re-exports, so pre-Phase-H sessions
+            // may still end up with a duplicate Health entry. That was the
+            // ONLY case before this change too; now it's the exception
+            // rather than the rule.
             let updatedSession = WorkoutSession(
                 id:                   session.id,
                 routineID:            session.routineID,
@@ -507,7 +515,7 @@ private struct DurationEditSheet: View {
             )
             let existingSets = (try? await SessionRepository.sessionSets(sessionID: session.id)) ?? []
             try? await HealthKitBridge.requestPermission()
-            try? await HealthKitBridge.exportWorkout(session: updatedSession, setLogs: existingSets)
+            await HealthKitBridge.replaceWorkout(session: updatedSession, setLogs: existingSets)
 
             onSaved()
             dismiss()

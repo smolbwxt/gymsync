@@ -408,9 +408,12 @@ enum SessionRepository {
     ///   1. Inserts a `session_duration_edits` audit row (old + new values, edited_by me).
     ///   2. Updates `sessions` (started_at, completed_at, duration_was_edited = true, edited_by = me).
     ///
-    /// HealthKit re-write on edit is deferred to Phase 3c polish.
-    /// TODO(3c): after a successful edit, call HealthKitBridge.replaceWorkout(session:) to
-    ///           update the Health sample's duration to match the corrected timestamps.
+    /// HealthKit re-write on edit: this data-layer function stays HealthKit-
+    /// agnostic (no platform-framework import here) — the caller re-writes
+    /// the exported `HKWorkout` after a successful edit by calling
+    /// `HealthKitBridge.replaceWorkout(session:setLogs:)`. See
+    /// `CompletedSessionView.DurationEditSheet.save()` (Phase H), the one
+    /// client-side call site that invokes `editDuration`.
     static func editDuration(
         sessionID: UUID,
         newStartedAt: Date,
