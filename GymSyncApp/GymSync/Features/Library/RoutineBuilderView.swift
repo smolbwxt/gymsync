@@ -669,11 +669,15 @@ struct RoutineBuilderView: View {
                 let validTopSetID = scoringTopSetExerciseID.flatMap { id in
                     normalizedItems.contains { $0.exerciseID == id } ? id : nil
                 }
+                // Guard: `.topSet` selected with no (valid) exercise picked is
+                // logically incomplete — silently drop it from the metrics
+                // being written rather than publish a NULL-id scoring metric.
+                let effectiveMetrics = validTopSetID == nil ? scoringMetrics.subtracting([.topSet]) : scoringMetrics
                 try await RoutineRepository.updatePublishFields(
                     routineID: routineID,
                     defaultSort: defaultSort?.rawValue,
-                    scoringMetrics: scoringMetrics.isEmpty ? nil : scoringMetrics.map(\.rawValue),
-                    scoringTopSetExerciseID: scoringMetrics.contains(.topSet) ? validTopSetID : nil
+                    scoringMetrics: effectiveMetrics.isEmpty ? nil : effectiveMetrics.map(\.rawValue),
+                    scoringTopSetExerciseID: effectiveMetrics.contains(.topSet) ? validTopSetID : nil
                 )
             }
 

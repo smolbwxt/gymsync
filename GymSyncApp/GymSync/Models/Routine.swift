@@ -186,42 +186,52 @@ enum RoutineRepository {
         }
     }
 
+    /// Encodable counterpart to `PublishFields` above, backing the targeted
+    /// UPDATE in `updatePublishFields` below. Declared here (a nested type of
+    /// `RoutineRepository`, sibling to `PublishFields`) rather than local to
+    /// `updatePublishFields` — where it originally lived — so
+    /// `PublishFieldsEncodingTests` can reference it via `@testable import
+    /// GymSync`: a type declared inside a function body has no externally
+    /// nameable path, `internal` access or not. Behavior is unchanged: same
+    /// fields, same `CodingKeys`, same explicit `encode(to:)`.
+    ///
+    /// The EXPLICIT `encode(to:)` (`container.encode(_:forKey:)`, not the
+    /// synthesized `encodeIfPresent`) is deliberate: it makes a `nil` field
+    /// serialize as JSON `null` and actually CLEAR that column via
+    /// PostgREST's PATCH, rather than being silently omitted from the
+    /// request body and leaving a previously-set value stuck — the exact
+    /// behavior a curator un-picking "Top Set" (or any other field) needs.
+    struct PublishFieldsUpdate: Encodable {
+        let defaultSort: String?
+        let scoringMetrics: [String]?
+        let scoringTopSetExerciseID: UUID?
+        enum CodingKeys: String, CodingKey {
+            case defaultSort = "default_sort"
+            case scoringMetrics = "scoring_metrics"
+            case scoringTopSetExerciseID = "scoring_top_set_exercise_id"
+        }
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(defaultSort, forKey: .defaultSort)
+            try c.encode(scoringMetrics, forKey: .scoringMetrics)
+            try c.encode(scoringTopSetExerciseID, forKey: .scoringTopSetExerciseID)
+        }
+    }
+
     /// Targeted UPDATE of exactly the 3 publish-only columns — the brief's
     /// "minimal safe shape" decision (see this section's header comment).
     /// Called by `RoutineBuilderView.save()` ONLY when the routine is being
     /// published (`publishAsFeatured == true`); left untouched on unpublish
     /// (Discover only ever reads `visibility='public'` rows anyway, so a
     /// stale value on a private routine is inert either way — see that
-    /// call site's comment for the full reasoning).
-    ///
-    /// Uses a private `Encodable` with an EXPLICIT `encode(to:)` (`container
-    /// .encode(_:forKey:)`, not the synthesized `encodeIfPresent`) so a `nil`
-    /// field serializes as JSON `null` and actually CLEARS that column via
-    /// PostgREST's PATCH, rather than being silently omitted from the
-    /// request body and leaving a previously-set value stuck — the exact
-    /// behavior a curator un-picking "Top Set" (or any other field) needs.
+    /// call site's comment for the full reasoning). See `PublishFieldsUpdate`
+    /// above for why a `nil` field still needs writing.
     static func updatePublishFields(
         routineID: UUID,
         defaultSort: String?,
         scoringMetrics: [String]?,
         scoringTopSetExerciseID: UUID?
     ) async throws {
-        struct PublishFieldsUpdate: Encodable {
-            let defaultSort: String?
-            let scoringMetrics: [String]?
-            let scoringTopSetExerciseID: UUID?
-            enum CodingKeys: String, CodingKey {
-                case defaultSort = "default_sort"
-                case scoringMetrics = "scoring_metrics"
-                case scoringTopSetExerciseID = "scoring_top_set_exercise_id"
-            }
-            func encode(to encoder: Encoder) throws {
-                var c = encoder.container(keyedBy: CodingKeys.self)
-                try c.encode(defaultSort, forKey: .defaultSort)
-                try c.encode(scoringMetrics, forKey: .scoringMetrics)
-                try c.encode(scoringTopSetExerciseID, forKey: .scoringTopSetExerciseID)
-            }
-        }
         do {
             _ = try await client
                 .from("routines")

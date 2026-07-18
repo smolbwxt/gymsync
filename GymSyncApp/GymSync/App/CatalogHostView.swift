@@ -578,16 +578,23 @@ struct CatalogHostView: View {
         ),
     ]
 
+    // Wrapped in its own `NavigationStack`, matching `content_editProfile`/
+    // `content_blockedUsers`/`content_topLifters` above — `DiscoverWorkoutDetailView`
+    // sets `.navigationTitle` + `.toolbarBackground` (below), both of which
+    // no-op without a `NavigationStack` ancestor; without this wrap the
+    // capture shows no nav chrome at all.
     private var content_discoverDetail: some View {
-        DiscoverWorkoutDetailView(
-            catalogFixtureWorkout: Self.discoverFixtureMurph,
-            catalogFixtureRoutineExercises: Self.discoverFixtureRoutineExercises,
-            catalogFixtureAllExercises: [
-                Self.discoverFixtureExercisePullUp,
-                Self.discoverFixtureExercisePushUp,
-            ],
-            catalogFixtureLeaderboard: Self.discoverFixtureLeaderboard
-        )
+        NavigationStack {
+            DiscoverWorkoutDetailView(
+                catalogFixtureWorkout: Self.discoverFixtureMurph,
+                catalogFixtureRoutineExercises: Self.discoverFixtureRoutineExercises,
+                catalogFixtureAllExercises: [
+                    Self.discoverFixtureExercisePullUp,
+                    Self.discoverFixtureExercisePushUp,
+                ],
+                catalogFixtureLeaderboard: Self.discoverFixtureLeaderboard
+            )
+        }
     }
 
     // MARK: - Top Lifters (Phase L Task 4 — no canvas frame, catalog case)
