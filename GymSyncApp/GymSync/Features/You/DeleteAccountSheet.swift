@@ -136,11 +136,22 @@ struct DeleteAccountSheet: View {
         errorText = nil
         do {
             try await AccountDeletionRepository.deleteAccount()
-            // Cascade succeeded server-side — sign out locally. RootView
-            // switches on `AuthService.state`, so this alone tears down the
-            // entire authenticated view hierarchy (including this sheet)
-            // back to SignInView; no explicit `dismiss()` needed here.
-            try await auth.signOut()
+            // Cascade succeeded server-side — this is the point of no
+            // return, so from here on nothing may surface an error or
+            // leave the app looking authenticated. Deliberately NOT
+            // `auth.signOut()`: that revokes the local Supabase session
+            // first and can throw on an already-server-deleted account,
+            // which would otherwise skip `state = .signedOut` (via
+            // `signOut()`'s early `throw`) and strand the user
+            // authenticated against a deleted account with a raw error
+            // and a re-enabled confirm button. `forceSignedOutAfterDeletion()`
+            // is non-throwing by construction (swallows the local-revoke
+            // error internally), so this call can never land in the catch
+            // clauses below. RootView switches on `AuthService.state`, so
+            // this alone tears down the entire authenticated view
+            // hierarchy (including this sheet) back to SignInView; no
+            // explicit `dismiss()` needed here.
+            await auth.forceSignedOutAfterDeletion()
         } catch let error as GymSyncError {
             errorText = error.errorDescription
         } catch {

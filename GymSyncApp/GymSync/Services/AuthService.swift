@@ -81,6 +81,35 @@ final class AuthService {
         // UserDefaults-backed and synchronous — unlike the cleanups above,
         // this can't fail, so there's no try? to swallow.
         StatTilesSnapshotStore.clear()
+        // Compliance review fix: drop the cached profile alongside the auth
+        // state change so a stale (possibly now-deleted, see
+        // `forceSignedOutAfterDeletion()`) profile can't linger in the
+        // `AppState` singleton and get read by `RootView`/tab views before
+        // the next sign-in's refetch. Both `AuthService` and `AppState` are
+        // `@MainActor` singletons, so this cross-object write is a same-
+        // actor synchronous assignment — no isolation hop needed (matches
+        // the existing direct-write precedent in
+        // `CatalogHostView.content_sessionChat`, which sets
+        // `AppState.shared.currentProfile` the same way).
+        AppState.shared.currentProfile = nil
+        state = .signedOut
+    }
+
+    /// Best-effort local teardown called ONLY after
+    /// `AccountDeletionRepository.deleteAccount()` has already returned
+    /// successfully. At that point `account-deletion-cascade` has
+    /// hard-deleted this user's `auth.users` row server-side — the local
+    /// Supabase session is already orphaned, so revoking it locally
+    /// (`SupabaseService.shared.signOut()`) can throw (e.g. the
+    /// now-nonexistent user's session rejects the request). For an
+    /// irreversible action, "cascade succeeded" is the point of no return:
+    /// a local-cleanup failure must never look like "deletion failed," so
+    /// unlike `signOut()` this method is declared non-throwing and swallows
+    /// every error from the local revoke — it always lands the app in
+    /// `.signedOut`, unconditionally.
+    func forceSignedOutAfterDeletion() async {
+        try? await SupabaseService.shared.signOut()
+        AppState.shared.currentProfile = nil
         state = .signedOut
     }
 
