@@ -39,6 +39,7 @@ enum CatalogScreen: String, CaseIterable {
     case deleteAccount = "delete-account"
     case discover = "discover"
     case discoverDetail = "discover-detail"
+    case topLifters = "top-lifters"
 }
 
 struct CatalogHostView: View {
@@ -73,6 +74,7 @@ struct CatalogHostView: View {
             case .deleteAccount:              content_deleteAccount
             case .discover:                   content_discover
             case .discoverDetail:             content_discoverDetail
+            case .topLifters:                 content_topLifters
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -586,6 +588,44 @@ struct CatalogHostView: View {
             ],
             catalogFixtureLeaderboard: Self.discoverFixtureLeaderboard
         )
+    }
+
+    // MARK: - Top Lifters (Phase L Task 4 — no canvas frame, catalog case)
+    //
+    // No canvas frame depicts a Top Lifters board — same "Discover
+    // undesigned" finding as discover/discover-detail above; see
+    // `docs/design/accepted-deviations.json`'s "top-lifters" entry. Uses the
+    // `catalogFixtureLifters:` seam (skip the live `.task` fetch, seed
+    // `lifters` directly) — same idiom as `DiscoverView`/`TopLiftersView`'s
+    // own `#if DEBUG` extensions.
+    //
+    // `AppState.shared.currentProfile` is force-set to one of the fixture
+    // rows — same "You" identity idiom `content_sessionChat` above already
+    // establishes — so `TopLiftersView.leaderboardRow`'s `isYou` branch (`
+    // profile.id == appState.currentProfile?.id`) has a real id to match;
+    // CatalogHostView bypasses auth entirely (this file's own header
+    // comment), so `currentProfile` would otherwise be nil and no row would
+    // ever highlight.
+    //
+    // Wrapped in its own `NavigationStack`, matching `content_editProfile`/
+    // `content_blockedUsers` above (both set `.navigationTitle` and need a
+    // real nav bar to render it) — `TopLiftersView` sets `.navigationTitle
+    // ("Top Lifters")` the same way.
+    private static let topLiftersFixtureYou =
+        Profile(catalogFixtureUsername: "you", lifetimeVolumeLifted: 42_800)
+    private static let topLiftersFixtureRows: [Profile] = [
+        Profile(catalogFixtureUsername: "coach_dana", lifetimeVolumeLifted: 128_400),
+        Profile(catalogFixtureUsername: "jordan_c", lifetimeVolumeLifted: 96_200),
+        topLiftersFixtureYou,
+        Profile(catalogFixtureUsername: "sam_t", lifetimeVolumeLifted: 31_050),
+        Profile(catalogFixtureUsername: "alex_j", lifetimeVolumeLifted: 12_480),
+    ]
+
+    private var content_topLifters: some View {
+        AppState.shared.currentProfile = Self.topLiftersFixtureYou
+        return NavigationStack {
+            TopLiftersView(catalogFixtureLifters: Self.topLiftersFixtureRows)
+        }
     }
 }
 

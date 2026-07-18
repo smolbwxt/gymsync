@@ -217,6 +217,7 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogDeleteAccount()      { captureCatalog("delete-account") }
     func testCatalogDiscover()           { captureCatalog("discover") }
     func testCatalogDiscoverDetail()     { captureCatalog("discover-detail") }
+    func testCatalogTopLifters()         { captureCatalog("top-lifters") }
 
     // MARK: - Seeded deep-screen captures
     //

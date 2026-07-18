@@ -44,35 +44,82 @@ struct DiscoverView: View {
 
     var body: some View {
         ScrollView {
-            if loading {
-                HStack { Spacer(); ProgressView().tint(theme.accent); Spacer() }
-                    .padding(.top, 60)
-            } else if let errorText {
-                GSErrorCard(message: errorText) { Task { await load() } }
-                    .padding(16)
-            } else if workouts.isEmpty {
-                GSEmptyState(
-                    icon: "trophy",
-                    title: "Nothing published yet",
-                    message: "Featured public workouts will show up here."
-                )
-                .padding(.top, 40)
-            } else {
-                LazyVGrid(columns: columns, spacing: 10) {
-                    ForEach(workouts) { workout in
-                        NavigationLink {
-                            DiscoverWorkoutDetailView(workout: workout)
-                        } label: {
-                            workoutCard(workout)
+            VStack(spacing: 0) {
+                topLiftersRow
+
+                if loading {
+                    HStack { Spacer(); ProgressView().tint(theme.accent); Spacer() }
+                        .padding(.top, 60)
+                } else if let errorText {
+                    GSErrorCard(message: errorText) { Task { await load() } }
+                        .padding(16)
+                } else if workouts.isEmpty {
+                    GSEmptyState(
+                        icon: "trophy",
+                        title: "Nothing published yet",
+                        message: "Featured public workouts will show up here."
+                    )
+                    .padding(.top, 40)
+                } else {
+                    LazyVGrid(columns: columns, spacing: 10) {
+                        ForEach(workouts) { workout in
+                            NavigationLink {
+                                DiscoverWorkoutDetailView(workout: workout)
+                            } label: {
+                                workoutCard(workout)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
+                    .padding(16)
                 }
-                .padding(16)
             }
         }
         .background(theme.bg)
         .task { await load() }
+    }
+
+    // MARK: - Top Lifters entry point (Phase L Task 4)
+    //
+    // Card/row pushing the global cumulative-volume board, above the grid so
+    // it's reachable regardless of loading/error/empty state below it. Shape
+    // reuses `ScheduleSessionView.whatSection`'s bordered icon + title/
+    // subtitle + chevron Menu-row idiom (`Features/Sessions/
+    // ScheduleSessionView.swift:358-384`), swapped from a `Menu` to a plain
+    // `NavigationLink` push since this row has nowhere to pick from — it
+    // just navigates.
+    private var topLiftersRow: some View {
+        NavigationLink {
+            TopLiftersView()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "trophy.fill")
+                    .font(.system(size: 16, weight: .regular))
+                    .foregroundStyle(theme.accent)
+                    .frame(width: 20)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Top Lifters")
+                        .font(GSFont.bold(14, relativeTo: .headline))
+                        .foregroundStyle(theme.text)
+                    Text("Global leaderboard by lifetime volume")
+                        .font(GSFont.body(11, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral500)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(theme.neutral500)
+            }
+            .padding(12)
+            .background(theme.surface)
+            .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 16)
+        .padding(.top, 16)
     }
 
     // Canvas-idiom card: image placeholder + optional FEATURED chip

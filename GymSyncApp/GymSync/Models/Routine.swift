@@ -133,6 +133,108 @@ enum RoutineRepository {
         return copy
     }
 
+    // MARK: - Phase L Task 4: publish fields (default_sort/scoring_metrics/
+    // scoring_top_set_exercise_id)
+    //
+    // These 3 columns (+ is_featured) were added fix-forward to `routines` in
+    // Task 1 (`supabase/migrations/20260723000001_public_workout_repository.
+    // sql:29-35`) but deliberately NOT added as `Routine` stored properties —
+    // see `PublicWorkout.swift`'s doc comment: `RoutineBuilderView.save()`
+    // (below, `save()`) constructs a brand-new `Routine(...)` from scratch on
+    // every edit, so widening `Routine` would silently reset these fields to
+    // their defaults on every unrelated save (an "unpublish" regression for
+    // is_featured/default_sort/etc, parallel to the one that file's own
+    // `publishAsFeatured` comment already warns about for `visibility`).
+    // These two methods keep that surface OFF `Routine`/`save()` entirely: a
+    // narrow read (to seed the publish-fields UI when editing an
+    // already-published routine) and a narrow, targeted UPDATE of exactly
+    // these 3 columns (called only when publishing) — never routed through
+    // `save()`'s full-row upsert.
+
+    struct PublishFields: Decodable {
+        let defaultSort: String?
+        let scoringMetrics: [String]?
+        let scoringTopSetExerciseID: UUID?
+        enum CodingKeys: String, CodingKey {
+            case defaultSort = "default_sort"
+            case scoringMetrics = "scoring_metrics"
+            case scoringTopSetExerciseID = "scoring_top_set_exercise_id"
+        }
+    }
+
+    /// Seeds `RoutineBuilderView`'s publish-fields UI when `editing` is an
+    /// already-published routine — same "must read the current value before
+    /// overwriting it" discipline `RoutineBuilderView.load()`'s
+    /// `publishAsFeatured = editing.visibility == "public"` line already
+    /// documents for `visibility`. Read-only; owner/curator/public-visibility
+    /// RLS (`20260717000003_curation.sql`) already covers this exactly like
+    /// every other `routines` SELECT in this file — no new policy needed.
+    static func publishFields(routineID: UUID) async throws -> PublishFields? {
+        do {
+            let row: PublishFields = try await client
+                .from("routines")
+                .select("default_sort, scoring_metrics, scoring_top_set_exercise_id")
+                .eq("id", value: routineID)
+                .single()
+                .execute()
+                .value
+            return row
+        } catch let error as PostgrestError where error.code == "PGRST116" {
+            return nil
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
+
+    /// Targeted UPDATE of exactly the 3 publish-only columns — the brief's
+    /// "minimal safe shape" decision (see this section's header comment).
+    /// Called by `RoutineBuilderView.save()` ONLY when the routine is being
+    /// published (`publishAsFeatured == true`); left untouched on unpublish
+    /// (Discover only ever reads `visibility='public'` rows anyway, so a
+    /// stale value on a private routine is inert either way — see that
+    /// call site's comment for the full reasoning).
+    ///
+    /// Uses a private `Encodable` with an EXPLICIT `encode(to:)` (`container
+    /// .encode(_:forKey:)`, not the synthesized `encodeIfPresent`) so a `nil`
+    /// field serializes as JSON `null` and actually CLEARS that column via
+    /// PostgREST's PATCH, rather than being silently omitted from the
+    /// request body and leaving a previously-set value stuck — the exact
+    /// behavior a curator un-picking "Top Set" (or any other field) needs.
+    static func updatePublishFields(
+        routineID: UUID,
+        defaultSort: String?,
+        scoringMetrics: [String]?,
+        scoringTopSetExerciseID: UUID?
+    ) async throws {
+        struct PublishFieldsUpdate: Encodable {
+            let defaultSort: String?
+            let scoringMetrics: [String]?
+            let scoringTopSetExerciseID: UUID?
+            enum CodingKeys: String, CodingKey {
+                case defaultSort = "default_sort"
+                case scoringMetrics = "scoring_metrics"
+                case scoringTopSetExerciseID = "scoring_top_set_exercise_id"
+            }
+            func encode(to encoder: Encoder) throws {
+                var c = encoder.container(keyedBy: CodingKeys.self)
+                try c.encode(defaultSort, forKey: .defaultSort)
+                try c.encode(scoringMetrics, forKey: .scoringMetrics)
+                try c.encode(scoringTopSetExerciseID, forKey: .scoringTopSetExerciseID)
+            }
+        }
+        do {
+            _ = try await client
+                .from("routines")
+                .update(PublishFieldsUpdate(
+                    defaultSort: defaultSort,
+                    scoringMetrics: scoringMetrics,
+                    scoringTopSetExerciseID: scoringTopSetExerciseID
+                ))
+                .eq("id", value: routineID)
+                .execute()
+        } catch { throw ErrorMapping.map(error) }
+    }
+
     /// Bulk routine_exercises lookup — backs the Library list's card body/tags/meta
     /// (needs every visible routine's exercises without N per-routine round-trips).
     static func exercisesForRoutines(ids: [UUID]) async throws -> [RoutineExercise] {
