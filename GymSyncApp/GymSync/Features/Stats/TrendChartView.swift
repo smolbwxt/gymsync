@@ -42,8 +42,10 @@ struct TrendChartView: View {
     /// this to match the single-GSCard-per-card idiom every other Stats-tab
     /// card uses (reviewer Finding 1, Phase H Task 3 fix wave 1). Declared
     /// last with a default so it doesn't disturb the synthesized memberwise
-    /// init's existing `title:data:selectedRange:` call shape.
-    let embedInCard: Bool = true
+    /// init's existing `title:data:selectedRange:` call shape. Must be `var`:
+    /// a `let` with an initial value is omitted from the memberwise init
+    /// entirely, which would reject the `embedInCard: false` call site.
+    var embedInCard: Bool = true
 
     private var filteredData: [(Date, Double)] {
         guard let cutoff = Calendar.current.date(byAdding: .day, value: -selectedRange.days, to: .now) else {
