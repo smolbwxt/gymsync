@@ -24,6 +24,10 @@ struct FriendsView: View {
     @FocusState private var isUsernameFieldFocused: Bool
 
     // Phase M Task 2 (moderation/compliance): Report/Block on friends rows.
+    // Whole-branch review Finding 2: also wired onto incoming and outgoing
+    // request rows below — same two @State vars serve all three sections,
+    // since a report/block always targets the Profile behind the row, not
+    // the request/friendship relationship itself.
     @State private var reportTarget: Profile?
     @State private var blockTarget: Profile?
     @State private var showBlockConfirm = false
@@ -114,6 +118,27 @@ struct FriendsView: View {
                         .listRowBackground(theme.surface)
                         .listRowSeparatorTint(theme.divider)
                         .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+                        // Whole-branch review Finding 2: incoming (and
+                        // outgoing, below) request rows lacked Report/Block
+                        // entirely — same .contextMenu idiom as the
+                        // Friends-section rows below, reusing the same
+                        // reportTarget/blockTarget/showBlockConfirm state
+                        // (a request row and a friend row report/block the
+                        // same way: the profile behind the row, not the
+                        // request itself).
+                        .contextMenu {
+                            Button {
+                                reportTarget = profile
+                            } label: {
+                                Label("Report", systemImage: "flag")
+                            }
+                            Button(role: .destructive) {
+                                blockTarget = profile
+                                showBlockConfirm = true
+                            } label: {
+                                Label("Block", systemImage: "nosign")
+                            }
+                        }
                     }
                 } header: {
                     GSSectionHeader("Requests · \(incoming.count)")
@@ -140,6 +165,24 @@ struct FriendsView: View {
                         .listRowBackground(theme.surface)
                         .listRowSeparatorTint(theme.divider)
                         .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
+                        // Finding 2 (same as the incoming section above):
+                        // same trivial contextMenu pattern applies here too
+                        // — a user may want to report/block someone even
+                        // after sending them a request but before it's
+                        // answered.
+                        .contextMenu {
+                            Button {
+                                reportTarget = profile
+                            } label: {
+                                Label("Report", systemImage: "flag")
+                            }
+                            Button(role: .destructive) {
+                                blockTarget = profile
+                                showBlockConfirm = true
+                            } label: {
+                                Label("Block", systemImage: "nosign")
+                            }
+                        }
                     }
                 } header: {
                     GSSectionHeader("Sent")
@@ -315,15 +358,32 @@ struct FriendsView: View {
         outgoing = (try? await FriendRepository.outgoingRequests()) ?? []
     }
 
-    // Phase M Task 2: block a friend — inserts `blocked_users`, then drops
-    // the row client-side (spec: "friends: drop the row" — the row is
-    // already fetched, so future RLS-driven refetches alone wouldn't hide
-    // it until the next `refresh()`).
+    // Phase M Task 2: block a user — inserts `blocked_users`, then drops the
+    // row client-side (spec: "friends: drop the row" — the row is already
+    // fetched, so future RLS-driven refetches alone wouldn't hide it until
+    // the next `refresh()`).
+    //
+    // Whole-branch review Finding 2 extension: `blockTarget` can now come
+    // from ANY of the three sections (friends, incoming, outgoing —
+    // contextMenu is wired on all three above), so this removes the
+    // profile from all three local arrays rather than just `friends`. A
+    // given profile only ever actually appears in one of them at a time,
+    // so the other two `removeAll` calls are no-ops for that profile — this
+    // is simpler and safer than threading "which section did this menu
+    // open from" through `blockTarget` just to call one specific array's
+    // removeAll. Server-side, the new blocked_users_sever_friendship
+    // trigger (20260722000003_block_severs_friendship.sql) already deletes
+    // the underlying friendships row (pending or accepted) the instant the
+    // block INSERT lands — this local removal just keeps the visible list
+    // in sync immediately, same rationale as the pre-existing `friends`
+    // case, without waiting for a `refresh()`.
     private func block(_ profile: Profile?) async {
         guard let profile else { return }
         do {
             try await ModerationRepository.block(userID: profile.id)
             friends.removeAll { $0.id == profile.id }
+            incoming.removeAll { $0.id == profile.id }
+            outgoing.removeAll { $0.id == profile.id }
             moderationError = nil
         } catch let error as GymSyncError {
             moderationError = error.errorDescription

@@ -80,10 +80,24 @@ struct DeleteAccountSheet: View {
                     .font(GSFont.bold(15, relativeTo: .headline))
                     .foregroundStyle(theme.text)
             }
+            // Whole-branch review Finding 2 (Minor): the previous copy
+            // promised messages get "replaced by 'Deleted User'" — but
+            // there is no such attribution label anywhere in the client.
+            // The real mechanism (chat_messages.author_id ON DELETE SET
+            // NULL, "NULL = system" — supabase/functions/account-deletion-
+            // cascade/index.ts:47-59, which flags this exact gap as
+            // "Swift UI work belongs to Task 4") tombstones a message by
+            // clearing its author, and ChatView.systemMessageView
+            // (Features/Social/ChatView.swift:568-602) then renders it as
+            // a centered, unattributed system-style notice — the body text
+            // survives, but no "Deleted User" label is ever shown. Copy
+            // corrected to describe what actually happens (anonymization,
+            // not relabeling). A real "Deleted User" attribution UI stays
+            // a tracked follow-up, not part of this fix.
             Text(
                 "Deleting your account permanently removes your profile, friendships, " +
                 "routines, and workout history. Sessions and groups you share with others " +
-                "are preserved for them, with your name replaced by \"Deleted User.\""
+                "are preserved for them, and any messages you sent will be anonymized."
             )
             .font(GSFont.body(13, relativeTo: .footnote))
             .foregroundStyle(theme.neutral700)
