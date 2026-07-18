@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(9);
+SELECT plan(15);
 
 INSERT INTO auth.users (id, email) VALUES
   ('00000000-0000-0000-0000-000000000001', 'a@t.com'),
@@ -181,6 +181,111 @@ SELECT results_eq(
       AND session_id = '20000000-0000-0000-0000-000000000001'$$,
   ARRAY[0],
   'a non-friend never reads the owner''s solo set_logs regardless of show_solo_workouts'
+);
+
+-- ============================================================
+-- Fix-forward (20260722000003) — whole-branch review Finding 1: a block in
+-- EITHER direction must cut solo-workout visibility, even when an accepted
+-- friendship row still exists for the pair. See that migration's header
+-- for the full is_blocked()-clause rationale (two directions, why neither
+-- is implied by the other).
+--
+-- Each direction gets TWO assertions:
+--   (a) the REAL path — block via the normal authenticated INSERT into
+--       blocked_users, which also fires the new
+--       blocked_users_sever_friendship trigger (friendship gone -> is_friend()
+--       alone would already explain the loss of access here);
+--   (b) a RECONSTRUCTED "legacy" state — after the real block above, the
+--       friendship is re-inserted directly as `postgres` (bypasses RLS,
+--       same idiom as the `SET LOCAL role postgres` backfill inserts
+--       earlier in this file), simulating a pair that was blocked BEFORE
+--       this migration's trigger existed (exactly what this migration's
+--       one-time backfill cleans up on a real database, reconstructed
+--       fresh here for the test). With is_friend() true again, only the
+--       set_logs SELECT policy's own `NOT private.is_blocked(...)` clauses
+--       can be responsible for continued denial — this isolates that the
+--       policy layer works independently of the trigger, not just
+--       incidentally alongside it.
+-- ============================================================
+
+SET LOCAL role postgres;
+
+-- New fixture for direction B (viewer blocked owner): G, an accepted
+-- friend of A, added after A already has show_solo_workouts=true so no
+-- further profile setup is needed.
+INSERT INTO auth.users (id, email) VALUES
+  ('00000000-0000-0000-0000-000000000006', 'g@t.com');
+INSERT INTO profiles (id, username) VALUES
+  ('00000000-0000-0000-0000-000000000006', 'user_g');
+INSERT INTO friendships (user_id, friend_id, status) VALUES
+  ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000006', 'accepted');
+
+-- ── Direction A: OWNER (A) has blocked the VIEWER (F) ─────────────────────
+SET LOCAL role authenticated;
+SET LOCAL request.jwt.claim.sub = '00000000-0000-0000-0000-000000000001';  -- A
+SELECT lives_ok(
+  $$INSERT INTO blocked_users (blocker_id, blocked_id) VALUES
+    ('00000000-0000-0000-0000-000000000001',
+     '00000000-0000-0000-0000-000000000003')$$,
+  'A (owner) blocks F (viewer) — direction-A fixture'
+);
+
+SET LOCAL request.jwt.claim.sub = '00000000-0000-0000-0000-000000000003';  -- F
+SELECT results_eq(
+  $$SELECT count(*)::int FROM set_logs
+    WHERE user_id = '00000000-0000-0000-0000-000000000001'
+      AND session_id = '20000000-0000-0000-0000-000000000001'$$,
+  ARRAY[0],
+  'direction A, real path: blocked friend F can no longer read A''s solo set_logs (friendship also severed by trigger)'
+);
+
+-- Reconstruct: friendship re-inserted directly (postgres bypasses RLS) —
+-- is_friend(A,F) is true again, but A's block on F is still in place.
+SET LOCAL role postgres;
+INSERT INTO friendships (user_id, friend_id, status) VALUES
+  ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000003', 'accepted');
+
+SET LOCAL role authenticated;
+SET LOCAL request.jwt.claim.sub = '00000000-0000-0000-0000-000000000003';  -- F
+SELECT results_eq(
+  $$SELECT count(*)::int FROM set_logs
+    WHERE user_id = '00000000-0000-0000-0000-000000000001'
+      AND session_id = '20000000-0000-0000-0000-000000000001'$$,
+  ARRAY[0],
+  'direction A, policy-isolated: set_logs SELECT policy''s is_blocked(owner,viewer) clause denies F even though is_friend(A,F) is true again'
+);
+
+-- ── Direction B: VIEWER (G) has blocked the OWNER (A) ─────────────────────
+SET LOCAL request.jwt.claim.sub = '00000000-0000-0000-0000-000000000006';  -- G
+SELECT lives_ok(
+  $$INSERT INTO blocked_users (blocker_id, blocked_id) VALUES
+    ('00000000-0000-0000-0000-000000000006',
+     '00000000-0000-0000-0000-000000000001')$$,
+  'G (viewer) blocks A (owner) — direction-B fixture'
+);
+
+SELECT results_eq(
+  $$SELECT count(*)::int FROM set_logs
+    WHERE user_id = '00000000-0000-0000-0000-000000000001'
+      AND session_id = '20000000-0000-0000-0000-000000000001'$$,
+  ARRAY[0],
+  'direction B, real path: G, having blocked A, can no longer read A''s solo set_logs (friendship also severed by trigger)'
+);
+
+-- Reconstruct: friendship re-inserted directly — is_friend(A,G) true
+-- again, G's block on A still in place.
+SET LOCAL role postgres;
+INSERT INTO friendships (user_id, friend_id, status) VALUES
+  ('00000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-000000000006', 'accepted');
+
+SET LOCAL role authenticated;
+SET LOCAL request.jwt.claim.sub = '00000000-0000-0000-0000-000000000006';  -- G
+SELECT results_eq(
+  $$SELECT count(*)::int FROM set_logs
+    WHERE user_id = '00000000-0000-0000-0000-000000000001'
+      AND session_id = '20000000-0000-0000-0000-000000000001'$$,
+  ARRAY[0],
+  'direction B, policy-isolated: set_logs SELECT policy''s is_blocked(viewer,owner) clause denies G even though is_friend(A,G) is true again'
 );
 
 SET LOCAL role postgres;

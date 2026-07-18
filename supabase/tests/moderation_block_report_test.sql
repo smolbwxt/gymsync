@@ -15,7 +15,7 @@
 -- called in-DB, and that the public.is_blocked PostgREST oracle is gone.
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(26);
+SELECT plan(43);
 
 INSERT INTO auth.users (id, email) VALUES
   ('00000000-0000-0000-0000-0000000000f1', 'mf1@t.com'),  -- Alice: reporter/blocker
@@ -297,6 +297,189 @@ SELECT throws_ok(
                               '00000000-0000-0000-0000-0000000000f2')$$,
   '42883', NULL,
   'calling public.is_blocked by (schema-qualified) name now fails: function does not exist'
+);
+
+-- ============================================================
+-- 6. Fix-forward (20260722000003) — whole-branch review Finding 1/2:
+-- blocking severs the friendships row between the pair, regardless of
+-- which side of the row (user_id/friend_id) the blocker happens to be on,
+-- regardless of whether the row was still pending or already accepted;
+-- re-blocking after an unblock never errors even with nothing left to
+-- sever; an unrelated, never-blocked pair's friendship is unaffected.
+--
+-- Fresh `10000000-...` namespace (vs. this file's own `00000000-...0000f1-
+-- f9`) so these fixtures can't collide with sections 1-5 above.
+-- ============================================================
+INSERT INTO auth.users (id, email) VALUES
+  ('10000000-0000-0000-0000-0000000000f1', 'sev1@t.com'),  -- Jack
+  ('10000000-0000-0000-0000-0000000000f2', 'sev2@t.com'),  -- Kate
+  ('10000000-0000-0000-0000-0000000000f3', 'sev3@t.com'),  -- Leo
+  ('10000000-0000-0000-0000-0000000000f4', 'sev4@t.com'),  -- Mia
+  ('10000000-0000-0000-0000-0000000000f5', 'sev5@t.com'),  -- Nora
+  ('10000000-0000-0000-0000-0000000000f6', 'sev6@t.com'),  -- Oscar
+  ('10000000-0000-0000-0000-0000000000f7', 'sev7@t.com'),  -- Paul
+  ('10000000-0000-0000-0000-0000000000f8', 'sev8@t.com');  -- Quinn
+INSERT INTO profiles (id, username) VALUES
+  ('10000000-0000-0000-0000-0000000000f1', 'sev_jack'),
+  ('10000000-0000-0000-0000-0000000000f2', 'sev_kate'),
+  ('10000000-0000-0000-0000-0000000000f3', 'sev_leo'),
+  ('10000000-0000-0000-0000-0000000000f4', 'sev_mia'),
+  ('10000000-0000-0000-0000-0000000000f5', 'sev_nora'),
+  ('10000000-0000-0000-0000-0000000000f6', 'sev_oscar'),
+  ('10000000-0000-0000-0000-0000000000f7', 'sev_paul'),
+  ('10000000-0000-0000-0000-0000000000f8', 'sev_quinn');
+
+-- ── 6a. Ordering 1: the blocker is the friendship row's user_id (the
+-- original requester) ─────────────────────────────────────────────────────
+SET LOCAL role authenticated;
+SET LOCAL request.jwt.claim.sub = '10000000-0000-0000-0000-0000000000f1';  -- Jack
+SELECT lives_ok(
+  $$INSERT INTO friendships (user_id, friend_id, status) VALUES
+    ('10000000-0000-0000-0000-0000000000f1',
+     '10000000-0000-0000-0000-0000000000f2', 'pending')$$,
+  'Jack requests Kate (severance fixture, ordering 1)'
+);
+SET LOCAL request.jwt.claim.sub = '10000000-0000-0000-0000-0000000000f2';  -- Kate
+SELECT lives_ok(
+  $$UPDATE friendships SET status = 'accepted'
+    WHERE user_id = '10000000-0000-0000-0000-0000000000f1'
+      AND friend_id = '10000000-0000-0000-0000-0000000000f2'$$,
+  'Kate accepts Jack''s request'
+);
+SELECT results_eq(
+  $$SELECT count(*)::int FROM friendships
+    WHERE user_id = '10000000-0000-0000-0000-0000000000f1'
+      AND friend_id = '10000000-0000-0000-0000-0000000000f2'
+      AND status = 'accepted'$$,
+  ARRAY[1],
+  'sanity: Jack/Kate are accepted friends before the block'
+);
+
+SET LOCAL request.jwt.claim.sub = '10000000-0000-0000-0000-0000000000f1';  -- Jack
+SELECT lives_ok(
+  $$INSERT INTO blocked_users (blocker_id, blocked_id) VALUES
+    ('10000000-0000-0000-0000-0000000000f1',
+     '10000000-0000-0000-0000-0000000000f2')$$,
+  'Jack blocks Kate'
+);
+-- RESET ROLE: back to the connecting role (bypasses RLS) to check the
+-- row's true existence directly, same idiom as section 5 above — this
+-- must NOT be confounded by whether Kate's own RLS visibility into
+-- friendships happens to hide the row too.
+RESET ROLE;
+SELECT results_eq(
+  $$SELECT count(*)::int FROM friendships
+    WHERE (user_id = '10000000-0000-0000-0000-0000000000f1'
+           AND friend_id = '10000000-0000-0000-0000-0000000000f2')
+       OR (user_id = '10000000-0000-0000-0000-0000000000f2'
+           AND friend_id = '10000000-0000-0000-0000-0000000000f1')$$,
+  ARRAY[0],
+  'blocking severs the friendship: ordering 1 (blocker was the friendship row''s user_id)'
+);
+
+-- ── 6b. Ordering 2: the blocker is the friendship row's friend_id (the
+-- original recipient) ─────────────────────────────────────────────────────
+SET LOCAL role authenticated;
+SET LOCAL request.jwt.claim.sub = '10000000-0000-0000-0000-0000000000f3';  -- Leo
+SELECT lives_ok(
+  $$INSERT INTO friendships (user_id, friend_id, status) VALUES
+    ('10000000-0000-0000-0000-0000000000f3',
+     '10000000-0000-0000-0000-0000000000f4', 'pending')$$,
+  'Leo requests Mia (severance fixture, ordering 2)'
+);
+SET LOCAL request.jwt.claim.sub = '10000000-0000-0000-0000-0000000000f4';  -- Mia
+SELECT lives_ok(
+  $$UPDATE friendships SET status = 'accepted'
+    WHERE user_id = '10000000-0000-0000-0000-0000000000f3'
+      AND friend_id = '10000000-0000-0000-0000-0000000000f4'$$,
+  'Mia accepts Leo''s request'
+);
+SELECT lives_ok(
+  $$INSERT INTO blocked_users (blocker_id, blocked_id) VALUES
+    ('10000000-0000-0000-0000-0000000000f4',
+     '10000000-0000-0000-0000-0000000000f3')$$,
+  'Mia blocks Leo'
+);
+RESET ROLE;
+SELECT results_eq(
+  $$SELECT count(*)::int FROM friendships
+    WHERE (user_id = '10000000-0000-0000-0000-0000000000f3'
+           AND friend_id = '10000000-0000-0000-0000-0000000000f4')
+       OR (user_id = '10000000-0000-0000-0000-0000000000f4'
+           AND friend_id = '10000000-0000-0000-0000-0000000000f3')$$,
+  ARRAY[0],
+  'blocking severs the friendship: ordering 2 (blocker was the friendship row''s friend_id)'
+);
+
+-- ── 6c. A PENDING (never-accepted) request also vanishes on block — the
+-- M-Task2 follow-up ("friend-request-row block gap") this review's
+-- Finding 2 names ─────────────────────────────────────────────────────────
+SET LOCAL role authenticated;
+SET LOCAL request.jwt.claim.sub = '10000000-0000-0000-0000-0000000000f5';  -- Nora
+SELECT lives_ok(
+  $$INSERT INTO friendships (user_id, friend_id, status) VALUES
+    ('10000000-0000-0000-0000-0000000000f5',
+     '10000000-0000-0000-0000-0000000000f6', 'pending')$$,
+  'Nora requests Oscar (left pending — never accepted)'
+);
+SET LOCAL request.jwt.claim.sub = '10000000-0000-0000-0000-0000000000f6';  -- Oscar
+SELECT lives_ok(
+  $$INSERT INTO blocked_users (blocker_id, blocked_id) VALUES
+    ('10000000-0000-0000-0000-0000000000f6',
+     '10000000-0000-0000-0000-0000000000f5')$$,
+  'Oscar blocks Nora instead of responding to her pending request'
+);
+RESET ROLE;
+SELECT results_eq(
+  $$SELECT count(*)::int FROM friendships
+    WHERE user_id = '10000000-0000-0000-0000-0000000000f5'
+      AND friend_id = '10000000-0000-0000-0000-0000000000f6'$$,
+  ARRAY[0],
+  'a PENDING friend request also vanishes when the addressee blocks the requester'
+);
+
+-- ── 6d. Re-block idempotency ───────────────────────────────────────────────
+-- Jack already blocked Kate in 6a (friendship already gone). Unblock, then
+-- block again: the trigger fires a second time with nothing left to
+-- delete — must not raise, must not behave differently the second time.
+SET LOCAL role authenticated;
+SET LOCAL request.jwt.claim.sub = '10000000-0000-0000-0000-0000000000f1';  -- Jack
+SELECT lives_ok(
+  $$DELETE FROM blocked_users
+    WHERE blocker_id = '10000000-0000-0000-0000-0000000000f1'
+      AND blocked_id = '10000000-0000-0000-0000-0000000000f2'$$,
+  'Jack unblocks Kate'
+);
+SELECT lives_ok(
+  $$INSERT INTO blocked_users (blocker_id, blocked_id) VALUES
+    ('10000000-0000-0000-0000-0000000000f1',
+     '10000000-0000-0000-0000-0000000000f2')$$,
+  're-block is idempotent: Jack blocks Kate again with no friendship row left to sever, no error'
+);
+
+-- ── 6e. Regression: an unrelated, never-blocked pair is unaffected ───────
+SET LOCAL request.jwt.claim.sub = '10000000-0000-0000-0000-0000000000f7';  -- Paul
+SELECT lives_ok(
+  $$INSERT INTO friendships (user_id, friend_id, status) VALUES
+    ('10000000-0000-0000-0000-0000000000f7',
+     '10000000-0000-0000-0000-0000000000f8', 'pending')$$,
+  'Paul requests Quinn (regression fixture — never blocked)'
+);
+SET LOCAL request.jwt.claim.sub = '10000000-0000-0000-0000-0000000000f8';  -- Quinn
+SELECT lives_ok(
+  $$UPDATE friendships SET status = 'accepted'
+    WHERE user_id = '10000000-0000-0000-0000-0000000000f7'
+      AND friend_id = '10000000-0000-0000-0000-0000000000f8'$$,
+  'Quinn accepts Paul''s request'
+);
+RESET ROLE;
+SELECT results_eq(
+  $$SELECT count(*)::int FROM friendships
+    WHERE user_id = '10000000-0000-0000-0000-0000000000f7'
+      AND friend_id = '10000000-0000-0000-0000-0000000000f8'
+      AND status = 'accepted'$$,
+  ARRAY[1],
+  'regression: an unrelated, never-blocked pair''s accepted friendship survives all the blocking activity above'
 );
 
 SELECT * FROM finish();
