@@ -330,38 +330,81 @@ struct StatsTabView: View {
     // trend), and the "+ Log" header button mirrors
     // `RoutinesListView.yourRoutinesHeader`'s "+ New" button shape
     // (Features/Library/RoutinesListView.swift:83-104).
+    //
+    // Fix wave 1 (reviewer Findings 1 + 2): this card used to be a bare
+    // VStack sitting on top of `TrendChartView`'s own internal
+    // `GSCard(bordered: true)` — two visually disconnected pieces with a
+    // border style no sibling card on this screen uses (every sibling —
+    // `weeklyVolumeCardView` line 167, `streakCardView` line 224,
+    // `recentPRsCardView` line 272, Lifetime Volume line 22 — is ONE
+    // `GSCard(bordered: false) { header + content }.padding(16)`). Now
+    // wrapped in that same single `GSCard(bordered: false)`, with
+    // `TrendChartView(embedInCard: false)` (TrendChartView.swift:33-41) so
+    // the chart contributes only its header+chart content, no nested
+    // card/border/padding of its own — `ExerciseHistoryView` (the only
+    // other `TrendChartView` consumer, swift:76-78) doesn't pass
+    // `embedInCard` at all, so it keeps the default `true` and its exact
+    // prior rendering. `latestBodyWeightText` below adds the headline
+    // number this card was missing relative to its "big number" sibling,
+    // Lifetime Volume (`volumeString`, line 25-33) — wired from
+    // `StatMath.formattedBodyWeight` (Models/StatMath.swift:181), which had
+    // zero production call sites before this (Finding 2).
     @ViewBuilder
     private var bodyWeightCardView: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                GSSectionHeader("Body Weight")
-                Spacer()
-                Button {
-                    showingBodyWeightLogSheet = true
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "plus").font(.system(size: 12, weight: .bold))
-                        Text("Log").font(GSFont.bold(13, relativeTo: .subheadline))
+        GSCard(bordered: false) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    GSSectionHeader("Body Weight")
+                    Spacer()
+                    Button {
+                        showingBodyWeightLogSheet = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "plus").font(.system(size: 12, weight: .bold))
+                            Text("Log").font(GSFont.bold(13, relativeTo: .subheadline))
+                        }
+                        .foregroundStyle(theme.accent)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .overlay(Rectangle().strokeBorder(theme.accent, lineWidth: 1))
+                        .contentShape(Rectangle())
                     }
-                    .foregroundStyle(theme.accent)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .overlay(Rectangle().strokeBorder(theme.accent, lineWidth: 1))
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
-            }
 
-            TrendChartView(
-                title: "Weight",
-                data: bodyWeightChartData,
-                selectedRange: $selectedBodyWeightRange
-            )
+                if let latestBodyWeightText {
+                    Text(latestBodyWeightText)
+                        .font(GSFont.heading(34, relativeTo: .largeTitle))
+                        .foregroundStyle(theme.text)
+                        .monospacedDigit()
+                }
+
+                TrendChartView(
+                    title: "Weight",
+                    data: bodyWeightChartData,
+                    selectedRange: $selectedBodyWeightRange,
+                    embedInCard: false
+                )
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
         }
     }
 
     private var bodyWeightChartData: [(Date, Double)] {
         StatMath.bodyWeightTrendPoints(logs: bodyWeightLogs)
+    }
+
+    /// Headline "182.4 lbs" for the most recent log — `nil` (no headline)
+    /// when there are no logs yet, matching the chart's own "Not enough
+    /// data yet." empty state (TrendChartView.swift:53-56) rather than
+    /// duplicating a second empty-state message. `bodyWeightLogs` is
+    /// most-recent-first (`BodyWeightLogRepository.recent`'s documented
+    /// order, Models/BodyWeightLog.swift:31-36), so `.first` is the latest
+    /// entry without needing to re-sort.
+    private var latestBodyWeightText: String? {
+        guard let latest = bodyWeightLogs.first else { return nil }
+        return StatMath.formattedBodyWeight(latest.weight, unit: latest.unit)
     }
 
     private func exerciseName(for id: UUID) -> String {

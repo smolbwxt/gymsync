@@ -25,6 +25,17 @@ struct TrendChartView: View {
     /// Full, unfiltered series — filtered down to `selectedRange` for display.
     let data: [(Date, Double)]
     @Binding var selectedRange: TrendRange
+    /// When `true` (default — every existing call site's exact appearance,
+    /// e.g. `ExerciseHistoryView.swift:76-78`), wraps the header+chart in its
+    /// own `GSCard(bordered: true)` as before. Pass `false` to render just
+    /// the header+chart content with no card/border/padding of its own, so a
+    /// caller can fold it into ONE surrounding `GSCard` alongside sibling
+    /// content — StatsTabView's Body Weight card (`bodyWeightCardView`) does
+    /// this to match the single-GSCard-per-card idiom every other Stats-tab
+    /// card uses (reviewer Finding 1, Phase H Task 3 fix wave 1). Declared
+    /// last with a default so it doesn't disturb the synthesized memberwise
+    /// init's existing `title:data:selectedRange:` call shape.
+    let embedInCard: Bool = true
 
     private var filteredData: [(Date, Double)] {
         guard let cutoff = Calendar.current.date(byAdding: .day, value: -selectedRange.days, to: .now) else {
@@ -34,35 +45,43 @@ struct TrendChartView: View {
     }
 
     var body: some View {
-        GSCard(bordered: true) {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    GSSectionHeader(title)
-                    Spacer()
-                    rangePicker
-                }
-                if filteredData.isEmpty {
-                    Text("Not enough data yet.")
-                        .font(GSFont.body(13, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral500)
-                } else {
-                    Chart(Array(filteredData.enumerated()), id: \.offset) { _, point in
-                        LineMark(x: .value("Date", point.0), y: .value("Est. 1RM", point.1))
-                            .foregroundStyle(theme.accent)
-                        PointMark(x: .value("Date", point.0), y: .value("Est. 1RM", point.1))
-                            .foregroundStyle(theme.accent)
-                    }
-                    .chartXAxis {
-                        AxisMarks(values: .stride(by: .month)) { _ in
-                            AxisGridLine()
-                            AxisValueLabel(format: .dateTime.month(.abbreviated))
-                        }
-                    }
-                    .chartYAxis(.hidden)
-                    .frame(height: 140)
-                }
+        if embedInCard {
+            GSCard(bordered: true) {
+                chartContent
+                    .padding(16)
             }
-            .padding(16)
+        } else {
+            chartContent
+        }
+    }
+
+    private var chartContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                GSSectionHeader(title)
+                Spacer()
+                rangePicker
+            }
+            if filteredData.isEmpty {
+                Text("Not enough data yet.")
+                    .font(GSFont.body(13, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+            } else {
+                Chart(Array(filteredData.enumerated()), id: \.offset) { _, point in
+                    LineMark(x: .value("Date", point.0), y: .value("Est. 1RM", point.1))
+                        .foregroundStyle(theme.accent)
+                    PointMark(x: .value("Date", point.0), y: .value("Est. 1RM", point.1))
+                        .foregroundStyle(theme.accent)
+                }
+                .chartXAxis {
+                    AxisMarks(values: .stride(by: .month)) { _ in
+                        AxisGridLine()
+                        AxisValueLabel(format: .dateTime.month(.abbreviated))
+                    }
+                }
+                .chartYAxis(.hidden)
+                .frame(height: 140)
+            }
         }
     }
 
