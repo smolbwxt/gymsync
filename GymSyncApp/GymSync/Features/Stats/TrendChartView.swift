@@ -21,6 +21,14 @@ enum TrendRange: String, CaseIterable, Identifiable {
 struct TrendChartView: View {
     @Environment(\.gsTheme) private var theme
 
+    /// Header text for the chart's own title row. Pass `""` to omit the
+    /// title entirely (the row then holds just the right-aligned range
+    /// picker, no blank leading text) — used by callers that already render
+    /// their own card header above this chart, e.g. StatsTabView's Body
+    /// Weight card, so the card doesn't stack two headers (fix wave 2).
+    /// An empty `GSSectionHeader` is NOT rendered in its place because it's
+    /// a `maxWidth: .infinity` leading-aligned Text (GSComponents.swift:
+    /// 329-345) — an invisible greedy frame, not a clean no-op.
     let title: String
     /// Full, unfiltered series — filtered down to `selectedRange` for display.
     let data: [(Date, Double)]
@@ -58,7 +66,9 @@ struct TrendChartView: View {
     private var chartContent: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                GSSectionHeader(title)
+                if !title.isEmpty {
+                    GSSectionHeader(title)
+                }
                 Spacer()
                 rangePicker
             }

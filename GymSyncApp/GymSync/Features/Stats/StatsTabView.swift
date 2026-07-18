@@ -339,9 +339,10 @@ struct StatsTabView: View {
     // `recentPRsCardView` line 272, Lifetime Volume line 22 — is ONE
     // `GSCard(bordered: false) { header + content }.padding(16)`). Now
     // wrapped in that same single `GSCard(bordered: false)`, with
-    // `TrendChartView(embedInCard: false)` (TrendChartView.swift:33-41) so
-    // the chart contributes only its header+chart content, no nested
-    // card/border/padding of its own — `ExerciseHistoryView` (the only
+    // `TrendChartView(embedInCard: false, title: "")` so the chart
+    // contributes only its range picker + chart line, no nested
+    // card/border/padding and no second header of its own (fix wave 2 —
+    // see the comment at the call site below) — `ExerciseHistoryView` (the only
     // other `TrendChartView` consumer, swift:76-78) doesn't pass
     // `embedInCard` at all, so it keeps the default `true` and its exact
     // prior rendering. `latestBodyWeightText` below adds the headline
@@ -379,8 +380,16 @@ struct StatsTabView: View {
                         .monospacedDigit()
                 }
 
+                // `title: ""` — the card's own "Body Weight" header row
+                // above is this card's single title; a second inner "Weight"
+                // header would duplicate it (no sibling card stacks two
+                // titles). TrendChartView omits the GSSectionHeader entirely
+                // for an empty title (TrendChartView.swift:24-31), leaving
+                // the range picker right-aligned on its own row above the
+                // chart — same top-right position it occupies everywhere
+                // else (fix wave 2).
                 TrendChartView(
-                    title: "Weight",
+                    title: "",
                     data: bodyWeightChartData,
                     selectedRange: $selectedBodyWeightRange,
                     embedInCard: false
