@@ -35,10 +35,12 @@ enum AccountDeletionRepository {
     /// the function's own catch-all) — which the caller maps through
     /// `ErrorMapping.map(_:)` like every other repository call in this
     /// codebase. Does NOT sign the user out itself — that stays the
-    /// caller's job (`DeleteAccountSheet` calls `AuthService.signOut()`
-    /// only after this returns without throwing), so a network hiccup here
-    /// can never leave the app showing a signed-out UI for an account that
-    /// was never actually deleted.
+    /// caller's job (`DeleteAccountSheet` calls
+    /// `AuthService.forceSignedOutAfterDeletion()` only after this returns
+    /// without throwing), so a network hiccup here can never leave the app
+    /// showing a signed-out UI for an account that was never actually
+    /// deleted — and conversely, once the cascade succeeds the user is
+    /// always forced signed-out even if the local session revoke fails.
     ///
     /// ASSUMPTION (same caveat VoiceRoomService.swift's
     /// SupabaseVoiceTokenFetcher documents — no Mac/Xcode this session to
