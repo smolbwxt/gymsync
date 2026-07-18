@@ -37,6 +37,8 @@ enum CatalogScreen: String, CaseIterable {
     case reportSheet = "report-sheet"
     case blockedUsers = "blocked-users"
     case deleteAccount = "delete-account"
+    case discover = "discover"
+    case discoverDetail = "discover-detail"
 }
 
 struct CatalogHostView: View {
@@ -69,6 +71,8 @@ struct CatalogHostView: View {
             case .reportSheet:                content_reportSheet
             case .blockedUsers:               content_blockedUsers
             case .deleteAccount:              content_deleteAccount
+            case .discover:                   content_discover
+            case .discoverDetail:             content_discoverDetail
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -477,6 +481,112 @@ struct CatalogHostView: View {
     private var content_deleteAccount: some View {
         DeleteAccountSheet()
     }
+
+    // MARK: - Discover (Phase L Task 3 — no canvas frame, catalog case)
+    //
+    // No canvas frame depicts Discover — grepped `docs/design/frame-map.
+    // json` + `docs/design/*.dc.html` for "Discover": zero hits, matching
+    // the Phase L design's own prediction ("Discover may be undesigned ->
+    // system-designed + deviations"). See `docs/design/accepted-
+    // deviations.json`'s "discover"/"discover-detail" entries. A catalog
+    // fixture is the ONLY way to render either screen with real content
+    // right now — Task 4 (the phase's seed-content task, "The Murph" +
+    // templates) hasn't shipped yet, so a live/seeded capture would show an
+    // empty grid, not a meaningful screenshot (same class of gap
+    // `stattile-*`'s catalog cases exist for). Uses the `catalogFixture...`
+    // seam idiom (skip the live `.task` fetch, seed `@State` directly) —
+    // same as `ChatView`/`DiscoverView`/`DiscoverWorkoutDetailView`'s own
+    // `#if DEBUG` extensions.
+    private static let discoverFixtureOwnerID = UUID()
+    private static let discoverFixtureMurphID = UUID()
+    private static let discoverFixturePushDayID = UUID()
+
+    private static let discoverFixtureMurph = PublicWorkout(
+        catalogFixtureRoutine: Routine(
+            id: Self.discoverFixtureMurphID, ownerID: Self.discoverFixtureOwnerID, name: "The Murph",
+            description: "100 pull-ups, 200 push-ups, 300 squats, and two 1-mile runs — with a 20lb vest.",
+            visibility: "public", createdAt: .now, updatedAt: .now
+        ),
+        ownerUsername: "coach_dana",
+        isFeatured: true,
+        defaultSort: "time",
+        scoringMetrics: ["time", "volume"],
+        scoringTopSetExerciseID: nil
+    )
+
+    private static let discoverFixturePushDay = PublicWorkout(
+        catalogFixtureRoutine: Routine(
+            id: Self.discoverFixturePushDayID, ownerID: Self.discoverFixtureOwnerID, name: "Push Day A",
+            description: nil, visibility: "public", createdAt: .now, updatedAt: .now
+        ),
+        ownerUsername: "coach_dana",
+        isFeatured: false,
+        defaultSort: "volume",
+        scoringMetrics: ["volume", "top_set"],
+        scoringTopSetExerciseID: nil
+    )
+
+    private var content_discover: some View {
+        DiscoverView(
+            catalogFixtureWorkouts: [Self.discoverFixtureMurph, Self.discoverFixturePushDay],
+            catalogFixtureAttemptCounts: [
+                Self.discoverFixtureMurphID: 187,
+                Self.discoverFixturePushDayID: 3,
+            ]
+        )
+    }
+
+    // MARK: - Discover Detail (Phase L Task 3 — no canvas frame, catalog case)
+
+    private static let discoverFixtureExercisePullUp = Exercise(
+        id: UUID(), name: "Pull-up", slug: "pull-up", category: "compound",
+        primaryMuscle: "back", secondaryMuscles: ["biceps"], equipment: "bodyweight",
+        defaultUnit: "lbs", demoVideoURL: nil
+    )
+    private static let discoverFixtureExercisePushUp = Exercise(
+        id: UUID(), name: "Push-up", slug: "push-up", category: "compound",
+        primaryMuscle: "chest", secondaryMuscles: ["triceps"], equipment: "bodyweight",
+        defaultUnit: "lbs", demoVideoURL: nil
+    )
+    private static let discoverFixtureRoutineExercises: [RoutineExercise] = [
+        RoutineExercise(
+            id: UUID(), routineID: Self.discoverFixtureMurphID,
+            exerciseID: Self.discoverFixtureExercisePullUp.id, position: 1,
+            targetSets: 20, targetReps: "5", targetWeight: nil, restSeconds: 60, notes: nil
+        ),
+        RoutineExercise(
+            id: UUID(), routineID: Self.discoverFixtureMurphID,
+            exerciseID: Self.discoverFixtureExercisePushUp.id, position: 2,
+            targetSets: 20, targetReps: "10", targetWeight: nil, restSeconds: 60, notes: nil
+        ),
+    ]
+
+    private static let discoverFixtureLeaderboard: [LeaderboardEntryRow] = [
+        LeaderboardEntryRow(
+            catalogFixtureAttemptID: UUID(), routineID: Self.discoverFixtureMurphID,
+            userID: UUID(), timeSeconds: 2533, totalVolume: 3025, topSets: [:],
+            isComplete: true, isEdited: false,
+            computedAt: Date().addingTimeInterval(-3600), username: "tommy"
+        ),
+        LeaderboardEntryRow(
+            catalogFixtureAttemptID: UUID(), routineID: Self.discoverFixtureMurphID,
+            userID: UUID(), timeSeconds: 2610, totalVolume: 2890, topSets: [:],
+            isComplete: true, isEdited: true,
+            computedAt: Date().addingTimeInterval(-7200), username: "sarah_k"
+        ),
+    ]
+
+    private var content_discoverDetail: some View {
+        DiscoverWorkoutDetailView(
+            catalogFixtureWorkout: Self.discoverFixtureMurph,
+            catalogFixtureRoutineExercises: Self.discoverFixtureRoutineExercises,
+            catalogFixtureAllExercises: [
+                Self.discoverFixtureExercisePullUp,
+                Self.discoverFixtureExercisePushUp,
+            ],
+            catalogFixtureLeaderboard: Self.discoverFixtureLeaderboard
+        )
+    }
 }
 
 // MARK: - Profile fixture
@@ -527,6 +637,50 @@ extension ChatMessage {
         self.editedAt = nil
         self.deletedAt = nil
         self.payload = nil
+    }
+}
+
+// MARK: - PublicWorkout / LeaderboardEntryRow fixtures (discover catalog cases)
+//
+// Same memberwise-init trap as `Profile`/`ChatMessage` above:
+// `PublicWorkout.swift`'s only initializers are custom `init(from
+// decoder:)`s (the dual-decode-from-one-decoder idiom, needed to also
+// consume the joined `profiles(...)` key) — Codable's synthesized
+// memberwise init is suppressed by that. Every stored property on both
+// types is non-private, so these direct-assignment inits are added here
+// rather than editing `PublicWorkout.swift`, same placement precedent as
+// `Profile`/`ChatMessage` above (as opposed to `ChatView`'s `#if DEBUG`
+// seam, which lives in ChatView.swift itself because IT needs same-file
+// access to private `@State`).
+extension PublicWorkout {
+    init(catalogFixtureRoutine routine: Routine, ownerUsername: String,
+         isFeatured: Bool = false, defaultSort: String? = nil,
+         scoringMetrics: [String]? = nil, scoringTopSetExerciseID: UUID? = nil) {
+        self.routine = routine
+        self.ownerUsername = ownerUsername
+        self.isFeatured = isFeatured
+        self.defaultSort = defaultSort
+        self.scoringMetrics = scoringMetrics
+        self.scoringTopSetExerciseID = scoringTopSetExerciseID
+    }
+}
+
+extension LeaderboardEntryRow {
+    init(catalogFixtureAttemptID attemptID: UUID, routineID: UUID?, userID: UUID,
+         timeSeconds: Int?, totalVolume: Decimal?, topSets: [String: Decimal]?,
+         isComplete: Bool, isEdited: Bool, computedAt: Date,
+         username: String, avatarURL: URL? = nil) {
+        self.attemptID = attemptID
+        self.routineID = routineID
+        self.userID = userID
+        self.timeSeconds = timeSeconds
+        self.totalVolume = totalVolume
+        self.topSets = topSets
+        self.isComplete = isComplete
+        self.isEdited = isEdited
+        self.computedAt = computedAt
+        self.username = username
+        self.avatarURL = avatarURL
     }
 }
 #endif

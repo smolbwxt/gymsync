@@ -1,7 +1,12 @@
 import SwiftUI
 
 struct LibraryTabView: View {
-    enum SubTab: Hashable { case routines, exercises }
+    // Phase L Task 3: added `.discover` — master spec's four-sub-tab
+    // structure (`docs/superpowers/specs/2026-06-28-gymsync-design.md:690`:
+    // "Routines / Exercises / Discover / Campaigns"). Campaigns stays out
+    // per Phase L design §3 ("Campaigns stays Phase C",
+    // `docs/superpowers/specs/2026-07-18-discover-leaderboards-design.md:18`).
+    enum SubTab: Hashable { case routines, exercises, discover }
     @State private var selection: SubTab = .routines
     @Environment(\.gsTheme) private var theme
 
@@ -48,6 +53,8 @@ struct LibraryTabView: View {
                     .id(routinesRefreshToken)
                 case .exercises:
                     ExercisesListView()
+                case .discover:
+                    DiscoverView()
                 }
             }
             .background(theme.bg)
@@ -61,11 +68,20 @@ struct LibraryTabView: View {
         .task { await loadFeatured() }
     }
 
-    // Canvas: `.seg` — flat rectangle, 1px divider border, no radius, hugs content.
+    // Canvas: `.seg` — flat rectangle, 1px divider border, no radius, hugs
+    // content. Phase L Task 3: widened from 2 to 3 segments (Discover
+    // added) — each non-first segment gets the same leading-divider overlay
+    // the original Routines/Exercises pair used.
     private var segmentedControl: some View {
         HStack(spacing: 0) {
             segmentOption(title: "Routines", tab: .routines)
             segmentOption(title: "Exercises", tab: .exercises)
+                .overlay(alignment: .leading) {
+                    Rectangle()
+                        .fill(theme.divider)
+                        .frame(width: 1)
+                }
+            segmentOption(title: "Discover", tab: .discover)
                 .overlay(alignment: .leading) {
                     Rectangle()
                         .fill(theme.divider)

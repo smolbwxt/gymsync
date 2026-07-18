@@ -4,6 +4,20 @@ import SwiftUI
 
 struct ScheduleSessionView: View {
     let onScheduled: (WorkoutSession) -> Void
+    /// Phase L Task 3 — "Attempt with Friends" preload: the Discover routine
+    /// this sheet was launched to schedule around. Seeds `selectedRoutineID`
+    /// and is spliced into the routine picker's list even when it isn't one
+    /// of the caller's OWN routines (`routines` below normally comes from
+    /// `RoutineRepository.fetchAll(ownerID:)`, which never returns a public
+    /// routine the scheduler doesn't own — see `loadData()`). `nil` for
+    /// every other caller (Home's own "+ Schedule Session" sheet — unchanged).
+    let preloadedRoutine: Routine?
+
+    init(preloadedRoutine: Routine? = nil, onScheduled: @escaping (WorkoutSession) -> Void) {
+        self.preloadedRoutine = preloadedRoutine
+        self.onScheduled = onScheduled
+        _selectedRoutineID = State(initialValue: preloadedRoutine?.id)
+    }
 
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
@@ -580,11 +594,20 @@ struct ScheduleSessionView: View {
             let (g, f, r) = try await (fetchGroups, fetchFriends, fetchRoutines)
             groups = g
             friends = f
-            routines = r
+            // Splice the Discover "Attempt with Friends" preload into the
+            // picker's list even when the scheduler doesn't own it —
+            // `RoutineRepository.fetchAll(ownerID:)` above only ever returns
+            // the caller's OWN routines, but `preloadedRoutine` may be a
+            // public routine reached from Discover.
+            if let preloadedRoutine, !r.contains(where: { $0.id == preloadedRoutine.id }) {
+                routines = [preloadedRoutine] + r
+            } else {
+                routines = r
+            }
             if selectedGroupID == nil { selectedGroupID = g.first?.id }
 
             let exercises = (try? await RoutineRepository.exercisesForRoutines(
-                ids: r.map(\.id))) ?? []
+                ids: routines.map(\.id))) ?? []
             routineExerciseCounts = Dictionary(
                 grouping: exercises, by: \.routineID
             ).mapValues(\.count)

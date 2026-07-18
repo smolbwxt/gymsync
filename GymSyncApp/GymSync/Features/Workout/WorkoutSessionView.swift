@@ -13,6 +13,23 @@ struct WorkoutSessionView: View {
     let routine: Routine?
     let routineExercises: [RoutineExercise]
     let allExercises: [Exercise]
+    /// Non-nil only for a Discover "Attempt Solo" launch — carries the
+    /// user's "Show me on the leaderboard?" choice. `startIfNeeded()` calls
+    /// `start_attempt` right after creating the solo session, matching the
+    /// backend contract (`.superpowers/sdd/task-2-report.md`: "call AFTER
+    /// creating the session with that routine"). `nil` for every other
+    /// launch of this view (Home's Start Solo Workout / a routine's own
+    /// "Start Workout") — those never touch `workout_attempts` at all.
+    /// Defaulted so every pre-existing call site (`HomeView.swift`,
+    /// `RoutinesListView.swift`) is source-compatible unchanged.
+    let attemptOptIn: Bool?
+
+    init(routine: Routine?, routineExercises: [RoutineExercise], allExercises: [Exercise], attemptOptIn: Bool? = nil) {
+        self.routine = routine
+        self.routineExercises = routineExercises
+        self.allExercises = allExercises
+        self.attemptOptIn = attemptOptIn
+    }
 
     @Environment(\.dismiss) private var dismiss
     @Environment(AppState.self) private var appState
@@ -551,7 +568,24 @@ struct WorkoutSessionView: View {
     @MainActor
     private func startIfNeeded() async {
         guard session == nil else { return }
-        do { session = try await SessionRepository.startSolo(routineID: routine?.id) }
+        do {
+            let newSession = try await SessionRepository.startSolo(routineID: routine?.id)
+            session = newSession
+            // Discover "Attempt Solo" only: start the leaderboard attempt
+            // AFTER the session exists (backend contract — see
+            // `attemptOptIn`'s doc comment). Best-effort: a failed
+            // attempt-start must never block the workout itself — the user
+            // just won't appear on the leaderboard for this run, same
+            // best-effort idiom as `loadDefaultRestSeconds` below.
+            if let attemptOptIn, let routineID = routine?.id {
+                do {
+                    _ = try await PublicWorkoutRepository.startAttempt(
+                        routineID: routineID, sessionID: newSession.id, optIn: attemptOptIn)
+                } catch {
+                    AppLogger.db.error("startAttempt failed: \(error.localizedDescription, privacy: .public)")
+                }
+            }
+        }
         catch { errorText = ErrorMapping.map(error).errorDescription }
     }
 
