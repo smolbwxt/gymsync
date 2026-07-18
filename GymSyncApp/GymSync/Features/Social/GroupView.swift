@@ -19,12 +19,18 @@ struct GroupView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.gsTheme) private var theme
+    @Environment(AppState.self) private var appState
     @State private var subTab: SubTab = .chat
     @State private var members: [(member: GroupMember, profile: Profile)] = []
     @State private var addUsername = ""
     @State private var errorText: String?
     @State private var avatarItem: PhotosPickerItem?
     @State private var avatarURL: URL?
+
+    // Phase M Task 2 (moderation/compliance): Report/Block on Members rows.
+    @State private var reportTarget: Profile?
+    @State private var blockTarget: Profile?
+    @State private var showBlockConfirm = false
 
     // Sessions sub-tab
     @State private var upcomingSessions: [WorkoutSession] = []
@@ -80,6 +86,23 @@ struct GroupView: View {
             if subTab == .sessions {
                 Task { await loadGroupSessions() }
             }
+        }
+        .sheet(item: $reportTarget) { profile in
+            ReportSheet(reportedUserID: profile.id, contentType: .profile, contentID: profile.id)
+        }
+        // Literal text per brief: "Block @username? You won't see their
+        // messages or requests." — same title/message split as FriendsView.
+        .confirmationDialog(
+            "Block @\(blockTarget?.username ?? "")?",
+            isPresented: $showBlockConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Block", role: .destructive) {
+                Task { await block(blockTarget) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You won't see their messages or requests.")
         }
     }
 
@@ -184,20 +207,7 @@ struct GroupView: View {
 
                 VStack(spacing: 0) {
                     ForEach(members, id: \.member.userID) { entry in
-                        HStack(spacing: 10) {
-                            GSInitialsAvatar(name: entry.profile.username,
-                                              avatarURL: entry.profile.avatarURL, size: 36)
-
-                            nameBlock(entry.profile)
-
-                            Spacer()
-
-                            if entry.member.role == .admin {
-                                GSTag(text: "Admin", style: .neutral)
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
+                        memberRow(entry)
 
                         if entry.member.userID != members.last?.member.userID {
                             Rectangle()
@@ -248,6 +258,51 @@ struct GroupView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(theme.bg)
+        }
+    }
+
+    // Phase M Task 2: member row + Report/Block long-press menu (mirrors
+    // ChatView's reaction .contextMenu — this codebase's established
+    // per-row menu idiom; GroupView's members list is a plain VStack, not a
+    // List, so there's no swipeActions equivalent to reach for here). Omits
+    // the menu entirely for the current user's own row (self-report/block
+    // is meaningless) — an EMPTY `.contextMenu` is deliberately avoided
+    // (ambiguous iOS behavior on long-press) by branching the whole
+    // modifier chain instead of gating just its content.
+    @ViewBuilder
+    private func memberRow(_ entry: (member: GroupMember, profile: Profile)) -> some View {
+        let row = HStack(spacing: 10) {
+            GSInitialsAvatar(name: entry.profile.username,
+                              avatarURL: entry.profile.avatarURL, size: 36)
+
+            nameBlock(entry.profile)
+
+            Spacer()
+
+            if entry.member.role == .admin {
+                GSTag(text: "Admin", style: .neutral)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .contentShape(Rectangle())
+
+        if entry.profile.id == appState.currentProfile?.id {
+            row
+        } else {
+            row.contextMenu {
+                Button {
+                    reportTarget = entry.profile
+                } label: {
+                    Label("Report", systemImage: "flag")
+                }
+                Button(role: .destructive) {
+                    blockTarget = entry.profile
+                    showBlockConfirm = true
+                } label: {
+                    Label("Block", systemImage: "nosign")
+                }
+            }
         }
     }
 
@@ -392,6 +447,25 @@ struct GroupView: View {
             addUsername = ""
             errorText = nil
             members = (try? await GroupRepository.members(groupID: group.id)) ?? []
+        } catch let error as GymSyncError {
+            errorText = error.errorDescription
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    // Phase M Task 2: block a group member. No local `members` mutation —
+    // blocking doesn't remove group membership (out of this task's scope,
+    // matches Task 1's backend contract, which only enforces block at chat
+    // SELECT + friend-request INSERT); the member row stays visible, only
+    // their chat content becomes hidden (RLS on refetch/realtime, plus
+    // ChatView's own client-side message filter for content already in
+    // memory).
+    private func block(_ profile: Profile?) async {
+        guard let profile else { return }
+        do {
+            try await ModerationRepository.block(userID: profile.id)
+            errorText = nil
         } catch let error as GymSyncError {
             errorText = error.errorDescription
         } catch {

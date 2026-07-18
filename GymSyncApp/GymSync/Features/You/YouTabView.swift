@@ -18,6 +18,12 @@ struct YouTabView: View {
     @State private var showAppearance = false
     @State private var showRestTimerSetting = false
     @State private var showEditProfile = false
+    // Phase M Task 2 (moderation/compliance): You-tab Blocked Users list.
+    @State private var showBlockedUsers = false
+    // Phase M Task 4 (moderation/compliance): solo-workout privacy toggle +
+    // Delete Account flow.
+    @State private var showSoloWorkouts = false
+    @State private var showDeleteAccount = false
     // Canvas Completion Task 5: singleton (matches `AppState.shared`'s
     // convention) so the Settings Hub's "Appearance" value preview reflects
     // the LIVE palette name (updates the instant `AppearanceView` calls
@@ -47,6 +53,10 @@ struct YouTabView: View {
 
                         settingsGroupBox
                             .padding(.horizontal, 16)
+
+                        deleteAccountRow
+                            .padding(.horizontal, 16)
+                            .padding(.top, 12)
 
                         if let errorText {
                             Text(errorText)
@@ -95,6 +105,12 @@ struct YouTabView: View {
                     profile = updated
                     appState.currentProfile = updated
                 }
+            }
+            .navigationDestination(isPresented: $showBlockedUsers) {
+                BlockedUsersView()
+            }
+            .sheet(isPresented: $showDeleteAccount) {
+                DeleteAccountSheet()
             }
         }
     }
@@ -257,9 +273,109 @@ struct YouTabView: View {
             ) {
                 showRestTimerSetting = true
             }
+            GSSettingsRow(title: "Blocked Users", icon: "person.crop.circle.badge.xmark") {
+                showBlockedUsers = true
+            }
+            soloPrivacyRow
             healthSyncRow
         }
         .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+    }
+
+    // MARK: - Solo-workout privacy toggle (Phase M Task 4)
+    //
+    // Same bordered-row-with-caption shape as RoutineBuilderView's
+    // publishToggleRow (Library/RoutineBuilderView.swift:165-183) — label +
+    // explanatory footer line to the left, GSToggle to the right — the
+    // established "toggle row with an inline caption" idiom in this
+    // codebase, rather than NotificationPreferencesView's single-line
+    // toggleRow (that screen's captions are a single shared line below the
+    // whole group, not per-row). Reads/writes `profiles.show_solo_workouts`
+    // directly (owner-RLS, ProfileRepository.updateShowSoloWorkouts) — the
+    // flag the new set_logs SELECT policy
+    // (20260722000002_solo_workout_privacy.sql) checks before letting an
+    // accepted friend see this user's SOLO (single-participant) session
+    // set_logs; group-session set_logs are unaffected by this toggle either
+    // way.
+    private var soloPrivacyRow: some View {
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Share Solo Workouts")
+                    .font(GSFont.bodyMedium(14, relativeTo: .subheadline))
+                    .foregroundColor(theme.text)
+                Text("Let friends see your solo workouts")
+                    .font(GSFont.body(12, relativeTo: .caption))
+                    .foregroundColor(theme.neutral700)
+            }
+            Spacer(minLength: 8)
+            GSToggle(
+                isOn: Binding(
+                    get: { showSoloWorkouts },
+                    set: { setShowSoloWorkouts($0) }
+                ),
+                label: "Share Solo Workouts"
+            )
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(theme.surface)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(theme.divider).frame(height: 1)
+        }
+    }
+
+    /// Optimistic update (matches NotificationPreferencesView.setEnabled's
+    /// shape) — flips the local toggle immediately, reverts + surfaces
+    /// `errorText` if the write fails.
+    private func setShowSoloWorkouts(_ enabled: Bool) {
+        let previous = showSoloWorkouts
+        showSoloWorkouts = enabled
+        Task {
+            do {
+                let updated = try await ProfileRepository.updateShowSoloWorkouts(enabled)
+                await MainActor.run {
+                    profile = updated
+                    appState.currentProfile = updated
+                }
+            } catch {
+                await MainActor.run {
+                    showSoloWorkouts = previous
+                    errorText = ErrorMapping.map(error).errorDescription
+                }
+            }
+        }
+    }
+
+    // MARK: - Delete Account (Phase M Task 4 — App Store 5.1.1)
+    //
+    // Destructive row, deliberately kept OUTSIDE settingsGroupBox above —
+    // every row in that box is a safe, reversible preference; this one is
+    // not. Red icon + text signal irreversibility (no themed "danger" color
+    // token exists in GSTheme — this codebase's established precedent for
+    // destructive/error state is plain `.red`, e.g. ReportSheet's and this
+    // screen's own `errorText` styling). A single tap only opens
+    // `DeleteAccountSheet`'s typed-confirmation flow — it never deletes
+    // anything itself.
+    private var deleteAccountRow: some View {
+        Button {
+            showDeleteAccount = true
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "trash")
+                    .font(.system(size: 18, weight: .regular))
+                    .foregroundColor(.red)
+                Text("Delete Account")
+                    .font(GSFont.bodyMedium(14, relativeTo: .subheadline))
+                    .foregroundColor(.red)
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(theme.surface)
+            .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     /// Reads the live `ThemeStore` (not `userSettings.palette`) so this row
@@ -372,6 +488,7 @@ struct YouTabView: View {
         if let fetched = try? await profileFetch {
             profile = fetched
             appState.currentProfile = fetched
+            showSoloWorkouts = fetched.showSoloWorkouts
         }
         if let history = try? await historyFetch {
             workoutsLogged = history.count

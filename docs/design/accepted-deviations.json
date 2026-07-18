@@ -1,7 +1,7 @@
 [
   {
     "screenId": "tab-you",
-    "reason": "You tab implements the newer Settings Hub with added stat tiles + Apple Health row — a recorded deviation ahead of the superseded canvas 'You' frame, awaiting design sign-off."
+    "reason": "You tab implements the newer Settings Hub with added stat tiles + Apple Health row — a recorded deviation ahead of the superseded canvas 'You' frame, awaiting design sign-off. Phase M Task 4 adds two more rows on top of that same deviation: a \"Share Solo Workouts\" toggle (with inline caption) inside the Settings group box, and a red \"Delete Account\" row below it — both extend this entry rather than opening a new one; awaiting sign-off alongside the rest."
   },
   {
     "screenId": "exercise-detail",
@@ -38,5 +38,17 @@
   {
     "screenId": "edit-profile",
     "reason": "Phase F Task 6: Edit Profile (display name + avatar), deferred from Phase 2.5 — the You-tab Edit button was inert until this task (task-2-report.md recorded it as a future screen; no canvas frame was ever produced for it). System-designed: avatar-picker row mirrors GroupView.membersList's shape (56pt preview + accent 'Change Photo' link, upload-on-pick), display-name field mirrors CreateGroupView's bordered-TextField shape with an explicit toolbar Save. Awaiting a designer frame."
+  },
+  {
+    "screenId": "report-sheet",
+    "reason": "Phase M Task 2 (moderation/compliance): the Report action's reason-picker + freeform-details sheet is an App Store review requirement (Guidelines 1.2/5.1.1), not a designed screen — no canvas frame exists or is expected. System-designed: fixed reason-category list (Harassment/Spam/Inappropriate content/Other) with a checkmark-selection row shape borrowed from AppearanceView's palette rows, freeform TextField + toolbar Cancel/Submit mirroring CreateGroupView's sheet shape."
+  },
+  {
+    "screenId": "blocked-users",
+    "reason": "Phase M Task 2 (moderation/compliance): the You-tab Blocked Users list is the same App Store compliance surface as report-sheet above — no canvas frame exists or is expected. System-designed: pushed List of Profile rows (GSInitialsAvatar + two-line name block, mirroring FriendsView's friends-list row shape) with a per-row Unblock button; GSEmptyState/GSErrorCard for the no-blocks/load-failed cases, matching this codebase's other list-screen idioms."
+  },
+  {
+    "screenId": "delete-account",
+    "reason": "Phase M Task 4 (moderation/compliance): the Delete Account typed-confirmation sheet is an App Store 5.1.1 compliance requirement, not a designed screen — no canvas frame exists or is expected. System-designed: sheet shape mirrors report-sheet's self-contained NavigationStack + toolbar Cancel; a red-accented warning card explains the irreversible cascade, a bordered TextField requires typing the exact string \"DELETE\" before the destructive confirm button (solid red, disabled until matched) becomes tappable. Catalog/screenshot capture only ever shows this pre-confirmation state — the confirm button's disabled guard makes an accidental live deletion structurally impossible from the capture harness; the actual deletion is device-QA only."
   }
 ]

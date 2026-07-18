@@ -34,6 +34,9 @@ enum CatalogScreen: String, CaseIterable {
     case sessionChat = "session-chat"
     case groupRecap = "group-recap"
     case editProfile = "edit-profile"
+    case reportSheet = "report-sheet"
+    case blockedUsers = "blocked-users"
+    case deleteAccount = "delete-account"
 }
 
 struct CatalogHostView: View {
@@ -63,6 +66,9 @@ struct CatalogHostView: View {
             case .sessionChat:                content_sessionChat
             case .groupRecap:                 content_groupRecap
             case .editProfile:                content_editProfile
+            case .reportSheet:                content_reportSheet
+            case .blockedUsers:               content_blockedUsers
+            case .deleteAccount:              content_deleteAccount
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -403,6 +409,74 @@ struct CatalogHostView: View {
             EditProfileView(profile: Self.catalogEditProfileFixture, onSaved: { _ in })
         }
     }
+
+    // MARK: - Report sheet (Phase M Task 2 — moderation compliance)
+    //
+    // No canvas frame depicts a report flow — App Store compliance surface
+    // (Guidelines 1.2/5.1.1), not a designed screen; see
+    // docs/design/accepted-deviations.json's "report-sheet" entry.
+    // `ReportSheet` self-wraps its own `NavigationStack` (same as
+    // `CreateGroupView`, its sheet-shape precedent — always presented via
+    // `.sheet(...)`, never pushed), so unlike `content_editProfile` above,
+    // no extra `NavigationStack` wrapper is needed here. No live `.task`
+    // fetch to skip: `ReportSheet`'s only network call is `submit()`, which
+    // never fires without a user tap on "Submit" — the capture is hermetic
+    // with fixture ids alone.
+
+    private var content_reportSheet: some View {
+        ReportSheet(
+            reportedUserID: UUID(),
+            contentType: .profile,
+            contentID: UUID()
+        )
+    }
+
+    // MARK: - Blocked users (Phase M Task 2 — moderation compliance)
+    //
+    // No canvas frame depicts the You-tab Blocked Users list — same App
+    // Store compliance surface as report-sheet above; see
+    // docs/design/accepted-deviations.json's "blocked-users" entry.
+    // `BlockedUsersView` is a PUSHED destination (like `EditProfileView`),
+    // not a modal sheet — it needs a real `NavigationStack` for
+    // `.navigationTitle` to render any chrome, same reasoning as
+    // `content_editProfile` above. Uses the `catalogFixtureBlocked:` seam
+    // (BlockedUsersView.swift, `#if DEBUG` extension) to skip the live
+    // `.task` fetch, same idiom as ChatView/HomeGymSetupView's fixture
+    // inits elsewhere in this file.
+
+    private static let catalogBlockedUserFixture1 =
+        Profile(catalogFixtureUsername: "jordan_c", lifetimeVolumeLifted: 0)
+    private static let catalogBlockedUserFixture2 =
+        Profile(catalogFixtureUsername: "sam_t", lifetimeVolumeLifted: 0)
+
+    private var content_blockedUsers: some View {
+        NavigationStack {
+            BlockedUsersView(catalogFixtureBlocked: [
+                Self.catalogBlockedUserFixture1,
+                Self.catalogBlockedUserFixture2,
+            ])
+        }
+    }
+
+    // MARK: - Delete Account (Phase M Task 4 — moderation compliance)
+    //
+    // No canvas frame depicts a Delete Account flow — App Store 5.1.1
+    // compliance surface, not a designed screen; see
+    // docs/design/accepted-deviations.json's "delete-account" entry.
+    // `DeleteAccountSheet` self-wraps its own `NavigationStack` (same as
+    // `ReportSheet` above), so no extra wrapper is needed here, unlike
+    // `content_editProfile`/`content_blockedUsers` (pushed destinations).
+    // No fixture seam needed: the sheet has no live `.task` fetch to skip
+    // and its only network call (`AccountDeletionRepository.deleteAccount`)
+    // never fires without a tap on the confirm button, which itself stays
+    // disabled until "DELETE" is typed — this capture is hermetic by
+    // construction and only ever shows the pre-confirmation state. Per the
+    // design doc's own acceptance note, the actual deletion is
+    // device-QA-only, never exercised by this catalog/screenshot capture.
+
+    private var content_deleteAccount: some View {
+        DeleteAccountSheet()
+    }
 }
 
 // MARK: - Profile fixture
@@ -420,6 +494,11 @@ extension Profile {
         self.createdAt = .now
         self.lifetimeVolumeLifted = lifetimeVolumeLifted
         self.isCurator = false
+        // Phase M Task 4: Profile.swift's memberwise-trap fixture init needs
+        // every stored property assigned or this extension fails to compile
+        // — showSoloWorkouts defaults false, matching isCurator's fixture
+        // default above and the column's own server-side default.
+        self.showSoloWorkouts = false
     }
 }
 

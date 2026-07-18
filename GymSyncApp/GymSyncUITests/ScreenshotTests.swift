@@ -212,6 +212,9 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogSessionChat()        { captureCatalog("session-chat") }
     func testCatalogGroupRecap()         { captureCatalog("group-recap") }
     func testCatalogEditProfile()        { captureCatalog("edit-profile") }
+    func testCatalogReportSheet()        { captureCatalog("report-sheet") }
+    func testCatalogBlockedUsers()       { captureCatalog("blocked-users") }
+    func testCatalogDeleteAccount()      { captureCatalog("delete-account") }
 
     // MARK: - Seeded deep-screen captures
     //
