@@ -112,8 +112,16 @@ struct LogSetSheet: View {
                     // (Features/Stats/BodyWeightLogSheet.swift:82-85) already
                     // use for this exact TextField, so "invalid weight" is
                     // handled identically everywhere it's checked.
+                    //
+                    // Fix wave 1 (inline-card extension): the disclosure body
+                    // itself is now `PlateStackDisclosure`, a free-standing
+                    // `internal` view (bottom of this file) — promoted out of
+                    // this struct the same way `stepperCell` (line ~317
+                    // below) was, so GroupSessionLiveView's inline "LOG THIS
+                    // SET" card can reuse it instead of copy-pasting the
+                    // ~60-line body. This call site's rendering is unchanged.
                     if let targetWeight = Decimal(string: weight), targetWeight > 0 {
-                        plateStackSection(target: targetWeight)
+                        PlateStackDisclosure(target: targetWeight, theme: theme, isExpanded: $showPlateStack)
                             .padding(.horizontal, 16)
                             .padding(.bottom, 16)
                     }
@@ -209,75 +217,11 @@ struct LogSetSheet: View {
         dismiss()
     }
 
-    // MARK: - Plate stack disclosure (Phase H Task 4)
-    //
-    // `PlateMath` (Models/PlateMath.swift) is the pure helper — this only
-    // renders its result. `target` is bar+plates in lbs (this app is
-    // lbs-only in v1 — same finding `BodyWeightLogSheet.swift:23-28`
-    // recorded before hardcoding its own "lbs" unit).
-
-    @ViewBuilder
-    private func plateStackSection(target: Decimal) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Button {
-                showPlateStack.toggle()
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "square.stack.3d.up")
-                        .font(.system(size: 12, weight: .regular))
-                    Text("Plates")
-                        .font(GSFont.bodyMedium(12, relativeTo: .caption))
-                    Image(systemName: showPlateStack ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 10, weight: .regular))
-                }
-                .foregroundStyle(theme.neutral500)
-            }
-            .buttonStyle(.plain)
-
-            if showPlateStack {
-                let result = PlateMath.stack(for: target)
-                let chips = plateChipLabels(result)
-
-                if chips.isEmpty {
-                    Text("Bar only (\(formattedPlateWeight(result.achievedWeight)) lbs)")
-                        .font(GSFont.body(12, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral500)
-                } else {
-                    HStack(spacing: 6) {
-                        ForEach(chips, id: \.self) { chip in
-                            GSTag(text: chip, style: .outline)
-                        }
-                        Text("per side")
-                            .font(GSFont.body(11, relativeTo: .caption2))
-                            .foregroundStyle(theme.neutral500)
-                    }
-                }
-
-                if let remainder = result.remainder {
-                    let direction = result.achievedWeight < target ? "short" : "over target"
-                    Text("Nearest: \(formattedPlateWeight(result.achievedWeight)) lbs (\(formattedPlateWeight(remainder)) \(direction))")
-                        .font(GSFont.body(11, relativeTo: .caption2))
-                        .foregroundStyle(theme.neutral500)
-                }
-            }
-        }
-    }
-
-    /// "2×45" per non-zero denomination, index-aligned to `PlateMath.
-    /// standardPlates` (the same default `plateStackSection` calls `PlateMath
-    /// .stack(for:)` with).
-    private func plateChipLabels(_ result: PlateMath.Stack) -> [String] {
-        zip(PlateMath.standardPlates, result.platesPerSide).compactMap { denomination, count in
-            guard count > 0 else { return nil }
-            return "\(formattedPlateWeight(count))×\(formattedPlateWeight(denomination))"
-        }
-    }
-
-    /// Trims trailing zeros the same way `GroupSessionLiveView.weightText`
-    /// (GroupSessionLiveView.swift:1367) already formats logged weights.
-    private func formattedPlateWeight(_ value: Decimal) -> String {
-        NSDecimalNumber(decimal: value).stringValue
-    }
+    // Plate stack disclosure (Phase H Task 4) now lives as the free-standing
+    // `PlateStackDisclosure` view + helpers at the bottom of this file (Fix
+    // wave 1 — inline-card extension), same promotion `stepperCell` below
+    // already received, so GroupSessionLiveView's inline "LOG THIS SET" card
+    // can reuse it. See that section's doc comment for the full rationale.
 }
 
 #if DEBUG
@@ -433,4 +377,86 @@ struct RPESegmentBar: View {
         .frame(maxWidth: .infinity)
         .contentShape(Rectangle())
     }
+}
+
+// MARK: - Shared plate stack disclosure (Phase H Task 4, Fix wave 1)
+// Promoted out of `LogSetSheet` the same way `stepperCell` (line 317 above) and
+// `RPESegmentBar` (line 340 above) were: shared (internal, not file-private) so
+// GroupSessionLiveView's inline "LOG THIS SET" card can reuse the exact "Plates"
+// disclosure instead of copy-pasting its ~60-line body — reviewer ruled the copy-paste
+// approach out explicitly for this fix.
+//
+// `PlateMath` (Models/PlateMath.swift) is the pure helper — this only renders its
+// result. `target` is bar+plates in lbs (this app is lbs-only in v1 — same finding
+// `BodyWeightLogSheet.swift:23-28` recorded before hardcoding its own "lbs" unit).
+// Callers own the empty/invalid/non-positive-weight gate — both LogSetSheet
+// (LogSetSheet.swift:124) and GroupSessionLiveView's `logThisSetCard` only
+// construct this behind `if let targetWeight = Decimal(string: ...), targetWeight > 0`,
+// so this view assumes `target` is already a valid, positive weight.
+
+struct PlateStackDisclosure: View {
+    let target: Decimal
+    let theme: GSTheme
+    @Binding var isExpanded: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                isExpanded.toggle()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "square.stack.3d.up")
+                        .font(.system(size: 12, weight: .regular))
+                    Text("Plates")
+                        .font(GSFont.bodyMedium(12, relativeTo: .caption))
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 10, weight: .regular))
+                }
+                .foregroundStyle(theme.neutral500)
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                let result = PlateMath.stack(for: target)
+                let chips = plateChipLabels(result)
+
+                if chips.isEmpty {
+                    Text("Bar only (\(formattedPlateWeight(result.achievedWeight)) lbs)")
+                        .font(GSFont.body(12, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral500)
+                } else {
+                    HStack(spacing: 6) {
+                        ForEach(chips, id: \.self) { chip in
+                            GSTag(text: chip, style: .outline)
+                        }
+                        Text("per side")
+                            .font(GSFont.body(11, relativeTo: .caption2))
+                            .foregroundStyle(theme.neutral500)
+                    }
+                }
+
+                if let remainder = result.remainder {
+                    let direction = result.achievedWeight < target ? "short" : "over target"
+                    Text("Nearest: \(formattedPlateWeight(result.achievedWeight)) lbs (\(formattedPlateWeight(remainder)) \(direction))")
+                        .font(GSFont.body(11, relativeTo: .caption2))
+                        .foregroundStyle(theme.neutral500)
+                }
+            }
+        }
+    }
+}
+
+/// "2×45" per non-zero denomination, index-aligned to `PlateMath.standardPlates`
+/// (the same default `PlateStackDisclosure` calls `PlateMath.stack(for:)` with).
+func plateChipLabels(_ result: PlateMath.Stack) -> [String] {
+    zip(PlateMath.standardPlates, result.platesPerSide).compactMap { denomination, count in
+        guard count > 0 else { return nil }
+        return "\(formattedPlateWeight(count))×\(formattedPlateWeight(denomination))"
+    }
+}
+
+/// Trims trailing zeros the same way `GroupSessionLiveView.weightText`
+/// (GroupSessionLiveView.swift:1367) already formats logged weights.
+func formattedPlateWeight(_ value: Decimal) -> String {
+    NSDecimalNumber(decimal: value).stringValue
 }

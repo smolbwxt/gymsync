@@ -119,6 +119,14 @@ struct GroupSessionLiveView: View {
     /// In-flight guard for "Log Set & Pass" — prevents a double-tap from double-inserting
     /// the set and double-advancing the turn during the async commitInlineLog() round-trip.
     @State private var isLoggingSet = false
+    /// Fix wave 1 (inline-card extension) — "Plates" disclosure toggle for the inline
+    /// "LOG THIS SET" card, mirroring `LogSetSheet`'s own `showPlateStack`
+    /// (LogSetSheet.swift:36). This view already has an explicit `init(session:)`
+    /// (line 346 below) rather than relying on the synthesized memberwise init, so
+    /// there's no memberwise-init trap here the way there would be for a plain stored
+    /// property — `@State private` with a default is simply this view's own copy of
+    /// the toggle, not shared with LogSetSheet's.
+    @State private var showPlateStack = false
 
     // PR full-screen celebration (p29) — user-dismissed, no auto-timeout.
     @State private var isPROverlay          = false
@@ -915,6 +923,19 @@ struct GroupSessionLiveView: View {
                 )
             }
 
+            // Fix wave 1 (inline-card extension) — reuses `PlateStackDisclosure`
+            // (LogSetSheet.swift:397), the same free-standing view LogSetSheet's own
+            // "Plates" row renders (LogSetSheet.swift:124), instead of copy-pasting its
+            // body per the reviewer's explicit ruling against that approach. Same
+            // hidden/inert-for-empty/invalid/non-positive-weight gate as LogSetSheet
+            // and the same `Decimal(string:)` parse idiom `commitInlineLog()`
+            // (line 1502 below) already uses for this exact field — this card just
+            // holds its weight in `logWeight` rather than LogSetSheet's `weight`
+            // (LogSetSheet.swift:22).
+            if let targetWeight = Decimal(string: logWeight), targetWeight > 0 {
+                PlateStackDisclosure(target: targetWeight, theme: theme, isExpanded: $showPlateStack)
+            }
+
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline) {
                     Text("RPE · effort")
@@ -1458,6 +1479,10 @@ struct GroupSessionLiveView: View {
         logRPE = 7.0
         logIsFailed = false
         logNote = ""
+        // Fix wave 1 (inline-card extension) — collapse the "Plates" disclosure on every
+        // fresh turn, matching LogSetSheet's behavior (a new sheet instance always starts
+        // with `showPlateStack == false`; this persistent view needs the explicit reset).
+        showPlateStack = false
     }
 
     /// Commit the inline "LOG THIS SET" card — delegates to `logSetAndAdvance` UNCHANGED
