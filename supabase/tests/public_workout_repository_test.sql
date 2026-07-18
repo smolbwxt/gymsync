@@ -25,7 +25,7 @@
 -- stranger = never a participant/owner of anything — pure RLS negative.
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(22);
+SELECT plan(23);
 
 -- ============================================================
 -- ── F. routines fix-forward columns (is_featured/default_sort/
@@ -274,10 +274,10 @@ UPDATE set_logs SET weight = 205.00
     AND set_index = 1;
 
 SELECT results_eq(
-  $$SELECT time_seconds, total_volume FROM leaderboard_entries
+  $$SELECT time_seconds, total_volume, is_edited FROM leaderboard_entries
     WHERE attempt_id = 'b1000000-0000-0000-0000-00000000d001'$$,
-  $$VALUES (2533, 3125.00::numeric(10,2))$$,
-  'set_log UPDATE: total_volume recomputes to 3125.00 (925->1025), time_seconds stays 2533'
+  $$VALUES (2533, 3125.00::numeric(10,2), true)$$,
+  'set_log UPDATE: total_volume recomputes to 3125.00 (925->1025), time_seconds stays 2533, is_edited is true (20260723000004 fix)'
 );
 SELECT results_eq(
   $$SELECT (top_sets->>(SELECT id::text FROM exercises WHERE slug='bench-press'))::numeric(7,2)
@@ -293,16 +293,29 @@ DELETE FROM set_logs
     AND set_index = 3;
 
 SELECT results_eq(
-  $$SELECT time_seconds, total_volume FROM leaderboard_entries
+  $$SELECT time_seconds, total_volume, is_edited FROM leaderboard_entries
     WHERE attempt_id = 'b1000000-0000-0000-0000-00000000d001'$$,
-  $$VALUES (2533, 2000.00::numeric(10,2))$$,
-  'set_log DELETE: total_volume recomputes to 2000.00 (1125 removed), time_seconds still stays 2533'
+  $$VALUES (2533, 2000.00::numeric(10,2), true)$$,
+  'set_log DELETE: total_volume recomputes to 2000.00 (1125 removed), time_seconds still stays 2533, is_edited still true'
 );
 SELECT results_eq(
   $$SELECT top_sets ? (SELECT id::text FROM exercises WHERE slug='back-squat')
     FROM leaderboard_entries WHERE attempt_id = 'b1000000-0000-0000-0000-00000000d001'$$,
   ARRAY[false],
   'set_log DELETE: top_sets no longer carries a back-squat key at all'
+);
+
+-- Negative control (20260723000004 fix): bob's entry (d002) is opted-out,
+-- has zero set_logs, and never receives a duration edit or a set_log
+-- UPDATE/DELETE anywhere in this suite — neither edit trigger ever fires for
+-- it. is_edited must stay false, proving the refresh trigger's new
+-- `is_edited = true` write is scoped to entries it actually mutates, not a
+-- blanket flip on the whole table.
+SELECT results_eq(
+  $$SELECT is_edited FROM leaderboard_entries
+    WHERE attempt_id = 'b1000000-0000-0000-0000-00000000d002'$$,
+  ARRAY[false],
+  'bob: never-edited leaderboard entry (no duration edit, no set_log change) stays is_edited=false'
 );
 
 SELECT * FROM finish();
