@@ -9,6 +9,7 @@ struct Profile: Codable, Identifiable, Sendable, Equatable {
     let createdAt: Date
     let lifetimeVolumeLifted: Decimal
     let isCurator: Bool
+    let showSoloWorkouts: Bool
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -18,10 +19,13 @@ struct Profile: Codable, Identifiable, Sendable, Equatable {
         case createdAt = "created_at"
         case lifetimeVolumeLifted = "lifetime_volume_lifted"
         case isCurator = "is_curator"
+        case showSoloWorkouts = "show_solo_workouts"
     }
 
-    // Custom decode so any pre-migration cached JSON (no is_curator key yet)
-    // still decodes safely, defaulting to false. No callers construct
+    // Custom decode so any pre-migration cached JSON (no is_curator/
+    // show_solo_workouts key yet) still decodes safely, defaulting to false
+    // — same idiom for both (show_solo_workouts follows isCurator's own
+    // precedent, added here Phase M Task 4). No callers construct
     // `Profile(...)` directly (verified via grep before this change), so the
     // synthesized memberwise init is not needed elsewhere.
     init(from decoder: Decoder) throws {
@@ -33,6 +37,7 @@ struct Profile: Codable, Identifiable, Sendable, Equatable {
         createdAt = try c.decode(Date.self, forKey: .createdAt)
         lifetimeVolumeLifted = try c.decode(Decimal.self, forKey: .lifetimeVolumeLifted)
         isCurator = try c.decodeIfPresent(Bool.self, forKey: .isCurator) ?? false
+        showSoloWorkouts = try c.decodeIfPresent(Bool.self, forKey: .showSoloWorkouts) ?? false
     }
 }
 
@@ -150,6 +155,36 @@ enum ProfileRepository {
             let updated: Profile = try await client
                 .from("profiles")
                 .update(["display_name": displayName.trimmingCharacters(in: .whitespaces)])
+                .eq("id", value: userID.uuidString)
+                .select()
+                .single()
+                .execute()
+                .value
+            return updated
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
+
+    // MARK: - Phase M Task 4: solo-workout privacy toggle
+
+    /// Full-row-authorized by the same owner-RLS shape as
+    /// `updateDisplayName` above (`auth.uid() = id`, no column
+    /// restriction). Backs the You-tab "Share Solo Workouts" toggle —
+    /// writing this column is what the new set_logs SELECT policy
+    /// (20260722000002_solo_workout_privacy.sql) reads to decide whether an
+    /// accepted friend can see the owner's solo (single-participant)
+    /// session set_logs; multi-participant sessions are unaffected either
+    /// way (that policy's friend clause is gated on session-solo-ness, not
+    /// just this flag).
+    static func updateShowSoloWorkouts(_ enabled: Bool) async throws -> Profile {
+        guard let userID = await SupabaseService.shared.currentUserID() else {
+            throw GymSyncError.unauthorized
+        }
+        do {
+            let updated: Profile = try await client
+                .from("profiles")
+                .update(["show_solo_workouts": enabled])
                 .eq("id", value: userID.uuidString)
                 .select()
                 .single()
