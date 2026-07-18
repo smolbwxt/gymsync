@@ -9,6 +9,10 @@ struct StatsTabView: View {
     @State private var recentPRs: [PersonalRecord] = []
     @State private var monthTrendPercent: Double?
     @State private var userStreak: UserStreak?
+    // Body weight card (Phase H Task 3)
+    @State private var bodyWeightLogs: [BodyWeightLog] = []
+    @State private var selectedBodyWeightRange: TrendRange = .sixMonths
+    @State private var showingBodyWeightLogSheet = false
 
     var body: some View {
         NavigationStack {
@@ -49,6 +53,11 @@ struct StatsTabView: View {
 
                     // ── Recent PRs Table ────────────────────────────────────────
                     recentPRsCardView
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 16)
+
+                    // ── Body Weight Card (Task 3, Phase H) ──────────────────────
+                    bodyWeightCardView
                         .padding(.horizontal, 16)
                         .padding(.bottom, 16)
 
@@ -125,6 +134,7 @@ struct StatsTabView: View {
                 }
                 await loadWeeklyVolumeAndPRs()
                 await loadStreak()
+                await loadBodyWeight()
             }
             .refreshable {
                 if let id = appState.currentProfile?.id {
@@ -132,6 +142,10 @@ struct StatsTabView: View {
                 }
                 await loadWeeklyVolumeAndPRs()
                 await loadStreak()
+                await loadBodyWeight()
+            }
+            .sheet(isPresented: $showingBodyWeightLogSheet) {
+                BodyWeightLogSheet(onLogged: { Task { await loadBodyWeight() } })
             }
         }
     }
@@ -301,6 +315,55 @@ struct StatsTabView: View {
         }
     }
 
+    // MARK: - Body Weight Card (Task 3, Phase H)
+    //
+    // `body_weight_logs` (20260724000001_body_weight_logs.sql) — master-spec'd
+    // to live on Stats ("body weight trend",
+    // docs/superpowers/specs/2026-06-28-gymsync-design.md:692). No canvas
+    // frame exists for this card or its log sheet — system-designed,
+    // extends the existing "tab-stats" accepted deviation (same GSCard/
+    // GSSectionHeader rhythm as the weekly-volume/streak/recent-PRs cards
+    // already on this screen); see docs/design/accepted-deviations.json.
+    // The trend chart itself reuses `TrendChartView` verbatim (Features/
+    // Stats/TrendChartView.swift:21-27's init — title/data/selectedRange —
+    // same call shape `ExerciseHistoryView` already uses for its Est. 1RM
+    // trend), and the "+ Log" header button mirrors
+    // `RoutinesListView.yourRoutinesHeader`'s "+ New" button shape
+    // (Features/Library/RoutinesListView.swift:83-104).
+    @ViewBuilder
+    private var bodyWeightCardView: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                GSSectionHeader("Body Weight")
+                Spacer()
+                Button {
+                    showingBodyWeightLogSheet = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus").font(.system(size: 12, weight: .bold))
+                        Text("Log").font(GSFont.bold(13, relativeTo: .subheadline))
+                    }
+                    .foregroundStyle(theme.accent)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .overlay(Rectangle().strokeBorder(theme.accent, lineWidth: 1))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+
+            TrendChartView(
+                title: "Weight",
+                data: bodyWeightChartData,
+                selectedRange: $selectedBodyWeightRange
+            )
+        }
+    }
+
+    private var bodyWeightChartData: [(Date, Double)] {
+        StatMath.bodyWeightTrendPoints(logs: bodyWeightLogs)
+    }
+
     private func exerciseName(for id: UUID) -> String {
         exercises.first(where: { $0.id == id })?.name ?? "Exercise"
     }
@@ -342,5 +405,11 @@ struct StatsTabView: View {
     private func loadStreak() async {
         guard let userID = appState.currentProfile?.id else { return }
         userStreak = try? await StreakRepository.userStreak(userID: userID)
+    }
+
+    @MainActor
+    private func loadBodyWeight() async {
+        guard let userID = appState.currentProfile?.id else { return }
+        bodyWeightLogs = (try? await BodyWeightLogRepository.recent(userID: userID)) ?? []
     }
 }

@@ -40,6 +40,7 @@ enum CatalogScreen: String, CaseIterable {
     case discover = "discover"
     case discoverDetail = "discover-detail"
     case topLifters = "top-lifters"
+    case bodyWeightLog = "body-weight-log"
 }
 
 struct CatalogHostView: View {
@@ -75,6 +76,7 @@ struct CatalogHostView: View {
             case .discover:                   content_discover
             case .discoverDetail:             content_discoverDetail
             case .topLifters:                 content_topLifters
+            case .bodyWeightLog:              content_bodyWeightLog
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -637,6 +639,22 @@ struct CatalogHostView: View {
         return NavigationStack {
             TopLiftersView(catalogFixtureLifters: Self.topLiftersFixtureRows)
         }
+    }
+
+    // MARK: - Body Weight log sheet (Phase H Task 3 — no canvas frame, catalog case)
+    //
+    // No canvas frame depicts a body-weight log affordance — see
+    // `docs/design/accepted-deviations.json`'s "body-weight-log" entry.
+    // `BodyWeightLogSheet` self-wraps its own `NavigationStack` (same shape
+    // as `ReportSheet`/`DeleteAccountSheet` above), so no extra wrapper is
+    // needed here. No fixture seam needed: the sheet has no live `.task`
+    // fetch to skip and its only network call (`BodyWeightLogRepository
+    // .log`) never fires without a tap on "Save", which itself stays
+    // disabled until a valid weight is entered — hermetic by construction,
+    // same reasoning `content_deleteAccount` documents above.
+
+    private var content_bodyWeightLog: some View {
+        BodyWeightLogSheet()
     }
 }
 

@@ -202,4 +202,45 @@ final class StatDerivationTests: XCTestCase {
         let result = StatMath.weeklyVolumes(logs: logs, weeks: 6, calendar: utc, now: now)
         XCTAssertEqual(result[5], 0)
     }
+
+    // MARK: - Body weight trend (Phase H Task 3)
+
+    private func makeBodyWeightLog(loggedAt: Date, weight: Decimal, unit: String = "lbs") -> BodyWeightLog {
+        BodyWeightLog(id: UUID(), userID: UUID(), weight: weight, unit: unit, loggedAt: loggedAt)
+    }
+
+    func testBodyWeightTrendPoints_emptyLogsReturnsEmpty() {
+        XCTAssertTrue(StatMath.bodyWeightTrendPoints(logs: []).isEmpty)
+    }
+
+    func testBodyWeightTrendPoints_sortsChronologicallyOldestFirst() {
+        // Deliberately fed newest-first (BodyWeightLogRepository.recent's own
+        // order) — the mapper must re-sort, not assume caller order.
+        let logs = [
+            makeBodyWeightLog(loggedAt: date(2024, 1, 3), weight: 181),
+            makeBodyWeightLog(loggedAt: date(2024, 1, 1), weight: 183),
+            makeBodyWeightLog(loggedAt: date(2024, 1, 2), weight: 182)
+        ]
+        let result = StatMath.bodyWeightTrendPoints(logs: logs)
+        XCTAssertEqual(result.map(\.0), [date(2024, 1, 1), date(2024, 1, 2), date(2024, 1, 3)])
+    }
+
+    func testBodyWeightTrendPoints_mapsDecimalWeightToDouble() {
+        let logs = [makeBodyWeightLog(loggedAt: date(2024, 1, 1), weight: 182.4)]
+        let result = StatMath.bodyWeightTrendPoints(logs: logs)
+        XCTAssertEqual(result.count, 1)
+        XCTAssertEqual(result[0].1, 182.4, accuracy: 0.0001)
+    }
+
+    func testFormattedBodyWeight_wholeNumberTrimsTrailingDecimal() {
+        XCTAssertEqual(StatMath.formattedBodyWeight(185, unit: "lbs"), "185 lbs")
+    }
+
+    func testFormattedBodyWeight_fractionalKeepsOneDecimal() {
+        XCTAssertEqual(StatMath.formattedBodyWeight(182.4, unit: "lbs"), "182.4 lbs")
+    }
+
+    func testFormattedBodyWeight_kgUnitIsPassedThroughVerbatim() {
+        XCTAssertEqual(StatMath.formattedBodyWeight(81, unit: "kg"), "81 kg")
+    }
 }
