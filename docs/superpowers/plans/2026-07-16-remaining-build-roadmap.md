@@ -129,7 +129,23 @@ The spec's "true differentiator." New watchOS target (CI builds it like the iOS 
 
 Spec Flow 8: `campaigns`/`campaign_participants`/`campaign_progress` tables + progress trigger; Library **Campaigns** sub-tab + Home carousel; community progress bar (live via postgres_changes); per-campaign leaderboard; completion badge + system message. Ops prerequisite: team-curated campaign calendar (content work — user).
 
-## Phase V — Local venue hubs (18+, last)
+## Phase D — Design Sharpening (FINAL phase, after all development — user-committed 2026-07-18)
+
+**Goal:** every screen gets real, intentional design — new frames for everything built system-designed, new art replacing placeholders — measured by the parity harness until `accepted-deviations.json` is near-empty.
+
+**The design backlog (harness-maintained — `accepted-deviations.json` is the canonical queue):**
+1. **Undesigned screens needing frames** (built to system idioms, awaiting designer frames): Stats streak card · Group Stats sub-tab · Edit Profile · Report sheet · Blocked Users list · Delete Account sheet · session sub-thread chat surfaces (lobby + live buttons/sheet, live-header crowding note) · Discover grid · Discover workout detail · Top Lifters (L-T4) · publish-fields UI (L-T4) — plus every not-yet-built surface from H/O/W/C/V (body-weight log + trend, plate-math helper, voice coach-mark/mixer-sheet/toast, the ENTIRE Watch app, Campaigns sub-tab + detail + progress bars, venue Gym Hub + QR flow).
+2. **Designed-but-deviating, awaiting sign-off:** You-tab stat tiles + Apple Health row; the standing designer-note queue (chat mic-icon adjudication, bell icon variant, offline-pill placement).
+3. **Art/asset replacement (the "less awful" pass):** the app icon (still the PIL-generated placeholder dumbbell); Featured-pack artwork + an asset pipeline (placeholder blocks today); exercise demonstration imagery style (functional free-exercise-db photos vs the design language); soundboard icons/sounds curation.
+
+**Method (leverages the pipeline that already works — recommendations):**
+1. **Design against reality, in batches.** Generate a designer brief per screen-family (Social, Discover/Library, Moderation/Settings, Stats, Watch, Campaigns/Venues) embedding the REAL app captures (the harness's `app-*.png` set) so redraws start from what exists — upload each brief into the claude.ai/design project (the established `docs/design/requests/` + upload pattern).
+2. **One family at a time, parity-closed-loop:** designer draws frames → DesignSync pull → `render_proofs.js` → add `frame-map.json` entries → a small implementation fix-wave per family → parity report shows the family land in-band → prune its deviations entries. Never a monolithic redesign branch — each family merges independently, CI-gated like every phase.
+3. **Sequence D LAST (after W/C/V)** so Watch/Campaigns/Venues get designed once, not redesigned; but the ART track (icon, pack artwork, exercise imagery style) can run in parallel any time — it's asset production, not screen design.
+4. **Definition of done:** every `app-*.png` capture maps to an authoritative frame and scores in the structural-noise band; `accepted-deviations.json` contains only genuinely-permanent entries (behavior notes, photo-vs-mock); the app icon and pack artwork are real.
+5. **Cheap wins first inside each family:** the harness's worst-first report IS the priority order — start each family sprint at the top of its divergence list.
+
+## Phase V — Local venue hubs (18+, last development phase)
 
 Spec Flow 9 + §6.7: `venues`/`venue_users`/`venue_join_requests`; QR scan flow; Gym Hub view (local leaderboard, open crews, anonymized activity); crew join requests. **Prerequisites before build:** Twilio Verify account (phone verification), age-gate copy, privacy-policy update + legal review for phone-number handling, venue seeding strategy. Safety measures per spec are mandatory scope, not optional.
 

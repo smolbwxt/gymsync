@@ -96,8 +96,9 @@ function row(overrides: Partial<PushQueueRow>): PushQueueRow {
 }
 
 // ============================================================
-// payloads.ts — exact content for all 12 events (Dossier §A.6 test hook;
-// streak_milestone/streak_at_risk added in Phase S, 20260719000008)
+// payloads.ts — exact content for all 13 events (Dossier §A.6 test hook;
+// streak_milestone/streak_at_risk added in Phase S, 20260719000008;
+// leaderboard_passed added in Phase L, 20260723000002_attempt_plumbing)
 // ============================================================
 
 Deno.test("payloads: friend_request", () => {
@@ -239,6 +240,20 @@ Deno.test("payloads: streak_milestone (group) includes group_id as threadId", ()
     body: "Your crew just hit a 30-session streak!",
     category: "SESSION_VIEW",
     threadId: "g1",
+  });
+});
+
+Deno.test("payloads: leaderboard_passed", () => {
+  const c = buildNotificationPayload("leaderboard_passed", {
+    routine_id: "r1",
+    attempt_id: "a1",
+    passing_user_id: "u1",
+    new_rank: 187,
+  });
+  assertEquals(c, {
+    title: "Leaderboard",
+    body: "Someone just passed you on the leaderboard.",
+    category: "SESSION_VIEW",
   });
 });
 

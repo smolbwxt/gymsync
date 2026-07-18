@@ -24,6 +24,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { parseArgs } = require('node:util');
+const { randomUUID } = require('node:crypto');
 
 const env = fs.readFileSync(path.join(__dirname, '..', '.env.local'), 'utf8');
 const get = (k) => { const m = new RegExp(`${k}=(.+)`).exec(env); return m && m[1].trim(); };
@@ -86,6 +87,69 @@ const PR_EXERCISES = [
   { slug: 'back-squat', weight: 225, reps: 3, previous_best: 205 },
   { slug: 'bench-press', weight: 185, reps: 5, previous_best: 175 },
   { slug: 'deadlift', weight: 315, reps: 1, previous_best: 295 },
+];
+
+// Phase L Task 4: featured workouts pack ("The Murph" + 2 strength
+// templates) — extends the curator-publish idiom just below (single
+// FEATURED_ROUTINE, pre-existing) to the 4 Phase L columns Task 1 added
+// fix-forward to `routines` (is_featured/default_sort/scoring_metrics/
+// scoring_top_set_exercise_id, `supabase/migrations/20260723000001_
+// public_workout_repository.sql:29-35`).
+//
+// "The Murph" HONEST ADAPTATION: the canonical workout is 1-mile run, 100
+// pull-ups, 200 push-ups, 300 squats, 1-mile run (often with a 20lb vest).
+// This schema has NO way to represent a run or a weighted vest — grepped the
+// full exercise catalog (`node scripts/seed_routines.js --list-exercises`,
+// 200+ entries) for any distance/cardio/timed-interval category: none
+// exists (every entry is a discrete weight-room movement). This seed keeps
+// ONLY the representable middle three movements and drops both runs and the
+// vest — not faked as a 4th "exercise," just omitted, and documented both
+// here and in the routine's own `description` (shown in the app).
+const FEATURED_WORKOUTS = [
+  {
+    name: 'The Murph',
+    description: "Murph — adapted. The two bookend 1-mile runs (and the " +
+      "20lb vest) aren't representable in this app's set-log model (no " +
+      "distance/cardio exercise exists in the catalog), so this seed keeps " +
+      "only the representable middle: 100 pull-ups, 200 push-ups, 300 squats.",
+    isFeatured: true,
+    defaultSort: 'time',
+    scoringMetrics: ['time', 'volume'],
+    topSetExerciseSlug: null,
+    exercises: [
+      { slug: 'pull-up', sets: 1, reps: '100' },
+      { slug: 'push-up', sets: 1, reps: '200' },
+      { slug: 'bodyweight-squat', sets: 1, reps: '300' },
+    ],
+  },
+  {
+    name: 'StrongLifts 5x5 — Workout A',
+    description: 'Classic novice linear-progression day A: Squat, Bench Press, Barbell Row — 5 sets of 5.',
+    isFeatured: false,
+    defaultSort: 'volume',
+    scoringMetrics: ['volume', 'top_set'],
+    topSetExerciseSlug: 'back-squat',
+    exercises: [
+      { slug: 'back-squat', sets: 5, reps: '5', weight: '135' },
+      { slug: 'bench-press', sets: 5, reps: '5', weight: '95' },
+      { slug: 'barbell-row', sets: 5, reps: '5', weight: '95' },
+    ],
+  },
+  {
+    name: 'Hypertrophy Push Day',
+    description: 'Chest/shoulders/triceps volume day — moderate weight, higher reps.',
+    isFeatured: false,
+    defaultSort: 'volume',
+    scoringMetrics: ['volume', 'top_set'],
+    topSetExerciseSlug: 'bench-press',
+    exercises: [
+      { slug: 'bench-press', sets: 4, reps: '8-10', weight: '135' },
+      { slug: 'incline-db-press', sets: 3, reps: '10', weight: '55' },
+      { slug: 'ohp', sets: 3, reps: '10', weight: '65' },
+      { slug: 'lateral-raise', sets: 3, reps: '15', weight: '15' },
+      { slug: 'tricep-pushdown', sets: 3, reps: '12', weight: '40' },
+    ],
+  },
 ];
 
 // Creates the auth user + profile for the pending-friend fixture if it
@@ -266,6 +330,7 @@ async function main() {
     ...ROUTINE_PACK.flatMap((r) => r.exercises.map((e) => e.slug)),
     ...FEATURED_ROUTINE.exercises.map((e) => e.slug),
     ...PR_EXERCISES.map((p) => p.slug),
+    ...FEATURED_WORKOUTS.flatMap((w) => w.exercises.map((e) => e.slug)),
   ])];
   const exerciseRows = await rest(`exercises?select=id,slug&slug=in.(${allSlugs.map(encodeURIComponent).join(',')})`);
   const bySlug = Object.fromEntries(exerciseRows.map((e) => [e.slug, e.id]));
@@ -331,6 +396,161 @@ async function main() {
   }));
   await rest('routine_exercises', { method: 'POST', body: JSON.stringify(featuredRows) });
   console.log(`  featured routine: ${FEATURED_ROUTINE.name}`);
+
+  // --- Phase L Task 4: featured workouts pack (find-or-create by natural
+  //     key, NOT delete-then-recreate) --------------------------------------
+  // Deliberately NOT this file's usual "delete-by-marker then re-insert"
+  // idiom (ROUTINE_PACK/FEATURED_ROUTINE above): those routines are never
+  // referenced by another table across a re-run, but these 3 ARE — "The
+  // Murph"'s id is what the attempt fixture below points at
+  // (workout_attempts.routine_id / leaderboard_entries.routine_id, both
+  // `ON DELETE SET NULL`, `20260723000001_public_workout_repository.
+  // sql:72,93`). Deleting and recreating it every run would silently orphan
+  // the CI attempt fixture's leaderboard row (routine_id -> NULL) on the
+  // SECOND run — the exact "group_id ON DELETE SET NULL orphaning" lesson
+  // this file's own group block already learned (see that block's comment,
+  // above), applied here to a new table. Find-or-create by (owner_id, name)
+  // instead — same natural-key idiom the group block uses — and PATCH the
+  // publish fields in place on every run so a pack-definition edit still
+  // takes effect without minting a new id.
+  const featuredWorkoutIDs = {};
+  for (const w of FEATURED_WORKOUTS) {
+    let [routine] = await rest(
+      `routines?select=id&owner_id=eq.${me.id}&name=eq.${encodeURIComponent(w.name)}`);
+    const publishFields = {
+      visibility: 'public',
+      is_featured: w.isFeatured,
+      default_sort: w.defaultSort,
+      scoring_metrics: w.scoringMetrics,
+      scoring_top_set_exercise_id: w.topSetExerciseSlug ? bySlug[w.topSetExerciseSlug] : null,
+      description: w.description,
+    };
+    if (!routine) {
+      [routine] = await rest('routines', { method: 'POST', headers: rep,
+        body: JSON.stringify({ owner_id: me.id, name: w.name, ...publishFields }) });
+    } else {
+      await rest(`routines?id=eq.${routine.id}`, { method: 'PATCH', body: JSON.stringify(publishFields) });
+    }
+    featuredWorkoutIDs[w.name] = routine.id;
+
+    // routine_exercises carry no cross-run stable reference (nothing else
+    // points at a specific routine_exercises row) — safe to delete-and-
+    // reinsert every run, same idiom as ROUTINE_PACK above.
+    await rest(`routine_exercises?routine_id=eq.${routine.id}`, { method: 'DELETE' });
+    const rows = w.exercises.map((e, i) => ({
+      routine_id: routine.id, exercise_id: bySlug[e.slug], position: i + 1,
+      target_sets: e.sets ?? null, target_reps: e.reps != null ? String(e.reps) : null,
+      target_weight: e.weight != null ? String(e.weight) : null,
+    }));
+    await rest('routine_exercises', { method: 'POST', body: JSON.stringify(rows) });
+  }
+  console.log(`  featured workouts pack: ${FEATURED_WORKOUTS.map((w) => w.name).join(', ')}`);
+
+  // --- Phase L Task 4: CI-account "The Murph" attempt fixture -------------
+  // workout_attempts/leaderboard_entries are written EXCLUSIVELY by DEFINER
+  // triggers (no `authenticated` INSERT policy on either table at all,
+  // `20260723000001_public_workout_repository.sql:145-160`) and the normal
+  // client entry point, `start_attempt`, is SECURITY DEFINER keyed on
+  // `auth.uid()` — meaningless from this service-role script (no user JWT,
+  // `auth.uid()` reads NULL server-side). The honest seed, mirroring this
+  // file's OWN streak fixture above ("walk it through for real, don't
+  // synthesize the terminal state"): use the service-role key's RLS bypass
+  // (the same bypass this whole script already relies on for
+  // sessions/session_participants/set_logs elsewhere) to write a real
+  // session_participants row, a real workout_attempts row, and real
+  // set_logs, then flip `sessions.state` scheduled -> completed in ONE
+  // PATCH so the REAL `leaderboard_recompute_on_session_completion` trigger
+  // computes time_seconds/total_volume/top_sets itself — never hand-written
+  // into leaderboard_entries directly.
+  //
+  // Fixed, deterministic `scheduled_for` (never `now()`) is this block's
+  // natural key, same idiom as STREAK_DATES above — sessions has no name
+  // column to stamp a `[QA]` marker on. `MURPH_ATTEMPT_COMPLETED_AT` is
+  // deliberately 42:13 after `started_at` — the exact time the master
+  // spec's own Flow 4 worked example uses for its system-message copy
+  // ("attempted The Murph — 42:13, #187",
+  // `docs/superpowers/specs/2026-06-28-gymsync-design.md:790-797`).
+  const MURPH_ATTEMPT_SCHEDULED_FOR = '2026-07-18T09:00:00.000Z';
+  const MURPH_ATTEMPT_COMPLETED_AT = '2026-07-18T09:42:13.000Z';
+  const murphID = featuredWorkoutIDs['The Murph'];
+
+  let [murphSession] = await rest(
+    `sessions?select=id,state&organizer_id=eq.${me.id}&routine_id=eq.${murphID}` +
+    `&scheduled_for=eq.${encodeURIComponent(MURPH_ATTEMPT_SCHEDULED_FOR)}`);
+  if (!murphSession) {
+    [murphSession] = await rest('sessions', { method: 'POST', headers: rep,
+      body: JSON.stringify({
+        organizer_id: me.id, routine_id: murphID, state: 'scheduled',
+        scheduled_for: MURPH_ATTEMPT_SCHEDULED_FOR,
+      }) });
+  }
+
+  // Self as sole participant — same idiom `SessionRepository.startSolo`
+  // uses client-side for every real solo session ("Add self as sole
+  // participant, for RLS unification across phases"). Upsert-by-natural-key
+  // (PK is session_id+user_id) so a resumed partial run can safely re-POST.
+  await rest('session_participants', { method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates' },
+    body: JSON.stringify({
+      session_id: murphSession.id, user_id: me.id,
+      check_in_state: 'ready', check_in_at: MURPH_ATTEMPT_SCHEDULED_FOR,
+    }) });
+
+  // workout_attempts: find-or-create by the table's own UNIQUE(session_id,
+  // user_id) index (`workout_attempts_session_user_idx`) — never a second
+  // row for a re-run, same idempotency key `start_attempt` itself relies on.
+  let [murphAttempt] = await rest(
+    `workout_attempts?select=id,is_complete&session_id=eq.${murphSession.id}&user_id=eq.${me.id}`);
+  if (!murphAttempt) {
+    [murphAttempt] = await rest('workout_attempts', { method: 'POST', headers: rep,
+      body: JSON.stringify({
+        routine_id: murphID, user_id: me.id, session_id: murphSession.id,
+        is_opt_in_leaderboard: true, started_at: MURPH_ATTEMPT_SCHEDULED_FOR,
+        is_complete: false,
+      }) });
+  }
+
+  if (murphAttempt.is_complete) {
+    console.log('  Murph attempt fixture: already completed, skipping');
+  } else {
+    // set_logs: 3 rows, one per Murph movement (100 pull-ups / 200 push-ups
+    // / 300 squats logged as one unbroken set each — a seed simplification,
+    // not a claim about how Murph is actually performed rep-by-rep).
+    // weight=0, EXPLICIT not NULL: set_logs.weight represents ADDED load,
+    // not bodyweight — these are bodyweight movements with no added load,
+    // so total_volume/top_sets both honestly compute to 0 for this attempt
+    // (the recompute's SUM/MAX both filter `weight IS NOT NULL`, and 0
+    // satisfies that — a NULL would produce the identical 0 result, but 0
+    // states "no added weight" rather than "not logged"). Documented here
+    // for the same reason as the run/vest omission above: an honest
+    // limitation of an added-load volume metric applied to a bodyweight
+    // benchmark, not a bug.
+    const existingLogs = await rest(
+      `set_logs?select=id&session_id=eq.${murphSession.id}&user_id=eq.${me.id}`);
+    if (!existingLogs.length) {
+      const murphExercises = FEATURED_WORKOUTS.find((w) => w.name === 'The Murph').exercises;
+      const logRows = murphExercises.map((e) => ({
+        id: randomUUID(), user_id: me.id, session_id: murphSession.id,
+        exercise_id: bySlug[e.slug], set_index: 1,
+        reps: Number(e.reps), weight: 0,
+      }));
+      await rest('set_logs', { method: 'POST', body: JSON.stringify(logRows) });
+    }
+
+    // scheduled -> completed: the exact transition
+    // leaderboard_recompute_on_session_completion listens for (AFTER UPDATE
+    // OF state), same guard shape as the streak block's own completion PATCH
+    // above. The `state=eq.scheduled` filter makes this a no-op (0 rows) if
+    // a prior run already completed it.
+    await rest(`sessions?id=eq.${murphSession.id}&state=eq.scheduled`, { method: 'PATCH',
+      body: JSON.stringify({ state: 'completed', completed_at: MURPH_ATTEMPT_COMPLETED_AT }) });
+
+    const [entry] = await rest(
+      `leaderboard_entries?select=time_seconds,total_volume,is_complete&attempt_id=eq.${murphAttempt.id}`);
+    console.log(`  Murph attempt fixture: session ${murphSession.id}, ` +
+      `time_seconds=${entry?.time_seconds ?? '?'}, total_volume=${entry?.total_volume ?? '?'}, ` +
+      `is_complete=${entry?.is_complete ?? '?'}`);
+  }
 
   console.log('\ndone — QA fixture world seeded (idempotent).');
 }

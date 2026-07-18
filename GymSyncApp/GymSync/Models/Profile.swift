@@ -119,6 +119,30 @@ enum ProfileRepository {
         }
     }
 
+    // MARK: - Phase L Task 4: Top Lifters (global cumulative-volume board)
+
+    /// Global "Top Lifters" leaderboard — profiles ranked by
+    /// `lifetime_volume_lifted` DESC, LIMIT-ed (Phase L design §3's own
+    /// honest read: "Top Lifters ranks profiles by lifetime volume — public
+    /// data per profiles RLS (anyone reads public fields) — no extra opt-in
+    /// needed", `docs/superpowers/specs/2026-07-18-discover-leaderboards-
+    /// design.md:19`). `profiles` SELECT RLS is `USING (true)` for any
+    /// authenticated user (`20260709000001_create_profiles.sql:15-18`) — a
+    /// plain ordered+limited read needs no new RLS, same shape as
+    /// `RoutineRepository.publicRoutines()`'s `.order(...).execute()` idiom.
+    static func topLifters(limit: Int = 50) async throws -> [Profile] {
+        do {
+            let rows: [Profile] = try await client
+                .from("profiles")
+                .select()
+                .order("lifetime_volume_lifted", ascending: false)
+                .limit(limit)
+                .execute()
+                .value
+            return rows
+        } catch { throw ErrorMapping.map(error) }
+    }
+
     static func fetchMany(ids: [UUID]) async throws -> [Profile] {
         guard !ids.isEmpty else { return [] }
         do {

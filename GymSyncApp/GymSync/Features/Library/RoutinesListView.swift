@@ -219,17 +219,18 @@ private struct RoutineDetailChoice: View {
     @State private var errorText: String?
 
     // Phase M Task 2 (moderation/compliance): Report/Block-owner on routine
-    // detail. `RoutinesListView`'s only current navigation path here always
-    // passes an OWNED routine (`RoutineRepository.fetchAll(ownerID:
+    // detail, now via the shared `routineModerationToolbar` modifier (Phase L
+    // Task 3 extracted this exact menu/sheet/dialog out to
+    // `Features/Moderation/RoutineModerationToolbar.swift` so
+    // `DiscoverWorkoutDetailView` — a routine detail screen whose routine is
+    // NEVER the caller's own — can carry the identical surface instead of
+    // duplicating it). `RoutinesListView`'s only current navigation path here
+    // always passes an OWNED routine (`RoutineRepository.fetchAll(ownerID:
     // appState.currentProfile.id)`) — the featured/public-routine shelf in
     // LibraryTabView renders cards only, with no detail navigation of its
-    // own yet. `isOwnRoutine` below keeps this menu correctly inert on
-    // today's only reachable path while wiring it correctly for whenever a
-    // featured-routine detail screen is added (brief names "published/
-    // featured" routine detail explicitly) — flagged, not a scope
-    // expansion into building that navigation now.
-    @State private var showReportSheet = false
-    @State private var showBlockConfirm = false
+    // own. `isOwnRoutine` below keeps the menu correctly inert on this
+    // screen's only reachable path.
+    //
     // Deliberately separate from `errorText` above: that state gates the
     // whole screen (loading/error/content branches below) — reusing it for
     // a failed block attempt would replace the routine content with a bare
@@ -295,51 +296,12 @@ private struct RoutineDetailChoice: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(theme.surface, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
-        .toolbar {
-            // Hidden for your own routine — see the `isOwnRoutine` doc
-            // comment above (this task's only reachable path today).
-            if !isOwnRoutine {
-                ToolbarItem(placement: .primaryAction) {
-                    Menu {
-                        Button {
-                            showReportSheet = true
-                        } label: {
-                            Label("Report Routine", systemImage: "flag")
-                        }
-                        Button(role: .destructive) {
-                            showBlockConfirm = true
-                        } label: {
-                            Label("Block Owner", systemImage: "nosign")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(theme.text)
-                            .frame(minWidth: 44, minHeight: 44)
-                            .contentShape(Rectangle())
-                    }
-                }
-            }
-        }
-        .sheet(isPresented: $showReportSheet) {
-            ReportSheet(reportedUserID: routine.ownerID, contentType: .routine, contentID: routine.id)
-        }
-        // Literal text per brief: "Block @username? You won't see their
-        // messages or requests." — same "no username on hand" generic title
-        // as ChatView's identical dialog (only the owner's id is loaded
-        // here, not their Profile).
-        .confirmationDialog(
-            "Block this user?",
-            isPresented: $showBlockConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("Block", role: .destructive) {
-                Task { await blockOwner() }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("You won't see their messages or requests.")
-        }
+        .routineModerationToolbar(
+            ownerID: routine.ownerID,
+            routineID: routine.id,
+            isOwnContent: isOwnRoutine,
+            moderationErrorText: $moderationErrorText
+        )
         .task { await load() }
     }
 
@@ -353,17 +315,5 @@ private struct RoutineDetailChoice: View {
                 routineExercises = exs
             }
         } catch { errorText = ErrorMapping.map(error).errorDescription }
-    }
-
-    // Phase M Task 2: block a routine's owner.
-    private func blockOwner() async {
-        do {
-            try await ModerationRepository.block(userID: routine.ownerID)
-            moderationErrorText = nil
-        } catch let error as GymSyncError {
-            moderationErrorText = error.errorDescription
-        } catch {
-            moderationErrorText = error.localizedDescription
-        }
     }
 }

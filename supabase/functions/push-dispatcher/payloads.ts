@@ -20,10 +20,11 @@ export interface NotificationContent {
 }
 
 /**
- * Category ids, per the task brief's 7-id list. Twelve events map onto seven
- * categories because the brief's id list doesn't have a 1:1 slot for every
- * event — events whose action is a plain "View"/"Reply" (no bespoke action
- * buttons beyond opening the app to the right place) all share SESSION_VIEW.
+ * Category ids, per the task brief's 7-id list. Thirteen events map onto
+ * seven categories because the brief's id list doesn't have a 1:1 slot for
+ * every event — events whose action is a plain "View"/"Reply" (no bespoke
+ * action buttons beyond opening the app to the right place) all share
+ * SESSION_VIEW.
  *
  *   FRIEND_REQUEST  — friend_request              (Accept / Decline)
  *   SESSION_INVITE  — session_invite               (View / Decline)
@@ -37,6 +38,9 @@ export interface NotificationContent {
  *                    streak_milestone               (View — Phase S, no
  *                                                    bespoke action either)
  *                    streak_at_risk                 (View)
+ *                    leaderboard_passed             (View Leaderboard —
+ *                                                    Phase L, no bespoke
+ *                                                    action either)
  *   OPEN_LOBBY      — session_lobby_open           (Open Lobby)
  *   OPEN_SESSION    — your_turn                    (Open Session)
  *   ROAST           — lateness_chirp               (Roast)
@@ -213,6 +217,26 @@ export function buildNotificationPayload(
         body,
         category: CATEGORY.SESSION_VIEW,
         ...(isGroup && groupId ? { threadId: groupId } : {}),
+      };
+    }
+
+    case "leaderboard_passed": {
+      // Payload (leaderboard_social_effects_on_completion,
+      // 20260723000002_attempt_plumbing.sql): { routine_id, attempt_id,
+      // passing_user_id, new_rank }. No username/routine-name join available
+      // here (pure map, no DB access) — generic copy, same constraint as
+      // every other case in this file. No natural session/group thread for
+      // a cross-session leaderboard event (the pass can happen from a
+      // completely unrelated session), so no threadId — same as
+      // friend_request above, which has no natural grouping surface either.
+      // Category: the task brief's 7-id list has no bespoke "View
+      // Leaderboard" action button, so this shares SESSION_VIEW — the same
+      // generic "open and look" bucket partner_pr/chat_mention/
+      // streak_milestone/streak_at_risk already use.
+      return {
+        title: "Leaderboard",
+        body: "Someone just passed you on the leaderboard.",
+        category: CATEGORY.SESSION_VIEW,
       };
     }
 

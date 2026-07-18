@@ -23,6 +23,21 @@ struct RoutineBuilderView: View {
     // bootstrap-seeded from `editing?.visibility` in `load()`.
     @State private var publishAsFeatured = false
 
+    // Publish fields (Phase L Task 4) — VISIBLE ONLY while publishAsFeatured
+    // is on (`publishFieldsSection`), written via a separate targeted UPDATE
+    // in `save()` (see that method's comment for why they never ride
+    // `Routine`'s own upsert). `DiscoverWorkoutDetailView.SortMetric`
+    // (`Features/Library/DiscoverWorkoutDetailView.swift:76-91`) is reused
+    // directly for both pickers' value space rather than re-declaring the
+    // same time/volume/top_set/recent vocabulary a second time — that type's
+    // own doc comment already states its raw values "match the routines.
+    // default_sort/scoring_metrics CHECK constraint's value set verbatim,"
+    // and it carries no `private`/`fileprivate` on itself or its cases, so
+    // it's directly usable here.
+    @State private var defaultSort: DiscoverWorkoutDetailView.SortMetric?
+    @State private var scoringMetrics: Set<DiscoverWorkoutDetailView.SortMetric> = []
+    @State private var scoringTopSetExerciseID: UUID?
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
@@ -101,6 +116,16 @@ struct RoutineBuilderView: View {
                 // Save action (Save itself lives in the nav toolbar).
                 if appState.currentProfile?.isCurator == true {
                     publishToggleRow
+
+                    // Phase L Task 4: default_sort / scoring_metrics /
+                    // top-set-exercise pickers — VISIBLE ONLY when
+                    // publishing, per the brief. Placed directly below the
+                    // toggle it's gated on, same "this row only makes sense
+                    // in that state" placement as the toggle itself relative
+                    // to curator-gating above it.
+                    if publishAsFeatured {
+                        publishFieldsSection
+                    }
                 }
 
                 if let errorText {
@@ -180,6 +205,192 @@ struct RoutineBuilderView: View {
         .frame(minHeight: 44)
         .background(theme.surface)
         .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+    }
+
+    // MARK: - Publish fields (Phase L Task 4)
+    //
+    // Minimal UI per the brief: a default-sort segmented row (reusing
+    // `DiscoverWorkoutDetailView.sortSegmentedControl`'s flat-rectangle/1px-
+    // divider shape, `Features/Library/DiscoverWorkoutDetailView.swift:
+    // 451-482`, reimplemented locally since that one is `private` to its own
+    // file and this row needs a "None" 5th option that screen doesn't offer),
+    // a scoring-metrics multi-select (reusing `CreateGroupView.
+    // selectionCheckbox`'s filled-square-checkmark row idiom,
+    // `Features/Social/CreateGroupView.swift:229-241`), and a top-set
+    // exercise `Menu`+`Picker` (reusing `ScheduleSessionView.whatSection`'s
+    // bordered icon-row `Menu { Picker }` shape, `Features/Sessions/
+    // ScheduleSessionView.swift:358-384`) shown only when "Top Set" is
+    // selected among the scoring metrics.
+    private var publishFieldsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Default sort")
+                    .font(GSFont.body(12, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral700)
+                defaultSortControl
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Scoring metrics")
+                    .font(GSFont.body(12, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral700)
+                scoringMetricsControl
+            }
+
+            if scoringMetrics.contains(.topSet) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Top-set exercise")
+                        .font(GSFont.body(12, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral700)
+                    topSetExercisePicker
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 12)
+        .background(theme.surface)
+        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+    }
+
+    // "None" + the 4 `SortMetric` cases — a curator can leave a published
+    // routine with no ranked metric at all (matches the column's own
+    // nullable/no-default-value shape; `leaderboard_rank_and_passed`
+    // already treats a NULL default_sort as "no rank" per Task 2's
+    // migration, so "None" is a real, meaningful choice here, not a filler
+    // option).
+    private var defaultSortControl: some View {
+        HStack(spacing: 0) {
+            defaultSortOption(nil, label: "None")
+            ForEach(DiscoverWorkoutDetailView.SortMetric.allCases) { metric in
+                defaultSortOption(metric, label: metric.label)
+                    .overlay(alignment: .leading) {
+                        Rectangle().fill(theme.divider).frame(width: 1)
+                    }
+            }
+        }
+        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+    }
+
+    private func defaultSortOption(_ metric: DiscoverWorkoutDetailView.SortMetric?, label: String) -> some View {
+        let isSelected = defaultSort == metric
+        return Button {
+            defaultSort = metric
+        } label: {
+            Text(label)
+                .font(GSFont.bodyMedium(11, relativeTo: .subheadline))
+                .foregroundStyle(isSelected ? theme.bg : theme.text)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 7)
+                .frame(minHeight: 44)
+                .frame(maxWidth: .infinity)
+                .background(isSelected ? theme.accent : Color.clear)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // Scoring metrics deliberately excludes `.recent` — the `scoring_metrics`
+    // CHECK constraint only allows a subset of `['time','volume','top_set']`
+    // (`20260723000001_public_workout_repository.sql:33-34`); `.recent` is a
+    // display ordering, never a scored metric (same migration's comment,
+    // lines 40-42).
+    private static let scoringMetricOptions =
+        DiscoverWorkoutDetailView.SortMetric.allCases.filter { $0 != .recent }
+
+    private var scoringMetricsControl: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(Self.scoringMetricOptions.enumerated()), id: \.element.id) { index, metric in
+                Button {
+                    if scoringMetrics.contains(metric) {
+                        scoringMetrics.remove(metric)
+                        // Un-picking "Top Set" clears the exercise choice too
+                        // so a stale exercise id never rides a save silently
+                        // — the picker itself also disappears (see
+                        // `publishFieldsSection`'s `if scoringMetrics.
+                        // contains(.topSet)` gate).
+                        if metric == .topSet { scoringTopSetExerciseID = nil }
+                    } else {
+                        scoringMetrics.insert(metric)
+                    }
+                } label: {
+                    HStack(spacing: 10) {
+                        Text(metric.label)
+                            .font(GSFont.body(13, relativeTo: .body))
+                            .foregroundStyle(theme.text)
+                        Spacer()
+                        selectionCheckbox(isSelected: scoringMetrics.contains(metric))
+                    }
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 8)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                if index < Self.scoringMetricOptions.count - 1 {
+                    Rectangle().fill(theme.divider).frame(height: 1)
+                }
+            }
+        }
+    }
+
+    // Filled checkbox-square with checkmark when selected — verbatim shape
+    // from `CreateGroupView.selectionCheckbox` (that one is `private` to its
+    // own file, so reimplemented locally rather than imported).
+    private func selectionCheckbox(isSelected: Bool) -> some View {
+        ZStack {
+            Rectangle()
+                .fill(isSelected ? theme.accent : Color.clear)
+                .overlay(Rectangle().strokeBorder(isSelected ? theme.accent : theme.neutral400, lineWidth: 1))
+            if isSelected {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(theme.bg)
+            }
+        }
+        .frame(width: 20, height: 20)
+    }
+
+    // Bordered `Menu { Picker }` row — `ScheduleSessionView.whatSection`'s
+    // shape (icon + title/subtitle + chevron), cited above. Lists the
+    // routine's OWN exercises only (`items`, de-duplicated by exercise id —
+    // a routine could reference the same exercise at two different
+    // positions), resolved to names via `allExercises`.
+    private var topSetExercisePicker: some View {
+        let options: [(id: UUID, name: String)] = items
+            .reduce(into: [UUID: String]()) { acc, item in
+                guard acc[item.exerciseID] == nil else { return }
+                acc[item.exerciseID] = allExercises.first { $0.id == item.exerciseID }?.name ?? "Exercise"
+            }
+            .map { (id: $0.key, name: $0.value) }
+            .sorted { $0.name < $1.name }
+
+        return Menu {
+            Picker("Top-set exercise", selection: $scoringTopSetExerciseID) {
+                Text("None").tag(Optional<UUID>.none)
+                ForEach(options, id: \.id) { option in
+                    Text(option.name).tag(Optional(option.id))
+                }
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "chart.bar.fill")
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundStyle(theme.accent)
+                    .frame(width: 18)
+                Text(options.first { $0.id == scoringTopSetExerciseID }?.name ?? "None")
+                    .font(GSFont.body(13, relativeTo: .body))
+                    .foregroundStyle(scoringTopSetExerciseID != nil ? theme.text : theme.neutral500)
+                Spacer()
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(theme.neutral500)
+            }
+            .padding(.horizontal, 4)
+            .padding(.vertical, 10)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
     }
 
     // Canvas: exercise picker rows — name + muscle kicker
@@ -392,6 +603,20 @@ struct RoutineBuilderView: View {
                 if let (_, exs) = try await RoutineRepository.fetch(id: editing.id) {
                     items = exs
                 }
+                // Phase L Task 4: seed the publish-fields UI from the
+                // routine's CURRENT values — same "read before overwriting"
+                // discipline as `publishAsFeatured` above. Curator-gated (the
+                // section that reads these is itself only ever shown to a
+                // curator) and only fetched for an existing routine — a
+                // brand-new one has no row to read yet, so the pickers start
+                // at their empty/unset @State defaults.
+                if appState.currentProfile?.isCurator == true,
+                   let fields = try await RoutineRepository.publishFields(routineID: editing.id) {
+                    defaultSort = fields.defaultSort.flatMap { DiscoverWorkoutDetailView.SortMetric(rawValue: $0) }
+                    scoringMetrics = Set((fields.scoringMetrics ?? [])
+                        .compactMap { DiscoverWorkoutDetailView.SortMetric(rawValue: $0) })
+                    scoringTopSetExerciseID = fields.scoringTopSetExerciseID
+                }
             }
         } catch { errorText = ErrorMapping.map(error).errorDescription }
     }
@@ -425,6 +650,37 @@ struct RoutineBuilderView: View {
         }
         do {
             try await RoutineRepository.save(routine, exercises: normalizedItems)
+
+            // Phase L Task 4: targeted UPDATE of the publish-only columns —
+            // ONLY when publishing. Deliberately does NOT ride `save()`'s
+            // upsert above (see `RoutineRepository.updatePublishFields`'s doc
+            // comment for the full "unpublish regression" reasoning) and is
+            // deliberately skipped entirely on unpublish: Discover only ever
+            // reads `visibility='public'` rows (`PublicWorkoutRepository.
+            // publicWorkouts()`), so leaving a private routine's stale
+            // default_sort/scoring_metrics/scoring_top_set_exercise_id in
+            // place is inert — and skipping the write avoids touching a
+            // curator-only column set on a save a non-publishing user (or a
+            // curator saving a still-private draft) may trigger.
+            if publishAsFeatured {
+                // Defensive: a previously-picked top-set exercise may no
+                // longer be in `items` (removed from the routine since the
+                // last publish) — never write a dangling exercise id.
+                let validTopSetID = scoringTopSetExerciseID.flatMap { id in
+                    normalizedItems.contains { $0.exerciseID == id } ? id : nil
+                }
+                // Guard: `.topSet` selected with no (valid) exercise picked is
+                // logically incomplete — silently drop it from the metrics
+                // being written rather than publish a NULL-id scoring metric.
+                let effectiveMetrics = validTopSetID == nil ? scoringMetrics.subtracting([.topSet]) : scoringMetrics
+                try await RoutineRepository.updatePublishFields(
+                    routineID: routineID,
+                    defaultSort: defaultSort?.rawValue,
+                    scoringMetrics: effectiveMetrics.isEmpty ? nil : effectiveMetrics.map(\.rawValue),
+                    scoringTopSetExerciseID: effectiveMetrics.contains(.topSet) ? validTopSetID : nil
+                )
+            }
+
             onSaved(routine)
             dismiss()
         } catch { errorText = ErrorMapping.map(error).errorDescription }
