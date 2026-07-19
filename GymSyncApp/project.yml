@@ -3,6 +3,10 @@ options:
   bundleIdPrefix: app.gymsync
   deploymentTarget:
     iOS: "17.0"
+    # Phase W Task 1 (watch-hr design §1) — watchOS 10 pairs with iOS 17
+    # (Apple's SDK compatibility matrix: each iOS major ships alongside the
+    # watchOS major of the same number - 7, e.g. iOS 17 + watchOS 10).
+    watchOS: "10.0"
   createIntermediateGroups: true
 
 settings:
@@ -35,6 +39,22 @@ targets:
     platform: iOS
     sources:
       - GymSync
+      # Phase W Task 2 (watch-hr design §3) — the WatchConnectivity message
+      # envelope (`WatchEnvelope`/per-kind payloads/`WatchActionReply`,
+      # GymSyncShared/WatchEnvelope.swift) must be a compiled member of
+      # BOTH this target and `GymSyncWatch` below. xcodegen lets the same
+      # directory appear in two different targets' `sources:` lists (Task 1's
+      # own report already flagged this as the mechanism, task-1-report.md's
+      # "Shared target-membership for the future envelope file" section) —
+      # each target compiles the shared file into its OWN separate module
+      # (iOS app vs watchOS app), so it stays plain `internal` access on
+      # both sides, no `public`/framework needed. Picked a shared FOLDER
+      # (`GymSyncShared/`) over listing the individual file path under both
+      # targets: every future shared file (this phase's design doc names at
+      # least the HR pipeline's pure zone/throttle logic as a T5 candidate)
+      # lands here for free with zero further project.yml edits, vs. having
+      # to remember to add each new file's path to TWO lists.
+      - GymSyncShared
     resources:
       - GymSync/DesignSystem/Fonts
     dependencies:
@@ -44,6 +64,30 @@ targets:
         product: LiveKit
       - package: Sentry
         product: Sentry
+      # Phase W Task 1 (watch-hr design §1) — embeds the watchOS companion
+      # app into this app's bundle via xcodegen's "Embed Watch Content"
+      # copy-files phase. `embed`/`codeSign` are explicit even though
+      # xcodegen already defaults embed=true for an `application`-type
+      # target dependency (ProjectSpec.md "Dependencies") — self-documenting
+      # against a future xcodegen default change.
+      #
+      # KNOWN RISK (cited in task-1-report.md): yonaskolb/XcodeGen#1613
+      # (open, unresolved as of this writing) reports that Xcode 26
+      # rejects the embed path xcodegen generates for this exact shape
+      # ("... must be embedded in the parent app bundle's PlugIns
+      # directory, but is embedded in ... Watch directory"). This
+      # repo's `deploy-testflight` job explicitly selects Xcode 26
+      # (see that job's "Select Xcode 26" step) and archives the GymSync
+      # scheme, so IT is the job at risk — `build-test`/`screenshots`
+      # build on the runner's older default Xcode and are not expected to
+      # hit it. If the archive step fails with the error above, that
+      # issue's workaround (patch the generated .pbxproj's Embed Watch
+      # Content phase to dstSubfolderSpec=13, dstPath="") or an xcodegen
+      # version bump (brew always installs latest — may already be fixed
+      # by the time this runs) is the fix; see task-1-report.md.
+      - target: GymSyncWatch
+        embed: true
+        codeSign: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.gymsync.ios
@@ -72,6 +116,100 @@ targets:
         com.apple.developer.applesignin: [Default]
         com.apple.developer.healthkit: true
         aps-environment: development
+
+  # Phase W Task 1 (watch-hr design §1) — watchOS companion app, modern
+  # single-target shape: `type: application` + `platform: watchOS`, no
+  # separate WatchKit Extension target. This is the Xcode 14+ "Independent
+  # watchOS app" architecture (SwiftUI-only, one target); the pre-Xcode-14
+  # two-target shape (`application.watchapp2` container + `watchkit2-
+  # extension`) is legacy and NOT used here. Verified against a real
+  # xcodegen user hitting an Xcode-26 embedding regression with this EXACT
+  # shape (yonaskolb/XcodeGen#1613, open) — see the `GymSync` target's
+  # `dependencies` entry above for the embedding side, and
+  # task-1-report.md for the full citation.
+  #
+  # NO standalone auth/networking here (watch-hr design §1: "the phone
+  # owns the Supabase session; the Watch is a WatchConnectivity peripheral
+  # only") — this target has no Supabase/LiveKit/Sentry package
+  # dependencies, unlike GymSync above.
+  GymSyncWatch:
+    type: application
+    platform: watchOS
+    sources:
+      - GymSyncWatch
+      # Phase W Task 2 — see the identical comment on the `GymSync` target's
+      # `sources:` list above (`GymSyncShared/`'s doc comment there is the
+      # canonical explanation; not duplicated here to avoid drift between
+      # two copies of the same rationale).
+      - GymSyncShared
+    settings:
+      base:
+        # Apple's `<ios-bundle-id>.watchkitapp` companion convention (task
+        # brief) — this bundle id being a child of GymSync's `app.gymsync.
+        # ios` is what lets watchOS/App Store Connect infer the companion
+        # relationship in App Store Connect — but the simulator installer still
+        # requires the explicit WKCompanionAppBundleIdentifier
+        # Info.plist key (see the `info.properties` comment below).
+        PRODUCT_BUNDLE_IDENTIFIER: app.gymsync.ios.watchkitapp
+        TARGETED_DEVICE_FAMILY: "4"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    info:
+      path: GymSyncWatch/Info.plist
+      properties:
+        CFBundleDisplayName: "Gym Sync"
+        # Modern (Xcode 14+) single-target watch app marker — Apple's own
+        # "Watch App" target template sets this; without it watchOS won't
+        # recognize the embedded bundle as a launchable watch app.
+        WKApplication: true
+        # CI-proven required (run on fa38bae failed simulator install with
+        # "Missing WKCompanionAppBundleIdentifier key in WatchKit 2.0
+        # app's Info.plist") — the bundle-id child convention does NOT
+        # substitute for the explicit key at install time.
+        WKCompanionAppBundleIdentifier: app.gymsync.ios
+        # Explicit (rather than relying on the implicit default) because
+        # it's a deliberate architectural decision, not an incidental one:
+        # watch-hr design §1 states the Watch has no standalone auth and
+        # is a WatchConnectivity peripheral only — it cannot function
+        # without the phone app reachable, so it must not run
+        # independently.
+        WKRunsIndependentlyOfCompanionApp: false
+        # Phase W Task 5 (watch-hr design §4 + master spec §6.5) —
+        # HealthKit read-only usage description, REQUIRED on watchOS the
+        # same as iOS whenever a target calls `HKHealthStore
+        # .requestAuthorization` (`HeartRateSampler.requestAuthorizationIfNeeded`)
+        # — omitting it is an instant HealthKit authorization-request crash
+        # on-device, not just an App Store rejection. No
+        # `NSHealthUpdateUsageDescription` here: this target only ever
+        # READS heart-rate samples (`toShare: []` in that same call) — it
+        # never writes to Health, unlike the PHONE target's own two health
+        # usage strings (`GymSync` target's `info.properties` above, which
+        # DOES export completed workouts). Copy mirrors the phone's own
+        # tone/specificity (`NSHealthShareUsageDescription` above).
+        NSHealthShareUsageDescription: "Gym Sync reads your heart rate during a live session to share it with the crew you're training with."
+        # Background Modes -> Workout Processing. REQUIRED for
+        # `HKWorkoutSession` to keep running (and therefore keep the
+        # `HKAnchoredObjectQuery` update handler firing) once the watch
+        # screen locks or another app is briefly raised — without this key,
+        # an active workout session is suspended like any other background
+        # app and heart-rate delivery stops the moment the wrist drops.
+        # Apple's own "Workout Processing" Background Modes capability sets
+        # exactly this key; `HeartRateSampler.beginWorkoutSession` is the
+        # call site that needs it.
+        WKBackgroundModes:
+          - workout-processing
+    entitlements:
+      path: GymSyncWatch/GymSyncWatch.entitlements
+      properties:
+        # Phase W Task 5 — the Watch target had NO HealthKit entitlement
+        # before this task (checked: no `entitlements:` key existed at all
+        # for this target). Required for `HKHealthStore.requestAuthorization`/
+        # `HKWorkoutSession` to function on-device — mirrors the `GymSync`
+        # (phone) target's own `com.apple.developer.healthkit: true`
+        # entitlement above, read-only usage here (no
+        # `com.apple.developer.healthkit.access` restriction needed for the
+        # heart-rate type specifically; the phone target doesn't scope it
+        # either).
+        com.apple.developer.healthkit: true
 
   GymSyncTests:
     type: bundle.unit-test

@@ -17,4 +17,16 @@ enum AppLogger {
     static let audio = Logger(subsystem: subsystem, category: "audio")
     static let push = Logger(subsystem: subsystem, category: "push")
     static let voice = Logger(subsystem: subsystem, category: "voice")
+    // Phase W Task 2 (watch-hr design §3) — WatchConnectivityBridge (phone
+    // side only; the watchOS target has no AppLogger — see that file's
+    // `GymSyncWatch/`-only doc comment for why this isn't a shared file).
+    static let watch = Logger(subsystem: subsystem, category: "watch")
+    // Phase W Task 5 (watch-hr design §4) — dedicated category (rather than
+    // reusing `.watch`) so every heart-rate-adjacent log line is groupable
+    // for the EPHEMERAL LAW audit: every call site logging under this
+    // category must be checked to confirm it never carries a `bpm`/`zone`
+    // value, only ids/error descriptions/generic failure text (see
+    // `HeartRateBroadcastService`'s own doc comments at each log call
+    // site). Phone-side only, same reasoning as `.watch` above.
+    static let heartRate = Logger(subsystem: subsystem, category: "heartrate")
 }

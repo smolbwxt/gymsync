@@ -14,8 +14,8 @@ import XCTest
 final class ThemeStoreMergeTests: XCTestCase {
     private let userID = UUID()
 
-    private func settings(rest: Int, palette: String) -> UserSettings {
-        UserSettings(userID: userID, defaultRestSeconds: rest, palette: palette, updatedAt: Date())
+    private func settings(rest: Int, palette: String, shareHeartRate: Bool = false) -> UserSettings {
+        UserSettings(userID: userID, defaultRestSeconds: rest, palette: palette, updatedAt: Date(), shareHeartRate: shareHeartRate)
     }
 
     /// No cached row yet (e.g. `ThemeStore.load()` never ran, or failed) —
@@ -81,5 +81,28 @@ final class ThemeStoreMergeTests: XCTestCase {
         )
 
         XCTAssertEqual(result, incoming)
+    }
+
+    /// Task 4 (watch-hr design §4) extension: `shareHeartRate` has no
+    /// in-flight-task owner of its own (unlike `.palette`, which
+    /// `select(_:)`'s own in-flight task owns) — it must be treated exactly
+    /// like `defaultRestSeconds`: always adopted from `incoming`, even while
+    /// a palette persist is in flight. Without this, `YouTabView
+    /// .setShareHeartRate`'s own `noteExternalSettingsWrite` call would be
+    /// silently defeated by a concurrent palette tap, reproducing the exact
+    /// clobber class this merge function exists to prevent — just for a
+    /// THIRD field instead of the original two.
+    func testPersistInFlightAlsoAdoptsShareHeartRateAndKeepsCachedPalette() {
+        let cached = settings(rest: 120, palette: "arena", shareHeartRate: false)     // in-flight task's target
+        let incoming = settings(rest: 120, palette: "midnight", shareHeartRate: true) // HR toggle's own row
+
+        let result = ThemeStore.mergeExternalSettingsWrite(
+            cached: cached,
+            incoming: incoming,
+            persistInFlight: true
+        )
+
+        XCTAssertEqual(result.palette, "arena", "in-flight palette must not be clobbered")
+        XCTAssertTrue(result.shareHeartRate, "shareHeartRate must still be adopted from incoming, same as defaultRestSeconds")
     }
 }

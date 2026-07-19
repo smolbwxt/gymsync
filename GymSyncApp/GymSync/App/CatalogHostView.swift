@@ -45,6 +45,7 @@ enum CatalogScreen: String, CaseIterable {
     case topLifters = "top-lifters"
     case bodyWeightLog = "body-weight-log"
     case plateMath = "plate-math"
+    case heartRatePill = "heart-rate-pill"
 }
 
 struct CatalogHostView: View {
@@ -85,6 +86,7 @@ struct CatalogHostView: View {
             case .topLifters:                 content_topLifters
             case .bodyWeightLog:              content_bodyWeightLog
             case .plateMath:                  content_plateMath
+            case .heartRatePill:              content_heartRatePill
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -734,6 +736,43 @@ struct CatalogHostView: View {
             defaultReps: "5",
             defaultWeight: "185"
         ) { _, _, _, _, _ in }
+    }
+
+    // MARK: - Heart rate pill (Phase W Task 5 — no canvas gallery, component-alone capture)
+    //
+    // `GSHeartRatePill` (`DesignSystem/GSComponents.swift`) is embedded deep
+    // inside `GroupSessionLiveView`'s roster/spotlight rendering, which has
+    // no catalog-fixture seam (unlike `ChatView`/`LogSetSheet` above) — that
+    // view's participants/sets/routine state all come from LIVE
+    // `SessionRepository`/`RoutineRepository` fetches with no `#if DEBUG`
+    // bypass, and building one for this task alone would be a large,
+    // disproportionate addition just to showcase one small atom. Same
+    // "component alone" idiom `voice-coach-mark`/`voice-connected-toast`
+    // already established (docs/design/accepted-deviations.json) — this
+    // captures `GSHeartRatePill` directly, not the live roster it's
+    // embedded in.
+    //
+    // Shows all 4 zone colors + the two caption variants (roster "BPM" /
+    // spotlight "BPM · LIVE") in one screenshot rather than 5+ separate
+    // catalog ids — this is a small reusable atom with orthogonal color
+    // variants, not a set of mutually exclusive dock states the way
+    // `VoiceFixture` above is; one gallery capture proves every variant
+    // renders correctly without a proliferation of near-duplicate catalog
+    // ids. See docs/design/accepted-deviations.json's "heart-rate-pill"
+    // entry.
+    private var content_heartRatePill: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            GSHeartRatePill(bpm: 112, zone: .warmup)
+            GSHeartRatePill(bpm: 151, zone: .moderate)
+            GSHeartRatePill(bpm: 172, zone: .hard, showsLiveSuffix: true)
+            GSHeartRatePill(bpm: 188, zone: .max)
+            // Unrecognized/future zone value — proves the nil-zone fallback
+            // (`GSHeartRatePill.zoneColor`'s `case nil` branch) renders
+            // rather than crashing.
+            GSHeartRatePill(bpm: 140, zone: nil)
+        }
+        .padding(20)
+        .background(theme.surface)
     }
 }
 

@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(13);
+SELECT plan(17);
 
 -- ── Fixtures ──────────────────────────────────────────────────────────────────
 -- cu1 alice = owner
@@ -32,6 +32,15 @@ SELECT results_eq(
     WHERE user_id = '00000000-0000-0000-0000-0000000c0001'$$,
   $$VALUES (120, 'midnight'::text)$$,
   'default_rest_seconds/palette fall back to their column defaults when omitted'
+);
+
+-- ── 2b. Task 4 (watch-hr design §4): share_heart_rate column exists and
+--         defaults to false when omitted (20260727000001) ───────────────────
+SELECT results_eq(
+  $$SELECT share_heart_rate FROM user_settings
+    WHERE user_id = '00000000-0000-0000-0000-0000000c0001'$$,
+  ARRAY[false],
+  'share_heart_rate column exists and defaults to false when omitted'
 );
 
 -- ── 3. Owner sees own row (exactly 1) ──────────────────────────────────────────
@@ -80,6 +89,41 @@ WITH before_val AS (
 SELECT ok(
   after_update.updated_at > before_val.updated_at,
   'UPDATE bumps updated_at past its pre-update value')
+FROM before_val, after_update;
+
+-- ── 5c. Task 4: owner can update share_heart_rate (lives_ok) and it's
+--         reflected — the same "targeted-column-via-full-row-upsert" write
+--         path the client uses (UserSettingsRepository.upsert, gated by
+--         owner-only RLS already proven above; there is no column-level
+--         RLS distinct from the row-level policy this table already has) ──
+SELECT lives_ok(
+  $$UPDATE user_settings SET share_heart_rate = true
+    WHERE user_id = '00000000-0000-0000-0000-0000000c0001'$$,
+  'owner can update share_heart_rate'
+);
+
+SELECT results_eq(
+  $$SELECT share_heart_rate FROM user_settings
+    WHERE user_id = '00000000-0000-0000-0000-0000000c0001'$$,
+  ARRAY[true],
+  'share_heart_rate update is reflected'
+);
+
+-- ── 5d. Task 4: re-prove the Phase O updated_at trigger (20260726000006)
+--         also fires for a share_heart_rate-only UPDATE, not just the
+--         palette-only case assertion 5b already proved — same writable-CTE
+--         shape as 5b, clock_timestamp()-backed. ──────────────────────────
+WITH before_val AS (
+  SELECT updated_at FROM user_settings
+  WHERE user_id = '00000000-0000-0000-0000-0000000c0001'
+), after_update AS (
+  UPDATE user_settings SET share_heart_rate = false
+  WHERE user_id = '00000000-0000-0000-0000-0000000c0001'
+  RETURNING updated_at
+)
+SELECT ok(
+  after_update.updated_at > before_val.updated_at,
+  'share_heart_rate UPDATE also bumps updated_at (trigger fires for every column, not just palette/rest)')
 FROM before_val, after_update;
 
 -- ── 6. CHECK constraint: palette outside the 4 allowed values raises 23514 ─────

@@ -14,6 +14,8 @@ DerivedData/
 GymSyncApp/GymSync.xcodeproj/
 GymSyncApp/GymSync/Info.plist
 GymSyncApp/GymSync/GymSync.entitlements
+# Phase W Task 1 — watchOS companion app's generated Info.plist
+GymSyncApp/GymSyncWatch/Info.plist
 
 # Node (Supabase CLI is a dev dependency)
 node_modules/

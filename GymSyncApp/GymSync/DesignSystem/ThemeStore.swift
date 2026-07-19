@@ -17,6 +17,51 @@ public final class ThemeStore {
 
     public private(set) var paletteID: String = "midnight"
     public private(set) var current: GSTheme = .midnight
+    /// Phase W Task 5 (watch-hr design §4) — the live `user_settings
+    /// .share_heart_rate` value, mirrored here for the SAME reason
+    /// `paletteID` is: this class is already the app's one cross-view
+    /// `@Observable` cache of the current `user_settings` row, updated by
+    /// both `load()` (below) and `noteExternalSettingsWrite(_:)`
+    /// (`YouTabView.setShareHeartRate`'s own success-path call, already
+    /// existing since Task 4). `GroupSessionLiveView.pushWatchSessionState()`
+    /// reads this DIRECTLY instead of caching its own copy once at
+    /// `openAndSubscribe()` time — the fix for the carried-in T4 review
+    /// finding ("shareHeartRate is cached once... a mid-session toggle flip
+    /// never reaches the Watch"). Defaults `false`, matching `UserSettings
+    /// .defaults`' own safe opt-out default.
+    public private(set) var shareHeartRate: Bool = false
+
+    /// Fix wave 1 (reviewer finding, CRITICAL) — the trigger `GroupSessionLiveView
+    /// .pushWatchSessionState()` was missing. That function already reads
+    /// `shareHeartRate` above LIVE on every call (this property's own doc
+    /// comment), but nothing ever fired a re-push when the value actually
+    /// changed mid-session — a toggle flip in `YouTabView` (this app's tabs
+    /// stay mounted across switches, so no re-`.task` fires) sat unseen by
+    /// the Watch until an unrelated turn-change/session-end push happened
+    /// to carry it along. `GroupSessionLiveView` sets this to a closure that
+    /// calls its own `pushWatchSessionState()` on `.onAppear` (while a live
+    /// session is genuinely on screen) and clears it back to `nil` on
+    /// `.onDisappear` — same "owner sets one closure per event" convention
+    /// `WatchSessionProviding.onMessageReceived` already establishes
+    /// (`Services/WatchConnectivityBridge.swift`). `nil` whenever no live
+    /// session view is mounted, so `setShareHeartRate(_:)` below is always
+    /// safe to call unconditionally (optional-chained, harmless no-op).
+    ///
+    /// ISOLATION: both sides are `@MainActor`. This class is declared
+    /// `@MainActor` (isolating every stored-property access, including this
+    /// one), and `GroupSessionLiveView` — a SwiftUI `View` — inherits
+    /// `@MainActor` isolation from the `View` protocol itself for its
+    /// `body`/lifecycle-modifier closures (`.onAppear`/`.onDisappear`), the
+    /// same reasoning already documented at several existing `@MainActor`
+    /// annotations on that file's own methods. The closure literal assigned
+    /// in `.onAppear` is created within that MainActor context and is only
+    /// ever INVOKED from `setShareHeartRate(_:)` below, itself a method of
+    /// this `@MainActor` class — so it always runs on the main actor at the
+    /// call site, matching `WatchConnectivityBridge.init`'s identical
+    /// "closure literal assigned to a plain, non-`@MainActor`-typed
+    /// property, created and only ever called from a MainActor context"
+    /// shape for `self.session.onMessageReceived = { [weak self] ... }`.
+    public var onShareHeartRateChange: (() -> Void)?
 
     /// Cached most-recent settings row — kept so `select(_:)` can persist the
     /// new palette without clobbering `defaultRestSeconds` (mutates a copy of
@@ -52,6 +97,7 @@ public final class ThemeStore {
     public func load() async {
         guard let settings = try? await UserSettingsRepository.get() else { return }
         lastKnownSettings = settings
+        setShareHeartRate(settings.shareHeartRate)
         apply(paletteID: settings.palette)
     }
 
@@ -124,6 +170,26 @@ public final class ThemeStore {
             incoming: settings,
             persistInFlight: persistTask != nil
         )
+        // `shareHeartRate` always adopts the merged result — `select(_:)`'s
+        // in-flight task only ever owns `.palette` (see the merge rule's
+        // own doc comment below), so `shareHeartRate` is never the field
+        // being protected from clobber; it always wins from whichever
+        // write reported it, same as `defaultRestSeconds`.
+        setShareHeartRate(lastKnownSettings?.shareHeartRate ?? false)
+    }
+
+    /// Single writer for `shareHeartRate` — both `load()` and
+    /// `noteExternalSettingsWrite(_:)` route through here so
+    /// `onShareHeartRateChange` fires from exactly one place. Change-gated
+    /// (not called unconditionally) so an UNRELATED full-row upsert that
+    /// happens to report the same value it already had (e.g. a rest-timer
+    /// save through `noteExternalSettingsWrite` while sharing is already
+    /// off) doesn't trigger a pointless extra Watch push — only a GENUINE
+    /// flip re-fires the hook.
+    private func setShareHeartRate(_ value: Bool) {
+        guard shareHeartRate != value else { return }
+        shareHeartRate = value
+        onShareHeartRateChange?()
     }
 
     /// Pure merge rule behind `noteExternalSettingsWrite` — extracted (and
@@ -153,6 +219,17 @@ public final class ThemeStore {
     /// fact can correct an already-captured local variable. That narrow
     /// interleaving window is a network-timing race, not a cache-merge bug;
     /// device QA is the backstop for it.
+    ///
+    /// Task 4 (watch-hr design §4) extension: `shareHeartRate` joins
+    /// `defaultRestSeconds` on the "adopt from incoming" side of the rule,
+    /// not the "protect from clobber" side — `select(_:)`'s in-flight task
+    /// only ever owns `.palette` (it's the only field that task writes), so
+    /// every OTHER field an external caller reports (`YouTabView
+    /// .setShareHeartRate`'s own `noteExternalSettingsWrite` call, mirroring
+    /// `RestTimerSettingView.select(_:)`'s identical call) should win over
+    /// whatever `cached` was holding, exactly like `defaultRestSeconds`
+    /// already does. A future 4th `user_settings` field added the same way
+    /// should extend this same line, not the guard above it.
     nonisolated static func mergeExternalSettingsWrite(
         cached: UserSettings?,
         incoming: UserSettings,
@@ -162,6 +239,7 @@ public final class ThemeStore {
             return incoming
         }
         merged.defaultRestSeconds = incoming.defaultRestSeconds
+        merged.shareHeartRate = incoming.shareHeartRate
         return merged
     }
 
