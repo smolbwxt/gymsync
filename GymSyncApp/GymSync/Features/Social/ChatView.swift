@@ -932,11 +932,23 @@ struct ChatView: View {
     /// message (`imageURLRetried`) so a truly-missing/orphaned object fails
     /// once and stays failed, rather than retry-looping. See
     /// `imageURLRetried`'s declaration for the expiry scenario this covers.
+    ///
+    /// Fix wave 1 (Task 6 review, MINOR 3): only overwrite `imageURLs[id]`
+    /// on a SUCCESSFUL retry. The retry itself is a network call and can
+    /// fail transiently — `try?` discarding that into `nil` used to replace
+    /// the (merely expired, not missing) URL with `nil`, and
+    /// `AsyncImage(url: nil)` sits in `.empty` forever (a permanent spinner,
+    /// worse than the old "Image unavailable" state it was showing before
+    /// the retry). Keeping the previous URL on failure means AsyncImage
+    /// re-evaluates the same expired URL, gets `.failure` again, and the
+    /// "Image unavailable" label renders as it did pre-retry.
     private func retryImageURL(for message: ChatMessage) async {
         guard !imageURLRetried.contains(message.id),
               let path = message.storagePath else { return }
         imageURLRetried.insert(message.id)
-        imageURLs[message.id] = try? await StorageService.signedChatImageURL(path: path)
+        if let refreshed = try? await StorageService.signedChatImageURL(path: path) {
+            imageURLs[message.id] = refreshed
+        }
     }
 
     private func sendVoice(url: URL, duration: TimeInterval) async {
