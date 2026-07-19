@@ -28,7 +28,7 @@ settings:
 ##
 ## REASONING: each pin below is the latest STABLE release satisfying the
 ## previous `from:` floor, as of the last GREEN master CI run (commit
-## 62fa562, run 29706646158, completed 2026-07-19T22:42:57Z — `gh run list
+## 62fa562, run 29706646158, started 2026-07-19T22:42:57Z (completed 23:06:51Z) — `gh run list
 ## --branch master --workflow ios.yml`). Because CI always resolves
 ## "latest version satisfying the floor" at checkout time (no
 ## Package.resolved was ever committed before this change), the most

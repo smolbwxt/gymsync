@@ -52,13 +52,13 @@ import Foundation
 // via `SupabaseClient.realtimeV2` (NOT `SupabaseClient.channels`: that
 // convenience wrapper's own implementation, `Sources/Supabase/
 // SupabaseClient.swift:333-335` at this same version, references
-// `realtimeV2.subscriptions` — a member this audit could not find
-// declared anywhere in the RealtimeV2 target's source despite an
-// exhaustive search of every file in `Sources/RealtimeV2/`. The SDK's own
-// CI is green at this tag — `spm (debug)`, `spm (release)`, and every
-// `xcodebuild` job report `success` — so it evidently resolves somehow,
-// but the mechanism is undocumented and unverified from source reading
-// alone; routed around entirely rather than relied on).
+// `realtimeV2.subscriptions` — which is NOT in `Sources/RealtimeV2/` but
+// is a deprecated back-compat alias in `Sources/Realtime/Deprecated/
+// Deprecated.swift:13-17`: `@available(*, deprecated, renamed:
+// "channels") public var subscriptions: ... { channels }` — i.e. it
+// literally returns `channels`. Resolved by the T2 re-review after this
+// audit's search was scoped one directory too narrow. We still read
+// `realtimeV2.channels` directly: same data, no deprecated shim).
 enum BroadcastChannelDecision: Equatable {
     /// Reuse a channel this SAME service instance already holds
     /// (`self.channel`, set by its own prior `subscribe()` call). Never
