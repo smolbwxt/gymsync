@@ -11,6 +11,14 @@ struct RootView: View {
     // `.midnight`) is what makes the whole app re-render live when
     // `AppearanceView` calls `ThemeStore.select(_:)`.
     @State private var themeStore = ThemeStore.shared
+    // Phase O Task 2: app-level foreground hook for the calendar reconcile
+    // sweep (`EventKitBridge.reconcile()`) — see the `.onChange` below for
+    // why this lives HERE rather than following the per-screen `scenePhase`
+    // idiom every other consumer uses (HomeView/YouTabView/LobbyView/
+    // GroupSessionLiveView/ChatView/SocialTabView/PushPrimingView/
+    // NotificationPreferencesView all read `@Environment(\.scenePhase)`
+    // themselves).
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         Group {
@@ -43,6 +51,29 @@ struct RootView: View {
         // the SwiftUI back button; this environment tint does.
         .tint(themeStore.current.accent)
         .background(themeStore.current.bg.ignoresSafeArea())
+        // Phase O Task 2: calendar reconcile sweep, app-foreground gated.
+        // `RootView` is the one view instance that's alive for the entire
+        // signed-in session regardless of which tab is selected —
+        // `MainTabView.body` below only ever mounts the CURRENTLY selected
+        // tab (`switch appState.selectedTab { case .home: HomeView() ... }`
+        // inside a bare `ZStack`, not a `TabView` that keeps every tab
+        // alive), so a `scenePhase` hook placed on any one tab's own view
+        // (the idiom every other consumer above uses) would silently miss
+        // every foreground transition that happens while a DIFFERENT tab is
+        // selected. Hooking here instead guarantees "fires on every
+        // foreground transition" regardless of the user's current screen —
+        // the actual requirement for a sweep that has to run app-wide.
+        // `.onChange(of: scenePhase)` itself already fires at most once per
+        // transition (SwiftUI semantics, same as every other consumer's
+        // `guard scenePhase == .active else { return }` idiom); `reconcile()`
+        // additionally guards its own re-entrancy (`EventKitBridge.
+        // isReconciling`) in case two transitions land close together.
+        .onChange(of: scenePhase) {
+            guard scenePhase == .active else { return }
+            guard case .signedIn = auth.state else { return }
+            guard CalendarSyncPrefsStore.isEnabled() else { return }
+            Task { await EventKitBridge.reconcile() }
+        }
     }
 }
 
