@@ -1153,13 +1153,18 @@ struct GroupSessionLiveView: View {
         let status = rosterStatus(for: item.participant.userID)
         let isLifting = status == .lifting
         // Speaking ring (Task 4, Dossier §A.2's lobby-strip "talking" state,
-        // reused here for the live-session roster grid). `VoiceRoomService`
-        // exposes only WHO is currently speaking, not a full roster of who
-        // else has joined the room — so "listening"/"muted" for other
-        // participants isn't derivable here either (same honest limitation
-        // as `LobbyView.participantRow`); only the "talking" ring is real.
-        let isSpeaking = VoiceRoomService.shared.speakingParticipantIDs
-            .contains(item.participant.userID.uuidString.lowercased())
+        // reused here for the live-session roster grid).
+        let identity = item.participant.userID.uuidString.lowercased()
+        let voice = VoiceRoomService.shared
+        let isSpeaking = voice.speakingParticipantIDs.contains(identity)
+        // Phase O Task 5 item 4 ("muted-others roster rows") — mirrors
+        // LobbyView.participantRow's identical derivation now that
+        // VoiceRoomService exposes a roster + both mute-state sets; see
+        // that view's doc comment for the full "muted" definition (own-mic
+        // mute OR muted-by-you via the mixer, one shared caption for both).
+        let isInVoiceRoom = voice.connectedParticipantIDs.contains(identity)
+        let isMuted = isInVoiceRoom && !isSpeaking &&
+            (voice.remoteMutedParticipantIDs.contains(identity) || voice.locallyMutedParticipantIDs.contains(identity))
 
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 5) {
@@ -1177,6 +1182,10 @@ struct GroupSessionLiveView: View {
                     Text("talking")
                         .font(GSFont.bold(9, relativeTo: .caption2))
                         .foregroundStyle(isLifting ? theme.bg.opacity(0.85) : theme.accent700)
+                } else if isMuted {
+                    Text("muted")
+                        .font(GSFont.body(9, relativeTo: .caption2))
+                        .foregroundStyle(isLifting ? theme.bg.opacity(0.7) : theme.neutral500)
                 }
             }
 
@@ -1214,6 +1223,7 @@ struct GroupSessionLiveView: View {
         .overlay(Rectangle().strokeBorder(
             isSpeaking ? theme.accent700 : (isLifting ? Color.clear : theme.divider),
             lineWidth: isSpeaking ? 2 : 1))
+        .opacity(isMuted ? 0.7 : 1)
     }
 
     private func rosterStatusLabel(_ status: RosterStatus) -> String {

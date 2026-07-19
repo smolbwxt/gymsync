@@ -623,14 +623,27 @@ struct LobbyView: View {
         // Speaking ring (Task 4, Dossier §A.2 lobby "Who's here · voice on"
         // strip's "talking" state) — accent border + animated bars + label,
         // driven by `speakingParticipantIDs` (LiveKit identity = user UUID
-        // string, per T1). Only the "talking" sub-state is derivable from
-        // `VoiceRoomService`'s current surface — it exposes no roster of
-        // who else has joined the room at all, so the strip's "listening"/
-        // "muted" sub-states for OTHER participants can't be rendered
-        // honestly here; deliberately left as the existing check-in-only row
-        // when not speaking.
-        let isSpeaking = VoiceRoomService.shared.speakingParticipantIDs
-            .contains(item.participant.userID.uuidString.lowercased())
+        // string, per T1).
+        let identity = item.participant.userID.uuidString.lowercased()
+        let voice = VoiceRoomService.shared
+        let isSpeaking = voice.speakingParticipantIDs.contains(identity)
+
+        // Phase O Task 5 item 4 ("muted-others roster rows"): VoiceRoomService
+        // now exposes a roster (connectedParticipantIDs) plus both mute-state
+        // sets, closing the gap this doc comment used to describe (git blame:
+        // "it exposes no roster of who else has joined the room at all, so
+        // the strip's 'listening'/'muted' sub-states for OTHER participants
+        // can't be rendered honestly here"). A participant not in
+        // `connectedParticipantIDs` at all still falls through to the
+        // unchanged check-in-only row below — that "haven't joined voice"
+        // case is still not a "muted" state. "Muted" covers EITHER they
+        // muted their own mic (remoteMutedParticipantIDs) OR you've locally
+        // silenced them via the voice mixer sheet
+        // (locallyMutedParticipantIDs) — live-voice frame 2's roster rows
+        // use one shared "muted" caption for both, so this does too.
+        let isInVoiceRoom = voice.connectedParticipantIDs.contains(identity)
+        let isMuted = isInVoiceRoom && !isSpeaking &&
+            (voice.remoteMutedParticipantIDs.contains(identity) || voice.locallyMutedParticipantIDs.contains(identity))
 
         return HStack(spacing: 10) {
             // Presence dot + initials avatar
@@ -680,6 +693,12 @@ struct LobbyView: View {
                         .font(GSFont.bold(9, relativeTo: .caption2))
                         .foregroundStyle(theme.accent700)
                 }
+            } else if isMuted {
+                // Live-voice frame 2's dimmed "muted" caption (no bars) —
+                // Phase O Task 5 item 4.
+                Text("muted")
+                    .font(GSFont.body(9, relativeTo: .caption2))
+                    .foregroundStyle(theme.neutral500)
             }
 
             Spacer()
@@ -691,6 +710,7 @@ struct LobbyView: View {
         .padding(.vertical, 8)
         .background(theme.surface)
         .overlay(Rectangle().strokeBorder(isSpeaking ? theme.accent : theme.divider, lineWidth: isSpeaking ? 2 : 1))
+        .opacity(isMuted ? 0.7 : 1)
     }
 
     @ViewBuilder

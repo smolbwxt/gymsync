@@ -119,6 +119,24 @@ protocol VoiceRoomConnecting: AnyObject {
     /// `RoomDelegate.room(_:didUpdateSpeakingParticipants:)` fires.
     var onSpeakingParticipantsChanged: ((Set<String>) -> Void)? { get set }
 
+    /// Set once by `VoiceRoomService` right after construction. Fired with
+    /// the full current set of REMOTE participant identities in the room
+    /// (self excluded, same lowercased-UUID-string identity shape as
+    /// `onSpeakingParticipantsChanged`) whenever a participant joins or
+    /// leaves. Phase O Task 5 (3e follow-up queue item 4, "muted-others
+    /// roster rows" — the ledger's own "needs room-roster service surface"
+    /// note): `VoiceRoomService` previously exposed no roster at all, so
+    /// callers couldn't tell "not speaking" apart from "not even in the
+    /// room."
+    var onRosterChanged: ((Set<String>) -> Void)? { get set }
+
+    /// Set once by `VoiceRoomService` right after construction. Fired with
+    /// `(identity, isMuted)` whenever a REMOTE participant's OWN published
+    /// mic track's mute state changes (they muted/unmuted themselves) —
+    /// distinct from `setLocalVolume`'s muted-BY-YOU below, which is a pure
+    /// local override nobody else observes.
+    var onRemoteMuteChanged: ((String, Bool) -> Void)? { get set }
+
     /// Connects to `url` with `token` and publishes the mic track muted.
     /// Throws on any failure — token rejected, network, SDK-level error.
     func connectAndPublishMuted(url: String, token: String) async throws
@@ -127,6 +145,15 @@ protocol VoiceRoomConnecting: AnyObject {
     /// — mute/unmute is the low-latency path for hold-to-talk (Dossier
     /// §B.4/§B.3.5).
     func setMicrophoneMuted(_ muted: Bool) async throws
+
+    /// Sets LOCAL playback volume (0...1) for one remote participant's
+    /// audio — client-side only; doesn't touch what they publish or what
+    /// anyone else hears. Powers the voice mixer sheet's per-person
+    /// "tap to mute" (volume 0) and level control (Phase O Task 5 item 5).
+    /// Best-effort — never throws; a failed volume change degrades to "the
+    /// mixer's mute toggle didn't take" (device-QA-visible), never a torn
+    /// room. No-op for an identity that isn't currently in the room.
+    func setLocalVolume(_ volume: Double, forParticipantIdentity identity: String) async
 
     /// Disconnects the room. Best-effort — never throws; `leave()` must
     /// always be able to restore audio/state regardless of network state.
@@ -160,6 +187,21 @@ final class VoiceRoomService {
 
     private(set) var state: VoiceRoomState = .idle
     private(set) var speakingParticipantIDs: Set<String> = []
+
+    /// REMOTE participants currently in the room (self excluded). Phase O
+    /// Task 5 item 4 — the roster surface `PTTDockRow`'s roster rows and
+    /// the voice mixer sheet both need to tell "not speaking" apart from
+    /// "not even in the room."
+    private(set) var connectedParticipantIDs: Set<String> = []
+    /// Subset of `connectedParticipantIDs` who have muted THEIR OWN mic
+    /// (LiveKit publish-mute state — a fact about them, visible to
+    /// everyone in the room, not just you).
+    private(set) var remoteMutedParticipantIDs: Set<String> = []
+    /// Subset of `connectedParticipantIDs` YOU have locally silenced via
+    /// the voice mixer sheet (`setLocalMute`) — a pure client-side
+    /// override nobody else observes, distinct from
+    /// `remoteMutedParticipantIDs` above.
+    private(set) var locallyMutedParticipantIDs: Set<String> = []
 
     private let tokenFetcher: VoiceTokenFetching
     private let micPermission: MicPermissionChecking
@@ -198,6 +240,24 @@ final class VoiceRoomService {
         self.room = room ?? LiveKitRoomConnection()
         self.room.onSpeakingParticipantsChanged = { [weak self] identities in
             self?.speakingParticipantIDs = identities
+        }
+        self.room.onRosterChanged = { [weak self] identities in
+            guard let self else { return }
+            self.connectedParticipantIDs = identities
+            // A participant who left the room can no longer be "muted" in
+            // either sense — drop them from both derived sets so a
+            // reconnecting participant starts from a clean slate rather
+            // than inheriting a stale badge from their previous stint.
+            self.remoteMutedParticipantIDs.formIntersection(identities)
+            self.locallyMutedParticipantIDs.formIntersection(identities)
+        }
+        self.room.onRemoteMuteChanged = { [weak self] identity, isMuted in
+            guard let self else { return }
+            if isMuted {
+                self.remoteMutedParticipantIDs.insert(identity)
+            } else {
+                self.remoteMutedParticipantIDs.remove(identity)
+            }
         }
     }
 
@@ -298,6 +358,22 @@ final class VoiceRoomService {
         await join(sessionID: sessionID)
     }
 
+    /// Voice mixer sheet's per-person "tap to mute" (Phase O Task 5, item
+    /// 5) — a pure LOCAL playback override, never touching what `identity`
+    /// publishes or what anyone else in the room hears. No-op unless
+    /// currently connected AND `identity` is actually in the room —
+    /// silently dropping a stale toggle for someone who already left is
+    /// safer than surfacing an error for a UI action that's already moot.
+    func setLocalMute(_ muted: Bool, forParticipantIdentity identity: String) async {
+        guard case .connected = state, connectedParticipantIDs.contains(identity) else { return }
+        await room.setLocalVolume(muted ? 0 : 1, forParticipantIdentity: identity)
+        if muted {
+            locallyMutedParticipantIDs.insert(identity)
+        } else {
+            locallyMutedParticipantIDs.remove(identity)
+        }
+    }
+
     /// Hold-to-talk press. Unmutes the already-published mic track (NOT
     /// publish/unpublish — Dossier §B.4). No-op unless currently
     /// `.connected(.muted)`; a failed unmute leaves the state at `.muted`
@@ -353,6 +429,13 @@ final class VoiceRoomService {
             state = .idle
             currentSessionID = nil
             speakingParticipantIDs = []
+            // Phase O Task 5 item 4/5: the roster and both derived mute sets
+            // are meaningless once the room is gone — a later join() into a
+            // fresh room must start from an empty roster, not carry over
+            // whoever was in the PREVIOUS room.
+            connectedParticipantIDs = []
+            remoteMutedParticipantIDs = []
+            locallyMutedParticipantIDs = []
         }
         await room.disconnect()
     }

@@ -121,6 +121,8 @@ final class VoiceRoomServiceTests: XCTestCase {
     @MainActor
     private final class PendingConnectRoom: VoiceRoomConnecting {
         var onSpeakingParticipantsChanged: ((Set<String>) -> Void)?
+        var onRosterChanged: ((Set<String>) -> Void)?
+        var onRemoteMuteChanged: ((String, Bool) -> Void)?
         private var connectContinuation: CheckedContinuation<Void, Never>?
         private(set) var connectPending = false
         private(set) var connectCallCount = 0
@@ -141,6 +143,7 @@ final class VoiceRoomServiceTests: XCTestCase {
         }
 
         func setMicrophoneMuted(_ muted: Bool) async throws {}
+        func setLocalVolume(_ volume: Double, forParticipantIdentity identity: String) async {}
 
         func disconnect() async {
             disconnectCallCount += 1
@@ -161,6 +164,8 @@ final class VoiceRoomServiceTests: XCTestCase {
 
     private final class FakeRoomConnection: VoiceRoomConnecting {
         var onSpeakingParticipantsChanged: ((Set<String>) -> Void)?
+        var onRosterChanged: ((Set<String>) -> Void)?
+        var onRemoteMuteChanged: ((String, Bool) -> Void)?
 
         var connectError: Error?
         private(set) var connectCallCount = 0
@@ -169,6 +174,8 @@ final class VoiceRoomServiceTests: XCTestCase {
 
         var muteError: Error?
         private(set) var muteCalls: [Bool] = []
+
+        private(set) var localVolumeCalls: [(volume: Double, identity: String)] = []
 
         private(set) var disconnectCallCount = 0
 
@@ -182,6 +189,10 @@ final class VoiceRoomServiceTests: XCTestCase {
         func setMicrophoneMuted(_ muted: Bool) async throws {
             if let muteError { throw muteError }
             muteCalls.append(muted)
+        }
+
+        func setLocalVolume(_ volume: Double, forParticipantIdentity identity: String) async {
+            localVolumeCalls.append((volume, identity))
         }
 
         func disconnect() async {
@@ -226,12 +237,15 @@ final class VoiceRoomServiceTests: XCTestCase {
     @MainActor
     private final class PendingDisconnectRoom: VoiceRoomConnecting {
         var onSpeakingParticipantsChanged: ((Set<String>) -> Void)?
+        var onRosterChanged: ((Set<String>) -> Void)?
+        var onRemoteMuteChanged: ((String, Bool) -> Void)?
         private var disconnectContinuation: CheckedContinuation<Void, Never>?
         private(set) var disconnectPending = false
         private(set) var disconnectCallCount = 0
 
         func connectAndPublishMuted(url: String, token: String) async throws {}
         func setMicrophoneMuted(_ muted: Bool) async throws {}
+        func setLocalVolume(_ volume: Double, forParticipantIdentity identity: String) async {}
 
         func disconnect() async {
             disconnectCallCount += 1
@@ -780,5 +794,136 @@ final class VoiceRoomServiceTests: XCTestCase {
         room.onSpeakingParticipantsChanged?(identities)
 
         XCTAssertEqual(service.speakingParticipantIDs, identities)
+    }
+
+    // MARK: - Roster / mute surface (Phase O Task 5, items 4 and 5)
+
+    func testRosterChangedCallbackUpdatesConnectedParticipantIDs() async throws {
+        let room = FakeRoomConnection()
+        let service = VoiceRoomService(
+            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(),
+            audioSession: SpyAudioSession(), room: room
+        )
+        await service.join(sessionID: UUID())
+
+        XCTAssertTrue(service.connectedParticipantIDs.isEmpty)
+
+        let roster: Set<String> = ["jordan-uuid", "sam-uuid"]
+        room.onRosterChanged?(roster)
+
+        XCTAssertEqual(service.connectedParticipantIDs, roster)
+    }
+
+    func testRemoteMuteChangedCallbackTracksPerParticipantMuteState() async throws {
+        let room = FakeRoomConnection()
+        let service = VoiceRoomService(
+            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(),
+            audioSession: SpyAudioSession(), room: room
+        )
+        await service.join(sessionID: UUID())
+        room.onRosterChanged?(["jordan-uuid", "sam-uuid"])
+
+        room.onRemoteMuteChanged?("jordan-uuid", true)
+        XCTAssertEqual(service.remoteMutedParticipantIDs, ["jordan-uuid"])
+
+        room.onRemoteMuteChanged?("sam-uuid", true)
+        XCTAssertEqual(service.remoteMutedParticipantIDs, ["jordan-uuid", "sam-uuid"])
+
+        room.onRemoteMuteChanged?("jordan-uuid", false)
+        XCTAssertEqual(service.remoteMutedParticipantIDs, ["sam-uuid"])
+    }
+
+    /// A participant leaving the room must drop out of BOTH derived mute
+    /// sets — a reconnecting participant (or someone else later reusing
+    /// that identity string within the same process, however unlikely)
+    /// must not inherit a stale muted badge from a previous stint.
+    func testRosterChangedPrunesStaleMuteStateForDepartedParticipants() async throws {
+        let room = FakeRoomConnection()
+        let service = VoiceRoomService(
+            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(),
+            audioSession: SpyAudioSession(), room: room
+        )
+        await service.join(sessionID: UUID())
+        room.onRosterChanged?(["jordan-uuid", "sam-uuid"])
+        room.onRemoteMuteChanged?("jordan-uuid", true)
+        await service.setLocalMute(true, forParticipantIdentity: "sam-uuid")
+
+        XCTAssertEqual(service.remoteMutedParticipantIDs, ["jordan-uuid"])
+        XCTAssertEqual(service.locallyMutedParticipantIDs, ["sam-uuid"])
+
+        // Jordan leaves; Sam remains.
+        room.onRosterChanged?(["sam-uuid"])
+
+        XCTAssertEqual(service.connectedParticipantIDs, ["sam-uuid"])
+        XCTAssertTrue(service.remoteMutedParticipantIDs.isEmpty, "departed participant must be pruned from remote-mute state")
+        XCTAssertEqual(service.locallyMutedParticipantIDs, ["sam-uuid"], "a still-present participant's local mute must survive an unrelated roster change")
+    }
+
+    func testSetLocalMuteCallsRoomVolumeAndTracksState() async throws {
+        let room = FakeRoomConnection()
+        let service = VoiceRoomService(
+            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(),
+            audioSession: SpyAudioSession(), room: room
+        )
+        await service.join(sessionID: UUID())
+        room.onRosterChanged?(["jordan-uuid"])
+
+        await service.setLocalMute(true, forParticipantIdentity: "jordan-uuid")
+        XCTAssertEqual(service.locallyMutedParticipantIDs, ["jordan-uuid"])
+        XCTAssertEqual(room.localVolumeCalls.count, 1)
+        XCTAssertEqual(room.localVolumeCalls.last?.volume, 0)
+        XCTAssertEqual(room.localVolumeCalls.last?.identity, "jordan-uuid")
+
+        await service.setLocalMute(false, forParticipantIdentity: "jordan-uuid")
+        XCTAssertTrue(service.locallyMutedParticipantIDs.isEmpty)
+        XCTAssertEqual(room.localVolumeCalls.count, 2)
+        XCTAssertEqual(room.localVolumeCalls.last?.volume, 1)
+    }
+
+    func testSetLocalMuteIsNoOpForParticipantNotInRoom() async throws {
+        let room = FakeRoomConnection()
+        let service = VoiceRoomService(
+            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(),
+            audioSession: SpyAudioSession(), room: room
+        )
+        await service.join(sessionID: UUID())
+        room.onRosterChanged?(["jordan-uuid"])
+
+        await service.setLocalMute(true, forParticipantIdentity: "nobody-here-uuid")
+
+        XCTAssertTrue(room.localVolumeCalls.isEmpty, "must not call through to the room for an identity that isn't in the roster")
+        XCTAssertTrue(service.locallyMutedParticipantIDs.isEmpty)
+    }
+
+    func testSetLocalMuteIsNoOpWhenNotConnected() async throws {
+        let service = VoiceRoomService(
+            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(),
+            audioSession: SpyAudioSession(), room: FakeRoomConnection()
+        )
+        await service.setLocalMute(true, forParticipantIdentity: "jordan-uuid")
+        guard case .idle = service.state else {
+            XCTFail("setLocalMute must be a no-op while idle, got \(service.state)"); return
+        }
+    }
+
+    /// `leave()` must clear the roster and both derived mute sets — a
+    /// later join() into a fresh room must never carry over state from a
+    /// previous room's participants.
+    func testLeaveClearsRosterAndMuteState() async throws {
+        let room = FakeRoomConnection()
+        let service = VoiceRoomService(
+            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(),
+            audioSession: SpyAudioSession(), room: room
+        )
+        await service.join(sessionID: UUID())
+        room.onRosterChanged?(["jordan-uuid"])
+        room.onRemoteMuteChanged?("jordan-uuid", true)
+        await service.setLocalMute(true, forParticipantIdentity: "jordan-uuid")
+
+        await service.leave()
+
+        XCTAssertTrue(service.connectedParticipantIDs.isEmpty)
+        XCTAssertTrue(service.remoteMutedParticipantIDs.isEmpty)
+        XCTAssertTrue(service.locallyMutedParticipantIDs.isEmpty)
     }
 }
