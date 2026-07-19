@@ -928,11 +928,12 @@ struct GroupSessionLiveView: View {
             // "Plates" row renders (LogSetSheet.swift:124), instead of copy-pasting its
             // body per the reviewer's explicit ruling against that approach. Same
             // hidden/inert-for-empty/invalid/non-positive-weight gate as LogSetSheet
-            // and the same `Decimal(string:)` parse idiom `commitInlineLog()`
-            // (line 1502 below) already uses for this exact field — this card just
+            // and the same `Decimal.parseUserInput(_:)` locale-safe parse idiom
+            // `commitInlineLog()` (below) already uses for this exact field (Phase O
+            // Task 2 — was the bare `Decimal(string:)` initializer) — this card just
             // holds its weight in `logWeight` rather than LogSetSheet's `weight`
             // (LogSetSheet.swift:22).
-            if let targetWeight = Decimal(string: logWeight), targetWeight > 0 {
+            if let targetWeight = Decimal.parseUserInput(logWeight), targetWeight > 0 {
                 PlateStackDisclosure(target: targetWeight, theme: theme, isExpanded: $showPlateStack)
             }
 
@@ -1499,7 +1500,10 @@ struct GroupSessionLiveView: View {
         guard let ex = currentExerciseForSheet else { return }
         isLoggingSet = true
         let reps = Int(logReps)
-        let weight = Decimal(string: logWeight)
+        // Phase O Task 2: `Decimal.parseUserInput(_:)` — see the "Plates"
+        // disclosure gate above for why the bare `Decimal(string:)`
+        // initializer was locale-unsafe.
+        let weight = Decimal.parseUserInput(logWeight)
         let rpe = Decimal(logRPE)
         let note = logNote.isEmpty ? nil : logNote
         let failed = logIsFailed

@@ -80,12 +80,18 @@ struct BodyWeightLogSheet: View {
     // MARK: - Submit
 
     private var canSubmit: Bool {
-        guard let value = Decimal(string: weight) else { return false }
+        // Phase O Task 2: `Decimal.parseUserInput(_:)` (Models/Decimal+
+        // ParseUserInput.swift) instead of the bare `Decimal(string:)`
+        // initializer — accepts a comma decimal separator (what a
+        // `.decimalPad` keyboard shows on comma-locale devices) as well as
+        // a period, so this field is submittable regardless of device
+        // locale. Parse-side only — `value` is stored identically either way.
+        guard let value = Decimal.parseUserInput(weight) else { return false }
         return value > 0 && !isSubmitting
     }
 
     private func submit() async {
-        guard let value = Decimal(string: weight), value > 0 else { return }
+        guard let value = Decimal.parseUserInput(weight), value > 0 else { return }
         isSubmitting = true
         defer { isSubmitting = false }
         do {

@@ -107,8 +107,8 @@ struct LogSetSheet: View {
                     // Live-updates with `weight` on every keystroke since it
                     // re-parses `weight` directly rather than caching a
                     // snapshot. Hidden entirely for empty/invalid weight —
-                    // same `Decimal(string:)` parse idiom `commitLog()`
-                    // below and `BodyWeightLogSheet.canSubmit`
+                    // same parse idiom `commitLog()` below and
+                    // `BodyWeightLogSheet.canSubmit`
                     // (Features/Stats/BodyWeightLogSheet.swift:82-85) already
                     // use for this exact TextField, so "invalid weight" is
                     // handled identically everywhere it's checked.
@@ -120,7 +120,15 @@ struct LogSetSheet: View {
                     // below) was, so GroupSessionLiveView's inline "LOG THIS
                     // SET" card can reuse it instead of copy-pasting the
                     // ~60-line body. This call site's rendering is unchanged.
-                    if let targetWeight = Decimal(string: weight), targetWeight > 0 {
+                    //
+                    // Phase O Task 2: `Decimal.parseUserInput(_:)` (Models/
+                    // Decimal+ParseUserInput.swift) instead of the bare
+                    // `Decimal(string:)` initializer — same locale-safe
+                    // comma/period parse `commitLog()` below now uses for
+                    // this exact field, so a comma-locale device's live
+                    // "Plates" preview stays in sync with what actually
+                    // submits.
+                    if let targetWeight = Decimal.parseUserInput(weight), targetWeight > 0 {
                         PlateStackDisclosure(target: targetWeight, theme: theme, isExpanded: $showPlateStack)
                             .padding(.horizontal, 16)
                             .padding(.bottom, 16)
@@ -207,9 +215,12 @@ struct LogSetSheet: View {
     // MARK: - Sub-views
 
     private func commitLog() {
+        // Phase O Task 2: `Decimal.parseUserInput(_:)` — see the "Plates"
+        // disclosure gate above for why the bare `Decimal(string:)`
+        // initializer was locale-unsafe.
         onLog(
             Int(reps),
-            Decimal(string: weight),
+            Decimal.parseUserInput(weight),
             Decimal(rpe),
             isFailed,
             note.isEmpty ? nil : note
@@ -390,9 +401,11 @@ struct RPESegmentBar: View {
 // result. `target` is bar+plates in lbs (this app is lbs-only in v1 — same finding
 // `BodyWeightLogSheet.swift:23-28` recorded before hardcoding its own "lbs" unit).
 // Callers own the empty/invalid/non-positive-weight gate — both LogSetSheet
-// (LogSetSheet.swift:124) and GroupSessionLiveView's `logThisSetCard` only
-// construct this behind `if let targetWeight = Decimal(string: ...), targetWeight > 0`,
-// so this view assumes `target` is already a valid, positive weight.
+// (LogSetSheet.swift:~130) and GroupSessionLiveView's `logThisSetCard` only
+// construct this behind `if let targetWeight = Decimal.parseUserInput(...),
+// targetWeight > 0` (Phase O Task 2 — was the bare `Decimal(string:...)`
+// initializer), so this view assumes `target` is already a valid, positive
+// weight.
 
 struct PlateStackDisclosure: View {
     let target: Decimal
