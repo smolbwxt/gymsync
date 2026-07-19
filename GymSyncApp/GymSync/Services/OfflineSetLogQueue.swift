@@ -50,6 +50,13 @@ protocol CurrentUserIDProviding {
 /// runs before bootstrap resolves) has no user to scope to and must skip
 /// cleanly rather than guess.
 struct AuthServiceCurrentUserIDProvider: CurrentUserIDProviding {
+    /// Stateless struct: an explicitly `nonisolated` init lets the type be
+    /// constructed in nonisolated contexts (e.g. `OfflineSetLogQueue.init`'s
+    /// default-argument expression, which Swift evaluates outside the actor)
+    /// while `currentUserID` itself stays MainActor-isolated per the
+    /// protocol — construction touches no isolated state, reads do.
+    nonisolated init() {}
+
     var currentUserID: UUID? {
         guard case .signedIn(let userID) = AuthService.shared.state else { return nil }
         return userID
