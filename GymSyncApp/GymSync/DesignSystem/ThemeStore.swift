@@ -153,6 +153,17 @@ public final class ThemeStore {
     /// fact can correct an already-captured local variable. That narrow
     /// interleaving window is a network-timing race, not a cache-merge bug;
     /// device QA is the backstop for it.
+    ///
+    /// Task 4 (watch-hr design §4) extension: `shareHeartRate` joins
+    /// `defaultRestSeconds` on the "adopt from incoming" side of the rule,
+    /// not the "protect from clobber" side — `select(_:)`'s in-flight task
+    /// only ever owns `.palette` (it's the only field that task writes), so
+    /// every OTHER field an external caller reports (`YouTabView
+    /// .setShareHeartRate`'s own `noteExternalSettingsWrite` call, mirroring
+    /// `RestTimerSettingView.select(_:)`'s identical call) should win over
+    /// whatever `cached` was holding, exactly like `defaultRestSeconds`
+    /// already does. A future 4th `user_settings` field added the same way
+    /// should extend this same line, not the guard above it.
     nonisolated static func mergeExternalSettingsWrite(
         cached: UserSettings?,
         incoming: UserSettings,
@@ -162,6 +173,7 @@ public final class ThemeStore {
             return incoming
         }
         merged.defaultRestSeconds = incoming.defaultRestSeconds
+        merged.shareHeartRate = incoming.shareHeartRate
         return merged
     }
 

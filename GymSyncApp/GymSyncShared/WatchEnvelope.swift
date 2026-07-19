@@ -270,6 +270,17 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
     /// session exactly as it always did.
     let isActive: Bool
     let updatedAt: Date
+    /// Task 4 addition (watch-hr design §4) — the live `user_settings
+    /// .share_heart_rate` opt-in value for the CURRENT (phone) user, pushed
+    /// alongside the rest of the session snapshot so the Watch knows
+    /// whether to start its `HKAnchoredObjectQuery` HR sampler for this
+    /// session (T5 scope — the query itself isn't built yet; this field is
+    /// defined now so T5 has something to read). Additive, default `false`
+    /// — same "don't start the HR query unless explicitly told" safe
+    /// default the column itself has
+    /// (`supabase/migrations/20260727000001_user_settings_share_heart_rate.sql`,
+    /// `DEFAULT false`).
+    let shareHeartRate: Bool
 
     init(
         sessionID: UUID,
@@ -284,6 +295,7 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
         soundboardFavorites: [String] = [],
         soundboardFavoriteLabels: [String] = [],
         isActive: Bool = true,
+        shareHeartRate: Bool = false,
         updatedAt: Date = Date()
     ) {
         self.sessionID = sessionID
@@ -298,13 +310,14 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
         self.soundboardFavorites = soundboardFavorites
         self.soundboardFavoriteLabels = soundboardFavoriteLabels
         self.isActive = isActive
+        self.shareHeartRate = shareHeartRate
         self.updatedAt = updatedAt
     }
 
     private enum CodingKeys: String, CodingKey {
         case sessionID, groupID, sessionName, currentExerciseName, currentExerciseID
         case currentLifterName, isMyTurn, burpeesOwed, burpeesPaid, soundboardFavorites
-        case soundboardFavoriteLabels, isActive, updatedAt
+        case soundboardFavoriteLabels, isActive, shareHeartRate, updatedAt
     }
 
     /// Custom decode (Task 3, extended fix wave 1) — same "schema-lag" shape
@@ -331,6 +344,12 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
     /// two versions behind (pre-Task-3, missing both) still degrades
     /// correctly since `soundboardFavorites` itself has already resolved to
     /// `[]` by the time this line runs.
+    ///
+    /// `shareHeartRate` (Task 4) follows the SAME `decodeIfPresent(...) ??
+    /// default` shape as `isActive` immediately above it — falls back to
+    /// `false`, the column's own safe default, for any pre-Task-4 stored
+    /// context or older-build sender. Proven by
+    /// `WatchEnvelopeTests.testSessionStatePayloadFallsBackToShareHeartRateFalseWhenKeyAbsent`.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         sessionID = try c.decode(UUID.self, forKey: .sessionID)
@@ -345,6 +364,7 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
         soundboardFavorites = (try? c.decodeIfPresent([String].self, forKey: .soundboardFavorites)) ?? []
         soundboardFavoriteLabels = (try? c.decodeIfPresent([String].self, forKey: .soundboardFavoriteLabels)) ?? soundboardFavorites
         isActive = (try? c.decodeIfPresent(Bool.self, forKey: .isActive)) ?? true
+        shareHeartRate = (try? c.decodeIfPresent(Bool.self, forKey: .shareHeartRate)) ?? false
         updatedAt = try c.decode(Date.self, forKey: .updatedAt)
     }
 }

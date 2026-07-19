@@ -77,6 +77,13 @@ struct GroupSessionLiveView: View {
     /// Transient floating reaction pill — cleared after 2s.
     @State private var reactionOverlay: String? = nil
     @State private var reactionOverlayVisible = false
+    /// Task 4 (watch-hr design §4) — the CURRENT user's live
+    /// `user_settings.share_heart_rate` opt-in, populated async on first
+    /// appear (same best-effort `try?` degrade as `soundFavorites`/
+    /// `soundCatalog` above — a fetch failure here just leaves the Watch
+    /// not told to start sampling, never blocks the session). Fed straight
+    /// into `pushWatchSessionState()`'s `shareHeartRate` field.
+    @State private var shareHeartRate = false
 
     // MARK: - Routine state
 
@@ -1839,7 +1846,15 @@ struct GroupSessionLiveView: View {
             // Supabase-shaped) never need to compile into the watch target.
             soundboardFavorites: dockSounds.map(\.slug),
             soundboardFavoriteLabels: dockSounds.map(\.label),
-            isActive: WatchDisplayFormatting.isSessionActive(state: liveSession.state)
+            isActive: WatchDisplayFormatting.isSessionActive(state: liveSession.state),
+            // Task 4 (watch-hr design §4) — tells the Watch whether to start
+            // its HR sampler for this session (T5 builds the sampler itself;
+            // this is the opt-in signal it will read). Sourced from
+            // `shareHeartRate` (populated in `openAndSubscribe()` above),
+            // not re-fetched here — same "already-fetched state, not a
+            // reimplementation" shape every other field on this payload
+            // already follows.
+            shareHeartRate: shareHeartRate
         )
         WatchConnectivityBridge.shared.updateSessionState(payload)
     }
@@ -1913,6 +1928,10 @@ struct GroupSessionLiveView: View {
         // to the curated-first-4 fallback in `dockSounds` — never blocks the session.
         soundCatalog = (try? await SoundboardRepository.fetchCatalog()) ?? []
         soundFavorites = (try? await SoundboardFavoritesRepository.get()) ?? []
+        // Task 4 (watch-hr design §4) — same best-effort fetch shape as
+        // `soundFavorites` immediately above; feeds `pushWatchSessionState()`'s
+        // `shareHeartRate` field below.
+        shareHeartRate = (try? await UserSettingsRepository.get())?.shareHeartRate ?? false
         // Phase W Task 3 — `soundFavorites` finishes loading AFTER the
         // `pushWatchSessionState()` call above (which itself already re-runs
         // post-`reload()`), so a Watch that's already reachable would

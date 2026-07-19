@@ -34,23 +34,33 @@ final class UserSettingsRepositoryTests: XCTestCase {
             userID: UUID(),
             defaultRestSeconds: 150,
             palette: "arena",
-            updatedAt: Date()
+            updatedAt: Date(),
+            shareHeartRate: true
         )
         try await UserSettingsRepository.upsert(first)
 
         let fetched = try await UserSettingsRepository.get()
         XCTAssertEqual(fetched.defaultRestSeconds, 150)
         XCTAssertEqual(fetched.palette, "arena")
+        // Phase W Task 4 — proves `UserSettingsUpsert` actually carries
+        // `shareHeartRate` over the wire (live DB round trip, not just a
+        // Codable unit test): if a future edit re-introduces the
+        // `updated_at`-class bug (a field on `UserSettings` but missing from
+        // `UserSettingsUpsert`), this assertion fails instead of silently
+        // passing with a stale `false`.
+        XCTAssertTrue(fetched.shareHeartRate)
 
         // Second upsert — same row (primary key on user_id), not a duplicate.
         var second = fetched
         second.defaultRestSeconds = 90
         second.palette = "ink"
+        second.shareHeartRate = false
         try await UserSettingsRepository.upsert(second)
 
         let refetched = try await UserSettingsRepository.get()
         XCTAssertEqual(refetched.defaultRestSeconds, 90)
         XCTAssertEqual(refetched.palette, "ink")
+        XCTAssertFalse(refetched.shareHeartRate)
     }
 
     // MARK: - "m:ss" formatting (pure function, no network required)

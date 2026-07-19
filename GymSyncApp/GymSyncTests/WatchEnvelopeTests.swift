@@ -146,6 +146,9 @@ final class WatchEnvelopeTests: XCTestCase {
         XCTAssertEqual(decoded.soundboardFavorites, [])
         XCTAssertEqual(decoded.soundboardFavoriteLabels, [])
         XCTAssertTrue(decoded.isActive)
+        // Task 4 field — also absent from this fully-old JSON — must fall
+        // back to `false` (the column's own safe default), not throw.
+        XCTAssertFalse(decoded.shareHeartRate)
     }
 
     /// Fix wave 1's OWN backward-compat proof (IMPORTANT 2) — the schema-lag
@@ -177,6 +180,61 @@ final class WatchEnvelopeTests: XCTestCase {
 
         XCTAssertEqual(decoded.soundboardFavorites, ["airhorn", "crowd-cheer"])
         XCTAssertEqual(decoded.soundboardFavoriteLabels, ["airhorn", "crowd-cheer"])
+    }
+
+    /// Task 4 (watch-hr design §4) round trip: `shareHeartRate` survives the
+    /// SAME full wire path as the Task 3 fields above — `true` (the
+    /// non-default value) so a silent fallback-to-`false` bug couldn't hide
+    /// behind "happens to match anyway."
+    func testSessionStatePayloadRoundTripsShareHeartRate() throws {
+        let original = WatchSessionStatePayload(
+            sessionID: UUID(), groupID: UUID(), sessionName: "Push Day",
+            currentExerciseName: "Bench Press", currentLifterName: "tommy",
+            isMyTurn: true, burpeesOwed: 3, shareHeartRate: true
+        )
+        let envelope = try WatchEnvelope.encode(kind: .sessionState, payload: original)
+        let message = try envelope.asMessage()
+        let decoded = try XCTUnwrap(WatchEnvelope.from(message: message))
+        let decodedPayload = try decoded.decodePayload(as: WatchSessionStatePayload.self)
+
+        XCTAssertTrue(decodedPayload.shareHeartRate)
+    }
+
+    /// Task 4's OWN backward-compat proof — the T3 fix wave's established
+    /// pattern, followed exactly (see `testSessionStatePayloadFallsBackToSlugsWhenLabelsKeyAbsent`
+    /// above for the analogous Task-3-wave-1 case): a payload JSON that
+    /// already carries every Task-3 field but predates `shareHeartRate`
+    /// itself (a build one version behind THIS fix) must still decode,
+    /// falling back to `false` — the Watch's default posture is "don't
+    /// start the HR query" unless explicitly told otherwise, matching the
+    /// column's own `DEFAULT false`
+    /// (`supabase/migrations/20260727000001_user_settings_share_heart_rate.sql`).
+    func testSessionStatePayloadFallsBackToShareHeartRateFalseWhenKeyAbsent() throws {
+        let sessionID = UUID()
+        let json = """
+        {
+            "sessionID": "\(sessionID.uuidString)",
+            "groupID": null,
+            "sessionName": "Push Day",
+            "currentExerciseName": "Bench Press",
+            "currentLifterName": "tommy",
+            "isMyTurn": true,
+            "burpeesOwed": 3,
+            "burpeesPaid": 7,
+            "soundboardFavorites": ["airhorn"],
+            "soundboardFavoriteLabels": ["Air Horn"],
+            "isActive": true,
+            "updatedAt": "2026-07-19T12:00:00Z"
+        }
+        """
+        let decoded = try WatchWire.decoder.decode(WatchSessionStatePayload.self, from: Data(json.utf8))
+
+        XCTAssertFalse(decoded.shareHeartRate)
+        // Sanity: every OTHER field on this deliberately Task-3-shaped JSON
+        // still decodes normally — this test isolates `shareHeartRate`'s
+        // own fallback, not a general decode failure.
+        XCTAssertEqual(decoded.burpeesPaid, 7)
+        XCTAssertEqual(decoded.soundboardFavorites, ["airhorn"])
     }
 
     /// `WatchIdleStatePayload` round trip — Task 3's other new payload type,

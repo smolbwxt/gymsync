@@ -27,6 +27,11 @@ struct YouTabView: View {
     // Phase M Task 4 (moderation/compliance): solo-workout privacy toggle +
     // Delete Account flow.
     @State private var showSoloWorkouts = false
+    // Phase W Task 4 (watch-hr design §4): "Share heart rate in live
+    // sessions" opt-in — `user_settings.share_heart_rate`. Populated from
+    // `userSettings?.shareHeartRate` in `loadData()`, same "dedicated local
+    // @State bool for an inline toggle" shape as `showSoloWorkouts` above.
+    @State private var shareHeartRate = false
     @State private var showDeleteAccount = false
     // Canvas Completion Task 5: singleton (matches `AppState.shared`'s
     // convention) so the Settings Hub's "Appearance" value preview reflects
@@ -287,6 +292,7 @@ struct YouTabView: View {
                 showBlockedUsers = true
             }
             soloPrivacyRow
+            heartRateShareRow
             healthSyncRow
             calendarSyncRow
         }
@@ -357,6 +363,98 @@ struct YouTabView: View {
         }
     }
 
+    // MARK: - Heart rate broadcast opt-in (Phase W Task 4, watch-hr design §4)
+    //
+    // "Share heart rate in live sessions" — same bordered toggle-row-with-
+    // inline-caption shape as `soloPrivacyRow` above (this codebase's
+    // established idiom for a single boolean preference with an explanatory
+    // footer line, `soloPrivacyRow`'s own doc comment). The footer copy
+    // states the privacy contract plainly, per the design doc's EPHEMERAL
+    // LAW (§4/§6.5): broadcast only while in a live session, visible to
+    // session participants, never stored.
+    //
+    // Persists to `user_settings.share_heart_rate`
+    // (`supabase/migrations/20260727000001_user_settings_share_heart_rate.sql`)
+    // — NOT `profiles`, where the master spec's Data Model section literally
+    // lists this column (`docs/superpowers/specs/2026-06-28-gymsync-design.md:185`).
+    // See that migration's own header comment and task-4-report.md for the
+    // recorded placement deviation: `user_settings` is this codebase's
+    // ACTUAL "single settings row per user" home for opt-in toggles today.
+    //
+    // Enabling this toggle does NOT prompt for any permission on the phone —
+    // HealthKit heart-rate read authorization is requested WATCH-side, only
+    // when the Watch actually starts sampling for a live session (T5 scope,
+    // design §6.5 "Watch side": "the watchOS app runs an HKAnchoredObjectQuery
+    // ... for the duration of the session"). This row is a pure preference
+    // write — no permission code in this task, matching `WatchHRSamplePayload`'s
+    // own "T5 concern" framing (`GymSyncShared/WatchEnvelope.swift`).
+    private var heartRateShareRow: some View {
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Share heart rate in live sessions")
+                    .font(GSFont.bodyMedium(14, relativeTo: .subheadline))
+                    .foregroundColor(theme.text)
+                Text("Broadcast only while you're in a live session, visible to session participants, never stored")
+                    .font(GSFont.body(12, relativeTo: .caption))
+                    .foregroundColor(theme.neutral700)
+            }
+            Spacer(minLength: 8)
+            GSToggle(
+                isOn: Binding(
+                    get: { shareHeartRate },
+                    set: { setShareHeartRate($0) }
+                ),
+                label: "Share heart rate in live sessions"
+            )
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(theme.surface)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(theme.divider).frame(height: 1)
+        }
+    }
+
+    /// Optimistic flip (matches `setShowSoloWorkouts`'s shape), but persists
+    /// through `user_settings`'s established full-row-upsert discipline
+    /// rather than a `profiles`-style targeted column update — this column
+    /// lives on a different table, which has no genuine targeted-column
+    /// UPDATE helper the way `ProfileRepository.updateShowSoloWorkouts`
+    /// does (`Models/Profile.swift:204-221`); the brief's own instruction is
+    /// "targeted-column pattern if one exists, or the established safe
+    /// idiom" — none exists for `user_settings`, so this follows the
+    /// established SAFE idiom instead, exactly mirroring
+    /// `RestTimerSettingView.select(_:)` (`Features/You/RestTimerSettingView.swift:171-191`):
+    /// build `updated` from `effectiveUserSettings` (the SAME live-palette-
+    /// carrying base that view uses — see that computed property's own doc
+    /// comment) with only `.shareHeartRate` mutated, full-row `upsert`, then
+    /// — on success — call `ThemeStore.shared.noteExternalSettingsWrite(updated)`
+    /// so `ThemeStore`'s cached row doesn't go stale and clobber this
+    /// toggle's value back on the next palette `select(_:)` upsert (see
+    /// `ThemeStore.mergeExternalSettingsWrite`'s Task-4 extension,
+    /// `DesignSystem/ThemeStore.swift`, for the corresponding merge-rule
+    /// change that makes this safe).
+    private func setShareHeartRate(_ enabled: Bool) {
+        let previous = shareHeartRate
+        shareHeartRate = enabled
+        Task {
+            do {
+                var updated = effectiveUserSettings
+                updated.shareHeartRate = enabled
+                try await UserSettingsRepository.upsert(updated)
+                await MainActor.run {
+                    ThemeStore.shared.noteExternalSettingsWrite(updated)
+                    userSettings = updated
+                }
+            } catch {
+                await MainActor.run {
+                    shareHeartRate = previous
+                    errorText = ErrorMapping.map(error).errorDescription
+                }
+            }
+        }
+    }
+
     // MARK: - Delete Account (Phase M Task 4 — App Store 5.1.1)
     //
     // Destructive row, deliberately kept OUTSIDE settingsGroupBox above —
@@ -400,7 +498,8 @@ struct YouTabView: View {
         UserSettings.formatRestSeconds(userSettings?.defaultRestSeconds ?? 120)
     }
 
-    /// Settings handed to `RestTimerSettingView` — falls back to
+    /// Settings handed to `RestTimerSettingView` (and, as of Phase W Task 4,
+    /// the base row `setShareHeartRate` upserts from too) — falls back to
     /// `UserSettings.defaults` if `.task` hasn't resolved the real row yet.
     /// Safe even with a placeholder `userID`: `UserSettingsRepository.upsert`
     /// always re-derives the actual authenticated user id itself rather than
@@ -416,7 +515,10 @@ struct YouTabView: View {
     /// then write that stale value back to `user_settings`, silently
     /// reverting the just-made palette change in the DB (invisible until
     /// relaunch). See `ThemeStore.noteExternalSettingsWrite` for the
-    /// mirror-image fix in the other direction (rest-then-palette).
+    /// mirror-image fix in the other direction (rest-then-palette) — every
+    /// NEW full-row-upsert call site built on this property (Task 4's
+    /// `setShareHeartRate` included) must call `noteExternalSettingsWrite`
+    /// on success for the identical reason `RestTimerSettingView` does.
     private var effectiveUserSettings: UserSettings {
         var settings = userSettings ?? UserSettings.defaults(userID: appState.currentProfile?.id ?? UUID())
         settings.palette = themeStore.paletteID
@@ -670,6 +772,7 @@ struct YouTabView: View {
         let gym = try? await gymFetch
         homeGymName = gym?.name
         userSettings = try? await settingsFetch
+        shareHeartRate = userSettings?.shareHeartRate ?? false
 
         healthAuthStatus = HealthKitBridge.store.authorizationStatus(for: .workoutType())
         await pushReceiver.refreshAuthorizationStatus()
