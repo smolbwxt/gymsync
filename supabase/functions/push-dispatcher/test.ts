@@ -101,8 +101,18 @@ function row(overrides: Partial<PushQueueRow>): PushQueueRow {
 // leaderboard_passed added in Phase L, 20260723000002_attempt_plumbing)
 // ============================================================
 
-Deno.test("payloads: friend_request", () => {
+Deno.test("payloads: friend_request threads by requester (Task 6 item 7)", () => {
   const c = buildNotificationPayload("friend_request", { from_user_id: "u1" });
+  assertEquals(c, {
+    title: "Friend Request",
+    body: "You have a new friend request on GymSync.",
+    category: "FRIEND_REQUEST",
+    threadId: "u1",
+  });
+});
+
+Deno.test("payloads: friend_request omits threadId when from_user_id absent", () => {
+  const c = buildNotificationPayload("friend_request", {});
   assertEquals(c, {
     title: "Friend Request",
     body: "You have a new friend request on GymSync.",

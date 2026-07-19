@@ -108,6 +108,19 @@ struct HomeView: View {
         }
         guard let sessionID else { return }
         appState.pendingRoute = nil
+        // Task 6 item 7 (reliability/debt roll-up — .superpowers/sdd/
+        // progress.md:249, "dedupe re-push when deep-linked session already
+        // open"): a second push for a session the user has ALREADY
+        // deep-linked into (e.g. `your_turn` and `session_reminder_15min`
+        // landing close together, or a duplicate enqueue) would otherwise
+        // re-fetch and re-set `navigateToJoined = true` — harmless if the
+        // destination is already popped, but if the user is CURRENTLY
+        // looking at that exact LobbyView, this re-trigger has no visible
+        // effect either way EXCEPT it discards `joinedSession` and
+        // re-fetches from network for no reason. Skip the redundant
+        // round trip and no-op re-navigation when it's the same session
+        // that's already the active deep-link target.
+        if navigateToJoined, joinedSession?.id == sessionID { return }
         guard let session = try? await SessionRepository.session(id: sessionID) else { return }
         joinedSession = session
         navigateToJoined = true

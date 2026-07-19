@@ -79,14 +79,38 @@ export function buildNotificationPayload(
   payload: PushPayload,
 ): NotificationContent | null {
   switch (event) {
-    case "friend_request":
+    case "friend_request": {
       // Payload: { from_user_id }. No username join available here (pure
       // map, no DB access) — generic copy.
+      //
+      // Task 6 item 7 (reliability/debt roll-up — .superpowers/sdd/
+      // progress.md:249, "friend_request threadId passthrough in
+      // payloads.ts ... flagged"): `from_user_id` was already in the
+      // payload (push_friend_request trigger,
+      // 20260716000001_push_schema.sql:148-149) but never threaded through
+      // to `threadId` here — every other event in this file sets one, this
+      // was the sole exception. Groups multiple pending-request pushes
+      // from the SAME requester into one on-device thread (repeat
+      // requests, e.g. after an unfriend + re-request) instead of stacking
+      // as unrelated notifications, matching the `threadId` doc comment's
+      // "groups related pushes" contract every other case already honors.
+      const fromUserId = str(payload, "from_user_id");
       return {
         title: "Friend Request",
         body: "You have a new friend request on GymSync.",
         category: CATEGORY.FRIEND_REQUEST,
+        // Conditional spread (not a bare `threadId: fromUserId`) — same
+        // idiom `streak_milestone`'s user-case uses below to keep an
+        // absent id OUT of the object entirely, rather than present as an
+        // explicit `undefined` key (NotificationContent.threadId is
+        // optional; `dispatchBatch`/APNs treat a present-but-undefined key
+        // and an absent key identically at the JSON boundary, but this
+        // keeps `buildNotificationPayload`'s return value exactly as
+        // “normal” for a malformed/legacy row missing the field as it was
+        // before this fix).
+        ...(fromUserId ? { threadId: fromUserId } : {}),
       };
+    }
 
     case "session_invite": {
       // COPY NOTE: dossier §A.3 gives the example "Tommy invited you to
