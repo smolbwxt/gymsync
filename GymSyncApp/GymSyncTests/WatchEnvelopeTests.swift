@@ -77,6 +77,9 @@ final class WatchEnvelopeTests: XCTestCase {
     /// `isActive`) survive the SAME full wire path as the Task 2 test
     /// above, non-default values throughout so a bug that silently drops
     /// back to a default couldn't hide behind "happens to match anyway."
+    /// Fix wave 1 extended this to also cover `soundboardFavoriteLabels`
+    /// (the 5th field, reviewer finding IMPORTANT 2) with its own distinct
+    /// (non-slug-matching) values, for the identical reason.
     func testSessionStatePayloadRoundTripsTask3Fields() throws {
         let exerciseID = UUID()
         let original = WatchSessionStatePayload(
@@ -84,6 +87,7 @@ final class WatchEnvelopeTests: XCTestCase {
             currentExerciseName: "Bench Press", currentExerciseID: exerciseID,
             currentLifterName: "tommy", isMyTurn: true, burpeesOwed: 3,
             burpeesPaid: 7, soundboardFavorites: ["airhorn", "crowd-cheer"],
+            soundboardFavoriteLabels: ["Air Horn", "Crowd Cheer"],
             isActive: false
         )
         let envelope = try WatchEnvelope.encode(kind: .sessionState, payload: original)
@@ -94,12 +98,13 @@ final class WatchEnvelopeTests: XCTestCase {
         XCTAssertEqual(decodedPayload.currentExerciseID, exerciseID)
         XCTAssertEqual(decodedPayload.burpeesPaid, 7)
         XCTAssertEqual(decodedPayload.soundboardFavorites, ["airhorn", "crowd-cheer"])
+        XCTAssertEqual(decodedPayload.soundboardFavoriteLabels, ["Air Horn", "Crowd Cheer"])
         XCTAssertFalse(decodedPayload.isActive)
     }
 
     /// THE proof of this task's additive-payload discipline: a payload
     /// shaped like what a PRE-TASK-3 build would have encoded (only the 6
-    /// Task-2 fields, none of the 4 new ones) must still decode
+    /// Task-2 fields, none of the newer ones) must still decode
     /// successfully — a plain `Decodable` synthesis would have thrown here
     /// (missing required keys), which is exactly why `WatchSessionStatePayload`
     /// gained a custom `init(from:)` (see that type's own doc comment,
@@ -108,6 +113,13 @@ final class WatchEnvelopeTests: XCTestCase {
     /// constructing via `WatchSessionStatePayload.init(...)` would always
     /// include the new fields (they have parameter defaults), so it could
     /// never actually exercise the missing-key decode path this test needs.
+    /// Fix wave 1 extended this test's own assertions to cover
+    /// `soundboardFavoriteLabels`'s fallback too (falls back to `[]`, the
+    /// same default `soundboardFavorites` itself lands on here, since both
+    /// keys are equally absent from this JSON) — see the SEPARATE test
+    /// immediately below for the fix-wave-1-specific "slugs present, labels
+    /// absent" schema-lag scenario this field's fallback rule was actually
+    /// designed for.
     func testSessionStatePayloadDecodesOldShapeMissingTask3Fields() throws {
         let sessionID = UUID()
         let json = """
@@ -127,12 +139,44 @@ final class WatchEnvelopeTests: XCTestCase {
         XCTAssertEqual(decoded.sessionID, sessionID)
         XCTAssertEqual(decoded.sessionName, "Push Day")
         XCTAssertEqual(decoded.burpeesOwed, 3)
-        // The 4 Task 3 fields — absent from the JSON above — must fall back
+        // The Task 3 fields — absent from the JSON above — must fall back
         // to their documented defaults, not throw.
         XCTAssertNil(decoded.currentExerciseID)
         XCTAssertEqual(decoded.burpeesPaid, 0)
         XCTAssertEqual(decoded.soundboardFavorites, [])
+        XCTAssertEqual(decoded.soundboardFavoriteLabels, [])
         XCTAssertTrue(decoded.isActive)
+    }
+
+    /// Fix wave 1's OWN backward-compat proof (IMPORTANT 2) — the schema-lag
+    /// scenario `soundboardFavoriteLabels`'s fallback rule was actually
+    /// written for: a build that already sends `soundboardFavorites` (any
+    /// Task-3-wave-0 build, already shipped before this fix) but predates
+    /// `soundboardFavoriteLabels` itself. Falling back to `[]` here (like
+    /// the fully-old-shape test above) would silently blank out every
+    /// soundboard tile's label on a Watch that's otherwise perfectly capable
+    /// of showing slugs — the fallback instead reuses `soundboardFavorites`
+    /// itself, so the watch keeps rendering exactly what it rendered before
+    /// this field existed (the slug), never a blank string.
+    func testSessionStatePayloadFallsBackToSlugsWhenLabelsKeyAbsent() throws {
+        let sessionID = UUID()
+        let json = """
+        {
+            "sessionID": "\(sessionID.uuidString)",
+            "groupID": null,
+            "sessionName": "Push Day",
+            "currentExerciseName": "Bench Press",
+            "currentLifterName": "tommy",
+            "isMyTurn": true,
+            "burpeesOwed": 3,
+            "soundboardFavorites": ["airhorn", "crowd-cheer"],
+            "updatedAt": "2026-07-19T12:00:00Z"
+        }
+        """
+        let decoded = try WatchWire.decoder.decode(WatchSessionStatePayload.self, from: Data(json.utf8))
+
+        XCTAssertEqual(decoded.soundboardFavorites, ["airhorn", "crowd-cheer"])
+        XCTAssertEqual(decoded.soundboardFavoriteLabels, ["airhorn", "crowd-cheer"])
     }
 
     /// `WatchIdleStatePayload` round trip — Task 3's other new payload type,

@@ -10,16 +10,23 @@ import SwiftUI
 // SAME source `GroupSessionLiveView`'s own dock ribbon reads). Tap ->
 // `WatchSessionStore.tapSoundboard(slug:)` -> `WatchConnectivityBridge.
 // handleSoundboardTap` on the phone (local play + broadcast, unchanged
-// existing flow).
+// existing flow) — the tap payload always carries the SLUG, never the
+// label (see `tap(slug:)` below); that contract is unchanged by the
+// fix-wave-1 addition immediately below.
 //
-// No sound NAME/icon is carried over the wire (`soundboardFavorites` is
-// just `[String]` slugs) — the full `SoundboardSound` catalog
-// (`displayName`/`icon`) lives phone-side only and was judged out of scope
-// to duplicate here for 4 buttons: the slug itself (e.g. "airhorn",
-// "crowd-cheer") is already a readable label at watch scale, and adding a
-// second synced catalog would be exactly the kind of speculative plumbing
-// the design doc's "do NOT build a scheduling-sync subsystem" caution (said
-// of the idle state, but the same restraint applies here) warns against.
+// Fix wave 1 (reviewer finding, IMPORTANT 2) — SUPERSEDES this file's
+// original "no sound NAME is carried over the wire, the slug itself is
+// already a readable label" reasoning. `WatchSessionStatePayload` gained a
+// second, ADDITIVE `soundboardFavoriteLabels: [String]` field (parallel to
+// `soundboardFavorites`, same order, same phone-side source
+// (`GroupSessionLiveView.dockSounds`) — see that field's own doc comment in
+// `WatchEnvelope.swift`) once a reviewer flagged that a raw slug like
+// "crowd-cheer" reads worse at watch scale than the phone's own
+// `SoundboardSound.label` (`displayName ?? slug`,
+// `Models/Soundboard.swift:16`) — nothing here duplicates the full catalog
+// (icon/category/etc. still stay phone-side only); this is exactly the one
+// extra string per favorite this surface needs to render a name instead of
+// a slug.
 struct SoundboardView: View {
     @Environment(\.gsWatchTheme) private var theme
     let store: WatchSessionStore
@@ -33,6 +40,22 @@ struct SoundboardView: View {
 
     private var favorites: [String] {
         store.sessionState?.soundboardFavorites ?? []
+    }
+
+    /// Fix wave 1 addition — parallel to `favorites` above, same order
+    /// (both come from the SAME phone-side `dockSounds.map(\.slug)` /
+    /// `dockSounds.map(\.label)` pair, built in the same call —
+    /// `GroupSessionLiveView.pushWatchSessionState()`). `label(forSlugAt:)`
+    /// below still falls back to the slug itself if this array is ever
+    /// shorter than `favorites` (an old-shaped phone push, or any other
+    /// skew) — never crashes on an out-of-bounds index.
+    private var favoriteLabels: [String] {
+        store.sessionState?.soundboardFavoriteLabels ?? []
+    }
+
+    private func label(forSlugAt index: Int, slug: String) -> String {
+        guard favoriteLabels.indices.contains(index) else { return slug }
+        return favoriteLabels[index]
     }
 
     var body: some View {
@@ -58,8 +81,16 @@ struct SoundboardView: View {
                 }
             } else {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                    ForEach(favorites, id: \.self) { slug in
-                        soundTile(slug)
+                    // `.self` on the SLUG (not the index) as the identity —
+                    // unchanged from before this fix — since a slug is
+                    // already guaranteed unique within one user's favorites
+                    // (`SoundboardFavoritesRepository`'s `slugs` column has
+                    // no duplicate-tolerance concept, and `dockSounds`'
+                    // curated-fallback path draws from a catalog keyed by
+                    // slug). The label rides alongside via `enumerated()`
+                    // purely to look up its parallel-array position.
+                    ForEach(Array(favorites.enumerated()), id: \.element) { index, slug in
+                        soundTile(slug: slug, label: label(forSlugAt: index, slug: slug))
                     }
                 }
             }
@@ -70,7 +101,11 @@ struct SoundboardView: View {
         .navigationTitle("Sounds")
     }
 
-    private func soundTile(_ slug: String) -> some View {
+    /// `label` is display-only (fix wave 1) — the button's ACTION always
+    /// closes over `slug`, never `label`, so the outbound tap
+    /// (`tap(_:)` below -> `WatchSessionStore.tapSoundboard(slug:)`) is
+    /// unaffected by this rendering change.
+    private func soundTile(slug: String, label: String) -> some View {
         Button {
             Task { await tap(slug) }
         } label: {
@@ -82,7 +117,7 @@ struct SoundboardView: View {
                     Image(systemName: "speaker.wave.2.fill")
                         .foregroundStyle(theme.accent)
                 }
-                Text(slug)
+                Text(label)
                     .font(.caption2)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)

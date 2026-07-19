@@ -118,7 +118,29 @@ struct LogSetView: View {
         lastReply = nil
         let reply = await store.logSet(
             exerciseID: exerciseID,
-            reps: reps > 0 ? reps : nil,
+            // Fix wave 1 (reviewer finding, MINOR 2) — sent AS-IS, no
+            // zero-to-nil conversion. Matches the phone's own contract:
+            // `SetLog.reps: Int?` (`GymSync/Models/SetLog.swift:9`) and its
+            // DB column (`supabase/migrations/20260709000007_create_set_logs.sql:7`,
+            // `CHECK (reps IS NULL OR reps >= 0)`) both treat `0` as a
+            // valid, meaningful value, not a stand-in for "none" — and the
+            // phone's own inline log card sends exactly what it parses
+            // (`Int(logReps)`, `GroupSessionLiveView.commitInlineLog`,
+            // `GroupSessionLiveView.swift:1718`) with no nil-on-zero rule of
+            // its own. `reps` here can never actually be nil on this
+            // surface (the `Stepper` above always holds a concrete `Int` in
+            // its `0...50` range) — this is the honest "send what the UI
+            // holds" shape, not a guessed convention.
+            reps: reps,
+            // MINOR 3 (note-only, reviewer finding) — `Decimal(weightLbs)`
+            // via a `Double` intermediate is exact for THIS control's
+            // 2.5-step increments (`.digitalCrownRotation(..., by: 2.5, ...)`
+            // above — every reachable value is a multiple of 2.5, which has
+            // an exact binary-fraction `Double` representation). If a future
+            // change ever introduces a step size without an exact `Double`
+            // representation (e.g. thirds), this conversion would need to
+            // go through `String` (`Decimal(string:)`) instead to avoid
+            // inheriting `Double`'s rounding error.
             weight: weightLbs > 0 ? Decimal(weightLbs) : nil,
             rpe: nil,
             isFailed: false,

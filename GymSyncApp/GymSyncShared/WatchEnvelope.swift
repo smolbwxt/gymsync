@@ -241,6 +241,24 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
     /// renders (`dockSounds`, `GroupSessionLiveView.swift:164-168`). Empty
     /// until favorites finish loading or none are chosen.
     let soundboardFavorites: [String]
+    /// Task 3 fix wave 1 (reviewer finding, IMPORTANT 2) — additive alongside
+    /// `soundboardFavorites` above, NOT a replacement: `soundboardFavorites`
+    /// stays the slugs the watch's TAP path sends back for playback
+    /// (`SoundboardView.soundTile` -> `WatchSessionStore.tapSoundboard(slug:)`
+    /// -> `WatchConnectivityBridge.handleSoundboardTap`, which resolves
+    /// `payload.slug` straight into `SoundboardBroadcasting.play(slug:)` —
+    /// that contract is unchanged and must stay that way). This field is the
+    /// human-readable label for each of those SAME slugs, in the SAME order
+    /// (`SoundboardSound.label`, `Models/Soundboard.swift:16` —
+    /// `displayName ?? slug`) so the watch can render a real name instead of
+    /// a raw slug like "airhorn"/"crowd-cheer" (the file header comment in
+    /// `GymSyncWatch/SoundboardView.swift` used to explain why labels were
+    /// judged out of scope; that reasoning is now superseded). Parallel
+    /// array rather than `[(slug: String, label: String)]` or a small struct
+    /// — matches `soundboardFavorites`' own plain-`[String]` wire shape
+    /// exactly, so this rides the identical Codable/JSON path with no new
+    /// type to define.
+    let soundboardFavoriteLabels: [String]
     /// Task 3 addition — the CARRIED-IN REQUIREMENT from T2's review: "no
     /// session-ended signal exists; a Watch shows stale 'live' state for up
     /// to 90s after a session ends while the phone stays reachable."
@@ -264,6 +282,7 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
         burpeesOwed: Int,
         burpeesPaid: Int = 0,
         soundboardFavorites: [String] = [],
+        soundboardFavoriteLabels: [String] = [],
         isActive: Bool = true,
         updatedAt: Date = Date()
     ) {
@@ -277,6 +296,7 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
         self.burpeesOwed = burpeesOwed
         self.burpeesPaid = burpeesPaid
         self.soundboardFavorites = soundboardFavorites
+        self.soundboardFavoriteLabels = soundboardFavoriteLabels
         self.isActive = isActive
         self.updatedAt = updatedAt
     }
@@ -284,25 +304,33 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case sessionID, groupID, sessionName, currentExerciseName, currentExerciseID
         case currentLifterName, isMyTurn, burpeesOwed, burpeesPaid, soundboardFavorites
-        case isActive, updatedAt
+        case soundboardFavoriteLabels, isActive, updatedAt
     }
 
-    /// Custom decode (Task 3) — same "schema-lag" shape as `WorkoutSession.
-    /// init(from:)` (`Models/Session.swift:44-60`; that struct's own
-    /// comment: "older rows always carry it... custom init guards against
-    /// any schema-lag"). Here the lag isn't a DB migration, it's a
-    /// Watch/phone version skew: `updateApplicationContext` is "latest
-    /// wins" with no queueing (this file's own header doc comment), so a
-    /// just-relaunched watch could be handed a stored context encoded by an
-    /// OLDER build that predates this task's 4 new fields.
-    /// `decodeIfPresent(...) ?? default` on exactly those 4 lets that
-    /// decode succeed instead of throwing and losing the WHOLE payload —
-    /// proven by `WatchEnvelopeTests.
-    /// testSessionStatePayloadDecodesOldShapeMissingTask3Fields`. The 6
-    /// pre-existing fields stay plain `decode` (required) — unchanged from
-    /// Task 2, no reason to weaken them. `encode(to:)` stays
+    /// Custom decode (Task 3, extended fix wave 1) — same "schema-lag" shape
+    /// as `WorkoutSession.init(from:)` (`Models/Session.swift:44-60`; that
+    /// struct's own comment: "older rows always carry it... custom init
+    /// guards against any schema-lag"). Here the lag isn't a DB migration,
+    /// it's a Watch/phone version skew: `updateApplicationContext` is
+    /// "latest wins" with no queueing (this file's own header doc comment),
+    /// so a just-relaunched watch could be handed a stored context encoded
+    /// by an OLDER build that predates this task's fields.
+    /// `decodeIfPresent(...) ?? default` on each of them lets that decode
+    /// succeed instead of throwing and losing the WHOLE payload — proven by
+    /// `WatchEnvelopeTests.testSessionStatePayloadDecodesOldShapeMissingTask3Fields`.
+    /// The 6 original Task-2 fields stay plain `decode` (required) —
+    /// unchanged, no reason to weaken them. `encode(to:)` stays
     /// COMPILER-SYNTHESIZED (not written here) — only decode needs the
     /// leniency, matching `WorkoutSession`'s identical split.
+    ///
+    /// `soundboardFavoriteLabels` (fix wave 1, IMPORTANT 2) falls back to
+    /// `soundboardFavorites` itself — not `[]` — when its own key is absent:
+    /// a build one version behind this fix (Task-3-wave-0, which already
+    /// sends `soundboardFavorites` but not yet this field) still gives the
+    /// watch something readable to render rather than blank tiles; a build
+    /// two versions behind (pre-Task-3, missing both) still degrades
+    /// correctly since `soundboardFavorites` itself has already resolved to
+    /// `[]` by the time this line runs.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         sessionID = try c.decode(UUID.self, forKey: .sessionID)
@@ -315,6 +343,7 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
         burpeesOwed = try c.decode(Int.self, forKey: .burpeesOwed)
         burpeesPaid = (try? c.decodeIfPresent(Int.self, forKey: .burpeesPaid)) ?? 0
         soundboardFavorites = (try? c.decodeIfPresent([String].self, forKey: .soundboardFavorites)) ?? []
+        soundboardFavoriteLabels = (try? c.decodeIfPresent([String].self, forKey: .soundboardFavoriteLabels)) ?? soundboardFavorites
         isActive = (try? c.decodeIfPresent(Bool.self, forKey: .isActive)) ?? true
         updatedAt = try c.decode(Date.self, forKey: .updatedAt)
     }

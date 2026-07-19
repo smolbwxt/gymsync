@@ -685,6 +685,26 @@ struct GroupSessionLiveView: View {
             // rather than waiting for the next scenePhase/reload cycle.
             pushWatchSessionState()
         }
+        .onChange(of: liveSession.state) { _, _ in
+            // Phase W Task 3 fix wave 1 (reviewer finding, CRITICAL) —
+            // mirrors the `.onChange(of: liveSession.currentTurnUserID)`
+            // block immediately above, for the SAME reason: `liveSession`
+            // changing out from under this view is exactly the moment a
+            // Watch's state goes stale, and for a PARTICIPANT (everyone but
+            // the organizer), the ONLY way `liveSession.state` ever flips to
+            // `"completed"`/`"abandoned"` is the realtime sessions-UPDATE
+            // echo (`onSessionChange` below, `liveSession = updated`) — the
+            // organizer's own `endSession()` call is a route this
+            // participant never takes. Before this handler existed, nothing
+            // pushed to a participant's watch when that echo landed; their
+            // watch kept showing the session as live until the next
+            // incidental turn-change push or scenePhase reload (up to the
+            // full 90s idle-ladder staleness window). `pushWatchSessionState()`
+            // itself now derives `isActive` from `liveSession.state` (see
+            // that function's own doc comment) — this handler only needs to
+            // trigger the re-push, no argument to pass.
+            pushWatchSessionState()
+        }
         .onChange(of: scenePhase) {
             guard scenePhase == .active else { return }
             Task {
@@ -1743,28 +1763,53 @@ struct GroupSessionLiveView: View {
     /// already-built payload instead of re-deriving it. Called from
     /// `.onAppear` (initial snapshot), `.onChange(of: liveSession.currentTurnUserID)`
     /// (turn passes — the state most likely to matter to someone glancing
-    /// at their Watch), `openAndSubscribe()` twice (once right after
-    /// `reload()`, once more — Task 3 addition — after `soundFavorites`
-    /// finishes loading, since that fetch runs LATER in the same function
-    /// and this payload's `soundboardFavorites` field would otherwise stay
-    /// empty until the next turn change), and `endSession()` (Task 3 — see
-    /// `isActive` param doc below). Best-effort: `WatchConnectivityBridge.
-    /// updateSessionState` itself never throws into this call site.
+    /// at their Watch), `.onChange(of: liveSession.state)` (Task 3 fix wave
+    /// 1 addition, immediately above both `.onChange` blocks in `body` —
+    /// see that handler's own comment), `openAndSubscribe()` twice (once
+    /// right after `reload()`, once more — Task 3 addition — after
+    /// `soundFavorites` finishes loading, since that fetch runs LATER in the
+    /// same function and this payload's `soundboardFavorites` field would
+    /// otherwise stay empty until the next turn change), and `endSession()`.
+    /// Best-effort: `WatchConnectivityBridge.updateSessionState` itself
+    /// never throws into this call site.
     ///
-    /// `isActive` (Task 3 addition, CARRIED-IN REQUIREMENT from T2's
-    /// review): defaults `true` — every pre-existing call site is
-    /// unchanged. `endSession()` is the ONE call site that passes `false`,
-    /// right after `SessionRepository.complete(sessionID:)` succeeds. This
-    /// is the deliberately-chosen "honest hook" — `.onDisappear` was the
-    /// OTHER candidate (T2's reviewer named both) and was rejected: it
-    /// fires whenever this view stops being visible for ANY reason,
-    /// including navigating back to `LobbyView` while the session stays
-    /// genuinely LIVE for every other participant (`voicePersistsOnPop`'s
-    /// own doc comment above describes exactly this route) — pushing
-    /// `isActive: false` there would tell a Watch the session ended when it
-    /// hasn't. `endSession()`'s success path is the one moment the session
-    /// has UNAMBIGUOUSLY ended for everyone, server-side.
-    private func pushWatchSessionState(isActive: Bool = true) {
+    /// `isActive` (Task 3 fix wave 1 — reviewer finding, CRITICAL; replaces
+    /// the original `isActive: Bool = true` PARAMETER this function used to
+    /// take): now derived HERE, from `liveSession.state`, instead of being
+    /// handed in by each call site. The original shape let every
+    /// pre-existing call site default to `true` unconditionally and trusted
+    /// `endSession()` as the ONE call site allowed to pass `false` — which
+    /// had two bugs in practice: (a) a PARTICIPANT's watch (everyone except
+    /// the organizer) never learned a session ended AT ALL, because
+    /// `endSession()` is the organizer's own local success path and
+    /// participants only ever observe completion via the realtime
+    /// sessions-UPDATE echo (`onSessionChange` below, `liveSession =
+    /// updated`) — which had no push attached to it; and (b) `.onAppear`
+    /// pushed a hardcoded `true` with no state check at all, so reopening
+    /// this view for an already-completed session (however that's reached)
+    /// would push the WRONG state. Deriving `isActive` from `liveSession.state`
+    /// on every call fixes both at once: the realtime echo's `liveSession =
+    /// updated` assignment (now paired with the `.onChange(of: liveSession.state)`
+    /// handler above) feeds a genuinely live-or-not read straight into the
+    /// very next push, and `.onAppear`'s push is correct BY CONSTRUCTION —
+    /// whatever `liveSession.state` this view was constructed/updated with
+    /// is exactly what gets reported, no separate bookkeeping required to
+    /// keep the two in sync. `"in_progress"` is the one state string this
+    /// view's own `voiceEligibleStates`-adjacent reasoning and every other
+    /// state-string call site in this codebase (`SentryContext.swift`'s
+    /// `SessionPhase(rawState:)`, `GroupView.swift`'s `pastStates`,
+    /// `BurpeeLedgerMath.swift:143`) treat as "actually live" as opposed to
+    /// `completed`/`abandoned` (or a pre-live Lobby state) — matches here
+    /// for the identical reason.
+    ///
+    /// `endSession()` no longer needs a special-cased `isActive: false`
+    /// ARGUMENT to lead the realtime echo: it now assigns `liveSession =
+    /// completed` itself, right after `SessionRepository.complete(sessionID:)`
+    /// succeeds and BEFORE calling this function (see that call site's own
+    /// comment) — so by the time this function reads `liveSession.state`
+    /// below, it already reads `"completed"`, immediately, without waiting
+    /// for the realtime UPDATE to round-trip back in.
+    private func pushWatchSessionState() {
         let currentLifter = rotationOrder.first(where: { $0.participant.userID == liveSession.currentTurnUserID })?.profile
         let payload = WatchSessionStatePayload(
             sessionID: liveSession.id,
@@ -1776,8 +1821,25 @@ struct GroupSessionLiveView: View {
             isMyTurn: isMyTurn,
             burpeesOwed: burpeesRemaining,
             burpeesPaid: penaltyLogged,
-            soundboardFavorites: soundFavorites,
-            isActive: isActive
+            // Task 3 fix wave 1 (reviewer finding, IMPORTANT 1 + 2) —
+            // `dockSounds` (line 166 above) already encodes the EXACT same
+            // "favorites, or the first 4 curated sounds until any are
+            // chosen" fallback the phone's own soundboard dock ribbon
+            // renders. Sending raw `soundFavorites` here (the old shape)
+            // diverged from that: an empty-favorites watch showed "No
+            // favorites yet" while the phone's own dock, right next to it,
+            // was showing 4 curated tiles. `.label` (`displayName ?? slug`,
+            // `Models/Soundboard.swift:16`) is ADDITIVE alongside the
+            // slugs, same order — the watch's TAP path
+            // (`SoundboardView.soundTile` -> `WatchSessionStore.
+            // tapSoundboard(slug:)` -> `WatchConnectivityBridge.
+            // handleSoundboardTap`) still sends the SLUG back for playback,
+            // unchanged; labels are display-only, resolved here so
+            // `SoundboardSound`/`SoundboardRepository` (`GymSync`-only,
+            // Supabase-shaped) never need to compile into the watch target.
+            soundboardFavorites: dockSounds.map(\.slug),
+            soundboardFavoriteLabels: dockSounds.map(\.label),
+            isActive: liveSession.state == "in_progress"
         )
         WatchConnectivityBridge.shared.updateSessionState(payload)
     }
@@ -2236,13 +2298,26 @@ struct GroupSessionLiveView: View {
             // Phase W Task 3 — CARRIED-IN REQUIREMENT from T2's review: push
             // the "session ended" state to the Watch immediately, right here
             // at the one moment the session has unambiguously ended
-            // server-side (see `pushWatchSessionState`'s `isActive` doc
-            // comment for why THIS call site, not `.onDisappear`). Fired
-            // before the HealthKit export / recap-payload work below since
-            // none of that affects what the Watch needs to know, and this
-            // view stays mounted (presenting the recap sheet) for a while
-            // after this point — no reason to delay it.
-            pushWatchSessionState(isActive: false)
+            // server-side (see `pushWatchSessionState`'s doc comment for why
+            // THIS call site, not `.onDisappear`). Fired before the
+            // HealthKit export / recap-payload work below since none of
+            // that affects what the Watch needs to know, and this view
+            // stays mounted (presenting the recap sheet) for a while after
+            // this point — no reason to delay it.
+            //
+            // Fix wave 1 (reviewer finding, CRITICAL): `pushWatchSessionState()`
+            // no longer takes an `isActive` override argument — it derives
+            // `isActive` from `liveSession.state` itself (see that
+            // function's own doc comment). This assignment is what makes
+            // THIS call site still lead the realtime echo the way the old
+            // `isActive: false` argument used to: without it, `liveSession.state`
+            // would still read its stale pre-completion value (this `@State`
+            // var is otherwise only ever updated by `reload()` or the
+            // realtime `onSessionChange` echo, neither of which has run yet
+            // at this exact point) and the push below would incorrectly
+            // report the session as still live.
+            liveSession = completed
+            pushWatchSessionState()
             let allSets = try await SessionRepository.sessionSets(sessionID: session.id)
             try? await HealthKitBridge.requestPermission()
             try? await HealthKitBridge.exportWorkout(session: completed, setLogs: allSets)
