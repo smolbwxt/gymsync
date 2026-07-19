@@ -44,11 +44,23 @@
  * later) invoking it with service-role creds from .env.local.
  *
  * Usage:
- *   node scripts/cleanup_storage_orphans.js [--apply] [--bucket <name>]
+ *   node scripts/cleanup_storage_orphans.js [--apply] [--bucket <name>] [--min-age-hours <n>]
  *
  * Default is a dry run (report only, zero deletes) — pass --apply to
  * actually remove orphans. --bucket restricts to one bucket (chat-images,
  * chat-audio, or avatars); omit to scan all three.
+ *
+ * Fix wave 1 (Task 6 review, IMPORTANT 1 — TOCTOU age guard): uploads
+ * happen BEFORE the chat_messages insert (source 1 above), so an object
+ * from a message that's mid-send right now — upload done, insert not yet
+ * committed — looks identical to a genuine orphan at scan time. Without an
+ * age floor, `--apply` racing a live send could delete a real user's
+ * in-flight image/audio out from under them. Every object returned by the
+ * Storage list API carries `created_at`; objects younger than
+ * `--min-age-hours` (default 1 — comfortably longer than any realistic
+ * insert-after-upload delay, matching the signed-URL TTL elsewhere in this
+ * codebase) are excluded from the orphan set and separately counted/
+ * reported as "skipped as too-recent", never deleted.
  *
  * Requires SUPABASE_URL + SUPABASE_SECRET_KEY (service role, for the
  * Storage API) + SUPABASE_DB_URL (session pooler, for the live-row query)
@@ -103,8 +115,10 @@ async function listLevel(bucket, prefix) {
 }
 
 /** Recursively lists every FILE (not folder) object in `bucket`, returning
- * full paths relative to the bucket root. Folders are entries whose `id` is
- * null (Supabase Storage's convention for a pseudo-directory listing). */
+ * `{ path, createdAt }` pairs relative to the bucket root (`createdAt` a
+ * `Date`, from the list API's `created_at` — needed for the age guard, see
+ * this file's header comment). Folders are entries whose `id` is null
+ * (Supabase Storage's convention for a pseudo-directory listing). */
 async function listAllFiles(bucket) {
   const files = [];
   async function walk(prefix) {
@@ -114,7 +128,7 @@ async function listAllFiles(bucket) {
       if (entry.id === null) {
         await walk(fullPath);
       } else {
-        files.push(fullPath);
+        files.push({ path: fullPath, createdAt: new Date(entry.created_at) });
       }
     }
   }
@@ -137,11 +151,18 @@ async function main() {
     options: {
       apply: { type: 'boolean', default: false },
       bucket: { type: 'string' },
+      'min-age-hours': { type: 'string', default: '1' },
     },
   });
   const apply = values.apply;
   const bucketFilter = values.bucket;
-  console.log(`Storage orphan scan starting${apply ? ' (--apply: WILL DELETE)' : ' (dry run: report only)'}`);
+  const minAgeHours = Number(values['min-age-hours']);
+  if (!Number.isFinite(minAgeHours) || minAgeHours < 0) {
+    console.error(`--min-age-hours must be a non-negative number, got: ${values['min-age-hours']}`);
+    process.exit(1);
+  }
+  const minAgeMs = minAgeHours * 60 * 60 * 1000;
+  console.log(`Storage orphan scan starting${apply ? ' (--apply: WILL DELETE)' : ' (dry run: report only)'} (min age: ${minAgeHours}h)`);
 
   const db = new Client({ connectionString: SUPABASE_DB_URL, ssl: { rejectUnauthorized: false } });
   await db.connect();
@@ -183,22 +204,45 @@ async function main() {
       },
     ].filter(p => !bucketFilter || p.bucket === bucketFilter);
 
+    const now = Date.now();
+    let totalSkippedRecent = 0;
+
     for (const plan of plans) {
       const files = await listAllFiles(plan.bucket);
-      const orphans = files.filter(plan.isOrphan);
-      console.log(`\n${plan.bucket}: ${files.length} object(s), ${orphans.length} orphan(s)`);
-      for (const o of orphans) console.log(`  ORPHAN  ${plan.bucket}/${o}`);
+      const candidates = files.filter((f) => plan.isOrphan(f.path));
+      // Age guard (Fix wave 1, IMPORTANT 1): an object that looks orphaned
+      // but was created within the last `--min-age-hours` might just be
+      // mid-send — upload landed, the chat_messages insert hasn't (or a
+      // read-replica lag). Never treat those as orphans; count them
+      // separately instead of silently dropping them from the report.
+      const orphans = [];
+      const skippedRecent = [];
+      for (const f of candidates) {
+        const ageMs = now - f.createdAt.getTime();
+        // Missing/unparseable created_at (NaN) fails safe as "too-recent"
+        // rather than as an orphan — an unknown age must never be treated
+        // as proof of staleness when the whole point is not deleting a
+        // live object.
+        if (!Number.isFinite(ageMs) || ageMs < minAgeMs) {
+          skippedRecent.push(f);
+        } else {
+          orphans.push(f);
+        }
+      }
+      console.log(`\n${plan.bucket}: ${files.length} object(s), ${orphans.length} orphan(s), ${skippedRecent.length} skipped as too-recent`);
+      for (const o of orphans) console.log(`  ORPHAN  ${plan.bucket}/${o.path}  (created ${o.createdAt.toISOString()})`);
+      for (const s of skippedRecent) console.log(`  SKIP (too-recent)  ${plan.bucket}/${s.path}  (created ${s.createdAt.toISOString()})`);
       totalOrphans += orphans.length;
+      totalSkippedRecent += skippedRecent.length;
       if (apply && orphans.length > 0) {
-        await deleteObjects(plan.bucket, orphans);
+        await deleteObjects(plan.bucket, orphans.map((o) => o.path));
         console.log(`  deleted ${orphans.length} object(s) from ${plan.bucket}`);
       }
     }
+    console.log(`\nDone. ${totalOrphans} orphan(s) found${apply ? ' and deleted' : ' (dry run — pass --apply to delete)'}, ${totalSkippedRecent} skipped as too-recent (< ${minAgeHours}h old).`);
   } finally {
     await db.end();
   }
-
-  console.log(`\nDone. ${totalOrphans} orphan(s) found${apply ? ' and deleted' : ' (dry run — pass --apply to delete)'}.`);
 }
 
 main().catch(e => { console.error(e.message); process.exit(1); });
