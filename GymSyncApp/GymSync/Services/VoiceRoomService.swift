@@ -216,6 +216,12 @@ final class VoiceRoomService {
     /// overwrite `.idle` with `.connected` — a live room the caller believes
     /// it left. All access is MainActor-serialized, so an equality check
     /// between awaits is race-free.
+    ///
+    /// Fix wave 1 (reviewer Finding F3b): `leave()` now also gates its OWN
+    /// state-restoring `defer` against this epoch (see that method) — an
+    /// abandoned `leave()` call that resolves after a NEWER `leave()`/
+    /// `join()` has already run must not clobber whatever that newer call
+    /// left behind.
     private var lifecycleEpoch = 0
 
     init(
@@ -275,27 +281,39 @@ final class VoiceRoomService {
     /// of a half-finished join.
     func join(sessionID: UUID) async {
         // Phase O Task 5 (3e follow-up queue item 3, "join session-scope
-        // guard"): the two no-op guards below are SESSION-BLIND — they
-        // treat "already connecting/connected" as reason enough to return,
-        // regardless of which session that flight is FOR. That's correct
-        // (and load-bearing — `testJoinIsNoOpWhileAlreadyConnected` locks
-        // it) once already `.connected`: LobbyView -> GroupSessionLiveView
-        // deliberately re-calls join() for the SAME session to let the room
-        // persist across that push, and a second view's spurious call with
-        // a stale/different id must not steal or duplicate that connection.
-        // But while still `.connecting` FOR A DIFFERENT SESSION, that
-        // in-flight join is stale relative to THIS call — if left alone it
-        // can still land its own connect a moment later and silently
-        // establish the WRONG session's room. Extend the SAME
-        // `lifecycleEpoch` machinery `leave()` already uses to guard
-        // resumption-after-suspension (see that var's doc comment): route
-        // through `leave()` here too, which bumps the epoch, disconnects
-        // whatever the stale flight has connected so far (nothing yet, at
-        // this point), and resets state to `.idle` — so when the stale
-        // join resumes past its next epoch check (right after the token
-        // fetch, or right after connect), it recognizes itself as stale and
-        // stands down exactly like a leave()-during-join race today.
+        // guard"): the two no-op guards below used to be SESSION-BLIND —
+        // they treated "already connecting/connected" as reason enough to
+        // return, regardless of which session that flight is FOR. While
+        // still `.connecting` FOR A DIFFERENT SESSION, that in-flight join
+        // is stale relative to THIS call — if left alone it can still land
+        // its own connect a moment later and silently establish the WRONG
+        // session's room. Extend the SAME `lifecycleEpoch` machinery
+        // `leave()` already uses to guard resumption-after-suspension (see
+        // that var's doc comment): route through `leave()` here too, which
+        // bumps the epoch, disconnects whatever the stale flight has
+        // connected so far (nothing yet, at this point), and resets state
+        // to `.idle` — so when the stale join resumes past its next epoch
+        // check (right after the token fetch, or right after connect), it
+        // recognizes itself as stale and stands down exactly like a
+        // leave()-during-join race today.
+        //
+        // Fix wave 1 (reviewer Finding F3a): the already-`.connected` guard
+        // was ALSO session-blind, and that half was NOT harmless — a join
+        // for session B arriving while `.connected` to session A silently
+        // no-op'd, stranding the caller on the wrong room with no signal
+        // that anything went wrong. The one legitimate same-session case
+        // (LobbyView -> GroupSessionLiveView deliberately re-calling join()
+        // for the SAME session to let the room persist across that push)
+        // only needs the no-op when the session ID actually matches — so
+        // `.connected` now gets the identical "different session ->
+        // leave() first" treatment `.connecting` already had, and only
+        // no-ops when the session matches. `leave()` bumping the epoch
+        // synchronously before its first `await` (see that method) is what
+        // makes this safe to call unconditionally here.
         if case .connecting = state, currentSessionID != sessionID {
+            await leave()
+        }
+        if case .connected = state, currentSessionID != sessionID {
             await leave()
         }
         if case .connecting = state { return }
@@ -424,18 +442,66 @@ final class VoiceRoomService {
     /// wedged `room.disconnect()`.
     func leave() async {
         lifecycleEpoch += 1
+        // Fix wave 1 (reviewer Finding F3b): captured AFTER the bump, same
+        // convention as `join()`'s `let epoch = lifecycleEpoch` right after
+        // `state = .connecting`. An abandoned, late-resolving `leave()` call
+        // (e.g. the loser of `leave(timeout:)`'s race below, left running in
+        // the background per that method's own doc comment) used to
+        // unconditionally restore `.idle` + exit voice mode in this defer
+        // whenever `room.disconnect()` eventually returned — even after a
+        // NEWER join()/leave() for a different session had already
+        // superseded it, clobbering that newer session's `.connected` state
+        // and tearing its audio mode down out from under it. Gating the
+        // state restore on "no newer leave() has run since I bumped the
+        // epoch" fixes that: only the leave() call that's still the most
+        // recent one gets to write `.idle`.
+        //
+        // The room-level disconnect below stays UNCONDITIONAL regardless —
+        // `room.disconnect()` "must always be able to restore audio/state"
+        // per this method's contract above, epoch or no epoch. Room
+        // ownership: `LiveKitRoomConnection` holds a single `private let
+        // room = Room()` (LiveKitRoomConnection.swift:73) constructed once
+        // and reused for the connection's entire lifetime — NOT a fresh
+        // `Room` per connect/disconnect cycle — and `VoiceRoomService` in
+        // turn holds ONE `LiveKitRoomConnection` for its own entire
+        // lifetime (`init` above). So this is the "Room is shared" case,
+        // not "fresh Room per connection": an abandoned leave's disconnect()
+        // call and a newer leave()'s disconnect() call (routed through here
+        // via F3a's `.connected`-with-mismatched-session guard in `join()`)
+        // can both be in flight against the SAME underlying `Room` object.
+        // `join()` always `await`s its own routed `leave()` call to
+        // completion (including ITS disconnect) before attempting to
+        // connect, so by the time any new connection lands, at least one
+        // disconnect has been awaited through; an EARLIER, abandoned
+        // disconnect() resolving even later than that is a redundant call
+        // against a room whose connection state has already moved on.
+        // `VoiceRoomConnecting.disconnect()`'s contract ("best-effort,
+        // never throws") is what makes firing it unconditionally here safe
+        // to keep — but whether the underlying LiveKit `Room.disconnect()`
+        // is itself safe to invoke concurrently/redundantly without
+        // disturbing a connection established in the interim is NOT
+        // verified against SDK source in this session (no Mac/Xcode).
+        // Flagged as a residual risk in task-5-report.md's "Fix wave 1"
+        // concerns rather than silently assumed away — fixing it for real
+        // would mean either a fresh `Room` per connection or generation-
+        // tagging the disconnect call itself, both bigger than this fix's
+        // scope (epoch-gating the SERVICE's own state, which is what
+        // actually clobbered a newer session before this fix).
+        let epoch = lifecycleEpoch
         defer {
-            audioSession.exitVoiceMode()
-            state = .idle
-            currentSessionID = nil
-            speakingParticipantIDs = []
-            // Phase O Task 5 item 4/5: the roster and both derived mute sets
-            // are meaningless once the room is gone — a later join() into a
-            // fresh room must start from an empty roster, not carry over
-            // whoever was in the PREVIOUS room.
-            connectedParticipantIDs = []
-            remoteMutedParticipantIDs = []
-            locallyMutedParticipantIDs = []
+            if lifecycleEpoch == epoch {
+                audioSession.exitVoiceMode()
+                state = .idle
+                currentSessionID = nil
+                speakingParticipantIDs = []
+                // Phase O Task 5 item 4/5: the roster and both derived mute
+                // sets are meaningless once the room is gone — a later
+                // join() into a fresh room must start from an empty roster,
+                // not carry over whoever was in the PREVIOUS room.
+                connectedParticipantIDs = []
+                remoteMutedParticipantIDs = []
+                locallyMutedParticipantIDs = []
+            }
         }
         await room.disconnect()
     }

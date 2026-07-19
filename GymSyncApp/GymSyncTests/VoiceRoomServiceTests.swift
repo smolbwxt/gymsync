@@ -304,18 +304,29 @@ final class VoiceRoomServiceTests: XCTestCase {
         XCTAssertTrue(audio.isInVoiceMode)
     }
 
-    func testJoinIsNoOpWhileAlreadyConnected() async throws {
+    /// Fix wave 1 (reviewer Finding F3a): the OLD contract treated
+    /// already-`.connected` as an unconditional no-op regardless of WHICH
+    /// session that connection was for — this test used to lock exactly
+    /// that (two different `UUID()`s, still asserting `connectCallCount ==
+    /// 1`). The NEW contract only no-ops on a SAME-session re-entrant call
+    /// (LobbyView -> GroupSessionLiveView's deliberate re-call across that
+    /// push, letting the room persist); a DIFFERENT-session call now
+    /// re-joins instead — covered separately by
+    /// `testJoinForDifferentSessionWhileConnectedLeavesThenReconnects` below.
+    func testJoinIsNoOpWhileAlreadyConnectedToSameSession() async throws {
         let room = FakeRoomConnection()
         let service = VoiceRoomService(
             tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(),
             audioSession: SpyAudioSession(), room: room
         )
 
-        await service.join(sessionID: UUID())
+        let sessionID = UUID()
+        await service.join(sessionID: sessionID)
         XCTAssertEqual(room.connectCallCount, 1)
 
-        await service.join(sessionID: UUID()) // different session, already connected
-        XCTAssertEqual(room.connectCallCount, 1, "must not re-join while already connected")
+        await service.join(sessionID: sessionID) // SAME session, already connected
+        XCTAssertEqual(room.connectCallCount, 1, "must not re-join for the same session while already connected")
+        XCTAssertEqual(room.disconnectCallCount, 0, "a same-session re-entrant join must not route through leave()")
     }
 
     // MARK: - micDenied path
@@ -696,13 +707,16 @@ final class VoiceRoomServiceTests: XCTestCase {
 
     /// join(A) is parked on the token fetch (a stale in-flight join, from a
     /// view/session the caller has since moved on from) when join(B) — a
-    /// DIFFERENT session — arrives. Unlike `testJoinIsNoOpWhileAlreadyConnected`
-    /// (which locks the ALREADY-`.connected` no-op — Lobby -> live-session's
-    /// deliberate same-session persistence), this is the `.connecting` case:
-    /// A's flight must be treated as stale and torn down via the epoch
-    /// guard, and B's own join must proceed and actually connect — never
-    /// silently dropped, and never landing A's connection for the wrong
-    /// session.
+    /// DIFFERENT session — arrives. Unlike
+    /// `testJoinIsNoOpWhileAlreadyConnectedToSameSession` (which locks the
+    /// SAME-session `.connected` no-op — Lobby -> live-session's deliberate
+    /// same-session persistence; fix wave 1 renamed this from
+    /// `testJoinIsNoOpWhileAlreadyConnected` once the mismatched-session
+    /// case stopped being a no-op too, per Finding F3a), this is the
+    /// `.connecting` case: A's flight must be treated as stale and torn
+    /// down via the epoch guard, and B's own join must proceed and actually
+    /// connect — never silently dropped, and never landing A's connection
+    /// for the wrong session.
     func testJoinForDifferentSessionWhileConnectingAbortsStaleJoinAndConnectsNewSession() async throws {
         let tokenFetcher = MultiPendingTokenFetcher()
         let audio = SpyAudioSession()
@@ -776,6 +790,158 @@ final class VoiceRoomServiceTests: XCTestCase {
             XCTFail("expected .connected(.muted), got \(service.state)"); return
         }
         XCTAssertEqual(room.connectCallCount, 1, "the re-entrant same-session call must not have triggered a second connect")
+    }
+
+    /// Finding F3a (Phase O Task 5 fix wave 1): join() while already
+    /// `.connected` used to be blind to WHICH session that connection was
+    /// for — a join(B) arriving while `.connected` to A silently no-op'd,
+    /// stranding the caller on the wrong room. Same treatment as item 3 gave
+    /// the `.connecting` case above: `.connected` to a DIFFERENT session now
+    /// routes through leave() first. Uses a `PendingDisconnectRoom` (same
+    /// parked-continuation shape as `testLeaveDuringJoinConnectDisconnectsStaleConnection`)
+    /// to verify the ORDERING guarantee, not just the end state: A's
+    /// disconnect must be observably in flight — and B's own connect must
+    /// NOT have happened yet — before A's teardown is allowed to resolve.
+    func testJoinForDifferentSessionWhileConnectedLeavesThenReconnects() async throws {
+        let room = PendingDisconnectRoom()
+        let audio = SpyAudioSession()
+        let tokenFetcher = FakeTokenFetcher()
+        let service = VoiceRoomService(
+            tokenFetcher: tokenFetcher, micPermission: FakeMicPermission(), audioSession: audio, room: room
+        )
+
+        let sessionA = UUID()
+        await service.join(sessionID: sessionA)
+        guard case .connected(.muted) = service.state else {
+            XCTFail("setup: expected .connected(.muted) for A, got \(service.state)"); return
+        }
+
+        let sessionB = UUID()
+        let joinBTask = Task { await service.join(sessionID: sessionB) }
+        let disconnectReached = await settleUntil { room.disconnectPending }
+        XCTAssertTrue(disconnectReached, "join(B) never routed through leave()'s disconnect — test harness broken")
+        XCTAssertEqual(room.disconnectCallCount, 1, "A's teardown, via the routed leave()")
+
+        // A's disconnect must complete before B's own connect is attempted —
+        // still .connected (not yet re-entered .connecting for B) while parked.
+        guard case .connected = service.state else {
+            XCTFail("state moved on before A's disconnect resolved: \(service.state)"); return
+        }
+
+        room.resumeDisconnect()
+        await joinBTask.value
+
+        guard case .connected(.muted) = service.state else {
+            XCTFail("expected B to land .connected(.muted) after superseding A, got \(service.state)")
+            return
+        }
+        XCTAssertEqual(room.disconnectCallCount, 1, "exactly one disconnect — A's, never a second spurious one")
+        XCTAssertEqual(tokenFetcher.requestedSessionIDs, [sessionA.uuidString, sessionB.uuidString])
+        XCTAssertTrue(audio.isInVoiceMode, "B's join must have re-entered voice mode")
+    }
+
+    // MARK: - leave() state-restore epoch-gating (Phase O Task 5 fix wave 1, Finding F3b)
+
+    /// Dedicated fake for Finding F3b: the FIRST `disconnect()` call parks
+    /// (simulating an abandoned, timed-out `leave()` whose underlying
+    /// `room.disconnect()` never got a chance to resolve before the caller
+    /// stopped waiting — the loser of `leave(timeout:)`'s race, left running
+    /// in the background per that method's own doc comment) while every
+    /// LATER call resolves immediately, mirroring a room that's otherwise
+    /// healthy for whatever leave()/join() comes next. `connectAndPublishMuted`
+    /// is always immediate; only disconnect()'s first call is special.
+    @MainActor
+    private final class LateResolvingDisconnectRoom: VoiceRoomConnecting {
+        var onSpeakingParticipantsChanged: ((Set<String>) -> Void)?
+        var onRosterChanged: ((Set<String>) -> Void)?
+        var onRemoteMuteChanged: ((String, Bool) -> Void)?
+        private var disconnectContinuation: CheckedContinuation<Void, Never>?
+        private(set) var disconnectPending = false
+        private(set) var disconnectCallCount = 0
+        private(set) var connectCallCount = 0
+
+        func connectAndPublishMuted(url: String, token: String) async throws {
+            connectCallCount += 1
+        }
+        func setMicrophoneMuted(_ muted: Bool) async throws {}
+        func setLocalVolume(_ volume: Double, forParticipantIdentity identity: String) async {}
+
+        func disconnect() async {
+            disconnectCallCount += 1
+            guard disconnectCallCount == 1 else { return }
+            await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                disconnectContinuation = cont
+                disconnectPending = true
+            }
+        }
+
+        func resumeFirstDisconnect() {
+            disconnectPending = false
+            disconnectContinuation?.resume()
+            disconnectContinuation = nil
+        }
+    }
+
+    /// Finding F3b (Phase O Task 5 fix wave 1): an abandoned `leave()` (the
+    /// loser of `leave(timeout:)`'s race, per that method's own doc comment)
+    /// that resolves LATE must not clobber a NEWER session's state.
+    /// Sequence: join A -> `.connected`; leave() for A starts but parks on
+    /// `room.disconnect()` (the "abandoned" call, call #1); while still
+    /// parked, join(B) arrives — per F3a, `.connected` with a mismatched
+    /// session routes through its OWN leave() first (disconnect call #2,
+    /// which this fake resolves immediately) before connecting to B. Only
+    /// THEN does the original parked disconnect (call #1) resolve. Its
+    /// leave() must recognize a newer epoch has superseded it and skip the
+    /// state restore entirely — B's `.connected` state and voice-mode audio
+    /// session must survive untouched.
+    func testAbandonedLateLeaveDoesNotClobberNewerSessionState() async throws {
+        let room = LateResolvingDisconnectRoom()
+        let audio = SpyAudioSession()
+        let tokenFetcher = FakeTokenFetcher()
+        let service = VoiceRoomService(
+            tokenFetcher: tokenFetcher, micPermission: FakeMicPermission(), audioSession: audio, room: room
+        )
+
+        let sessionA = UUID()
+        await service.join(sessionID: sessionA)
+        guard case .connected = service.state else { XCTFail("setup: expected .connected for A"); return }
+
+        // The "abandoned" leave — started but not awaited directly by this
+        // test, mirroring leave(timeout:)'s loser continuing in the
+        // background after the caller stops waiting.
+        let abandonedLeave = Task { await service.leave() }
+        let firstDisconnectReached = await settleUntil { room.disconnectPending }
+        XCTAssertTrue(firstDisconnectReached, "abandoned leave never reached room.disconnect() — test harness broken")
+
+        // A different session's join arrives while the abandoned leave is
+        // still parked. state is still .connected (to A) at this instant —
+        // the parked leave's defer hasn't run — so per F3a this routes
+        // through its OWN leave() (disconnect call #2, resolved immediately
+        // by the fake) before actually connecting to B.
+        let sessionB = UUID()
+        await service.join(sessionID: sessionB)
+
+        guard case .connected(.muted) = service.state else {
+            XCTFail("expected B to be .connected(.muted), got \(service.state)"); return
+        }
+        XCTAssertTrue(audio.isInVoiceMode, "B's voice mode must be active")
+        let enterCountAfterB = audio.enterCallCount
+        let exitCountAfterB = audio.exitCallCount
+
+        // NOW let the original abandoned leave's disconnect (call #1)
+        // resolve. Its captured epoch is stale (superseded by B's own
+        // leave()+join) — its defer must skip the state restore entirely.
+        room.resumeFirstDisconnect()
+        await abandonedLeave.value
+
+        guard case .connected(.muted) = service.state else {
+            XCTFail("abandoned leave's late resolution clobbered B's state: \(service.state)"); return
+        }
+        XCTAssertTrue(audio.isInVoiceMode, "abandoned leave's late resolution must not have exited B's voice mode")
+        XCTAssertEqual(audio.enterCallCount, enterCountAfterB, "no spurious re-enter from the stale leave")
+        XCTAssertEqual(audio.exitCallCount, exitCountAfterB, "stale leave must not have called exitVoiceMode again")
+        XCTAssertEqual(room.connectCallCount, 2, "A's connect + B's connect")
+        XCTAssertEqual(room.disconnectCallCount, 2, "abandoned leave's disconnect (A) + B's own routed leave's disconnect")
     }
 
     // MARK: - Active speakers
