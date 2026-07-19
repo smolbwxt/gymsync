@@ -18,6 +18,12 @@ struct LobbyView: View {
     @State private var proposalVotes: [UUID: [ProposalVote]] = [:]
     @State private var proposerUsernames: [UUID: String] = [:]
     @State private var routineInfo: (name: String, exercises: [RoutineExercise])? = nil
+    /// Task 7 item 1 (pre-GA ledger): the full `Routine` row (not just
+    /// `routineInfo`'s name/exercises projection) for this session's
+    /// `routineID`, ONLY so `startSession()` can read `visibility`/`ownerID`
+    /// to decide whether Starting should also fire the group-attempt hook.
+    /// See that function's doc comment for the full gating rationale.
+    @State private var routineForSession: Routine? = nil
     @State private var presenceSet: Set<UUID> = []
     @State private var realtime = LobbyRealtimeService()
 
@@ -1127,6 +1133,7 @@ struct LobbyView: View {
             if let routineID = effectiveRoutineID {
                 if let (routine, exercises) = try await RoutineRepository.fetch(id: routineID) {
                     routineInfo = (name: routine.name, exercises: exercises)
+                    routineForSession = routine
                 }
             }
 
@@ -1219,6 +1226,82 @@ struct LobbyView: View {
         errorText = nil
         do {
             try await SessionRepository.start(sessionID: session.id)
+            // Task 7 item 1 (pre-GA ledger, .superpowers/sdd/task-7-brief.md
+            // item 1; ledger origin: .superpowers/sdd/progress.md's "PRE-GA
+            // LEDGER: (1) group-attempt start hook at LobbyView Start" under
+            // Phase L's merge entry) — closes Discover's "Attempt with
+            // Friends" entry-less flow: that CTA (`DiscoverWorkoutDetailView.
+            // attemptCTAs`) opens `ScheduleSessionView(preloadedRoutine:)`,
+            // which seeds `selectedRoutineID` from the Discover routine and
+            // splices it into the picker (ScheduleSessionView.swift:14-20,
+            // 597-603) — but `SessionRepository.schedule` never calls
+            // `start_attempt` (20260723000002_attempt_plumbing.sql:74-114),
+            // unlike the SOLO path (`WorkoutSessionView.startIfNeeded()`,
+            // WorkoutSessionView.swift:633-661), so a completed group
+            // "attempt" never reaches `workout_attempts` and therefore never
+            // appears on the leaderboard.
+            //
+            // Honest v1 scope (organizer-only, no invented consent flow):
+            // the RPC's own contract (start_attempt(p_routine_id, p_session_
+            // id, p_opt_in)) requires an explicit per-user opt-in choice, and
+            // there is genuinely no UI today that collects that choice from
+            // GROUP participants — no opt-in prompt at join/lobby time, and
+            // (verified by reading it) ScheduleSessionView's Discover-
+            // preloaded path carries no opt-in flag either
+            // (ScheduleSessionView.swift:16-20; `SessionRepository.schedule`
+            // takes no opt-in param). Inventing a multi-participant consent
+            // flow here would be new product surface, not a debt fix — out
+            // of this item's scope (deferred; a real candidate for Phase D's
+            // designed-surface backlog, alongside "discover-detail" in
+            // docs/design/accepted-deviations.json). So this wires ONLY the
+            // organizer's own attempt, since they're the one who actually
+            // clicked "Attempt with Friends" from Discover — the same
+            // "explicit intent" standard Solo's confirmationDialog captures,
+            // just without a second confirmation prompt (see optIn default
+            // below).
+            //
+            // Gate — "this session's routine is public AND the session was
+            // reached via the Discover flow" — with no schema column
+            // recording provenance, the honest DERIVABLE proxy is ownership:
+            // ordinary scheduling only ever offers the organizer their OWN
+            // routines (`RoutineRepository.fetchAll(ownerID:)`,
+            // ScheduleSessionView's own `preloadedRoutine` doc comment says
+            // this explicitly — "normally comes from ... which never returns
+            // a public routine the scheduler doesn't own"). So today, a
+            // session whose `routineID` resolves to a PUBLIC routine NOT
+            // owned by its organizer can only have gotten there through the
+            // Discover preload splice. This correctly EXCLUDES a curator
+            // just re-running their OWN already-published routine via
+            // ordinary scheduling (no surprise leaderboard entry for a
+            // routine they picked for a normal workout, not through
+            // "Attempt with Friends") — a deliberate, documented limitation,
+            // not an oversight: the RPC's own Finding 2 rationale
+            // (20260723000003:11-24) already treats Attempt flows as
+            // explicitly separate from ordinary session creation.
+            //
+            // optIn hardcoded true (no toggle to read, per above): clicking
+            // "Attempt with Friends" from a public workout's leaderboard
+            // page is itself the explicit signal the organizer wants this
+            // run counted — defaulting to `false` would silently re-create
+            // the exact "entry-less" bug this item exists to fix. Deferred:
+            // a real "Show me on the leaderboard?" toggle for the organizer
+            // (and any opt-in surface for other participants) at
+            // schedule/lobby time — designed-surface item, not invented here.
+            if isOrganizer,
+               let routineID = effectiveSession.routineID,
+               let routine = routineForSession, routine.id == routineID,
+               routine.visibility == "public", let selfID, routine.ownerID != selfID {
+                do {
+                    _ = try await PublicWorkoutRepository.startAttempt(
+                        routineID: routineID, sessionID: effectiveSession.id, optIn: true)
+                } catch {
+                    // Best-effort, matches WorkoutSessionView.startIfNeeded()'s
+                    // solo idiom: a failed leaderboard opt-in must never block
+                    // the session itself from starting.
+                    AppLogger.db.error(
+                        "group startAttempt failed: \(error.localizedDescription, privacy: .public)")
+                }
+            }
             // Unsubscribe lobby realtime BEFORE navigating to live session
             // so the lobby channel doesn't compete with the live-session channel.
             await realtime.unsubscribe()
