@@ -40,12 +40,7 @@ final class AudioSessionManager {
     /// Restore the ambient + mixWithOthers state that `configure()` establishes.
     /// Best-effort — never throws out; errors are swallowed and logged.
     func exitRecordMode() {
-        do {
-            try session.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
-            try session.setActive(true)
-        } catch {
-            AppLogger.audio.error("AudioSessionManager.exitRecordMode failed: \(error)")
-        }
+        restoreAmbientBaseline(logPrefix: "AudioSessionManager.exitRecordMode")
     }
 
     /// Swap to `.playAndRecord` / `.voiceChat` for a live voice (push-to-talk) room.
@@ -72,12 +67,23 @@ final class AudioSessionManager {
     /// Best-effort — never throws out; errors are swallowed and logged. Idempotent —
     /// calling this repeatedly, or without a prior `enterVoiceMode()`, is harmless.
     func exitVoiceMode() {
+        restoreAmbientBaseline(logPrefix: "AudioSessionManager.exitVoiceMode")
+        voiceModeFlag.withLock { $0 = false }
+    }
+
+    /// Shared restore step `exitRecordMode()`/`exitVoiceMode()` both used to
+    /// carry as an identical verbatim 5-line try/catch (Phase O Task 5, 3e
+    /// follow-up queue item 7, "restore-helper DRY" — flagged at the Phase
+    /// 3e Task 3 final review). Byte-equivalent behavior to before: same
+    /// category/mode/options, same best-effort swallow-and-log on failure,
+    /// same per-caller log-message prefix (passed in rather than hardcoded,
+    /// so `exitRecordMode`'s and `exitVoiceMode`'s log lines are unchanged).
+    private func restoreAmbientBaseline(logPrefix: StaticString) {
         do {
             try session.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
             try session.setActive(true)
         } catch {
-            AppLogger.audio.error("AudioSessionManager.exitVoiceMode failed: \(error)")
+            AppLogger.audio.error("\(logPrefix) failed: \(error)")
         }
-        voiceModeFlag.withLock { $0 = false }
     }
 }
