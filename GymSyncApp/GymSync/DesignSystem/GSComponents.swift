@@ -1938,14 +1938,6 @@ struct GSVoiceMixerSheet: View {
     }
 }
 
-// MARK: - PTTPressGesture
-//
-// Wraps `onLongPressGesture(minimumDuration:pressing:perform:)` so
-// `PTTDockRow`'s interactive mic variants share one gesture wiring instead
-// of duplicating the modifier call — see `PTTDockRow`'s doc comment for why
-// a single `onLongPressGesture` is enough to derive both tap and hold
-// behavior.
-
 // MARK: - GSHeartRatePill
 //
 // Phase W Task 5 (watch-hr design §4 + master spec §5 "Heart rate
@@ -2037,6 +2029,14 @@ struct GSHeartRatePill: View {
         }
     }
 }
+
+// MARK: - PTTPressGesture
+//
+// Wraps `onLongPressGesture(minimumDuration:pressing:perform:)` so
+// `PTTDockRow`'s interactive mic variants share one gesture wiring instead
+// of duplicating the modifier call — see `PTTDockRow`'s doc comment for why
+// a single `onLongPressGesture` is enough to derive both tap and hold
+// behavior.
 
 private struct PTTPressGesture: ViewModifier {
     let threshold: TimeInterval

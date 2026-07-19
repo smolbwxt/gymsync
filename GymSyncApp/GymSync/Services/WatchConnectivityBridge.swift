@@ -255,12 +255,13 @@ final class WatchConnectivityBridge {
     /// `logSetAndAdvance`'s OWN additional concerns on top of the bare
     /// submit, tied to `GroupSessionLiveView`'s live turn-rotation UI
     /// state (`isPR`/`priorBest`/`didQueueSetOffline` machinery,
-    /// GroupSessionLiveView.swift:2005-2110). This task builds the
-    /// PLUMBING (design §3); the actual Watch "Tap-to-log-set" surface
-    /// (design §2, Component 2 — `GymSyncWatch/ContentView.swift` is still
-    /// Task 1's placeholder) is separate, future scope, and is the right
-    /// place to decide how (or whether) a watch-submitted set should also
-    /// trigger PR checks / turn advancement once a real Watch UI exists to
+    /// GroupSessionLiveView.swift:2005-2110). This task built the
+    /// PLUMBING (design §3); the Watch "Tap-to-log-set" surface now EXISTS
+    /// (T3, `GymSyncWatch/LogSetView.swift`) but the turn-advance / PR
+    /// decision was NOT revisited with it — a watch-logged set does NOT
+    /// advance the turn (Phase W gate finding I-2: pending PRODUCT
+    /// adjudication, not a silent deferral). Whoever resolves it decides
+    /// how (or whether) a watch-submitted set should also
     /// show that outcome. Noted here so this is a known, intentional
     /// boundary — not a silent omission.
     ///

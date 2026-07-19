@@ -427,11 +427,11 @@ struct WatchSoundboardTapPayload: Codable, Sendable, Equatable {
     init(slug: String) { self.slug = slug }
 }
 
-/// watch→phone (T5 — HR broadcast). Defined now per the task brief ("define
-/// now, implement senders progressively"); no sender or phone-side handler
-/// exists yet — `WatchConnectivityBridge.handle(message:replyHandler:)`
-/// replies `.failure` for this kind today (see that method), same
-/// treatment as any other not-yet-wired kind. `bpm`/`recordedAt` match the
+/// watch→phone (T5 — HR broadcast). LIVE since 95dd7a3/f61a337: the sender
+/// is `HeartRateSampler.send` (watch, fire-and-forget sendMessage) and the
+/// phone-side handler is `WatchConnectivityBridge.handleHRSample` (relays
+/// to `HeartRateBroadcastService.publish` behind the live opt-in gate).
+/// `bpm`/`recordedAt` match the
 /// design doc §6.5 wire shape's `{user_id, bpm, zone?}` Realtime payload
 /// minus `user_id`/`zone` — those are added phone-side (the phone knows
 /// the signed-in user; zone is a derived display concern computed from
