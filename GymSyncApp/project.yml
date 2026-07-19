@@ -3,6 +3,10 @@ options:
   bundleIdPrefix: app.gymsync
   deploymentTarget:
     iOS: "17.0"
+    # Phase W Task 1 (watch-hr design §1) — watchOS 10 pairs with iOS 17
+    # (Apple's SDK compatibility matrix: each iOS major ships alongside the
+    # watchOS major of the same number - 7, e.g. iOS 17 + watchOS 10).
+    watchOS: "10.0"
   createIntermediateGroups: true
 
 settings:
@@ -44,6 +48,30 @@ targets:
         product: LiveKit
       - package: Sentry
         product: Sentry
+      # Phase W Task 1 (watch-hr design §1) — embeds the watchOS companion
+      # app into this app's bundle via xcodegen's "Embed Watch Content"
+      # copy-files phase. `embed`/`codeSign` are explicit even though
+      # xcodegen already defaults embed=true for an `application`-type
+      # target dependency (ProjectSpec.md "Dependencies") — self-documenting
+      # against a future xcodegen default change.
+      #
+      # KNOWN RISK (cited in task-1-report.md): yonaskolb/XcodeGen#1613
+      # (open, unresolved as of this writing) reports that Xcode 26
+      # rejects the embed path xcodegen generates for this exact shape
+      # ("... must be embedded in the parent app bundle's PlugIns
+      # directory, but is embedded in ... Watch directory"). This
+      # repo's `deploy-testflight` job explicitly selects Xcode 26
+      # (see that job's "Select Xcode 26" step) and archives the GymSync
+      # scheme, so IT is the job at risk — `build-test`/`screenshots`
+      # build on the runner's older default Xcode and are not expected to
+      # hit it. If the archive step fails with the error above, that
+      # issue's workaround (patch the generated .pbxproj's Embed Watch
+      # Content phase to dstSubfolderSpec=13, dstPath="") or an xcodegen
+      # version bump (brew always installs latest — may already be fixed
+      # by the time this runs) is the fix; see task-1-report.md.
+      - target: GymSyncWatch
+        embed: true
+        codeSign: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.gymsync.ios
@@ -72,6 +100,54 @@ targets:
         com.apple.developer.applesignin: [Default]
         com.apple.developer.healthkit: true
         aps-environment: development
+
+  # Phase W Task 1 (watch-hr design §1) — watchOS companion app, modern
+  # single-target shape: `type: application` + `platform: watchOS`, no
+  # separate WatchKit Extension target. This is the Xcode 14+ "Independent
+  # watchOS app" architecture (SwiftUI-only, one target); the pre-Xcode-14
+  # two-target shape (`application.watchapp2` container + `watchkit2-
+  # extension`) is legacy and NOT used here. Verified against a real
+  # xcodegen user hitting an Xcode-26 embedding regression with this EXACT
+  # shape (yonaskolb/XcodeGen#1613, open) — see the `GymSync` target's
+  # `dependencies` entry above for the embedding side, and
+  # task-1-report.md for the full citation.
+  #
+  # NO standalone auth/networking here (watch-hr design §1: "the phone
+  # owns the Supabase session; the Watch is a WatchConnectivity peripheral
+  # only") — this target has no Supabase/LiveKit/Sentry package
+  # dependencies, unlike GymSync above.
+  GymSyncWatch:
+    type: application
+    platform: watchOS
+    sources:
+      - GymSyncWatch
+    settings:
+      base:
+        # Apple's `<ios-bundle-id>.watchkitapp` companion convention (task
+        # brief) — this bundle id being a child of GymSync's `app.gymsync.
+        # ios` is what lets watchOS/App Store Connect infer the companion
+        # relationship without an explicit WKCompanionAppBundleIdentifier
+        # Info.plist key (see the `info.properties` comment below).
+        PRODUCT_BUNDLE_IDENTIFIER: app.gymsync.ios.watchkitapp
+        TARGETED_DEVICE_FAMILY: "4"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    info:
+      path: GymSyncWatch/Info.plist
+      properties:
+        CFBundleDisplayName: "Gym Sync"
+        # Modern (Xcode 14+) single-target watch app marker — Apple's own
+        # "Watch App" target template sets this; without it watchOS won't
+        # recognize the embedded bundle as a launchable watch app.
+        WKApplication: true
+        # Explicit (rather than relying on the implicit default) because
+        # it's a deliberate architectural decision, not an incidental one:
+        # watch-hr design §1 states the Watch has no standalone auth and
+        # is a WatchConnectivity peripheral only — it cannot function
+        # without the phone app reachable, so it must not run
+        # independently.
+        WKRunsIndependentlyOfCompanionApp: false
+        # No WKCompanionAppBundleIdentifier: inferred from the bundle-id
+        # convention above.
 
   GymSyncTests:
     type: bundle.unit-test
