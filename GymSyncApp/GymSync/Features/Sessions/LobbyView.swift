@@ -44,6 +44,12 @@ struct LobbyView: View {
 
     @State private var showSeriesEditor = false
 
+    // MARK: - Voice chrome (Phase O Task 5, item 5 — designer follow-up frames)
+
+    @State private var showVoiceConnectedToast = false
+    @State private var showVoiceCoachMark = false
+    @State private var showVoiceMixerSheet = false
+
     // MARK: - Session chat (Task 3, Phase F)
 
     /// No canvas frame depicts a chat affordance for this screen
@@ -108,6 +114,38 @@ struct LobbyView: View {
     private func joinVoiceIfEligible() async {
         guard isVoiceEligible else { return }
         await VoiceRoomService.shared.join(sessionID: effectiveSession.id)
+    }
+
+    /// Other participants' usernames, for `PTTDockRow`'s transmit hero
+    /// (Phase O Task 5 item 5) — `VoiceRoomService` only knows LiveKit
+    /// identity strings, never real usernames, so this view's own
+    /// `Profile` data is what supplies them.
+    private var otherParticipantNames: [String] {
+        participants
+            .filter { $0.participant.userID != selfID }
+            .map(\.profile.username)
+    }
+
+    /// True once the voice room reaches `.connected` (either sub-state) —
+    /// a plain `Bool` proxy over `VoiceRoomState` (which isn't `Equatable`,
+    /// so `.onChange(of:)` can't watch `VoiceRoomService.shared.state`
+    /// directly) that drives the connected-toast/first-run-coach-mark
+    /// trigger below.
+    private var isVoiceConnected: Bool {
+        if case .connected = VoiceRoomService.shared.state { return true }
+        return false
+    }
+
+    /// (identity, username) pairs for the voice mixer sheet — same
+    /// "VoiceRoomService only knows identity strings, this view supplies
+    /// real names" shape as `otherParticipantNames` above.
+    private var voiceMixerParticipants: [(identity: String, name: String)] {
+        let byIdentity = Dictionary(
+            uniqueKeysWithValues: participants.map { ($0.participant.userID.uuidString.lowercased(), $0.profile.username) }
+        )
+        return VoiceRoomService.shared.connectedParticipantIDs
+            .sorted()
+            .map { identity in (identity, byIdentity[identity] ?? "Someone") }
     }
 
     /// Check-in opens 20 minutes before the scheduled start (server-enforced too —
@@ -208,8 +246,27 @@ struct LobbyView: View {
             }
         }
         .background(theme.bg)
+        .overlay(alignment: .top) {
+            // "Voice connected" toast (Phase O Task 5 item 5) — transient,
+            // this view owns the show/hide timer (GSVoiceConnectedToast has
+            // no opinion on timing, matching every other voice component's
+            // "callers gate visibility" contract).
+            if showVoiceConnectedToast {
+                GSVoiceConnectedToast(groupName: groupName)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 0) {
+                // First-run coach mark (Phase O Task 5 item 5) — sits
+                // directly above the dock, per the designer follow-up frame.
+                if showVoiceCoachMark {
+                    GSVoiceCoachMark(onDismiss: { showVoiceCoachMark = false })
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 6)
+                }
                 // ── PUSH-TO-TALK DOCK ────────────────────────────────────
                 // Open layout question flagged by Dossier §A.2 (never
                 // resolved there): whether the PTT dock replaces, stacks
@@ -218,7 +275,7 @@ struct LobbyView: View {
                 // matching how GroupSessionLiveView already stacks its own
                 // soundboard dock above its bottom action bar.
                 if isVoiceEligible {
-                    PTTDockRow()
+                    PTTDockRow(otherParticipantNames: otherParticipantNames)
                 }
                 actionBar
             }
@@ -236,6 +293,17 @@ struct LobbyView: View {
                     GSConnectingVoicePill()
                 }
             }
+            // Voice mixer entry point (Phase O Task 5 item 5) — no canvas
+            // frame depicts WHERE the mixer sheet opens from (the frames
+            // show only its content), so this follows `chatButton`'s own
+            // existing "bordered icon-button toolbar item" idiom
+            // immediately beside it; see docs/design/accepted-deviations.json's
+            // "voice-mixer-entry-point" entry.
+            if isVoiceConnected {
+                ToolbarItem(placement: .topBarTrailing) {
+                    voiceMixerButton
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 chatButton
             }
@@ -246,6 +314,27 @@ struct LobbyView: View {
             }
         }
         .task { await openAndLoad() }
+        .onChange(of: isVoiceConnected) { wasConnected, nowConnected in
+            guard nowConnected, !wasConnected else { return }
+            // Phase O Task 5 item 5: fires on every genuine `.idle`/
+            // `.connecting`/etc -> `.connected` transition, not just the
+            // first ever (the toast) — but the coach mark only the first
+            // time this device has ever connected voice (marked shown
+            // immediately, not on dismiss, so it can never show twice even
+            // if the user backs out before tapping "Got it").
+            withAnimation { showVoiceConnectedToast = true }
+            if !VoiceCoachMarkStore.hasBeenShown {
+                showVoiceCoachMark = true
+                VoiceCoachMarkStore.markShown()
+            }
+            Task {
+                try? await Task.sleep(for: .seconds(3))
+                withAnimation { showVoiceConnectedToast = false }
+            }
+        }
+        .sheet(isPresented: $showVoiceMixerSheet) {
+            voiceMixerSheet
+        }
         .onChange(of: scenePhase) {
             guard scenePhase == .active else { return }
             Task { await reload() }
@@ -373,6 +462,45 @@ struct LobbyView: View {
                     }
                 }
         }
+    }
+
+    // MARK: - Voice mixer (Task 5, item 5 — same toolbar-button + sheet
+    // idiom as chatButton/chatSheet above)
+
+    private var voiceMixerButton: some View {
+        Button {
+            showVoiceMixerSheet = true
+        } label: {
+            Image(systemName: "slider.horizontal.3")
+                .font(.system(size: 18, weight: .regular))
+                .foregroundStyle(theme.text)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+        }
+    }
+
+    private var voiceMixerSheet: some View {
+        NavigationStack {
+            GSVoiceMixerSheet(
+                participants: voiceMixerParticipants,
+                mutedIdentities: VoiceRoomService.shared.remoteMutedParticipantIDs
+                    .union(VoiceRoomService.shared.locallyMutedParticipantIDs),
+                onToggleMute: { identity in
+                    let isMuted = VoiceRoomService.shared.locallyMutedParticipantIDs.contains(identity)
+                    Task { await VoiceRoomService.shared.setLocalMute(!isMuted, forParticipantIdentity: identity) }
+                }
+            )
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showVoiceMixerSheet = false }
+                        .font(GSFont.bold(14, relativeTo: .body))
+                        .foregroundStyle(theme.accent700)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 
     // MARK: - Manage Menu (functional items unchanged)

@@ -1200,6 +1200,22 @@ struct GSExpandingRing: View {
 struct PTTDockRow: View {
     @Environment(\.gsTheme) private var theme
 
+    /// Other participants' display names, for the transmit hero's "N
+    /// listening" caption (Phase O Task 5 item 5 — designer follow-up
+    /// frames, `docs/design/sections/2026-07-live-voice.dc.html`).
+    /// `VoiceRoomService` only knows LiveKit identity strings (UUIDs),
+    /// never usernames, so this must be threaded in from whichever view
+    /// already has real `Profile` data (`LobbyView.participants` /
+    /// `GroupSessionLiveView`'s own roster). Defaults empty so every
+    /// existing call site (`CatalogHostView`'s bare `PTTDockRow()`) keeps
+    /// compiling unchanged — an empty list just omits the hero's
+    /// listening-names line, it never blocks the hero itself from showing.
+    let otherParticipantNames: [String]
+
+    init(otherParticipantNames: [String] = []) {
+        self.otherParticipantNames = otherParticipantNames
+    }
+
     /// Monotonic per-press identity. Bumped on every press-down; captured by
     /// the threshold handler and the release handler, and re-checked before
     /// any of them consumes or clears the shared per-press state below.
@@ -1262,6 +1278,12 @@ struct PTTDockRow: View {
     var body: some View {
         VStack(spacing: 0) {
             GSDivider()
+            // Transmit hero (Phase O Task 5 item 5) — shown above the dock
+            // itself while actively transmitting, matching the designer
+            // follow-up frames' "YOU'RE LIVE"/mic-open hero moment.
+            if isTransmitting {
+                transmitHero
+            }
             Group {
                 switch voice.state {
                 case .micDenied:
@@ -1278,6 +1300,51 @@ struct PTTDockRow: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 9)
         }
+        .background(theme.bg)
+    }
+
+    // MARK: Transmit hero (Phase O Task 5 item 5)
+    //
+    // docs/design/sections/2026-07-live-voice.dc.html frames 1 ("Talking ·
+    // hold") and 2 ("Mic open · tap") both show a full hero moment above
+    // the dock while actively transmitting — waveform, "YOU'RE LIVE"/mic-
+    // open headline, "The crew can hear you" + who's listening. This is
+    // the reusable core only (headline + waveform + listening caption) —
+    // the frames' own top status bar/turn card are page-level chrome each
+    // caller (LobbyView/GroupSessionLiveView) already renders above
+    // wherever it places `PTTDockRow`, not this component's concern.
+    //
+    // Waveform: reuses `GSTalkingBars` (its own doc comment's "purely
+    // decorative, not driven by live audio levels" honesty note applies
+    // here too — `VoiceRoomService` exposes no metering API) at a larger
+    // size rather than building a second bespoke waveform view; the
+    // frames' own waveform is an 11-bar version of the exact same idea.
+
+    private var transmitHero: some View {
+        VStack(spacing: 10) {
+            Text(isHeldTransmitOwnedByThisPress ? "YOU'RE LIVE" : "MIC OPEN · HANDS-FREE")
+                .font(GSFont.bold(12, relativeTo: .caption))
+                .tracking(1.6)
+                .foregroundStyle(theme.accent700)
+
+            GSTalkingBars(color: theme.accent, barWidth: 6, maxHeight: 56)
+
+            VStack(spacing: 2) {
+                Text("The crew can hear you")
+                    .font(GSFont.bold(18, relativeTo: .title3))
+                    .foregroundStyle(theme.text)
+                if !otherParticipantNames.isEmpty {
+                    Text("\(otherParticipantNames.joined(separator: " · ")) listening")
+                        .font(GSFont.body(12, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral500)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 16)
+        .padding(.horizontal, 12)
         .background(theme.bg)
     }
 
@@ -1339,9 +1406,14 @@ struct PTTDockRow: View {
                 if !isTransmitting {
                     Circle().strokeBorder(theme.accent, lineWidth: 1)
                 }
-                micGlyph(color: isTransmitting ? theme.bg : theme.accent)
+                micGlyph(color: isTransmitting ? theme.bg : theme.accent, size: isTransmitting ? 26 : 18)
             }
-            .frame(width: 44, height: 44)
+            // 80pt dock variant (Phase O Task 5 item 5): the mic grows from
+            // the blessed 44pt (2026-07-14 review round, still used for
+            // every non-transmitting state) to 80pt — matching the
+            // designer follow-up frames' held/open dock circle — while
+            // actively transmitting.
+            .frame(width: isTransmitting ? 80 : 44, height: isTransmitting ? 80 : 44)
             .contentShape(Circle())
             .modifier(pressGesture)
         }, bar: {
@@ -1378,9 +1450,9 @@ struct PTTDockRow: View {
         .frame(width: 44, height: 44)
     }
 
-    private func micGlyph(color: Color) -> some View {
+    private func micGlyph(color: Color, size: CGFloat = 18) -> some View {
         Image(systemName: "mic")
-            .font(.system(size: 18, weight: .regular))
+            .font(.system(size: size, weight: .regular))
             .foregroundStyle(color)
     }
 
@@ -1600,6 +1672,240 @@ struct PTTDockRow: View {
         default:
             break
         }
+    }
+}
+
+// MARK: - GSVoiceConnectedToast
+//
+// "Voice connected" toast (Phase O Task 5 item 5 — designer follow-up
+// frame, `docs/design/sections/2026-07-live-voice.dc.html` frame 3's top
+// banner). Purely presentational — no timer of its own; the caller decides
+// when to show/hide it (same "callers gate visibility" contract as
+// `GSVoiceUnavailableBanner`/`GSConnectingVoicePill` above), typically via
+// a short `Task.sleep` + dismiss at the call site, matching this
+// codebase's existing transient-banner idiom (e.g. `ChatView`'s 4s error
+// auto-clear).
+
+struct GSVoiceConnectedToast: View {
+    @Environment(\.gsTheme) private var theme
+    let groupName: String?
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "checkmark")
+                .font(.system(size: 15, weight: .bold))
+                .foregroundStyle(theme.bg)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Voice connected")
+                    .font(GSFont.bold(14, relativeTo: .headline))
+                    .foregroundStyle(theme.bg)
+                if let groupName {
+                    Text("You're in the room with \(groupName)")
+                        .font(GSFont.body(11, relativeTo: .caption))
+                        .foregroundStyle(theme.bg.opacity(0.9))
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .background(theme.accent)
+        .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
+    }
+}
+
+// MARK: - GSVoiceCoachMark
+//
+// First-run coach mark (Phase O Task 5 item 5 — designer follow-up frame
+// "FIRST-RUN COACH MARK", same canvas section). Caller decides WHEN to
+// show it — typically gated on `VoiceCoachMarkStore.hasBeenShown` at the
+// first successful `.connected` transition — and where to anchor it
+// (directly above `PTTDockRow`, per the frame). This view has no opinion
+// on timing/placement beyond its own content, matching every other
+// visibility-agnostic voice component in this file.
+
+struct GSVoiceCoachMark: View {
+    @Environment(\.gsTheme) private var theme
+    let onDismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Tap or hold to talk")
+                    .font(GSFont.bold(15, relativeTo: .headline))
+                    .foregroundStyle(theme.bg)
+                Text("You're muted until you open your mic. Tap to keep it open hands-free, or hold for walkie-talkie. Nothing is recorded.")
+                    .font(GSFont.body(12, relativeTo: .caption))
+                    .foregroundStyle(theme.bg.opacity(0.85))
+                Button(action: onDismiss) {
+                    Text("Got it")
+                        .font(GSFont.bold(12, relativeTo: .caption))
+                        .foregroundStyle(theme.text)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(theme.bg)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 6)
+            }
+            .padding(14)
+            .background(theme.text)
+
+            // Pointer triangle toward the mic dock below (frame's downward-
+            // pointing bubble tail) — a local `Path`, not a new reusable
+            // `Shape` type; this is the one place a triangle pointer is
+            // needed in this codebase so far.
+            Path { path in
+                path.move(to: CGPoint(x: 0, y: 0))
+                path.addLine(to: CGPoint(x: 18, y: 0))
+                path.addLine(to: CGPoint(x: 9, y: 9))
+                path.closeSubpath()
+            }
+            .fill(theme.text)
+            .frame(width: 18, height: 9)
+            .padding(.leading, 36)
+        }
+    }
+}
+
+// MARK: - GSVoiceMixerSheet
+//
+// In-session voice mixer (Phase O Task 5 item 5 — designer follow-up
+// frame "VOICE MIXER SHEET", same canvas section). Per-participant
+// volume/mute is REAL, wired through `VoiceRoomService.setLocalMute(_:
+// forParticipantIdentity:)` (item 4's roster/mute service extension) —
+// LiveKit's client-side per-participant playback volume. The mic-level
+// meter and both toggles are honestly NOT backed by anything real:
+// `VoiceRoomService` exposes no input-level metering API (same
+// limitation `GSTalkingBars`' own doc comment already names for the
+// roster "talking" bars) and no noise-suppression/monitor-toggle control
+// exists anywhere in `VoiceRoomConnecting`/`AudioSessionManager` — building
+// fake-functioning toggles would be dishonest, so they're rendered as the
+// frame specifies but documented here (and in `accepted-deviations.json`)
+// as chrome-only pending a real backing API. `presentationDetents`/sheet
+// wrapping is the caller's job — this is just the sheet's content.
+
+struct GSVoiceMixerSheet: View {
+    @Environment(\.gsTheme) private var theme
+
+    /// (identity, displayName) pairs for everyone currently in the room —
+    /// same "VoiceRoomService only knows identity strings, caller supplies
+    /// real names" shape as `PTTDockRow.otherParticipantNames`.
+    let participants: [(identity: String, name: String)]
+    let mutedIdentities: Set<String>
+    let onToggleMute: (String) -> Void
+
+    @State private var noiseSuppression = true
+    @State private var hearOwnVoice = false
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Voice")
+                    .font(GSFont.bold(22, relativeTo: .title2))
+                    .foregroundStyle(theme.text)
+
+                // Mic level meter — decorative only, see type doc comment.
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Your mic level")
+                            .font(GSFont.body(11, relativeTo: .caption))
+                            .foregroundStyle(theme.neutral500)
+                        Spacer()
+                    }
+                    HStack(spacing: 2) {
+                        ForEach(0..<12, id: \.self) { i in
+                            Rectangle()
+                                .fill(i < 7 ? theme.accent : theme.surface)
+                                .overlay(i < 7 ? nil : Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                                .frame(height: 20)
+                        }
+                    }
+                }
+
+                // Toggles — chrome-only, see type doc comment.
+                VStack(spacing: 0) {
+                    Toggle(isOn: $noiseSuppression) {
+                        Text("Noise suppression")
+                            .font(GSFont.bold(14, relativeTo: .body))
+                            .foregroundStyle(theme.text)
+                    }
+                    .padding(12)
+                    GSDivider()
+                    Toggle(isOn: $hearOwnVoice) {
+                        Text("Hear my own voice")
+                            .font(GSFont.bold(14, relativeTo: .body))
+                            .foregroundStyle(theme.neutral500)
+                    }
+                    .padding(12)
+                }
+                .tint(theme.accent)
+                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+
+                if !participants.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Crew · tap to mute")
+                            .font(GSFont.body(11, relativeTo: .caption))
+                            .foregroundStyle(theme.neutral500)
+
+                        VStack(spacing: 10) {
+                            ForEach(participants, id: \.identity) { p in
+                                mixerRow(p)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(16)
+        }
+        .background(theme.bg)
+    }
+
+    private func mixerRow(_ p: (identity: String, name: String)) -> some View {
+        let isMuted = mutedIdentities.contains(p.identity)
+        return HStack(spacing: 10) {
+            ZStack {
+                Rectangle().fill(theme.neutral700)
+                Text(String(p.name.prefix(2)).uppercased())
+                    .font(GSFont.bold(11, relativeTo: .caption2))
+                    .foregroundStyle(theme.bg)
+            }
+            .frame(width: 30, height: 30)
+
+            Text(p.name)
+                .font(GSFont.bold(13, relativeTo: .body))
+                .foregroundStyle(theme.text)
+                .lineLimit(1)
+                .frame(width: 64, alignment: .leading)
+
+            // Per-person volume is real (setLocalMute below), but this view
+            // has no continuous level to show — mute/unmute is the only
+            // real signal, so the "slider" is a two-state fill (full when
+            // audible, empty when muted) rather than an interactive
+            // continuous control this API can't actually back.
+            Rectangle()
+                .fill(theme.neutral300)
+                .frame(height: 5)
+                .overlay(alignment: .leading) {
+                    if !isMuted {
+                        Rectangle().fill(theme.accent)
+                    }
+                }
+
+            Button {
+                onToggleMute(p.identity)
+            } label: {
+                Image(systemName: isMuted ? "speaker.slash" : "speaker.wave.2")
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundStyle(isMuted ? theme.accent : theme.neutral700)
+                    .frame(width: 32, height: 32)
+                    .overlay(Rectangle().strokeBorder(isMuted ? theme.accent : theme.divider, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isMuted ? "Unmute \(p.name)" : "Mute \(p.name)")
+        }
+        .opacity(isMuted ? 0.6 : 1)
     }
 }
 

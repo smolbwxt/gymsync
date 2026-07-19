@@ -198,6 +198,9 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogVoiceTransmitting()  { captureCatalog("voice-transmitting") }
     func testCatalogVoiceMicDenied()     { captureCatalog("voice-mic-denied") }
     func testCatalogVoiceUnavailable()   { captureCatalog("voice-unavailable") }
+    func testCatalogVoiceCoachMark()     { captureCatalog("voice-coach-mark") }
+    func testCatalogVoiceConnectedToast() { captureCatalog("voice-connected-toast") }
+    func testCatalogVoiceMixerSheet()    { captureCatalog("voice-mixer-sheet") }
     func testCatalogOnboardingSignIn()   { captureCatalog("onboarding-signin") }
     func testCatalogOnboardingUsername() { captureCatalog("onboarding-username") }
     func testCatalogOnboardingHomeGym()  { captureCatalog("onboarding-homegym") }

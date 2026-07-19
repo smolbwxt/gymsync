@@ -521,3 +521,27 @@ extension VoiceRoomService {
     }
 }
 #endif
+
+// MARK: - VoiceCoachMarkStore
+
+/// `UserDefaults`-backed "has the first-run voice coach mark been shown"
+/// flag (Phase O Task 5 item 5). Mirrors `StatTilesSnapshotStore`'s
+/// enum-of-static-members shape (`Models/StatTilesSnapshot.swift`) — no
+/// existing UserDefaults-based idiom for a single boolean flag exists in
+/// this codebase, so this follows that file's snapshot-store shape scaled
+/// down to a `Bool`. Deliberately NOT cleared by `AuthService.signOut()`'s
+/// per-user cleanup sweep (unlike `StatTilesSnapshotStore`/
+/// `SessionCalendarSyncStore`) — the coach mark explains a DEVICE-level
+/// gesture (tap/hold), not per-user data, so a second account signing in
+/// on the same device shouldn't see it again either.
+enum VoiceCoachMarkStore {
+    private static let defaultsKey = "voice.coachMark.shown.v1"
+
+    static var hasBeenShown: Bool {
+        UserDefaults.standard.bool(forKey: defaultsKey)
+    }
+
+    static func markShown() {
+        UserDefaults.standard.set(true, forKey: defaultsKey)
+    }
+}

@@ -1,5 +1,25 @@
 [
   {
+    "screenId": "voice-coach-mark",
+    "reason": "Phase O Task 5 (3e follow-up queue item 5): designer follow-up frame, `docs/design/sections/2026-07-live-voice.dc.html` frame 3 (\"FIRST-RUN COACH MARK\") — a real authoritative frame, not system-designed, but this section file is a separate follow-up canvas (2026-07, \"PTT polish\") not yet merged/numbered into the master canvas frame-map.json uses for every other voice-* entry (frames 47-50); pending DesignSync integration to get its own numbered frame-map entry. Catalog capture shows the coach mark bubble alone (GSVoiceCoachMark, GSComponents.swift) stacked above a forced-`.connected(.muted)` PTTDockRow — the frame's own dimmed live-session background chrome (turn card, set rows) is that screen's own content, not this component's concern, mirroring how every other PTTDockRow catalog case (voice-idle/connecting/etc.) captures the dock alone."
+  },
+  {
+    "screenId": "voice-connected-toast",
+    "reason": "Phase O Task 5 item 5: same designer follow-up frame as voice-coach-mark above (`docs/design/sections/2026-07-live-voice.dc.html` frame 3's top banner) — real frame, pending the same DesignSync/frame-map integration. Catalog capture shows GSVoiceConnectedToast alone with a fixture group name."
+  },
+  {
+    "screenId": "voice-mixer-sheet",
+    "reason": "Phase O Task 5 item 5: designer follow-up frame, `docs/design/sections/2026-07-live-voice.dc.html` frame 4 (\"VOICE MIXER SHEET\") — real frame, pending the same DesignSync/frame-map integration as voice-coach-mark/voice-connected-toast above. Per-participant volume/mute IS real (VoiceRoomService.setLocalMute, wired through LiveKit's client-side per-participant playback volume — item 4's roster/mute service extension). The mic-level meter and both toggles (\"Noise suppression\", \"Hear my own voice\") are honestly NOT backed by anything real: VoiceRoomService exposes no input-level metering API (same limitation GSTalkingBars' own doc comment already names for the roster \"talking\" bars) and no noise-suppression/monitor-toggle control exists anywhere in VoiceRoomConnecting/AudioSessionManager — rendered per the frame but chrome-only pending a real backing API, not silently invented functionality."
+  },
+  {
+    "screenId": "voice-mixer-entry-point",
+    "reason": "Phase O Task 5 item 5: no canvas frame depicts WHERE the voice mixer sheet opens from (the frames show only its own content) — system-designed: a bordered icon-button (slider.horizontal.3) in LobbyView's toolbar / GroupSessionLiveView's headerBar, styled after each screen's own existing chatButton icon-button, shown only while voice is connected."
+  },
+  {
+    "screenId": "voice-transmit-hero",
+    "reason": "Phase O Task 5 item 5: designer follow-up frames 1 (\"Talking · hold\") and 2 (\"Mic open · tap\"), `docs/design/sections/2026-07-live-voice.dc.html` — real frames, pending the same DesignSync/frame-map integration as the other voice-* entries above. PTTDockRow's transmitHero renders the reusable core only (headline + waveform + \"the crew can hear you\" + listening names) — the frames' own top status bar/turn card are page-level chrome each caller (LobbyView/GroupSessionLiveView) already renders above the dock, not this component's concern. Waveform reuses GSTalkingBars (3 bars) rather than matching the frames' fuller 11-bar waveform exactly — same component, larger sizing, not a second bespoke waveform view. The `voice-transmitting` catalog id (existing) captures the toggled-open/hands-free variant (frame 2); the held/\"YOU'RE LIVE\" variant (frame 1) needs a live press to reach and has no separate catalog id."
+  },
+  {
     "screenId": "tab-you",
     "reason": "You tab implements the newer Settings Hub with added stat tiles + Apple Health row — a recorded deviation ahead of the superseded canvas 'You' frame, awaiting design sign-off. Phase M Task 4 adds two more rows on top of that same deviation: a \"Share Solo Workouts\" toggle (with inline caption) inside the Settings group box, and a red \"Delete Account\" row below it — both extend this entry rather than opening a new one; awaiting sign-off alongside the rest. Phase H Task 2 adds one more row to the same Settings group box: \"Add my sessions to Calendar\" (default off, toggle-row-with-inline-caption shape matching \"Share Solo Workouts\"; system-denied state collapses the row into a single open-Settings tap target per `PTTDockRow.deniedRow`'s idiom) — no canvas frame depicts EventKit sync at all, so this extends the existing deviation rather than opening a new one; awaiting sign-off alongside the rest."
   },

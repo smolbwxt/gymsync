@@ -97,6 +97,13 @@ struct GroupSessionLiveView: View {
     @State private var showChatSheet        = false
     @State private var isEnding             = false
     @State private var errorText: String?
+    // Phase O Task 5 item 5 — mirrors LobbyView's identical trio (this
+    // view's own `voicePersistsOnPop` doc comment already notes it's not
+    // the only route in: `BurpeeLedgerView`'s direct push means voice can
+    // first connect here without ever having shown Lobby's copies).
+    @State private var showVoiceConnectedToast = false
+    @State private var showVoiceCoachMark = false
+    @State private var showVoiceMixerSheet = false
     /// Canvas Completion Task 4 fix round 1 (proof p31-errors, "Couldn't load
     /// the roster"): `reload()` previously swallowed participants/session
     /// fetch failures with only an `AppLogger` line — no UI signal at all.
@@ -198,6 +205,32 @@ struct GroupSessionLiveView: View {
     private func joinVoiceIfEligible() async {
         guard isVoiceEligible else { return }
         await VoiceRoomService.shared.join(sessionID: liveSession.id)
+    }
+
+    /// Other participants' usernames, for `PTTDockRow`'s transmit hero —
+    /// mirrors `LobbyView`'s identical property (same "no shared home for
+    /// session-state helpers" reasoning as `voiceEligibleStates` above).
+    private var otherParticipantNames: [String] {
+        participants
+            .filter { $0.participant.userID != selfID }
+            .map(\.profile.username)
+    }
+
+    /// Mirrors `LobbyView.isVoiceConnected`/`voiceMixerParticipants` —
+    /// same reasoning in both places (`VoiceRoomState` isn't `Equatable`;
+    /// `VoiceRoomService` only knows identity strings, not usernames).
+    private var isVoiceConnected: Bool {
+        if case .connected = VoiceRoomService.shared.state { return true }
+        return false
+    }
+
+    private var voiceMixerParticipants: [(identity: String, name: String)] {
+        let byIdentity = Dictionary(
+            uniqueKeysWithValues: participants.map { ($0.participant.userID.uuidString.lowercased(), $0.profile.username) }
+        )
+        return VoiceRoomService.shared.connectedParticipantIDs
+            .sorted()
+            .map { identity in (identity, byIdentity[identity] ?? "Someone") }
     }
 
     private var myParticipant: SessionParticipant? {
@@ -520,11 +553,18 @@ struct GroupSessionLiveView: View {
                 }
                 // ── SOUNDBOARD DOCK ──────────────────────────────────────
                 soundboardDock
+                // First-run coach mark (Phase O Task 5 item 5) — mirrors
+                // LobbyView's identical placement directly above the dock.
+                if showVoiceCoachMark {
+                    GSVoiceCoachMark(onDismiss: { showVoiceCoachMark = false })
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 6)
+                }
                 // ── PUSH-TO-TALK DOCK ────────────────────────────────────
                 // Dossier §A.2 confirms the exact insertion point: between
                 // the HYPE strip and the bottom action bar.
                 if isVoiceEligible {
-                    PTTDockRow()
+                    PTTDockRow(otherParticipantNames: otherParticipantNames)
                 }
                 // ── BOTTOM ACTION BAR ────────────────────────────────────
                 // My turn → pinned "Log Set & Pass" CTA (per proof, lives OUTSIDE the
@@ -560,6 +600,38 @@ struct GroupSessionLiveView: View {
         .sheet(isPresented: $showLogSetSheet) { logSetSheetContent }
         // Session chat sheet (Task 3)
         .sheet(isPresented: $showChatSheet) { chatSheet }
+        // Voice mixer sheet (Phase O Task 5 item 5)
+        .sheet(isPresented: $showVoiceMixerSheet) { voiceMixerSheet }
+        .onChange(of: isVoiceConnected) { wasConnected, nowConnected in
+            guard nowConnected, !wasConnected else { return }
+            // Mirrors LobbyView's identical trigger — see that view's
+            // `.onChange(of: isVoiceConnected)` doc comment for the full
+            // "toast every time, coach mark only the first time ever"
+            // reasoning.
+            withAnimation { showVoiceConnectedToast = true }
+            if !VoiceCoachMarkStore.hasBeenShown {
+                showVoiceCoachMark = true
+                VoiceCoachMarkStore.markShown()
+            }
+            Task {
+                try? await Task.sleep(for: .seconds(3))
+                withAnimation { showVoiceConnectedToast = false }
+            }
+        }
+        .overlay(alignment: .top) {
+            // "Voice connected" toast (Phase O Task 5 item 5) — mirrors
+            // LobbyView's identical overlay.
+            if showVoiceConnectedToast {
+                // Unlike LobbyView, this view has no fetched group-name
+                // state to hand the toast's subtitle — `nil` renders just
+                // the "Voice connected" headline (GSVoiceConnectedToast's
+                // `groupName` param is optional exactly for this reason).
+                GSVoiceConnectedToast(groupName: nil)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
         // Recap sheet — Phase F Task 4: the frame-8 group celebration
         // (GroupRecapView) replaces this sheet's content for genuine
         // group-backed sessions (data.groupPayload != nil); solo/ad-hoc
@@ -827,6 +899,26 @@ struct GroupSessionLiveView: View {
                     .font(.custom("Archivo-Bold", size: 14).monospacedDigit())
                     .foregroundStyle(theme.neutral700)
                     .monospacedDigit()
+            }
+
+            // Voice mixer entry point (Phase O Task 5 item 5) — same
+            // bordered-square idiom as the chat/X buttons beside it; no
+            // canvas frame shows WHERE the mixer opens from (only its own
+            // content), see docs/design/accepted-deviations.json's
+            // "voice-mixer-entry-point" entry.
+            if isVoiceConnected {
+                Button {
+                    showVoiceMixerSheet = true
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(theme.neutral700)
+                        .frame(width: 30, height: 30)
+                        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
 
             // Session chat (Task 3) — same bordered-square idiom as the X
@@ -1525,6 +1617,33 @@ struct GroupSessionLiveView: View {
                     }
                 }
         }
+    }
+
+    // MARK: - Voice mixer (Phase O Task 5 item 5) — mirrors LobbyView's
+    // identical sheet, same toolbar-button + sheet idiom as chatSheet above.
+
+    private var voiceMixerSheet: some View {
+        NavigationStack {
+            GSVoiceMixerSheet(
+                participants: voiceMixerParticipants,
+                mutedIdentities: VoiceRoomService.shared.remoteMutedParticipantIDs
+                    .union(VoiceRoomService.shared.locallyMutedParticipantIDs),
+                onToggleMute: { identity in
+                    let isMuted = VoiceRoomService.shared.locallyMutedParticipantIDs.contains(identity)
+                    Task { await VoiceRoomService.shared.setLocalMute(!isMuted, forParticipantIdentity: identity) }
+                }
+            )
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showVoiceMixerSheet = false }
+                        .font(GSFont.bold(14, relativeTo: .body))
+                        .foregroundStyle(theme.accent700)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 
     /// Best-guess current exercise for the turn (first routine exercise, or first from allExercises).

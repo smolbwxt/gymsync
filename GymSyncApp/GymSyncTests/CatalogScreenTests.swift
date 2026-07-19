@@ -11,6 +11,7 @@ final class CatalogScreenTests: XCTestCase {
             "pr-celebration",
             "voice-idle", "voice-connecting", "voice-transmitting",
             "voice-mic-denied", "voice-unavailable",
+            "voice-coach-mark", "voice-connected-toast", "voice-mixer-sheet",
             "onboarding-signin", "onboarding-username", "onboarding-homegym",
             "onboarding-homegym-searching", "onboarding-done",
             "onboarding-push-priming", "onboarding-push-denied",
