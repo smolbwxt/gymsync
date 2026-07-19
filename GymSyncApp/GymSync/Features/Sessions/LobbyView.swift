@@ -1260,44 +1260,81 @@ struct LobbyView: View {
             // just without a second confirmation prompt (see optIn default
             // below).
             //
-            // Gate — "this session's routine is public AND the session was
-            // reached via the Discover flow" — with no schema column
-            // recording provenance, the honest DERIVABLE proxy is ownership:
-            // ordinary scheduling only ever offers the organizer their OWN
-            // routines (`RoutineRepository.fetchAll(ownerID:)`,
-            // ScheduleSessionView's own `preloadedRoutine` doc comment says
-            // this explicitly — "normally comes from ... which never returns
-            // a public routine the scheduler doesn't own"). So today, a
-            // session whose `routineID` resolves to a PUBLIC routine NOT
-            // owned by its organizer can only have gotten there through the
-            // Discover preload splice. This correctly EXCLUDES a curator
-            // just re-running their OWN already-published routine via
-            // ordinary scheduling (no surprise leaderboard entry for a
-            // routine they picked for a normal workout, not through
-            // "Attempt with Friends") — a deliberate, documented limitation,
-            // not an oversight: the RPC's own Finding 2 rationale
-            // (20260723000003:11-24) already treats Attempt flows as
-            // explicitly separate from ordinary session creation.
+            // Gate — fix wave 1 (reviewer Finding 1, 2026-07-19): the original
+            // gate used ownership mismatch (`routine.ownerID != selfID`) as a
+            // proxy for "reached via Discover," reasoning that ordinary
+            // scheduling only ever offers the organizer their OWN routines.
+            // That proxy was wrong: Discover shows curators their OWN public
+            // routines too, and "Attempt with Friends" works on them from
+            // there — so a curator group-attempting their own public routine
+            // silently hit the `routine.ownerID != selfID` branch as false
+            // and skipped this hook entirely. That is exactly the entry-less
+            // bug this item exists to fix, just for a narrower set of
+            // organizers (curators of their own public work, not everyone).
             //
-            // optIn hardcoded true (no toggle to read, per above): clicking
-            // "Attempt with Friends" from a public workout's leaderboard
-            // page is itself the explicit signal the organizer wants this
-            // run counted — defaulting to `false` would silently re-create
-            // the exact "entry-less" bug this item exists to fix. Deferred:
-            // a real "Show me on the leaderboard?" toggle for the organizer
-            // (and any opt-in surface for other participants) at
-            // schedule/lobby time — designed-surface item, not invented here.
+            // Fix: gate on the honest, directly-available condition instead —
+            // this session's routine (`routineForSession`, the loaded routine
+            // model captured in `reload()`, already matched to
+            // `effectiveSession.routineID` above) has `visibility == "public"`.
+            // No ownership check. This necessarily over-matches relative to
+            // "reached via Discover" — it now also fires for a curator
+            // re-running their own already-published routine through
+            // ordinary scheduling, not just the Discover preload splice. With
+            // the optIn fix below (hardcoded `false`, not `true`), that
+            // over-match is harmless: an attempt ROW on any public-routine
+            // group session is exactly what the leaderboard system wants —
+            // Attempt flows are already treated as explicitly separate from
+            // ordinary session creation by the RPC's own design rationale
+            // (`20260723000002_attempt_plumbing.sql:34-51`, Finding 2 in that
+            // migration — the citation here previously pointed at
+            // `20260723000003:11-24`, mislabeled "Finding 2"; that's actually
+            // Finding 1 in the FIXES migration, about a different check
+            // entirely — routine/session binding — corrected) — and public
+            // visibility into the leaderboard stays off regardless, until a
+            // real per-attempt opt-in surface exists.
+            //
+            // optIn — fix wave 1 (reviewer Finding 2, 2026-07-19): hardcoded
+            // `true` was wrong. `start_attempt`'s `COALESCE(p_opt_in, false)`
+            // (`20260723000002_attempt_plumbing.sql:93`, unchanged by the
+            // `20260723000003` fix-forward) only controls the stored
+            // `is_opt_in_leaderboard` boolean — the `workout_attempts` ROW
+            // itself, and its `leaderboard_entries` row (computed
+            // unconditionally by the completion recompute trigger regardless
+            // of opt-in; opt-in only gates PUBLIC READ visibility, via the
+            // `USING (is_opt_in_leaderboard = true OR user_id = auth.uid())` /
+            // `EXISTS (... wa.is_opt_in_leaderboard = true)` SELECT RLS
+            // policies, `20260723000001_public_workout_repository.sql:
+            // 130-143`), get created either way. Forcing `true` bought
+            // nothing toward closing the entry-less bug — the row is written
+            // regardless of the flag — and cost real consent: no group-flow
+            // UI (this hook included) discloses to the organizer that
+            // starting the session will make this run visible on a public
+            // leaderboard, contradicting the spec's per-attempt opt-in
+            // framing (Flow 4's "Show me on the leaderboard?" toggle) and
+            // re-creating the exact unconsented-visibility shape item 2 of
+            // this same task just un-leaked for the seed fixture.
+            //
+            // Fix: pass `optIn: false`. Visibility deferred until a real
+            // group-flow consent toggle exists (Phase D designed-surface
+            // candidate, same status as "discover-detail" in
+            // docs/design/accepted-deviations.json) — the organizer (and any
+            // other participants) can't yet express the choice anywhere in
+            // this flow, so the conservative RPC default is the honest value.
+            // The attempt row and its leaderboard_entries row still record
+            // (per the RPC contract above); only the PUBLIC READ visibility
+            // flag stays off.
             if isOrganizer,
                let routineID = effectiveSession.routineID,
                let routine = routineForSession, routine.id == routineID,
-               routine.visibility == "public", let selfID, routine.ownerID != selfID {
+               routine.visibility == "public" {
                 do {
                     _ = try await PublicWorkoutRepository.startAttempt(
-                        routineID: routineID, sessionID: effectiveSession.id, optIn: true)
+                        routineID: routineID, sessionID: effectiveSession.id, optIn: false)
                 } catch {
-                    // Best-effort, matches WorkoutSessionView.startIfNeeded()'s
-                    // solo idiom: a failed leaderboard opt-in must never block
-                    // the session itself from starting.
+                    // Mirrors WorkoutSessionView.startIfNeeded()'s solo idiom
+                    // (minus solo's failure toast — best-effort here): a
+                    // failed leaderboard opt-in must never block the session
+                    // itself from starting.
                     AppLogger.db.error(
                         "group startAttempt failed: \(error.localizedDescription, privacy: .public)")
                 }
