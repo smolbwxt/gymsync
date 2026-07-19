@@ -126,7 +126,7 @@ struct LogSetView: View {
             // valid, meaningful value, not a stand-in for "none" — and the
             // phone's own inline log card sends exactly what it parses
             // (`Int(logReps)`, `GroupSessionLiveView.commitInlineLog`,
-            // `GroupSessionLiveView.swift:1718`) with no nil-on-zero rule of
+            // `GroupSessionLiveView.swift:~1734`) with no nil-on-zero rule of
             // its own. `reps` here can never actually be nil on this
             // surface (the `Stepper` above always holds a concrete `Int` in
             // its `0...50` range) — this is the honest "send what the UI

@@ -76,4 +76,28 @@ final class WatchDisplayFormattingTests: XCTestCase {
         // first letter is still correctly uppercased.
         XCTAssertEqual(WatchDisplayFormatting.initials(from: "🔥 tommy"), "🔥T")
     }
+
+    // MARK: - isSessionActive (T3 fix wave 2 — the ended-detection predicate)
+
+    func testEveryPreEndedStateIsActive() {
+        // The stale-entry-window law: a lobby-era struct seeding the live
+        // view must read as ACTIVE (not-ended), or the watch shows
+        // "Session ended" at session start (T3 re-review NEW-Important).
+        for state in ["scheduled", "lobby_open", "editing", "voting", "locked", "in_progress"] {
+            XCTAssertTrue(WatchDisplayFormatting.isSessionActive(state: state), state)
+        }
+    }
+
+    func testEndedStatesAreInactive() {
+        for state in ["completed", "abandoned"] {
+            XCTAssertFalse(WatchDisplayFormatting.isSessionActive(state: state), state)
+        }
+    }
+
+    func testUnknownFutureStateDefaultsToActive() {
+        // Fail-open by design: an unrecognized future state must not make
+        // every watch suddenly render "Session ended" — only the two known
+        // terminal states do.
+        XCTAssertTrue(WatchDisplayFormatting.isSessionActive(state: "some_future_state"))
+    }
 }

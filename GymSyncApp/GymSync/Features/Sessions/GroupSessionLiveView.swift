@@ -1839,7 +1839,7 @@ struct GroupSessionLiveView: View {
             // Supabase-shaped) never need to compile into the watch target.
             soundboardFavorites: dockSounds.map(\.slug),
             soundboardFavoriteLabels: dockSounds.map(\.label),
-            isActive: liveSession.state == "in_progress"
+            isActive: WatchDisplayFormatting.isSessionActive(state: liveSession.state)
         )
         WatchConnectivityBridge.shared.updateSessionState(payload)
     }
