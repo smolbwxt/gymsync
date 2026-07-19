@@ -135,6 +135,21 @@ struct RootView: View {
             guard case .signedIn = auth.state else { return }
             Task { await OfflineSetLogQueue.shared.replay() }
         }
+        // Phase O Task 4 (Sentry, master spec §6.8.5) — refresh the
+        // crash-time context snapshot on every foreground transition. A
+        // SEPARATE `.onChange(of: scenePhase)` block, same rationale as the
+        // calendar-reconcile and offline-queue-replay blocks above (each
+        // keeps an unrelated concern in its own block instead of overloading
+        // one closure). `SentryContext.refreshAppWide()` is a no-op whenever
+        // Sentry isn't started (`CrashReporting.shared.isEnabled == false`,
+        // today's DSN-absent default), so this costs nothing in the common
+        // case. See `GroupSessionLiveView`'s own scenePhase hook for the
+        // equivalent in-live-session refresh (has real session/roster data
+        // this app-wide one can't see).
+        .onChange(of: scenePhase) {
+            guard scenePhase == .active else { return }
+            SentryContext.refreshAppWide()
+        }
         // Replay trigger 4/4 — post-submit "cheap drain": NOT a RootView
         // hook. Fired inline, fire-and-forget, right after every successful
         // ONLINE set-log submit (WorkoutSessionView.swift ~726-731,

@@ -19,6 +19,15 @@ packages:
   LiveKit:
     url: https://github.com/livekit/client-sdk-swift
     from: 2.15.0
+  # Phase O Task 4 (master spec §6.8.5) — crash reporting, DSN-gated (see
+  # Config/Secrets.swift[.template] and Services/CrashReporting.swift).
+  # `from:` floor pinned to the newest sentry-cocoa release citable from
+  # training knowledge at the time this was written (8.36.0, 2024) — same
+  # "from: <minimum>" idiom as Supabase/LiveKit above, so SPM/CI resolve
+  # whatever compatible version is newest at build time, not a hard pin.
+  Sentry:
+    url: https://github.com/getsentry/sentry-cocoa
+    from: 8.36.0
 
 targets:
   GymSync:
@@ -33,6 +42,8 @@ targets:
         product: Supabase
       - package: LiveKit
         product: LiveKit
+      - package: Sentry
+        product: Sentry
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.gymsync.ios

@@ -12,6 +12,38 @@ struct GymSyncApp: App {
     init() {
         try? AudioSessionManager.shared.configure()
         GSAppearance.apply()
+        // Phase O Task 4 (master spec §6.8.5) — DSN-gated no-op when
+        // `Secrets.sentryDSN` is empty (no Sentry project created yet, see
+        // Config/Secrets.swift.template's USER ACTION note). See
+        // `CrashReporting` (Services/CrashReporting.swift) for the
+        // hermetically-provable no-op path.
+        CrashReporting.shared.start(
+            dsn: Secrets.sentryDSN,
+            environment: Self.sentryEnvironment,
+            release: Self.buildNumber
+        )
+    }
+
+    /// Sentry `environment` tag — separates noisy debug/simulator crashes
+    /// from real user (release/TestFlight/App Store) crashes in the
+    /// dashboard. Standard `#if DEBUG` idiom, matching this file's own
+    /// `#if DEBUG` catalog-mode branch below.
+    #if DEBUG
+    private static let sentryEnvironment = "debug"
+    #else
+    private static let sentryEnvironment = "release"
+    #endif
+
+    /// Sentry `release`/build tag. `CFBundleVersion` is populated from
+    /// project.yml's `CURRENT_PROJECT_VERSION` base setting ("1") for every
+    /// build EXCEPT the TestFlight archive job, which overrides it to
+    /// `${{ github.run_number }}` at archive time
+    /// (.github/workflows/ios.yml's "Archive (automatic signing via ASC API
+    /// key)" step, `CURRENT_PROJECT_VERSION=${{ github.run_number }}`) — so
+    /// a TestFlight crash's release tag maps 1:1 to the CI run that produced
+    /// the build it came from.
+    private static var buildNumber: String {
+        (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "unknown"
     }
     var body: some Scene {
         WindowGroup {

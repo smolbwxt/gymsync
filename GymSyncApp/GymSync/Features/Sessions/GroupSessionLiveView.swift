@@ -609,12 +609,20 @@ struct GroupSessionLiveView: View {
                 // one call per foreground transition, no timer. Best-effort:
                 // a failed heartbeat must never disrupt the live session UI.
                 try? await SessionRepository.touchActivity(sessionID: liveSession.id)
+                // Phase O Task 4 (Sentry, master spec §6.8.5) — piggybacks
+                // this existing foreground hook rather than adding a new
+                // one; refreshed AFTER reload() so the participant count is
+                // current. No-op when Sentry isn't started.
+                SentryContext.refreshLiveSession(rawState: liveSession.state, participantCount: participants.count)
             }
         }
         .onAppear {
             // Suppresses the push banner for this same session while it's
             // open live (AppDelegate.willPresent, AppState.activeSessionID).
             appState.activeSessionID = liveSession.id
+            // Phase O Task 4 (Sentry) — "session join" refresh; see
+            // SentryContext.refreshLiveSession's doc comment.
+            SentryContext.refreshLiveSession(rawState: liveSession.state, participantCount: participants.count)
         }
         .onDisappear {
             // Only clear the suppression flag if it's still pointing at THIS
@@ -625,6 +633,11 @@ struct GroupSessionLiveView: View {
             // whichever session is now actually live.
             if appState.activeSessionID == session.id {
                 appState.activeSessionID = nil
+                // Phase O Task 4 (Sentry) — "session leave" refresh, only
+                // when THIS view was genuinely the active one (mirrors the
+                // guard above) so a stale disappear from a covered view
+                // doesn't overwrite a still-live session's context.
+                SentryContext.refreshAppWide()
             }
             Task {
                 await liveService.unsubscribe()
