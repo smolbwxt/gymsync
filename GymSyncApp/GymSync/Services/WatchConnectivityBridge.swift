@@ -156,6 +156,27 @@ final class WatchConnectivityBridge {
         }
     }
 
+    /// Pushes `payload` via `updateApplicationContext` — Task 3 (watch-hr
+    /// design §2, "Idle state"). Same "latest wins" mechanics as
+    /// `updateSessionState` above, and the SAME best-effort swallow
+    /// (`HealthKitBridge.replaceWorkout`'s established convention, cited on
+    /// `updateSessionState`'s own doc comment). Deliberately does NOT touch
+    /// `lastPushedState` — that field only exists to resolve
+    /// `sessionID`/`groupID` for an INBOUND watch action
+    /// (`handleLogSet`/`handleSoundboardTap`), and there is no such action
+    /// tied to idle state (no live session means nothing to log or tap
+    /// sound into). Callers (`HomeView`) are expected to only call this when
+    /// no session is genuinely live — see that call site's own guard.
+    func updateIdleState(_ payload: WatchIdleStatePayload) {
+        do {
+            let envelope = try WatchEnvelope.encode(kind: .idleState, payload: payload)
+            let message = try envelope.asMessage()
+            try session.updateApplicationContext(message)
+        } catch {
+            AppLogger.watch.error("updateIdleState failed: \(error, privacy: .public)")
+        }
+    }
+
     // MARK: - Inbound message routing
 
     /// Wired to `WatchSessionProviding.onMessageReceived` in `init` above.
@@ -189,6 +210,12 @@ final class WatchConnectivityBridge {
         case .sessionState:
             // Phone→watch only; the phone should never RECEIVE this kind.
             AppLogger.watch.error("received unexpected sessionState message (phone→watch only)")
+            reply(.failure, message: "Unsupported on phone", to: replyHandler)
+        case .idleState:
+            // Task 3 addition — phone→watch only, same reasoning as
+            // .sessionState immediately above (mutually exclusive on the
+            // wire with it; see WatchIdleStatePayload's doc comment).
+            AppLogger.watch.error("received unexpected idleState message (phone→watch only)")
             reply(.failure, message: "Unsupported on phone", to: replyHandler)
         case .hrSample:
             // T5 scope (design §4) — schema defined now, handler not yet

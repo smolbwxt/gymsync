@@ -158,6 +158,39 @@ final class WatchConnectivityBridgeTests: XCTestCase {
         XCTAssertEqual(h.session.pushedContexts.count, 0, "the fake recorded nothing since the push threw")
     }
 
+    // MARK: - updateIdleState (Task 3)
+
+    func testUpdateIdleStatePushesEncodedEnvelope() throws {
+        let h = makeHarness()
+        let at = Date()
+        let payload = WatchIdleStatePayload(nextSessionName: "Leg Day", nextSessionAt: at)
+        h.bridge.updateIdleState(payload)
+
+        XCTAssertEqual(h.session.pushedContexts.count, 1)
+        let envelope = try XCTUnwrap(WatchEnvelope.from(message: h.session.pushedContexts[0]))
+        XCTAssertEqual(envelope.decodedKind(), .idleState)
+        let decoded = try envelope.decodePayload(as: WatchIdleStatePayload.self)
+        XCTAssertEqual(decoded.nextSessionName, "Leg Day")
+    }
+
+    func testUpdateIdleStateSwallowsPushFailure() {
+        let h = makeHarness()
+        h.session.updateContextError = URLError(.notConnectedToInternet)
+        h.bridge.updateIdleState(WatchIdleStatePayload(nextSessionName: nil, nextSessionAt: nil))
+        XCTAssertEqual(h.session.pushedContexts.count, 0, "the fake recorded nothing since the push threw")
+    }
+
+    func testUpdateIdleStateDoesNotTouchLastPushedState() {
+        // updateIdleState must not clobber lastPushedState — that field
+        // resolves sessionID/groupID for INBOUND watch actions, and there's
+        // no such action tied to idle state (see updateIdleState's own doc
+        // comment).
+        let h = makeHarness()
+        let sessionPayload = seedSessionState(h)
+        h.bridge.updateIdleState(WatchIdleStatePayload(nextSessionName: "Leg Day", nextSessionAt: Date()))
+        XCTAssertEqual(h.bridge.lastPushedState?.sessionID, sessionPayload.sessionID)
+    }
+
     // MARK: - logSet routing
 
     func testLogSetRoutesToSubmitterAndRepliesSuccess() async throws {
@@ -398,6 +431,23 @@ final class WatchConnectivityBridgeTests: XCTestCase {
             currentExerciseName: nil, currentLifterName: nil, isMyTurn: false, burpeesOwed: 0
         )
         let envelope = try WatchEnvelope.encode(kind: .sessionState, payload: payload)
+        let message = try envelope.asMessage()
+
+        var captured: [String: Any] = [:]
+        onMessageReceived(message, { captured = $0 })
+
+        let outcome = try reply(from: captured)
+        XCTAssertEqual(outcome.outcome, .failure)
+    }
+
+    func testDispatchRepliesFailureForIdleStateKindReceivedOnPhone() throws {
+        // idleState is phone->watch ONLY (Task 3), same reasoning as
+        // sessionState immediately above — the phone must never act on
+        // receiving one itself (see `handle`'s `.idleState` case).
+        let h = makeHarness()
+        let onMessageReceived = try XCTUnwrap(h.session.onMessageReceived)
+        let payload = WatchIdleStatePayload(nextSessionName: "Leg Day", nextSessionAt: Date())
+        let envelope = try WatchEnvelope.encode(kind: .idleState, payload: payload)
         let message = try envelope.asMessage()
 
         var captured: [String: Any] = [:]

@@ -72,6 +72,100 @@ final class WatchEnvelopeTests: XCTestCase {
         XCTAssertLessThan(abs(decodedPayload.updatedAt.timeIntervalSince(original.updatedAt)), 1.0)
     }
 
+    /// Task 3 round-trip: the 4 new `WatchSessionStatePayload` fields
+    /// (`currentExerciseID`, `burpeesPaid`, `soundboardFavorites`,
+    /// `isActive`) survive the SAME full wire path as the Task 2 test
+    /// above, non-default values throughout so a bug that silently drops
+    /// back to a default couldn't hide behind "happens to match anyway."
+    func testSessionStatePayloadRoundTripsTask3Fields() throws {
+        let exerciseID = UUID()
+        let original = WatchSessionStatePayload(
+            sessionID: UUID(), groupID: UUID(), sessionName: "Push Day",
+            currentExerciseName: "Bench Press", currentExerciseID: exerciseID,
+            currentLifterName: "tommy", isMyTurn: true, burpeesOwed: 3,
+            burpeesPaid: 7, soundboardFavorites: ["airhorn", "crowd-cheer"],
+            isActive: false
+        )
+        let envelope = try WatchEnvelope.encode(kind: .sessionState, payload: original)
+        let message = try envelope.asMessage()
+        let decoded = try XCTUnwrap(WatchEnvelope.from(message: message))
+        let decodedPayload = try decoded.decodePayload(as: WatchSessionStatePayload.self)
+
+        XCTAssertEqual(decodedPayload.currentExerciseID, exerciseID)
+        XCTAssertEqual(decodedPayload.burpeesPaid, 7)
+        XCTAssertEqual(decodedPayload.soundboardFavorites, ["airhorn", "crowd-cheer"])
+        XCTAssertFalse(decodedPayload.isActive)
+    }
+
+    /// THE proof of this task's additive-payload discipline: a payload
+    /// shaped like what a PRE-TASK-3 build would have encoded (only the 6
+    /// Task-2 fields, none of the 4 new ones) must still decode
+    /// successfully — a plain `Decodable` synthesis would have thrown here
+    /// (missing required keys), which is exactly why `WatchSessionStatePayload`
+    /// gained a custom `init(from:)` (see that type's own doc comment,
+    /// `GymSyncShared/WatchEnvelope.swift`, for the `WorkoutSession`-mirrored
+    /// "schema-lag" reasoning). Hand-builds the OLD-shaped JSON directly —
+    /// constructing via `WatchSessionStatePayload.init(...)` would always
+    /// include the new fields (they have parameter defaults), so it could
+    /// never actually exercise the missing-key decode path this test needs.
+    func testSessionStatePayloadDecodesOldShapeMissingTask3Fields() throws {
+        let sessionID = UUID()
+        let json = """
+        {
+            "sessionID": "\(sessionID.uuidString)",
+            "groupID": null,
+            "sessionName": "Push Day",
+            "currentExerciseName": "Bench Press",
+            "currentLifterName": "tommy",
+            "isMyTurn": true,
+            "burpeesOwed": 3,
+            "updatedAt": "2026-07-19T12:00:00Z"
+        }
+        """
+        let decoded = try WatchWire.decoder.decode(WatchSessionStatePayload.self, from: Data(json.utf8))
+
+        XCTAssertEqual(decoded.sessionID, sessionID)
+        XCTAssertEqual(decoded.sessionName, "Push Day")
+        XCTAssertEqual(decoded.burpeesOwed, 3)
+        // The 4 Task 3 fields — absent from the JSON above — must fall back
+        // to their documented defaults, not throw.
+        XCTAssertNil(decoded.currentExerciseID)
+        XCTAssertEqual(decoded.burpeesPaid, 0)
+        XCTAssertEqual(decoded.soundboardFavorites, [])
+        XCTAssertTrue(decoded.isActive)
+    }
+
+    /// `WatchIdleStatePayload` round trip — Task 3's other new payload type,
+    /// same wire path as every other kind (envelope -> message dict ->
+    /// back).
+    func testIdleStatePayloadRoundTrips() throws {
+        let at = Date()
+        let original = WatchIdleStatePayload(nextSessionName: "Leg Day", nextSessionAt: at)
+        let envelope = try WatchEnvelope.encode(kind: .idleState, payload: original)
+        let message = try envelope.asMessage()
+        let decoded = try XCTUnwrap(WatchEnvelope.from(message: message))
+        XCTAssertEqual(decoded.decodedKind(), .idleState)
+        let decodedPayload = try decoded.decodePayload(as: WatchIdleStatePayload.self)
+
+        XCTAssertEqual(decodedPayload.nextSessionName, "Leg Day")
+        XCTAssertNotNil(decodedPayload.nextSessionAt)
+        XCTAssertLessThan(abs(decodedPayload.nextSessionAt!.timeIntervalSince(at)), 1.0)
+    }
+
+    /// The "no upcoming session" idle shape — both fields nil, matching
+    /// `HomeView.pushWatchIdleStateIfNoLiveSession`'s own "always set
+    /// together" derivation (`upcomingSessions.first == nil`).
+    func testIdleStatePayloadRoundTripsWithNoUpcomingSession() throws {
+        let original = WatchIdleStatePayload(nextSessionName: nil, nextSessionAt: nil)
+        let envelope = try WatchEnvelope.encode(kind: .idleState, payload: original)
+        let message = try envelope.asMessage()
+        let decoded = try XCTUnwrap(WatchEnvelope.from(message: message))
+        let decodedPayload = try decoded.decodePayload(as: WatchIdleStatePayload.self)
+
+        XCTAssertNil(decodedPayload.nextSessionName)
+        XCTAssertNil(decodedPayload.nextSessionAt)
+    }
+
     /// `WatchActionReply` rides the identical single-key `WatchWire` bridge
     /// but deliberately outside the `WatchEnvelope` shell (see its doc
     /// comment) — its own round trip is tested independently.
@@ -127,7 +221,9 @@ final class WatchEnvelopeTests: XCTestCase {
     /// guards against a future rename of a `WatchMessageKind` case
     /// silently breaking recognition of its own raw value.
     func testAllDeclaredKindsAreRecognized() {
-        for kind: WatchMessageKind in [.sessionState, .logSet, .soundboardTap, .hrSample] {
+        // Task 3 extended this list with `.idleState` — every kind
+        // `WatchMessageKind` currently declares.
+        for kind: WatchMessageKind in [.sessionState, .logSet, .soundboardTap, .hrSample, .idleState] {
             let envelope = WatchEnvelope(kind: kind, payload: Data())
             XCTAssertEqual(envelope.decodedKind(), kind)
         }

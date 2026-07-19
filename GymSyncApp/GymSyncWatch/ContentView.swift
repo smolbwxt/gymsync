@@ -1,71 +1,49 @@
 import SwiftUI
 
-// Phase W Task 1 (watch-hr design §1) placeholder, extended by Phase W
-// Task 2 (design §3) to actually render `WatchSessionStore`'s state: the
-// idle "No live session" case (Task 1's original placeholder, unchanged
-// wording), a minimal live-session summary once a `sessionState` push has
-// arrived, and a stale-state indicator per the design doc's explicit
-// requirement ("Watch reachability degradations handled honestly — phone
-// app not reachable → Watch shows stale-state indicator").
+// MARK: - ContentView
 //
-// STILL a placeholder, deliberately: the real whose-turn SHELL (design §2
-// Component 2's actual visual design — exercise headline, turn-state
-// chrome, crown-adjustable steppers, etc.) is Phase D / a future Watch-UI
-// task's scope, not this one. This task's bar is "show the (placeholder)
-// state + stale indicator" (task brief, Task 2 item 3) — proving the data
-// actually reaches the watch and the staleness signal actually works, not
-// designing the final screen.
-
+// Phase W Task 3 (watch-hr design §2) — replaces Task 1/2's single-screen
+// placeholder ("No live session" / minimal live summary, both folded into
+// `WhoseTurnView` now) with the real 4-surface companion: whose-turn
+// (root), tap-to-log-set, soundboard, ledger glance.
+//
+// NAVIGATION (task brief's explicit judgment call — "TabView (vertical
+// paging) or NavigationStack, judge per watchOS 10 idiom"): `TabView` +
+// `.tabViewStyle(.verticalPage)`, watchOS 10's OWN tab-view redesign for a
+// small set of SIBLING, non-hierarchical surfaces — Apple's WWDC23 "Update
+// your app for watchOS 10" session demonstrates exactly this shape (a
+// `TabView` of peer screens, each carrying its own `.navigationTitle`,
+// `.tabViewStyle(.verticalPage)`) for a multi-glance companion app. A
+// `NavigationStack` was rejected: it reads as parent/child drill-down
+// (tap in, tap "back" out), which is the wrong mental model for 4 PEER
+// glances a lifter flips between mid-set — vertical Digital-Crown/swipe
+// paging is the faster, one-handed motion for that. "Whose-turn is the
+// root" (brief) = first page below.
+//
+// Per Apple's own guidance for `.verticalPage` (cited above): scrollable
+// content should live in the LAST tab if it must exist at all, since a
+// ScrollView inside a vertically-paging TabView competes with the page-
+// swipe gesture. None of these 4 surfaces scroll (each is deliberately kept
+// to a handful of short lines — "tiny-screen honesty"), so this doesn't
+// bite here, but it's why `WhoseTurnView`/`LogSetView`/`SoundboardView`/
+// `LedgerView` all use plain `VStack`/`Group`, never `ScrollView`.
+//
+// `LogSetView`'s own Digital Crown usage (weight adjustment) is scoped to
+// its own `.focusable` control, not a page-level gesture — see that file's
+// header doc comment for the citation and the interaction nuance flagged
+// as a device-QA item (crown-vs-page-swipe contention is a real-device
+// question this session can't verify without a Watch/simulator).
 struct ContentView: View {
-    @Environment(\.gsWatchTheme) private var theme
     @State private var store = WatchSessionStore.shared
 
     var body: some View {
-        VStack(spacing: 8) {
-            Text("GymSync")
-                .font(.headline)
-                .foregroundStyle(theme.text)
-
-            if let state = store.sessionState {
-                VStack(spacing: 4) {
-                    Text(state.currentExerciseName ?? state.sessionName)
-                        .font(.subheadline.bold())
-                        .foregroundStyle(theme.text)
-                        .lineLimit(2)
-                    if let lifter = state.currentLifterName {
-                        Text(state.isMyTurn ? "Your turn" : "\(lifter)'s turn")
-                            .font(.caption2)
-                            .foregroundStyle(theme.accent)
-                    }
-                    if store.isStale {
-                        // "wifi.slash" (long-established SF Symbol, present
-                        // since SF Symbols 1.0) rather than a guessed
-                        // "iphone.slash"-style name this session can't
-                        // verify against a live SF Symbols catalog —
-                        // conveys "no connection to the phone" without
-                        // risking an unrecognized symbol name.
-                        Label("Phone unreachable", systemImage: "wifi.slash")
-                            .font(.caption2)
-                            .foregroundStyle(theme.text.opacity(0.6))
-                    }
-                }
-            } else {
-                Text("No live session")
-                    .font(.caption)
-                    .foregroundStyle(theme.text.opacity(0.6))
-            }
+        TabView {
+            WhoseTurnView(store: store)
+            LogSetView(store: store)
+            SoundboardView(store: store)
+            LedgerView(store: store)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(theme.bg)
-        .onAppear {
-            // Age-based staleness (WatchSessionStore.refreshStaleness's doc
-            // comment) can't self-trigger on the clock alone — re-check
-            // whenever this screen becomes visible, same "recompute
-            // on-appear" idiom the iOS side uses throughout
-            // (`GroupSessionLiveView`'s own `.onAppear`/`.onChange(of: scenePhase)`
-            // hooks).
-            store.refreshStaleness()
-        }
+        .tabViewStyle(.verticalPage)
     }
 }
 

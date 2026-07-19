@@ -1741,20 +1741,43 @@ struct GroupSessionLiveView: View {
     /// render, not a second computation. See `WatchConnectivityBridge`'s
     /// header doc comment for why the bridge itself accepts this
     /// already-built payload instead of re-deriving it. Called from
-    /// `.onAppear` (initial snapshot) and `.onChange(of: liveSession.currentTurnUserID)`
+    /// `.onAppear` (initial snapshot), `.onChange(of: liveSession.currentTurnUserID)`
     /// (turn passes — the state most likely to matter to someone glancing
-    /// at their Watch). Best-effort: `WatchConnectivityBridge.updateSessionState`
-    /// itself never throws into this call site.
-    private func pushWatchSessionState() {
+    /// at their Watch), `openAndSubscribe()` twice (once right after
+    /// `reload()`, once more — Task 3 addition — after `soundFavorites`
+    /// finishes loading, since that fetch runs LATER in the same function
+    /// and this payload's `soundboardFavorites` field would otherwise stay
+    /// empty until the next turn change), and `endSession()` (Task 3 — see
+    /// `isActive` param doc below). Best-effort: `WatchConnectivityBridge.
+    /// updateSessionState` itself never throws into this call site.
+    ///
+    /// `isActive` (Task 3 addition, CARRIED-IN REQUIREMENT from T2's
+    /// review): defaults `true` — every pre-existing call site is
+    /// unchanged. `endSession()` is the ONE call site that passes `false`,
+    /// right after `SessionRepository.complete(sessionID:)` succeeds. This
+    /// is the deliberately-chosen "honest hook" — `.onDisappear` was the
+    /// OTHER candidate (T2's reviewer named both) and was rejected: it
+    /// fires whenever this view stops being visible for ANY reason,
+    /// including navigating back to `LobbyView` while the session stays
+    /// genuinely LIVE for every other participant (`voicePersistsOnPop`'s
+    /// own doc comment above describes exactly this route) — pushing
+    /// `isActive: false` there would tell a Watch the session ended when it
+    /// hasn't. `endSession()`'s success path is the one moment the session
+    /// has UNAMBIGUOUSLY ended for everyone, server-side.
+    private func pushWatchSessionState(isActive: Bool = true) {
         let currentLifter = rotationOrder.first(where: { $0.participant.userID == liveSession.currentTurnUserID })?.profile
         let payload = WatchSessionStatePayload(
             sessionID: liveSession.id,
             groupID: liveSession.groupID,
             sessionName: routineName ?? "Session",
             currentExerciseName: currentExerciseForSheet?.name,
+            currentExerciseID: currentExerciseForSheet?.id,
             currentLifterName: currentLifter?.username,
             isMyTurn: isMyTurn,
-            burpeesOwed: burpeesRemaining
+            burpeesOwed: burpeesRemaining,
+            burpeesPaid: penaltyLogged,
+            soundboardFavorites: soundFavorites,
+            isActive: isActive
         )
         WatchConnectivityBridge.shared.updateSessionState(payload)
     }
@@ -1828,6 +1851,12 @@ struct GroupSessionLiveView: View {
         // to the curated-first-4 fallback in `dockSounds` — never blocks the session.
         soundCatalog = (try? await SoundboardRepository.fetchCatalog()) ?? []
         soundFavorites = (try? await SoundboardFavoritesRepository.get()) ?? []
+        // Phase W Task 3 — `soundFavorites` finishes loading AFTER the
+        // `pushWatchSessionState()` call above (which itself already re-runs
+        // post-`reload()`), so a Watch that's already reachable would
+        // otherwise never see the soundboard favorites until the next turn
+        // change. Re-push once more now that they're actually in.
+        pushWatchSessionState()
         await subscribeBroadcast()
         if isMyTurn { prefillLogInputs() }
         // Initial heartbeat — the scenePhase→active heartbeat above only
@@ -2204,6 +2233,16 @@ struct GroupSessionLiveView: View {
         errorText = nil
         do {
             let completed = try await SessionRepository.complete(sessionID: session.id)
+            // Phase W Task 3 — CARRIED-IN REQUIREMENT from T2's review: push
+            // the "session ended" state to the Watch immediately, right here
+            // at the one moment the session has unambiguously ended
+            // server-side (see `pushWatchSessionState`'s `isActive` doc
+            // comment for why THIS call site, not `.onDisappear`). Fired
+            // before the HealthKit export / recap-payload work below since
+            // none of that affects what the Watch needs to know, and this
+            // view stays mounted (presenting the recap sheet) for a while
+            // after this point — no reason to delay it.
+            pushWatchSessionState(isActive: false)
             let allSets = try await SessionRepository.sessionSets(sessionID: session.id)
             try? await HealthKitBridge.requestPermission()
             try? await HealthKitBridge.exportWorkout(session: completed, setLogs: allSets)

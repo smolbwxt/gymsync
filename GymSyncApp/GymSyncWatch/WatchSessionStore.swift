@@ -43,6 +43,15 @@ final class WatchSessionStore: NSObject {
     /// see this file's `ContentView.swift` wiring).
     private(set) var sessionState: WatchSessionStatePayload?
 
+    /// Task 3 addition (watch-hr design §2, "Idle state") — the latest
+    /// `idleState` push, or `nil`. Mutually exclusive with `sessionState`
+    /// (both cleared/set as a pair in `didReceiveApplicationContext` below)
+    /// since `updateApplicationContext` replaces the phone's ENTIRE pushed
+    /// context on every call — see `WatchIdleStatePayload`'s own doc
+    /// comment (`GymSyncShared/WatchEnvelope.swift`) for why only one of
+    /// the two can ever be "current" at a time.
+    private(set) var idleState: WatchIdleStatePayload?
+
     /// `true` once `WCSession.default.isReachable` has been observed
     /// `false`, OR the last-received `sessionState` is older than
     /// `staleThreshold` — design §3's "Watch reachability degradations
@@ -125,24 +134,106 @@ extension WatchSessionStore: WCSessionDelegate {
         }
     }
 
-    /// `updateApplicationContext` delivery — the phone's `sessionState`
-    /// push (`WatchConnectivityBridge.updateSessionState`, "latest wins").
+    /// `updateApplicationContext` delivery — the phone's `sessionState` OR
+    /// `idleState` push (`WatchConnectivityBridge.updateSessionState`/
+    /// `.updateIdleState`, both "latest wins" — Task 3 extended this method
+    /// to route `idleState` too, previously `sessionState`-only).
     /// Unknown-kind/unsupported-version messages are dropped silently here
     /// (mirrored logging would need this file's own AppLogger-equivalent —
     /// out of scope to build for a single log line; the phone-side
     /// `WatchConnectivityBridge` is the side with hermetic test coverage
     /// proving this tolerance, see `WatchEnvelopeTests`/
     /// `WatchConnectivityBridgeTests` in `GymSyncTests`).
+    ///
+    /// Each recognized kind clears the OTHER stored payload — since only
+    /// one context is ever active on the wire at a time (see
+    /// `WatchIdleStatePayload`'s doc comment), the property this build
+    /// ISN'T currently receiving must not keep showing a stale value from
+    /// whatever it held before.
     nonisolated func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
-        guard let envelope = WatchEnvelope.from(message: applicationContext),
-              envelope.isSupportedVersion,
-              envelope.decodedKind() == .sessionState,
-              let payload = try? envelope.decodePayload(as: WatchSessionStatePayload.self)
-        else { return }
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            self.sessionState = payload
-            self.refreshStaleness()
+        guard let envelope = WatchEnvelope.from(message: applicationContext), envelope.isSupportedVersion else { return }
+        switch envelope.decodedKind() {
+        case .sessionState:
+            guard let payload = try? envelope.decodePayload(as: WatchSessionStatePayload.self) else { return }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.sessionState = payload
+                self.idleState = nil
+                self.refreshStaleness()
+            }
+        case .idleState:
+            guard let payload = try? envelope.decodePayload(as: WatchIdleStatePayload.self) else { return }
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.idleState = payload
+                self.sessionState = nil
+                self.refreshStaleness()
+            }
+        case .logSet, .soundboardTap, .hrSample, nil:
+            // Not applicable via applicationContext (the first two are
+            // watch→phone sendMessage actions; hrSample is T5, also
+            // sendMessage-based) / unrecognized kind — silent drop, same
+            // tolerance as this method's pre-Task-3 behavior.
+            return
+        }
+    }
+}
+
+// MARK: - Outbound actions (Phase W Task 3, watch-hr design §2)
+//
+// `logSet`/`tapSoundboard` — the Watch's half of `WatchConnectivityBridge.
+// handleLogSet`/`.handleSoundboardTap` (`GymSync/Services/
+// WatchConnectivityBridge.swift`). NO protocol seam here, same reasoning as
+// this file's top-of-file doc comment (no watch-side test target exists) —
+// talks to `WCSession.default` directly, same as every other member of this
+// class.
+extension WatchSessionStore {
+
+    /// Sends a `logSet` action, awaiting the phone's reply. Reply semantics
+    /// are respected honestly, not collapsed: `.success` means the set is
+    /// saved server-side; `.queued` means the PHONE is offline and enqueued
+    /// it into `OfflineSetLogQueue` (safe on the phone, not yet synced —
+    /// NOT the same guarantee as `.success`); `.failure` means neither
+    /// happened. `LogSetView` renders these as three distinct states.
+    func logSet(exerciseID: UUID, reps: Int?, weight: Decimal?, rpe: Decimal?, isFailed: Bool, note: String?) async -> WatchActionReply {
+        let payload = WatchLogSetPayload(exerciseID: exerciseID, reps: reps, weight: weight, rpe: rpe, isFailed: isFailed, note: note)
+        return await sendAction(kind: .logSet, payload: payload)
+    }
+
+    /// Sends a `soundboardTap` action. Per `handleSoundboardTap`'s own doc
+    /// comment this always replies `.success` once routed (both the local-
+    /// play and broadcast-send legs are already best-effort at their own
+    /// layer) — `.queued` is not a real outcome here, but `SoundboardView`
+    /// still switches on the full `WatchActionReply.Outcome` rather than
+    /// assuming, since the reply shape is shared with `logSet`.
+    func tapSoundboard(slug: String) async -> WatchActionReply {
+        let payload = WatchSoundboardTapPayload(slug: slug)
+        return await sendAction(kind: .soundboardTap, payload: payload)
+    }
+
+    /// Shared `sendMessage` + reply-decode plumbing for both actions above.
+    /// `WCSession.sendMessage`'s `errorHandler` fires for exactly the
+    /// failure modes `WatchActionReply.Outcome.failure` already exists to
+    /// describe (unreachable phone, timeout, delivery error) — mapped here
+    /// rather than left to hang or crash the caller. Apple's documented
+    /// contract guarantees exactly ONE of replyHandler/errorHandler fires
+    /// per call, so the continuation below resumes exactly once.
+    private func sendAction<T: Encodable>(kind: WatchMessageKind, payload: T) async -> WatchActionReply {
+        guard let envelope = try? WatchEnvelope.encode(kind: kind, payload: payload),
+              let message = try? envelope.asMessage() else {
+            return WatchActionReply(outcome: .failure, message: "Couldn't build request")
+        }
+        guard WCSession.default.activationState == .activated else {
+            return WatchActionReply(outcome: .failure, message: "Not connected to phone")
+        }
+        return await withCheckedContinuation { continuation in
+            WCSession.default.sendMessage(message, replyHandler: { replyDict in
+                let reply = WatchActionReply.from(message: replyDict)
+                    ?? WatchActionReply(outcome: .failure, message: "Malformed reply")
+                continuation.resume(returning: reply)
+            }, errorHandler: { error in
+                continuation.resume(returning: WatchActionReply(outcome: .failure, message: error.localizedDescription))
+            })
         }
     }
 }

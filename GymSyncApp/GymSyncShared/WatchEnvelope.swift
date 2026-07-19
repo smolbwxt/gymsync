@@ -46,6 +46,14 @@ enum WatchMessageKind: String, Codable, Sendable, Equatable {
     case logSet
     case soundboardTap
     case hrSample
+    /// Task 3 addition (watch-hr design §2, "Idle state"). phone→watch,
+    /// `updateApplicationContext` — mutually exclusive with `sessionState`
+    /// on the wire since `updateApplicationContext` replaces the ENTIRE
+    /// current context on each call (Apple's documented "latest wins": one
+    /// active context total, not one per kind). See `WatchIdleStatePayload`'s
+    /// doc comment and `WatchSessionStore`'s `didReceiveApplicationContext`
+    /// for how the watch keeps the two states from colliding.
+    case idleState
 }
 
 /// Versioned envelope shell. `v` versions the SHELL itself (this struct's
@@ -198,12 +206,51 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
     /// `nil` before routine/exercise data has finished loading, or for a
     /// session with no resolvable current exercise.
     let currentExerciseName: String?
+    /// Task 3 addition (watch-hr design §2, Component "Tap-to-log-set") —
+    /// the SAME `Exercise`'s id whose `.name` fills `currentExerciseName`
+    /// above (`GroupSessionLiveView.currentExerciseForSheet`,
+    /// `GroupSessionLiveView.swift:1675`) — needed to fill
+    /// `WatchLogSetPayload.exerciseID` when the watch submits a set. `nil`
+    /// under the identical conditions `currentExerciseName` is nil.
+    let currentExerciseID: UUID?
     /// Display name (username) of whoever currently holds the turn — `nil`
     /// once nobody has an active turn (e.g. session ending/no participants
     /// yet resolved).
     let currentLifterName: String?
     let isMyTurn: Bool
+    /// NOTE (pre-existing, Task 2): despite the name, this carries
+    /// `GroupSessionLiveView.burpeesRemaining` (owed minus already-paid-
+    /// this-session), not the raw `myParticipant.burpeesOwed` total — see
+    /// `pushWatchSessionState()`'s call site. Kept byte-identical here; an
+    /// additive Task 3 extension is not the place to rename a shipped
+    /// field. `burpeesPaid` below is the field that's actually new.
     let burpeesOwed: Int
+    /// Task 3 addition (watch-hr design §2, "Ledger glance") — burpee reps
+    /// already logged as a penalty THIS SESSION by the current user,
+    /// mirrors `GroupSessionLiveView.penaltyLogged`
+    /// (`GroupSessionLiveView.swift:130`) — the same counter `burpeesOwed`
+    /// above is already net of (see that field's note). Together the two
+    /// give the ledger glance its "owed / paid" pair without re-deriving
+    /// anything phone-side.
+    let burpeesPaid: Int
+    /// Task 3 addition (watch-hr design §2, "Soundboard buttons") — up to 4
+    /// favorite slugs, straight from `GroupSessionLiveView.soundFavorites`
+    /// (`GroupSessionLiveView.swift:69`), itself sourced from
+    /// `SoundboardFavoritesRepository.get()` (`Models/Soundboard.swift:60`)
+    /// — the SAME favorites list the phone's own soundboard dock ribbon
+    /// renders (`dockSounds`, `GroupSessionLiveView.swift:164-168`). Empty
+    /// until favorites finish loading or none are chosen.
+    let soundboardFavorites: [String]
+    /// Task 3 addition — the CARRIED-IN REQUIREMENT from T2's review: "no
+    /// session-ended signal exists; a Watch shows stale 'live' state for up
+    /// to 90s after a session ends while the phone stays reachable."
+    /// `false` exactly once, pushed from `GroupSessionLiveView.endSession()`
+    /// right after `SessionRepository.complete(sessionID:)` succeeds — see
+    /// that function's own comment for why THAT moment (not `.onDisappear`)
+    /// is the honest hook. Defaults `true` so every pre-Task-3 call site
+    /// (unchanged, never passes this argument) keeps describing a live
+    /// session exactly as it always did.
+    let isActive: Bool
     let updatedAt: Date
 
     init(
@@ -211,18 +258,90 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
         groupID: UUID?,
         sessionName: String,
         currentExerciseName: String?,
+        currentExerciseID: UUID? = nil,
         currentLifterName: String?,
         isMyTurn: Bool,
         burpeesOwed: Int,
+        burpeesPaid: Int = 0,
+        soundboardFavorites: [String] = [],
+        isActive: Bool = true,
         updatedAt: Date = Date()
     ) {
         self.sessionID = sessionID
         self.groupID = groupID
         self.sessionName = sessionName
         self.currentExerciseName = currentExerciseName
+        self.currentExerciseID = currentExerciseID
         self.currentLifterName = currentLifterName
         self.isMyTurn = isMyTurn
         self.burpeesOwed = burpeesOwed
+        self.burpeesPaid = burpeesPaid
+        self.soundboardFavorites = soundboardFavorites
+        self.isActive = isActive
+        self.updatedAt = updatedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case sessionID, groupID, sessionName, currentExerciseName, currentExerciseID
+        case currentLifterName, isMyTurn, burpeesOwed, burpeesPaid, soundboardFavorites
+        case isActive, updatedAt
+    }
+
+    /// Custom decode (Task 3) — same "schema-lag" shape as `WorkoutSession.
+    /// init(from:)` (`Models/Session.swift:44-60`; that struct's own
+    /// comment: "older rows always carry it... custom init guards against
+    /// any schema-lag"). Here the lag isn't a DB migration, it's a
+    /// Watch/phone version skew: `updateApplicationContext` is "latest
+    /// wins" with no queueing (this file's own header doc comment), so a
+    /// just-relaunched watch could be handed a stored context encoded by an
+    /// OLDER build that predates this task's 4 new fields.
+    /// `decodeIfPresent(...) ?? default` on exactly those 4 lets that
+    /// decode succeed instead of throwing and losing the WHOLE payload —
+    /// proven by `WatchEnvelopeTests.
+    /// testSessionStatePayloadDecodesOldShapeMissingTask3Fields`. The 6
+    /// pre-existing fields stay plain `decode` (required) — unchanged from
+    /// Task 2, no reason to weaken them. `encode(to:)` stays
+    /// COMPILER-SYNTHESIZED (not written here) — only decode needs the
+    /// leniency, matching `WorkoutSession`'s identical split.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        sessionID = try c.decode(UUID.self, forKey: .sessionID)
+        groupID = try c.decodeIfPresent(UUID.self, forKey: .groupID)
+        sessionName = try c.decode(String.self, forKey: .sessionName)
+        currentExerciseName = try c.decodeIfPresent(String.self, forKey: .currentExerciseName)
+        currentExerciseID = try? c.decodeIfPresent(UUID.self, forKey: .currentExerciseID)
+        currentLifterName = try c.decodeIfPresent(String.self, forKey: .currentLifterName)
+        isMyTurn = try c.decode(Bool.self, forKey: .isMyTurn)
+        burpeesOwed = try c.decode(Int.self, forKey: .burpeesOwed)
+        burpeesPaid = (try? c.decodeIfPresent(Int.self, forKey: .burpeesPaid)) ?? 0
+        soundboardFavorites = (try? c.decodeIfPresent([String].self, forKey: .soundboardFavorites)) ?? []
+        isActive = (try? c.decodeIfPresent(Bool.self, forKey: .isActive)) ?? true
+        updatedAt = try c.decode(Date.self, forKey: .updatedAt)
+    }
+}
+
+/// phone→watch (Task 3, watch-hr design §2 "Idle state") — pushed via
+/// `updateApplicationContext` the SAME way `WatchSessionStatePayload` is,
+/// but only when NO live session exists to describe (see
+/// `WatchConnectivityBridge.updateIdleState` / `HomeView`'s push site for
+/// the honest, minimal trigger chosen — app foreground on the Home screen,
+/// piggybacking that screen's own existing `upcoming()` fetch rather than
+/// building a scheduling-sync subsystem). Mutually exclusive with
+/// `WatchSessionStatePayload` on the wire — see `WatchMessageKind.idleState`'s
+/// doc comment for why — and `WatchSessionStore` clears whichever one it
+/// ISN'T currently holding on each new arrival.
+struct WatchIdleStatePayload: Codable, Sendable, Equatable {
+    /// `nil` when there's no upcoming session at all — the watch renders
+    /// "No session" in that case. Always set together with `nextSessionAt`
+    /// from the same `WorkoutSession` row (`HomeView`'s push site), so the
+    /// two are never meaningfully out of sync with each other.
+    let nextSessionName: String?
+    let nextSessionAt: Date?
+    let updatedAt: Date
+
+    init(nextSessionName: String?, nextSessionAt: Date?, updatedAt: Date = Date()) {
+        self.nextSessionName = nextSessionName
+        self.nextSessionAt = nextSessionAt
         self.updatedAt = updatedAt
     }
 }

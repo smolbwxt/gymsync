@@ -444,6 +444,19 @@ struct HomeView: View {
 
         if let sessions = try? await sessionsFetch { upcomingSessions = sessions }
         if let fetchedGroups = try? await groupsFetch { groups = fetchedGroups }
+        // Phase W Task 3 (watch-hr design §2, "Idle state") — see
+        // `pushWatchIdleStateIfNoLiveSession()`'s own doc comment for the
+        // "cheap trigger" reasoning. Placed after BOTH fetches above
+        // (not right after `upcomingSessions`) since the idle payload's
+        // session-name derivation needs `groups` too. Gated on `userID !=
+        // nil` — same guard `loadTodaysRoutine()` uses below for the
+        // identical reason: a signed-out pass through this function must
+        // never push a signed-in user's stale `upcomingSessions`/`groups`
+        // state to a paired Watch (the shared-device leak class
+        // `OfflineSetLogQueue`'s own user-scoping fix already exists to
+        // prevent elsewhere in this codebase — same discipline, applied
+        // here at the source instead of after the fact).
+        if userID != nil { pushWatchIdleStateIfNoLiveSession() }
         let history = await historyFetch
         if let history { historySessions = history }
         if let routines = await routinesFetch { ownedRoutines = routines }
@@ -473,6 +486,49 @@ struct HomeView: View {
         if userID != nil {
             await loadTodaysRoutine()
         }
+    }
+
+    // MARK: - Watch idle state (Phase W Task 3, watch-hr design §2)
+
+    /// The "cheap trigger" chosen for the Watch's idle surface (design §2:
+    /// "next scheduled session or 'no session' — needs a small additive
+    /// idle payload pushed on a cheap trigger (app foreground / schedule
+    /// change... do NOT build a scheduling-sync subsystem)"). Piggybacks
+    /// `refresh()`'s ALREADY-FETCHED `upcomingSessions`/`groups` — no new
+    /// network call, no new subsystem — and `refresh()` itself already
+    /// fires on app foreground (`.onChange(of: scenePhase == .active)`),
+    /// pull-to-refresh, and initial `.task`, so this rides all three for
+    /// free.
+    ///
+    /// Guarded on `appState.activeSessionID == nil`
+    /// (`App/AppState.swift:51`) — the SAME flag `GroupSessionLiveView`
+    /// sets on `.onAppear` and clears on `.onDisappear` for an actually-live
+    /// session. This guard is LOAD-BEARING, not decorative:
+    /// `WCSession.updateApplicationContext` replaces the Watch's ENTIRE
+    /// current context on every call (`WatchIdleStatePayload`'s own doc
+    /// comment) — without this guard, a `HomeView` refresh racing behind an
+    /// open `GroupSessionLiveView` (e.g. a background tab reload) could
+    /// stomp the Watch's real, live `sessionState` context with stale idle
+    /// info.
+    ///
+    /// Session-name derivation mirrors `upcomingCard`'s own kicker text
+    /// exactly (`HomeView.swift:334-346`: group name if resolvable, else
+    /// "Session") — NOT `routineLabel(for:)` (`HomeView.swift:543-548`),
+    /// which is a pre-existing, undifferentiated "Workout" placeholder for
+    /// every session regardless of which one it is; the kicker is the one
+    /// piece of this card that actually varies per session today.
+    private func pushWatchIdleStateIfNoLiveSession() {
+        guard appState.activeSessionID == nil else { return }
+        WatchConnectivityBridge.shared.activateIfNeeded()
+        let next = upcomingSessions.first
+        let nextName: String? = next.map { session in
+            if let groupID = session.groupID, let group = groups.first(where: { $0.id == groupID }) {
+                return group.name
+            }
+            return "Session"
+        }
+        let payload = WatchIdleStatePayload(nextSessionName: nextName, nextSessionAt: next?.scheduledFor)
+        WatchConnectivityBridge.shared.updateIdleState(payload)
     }
 
     // MARK: - Task 5 fetch helpers (userID-gated, best-effort)
