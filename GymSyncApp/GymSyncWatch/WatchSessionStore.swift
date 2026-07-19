@@ -160,6 +160,7 @@ extension WatchSessionStore: WCSessionDelegate {
                 self.sessionState = payload
                 self.idleState = nil
                 self.refreshStaleness()
+                self.syncHeartRateSampler()
             }
         case .idleState:
             guard let payload = try? envelope.decodePayload(as: WatchIdleStatePayload.self) else { return }
@@ -168,14 +169,41 @@ extension WatchSessionStore: WCSessionDelegate {
                 self.idleState = payload
                 self.sessionState = nil
                 self.refreshStaleness()
+                // No live session described by an idleState push — the
+                // sampler has nothing to sample for. Same reasoning as
+                // `syncHeartRateSampler()`'s own "no sessionState" guard,
+                // spelled out directly here since there's no
+                // `sessionState` to read `isActive`/`shareHeartRate` off of.
+                HeartRateSampler.shared.stop()
             }
         case .logSet, .soundboardTap, .hrSample, nil:
             // Not applicable via applicationContext (the first two are
-            // watch→phone sendMessage actions; hrSample is T5, also
-            // sendMessage-based) / unrecognized kind — silent drop, same
-            // tolerance as this method's pre-Task-3 behavior.
+            // watch→phone sendMessage actions; hrSample is watch→phone
+            // sendMessage too, Phase W Task 5) / unrecognized kind — silent
+            // drop, same tolerance as this method's pre-Task-3 behavior.
             return
         }
+    }
+}
+
+// MARK: - Heart rate sampler lifecycle (Phase W Task 5, watch-hr design §4)
+
+extension WatchSessionStore {
+    /// Starts/stops `HeartRateSampler.shared` from the CURRENT `sessionState`
+    /// — called on every `sessionState` push (`didReceiveApplicationContext`
+    /// above), so a mid-session `shareHeartRate` toggle flip or a session
+    /// ending both reach the sampler on the very next push, no separate
+    /// polling needed. Single combined guard, per task-5-brief.md item 4:
+    /// "the Watch's sampler stops when isActive false arrives OR
+    /// shareHeartRate flips false" — both conditions collapse into one
+    /// "should be running right now" predicate rather than two separate
+    /// start/stop call sites that could drift out of sync with each other.
+    func syncHeartRateSampler() {
+        guard let sessionState, sessionState.isActive, sessionState.shareHeartRate else {
+            HeartRateSampler.shared.stop()
+            return
+        }
+        HeartRateSampler.shared.start()
     }
 }
 

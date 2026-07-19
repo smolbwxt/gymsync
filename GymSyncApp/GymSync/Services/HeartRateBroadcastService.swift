@@ -1,10 +1,12 @@
 import Foundation
+import Supabase
 
 // ── HeartRateBroadcastService ───────────────────────────────────────────────
 //
 // Phase W Task 4 (watch-hr design §4, "Heart-rate broadcast" —
-// `docs/superpowers/specs/2026-07-19-watch-hr-design.md:20-24`). Phone-side
-// broadcaster for the `session:{id}:hr` Realtime channel.
+// `docs/superpowers/specs/2026-07-19-watch-hr-design.md:20-24`), wired for
+// real by Task 5. Phone-side broadcaster for the `session:{id}:hr` Realtime
+// channel.
 //
 // Wire shape (quoted verbatim, master spec §5 —
 // `docs/superpowers/specs/2026-06-28-gymsync-design.md:1033-1047`):
@@ -17,20 +19,24 @@ import Foundation
 //   }
 //   "Sample rate: one broadcast per 5 seconds per user."
 //
-// STUB SCOPE (task-4-brief.md item 4): the channel-name builder, payload
-// struct, and throttle below are REAL and hermetically tested — everything
-// a caller needs to reason about this channel's shape without touching the
-// network. Actual Realtime subscribe/publish wiring is DELIBERATELY
-// deferred to T5: that task also builds the Watch-side `HKAnchoredObjectQuery`
-// sampler (design §4 "Watch side") this service would be fed by, and wiring
-// a `publish` path with no real producer upstream — or a `subscribe` path
-// with no roster UI to render into yet — would be untested, unreachable
-// code today. `subscribe`/`publish`/`unsubscribe` below are sketched with
-// the SAME call shape `SessionBroadcastService.subscribe`/`sendSound`
-// already establishes for the sibling `session:{id}` broadcast channel
-// (`Services/SessionBroadcastService.swift:53-107,128-145`), so T5 can fill
-// in the `channel(...).broadcastStream`/`.broadcast` bodies without
-// redesigning this service's call surface.
+// TASK 4 STUB / TASK 5 WIRING: the channel-name builder, payload struct, and
+// throttle were built in T4 and are hermetically tested — everything a
+// caller needs to reason about this channel's shape without touching the
+// network. T5 fills in the actual Realtime subscribe/publish bodies below,
+// fed by the Watch-side `HKAnchoredObjectQuery` sampler
+// (`GymSyncWatch/HeartRateSampler.swift`) via `WatchConnectivityBridge
+// .handleHRSample` (the real producer) and rendered by `GroupSessionLiveView`
+// (the real roster-pill consumer — `GSHeartRatePill`,
+// `DesignSystem/GSComponents.swift`). `subscribe`/`publish`/`unsubscribe`
+// below follow the EXACT SAME call shape `SessionBroadcastService.subscribe`/
+// `sendSound`/`broadcastRaw` already establishes for the sibling
+// `session:{id}` broadcast channel (`Services/SessionBroadcastService.swift:
+// 53-107,128-145,179-211`) — same disposable-channel-fallback send path, same
+// `channel.broadcastStream(event:)` receive path, same best-effort
+// (never-throws-into-the-caller) error handling. `HeartRateThrottle` itself
+// moved to `GymSyncShared/HeartRateThrottle.swift` this task (T5) so the
+// Watch-side sampler can reuse the identical pure decision core — see that
+// file's own header comment.
 //
 // EPHEMERAL LAW (design §4, master spec §6.5): heart rate is biometric
 // data that is NEVER persisted anywhere in this app — no DB table, no logs
@@ -38,15 +44,17 @@ import Foundation
 // broadcast wire ONLY — see that struct's own doc comment for why it must
 // never be given a route into a Postgrest `.insert()`/`.upsert()` call.
 //
-// ISOLATION NOTE: `HeartRatePayload` and `HeartRateThrottle` are declared
-// at FILE SCOPE, not nested inside the `@MainActor` class below, even
-// though only this service uses them today. Global-actor isolation
-// (`@MainActor` on `HeartRateBroadcastService`) applies to that type's OWN
-// members (methods/properties/initializers); it does NOT recursively apply
-// to a type nested inside it — but keeping them file-scope removes any
-// ambiguity about that rule entirely, rather than relying on it, so both
-// types stay freely constructible/testable from a plain, non-actor test
-// context with no `nonisolated`/actor-hop bookkeeping needed anywhere.
+// ISOLATION NOTE: `HeartRatePayload` is declared at FILE SCOPE, not nested
+// inside the `@MainActor` class below, even though only this service uses
+// it today. Global-actor isolation (`@MainActor` on `HeartRateBroadcastService`)
+// applies to that type's OWN members (methods/properties/initializers); it
+// does NOT recursively apply to a type nested inside it — but keeping it
+// file-scope removes any ambiguity about that rule entirely, rather than
+// relying on it, so it stays freely constructible/testable from a plain,
+// non-actor test context with no `nonisolated`/actor-hop bookkeeping needed
+// anywhere. (`HeartRateThrottle` used to live here too, same reasoning —
+// it's now in `GymSyncShared/HeartRateThrottle.swift`, also file-scope,
+// same isolation-avoidance rationale.)
 
 /// Wire shape for the `heart_rate` broadcast event — field names match the
 /// spec's payload EXACTLY: `{user_id, bpm, zone, ts}`
@@ -95,45 +103,35 @@ struct HeartRatePayload: Encodable, Sendable, Equatable {
     }
 }
 
-/// 1 broadcast per 5s PER USER (spec: "Sample rate: one broadcast per 5
-/// seconds per user"). Same SHAPE as `SessionBroadcastService.rateAllowed()`
-/// (`Services/SessionBroadcastService.swift:170-175` — a single `lastSentAt`
-/// gate, "≥ interval since last send" check, "drop, don't queue" semantics)
-/// but keyed PER `user_id` rather than one shared timestamp, matching the
-/// spec's literal "per user" phrasing. A single phone only ever broadcasts
-/// its OWN signed-in user's samples in v1 (one paired Watch, one phone, one
-/// user) — the per-user keying is headroom for correctness, not a v1
-/// requirement, and costs nothing.
-///
-/// `allowed(lastSentAt:now:minInterval:)` is the pure decision core behind
-/// `rateAllowed(userID:now:)`'s stateful wrapper — the same "pure function
-/// behind a stateful convenience" shape `ThemeStore.mergeExternalSettingsWrite`
-/// uses for its own merge rule (`DesignSystem/ThemeStore.swift`) — so every
-/// edge case (no prior send, exactly at the boundary, just under, just
-/// over) is trivial to unit test without constructing anything stateful.
-struct HeartRateThrottle {
-    private var lastSentAt: [UUID: Date] = [:]
-    let minInterval: TimeInterval
-
-    init(minInterval: TimeInterval = 5.0) {
-        self.minInterval = minInterval
-    }
-
-    /// Pure decision core — no mutation.
-    static func allowed(lastSentAt: Date?, now: Date, minInterval: TimeInterval) -> Bool {
-        guard let lastSentAt else { return true }
-        return now.timeIntervalSince(lastSentAt) >= minInterval
-    }
-
-    /// Stateful convenience: checks + records atomically, mirroring
-    /// `SessionBroadcastService.rateAllowed()`'s own check-and-record call
-    /// shape for its callers.
-    mutating func rateAllowed(userID: UUID, now: Date = Date()) -> Bool {
-        guard Self.allowed(lastSentAt: lastSentAt[userID], now: now, minInterval: minInterval) else {
-            return false
-        }
-        lastSentAt[userID] = now
-        return true
+extension HeartRatePayload {
+    /// Manual `AnyJSON` dict construction, field-by-field from `self` —
+    /// matches `SessionBroadcastService.sendSound`/`sendReaction`'s own
+    /// literal-dictionary style EXACTLY (`Services/SessionBroadcastService.
+    /// swift:135-139,159-163`: `.string`/`.double` cases, no `.null` case
+    /// used anywhere in this codebase — grepped before writing this) rather
+    /// than routing through `JSONEncoder` + a `JSONObject: Decodable` bridge,
+    /// which has no precedent anywhere in this codebase and is unverifiable
+    /// here (Swift compiles ONLY in CI on this task — see task-5-brief.md —
+    /// so an unproven SDK API surface is a real risk, not a style
+    /// preference). `zone` is OMITTED (not encoded as an explicit JSON
+    /// null) when `nil` — `subscribe`'s own receive side below already
+    /// treats an absent key and an explicit null identically
+    /// (`payload["zone"]?.stringValue` returns `nil` either way), so this
+    /// loses no information a receiver can act on. This computed property
+    /// keeps `HeartRatePayload` the single place the outgoing field mapping
+    /// is defined — `publish` below calls this, not a second hand-built
+    /// dict — while `HeartRatePayload`'s own `Encodable` conformance (used
+    /// only by `HeartRateBroadcastServiceTests`' wire-shape tests) stays
+    /// untouched as the documented/tested reference for what the JSON KEYS
+    /// must be.
+    var wireMessage: JSONObject {
+        var message: JSONObject = [
+            "user_id": .string(userID.uuidString),
+            "bpm": .double(Double(bpm)),
+            "ts": .double(ts)
+        ]
+        if let zone { message["zone"] = .string(zone) }
+        return message
     }
 }
 
@@ -153,40 +151,145 @@ final class HeartRateBroadcastService {
 
     private var throttle = HeartRateThrottle()
 
-    // MARK: - Subscribe / publish (T5 scope — signatures sketched only)
-    //
-    // NOT WIRED to Supabase Realtime (task-4-brief.md item 4: "NO actual
-    // Realtime wiring yet (T5)"). No production call site exists for any of
-    // the three methods below yet either — nothing samples HR to feed
-    // `publish` and nothing renders a roster pill to consume `subscribe`
-    // until T5 exists. Bodies are intentionally empty; see this file's
-    // header comment for the full reasoning.
+    /// Mirrors `SessionBroadcastService`'s own `channel`/`broadcastTask`
+    /// pair (`Services/SessionBroadcastService.swift:38-39`) — held only by
+    /// whichever instance called `subscribe`. `WatchConnectivityBridge`
+    /// owns a SEPARATE `HeartRateBroadcastService` instance purely for
+    /// SENDING (constructed in its own init body, same "two instances, one
+    /// per direction" shape `SessionBroadcastService` already has via
+    /// `LiveSoundboardBroadcasting`'s own separate instance) — that
+    /// instance's `channel` stays `nil` forever, so its `publish` calls
+    /// always take the disposable-channel fallback below, exactly like
+    /// `SessionBroadcastService.sendSound`/`sendReaction` do from that same
+    /// send-only instance.
+    private var channel: RealtimeChannelV2?
+    private var broadcastTask: Task<Void, Never>?
 
-    /// T5: subscribe to `channelName(sessionID:)`'s `heart_rate` broadcast
-    /// event, decode into `(userID, bpm, zone)`, invoke `onHeartRate` on
-    /// the main actor — same shape as `SessionBroadcastService.subscribe`'s
-    /// `onSoundboard`/`onReaction` callbacks
-    /// (`Services/SessionBroadcastService.swift:53-57`).
+    // MARK: - Subscribe
+
+    /// Subscribe to `heart_rate` broadcast events for a session — GroupSessionLiveView's
+    /// receive side, called from `subscribeBroadcast()` alongside
+    /// `SessionBroadcastService.subscribe`'s soundboard/reaction subscribe
+    /// (`Features/Sessions/GroupSessionLiveView.swift`, `subscribeBroadcast()`).
+    /// Same shape as that method (`Services/SessionBroadcastService.swift:53-107`):
+    /// register the broadcast stream BEFORE `await ch.subscribe()` (same
+    /// ordering rule), one `Task` iterating the stream on the main actor.
+    ///
+    /// Self-echo: this channel receives the CURRENT phone's own published
+    /// samples too (Realtime broadcast's default behavior — confirmed by
+    /// `SessionBroadcastService.subscribe`'s own `onSoundboard` handler,
+    /// which explicitly guards `userID != selfID` to skip its own echo,
+    /// meaning the SDK/config in this codebase already delivers self-sent
+    /// broadcasts back to the sender). `GroupSessionLiveView`'s own
+    /// `onHeartRate` callback relies on this: it's the SAME path that feeds
+    /// both the Spotlight hero's own-HR pill (frame 2A) and every OTHER
+    /// participant's roster pill (frame 2B) — one subscription, no special
+    /// self-only mechanism needed.
     func subscribe(
         sessionID: UUID,
         onHeartRate: @escaping @MainActor (UUID, Int, String?) -> Void
     ) async {
-        // Intentionally not implemented — T5 scope, see header comment.
+        await unsubscribe()
+
+        let ch = SupabaseService.shared.client
+            .channel(Self.channelName(sessionID: sessionID))
+
+        let stream = ch.broadcastStream(event: "heart_rate")
+
+        self.channel = ch
+        await ch.subscribe()
+
+        broadcastTask = Task { @MainActor in
+            for await payload in stream {
+                // EPHEMERAL LAW: never log `bpm`/`zone` — the malformed-payload
+                // branch below logs only that decoding failed, never the
+                // payload's own values.
+                guard
+                    let rawUID = payload["user_id"]?.stringValue,
+                    let uid = UUID(uuidString: rawUID),
+                    let bpmRaw = payload["bpm"]?.doubleValue
+                else {
+                    AppLogger.heartRate.error("broadcast: malformed heart_rate payload")
+                    continue
+                }
+                let zone = payload["zone"]?.stringValue
+                onHeartRate(uid, Int(bpmRaw.rounded()), zone)
+            }
+        }
     }
 
-    /// T5: broadcast a `HeartRatePayload` on `channelName(sessionID:)`,
-    /// gated by `throttle.rateAllowed(userID:)` — same "drop, don't queue"
-    /// ephemeral semantics `SessionBroadcastService.sendSound`/`sendReaction`
-    /// already use for their own 1/s gate
-    /// (`Services/SessionBroadcastService.swift:128-129,152-153`). The
-    /// throttle check is real and live even in this stub — only the actual
-    /// network send below it is deferred.
-    func publish(sessionID: UUID, userID: UUID, bpm: Int, zone: String?) async {
-        guard throttle.rateAllowed(userID: userID) else { return }
-        // Intentionally not implemented — T5 scope, see header comment.
-    }
+    // MARK: - Unsubscribe
 
     func unsubscribe() async {
-        // Intentionally not implemented — T5 scope, see header comment.
+        broadcastTask?.cancel()
+        broadcastTask = nil
+        if let ch = channel {
+            await SupabaseService.shared.client.removeChannel(ch)
+        }
+        channel = nil
+    }
+
+    // MARK: - Publish
+
+    /// Broadcast a `HeartRatePayload` on `channelName(sessionID:)`, gated by
+    /// `throttle.rateAllowed(userID:)` — same "drop, don't queue" ephemeral
+    /// semantics `SessionBroadcastService.sendSound`/`sendReaction` already
+    /// use for their own 1/s gate (`Services/SessionBroadcastService.swift:
+    /// 128-129,152-153`). This is the SECOND throttle net: the Watch-side
+    /// sampler (`GymSyncWatch/HeartRateSampler.swift`) already throttles to
+    /// 1/5s before ever sending over WatchConnectivity, but this gate stays
+    /// live regardless (task-5-brief.md: "the service's own throttle gate
+    /// stays as the second net") — defense in depth against a future
+    /// caller that doesn't go through the Watch sampler, or a Watch/phone
+    /// version skew where an older watch build throttles differently.
+    ///
+    /// Caller: `WatchConnectivityBridge.handleHRSample` — this is a SEND-ONLY
+    /// call site (see `channel`'s own doc comment above), so this method
+    /// always takes the same disposable-channel-fallback path
+    /// `SessionBroadcastService.broadcastRaw`'s `else` branch does
+    /// (`Services/SessionBroadcastService.swift:184-203`), rather than
+    /// duplicating that fallback as a separate private helper for a single
+    /// call site.
+    func publish(sessionID: UUID, userID: UUID, bpm: Int, zone: String?) async {
+        guard throttle.rateAllowed(userID: userID) else { return }
+        let payload = HeartRatePayload(userID: userID, bpm: bpm, zone: zone)
+        let message = payload.wireMessage
+
+        let ch: RealtimeChannelV2
+        if let active = channel {
+            ch = active
+        } else {
+            let tmp = SupabaseService.shared.client
+                .channel(Self.channelName(sessionID: sessionID))
+            await tmp.subscribe()
+            defer {
+                Task { await SupabaseService.shared.client.removeChannel(tmp) }
+            }
+            do {
+                try await tmp.broadcast(event: "heart_rate", message: message)
+            } catch {
+                AppLogger.heartRate.error("broadcast send failed: \(error, privacy: .public)")
+            }
+            return
+        }
+        do {
+            try await ch.broadcast(event: "heart_rate", message: message)
+        } catch {
+            AppLogger.heartRate.error("broadcast send failed: \(error, privacy: .public)")
+        }
     }
 }
+
+// MARK: - HeartRateBroadcasting (send-side seam)
+//
+// Abstracts `publish` so `WatchConnectivityBridge.handleHRSample`'s relay
+// gating (opt-in check, active-session check, decoded-payload check) is
+// hermetically testable without linking Supabase/Realtime — same
+// "protocol abstracts the production type, tests supply a fake" shape as
+// `SoundboardBroadcasting` (`Services/WatchConnectivityBridge.swift`).
+@MainActor
+protocol HeartRateBroadcasting {
+    func publish(sessionID: UUID, userID: UUID, bpm: Int, zone: String?) async
+}
+
+extension HeartRateBroadcastService: HeartRateBroadcasting {}

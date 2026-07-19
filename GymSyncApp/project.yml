@@ -173,6 +173,43 @@ targets:
         # without the phone app reachable, so it must not run
         # independently.
         WKRunsIndependentlyOfCompanionApp: false
+        # Phase W Task 5 (watch-hr design §4 + master spec §6.5) —
+        # HealthKit read-only usage description, REQUIRED on watchOS the
+        # same as iOS whenever a target calls `HKHealthStore
+        # .requestAuthorization` (`HeartRateSampler.requestAuthorizationIfNeeded`)
+        # — omitting it is an instant HealthKit authorization-request crash
+        # on-device, not just an App Store rejection. No
+        # `NSHealthUpdateUsageDescription` here: this target only ever
+        # READS heart-rate samples (`toShare: []` in that same call) — it
+        # never writes to Health, unlike the PHONE target's own two health
+        # usage strings (`GymSync` target's `info.properties` above, which
+        # DOES export completed workouts). Copy mirrors the phone's own
+        # tone/specificity (`NSHealthShareUsageDescription` above).
+        NSHealthShareUsageDescription: "Gym Sync reads your heart rate during a live session to share it with the crew you're training with."
+        # Background Modes -> Workout Processing. REQUIRED for
+        # `HKWorkoutSession` to keep running (and therefore keep the
+        # `HKAnchoredObjectQuery` update handler firing) once the watch
+        # screen locks or another app is briefly raised — without this key,
+        # an active workout session is suspended like any other background
+        # app and heart-rate delivery stops the moment the wrist drops.
+        # Apple's own "Workout Processing" Background Modes capability sets
+        # exactly this key; `HeartRateSampler.beginWorkoutSession` is the
+        # call site that needs it.
+        WKBackgroundModes:
+          - workout-processing
+    entitlements:
+      path: GymSyncWatch/GymSyncWatch.entitlements
+      properties:
+        # Phase W Task 5 — the Watch target had NO HealthKit entitlement
+        # before this task (checked: no `entitlements:` key existed at all
+        # for this target). Required for `HKHealthStore.requestAuthorization`/
+        # `HKWorkoutSession` to function on-device — mirrors the `GymSync`
+        # (phone) target's own `com.apple.developer.healthkit: true`
+        # entitlement above, read-only usage here (no
+        # `com.apple.developer.healthkit.access` restriction needed for the
+        # heart-rate type specifically; the phone target doesn't scope it
+        # either).
+        com.apple.developer.healthkit: true
 
   GymSyncTests:
     type: bundle.unit-test

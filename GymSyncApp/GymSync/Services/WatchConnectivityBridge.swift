@@ -81,6 +81,14 @@ final class WatchConnectivityBridge {
     private let submitter: SetLogSubmitting
     private let userIDProvider: CurrentUserIDProviding
     private let soundboard: SoundboardBroadcasting
+    /// Phase W Task 5 (watch-hr design §4) — the send-only
+    /// `HeartRateBroadcastService` instance for `handleHRSample` below. Same
+    /// "separate instance per direction" shape `soundboard` above already
+    /// establishes via `LiveSoundboardBroadcasting`'s own
+    /// `SessionBroadcastService()` — `GroupSessionLiveView` owns a SECOND,
+    /// separate `HeartRateBroadcastService` instance for SUBSCRIBING/
+    /// rendering pills; this one only ever calls `publish`.
+    private let heartRateBroadcast: HeartRateBroadcasting
 
     private var didActivate = false
 
@@ -101,22 +109,25 @@ final class WatchConnectivityBridge {
         session: WatchSessionProviding? = nil,
         submitter: SetLogSubmitting = SupabaseSetLogSubmitter(),
         userIDProvider: CurrentUserIDProviding = AuthServiceCurrentUserIDProvider(),
-        soundboard: SoundboardBroadcasting? = nil
+        soundboard: SoundboardBroadcasting? = nil,
+        heartRateBroadcast: HeartRateBroadcasting? = nil
     ) {
-        // `WCSessionProvider()`/`LiveSoundboardBroadcasting(...)` are
-        // constructed HERE, in the init BODY, not as the parameters'
-        // default-value expressions — same trap `LiveKitRoomConnection`'s
-        // own doc comment documents (`Services/LiveKitRoomConnection.swift:260-269`):
-        // default-argument expressions evaluate in a synchronous
-        // nonisolated context even inside a `@MainActor` initializer, and
-        // both of these production conformers touch `@MainActor`-isolated
-        // state at construction time (`WCSessionProvider` sets itself as
-        // `WCSession.default.delegate`; `SessionBroadcastService` is itself
-        // `@MainActor`).
+        // `WCSessionProvider()`/`LiveSoundboardBroadcasting(...)`/
+        // `HeartRateBroadcastService()` are constructed HERE, in the init
+        // BODY, not as the parameters' default-value expressions — same
+        // trap `LiveKitRoomConnection`'s own doc comment documents
+        // (`Services/LiveKitRoomConnection.swift:260-269`): default-argument
+        // expressions evaluate in a synchronous nonisolated context even
+        // inside a `@MainActor` initializer, and all three of these
+        // production conformers touch `@MainActor`-isolated state at
+        // construction time (`WCSessionProvider` sets itself as
+        // `WCSession.default.delegate`; `SessionBroadcastService`/
+        // `HeartRateBroadcastService` are themselves `@MainActor`).
         self.session = session ?? WCSessionProvider()
         self.submitter = submitter
         self.userIDProvider = userIDProvider
         self.soundboard = soundboard ?? LiveSoundboardBroadcasting(broadcastService: SessionBroadcastService())
+        self.heartRateBroadcast = heartRateBroadcast ?? HeartRateBroadcastService()
         self.session.onMessageReceived = { [weak self] message, replyHandler in
             self?.handle(message: message, replyHandler: replyHandler)
         }
@@ -218,12 +229,7 @@ final class WatchConnectivityBridge {
             AppLogger.watch.error("received unexpected idleState message (phone→watch only)")
             reply(.failure, message: "Unsupported on phone", to: replyHandler)
         case .hrSample:
-            // T5 scope (design §4) — schema defined now, handler not yet
-            // built. Explicit failure reply rather than silent drop so a
-            // future watch-side sender (once T5 exists) gets an honest
-            // signal during any transition period rather than a message
-            // that silently vanishes.
-            reply(.failure, message: "Not yet implemented", to: replyHandler)
+            Task { await self.handleHRSample(envelope, replyHandler: replyHandler) }
         }
     }
 
@@ -361,6 +367,57 @@ final class WatchConnectivityBridge {
         // definitely broadcast," matching what the phone's OWN soundboard
         // dock already tells the user (no error UI exists for a failed
         // `tapSound` either — same fire-and-forget contract, unchanged).
+        reply(.success, message: nil, to: replyHandler)
+    }
+
+    /// `hrSample` action (Phase W Task 5, watch-hr design §4) — watch→phone
+    /// relay, `sendMessage` with a reply expected, same shape as
+    /// `handleSoundboardTap` above. Computes `zone` from the sample's raw
+    /// `bpm` (`HeartRateZone.zone(bpm:)`, `Services/HeartRateZone.swift`)
+    /// BEFORE handing off to `heartRateBroadcast.publish` — zone is baked
+    /// into the wire payload once, phone-side, per that type's own doc
+    /// comment on why a receiver never recomputes it for someone else.
+    ///
+    /// RELAY GATING (task-5-brief.md item 2: "Only while in the live
+    /// session"; the design's opt-in law): this is the SECOND gate — the
+    /// Watch-side sampler (`GymSyncWatch/HeartRateSampler.swift`) already
+    /// starts/stops itself from the SAME `isActive`/`shareHeartRate`
+    /// signals it received in `WatchSessionStatePayload`, so in the honest
+    /// case this guard never fires. It exists anyway as defense in depth
+    /// (same "second net" philosophy as the throttle two layers down,
+    /// `HeartRateBroadcastService.publish`'s own doc comment) against a
+    /// stale/racing watch build that hasn't caught up to a just-flipped
+    /// `shareHeartRate` or a just-ended session yet — reading BOTH checks
+    /// off `lastPushedState` (the SAME already-pushed snapshot
+    /// `handleLogSet`/`handleSoundboardTap` resolve `sessionID`/`groupID`
+    /// from above) rather than adding new bridge state to track.
+    ///
+    /// EPHEMERAL LAW: no branch in this function ever logs `payload.bpm` or
+    /// the computed `zone` — only ids and fixed strings, matching every
+    /// other `reply(...)` call site in this file.
+    func handleHRSample(_ envelope: WatchEnvelope, replyHandler: @escaping ([String: Any]) -> Void) async {
+        guard let payload = try? envelope.decodePayload(as: WatchHRSamplePayload.self) else {
+            reply(.failure, message: "Malformed heart rate sample", to: replyHandler)
+            return
+        }
+        guard let userID = userIDProvider.currentUserID else {
+            reply(.failure, message: "Not signed in", to: replyHandler)
+            return
+        }
+        guard let state = lastPushedState else {
+            reply(.failure, message: "No active session", to: replyHandler)
+            return
+        }
+        guard state.isActive else {
+            reply(.failure, message: "Session is not live", to: replyHandler)
+            return
+        }
+        guard state.shareHeartRate else {
+            reply(.failure, message: "Heart rate sharing is off", to: replyHandler)
+            return
+        }
+        let zone = HeartRateZone.zone(bpm: payload.bpm)
+        await heartRateBroadcast.publish(sessionID: state.sessionID, userID: userID, bpm: payload.bpm, zone: zone.rawValue)
         reply(.success, message: nil, to: replyHandler)
     }
 
