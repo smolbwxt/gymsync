@@ -1,0 +1,113 @@
+-- ============================================================
+-- Debt-zero sprint / Task 3, item 1 (ESCALATED by the T1 reviewer):
+-- drop 3 undocumented ad-hoc debug functions found in live pg_proc.
+-- ============================================================
+-- PROVENANCE (unknown / out-of-band): none of the three functions below
+-- is defined by any migration file in this repo. Cross-checked two ways:
+--   1. `grep -ril "FUNCTION public.<name>(\|FUNCTION <name>(" supabase/
+--      migrations/` for each of the 61 live public-schema functions —
+--      these 3 are the ONLY ones with zero matches.
+--   2. `SELECT proname FROM pg_proc JOIN pg_namespace ... WHERE
+--      nspname='public'` (all 61) manually diffed against migration
+--      grep results — same 3-function gap.
+-- They were evidently created directly against the live database,
+-- outside `supabase db push`, most likely while iterating on the
+-- `resolve_proposal()` trigger (20260712000003_routine_proposals.sql)
+-- during its original development — each is a near-duplicate of that
+-- trigger body with RAISE NOTICE / RAISE EXCEPTION instrumentation
+-- spliced in, consistent with live trial-and-error debugging rather
+-- than a deliberate feature.
+--
+-- COUNT NOTE: DZ-T1's report (task-1-report.md) said "four undocumented
+-- live functions" in prose but named only three
+-- (resolve_proposal_debug, resolve_proposal_debug2,
+-- resolve_proposal_debug3) — apparent off-by-one in that sentence, not
+-- evidence of a missing fourth. Re-probed live pg_proc directly for
+-- this task: `SELECT proname FROM pg_proc JOIN pg_namespace ON
+-- pronamespace=pg_namespace.oid WHERE nspname='public' AND proname LIKE
+-- '%debug%'` returns exactly these 3 rows. A broader sweep against
+-- other ad-hoc-debugging name patterns (tmp/temp/test/scratch/old/
+-- backup/wip/adhoc/_v2/_bak) surfaced only false positives
+-- (leaderboard_attempt_volume, start_attempt — "attempt" contains the
+-- substring "temp" at a shifted offset; unrelated, legitimate,
+-- migration-provenanced functions, left untouched). The migration-
+-- provenance diff above (method 1/2) independently confirms the same
+-- 3-function set with no naming-pattern dependency at all. The set is
+-- CLOSED at 3.
+--
+-- WHAT EACH ONE DOES (quoted from live pg_get_functiondef(), verbatim
+-- prosrc, `SELECT p.proname, p.prosecdef, p.proconfig FROM pg_proc p
+-- JOIN pg_namespace n ON p.pronamespace=n.oid WHERE n.nspname='public'
+-- AND p.proname IN (...)`); each is `RETURNS trigger`, `SECURITY
+-- DEFINER`, `SET search_path TO 'public'`:
+--
+-- 1. resolve_proposal_debug() — a copy of the real resolve_proposal()
+--    trigger body (unanimous-vote resolution + add_exercise apply) with
+--    `RAISE NOTICE` tracing added at every branch ("proposal not found
+--    or not open", "participants: %, approves: %", "not unanimous yet",
+--    "unanimous! proposal_type: %", "computed position: %", "rows
+--    inserted into routine_exercises: %") — a verbose, non-fatal
+--    tracing variant.
+-- 2. resolve_proposal_debug2() — same trigger shape, stripped of the
+--    NOTICE tracing, but on the add_exercise branch it looks up the
+--    routine_id and unconditionally `RAISE EXCEPTION 'DEBUG:
+--    session_id=%, routine_id=%, payload=%'` — a variant built to force
+--    an error and dump state via the exception message rather than log
+--    output.
+-- 3. resolve_proposal_debug3() — same shape again; wraps the
+--    routine_exercises INSERT in a nested BEGIN/EXCEPTION block that
+--    re-raises `'INSERT failed: % %', SQLERRM, SQLSTATE` on any error,
+--    then unconditionally `RAISE EXCEPTION 'DEBUG after insert:
+--    rows_inserted=%, position=%'` after a successful insert — a
+--    variant built to distinguish "insert failed" from "insert
+--    succeeded but something after it was being investigated."
+--
+-- None of the three ever finalizes a proposal to 'approved' along a
+-- path that isn't also short-circuited by its own debug RAISE — they
+-- are development-time instrumentation forks of resolve_proposal(),
+-- not alternate production logic.
+--
+-- ZERO-REFERENCE PROOF (live, T1 position()-substring method — see
+-- "ILIKE-underscore-wildcard methodology trap" in task-1-report.md;
+-- underscore is a LIKE/ILIKE single-char wildcard, so exact substring
+-- checks are used instead of ILIKE for the caller scan):
+--   1. pg_trigger, joined to pg_proc by tgfoid, filtered to these 3
+--      function names, excluding internal triggers: 0 rows. The ONE
+--      trigger on routine_proposal_votes ("proposal_vote_cast") is
+--      wired to resolve_proposal (the real function) — confirmed
+--      separately, untouched by this migration.
+--   2. pg_depend, `refobjid = <fn oid>, refclassid = 'pg_proc'::
+--      regclass` (object-type-agnostic — surfaces triggers, views, or
+--      any other dependent, not just policies), for all 3: 0 rows.
+--   3. pg_policies.qual / with_check ILIKE '%resolve_proposal_debug%':
+--      0 rows (also would have caught the digit-suffixed variants,
+--      since ILIKE '%debug%' is not underscore-sensitive the way an
+--      exact name match is).
+--   4. information_schema.views.view_definition ILIKE
+--      '%resolve_proposal_debug%': 0 rows.
+--   5. information_schema.triggers.action_statement ILIKE
+--      '%resolve_proposal_debug%': 0 rows.
+--   6. `grep -rn "resolve_proposal_debug" .` across the whole repo
+--      (sql/ts/swift/js, excluding node_modules): the only hits are
+--      this migration and 3 comment lines in
+--      20260727000004_proposal_session_id_private_schema.sql
+--      documenting the DZ-T1 ILIKE false-positive finding — no actual
+--      call sites anywhere.
+--   7. `grep -rn "\.rpc(" supabase/functions/`: exactly 2 call sites in
+--      the whole tree (livekit-token -> is_session_participant,
+--      push-dispatcher -> claim_push_batch) — neither is one of these.
+-- All 7 independent checks agree: zero callers, zero dependents, zero
+-- references outside their own definitions. Grant posture (for the
+-- record, matches the platform's untouched default and is moot once
+-- dropped): EXECUTE was granted to PUBLIC/postgres/anon/authenticated/
+-- service_role on all 3, same default every other DEFINER function in
+-- this schema carries — but functions declared `RETURNS trigger`
+-- cannot be invoked via a direct SELECT/RPC call regardless of grants
+-- (Postgres raises "trigger functions can only be called as triggers"),
+-- so the EXECUTE grant, while present, was never a live direct-call
+-- exposure — the risk was provenance/dead-code, not an open RPC oracle.
+-- ============================================================
+
+DROP FUNCTION public.resolve_proposal_debug();
+DROP FUNCTION public.resolve_proposal_debug2();
+DROP FUNCTION public.resolve_proposal_debug3();
