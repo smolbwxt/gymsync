@@ -12,9 +12,12 @@ import SwiftData
 /// `GymSyncApp/project.yml:5`), the same way `HealthKit`/`EventKit` need no
 /// `sdk:` entry in `project.yml` either.
 ///
-/// Mirrors `SetLog`'s fields (Models/SetLog.swift) 1:1 plus two queue-only
-/// additions (`enqueuedAt`, `attemptCount`) — brief's "mirror SetLog's
-/// fields + enqueue timestamp + attempt count" requirement.
+/// Mirrors `SetLog`'s fields (Models/SetLog.swift) 1:1 plus queue-only
+/// additions: `enqueuedAt` and `attemptCount` (brief's "mirror SetLog's
+/// fields + enqueue timestamp + attempt count" requirement), and
+/// `unauthorizedAttemptCount` (fix wave 2, not part of the original brief —
+/// see that field's own doc comment below for why it exists as a separate
+/// field rather than reusing `attemptCount`).
 ///
 /// `id` doubles as the idempotency key: it's the SAME client-generated UUID
 /// `SetLog.id` already carries end-to-end (WorkoutSessionView.swift:675,
@@ -46,17 +49,35 @@ final class PendingSetLog {
     /// by enqueue time" per brief) and the 90-day prune window (master
     /// spec §6.4's stated cache/queue retention).
     var enqueuedAt: Date
-    /// Bumped on every replay attempt. Originally a pure diagnostic field
-    /// (kept per the brief's explicit "mirror SetLog's fields + enqueue
-    /// timestamp + attempt count" requirement, with room for a future
-    /// backoff policy without a schema change) — every transient `.network`
-    /// failure still just stops the pass and retries next trigger with no
-    /// cap (see `OfflineSetLogQueue.replay()`). Reviewer Finding 3 (fix wave
-    /// 1) gave it its first real reader: the `.unauthorized` case now checks
-    /// this value against `OfflineSetLogQueue.maxUnauthorizedAttempts` and
-    /// escalates to a permanent drop once it's exceeded, so a session that
-    /// never comes back doesn't queue an item forever.
+    /// Bumped on every replay attempt, regardless of outcome — the
+    /// total-attempts diagnostic (kept per the brief's explicit "mirror
+    /// SetLog's fields + enqueue timestamp + attempt count" requirement).
+    /// Every transient `.network` failure still just stops the pass and
+    /// retries next trigger with no cap (see `OfflineSetLogQueue.replay()`).
+    /// Reviewer Finding 3 (fix wave 1) briefly wired THIS field into the
+    /// `.unauthorized` escalation check, but that made the escalation
+    /// non-auth-specific: a long offline stretch of `.network` failures
+    /// bumps this same counter, so a single later `.unauthorized` could
+    /// read as the Nth failure and drop the item after just one real auth
+    /// failure. Fix wave 2 moved the escalation check onto the dedicated
+    /// `unauthorizedAttemptCount` field below instead — this field is back
+    /// to being the pure, honest total-attempts count it always claimed to
+    /// be, not read by any cap/backoff logic.
     var attemptCount: Int
+
+    /// Bumped ONLY on an `.unauthorized` replay failure (fix wave 2,
+    /// reviewer follow-up to Finding 3's escalation) — this is the value
+    /// `OfflineSetLogQueue.maxUnauthorizedAttempts` actually compares
+    /// against in `replay()`'s `.unauthorized` case, not `attemptCount`.
+    /// Kept as its own field so a long run of transient `.network` failures
+    /// can never count toward the auth-specific escalation threshold; only
+    /// genuine `.unauthorized` responses do. Defaults to 0: this model was
+    /// never shipped before this branch (see the class doc comment above —
+    /// no SwiftData migration concern), and the default means any existing
+    /// in-memory test fixture that doesn't reference this field explicitly
+    /// still compiles and behaves correctly (starts at 0, same as a freshly
+    /// enqueued item).
+    var unauthorizedAttemptCount: Int = 0
 
     init(setLog: SetLog, enqueuedAt: Date = Date()) {
         self.id = setLog.id

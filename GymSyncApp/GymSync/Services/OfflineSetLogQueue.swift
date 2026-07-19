@@ -46,19 +46,28 @@ final class OfflineSetLogQueue {
     static let retentionWindow: TimeInterval = 90 * 24 * 60 * 60
 
     /// Bounded escalation for `.unauthorized` (reviewer Finding 3, fix wave
-    /// 1). The original judgment call below (see the `.unauthorized` case
-    /// in `replay()`) treats "no valid session right now" as recoverable —
-    /// right for a brief auth hiccup — but with no cap, an item whose
-    /// session never comes back (permanently signed out, account deleted,
-    /// a stuck/expired token that never refreshes) would sit in the queue
-    /// forever, re-attempted on every trigger forever, with `attemptCount`
-    /// (PendingSetLog.swift's `attemptCount` field) incrementing and never
-    /// read by anything. 10 is a defensible, generous bound: replay is
-    /// triggered on every foreground/connectivity/signed-in-transition/
-    /// post-submit event (RootView.swift), so 10 attempts is 10 separate
-    /// trigger firings, not 10 app launches — several orders of magnitude
-    /// more slack than a normal "signed back in within the session" recovery
-    /// would ever need.
+    /// 1; refined fix wave 2 — see below). The original judgment call below
+    /// (see the `.unauthorized` case in `replay()`) treats "no valid session
+    /// right now" as recoverable — right for a brief auth hiccup — but with
+    /// no cap, an item whose session never comes back (permanently signed
+    /// out, account deleted, a stuck/expired token that never refreshes)
+    /// would sit in the queue forever, re-attempted on every trigger
+    /// forever. 10 is a defensible, generous bound: replay is triggered on
+    /// every foreground/connectivity/signed-in-transition/post-submit event
+    /// (RootView.swift), so 10 attempts is 10 separate trigger firings, not
+    /// 10 app launches — several orders of magnitude more slack than a
+    /// normal "signed back in within the session" recovery would ever need.
+    ///
+    /// Compared against `PendingSetLog.unauthorizedAttemptCount`
+    /// (PendingSetLog.swift), NOT `attemptCount`. Fix wave 1 originally
+    /// wired this check to `attemptCount`, which bumps on every replay
+    /// attempt regardless of outcome — so a long offline stretch of
+    /// `.network` failures followed by a single later `.unauthorized` could
+    /// read as the Nth failure and drop the item after just one real auth
+    /// failure, contradicting this escalation's own "session never comes
+    /// back" rationale. Fix wave 2 split out a dedicated
+    /// `unauthorizedAttemptCount` that only `.unauthorized` increments, so
+    /// this threshold now means exactly what its name says.
     static let maxUnauthorizedAttempts = 10
 
     /// IDs currently queued (enqueued, not yet confirmed landed server-side).
@@ -130,8 +139,10 @@ final class OfflineSetLogQueue {
     ///                              item and everything after it queued
     ///   - `.unauthorized`        → transient, same as `.network`, UNLESS
     ///                              this was the item's `maxUnauthorizedAttempts`th
-    ///                              failure, in which case: permanent (see
-    ///                              below)
+    ///                              `.unauthorized` failure specifically
+    ///                              (fix wave 2: `.network` failures no
+    ///                              longer count toward this), in which
+    ///                              case: permanent (see below)
     ///   - anything else          → permanent (RLS denial, validation, an
     ///                              `.unauthorized` that exhausted its
     ///                              attempts, …); drop + surface (AppLogger
@@ -185,12 +196,18 @@ final class OfflineSetLogQueue {
                     // Reviewer Finding 3, fix wave 1: "rare in practice" isn't
                     // "never" — bounded via `maxUnauthorizedAttempts` above so
                     // a session that genuinely never comes back doesn't queue
-                    // this item forever. `item.attemptCount` was already
-                    // incremented for THIS attempt above, so `>=` here means
-                    // "this was the Nth failure."
-                    if item.attemptCount >= Self.maxUnauthorizedAttempts {
+                    // this item forever. Fix wave 2: bumps
+                    // `item.unauthorizedAttemptCount` here — NOT the
+                    // unconditional `item.attemptCount` already incremented
+                    // above for every attempt regardless of outcome — so a
+                    // run of `.network` failures can never count toward this
+                    // auth-specific threshold; only a real `.unauthorized`
+                    // response does. `>=` here means "this was the Nth
+                    // unauthorized failure."
+                    item.unauthorizedAttemptCount += 1
+                    if item.unauthorizedAttemptCount >= Self.maxUnauthorizedAttempts {
                         let message = error.errorDescription ?? "You're signed out. Please sign in again."
-                        AppLogger.workout.error("offline set-log \(item.id, privacy: .public) dropped after \(item.attemptCount) unauthorized attempts: \(message, privacy: .public)")
+                        AppLogger.workout.error("offline set-log \(item.id, privacy: .public) dropped after \(item.unauthorizedAttemptCount) unauthorized attempts: \(message, privacy: .public)")
                         lastPermanentFailure = (item.id, message)
                         remove(item, modelContext: modelContext)
                         // Deliberately falls through to the next item (no

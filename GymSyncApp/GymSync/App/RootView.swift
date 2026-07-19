@@ -105,8 +105,9 @@ struct RootView: View {
         // every auth-state transition and draining whenever the NEW state
         // is `.signedIn` — including the ordinary sign-in transition, where
         // it's a harmless extra call: `OfflineSetLogQueue.replay()` is
-        // idempotent and reentrancy-guarded (Services/OfflineSetLogQueue.swift
-        // ~120-124), so overlapping with the `.task`'s own call is a no-op,
+        // idempotent and reentrancy-guarded (`isReplaying`, Services/
+        // OfflineSetLogQueue.swift — declared ~102, checked/set ~154-156),
+        // so overlapping with the `.task`'s own call is a no-op,
         // not a double-submit.
         .onChange(of: auth.state) {
             guard case .signedIn = auth.state else { return }

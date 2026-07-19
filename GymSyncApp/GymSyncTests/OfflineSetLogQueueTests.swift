@@ -302,7 +302,8 @@ final class OfflineSetLogQueueTests: XCTestCase {
     /// Below `maxUnauthorizedAttempts`, `.unauthorized` must keep behaving
     /// exactly like `testReplayTreatsUnauthorizedAsTransientNotPermanentDrop`
     /// above — each failed pass stops (doesn't drop) and bumps
-    /// `attemptCount` by exactly one.
+    /// `unauthorizedAttemptCount` (the field the escalation actually reads,
+    /// fix wave 2) by exactly one.
     func testReplayKeepsUnauthorizedBelowEscalationThreshold() async throws {
         let context = try makeInMemoryContext()
         let submitter = FakeSetLogSubmitter()
@@ -322,7 +323,7 @@ final class OfflineSetLogQueueTests: XCTestCase {
                        "below the escalation threshold, .unauthorized must stay queued")
         XCTAssertNil(queue.lastPermanentFailure)
         let stored = try context.fetch(FetchDescriptor<PendingSetLog>())
-        XCTAssertEqual(stored.first?.attemptCount, OfflineSetLogQueue.maxUnauthorizedAttempts - 1)
+        XCTAssertEqual(stored.first?.unauthorizedAttemptCount, OfflineSetLogQueue.maxUnauthorizedAttempts - 1)
     }
 
     /// At exactly `maxUnauthorizedAttempts` failed attempts, `.unauthorized`
@@ -347,6 +348,45 @@ final class OfflineSetLogQueueTests: XCTestCase {
         XCTAssertEqual(queue.lastPermanentFailure?.setLogID, log.id)
         XCTAssertEqual(queue.lastPermanentFailure?.message, GymSyncError.unauthorized.errorDescription)
         XCTAssertTrue(try context.fetch(FetchDescriptor<PendingSetLog>()).isEmpty)
+    }
+
+    /// Fix wave 2 (reviewer follow-up to Finding 3, NEW-1): the escalation
+    /// counter must be unauthorized-specific, not a stand-in for total
+    /// attempts. Several `.network` failures (which stop the pass and bump
+    /// only the diagnostic `attemptCount`, never `unauthorizedAttemptCount`)
+    /// followed by a single `.unauthorized` failure must NOT read as "the
+    /// Nth unauthorized failure" — it's the first one. Proves network noise
+    /// no longer counts toward the auth threshold.
+    func testMixedNetworkThenUnauthorizedDoesNotInflateEscalation() async throws {
+        let context = try makeInMemoryContext()
+        let submitter = FakeSetLogSubmitter()
+        let queue = OfflineSetLogQueue(submitter: submitter)
+        queue.configure(modelContext: context)
+
+        let log = makeSetLog()
+        queue.enqueue(log)
+
+        // Several `.network` failures — well past `maxUnauthorizedAttempts`
+        // in raw attempt count, but none of them `.unauthorized`.
+        submitter.outcomes[log.id] = .failure(.network)
+        for _ in 0..<(OfflineSetLogQueue.maxUnauthorizedAttempts + 5) {
+            await queue.replay()
+        }
+        XCTAssertTrue(queue.pendingSetLogIDs.contains(log.id), "still queued after repeated .network failures")
+
+        // Now a single .unauthorized failure — must be treated as the
+        // FIRST unauthorized attempt, not the Nth overall attempt.
+        submitter.outcomes[log.id] = .failure(.unauthorized)
+        await queue.replay()
+
+        XCTAssertTrue(queue.pendingSetLogIDs.contains(log.id),
+                       "a single .unauthorized failure after many .network failures must NOT trip the escalation")
+        XCTAssertNil(queue.lastPermanentFailure)
+        let stored = try context.fetch(FetchDescriptor<PendingSetLog>())
+        XCTAssertEqual(stored.first?.unauthorizedAttemptCount, 1,
+                        "unauthorizedAttemptCount must count only the .unauthorized failure, not the prior .network ones")
+        XCTAssertGreaterThan(stored.first?.attemptCount ?? 0, OfflineSetLogQueue.maxUnauthorizedAttempts,
+                              "attemptCount (the total-attempts diagnostic) should be well past the threshold, proving it's genuinely NOT what the escalation reads")
     }
 
     // MARK: - 90-day prune
