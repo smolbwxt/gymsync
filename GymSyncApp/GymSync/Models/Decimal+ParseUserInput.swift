@@ -65,18 +65,22 @@ enum DecimalParsing {
     /// digits today, but accepting it is strictly more permissive/correct
     /// than rejecting it (a keyboard string with stray whitespace around an
     /// otherwise-valid number is still an unambiguous user intent), so
-    /// there's no reason to special-case it back to `nil`. A string that
-    /// trims down to just a lone separator (e.g. `" . "` -> `"."`) still
-    /// fails after the fix too — `Decimal(string: ".", locale:
-    /// en_US_POSIX)` has no digits to parse, so it returns `nil` same as
-    /// any other non-numeric input; trimming doesn't change that outcome,
-    /// it only changes what reaches the separator-count/parse steps below.
+    /// there's no reason to special-case it back to `nil`.
+    ///
+    /// DIGIT GUARD (fix wave 2 — CI-caught, same Foundation quirk family as
+    /// the whitespace fix): `Decimal(string: ".", locale: en_US_POSIX)`
+    /// parses to `0`, NOT `nil` — Foundation's scanner treats a digit-free
+    /// separator (and other digit-free prefixes) as an empty-but-valid zero
+    /// parse. So a lone separator surviving the trim (`" . "` -> `"."`)
+    /// must be rejected explicitly: the guard below requires at least one
+    /// decimal digit in the normalized string before parsing.
     static func parse(_ input: String) -> Decimal? {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         let separatorCount = trimmed.filter { $0 == "." || $0 == "," }.count
         guard separatorCount <= 1 else { return nil }
         let normalized = trimmed.replacingOccurrences(of: ",", with: ".")
+        guard normalized.contains(where: { $0.isNumber }) else { return nil }
         return Decimal(string: normalized, locale: Locale(identifier: "en_US_POSIX"))
     }
 }
