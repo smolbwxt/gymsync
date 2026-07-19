@@ -1171,14 +1171,27 @@ struct LobbyView: View {
 
             try await SeriesRepository.cancelSeriesForward(seriesID: sid)
 
-            // EventKit sync (Phase H Task 2): best-effort remove every
-            // mapped event for the occurrences just deleted. Ungated on the
-            // toggle — same "cleanup always runs" reasoning as
-            // `cancelOccurrence()` above.
-            for sessionID in upcomingIDs {
-                await EventKitBridge.removeEvent(sessionID: sessionID)
-            }
             dismiss()
+
+            // EventKit sync (Phase H Task 2; moved AFTER dismiss in Phase O
+            // Task 2): best-effort remove every mapped event for the
+            // occurrences just deleted. Ungated on the toggle — same
+            // "cleanup always runs" reasoning as `cancelOccurrence()`
+            // above. The server delete (already awaited above) is the
+            // operation that matters to the caller; this per-occurrence
+            // removal loop no longer gates the sheet close, running
+            // fire-and-forget in a detached `Task` instead
+            // (`EventKitBridge.removeEvent` never throws). If the app is
+            // killed mid-loop, the app-foreground `EventKitBridge.
+            // reconcile()` sweep IS the safety net here — the deleted
+            // sessions are already gone server-side, so reconcile's next
+            // pass will find their ids missing from the batch fetch and
+            // remove the leftover events itself.
+            Task {
+                for sessionID in upcomingIDs {
+                    await EventKitBridge.removeEvent(sessionID: sessionID)
+                }
+            }
         } catch let error as GymSyncError {
             errorText = error.errorDescription
         } catch {

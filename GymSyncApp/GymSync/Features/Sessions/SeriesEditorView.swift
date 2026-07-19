@@ -182,6 +182,11 @@ struct SeriesEditorView: View {
     @State private var dayRoutines: [Int: UUID?] = [:]
     @State private var untilDate: Date = Date().addingTimeInterval(8 * 7 * 86400)
     @State private var routines: [Routine] = []
+    // Phase O Task 2: per-routine exercise counts, threaded into EventKit
+    // sync in `save()` below — see `loadData()`'s doc comment for why this
+    // was added (kills the 60-min generic-duration fallback for
+    // routine-assigned occurrences).
+    @State private var routineExerciseCounts: [UUID: Int] = [:]
 
     @State private var isLoading = true
     @State private var isSaving = false
@@ -327,6 +332,23 @@ struct SeriesEditorView: View {
             }
             routines = fetchedRoutines
 
+            // Phase O Task 2: bulk-fetch per-routine exercise counts —
+            // mirrors ScheduleSessionView.loadData()'s own precedent
+            // (ScheduleSessionView.swift:609-613) exactly, reusing the same
+            // bulk `RoutineRepository.exercisesForRoutines(ids:)` idiom
+            // (avoids an N+1 fetch fan-out) instead of adding a bespoke
+            // per-routine fetch. Threaded into `save()`'s EventKit sync so
+            // series-edit calendar events get a routine-specific duration
+            // estimate instead of always falling back to `EventKitBridge.
+            // estimatedDuration(exerciseCount:)`'s documented 60-min no-
+            // count default (the fix-wave-1 "exerciseCount: nil" gap the
+            // Phase H gate review ledgered for this exact follow-up).
+            let exercises = (try? await RoutineRepository.exercisesForRoutines(
+                ids: fetchedRoutines.map(\.id))) ?? []
+            routineExerciseCounts = Dictionary(
+                grouping: exercises, by: \.routineID
+            ).mapValues(\.count)
+
             let (fetchedSeries, fetchedDays) = try await (fetchSeries, fetchDays)
             series = fetchedSeries
 
@@ -398,38 +420,46 @@ struct SeriesEditorView: View {
                 untilDate: untilDate
             )
 
-            // EventKit sync (Phase H Task 2): best-effort, server op already
-            // succeeded above so calendar failures here can never block or
-            // fail the save. Old events are stale (their session rows are
-            // gone) — remove first. Removal is ungated on the toggle, same
-            // "cleanup always runs regardless of the toggle's CURRENT
-            // state" reasoning as `LobbyView.cancelSeriesForward()`
-            // (LobbyView.swift:1174-1180). Then re-fetch and sync the
-            // freshly re-materialized occurrences, gated on
-            // `CalendarSyncPrefsStore.isEnabled()` exactly like
-            // `ScheduleSessionView.syncScheduledSessionsToCalendar`
-            // (ScheduleSessionView.swift:731-738) — filtered the same way
-            // as the pre-delete snapshot above so completed/past series
-            // occurrences (untouched by this edit) aren't touched either.
-            // `exerciseCount: nil` relies on `EventKitBridge.
-            // estimatedDuration`'s documented 60-min fallback
-            // (EventKitBridge.swift:79-95) — this view has no
-            // `routineExerciseCounts` cache to consult, unlike
-            // `ScheduleSessionView`.
-            for oldID in oldOccurrenceIDs {
-                await EventKitBridge.removeEvent(sessionID: oldID)
-            }
-            if CalendarSyncPrefsStore.isEnabled() {
-                let newOccurrences = ((try? await SeriesRepository.occurrences(seriesID: seriesID)) ?? [])
-                    .filter { $0.state == "scheduled" && ($0.scheduledFor ?? .distantPast) > now }
-                for session in newOccurrences {
-                    let routine = session.routineID.flatMap { rid in routines.first { $0.id == rid } }
-                    await EventKitBridge.syncEvent(session: session, routineName: routine?.name, exerciseCount: nil)
-                }
-            }
-
             onSaved()
             dismiss()
+
+            // EventKit sync (Phase H Task 2; moved AFTER dismiss + real
+            // exerciseCount threaded through in Phase O Task 2): best-
+            // effort, server op already succeeded above — `onSaved()`/
+            // `dismiss()` no longer wait on this. Old events are stale
+            // (their session rows are gone) — remove first. Removal is
+            // ungated on the toggle, same "cleanup always runs regardless
+            // of the toggle's CURRENT state" reasoning as `LobbyView.
+            // cancelSeriesForward()` (LobbyView.swift:1174-1180 area).
+            // Then re-fetch and sync the freshly re-materialized
+            // occurrences, gated on `CalendarSyncPrefsStore.isEnabled()`
+            // exactly like `ScheduleSessionView.
+            // syncScheduledSessionsToCalendar` — filtered the same way as
+            // the pre-delete snapshot above so completed/past series
+            // occurrences (untouched by this edit) aren't touched either.
+            // `exerciseCount` now looks up `routineExerciseCounts`
+            // (`loadData()` above) instead of always passing `nil` — kills
+            // the 60-min generic-duration fallback for routine-assigned
+            // occurrences, matching `ScheduleSessionView`'s own behavior.
+            // `routines`/`routineExerciseCounts` are snapshotted into local
+            // `let`s before the `Task` so this closure doesn't depend on
+            // `self` still being around after the sheet closes.
+            let routinesSnapshot = routines
+            let exerciseCountsSnapshot = routineExerciseCounts
+            Task {
+                for oldID in oldOccurrenceIDs {
+                    await EventKitBridge.removeEvent(sessionID: oldID)
+                }
+                if CalendarSyncPrefsStore.isEnabled() {
+                    let newOccurrences = ((try? await SeriesRepository.occurrences(seriesID: seriesID)) ?? [])
+                        .filter { $0.state == "scheduled" && ($0.scheduledFor ?? .distantPast) > now }
+                    for session in newOccurrences {
+                        let routine = session.routineID.flatMap { rid in routinesSnapshot.first { $0.id == rid } }
+                        let exerciseCount = session.routineID.flatMap { exerciseCountsSnapshot[$0] }
+                        await EventKitBridge.syncEvent(session: session, routineName: routine?.name, exerciseCount: exerciseCount)
+                    }
+                }
+            }
         } catch let error as GymSyncError {
             errorText = error.errorDescription
         } catch {

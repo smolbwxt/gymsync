@@ -680,13 +680,26 @@ struct ScheduleSessionView: View {
                 if let first = occurrences.first {
                     onScheduled(first)
                 }
-                // EventKit sync (Phase H Task 2): organizer-side, gated on
-                // the You-tab toggle. `occurrences` is exactly the series'
-                // MATERIALIZED set (bounded — `SeriesRepository.create`
-                // never open-ended-recurs), so this creates one calendar
-                // event per already-materialized session row, no more.
-                await syncScheduledSessionsToCalendar(occurrences)
                 dismiss()
+                // EventKit sync (Phase H Task 2; moved AFTER dismiss in
+                // Phase O Task 2): organizer-side, gated on the You-tab
+                // toggle. `occurrences` is exactly the series' MATERIALIZED
+                // set (bounded — `SeriesRepository.create` never
+                // open-ended-recurs), so this creates one calendar event
+                // per already-materialized session row, no more. The
+                // server write (already awaited above) is what
+                // `onScheduled` needed — the per-occurrence EventKit loop
+                // no longer gates the sheet close; it now runs fire-and-
+                // forget in a detached `Task`, best-effort as always
+                // (`EventKitBridge.syncEvent` never throws). If the app is
+                // killed mid-loop, `EventKitBridge.reconcile()`'s
+                // app-foreground sweep is NOT the safety net here (this
+                // loop only ADDS events, reconcile only REMOVES stale
+                // ones) — a killed-mid-loop series would simply be missing
+                // some of its calendar events, recoverable by toggling
+                // calendar sync off/on again (re-triggers
+                // `backfillCalendarSync`).
+                Task { await syncScheduledSessionsToCalendar(occurrences) }
             } catch let error as GymSyncError {
                 errorText = error.errorDescription
             } catch {
@@ -705,10 +718,10 @@ struct ScheduleSessionView: View {
                 generateRoomCode: generateRoomCode
             )
             onScheduled(session)
-            // EventKit sync (Phase H Task 2): see the series path's comment
-            // above — same helper, single-session list.
-            await syncScheduledSessionsToCalendar([session])
             dismiss()
+            // EventKit sync: see the series path's comment above — same
+            // helper, post-dismiss Task, single-session list.
+            Task { await syncScheduledSessionsToCalendar([session]) }
         } catch let error as GymSyncError {
             errorText = error.errorDescription
         } catch {
