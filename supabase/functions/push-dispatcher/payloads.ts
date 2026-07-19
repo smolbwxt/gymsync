@@ -100,9 +100,11 @@ export function buildNotificationPayload(
         body: "You have a new friend request on GymSync.",
         category: CATEGORY.FRIEND_REQUEST,
         // Conditional spread (not a bare `threadId: fromUserId`) — same
-        // idiom `streak_milestone`'s user-case uses below to keep an
-        // absent id OUT of the object entirely, rather than present as an
-        // explicit `undefined` key (NotificationContent.threadId is
+        // idiom as `streak_milestone`'s shared conditional-spread
+        // expression below (the one line that runs for both its user and
+        // group cases), used here to keep an absent id OUT of the object
+        // entirely, rather than present as an explicit `undefined` key
+        // (NotificationContent.threadId is
         // optional; `dispatchBatch`/APNs treat a present-but-undefined key
         // and an absent key identically at the JSON boundary, but this
         // keeps `buildNotificationPayload`'s return value exactly as
@@ -251,8 +253,10 @@ export function buildNotificationPayload(
       // here (pure map, no DB access) — generic copy, same constraint as
       // every other case in this file. No natural session/group thread for
       // a cross-session leaderboard event (the pass can happen from a
-      // completely unrelated session), so no threadId — same as
-      // friend_request above, which has no natural grouping surface either.
+      // completely unrelated session), so no threadId — unlike
+      // friend_request above (which now threads by from_user_id, Task 6
+      // item 7), none of this payload's ids (routine_id/attempt_id/
+      // passing_user_id) map onto a session/group thread to group by.
       // Category: the task brief's 7-id list has no bespoke "View
       // Leaderboard" action button, so this shares SESSION_VIEW — the same
       // generic "open and look" bucket partner_pr/chat_mention/
