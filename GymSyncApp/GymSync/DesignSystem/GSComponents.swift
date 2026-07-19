@@ -1785,6 +1785,11 @@ struct GSVoiceCoachMark: View {
 // frame specifies but documented here (and in `accepted-deviations.json`)
 // as chrome-only pending a real backing API. `presentationDetents`/sheet
 // wrapping is the caller's job — this is just the sheet's content.
+//
+// Fix wave 1 (reviewer Finding F5): "documented in a code comment" wasn't
+// enough — the two toggles were visually indistinguishable from real,
+// working controls. Both are now `.disabled(true)` with a "Coming soon"
+// caption under each title (see the toggles' own inline comment below).
 
 struct GSVoiceMixerSheet: View {
     @Environment(\.gsTheme) private var theme
@@ -1824,22 +1829,46 @@ struct GSVoiceMixerSheet: View {
                     }
                 }
 
-                // Toggles — chrome-only, see type doc comment.
+                // Toggles — chrome-only, see type doc comment. Fix wave 1
+                // (reviewer Finding F5): rendered per the frame but
+                // previously indistinguishable from a real, working
+                // control. Now `.disabled(true)` (structurally
+                // non-interactive, not just visually) + a small "Coming
+                // soon" caption under each title — same toggle-row-with-
+                // inline-caption shape `YouTabView.soloPrivacyRow`/
+                // `calendarSyncRow` already establish for a title+caption
+                // pair beside a toggle (`Features/You/YouTabView.swift:311-336,
+                // 528-549`) — plus an overall dimmed opacity so the whole
+                // block reads as inert at a glance. `accepted-deviations.json`'s
+                // `voice-mixer-sheet` entry records this as the deviation.
                 VStack(spacing: 0) {
                     Toggle(isOn: $noiseSuppression) {
-                        Text("Noise suppression")
-                            .font(GSFont.bold(14, relativeTo: .body))
-                            .foregroundStyle(theme.text)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Noise suppression")
+                                .font(GSFont.bold(14, relativeTo: .body))
+                                .foregroundStyle(theme.text)
+                            Text("Coming soon")
+                                .font(GSFont.body(11, relativeTo: .caption2))
+                                .foregroundStyle(theme.neutral500)
+                        }
                     }
+                    .disabled(true)
                     .padding(12)
                     GSDivider()
                     Toggle(isOn: $hearOwnVoice) {
-                        Text("Hear my own voice")
-                            .font(GSFont.bold(14, relativeTo: .body))
-                            .foregroundStyle(theme.neutral500)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Hear my own voice")
+                                .font(GSFont.bold(14, relativeTo: .body))
+                                .foregroundStyle(theme.neutral500)
+                            Text("Coming soon")
+                                .font(GSFont.body(11, relativeTo: .caption2))
+                                .foregroundStyle(theme.neutral500)
+                        }
                     }
+                    .disabled(true)
                     .padding(12)
                 }
+                .opacity(0.6)
                 .tint(theme.accent)
                 .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
 
