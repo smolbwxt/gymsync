@@ -140,7 +140,40 @@ final class WatchConnectivityBridgeTests: XCTestCase {
             isActive: isActive, shareHeartRate: shareHeartRate
         )
         harness.bridge.updateSessionState(payload)
+        // Fix wave 1 (reviewer finding, CRITICAL) — `handleHRSample`'s relay
+        // gate no longer reads `shareHeartRate` off THIS pushed snapshot; it
+        // reads the LIVE `ThemeStore.shared.shareHeartRate` instead (see
+        // that method's own doc comment). Syncing this helper's one
+        // `shareHeartRate` parameter to BOTH the pushed snapshot AND the
+        // live value is what keeps every PRE-fix-wave-1 call site below
+        // passing unchanged — they're all exercising the "honest" case
+        // where the two nets agree. The one test that needs them to
+        // DISAGREE (`testHRSampleWithLiveShareHeartRateFalseDoesNotPublish
+        // EvenWithStaleLastPushedStateTrue`, below) calls
+        // `setLiveShareHeartRate(_:)` again, separately, right after this.
+        setLiveShareHeartRate(shareHeartRate)
         return payload
+    }
+
+    /// Sets the LIVE `ThemeStore.shared.shareHeartRate` — the actual
+    /// production surface `WatchConnectivityBridge.handleHRSample` now
+    /// reads directly (Fix wave 1) — via the SAME `noteExternalSettingsWrite(_:)`
+    /// path `YouTabView.setShareHeartRate` uses in production, not by
+    /// poking a private field (there is no field to poke: `shareHeartRate`
+    /// is `private(set)`). `ThemeStore.shared` is a TRUE SINGLETON, not a
+    /// per-test fixture — `tearDown()` below resets it after every test in
+    /// this file so nothing leaks into whatever test runs next in this same
+    /// process (XCTest runs every test class in a bundle in one process by
+    /// default).
+    private func setLiveShareHeartRate(_ value: Bool) {
+        ThemeStore.shared.noteExternalSettingsWrite(
+            UserSettings(userID: UUID(), defaultRestSeconds: 120, palette: "midnight", updatedAt: Date(), shareHeartRate: value)
+        )
+    }
+
+    override func tearDown() async throws {
+        setLiveShareHeartRate(false)
+        try await super.tearDown()
     }
 
     private func reply(from dict: [String: Any]) throws -> WatchActionReply {
@@ -569,6 +602,30 @@ final class WatchConnectivityBridgeTests: XCTestCase {
         await h.bridge.handleHRSample(envelope, replyHandler: { captured = $0 })
 
         XCTAssertTrue(h.heartRateBroadcast.published.isEmpty)
+        let outcome = try reply(from: captured)
+        XCTAssertEqual(outcome.outcome, .failure)
+    }
+
+    /// Fix wave 1 (reviewer finding, CRITICAL) — proves this gate is
+    /// genuinely INDEPENDENT of the Watch's own gate, not sharing one stale
+    /// input with it (the reviewer's exact criticism of the pre-fix code,
+    /// which read `shareHeartRate` off this same pushed snapshot).
+    /// `lastPushedState.shareHeartRate` is STALE-true (the Watch was last
+    /// told sharing was on); the LIVE `ThemeStore.shared.shareHeartRate` —
+    /// set to `false` here, deliberately diverging from what
+    /// `seedSessionState` just synced it to — is what the fixed gate must
+    /// actually obey.
+    func testHRSampleWithLiveShareHeartRateFalseDoesNotPublishEvenWithStaleLastPushedStateTrue() async throws {
+        let h = makeHarness()
+        _ = seedSessionState(h, isActive: true, shareHeartRate: true)
+        setLiveShareHeartRate(false)
+        let payload = WatchHRSamplePayload(bpm: 140, recordedAt: Date())
+        let envelope = try WatchEnvelope.encode(kind: .hrSample, payload: payload)
+
+        var captured: [String: Any] = [:]
+        await h.bridge.handleHRSample(envelope, replyHandler: { captured = $0 })
+
+        XCTAssertTrue(h.heartRateBroadcast.published.isEmpty, "live ThemeStore says sharing is off — must not publish even though lastPushedState is stale-true")
         let outcome = try reply(from: captured)
         XCTAssertEqual(outcome.outcome, .failure)
     }

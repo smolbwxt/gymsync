@@ -64,7 +64,39 @@ final class HeartRateSampler: NSObject {
     private var workoutSession: HKWorkoutSession?
     private var builder: HKLiveWorkoutBuilder?
     private var anchoredQuery: HKAnchoredObjectQuery?
-    private var isRunning = false
+
+    /// Fix wave 1 (reviewer finding, IMPORTANT 1) — replaces the old bare
+    /// `isRunning: Bool` + unretained `Task { ... }` shape, which had a real
+    /// leak race: `start()` set `isRunning = true` SYNCHRONOUSLY, then did
+    /// its actual HealthKit setup in an unretained `Task`. If `stop()` fired
+    /// during that in-flight window, it saw `isRunning == true` and "did its
+    /// job" — but `workoutSession`/`anchoredQuery` were still `nil` at that
+    /// point (the `Task` hadn't populated them yet), so `stop()`'s own
+    /// teardown calls were silent no-ops against nothing, AND it set
+    /// `isRunning = false`. The in-flight `Task` then finished — with no
+    /// idea `stop()` had ever run — and populated `workoutSession`/`builder`/
+    /// `anchoredQuery` with a genuinely LIVE HealthKit session, while
+    /// `isRunning` (now `false`) told the rest of this type "nothing is
+    /// running." That live session became permanently unstoppable: a later
+    /// `stop()` call would see `isRunning == false` and no-op immediately
+    /// (never touching the now-populated handles), and a later `start()`
+    /// call would see `isRunning == false` and happily begin a SECOND
+    /// workout session on top of the still-live first one.
+    ///
+    /// Fix: an explicit 3-state machine + a retained `Task` handle.
+    /// `stop()` during `.starting` CANCELS that task (`startTask?.cancel()`)
+    /// and flips state back to `.idle` immediately — nothing to tear down
+    /// yet, since `workoutSession`/`anchoredQuery` are only ever assigned
+    /// AFTER the task's own post-await recheck (`start()`'s own doc
+    /// comment traces exactly why one recheck, right after the single
+    /// `await`, is sufficient to close the race).
+    private enum State: Equatable {
+        case idle
+        case starting
+        case running
+    }
+    private var state: State = .idle
+    private var startTask: Task<Void, Never>?
 
     /// Pure throttle core, reused from the phone side (`GymSyncShared/
     /// HeartRateThrottle.swift`'s own header comment explains why THIS file
@@ -79,25 +111,52 @@ final class HeartRateSampler: NSObject {
 
     // MARK: - Lifecycle
 
-    /// Starts sampling. Idempotent — a second call while already running is
-    /// a no-op (mirrors `WatchConnectivityBridge.activateIfNeeded`'s own
-    /// idempotency guard shape). Called ONLY from `WatchSessionStore
-    /// .syncHeartRateSampler()` when `sessionState.isActive &&
-    /// sessionState.shareHeartRate` — see that method for the gating logic;
-    /// this type has no opinion on WHEN it should run, only HOW.
+    /// Starts sampling. Idempotent — a second call while already `.starting`
+    /// or `.running` is a no-op (mirrors `WatchConnectivityBridge
+    /// .activateIfNeeded`'s own idempotency guard shape). Called ONLY from
+    /// `WatchSessionStore.syncHeartRateSampler()` when `sessionState.isActive
+    /// && sessionState.shareHeartRate` — see that method for the gating
+    /// logic; this type has no opinion on WHEN it should run, only HOW.
+    ///
+    /// LEAK-RACE FIX (reviewer finding, IMPORTANT 1 — full trace on
+    /// `state`'s own doc comment above): `state = .starting` is set
+    /// SYNCHRONOUSLY before the `Task` below ever awaits anything, so a
+    /// `stop()` arriving before this function even returns still sees the
+    /// correct (non-`.idle`) state. The single `await` inside
+    /// `requestAuthorizationIfNeeded()` is the ONLY point another
+    /// MainActor-isolated call (`stop()`) can interleave — `beginWorkoutSession()`
+    /// and `startAnchoredQuery()` are both synchronous, non-suspending calls,
+    /// so once the recheck below passes, nothing can preempt the rest of
+    /// this sequence before `state = .running` lands. One recheck,
+    /// immediately after the one `await`, is therefore sufficient — not two.
     func start() {
-        guard !isRunning else { return }
+        guard state == .idle else { return }
         guard HKHealthStore.isHealthDataAvailable() else { return }
-        isRunning = true
-        Task {
+        state = .starting
+        startTask = Task {
             do {
                 try await requestAuthorizationIfNeeded()
+            } catch {
+                state = .idle
+                startTask = nil
+                Self.logger.error("HeartRateSampler start failed: \(error.localizedDescription, privacy: .public)")
+                return
+            }
+            // `stop()` may have fired (and cancelled this task) while the
+            // authorization request above was in flight — bail out here,
+            // BEFORE touching any HealthKit session/query state, rather
+            // than going on to populate a live workout session `stop()`
+            // already told this type to abandon.
+            guard state == .starting, !Task.isCancelled else { return }
+            do {
                 try beginWorkoutSession()
                 startAnchoredQuery()
+                state = .running
             } catch {
-                isRunning = false
+                state = .idle
                 Self.logger.error("HeartRateSampler start failed: \(error.localizedDescription, privacy: .public)")
             }
+            startTask = nil
         }
     }
 
@@ -106,19 +165,35 @@ final class HeartRateSampler: NSObject {
     /// `WatchSessionStore.syncHeartRateSampler()`'s single combined guard.
     /// Idempotent. `builder.discardWorkout()`, never `finishWorkout()` —
     /// see this type's header comment on why nothing gets saved.
+    ///
+    /// LEAK-RACE FIX (reviewer finding, IMPORTANT 1): branches on `state`
+    /// rather than a single `isRunning` bool. The `.starting` case is the
+    /// one the old code got wrong — CANCELS the in-flight `start()` task
+    /// (so its post-await recheck bails, see that function's own doc
+    /// comment) instead of no-op-ing against handles that don't exist yet.
     func stop() {
-        guard isRunning else { return }
-        isRunning = false
-        if let anchoredQuery {
-            healthStore.stop(anchoredQuery)
+        switch state {
+        case .idle:
+            return
+        case .starting:
+            startTask?.cancel()
+            startTask = nil
+            state = .idle
+        case .running:
+            state = .idle
+            startTask = nil
+            if let anchoredQuery {
+                healthStore.stop(anchoredQuery)
+            }
+            anchoredQuery = nil
+            workoutSession?.end()
+            // `builder.discardWorkout()` happens in the
+            // `HKWorkoutSessionDelegate` callback below once the session
+            // actually reaches `.ended` — ending a session is asynchronous
+            // (Apple's documented state-machine transition), so discarding
+            // here immediately (before that transition lands) would race
+            // an in-flight `beginCollection`.
         }
-        anchoredQuery = nil
-        workoutSession?.end()
-        // `builder.discardWorkout()` happens in the `HKWorkoutSessionDelegate`
-        // callback below once the session actually reaches `.ended` — ending
-        // a session is asynchronous (Apple's documented state-machine
-        // transition), so discarding here immediately (before that
-        // transition lands) would race an in-flight `beginCollection`.
     }
 
     // MARK: - HealthKit setup

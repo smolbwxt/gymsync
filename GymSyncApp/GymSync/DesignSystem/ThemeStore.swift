@@ -31,6 +31,38 @@ public final class ThemeStore {
     /// .defaults`' own safe opt-out default.
     public private(set) var shareHeartRate: Bool = false
 
+    /// Fix wave 1 (reviewer finding, CRITICAL) — the trigger `GroupSessionLiveView
+    /// .pushWatchSessionState()` was missing. That function already reads
+    /// `shareHeartRate` above LIVE on every call (this property's own doc
+    /// comment), but nothing ever fired a re-push when the value actually
+    /// changed mid-session — a toggle flip in `YouTabView` (this app's tabs
+    /// stay mounted across switches, so no re-`.task` fires) sat unseen by
+    /// the Watch until an unrelated turn-change/session-end push happened
+    /// to carry it along. `GroupSessionLiveView` sets this to a closure that
+    /// calls its own `pushWatchSessionState()` on `.onAppear` (while a live
+    /// session is genuinely on screen) and clears it back to `nil` on
+    /// `.onDisappear` — same "owner sets one closure per event" convention
+    /// `WatchSessionProviding.onMessageReceived` already establishes
+    /// (`Services/WatchConnectivityBridge.swift`). `nil` whenever no live
+    /// session view is mounted, so `setShareHeartRate(_:)` below is always
+    /// safe to call unconditionally (optional-chained, harmless no-op).
+    ///
+    /// ISOLATION: both sides are `@MainActor`. This class is declared
+    /// `@MainActor` (isolating every stored-property access, including this
+    /// one), and `GroupSessionLiveView` — a SwiftUI `View` — inherits
+    /// `@MainActor` isolation from the `View` protocol itself for its
+    /// `body`/lifecycle-modifier closures (`.onAppear`/`.onDisappear`), the
+    /// same reasoning already documented at several existing `@MainActor`
+    /// annotations on that file's own methods. The closure literal assigned
+    /// in `.onAppear` is created within that MainActor context and is only
+    /// ever INVOKED from `setShareHeartRate(_:)` below, itself a method of
+    /// this `@MainActor` class — so it always runs on the main actor at the
+    /// call site, matching `WatchConnectivityBridge.init`'s identical
+    /// "closure literal assigned to a plain, non-`@MainActor`-typed
+    /// property, created and only ever called from a MainActor context"
+    /// shape for `self.session.onMessageReceived = { [weak self] ... }`.
+    public var onShareHeartRateChange: (() -> Void)?
+
     /// Cached most-recent settings row — kept so `select(_:)` can persist the
     /// new palette without clobbering `defaultRestSeconds` (mutates a copy of
     /// the whole row, same convention as `RestTimerSettingView.select(_:)`,
@@ -65,7 +97,7 @@ public final class ThemeStore {
     public func load() async {
         guard let settings = try? await UserSettingsRepository.get() else { return }
         lastKnownSettings = settings
-        shareHeartRate = settings.shareHeartRate
+        setShareHeartRate(settings.shareHeartRate)
         apply(paletteID: settings.palette)
     }
 
@@ -143,7 +175,21 @@ public final class ThemeStore {
         // own doc comment below), so `shareHeartRate` is never the field
         // being protected from clobber; it always wins from whichever
         // write reported it, same as `defaultRestSeconds`.
-        shareHeartRate = lastKnownSettings?.shareHeartRate ?? false
+        setShareHeartRate(lastKnownSettings?.shareHeartRate ?? false)
+    }
+
+    /// Single writer for `shareHeartRate` — both `load()` and
+    /// `noteExternalSettingsWrite(_:)` route through here so
+    /// `onShareHeartRateChange` fires from exactly one place. Change-gated
+    /// (not called unconditionally) so an UNRELATED full-row upsert that
+    /// happens to report the same value it already had (e.g. a rest-timer
+    /// save through `noteExternalSettingsWrite` while sharing is already
+    /// off) doesn't trigger a pointless extra Watch push — only a GENUINE
+    /// flip re-fires the hook.
+    private func setShareHeartRate(_ value: Bool) {
+        guard shareHeartRate != value else { return }
+        shareHeartRate = value
+        onShareHeartRateChange?()
     }
 
     /// Pure merge rule behind `noteExternalSettingsWrite` — extracted (and

@@ -786,6 +786,22 @@ struct GroupSessionLiveView: View {
             // so a Watch that's already reachable doesn't wait for the
             // first turn change to see anything.
             WatchConnectivityBridge.shared.activateIfNeeded()
+            // Fix wave 1 (reviewer finding, CRITICAL) — `pushWatchSessionState()`
+            // already reads `ThemeStore.shared.shareHeartRate` LIVE on every
+            // call (see that function's own doc comment), but nothing ever
+            // FIRED a call when the value changed mid-session: this app's
+            // tabs stay mounted across switches (no re-`.task`), so a
+            // toggle flip in `YouTabView` while this view is on screen sat
+            // unseen by the Watch until an unrelated turn-change/session-end
+            // push happened to carry it along — an opt-out could keep
+            // broadcasting HR for the rest of the session. `ThemeStore
+            // .onShareHeartRateChange` (`DesignSystem/ThemeStore.swift`) is
+            // the trigger this was missing: set here so a flip anywhere in
+            // the app re-pushes state to the Watch immediately in EITHER
+            // direction (opt-out stops the sampler on the very next push,
+            // opt-in starts it) — cleared back to `nil` in `.onDisappear`
+            // below.
+            ThemeStore.shared.onShareHeartRateChange = { pushWatchSessionState() }
             pushWatchSessionState()
         }
         .onDisappear {
@@ -818,6 +834,17 @@ struct GroupSessionLiveView: View {
             // view is about to stop observing.
             heartRateExpiryTasks.values.forEach { $0.cancel() }
             heartRateExpiryTasks = [:]
+            // Fix wave 1 (reviewer finding, CRITICAL) — clears the trigger
+            // set in `.onAppear` above. Unconditional (no "still points at
+            // THIS session" guard the way `appState.activeSessionID`'s
+            // clear above needs): only one `GroupSessionLiveView` is ever
+            // genuinely live-on-screen at a time in this app's navigation
+            // model, so there's no sibling instance whose hook this could
+            // wrongly clear — leaving it set would let a departed view's
+            // stale `pushWatchSessionState()` closure keep firing (harmless
+            // today since it reads live state, but a dangling reference to
+            // a view that's gone is still the wrong thing to leave live).
+            ThemeStore.shared.onShareHeartRateChange = nil
             Task {
                 await liveService.unsubscribe()
                 await broadcastService.unsubscribe()
@@ -1087,7 +1114,16 @@ struct GroupSessionLiveView: View {
                 // always the current (self) user, so `selfID` is the only
                 // key this slot ever reads. See `GSHeartRatePill`'s header
                 // comment for the frame citation.
-                if let mine = heartRateFor(selfID) {
+                //
+                // Fix wave 1 (CI compile error, `selfID` is `UUID?` —
+                // `appState.currentProfile?.id`, line 234 — but
+                // `heartRateFor(_:)` takes a non-optional `UUID`): unwrapped
+                // here rather than force-unwrapped or defaulted. A nil
+                // `selfID` (no signed-in profile resolved yet) means no
+                // pill — the honest choice, matching every OTHER optional
+                // guard on `selfID` elsewhere in this file (e.g. line 407's
+                // `guard let selfID, ... else { return nil }`).
+                if let selfID, let mine = heartRateFor(selfID) {
                     GSHeartRatePill(
                         bpm: mine.bpm,
                         zone: mine.zone,

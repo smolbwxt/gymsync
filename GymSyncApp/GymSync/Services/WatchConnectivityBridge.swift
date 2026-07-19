@@ -387,10 +387,24 @@ final class WatchConnectivityBridge {
     /// (same "second net" philosophy as the throttle two layers down,
     /// `HeartRateBroadcastService.publish`'s own doc comment) against a
     /// stale/racing watch build that hasn't caught up to a just-flipped
-    /// `shareHeartRate` or a just-ended session yet — reading BOTH checks
-    /// off `lastPushedState` (the SAME already-pushed snapshot
-    /// `handleLogSet`/`handleSoundboardTap` resolve `sessionID`/`groupID`
-    /// from above) rather than adding new bridge state to track.
+    /// `shareHeartRate` or a just-ended session yet.
+    ///
+    /// Fix wave 1 (reviewer finding, CRITICAL): the `isActive` half of this
+    /// still reads `lastPushedState` — there is no independent phone-side
+    /// notion of "is this session live" to read instead, and staleness here
+    /// is bounded by the SAME triggers that already re-push session state
+    /// (turn change, session end, foreground). The `shareHeartRate` half no
+    /// longer does: it now reads the LIVE `ThemeStore.shared.shareHeartRate`
+    /// (`DesignSystem/ThemeStore.swift`) — the same source of truth
+    /// `YouTabView.setShareHeartRate` writes directly and
+    /// `pushWatchSessionState()` reads live for the OUTBOUND push. Reading
+    /// `lastPushedState.shareHeartRate` here would make this "second net"
+    /// share ONE un-refreshed input with the Watch's own gate — exactly the
+    /// reviewer's criticism: both nets going stale together defeats the
+    /// point of having two. Reading the live value instead means an
+    /// opt-out drops samples on THIS gate immediately, even before a fresh
+    /// `updateSessionState` push ever reaches (or is acknowledged by) the
+    /// Watch — genuinely independent of `lastPushedState`'s own staleness.
     ///
     /// EPHEMERAL LAW: no branch in this function ever logs `payload.bpm` or
     /// the computed `zone` — only ids and fixed strings, matching every
@@ -412,7 +426,7 @@ final class WatchConnectivityBridge {
             reply(.failure, message: "Session is not live", to: replyHandler)
             return
         }
-        guard state.shareHeartRate else {
+        guard ThemeStore.shared.shareHeartRate else {
             reply(.failure, message: "Heart rate sharing is off", to: replyHandler)
             return
         }

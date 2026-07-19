@@ -176,13 +176,22 @@ final class HeartRateBroadcastService {
     /// ordering rule), one `Task` iterating the stream on the main actor.
     ///
     /// Self-echo: this channel receives the CURRENT phone's own published
-    /// samples too (Realtime broadcast's default behavior — confirmed by
-    /// `SessionBroadcastService.subscribe`'s own `onSoundboard` handler,
-    /// which explicitly guards `userID != selfID` to skip its own echo,
-    /// meaning the SDK/config in this codebase already delivers self-sent
-    /// broadcasts back to the sender). `GroupSessionLiveView`'s own
-    /// `onHeartRate` callback relies on this: it's the SAME path that feeds
-    /// both the Spotlight hero's own-HR pill (frame 2A) and every OTHER
+    /// samples too (Realtime broadcast's default behavior). Confirmed by
+    /// `GroupSessionLiveView`'s own `onSoundboard` CALLBACK closure
+    /// (`Features/Sessions/GroupSessionLiveView.swift:~2090-2092`, its call
+    /// site of `SessionBroadcastService.subscribe`), which explicitly
+    /// guards `userID != selfID` to skip its own echo — that guard lives in
+    /// the CALLER's closure, not inside `SessionBroadcastService.subscribe`'s
+    /// own body (Fix wave 1, MINOR: the original citation here attributed
+    /// it to the wrong file — `subscribe`'s own body forwards every
+    /// received broadcast to its `onSoundboard` parameter unconditionally,
+    /// `Services/SessionBroadcastService.swift:86`; it does no filtering of
+    /// its own). The guard's mere EXISTENCE at that call site is still the
+    /// right evidence: it wouldn't be needed at all if this codebase's
+    /// Realtime SDK/config didn't already deliver self-sent broadcasts back
+    /// to the sender. `GroupSessionLiveView`'s own `onHeartRate` callback
+    /// relies on the same self-echo: it's the SAME path that feeds both the
+    /// Spotlight hero's own-HR pill (frame 2A) and every OTHER
     /// participant's roster pill (frame 2B) — one subscription, no special
     /// self-only mechanism needed.
     func subscribe(
