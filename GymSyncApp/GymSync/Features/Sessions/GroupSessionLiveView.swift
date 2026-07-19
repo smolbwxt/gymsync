@@ -32,6 +32,14 @@ import SwiftUI
 struct GroupSessionLiveView: View {
     let session: WorkoutSession
 
+    /// True only when this view was reached via LobbyView ->
+    /// `SessionInProgressView` (the Lobby<->Live push/pop pair for the SAME
+    /// session) — false for every other route, currently `BurpeeLedgerView`'s
+    /// direct `NavigationLink` (Phase O Task 5, 3e follow-up queue item 6,
+    /// "Lobby<->Live back-nav rejoin blip"). See `onDisappear`'s doc comment
+    /// below for what this actually guards.
+    let voicePersistsOnPop: Bool
+
     @Environment(AppState.self)       private var appState
     @Environment(\.dismiss)          private var dismiss
     @Environment(\.scenePhase)       private var scenePhase
@@ -353,8 +361,9 @@ struct GroupSessionLiveView: View {
 
     // MARK: - Init
 
-    init(session: WorkoutSession) {
+    init(session: WorkoutSession, voicePersistsOnPop: Bool = false) {
         self.session = session
+        self.voicePersistsOnPop = voicePersistsOnPop
         _liveSession = State(initialValue: session)
     }
 
@@ -642,16 +651,30 @@ struct GroupSessionLiveView: View {
             Task {
                 await liveService.unsubscribe()
                 await broadcastService.unsubscribe()
-                // Unconditional, mirroring the two unsubscribes above — this
-                // is the top of the voice-eligible flow (no further "more
-                // live" view to hand the room off to, unlike LobbyView's
-                // guarded leave() for its Lobby -> live-session transition),
-                // so every disappearance here is a genuine "stop talking"
-                // moment (session ended, backed out, or a child pushed on
-                // top — the latter already re-subscribes everything else on
-                // return via this same `.task`, so voice re-joining too is
-                // consistent, not a new blip class introduced here).
-                await VoiceRoomService.shared.leave()
+                // Phase O Task 5 (3e follow-up queue item 6, "Lobby<->Live
+                // back-nav rejoin blip"): this used to be unconditional
+                // (every disappearance treated as a genuine "stop talking"
+                // moment). That's still right for a child pushed on top
+                // (re-subscribes everything, voice included, on return via
+                // this same `.task`) and for `BurpeeLedgerView`'s direct
+                // route (`voicePersistsOnPop` false there — no Lobby is
+                // about to reclaim the room). But backing OUT to LobbyView
+                // for the SAME still-live session (`voicePersistsOnPop`
+                // true — `SessionInProgressView` is the only route that
+                // sets it, per its own "LobbyView navigates here" doc
+                // comment) is exactly LobbyView's own guarded-leave case,
+                // mirrored: LobbyView's `.task` re-fires `joinVoiceIfEligible
+                // ()` on reappearance and `VoiceRoomService.join()`'s
+                // idempotent guard no-ops against an already-`.connected`
+                // room — so tearing the room down here just to have Lobby
+                // immediately reconnect it produced an audible disconnect/
+                // reconnect blip for no reason. Only leave() when EITHER
+                // this isn't that persisting route OR the session has left
+                // the voice-eligible window (ended/cancelled/abandoned) —
+                // a genuine "stop talking" moment either way.
+                if !voicePersistsOnPop || !isVoiceEligible {
+                    await VoiceRoomService.shared.leave()
+                }
             }
         }
     }
