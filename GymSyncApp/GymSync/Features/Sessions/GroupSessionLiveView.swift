@@ -1397,6 +1397,13 @@ struct GroupSessionLiveView: View {
                     if log.isFailed {
                         GSTag(text: "failed", style: .neutral)
                     }
+                    // Phase O Task 3 — syncing indicator (system-designed, no canvas
+                    // frame; docs/design/accepted-deviations.json's
+                    // "offline-syncing-indicator" entry). Same GSTag(.outline) chip
+                    // idiom this row's own penalty/failed tags already use.
+                    if OfflineSetLogQueue.shared.pendingSetLogIDs.contains(log.id) {
+                        GSTag(text: "syncing", style: .outline)
+                    }
                 }
             }
 
@@ -1547,6 +1554,14 @@ struct GroupSessionLiveView: View {
                 Task { await reloadParticipants() }
             },
             onSetLogged: { log in
+                // Phase O Task 3 — dedupe guard: an optimistically-appended offline
+                // set (queued via OfflineSetLogQueue, see logSetAndAdvance/logSet
+                // above) shares its `id` with the eventual realtime echo of its own
+                // successful replay. Without this guard, that echo would double
+                // -append the row (and double-count penaltyLogged) once reconnected.
+                // No-op for the ordinary online path — a fresh id is never already
+                // in feedSets.
+                guard !feedSets.contains(where: { $0.id == log.id }) else { return }
                 // Prepend to feed (newest-first), cap 30
                 feedSets.insert(log, at: 0)
                 if feedSets.count > 30 { feedSets = Array(feedSets.prefix(30)) }
@@ -1744,13 +1759,46 @@ struct GroupSessionLiveView: View {
             var isPR = false
             var priorBest: Decimal = 0
             if !isFailed, let weight, weight > 0 {
-                let prior = try await priorMax(exerciseID: exerciseID,
-                                               weight: weight, userID: userID)
-                priorBest = prior
-                isPR = weight > prior
+                // Phase O Task 3 — see WorkoutSessionView.log's identical catch for
+                // the full rationale: without this, an offline attempt throws HERE
+                // (before the set-log write below), so a group-session lifter could
+                // never queue a set while offline either. Only `.network` is tolerant.
+                do {
+                    let prior = try await priorMax(exerciseID: exerciseID,
+                                                   weight: weight, userID: userID)
+                    priorBest = prior
+                    isPR = weight > prior
+                } catch let error as GymSyncError {
+                    guard case .network = error else { throw error }
+                    // Offline — PR check skipped (best-effort, never blocks logging).
+                }
             }
 
-            try await SessionRepository.logSet(log)
+            do {
+                try await SessionRepository.logSet(log)
+                Task { await OfflineSetLogQueue.shared.replay() }   // cheap drain
+            } catch let error as GymSyncError {
+                guard case .network = error else { throw error }
+                // Offline — queue for replay + optimistic local append. `feedSets`/
+                // `allSessionSets` normally only ever get a set from the realtime
+                // echo (`onSetLogged` below — "single source" per its own comment);
+                // that echo can't arrive while offline, so this is now this path's
+                // ONLY way the set becomes visible / counts toward mySetCount()
+                // until reconnect. `onSetLogged` gained a dedupe-by-id guard (below)
+                // so the eventual echo of this same id, once replay succeeds, does
+                // not double-append the row.
+                OfflineSetLogQueue.shared.enqueue(log)
+                feedSets.insert(log, at: 0)
+                if feedSets.count > 30 { feedSets = Array(feedSets.prefix(30)) }
+                allSessionSets.append(log)
+                // advanceTurn below is deliberately NOT attempted in this branch —
+                // running/coordinating a live session (turn state) stays
+                // online-required per master spec §6.4's explicit bucket split; only
+                // the set-log WRITE itself is offline-capable. It will still be
+                // attempted below (unchanged), and — being offline — will itself
+                // throw and surface the existing, accurate "check your connection"
+                // banner via the outer catch. The set's rep data is safe either way.
+            }
 
             if isPR, let weight {
                 let name = await ExerciseNameCache.name(for: exerciseID)
@@ -1832,9 +1880,24 @@ struct GroupSessionLiveView: View {
         )
         do {
             try await SessionRepository.logSet(log)
+            Task { await OfflineSetLogQueue.shared.replay() }   // cheap drain
             // penaltyLogged updates via the realtime echo (single source; reload() re-seeds)
         } catch let error as GymSyncError {
-            errorText = error.errorDescription
+            guard case .network = error else {
+                errorText = error.errorDescription
+                return
+            }
+            // Phase O Task 3 — offline: queue for replay + optimistic local append.
+            // This function's "single source: realtime echo" comment above no longer
+            // holds while offline (there is no realtime channel to echo from) — the
+            // local append here is this path's ONLY way the set becomes visible /
+            // counts toward penaltyLogged until reconnect. Mirrors what the realtime
+            // echo (onSetLogged, below) does for the exact same fields.
+            OfflineSetLogQueue.shared.enqueue(log)
+            feedSets.insert(log, at: 0)
+            if feedSets.count > 30 { feedSets = Array(feedSets.prefix(30)) }
+            allSessionSets.append(log)
+            if isPenalty && !isFailed { penaltyLogged += reps ?? 0 }
         } catch {
             errorText = error.localizedDescription
         }

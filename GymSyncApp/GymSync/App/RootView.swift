@@ -1,3 +1,4 @@
+import SwiftData
 import SwiftUI
 
 struct RootView: View {
@@ -19,6 +20,13 @@ struct RootView: View {
     // NotificationPreferencesView all read `@Environment(\.scenePhase)`
     // themselves).
     @Environment(\.scenePhase) private var scenePhase
+    // Phase O Task 3 — offline set-log queue. `RootView` is the one view
+    // instance alive for the whole signed-in session (same rationale as the
+    // calendar-reconcile hook above), so it's the right place to both
+    // configure the queue's ModelContext once and drive its two
+    // app-level replay triggers (connectivity restored, app foreground).
+    @Environment(\.modelContext) private var modelContext
+    @State private var connectivity = ConnectivityMonitor.shared
 
     var body: some View {
         Group {
@@ -73,6 +81,36 @@ struct RootView: View {
             guard case .signedIn = auth.state else { return }
             guard CalendarSyncPrefsStore.isEnabled() else { return }
             Task { await EventKitBridge.reconcile() }
+        }
+        // Phase O Task 3 — configure the queue's ModelContext once, then
+        // attempt an initial drain (covers "was offline when the app was
+        // last force-quit, is online again by the time it relaunches").
+        .task {
+            OfflineSetLogQueue.shared.configure(modelContext: modelContext)
+            guard case .signedIn = auth.state else { return }
+            await OfflineSetLogQueue.shared.replay()
+        }
+        // Replay trigger 1/2 — connectivity restored. `.onChange` fires only
+        // on a transition, so this is exactly the "path becomes satisfied"
+        // edge (not a repeat while already online, not the offline edge).
+        .onChange(of: connectivity.isOnline) {
+            guard connectivity.isOnline else { return }
+            guard case .signedIn = auth.state else { return }
+            Task { await OfflineSetLogQueue.shared.replay() }
+        }
+        // Replay trigger 2/2 — app foreground. A SEPARATE `.onChange(of:
+        // scenePhase)` block, deliberately not merged into the calendar
+        // reconcile hook above — brief's explicit "do NOT duplicate the
+        // reconcile throttle, add alongside": `EventKitBridge.isReconciling`
+        // and `OfflineSetLogQueue`'s own reentrancy guard are independent,
+        // unrelated concerns that just happen to share the same trigger
+        // shape. Same "one instance alive all session" rationale as the
+        // reconcile hook for why this lives on RootView rather than a
+        // per-tab `scenePhase` read.
+        .onChange(of: scenePhase) {
+            guard scenePhase == .active else { return }
+            guard case .signedIn = auth.state else { return }
+            Task { await OfflineSetLogQueue.shared.replay() }
         }
     }
 }

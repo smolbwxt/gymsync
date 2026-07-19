@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import SwiftUI
 
 @main
@@ -31,10 +32,12 @@ struct GymSyncApp: App {
             } else {
                 RootView()
                     .environment(AuthService.shared)
+                    .modelContainer(for: PendingSetLog.self)
             }
             #else
             RootView()
                 .environment(AuthService.shared)
+                .modelContainer(for: PendingSetLog.self)
             #endif
         }
     }

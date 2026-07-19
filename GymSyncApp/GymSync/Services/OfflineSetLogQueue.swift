@@ -1,0 +1,217 @@
+import Foundation
+import SwiftData
+
+// MARK: - Submit seam
+
+/// Abstracts the server-side set-log INSERT so `OfflineSetLogQueue`'s
+/// enqueue/replay/dedupe/prune logic is hermetically testable — same
+/// "protocol + production conformer + test fake" idiom as
+/// `VoiceRoomService`'s `VoiceTokenFetching` seam (Services/
+/// VoiceRoomService.swift:39, `VoiceRoomServiceTests.swift`'s 19 hermetic
+/// tests fake it as `FakeTokenFetcher`), so tests never touch Supabase or
+/// the network.
+protocol SetLogSubmitting {
+    func submit(_ log: SetLog) async throws
+}
+
+/// Production conformer — delegates to the SAME repository method every
+/// online submit surface already calls (`SessionRepository.logSet`,
+/// Models/SessionRepository.swift:73), so replay is byte-identical to a
+/// live submit, not a reimplementation.
+struct SupabaseSetLogSubmitter: SetLogSubmitting {
+    func submit(_ log: SetLog) async throws {
+        try await SessionRepository.logSet(log)
+    }
+}
+
+// MARK: - Offline set-log queue
+
+/// Master spec §6.4's "pending writes queue" for set logs — SCOPE: set
+/// logging only, not a general offline layer (reliability-debt design §3).
+/// `@Observable @MainActor final class` singleton, matching this codebase's
+/// existing convention for exactly this shape of service
+/// (`ConnectivityMonitor.shared`, `AppState.shared` — both `@Observable
+/// @MainActor final class` singletons read directly by views with no
+/// environment threading, see `ConnectivityMonitor`'s own doc comment).
+/// `@MainActor` also keeps every `ModelContext` touch on one actor, which
+/// SwiftData expects (a context is not meant to be used concurrently from
+/// multiple threads).
+@Observable
+@MainActor
+final class OfflineSetLogQueue {
+    static let shared = OfflineSetLogQueue()
+
+    /// Master spec §6.4's stated local retention window ("past sessions
+    /// (last 90 days), set_logs (last 90 days)").
+    static let retentionWindow: TimeInterval = 90 * 24 * 60 * 60
+
+    /// IDs currently queued (enqueued, not yet confirmed landed server-side).
+    /// Views check membership to render the "syncing" indicator — e.g.
+    /// `WorkoutSessionView.loggedSetsTable`'s row icon,
+    /// `GroupSessionLiveView.feedRow`'s tag row (both wired in Phase O
+    /// Task 3). Read directly like `ConnectivityMonitor.shared.isOnline` —
+    /// no environment plumbing needed, `@Observable` tracks the read.
+    private(set) var pendingSetLogIDs: Set<UUID> = []
+
+    /// Best-effort surface for a PERMANENT (non-retryable) replay-time
+    /// failure. No existing global toast/banner idiom exists in this
+    /// codebase to hang this off of (checked `DesignSystem/
+    /// GSComponents.swift` — no Toast/global-banner type; `GSInlineErrorBanner`
+    /// and friends are all per-screen, driven by a local `@State` string, not
+    /// something a background replay pass can reach into). Submit-TIME
+    /// permanent failures (the common case — a bad value, RLS denial) still
+    /// surface exactly as before, through each call site's own existing
+    /// `errorText`/`logSetErrorText` idiom, completely unchanged. This
+    /// property exists so a future screen COULD observe a background-replay
+    /// drop; today it's paired with an `AppLogger.workout` line as the
+    /// actual, honest surfacing mechanism.
+    private(set) var lastPermanentFailure: (setLogID: UUID, message: String)?
+
+    private let submitter: SetLogSubmitting
+    private var modelContext: ModelContext?
+    /// Reentrancy guard — mirrors `EventKitBridge.isReconciling`'s exact
+    /// idiom (Services/EventKitBridge.swift:240): best-effort de-dupe, not a
+    /// hard mutual-exclusion guarantee (acceptable here for the same reason
+    /// EventKitBridge gives — a redundant pass is wasted work, never
+    /// incorrect, since each pass re-fetches from the SwiftData store fresh).
+    private var isReplaying = false
+
+    init(submitter: SetLogSubmitting = SupabaseSetLogSubmitter()) {
+        self.submitter = submitter
+    }
+
+    /// Must be called once (RootView, Phase O Task 3) with the app's
+    /// SwiftData `ModelContext` before enqueue/replay do anything — mirrors
+    /// `ThemeStore.shared.load()`'s "singleton configured post-init from the
+    /// view tree" idiom (App/GymSyncApp.swift's `.task`) rather than this
+    /// class building its own `ModelContainer`, so the queue shares the
+    /// app's single SwiftData store (`.modelContainer(for:
+    /// PendingSetLog.self)` on the `WindowGroup`, GymSyncApp.swift).
+    func configure(modelContext: ModelContext) {
+        self.modelContext = modelContext
+        refreshPendingIDs()
+    }
+
+    /// Enqueue a set log that failed to submit for a transient (offline)
+    /// reason. Idempotent on `id` — a caller retrying the same logical set
+    /// (same `SetLog.id`) never double-queues it.
+    func enqueue(_ log: SetLog) {
+        guard let modelContext else {
+            AppLogger.workout.error("OfflineSetLogQueue.enqueue called before configure(modelContext:) — set \(log.id) NOT queued")
+            return
+        }
+        guard !pendingSetLogIDs.contains(log.id) else { return }
+        modelContext.insert(PendingSetLog(setLog: log))
+        try? modelContext.save()
+        pendingSetLogIDs.insert(log.id)
+    }
+
+    /// Replay every queued item, oldest-enqueued first. Per-item:
+    ///   - success                → remove from queue
+    ///   - `.conflict` (23505)    → already landed in a prior partial
+    ///                              replay; treat as success, remove
+    ///   - `.network`             → transient; STOP the pass, keep this
+    ///                              item and everything after it queued
+    ///   - anything else          → permanent (RLS denial, validation, …);
+    ///                              drop + surface (AppLogger +
+    ///                              `lastPermanentFailure`)
+    /// Also prunes entries older than `retentionWindow` before attempting
+    /// any submits (spec's 90-day window).
+    func replay() async {
+        guard let modelContext else { return }
+        guard !isReplaying else { return }
+        isReplaying = true
+        defer { isReplaying = false }
+
+        pruneExpired(modelContext: modelContext)
+
+        let descriptor = FetchDescriptor<PendingSetLog>(
+            sortBy: [SortDescriptor(\.enqueuedAt, order: .forward)]
+        )
+        guard let items = try? modelContext.fetch(descriptor), !items.isEmpty else { return }
+
+        for item in items {
+            item.attemptCount += 1
+            do {
+                try await submitter.submit(item.asSetLog)
+                remove(item, modelContext: modelContext)
+            } catch let error as GymSyncError {
+                switch error {
+                case .conflict:
+                    remove(item, modelContext: modelContext)
+                case .network:
+                    try? modelContext.save()
+                    return
+                case .unauthorized:
+                    // Deliberate judgment call (recorded in task-3-report.md's
+                    // design-decisions section): treated as transient rather
+                    // than a permanent drop. Unlike `.network`, this isn't one
+                    // of the task brief's named "permanent 4xx" examples (RLS
+                    // denial, validation) — RLS denial itself already surfaces
+                    // as `.validation` (PostgrestError, not AuthError) and
+                    // stays in the permanent-drop bucket below. `.unauthorized`
+                    // specifically means "no valid session right now" (expired
+                    // token, mid-sign-out race), which is recoverable once the
+                    // SAME user is signed back in — dropping a lifter's already
+                    // -captured reps over a recoverable auth hiccup would be a
+                    // far worse failure mode than a network blip, and retry is
+                    // free (idempotent via the UUID PK either way). The replay
+                    // trigger sites (RootView) already gate on `auth.state ==
+                    // .signedIn` before calling `replay()` at all, so this case
+                    // should be rare in practice — reached only by a race
+                    // between the gate check and the actual request.
+                    try? modelContext.save()
+                    return
+                default:
+                    let message = error.errorDescription ?? "Couldn't save that set."
+                    AppLogger.workout.error("offline set-log \(item.id, privacy: .public) dropped permanently: \(message, privacy: .public)")
+                    lastPermanentFailure = (item.id, message)
+                    remove(item, modelContext: modelContext)
+                }
+            } catch {
+                // SessionRepository.logSet always wraps via ErrorMapping, so
+                // this branch shouldn't be reachable in production — kept
+                // conservative (drop, don't wedge the pass on a malformed
+                // item forever) rather than looping on an unrecognized error.
+                let message = error.localizedDescription
+                AppLogger.workout.error("offline set-log \(item.id, privacy: .public) unmapped error: \(message, privacy: .public)")
+                lastPermanentFailure = (item.id, message)
+                remove(item, modelContext: modelContext)
+            }
+        }
+    }
+
+    // MARK: - Internals
+
+    private func remove(_ item: PendingSetLog, modelContext: ModelContext) {
+        modelContext.delete(item)
+        try? modelContext.save()
+        pendingSetLogIDs.remove(item.id)
+    }
+
+    /// Spec's 90-day local window. Logs what's dropped (brief's explicit
+    /// "log what's dropped" requirement) — these are old enough that
+    /// whatever session they belonged to is long past the ledger/stats
+    /// windows that read `set_logs`, so silently losing them is the
+    /// accepted trade-off of the window, not a bug; the log line exists so
+    /// it's traceable if a user ever reports a missing old set.
+    private func pruneExpired(modelContext: ModelContext) {
+        let cutoff = Date().addingTimeInterval(-Self.retentionWindow)
+        let descriptor = FetchDescriptor<PendingSetLog>(
+            predicate: #Predicate { $0.enqueuedAt < cutoff }
+        )
+        guard let expired = try? modelContext.fetch(descriptor), !expired.isEmpty else { return }
+        for item in expired {
+            AppLogger.workout.notice("pruning stale offline set-log \(item.id, privacy: .public), enqueued \(item.enqueuedAt, privacy: .public) (>90d old)")
+            modelContext.delete(item)
+            pendingSetLogIDs.remove(item.id)
+        }
+        try? modelContext.save()
+    }
+
+    private func refreshPendingIDs() {
+        guard let modelContext else { return }
+        let items = (try? modelContext.fetch(FetchDescriptor<PendingSetLog>())) ?? []
+        pendingSetLogIDs = Set(items.map(\.id))
+    }
+}

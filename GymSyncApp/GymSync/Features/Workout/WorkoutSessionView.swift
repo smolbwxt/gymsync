@@ -363,9 +363,23 @@ struct WorkoutSessionView: View {
             let currentExSets = loggedSets.filter { $0.exerciseID == currentRoutineExercise?.exerciseID }
             ForEach(currentExSets) { log in
                 loggedRowCells(
-                    col0: Image(systemName: "checkmark")
-                              .font(.system(size: 13, weight: .bold))
-                              .foregroundStyle(theme.accent700),
+                    // Phase O Task 3 — syncing indicator (system-designed, no canvas
+                    // frame; see docs/design/accepted-deviations.json's
+                    // "offline-syncing-indicator" entry). Swaps the normal checkmark
+                    // for a rotate-arrows glyph while `log.id` is still queued in
+                    // OfflineSetLogQueue — same "read the singleton directly" idiom
+                    // ConnectivityMonitor.shared.isOnline already uses elsewhere.
+                    col0: Group {
+                        if OfflineSetLogQueue.shared.pendingSetLogIDs.contains(log.id) {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(theme.neutral500)
+                        } else {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(theme.accent700)
+                        }
+                    },
                     col1: Text("\(log.reps ?? 0)")
                               .font(GSFont.heading(15, relativeTo: .body))
                               .foregroundStyle(theme.text),
@@ -690,12 +704,39 @@ struct WorkoutSessionView: View {
             var isPR = false
             var priorBest: Decimal = 0
             if !isFailed, let weight, weight > 0 {
-                priorBest = try await priorMax(exerciseID: re.exerciseID,
-                                               weight: weight, userID: userID)
-                isPR = weight > priorBest
+                // Phase O Task 3 (offline set logging, master spec §6.4): this is a
+                // READ that requires connectivity. Without this catch, an offline
+                // attempt throws HERE — before the actual set-log write below is ever
+                // reached — meaning an offline lifter could never log a single
+                // non-failed, weighted set (the common case). Only `.network` gets
+                // this tolerant treatment; every other error (validation,
+                // unauthorized, …) still aborts exactly as before.
+                do {
+                    priorBest = try await priorMax(exerciseID: re.exerciseID,
+                                                   weight: weight, userID: userID)
+                    isPR = weight > priorBest
+                } catch let error as GymSyncError {
+                    guard case .network = error else { throw error }
+                    // Offline — PR check skipped (best-effort, never blocks logging;
+                    // mirrors the PersonalRecordRepository.record fallback below,
+                    // which already tolerates a failed PR-record insert the same way).
+                }
             }
 
-            try await SessionRepository.logSet(log)
+            do {
+                try await SessionRepository.logSet(log)
+                // Cheap drain (brief's "after each successful online submit") —
+                // opportunistically flushes any earlier queued sets now that we know
+                // we're online. Fire-and-forget: never blocks this submit.
+                Task { await OfflineSetLogQueue.shared.replay() }
+            } catch let error as GymSyncError {
+                guard case .network = error else { throw error }
+                // Offline — queue for replay instead of losing the set. The rest of
+                // this function proceeds exactly as the success path (optimistic UI:
+                // PR overlay, set-index advance, rest timer) since, from the lifter's
+                // perspective, the set IS saved (just not confirmed server-side yet).
+                OfflineSetLogQueue.shared.enqueue(log)
+            }
             loggedSets.append(log)
 
             if isPR, let weight {
