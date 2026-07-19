@@ -41,6 +41,71 @@ final class EventKitBridgeTests: XCTestCase {
         // min...)", :937) — used when no routine is selected at all.
         XCTAssertEqual(EventKitBridge.estimatedDuration(exerciseCount: nil), 60 * 60)
     }
+
+    // MARK: - staleSessionIDs (pure — extracted from reconcile(), Phase O
+    // Task 2 fix wave 1, reviewer Finding 3; no EKEventStore/network access)
+
+    func testAbandonedStateIsStale() {
+        let id = UUID()
+        let staleIDs = EventKitBridge.staleSessionIDs(mappedIDs: [id], liveStates: [id: "abandoned"])
+        XCTAssertEqual(staleIDs, [id])
+    }
+
+    func testMissingFromLiveStatesIsStale() {
+        // Covers BOTH "cancelled" (hard-DELETEd row, no `'cancelled'` value
+        // even exists in the DB's CHECK constraint) and "genuinely
+        // nonexistent"/"RLS-hidden" — all three collapse into "absent from
+        // the batch fetch," which is exactly what this case exercises.
+        let id = UUID()
+        let staleIDs = EventKitBridge.staleSessionIDs(mappedIDs: [id], liveStates: [:])
+        XCTAssertEqual(staleIDs, [id])
+    }
+
+    func testScheduledStateIsKept() {
+        let id = UUID()
+        let staleIDs = EventKitBridge.staleSessionIDs(mappedIDs: [id], liveStates: [id: "scheduled"])
+        XCTAssertTrue(staleIDs.isEmpty)
+    }
+
+    func testCompletedStateIsKept() {
+        // A session that already happened is a legitimate calendar record,
+        // not stale state — deliberately NOT removed.
+        let id = UUID()
+        let staleIDs = EventKitBridge.staleSessionIDs(mappedIDs: [id], liveStates: [id: "completed"])
+        XCTAssertTrue(staleIDs.isEmpty)
+    }
+
+    func testEveryOtherActiveStateIsKept() {
+        let ids = (0..<5).map { _ in UUID() }
+        let states = ["lobby_open", "editing", "voting", "locked", "in_progress"]
+        let liveStates = Dictionary(uniqueKeysWithValues: zip(ids, states))
+        let staleIDs = EventKitBridge.staleSessionIDs(mappedIDs: ids, liveStates: liveStates)
+        XCTAssertTrue(staleIDs.isEmpty)
+    }
+
+    func testEmptyMappedIDsReturnsEmpty() {
+        let staleIDs = EventKitBridge.staleSessionIDs(mappedIDs: [], liveStates: [UUID(): "abandoned"])
+        XCTAssertTrue(staleIDs.isEmpty)
+    }
+
+    func testEmptyLiveStatesTreatsEveryMappedIDAsStale() {
+        let ids = (0..<3).map { _ in UUID() }
+        let staleIDs = EventKitBridge.staleSessionIDs(mappedIDs: ids, liveStates: [:])
+        XCTAssertEqual(Set(staleIDs), Set(ids))
+    }
+
+    func testMixedIDsReturnOnlyTheStaleOnes() {
+        let scheduled = UUID()
+        let abandoned = UUID()
+        let missing = UUID()
+        let completed = UUID()
+        let liveStates = [scheduled: "scheduled", abandoned: "abandoned", completed: "completed"]
+        let staleIDs = EventKitBridge.staleSessionIDs(
+            mappedIDs: [scheduled, abandoned, missing, completed],
+            liveStates: liveStates
+        )
+        XCTAssertEqual(Set(staleIDs), Set([abandoned, missing]))
+    }
 }
 
 // MARK: - SessionCalendarSyncStore (hermetic — isolated UserDefaults suite,

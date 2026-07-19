@@ -182,6 +182,11 @@ struct SeriesEditorView: View {
     @State private var dayRoutines: [Int: UUID?] = [:]
     @State private var untilDate: Date = Date().addingTimeInterval(8 * 7 * 86400)
     @State private var routines: [Routine] = []
+    // Phase O Task 2: per-routine exercise counts, threaded into EventKit
+    // sync in `save()` below — see `loadData()`'s doc comment for why this
+    // was added (kills the 60-min generic-duration fallback for
+    // routine-assigned occurrences).
+    @State private var routineExerciseCounts: [UUID: Int] = [:]
 
     @State private var isLoading = true
     @State private var isSaving = false
@@ -268,6 +273,33 @@ struct SeriesEditorView: View {
                         )
                         .labelsHidden()
                         .tint(theme.accent)
+                        // Phase O Task 5 (3e follow-up queue item 8,
+                        // "SeriesEditorView device-tz picker residual" —
+                        // flagged at the Phase 3e Task 3 final review, minor
+                        // 5). Without this, the picker frames day selection
+                        // in `Calendar.current` — the EDITOR's device
+                        // timezone. `SeriesRepository.editSeriesForward`
+                        // re-serializes whatever `Date` this binding holds
+                        // back into a day-string using the SERIES's own
+                        // stored timezone (`SessionSeries.dayString(for:in:)`,
+                        // called there with the series row's own `timezone`
+                        // — SessionSeries.swift:402-403). If the editor's
+                        // device timezone differs from the series's, picking
+                        // a day here and that downstream re-serialization
+                        // step can disagree by one calendar day — the same
+                        // failure class `SessionSeries.swift`'s own doc
+                        // comment already names for the raw-UTC-parse path
+                        // ("shifted the day one earlier for any timezone
+                        // west"), just manifesting at this binding instead.
+                        // Forcing this picker's calendar to the series's own
+                        // timezone makes the `Date` it produces agree with
+                        // `dayString(for:in:)`'s downstream reinterpretation,
+                        // closing the gap. `seriesCalendar` falls back to
+                        // `.current` only if `series` hasn't loaded yet or
+                        // its stored identifier fails to parse — same
+                        // `TimeZone(identifier:) ?? .current` fallback
+                        // `SessionSeries.swift` uses everywhere else.
+                        .environment(\.calendar, seriesCalendar)
                     }
                     Spacer()
                 }
@@ -277,10 +309,25 @@ struct SeriesEditorView: View {
 
             // Caption
             Section {
-                Text("Changes apply to future sessions only.")
-                    .font(GSFont.body(13, relativeTo: .footnote))
-                    .foregroundStyle(theme.neutral500)
-                    .listRowBackground(theme.bg)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Changes apply to future sessions only.")
+                        .font(GSFont.body(13, relativeTo: .footnote))
+                        .foregroundStyle(theme.neutral500)
+                    // Phase O Task 5 (item 8, continued): a one-line
+                    // timezone caption so an editor whose device is in a
+                    // DIFFERENT timezone than the series knows which
+                    // timezone "Until" (and the per-day times in the
+                    // "Repeat on" section above — plain hour/minute values
+                    // with no timezone context of their own) apply to. One
+                    // shared caption here covers both sections rather than
+                    // duplicating it per row.
+                    if let tzName = seriesTimeZone.localizedName(for: .standard, locale: .current) {
+                        Text("Times shown in \(tzName).")
+                            .font(GSFont.body(11, relativeTo: .caption2))
+                            .foregroundStyle(theme.neutral500)
+                    }
+                }
+                .listRowBackground(theme.bg)
             }
 
             // Error
@@ -308,6 +355,27 @@ struct SeriesEditorView: View {
         dayTimes.values.first?.minute ?? 0
     }
 
+    // MARK: - Series timezone (Phase O Task 5, item 8)
+
+    /// The series' own stored timezone — falls back to `.current` only if
+    /// `series` hasn't loaded yet or its stored identifier fails to parse,
+    /// matching every other `TimeZone(identifier:) ?? .current` fallback in
+    /// `SessionSeries.swift`.
+    private var seriesTimeZone: TimeZone {
+        guard let identifier = series?.timezone else { return .current }
+        return TimeZone(identifier: identifier) ?? .current
+    }
+
+    /// `Calendar.current` with its `timeZone` pinned to `seriesTimeZone` —
+    /// used to frame the "Until" `DatePicker` so the `Date` it produces
+    /// agrees with `SessionSeries.dayString(for:in:)`'s downstream
+    /// reinterpretation in `seriesTZ` (see the DatePicker's own doc comment).
+    private var seriesCalendar: Calendar {
+        var calendar = Calendar.current
+        calendar.timeZone = seriesTimeZone
+        return calendar
+    }
+
     // MARK: - Data loading
 
     @MainActor
@@ -326,6 +394,23 @@ struct SeriesEditorView: View {
                 fetchedRoutines = []
             }
             routines = fetchedRoutines
+
+            // Phase O Task 2: bulk-fetch per-routine exercise counts —
+            // mirrors ScheduleSessionView.loadData()'s own precedent
+            // (ScheduleSessionView.swift:609-613) exactly, reusing the same
+            // bulk `RoutineRepository.exercisesForRoutines(ids:)` idiom
+            // (avoids an N+1 fetch fan-out) instead of adding a bespoke
+            // per-routine fetch. Threaded into `save()`'s EventKit sync so
+            // series-edit calendar events get a routine-specific duration
+            // estimate instead of always falling back to `EventKitBridge.
+            // estimatedDuration(exerciseCount:)`'s documented 60-min no-
+            // count default (the fix-wave-1 "exerciseCount: nil" gap the
+            // Phase H gate review ledgered for this exact follow-up).
+            let exercises = (try? await RoutineRepository.exercisesForRoutines(
+                ids: fetchedRoutines.map(\.id))) ?? []
+            routineExerciseCounts = Dictionary(
+                grouping: exercises, by: \.routineID
+            ).mapValues(\.count)
 
             let (fetchedSeries, fetchedDays) = try await (fetchSeries, fetchDays)
             series = fetchedSeries
@@ -398,38 +483,61 @@ struct SeriesEditorView: View {
                 untilDate: untilDate
             )
 
-            // EventKit sync (Phase H Task 2): best-effort, server op already
-            // succeeded above so calendar failures here can never block or
-            // fail the save. Old events are stale (their session rows are
-            // gone) — remove first. Removal is ungated on the toggle, same
-            // "cleanup always runs regardless of the toggle's CURRENT
-            // state" reasoning as `LobbyView.cancelSeriesForward()`
-            // (LobbyView.swift:1174-1180). Then re-fetch and sync the
-            // freshly re-materialized occurrences, gated on
-            // `CalendarSyncPrefsStore.isEnabled()` exactly like
-            // `ScheduleSessionView.syncScheduledSessionsToCalendar`
-            // (ScheduleSessionView.swift:731-738) — filtered the same way
-            // as the pre-delete snapshot above so completed/past series
-            // occurrences (untouched by this edit) aren't touched either.
-            // `exerciseCount: nil` relies on `EventKitBridge.
-            // estimatedDuration`'s documented 60-min fallback
-            // (EventKitBridge.swift:79-95) — this view has no
-            // `routineExerciseCounts` cache to consult, unlike
-            // `ScheduleSessionView`.
-            for oldID in oldOccurrenceIDs {
-                await EventKitBridge.removeEvent(sessionID: oldID)
-            }
-            if CalendarSyncPrefsStore.isEnabled() {
-                let newOccurrences = ((try? await SeriesRepository.occurrences(seriesID: seriesID)) ?? [])
-                    .filter { $0.state == "scheduled" && ($0.scheduledFor ?? .distantPast) > now }
-                for session in newOccurrences {
-                    let routine = session.routineID.flatMap { rid in routines.first { $0.id == rid } }
-                    await EventKitBridge.syncEvent(session: session, routineName: routine?.name, exerciseCount: nil)
-                }
-            }
-
             onSaved()
             dismiss()
+
+            // EventKit sync (Phase H Task 2; moved AFTER dismiss + real
+            // exerciseCount threaded through in Phase O Task 2): best-
+            // effort, server op already succeeded above — `onSaved()`/
+            // `dismiss()` no longer wait on this. Old events are stale
+            // (their session rows are gone) — remove first. Removal is
+            // ungated on the toggle, same "cleanup always runs regardless
+            // of the toggle's CURRENT state" reasoning as `LobbyView.
+            // cancelSeriesForward()` (LobbyView.swift:1174-1180 area).
+            // Then re-fetch and sync the freshly re-materialized
+            // occurrences, gated on `CalendarSyncPrefsStore.isEnabled()`
+            // exactly like `ScheduleSessionView.
+            // syncScheduledSessionsToCalendar` — filtered the same way as
+            // the pre-delete snapshot above so completed/past series
+            // occurrences (untouched by this edit) aren't touched either.
+            // `exerciseCount` now looks up `routineExerciseCounts`
+            // (`loadData()` above) instead of always passing `nil` — kills
+            // the 60-min generic-duration fallback for routine-assigned
+            // occurrences, matching `ScheduleSessionView`'s own behavior.
+            // `routines`/`routineExerciseCounts` are snapshotted into local
+            // `let`s before the `Task` so this closure doesn't depend on
+            // `self` still being around after the sheet closes.
+            //
+            // Recovery picture if the app is killed mid-`Task` (added —
+            // Phase O Task 2 fix wave 1, reviewer Finding 2, same correction
+            // as `ScheduleSessionView.schedule()`'s equivalent comment): the
+            // remove-old loop is self-healing regardless (`removeEvent`
+            // only clears a mapping on confirmed-gone, so a killed remove
+            // just leaves that mapping for a later `reconcile()`/retry to
+            // clean up — see `removeEvent`'s own doc comment). The sync-new
+            // loop shares `syncEvent`'s narrower risk: an occurrence
+            // `syncEvent` was actively writing when the kill landed can hit
+            // the save-then-map window documented on `EventKitBridge.
+            // syncEvent` ("HONEST FAILURE MODE") and become a permanent,
+            // unmapped orphan event that duplicates on the next backfill —
+            // re-toggling calendar sync recovers occurrences this loop
+            // hadn't reached yet, not that one.
+            let routinesSnapshot = routines
+            let exerciseCountsSnapshot = routineExerciseCounts
+            Task {
+                for oldID in oldOccurrenceIDs {
+                    await EventKitBridge.removeEvent(sessionID: oldID)
+                }
+                if CalendarSyncPrefsStore.isEnabled() {
+                    let newOccurrences = ((try? await SeriesRepository.occurrences(seriesID: seriesID)) ?? [])
+                        .filter { $0.state == "scheduled" && ($0.scheduledFor ?? .distantPast) > now }
+                    for session in newOccurrences {
+                        let routine = session.routineID.flatMap { rid in routinesSnapshot.first { $0.id == rid } }
+                        let exerciseCount = session.routineID.flatMap { exerciseCountsSnapshot[$0] }
+                        await EventKitBridge.syncEvent(session: session, routineName: routine?.name, exerciseCount: exerciseCount)
+                    }
+                }
+            }
         } catch let error as GymSyncError {
             errorText = error.errorDescription
         } catch {

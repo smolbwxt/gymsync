@@ -26,12 +26,21 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+          # OPTIONAL secret (Phase O Task 4, master spec §6.8.5) — no Sentry
+          # project exists yet, so this repo secret doesn't exist either.
+          # `${{ secrets.SENTRY_DSN }}` already evaluates to an empty string
+          # when the secret is unset (GitHub Actions' built-in behavior for a
+          # missing secret reference — no `|| ''` fallback needed, same as
+          # every other secret in this workflow), which is exactly what
+          # CrashReporting.start(dsn:) treats as "disabled" (Services/
+          # CrashReporting.swift).
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
           TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
         run: |
           if [ -n "$SUPABASE_URL" ]; then
-            printf 'import Foundation\n\nenum Secrets {\n    static let supabaseURL = URL(string: "%s")!\n    static let supabaseAnonKey = "%s"\n}\n' \
-              "$SUPABASE_URL" "$SUPABASE_PUBLISHABLE_KEY" > GymSyncApp/GymSync/Config/Secrets.swift
+            printf 'import Foundation\n\nenum Secrets {\n    static let supabaseURL = URL(string: "%s")!\n    static let supabaseAnonKey = "%s"\n    static let sentryDSN = "%s"\n}\n' \
+              "$SUPABASE_URL" "$SUPABASE_PUBLISHABLE_KEY" "$SENTRY_DSN" > GymSyncApp/GymSync/Config/Secrets.swift
           else
             cp GymSyncApp/GymSync/Config/Secrets.swift.template GymSyncApp/GymSync/Config/Secrets.swift
           fi
@@ -92,12 +101,21 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+          # OPTIONAL secret (Phase O Task 4, master spec §6.8.5) — no Sentry
+          # project exists yet, so this repo secret doesn't exist either.
+          # `${{ secrets.SENTRY_DSN }}` already evaluates to an empty string
+          # when the secret is unset (GitHub Actions' built-in behavior for a
+          # missing secret reference — no `|| ''` fallback needed, same as
+          # every other secret in this workflow), which is exactly what
+          # CrashReporting.start(dsn:) treats as "disabled" (Services/
+          # CrashReporting.swift).
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
           TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
         run: |
           if [ -n "$SUPABASE_URL" ]; then
-            printf 'import Foundation\n\nenum Secrets {\n    static let supabaseURL = URL(string: "%s")!\n    static let supabaseAnonKey = "%s"\n}\n' \
-              "$SUPABASE_URL" "$SUPABASE_PUBLISHABLE_KEY" > GymSyncApp/GymSync/Config/Secrets.swift
+            printf 'import Foundation\n\nenum Secrets {\n    static let supabaseURL = URL(string: "%s")!\n    static let supabaseAnonKey = "%s"\n    static let sentryDSN = "%s"\n}\n' \
+              "$SUPABASE_URL" "$SUPABASE_PUBLISHABLE_KEY" "$SENTRY_DSN" > GymSyncApp/GymSync/Config/Secrets.swift
           else
             cp GymSyncApp/GymSync/Config/Secrets.swift.template GymSyncApp/GymSync/Config/Secrets.swift
           fi
@@ -281,9 +299,12 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+          # OPTIONAL — see the build-test job's identical step above for why
+          # no `|| ''` fallback is needed.
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
         run: |
-          printf 'import Foundation\n\nenum Secrets {\n    static let supabaseURL = URL(string: "%s")!\n    static let supabaseAnonKey = "%s"\n}\n' \
-            "$SUPABASE_URL" "$SUPABASE_PUBLISHABLE_KEY" > GymSyncApp/GymSync/Config/Secrets.swift
+          printf 'import Foundation\n\nenum Secrets {\n    static let supabaseURL = URL(string: "%s")!\n    static let supabaseAnonKey = "%s"\n    static let sentryDSN = "%s"\n}\n' \
+            "$SUPABASE_URL" "$SUPABASE_PUBLISHABLE_KEY" "$SENTRY_DSN" > GymSyncApp/GymSync/Config/Secrets.swift
           cp GymSyncApp/GymSyncTests/TestSecrets.swift.template GymSyncApp/GymSyncTests/TestSecrets.swift
 
       - name: Generate Xcode project from project.yml

@@ -223,6 +223,26 @@ enum SeriesRepository {
     // MARK: - Public API
 
     /// Creates a series, materializes all occurrences, and calls `finalize_series`.
+    //
+    // Task 6 item 3 (reliability/debt roll-up — series ops transactionality
+    // note, docs/superpowers/specs/2026-07-18-reliability-debt-design.md
+    // §6): five sequential client-orchestrated writes (session_series
+    // insert → session_series_days insert → group_members read →
+    // materializeOccurrences' two bulk inserts → finalize_series RPC), NOT
+    // wrapped in a single server-side transaction. A failure partway (e.g.
+    // network drop after the series row lands but before day rules insert)
+    // leaves a partially-created series behind — the caller sees the
+    // thrown error (every call site maps it through `ErrorMapping`/
+    // `GymSyncError` to a visible `errorText`, consistent with every other
+    // repository call in this codebase; see ScheduleSessionView.swift and
+    // LobbyView.swift's identical `catch let error as GymSyncError { ... }`
+    // pattern at their `SeriesRepository.create`/`cancelSeriesForward`
+    // call sites), but nothing here rolls the partial writes back. v1
+    // scope is honest error surfacing, not a transactional rewrite — same
+    // documented limitation `editSeriesForward` below already carries for
+    // its own re-run hazard. A retry after a partial failure is NOT
+    // guaranteed idempotent (a second `create` call makes a second series
+    // row rather than resuming the first).
     static func create(
         groupID: UUID,
         days: [SeriesDayInput],
@@ -358,6 +378,16 @@ enum SeriesRepository {
     }
 
     /// Mark series ended and delete all future scheduled occurrences.
+    // Task 6 item 3: same non-transactional caveat as `create`/
+    // `editSeriesForward` above — the `ended_at` update and the future-
+    // occurrences delete are two separate round trips. A failure between
+    // them leaves the series marked ended with its future occurrences
+    // still scheduled (visible, cancellable individually via
+    // `cancelOccurrence`, just not swept in bulk) rather than a torn
+    // half-deleted state — the safer of the two orderings if this has to
+    // be non-atomic, which is why `ended_at` is updated first. Error
+    // surfacing is the same consistent `ErrorMapping`/`GymSyncError` →
+    // `errorText` path as every other call site (LobbyView.swift).
     static func cancelSeriesForward(seriesID: UUID) async throws {
         do {
             let now = isoString(Date())

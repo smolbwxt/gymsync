@@ -123,6 +123,18 @@ struct ChatView: View {
             case .session(_, let groupID): return groupID
             }
         }
+
+        /// Key into `AppState.chatDrafts` (Task 6 item 2 — tab-switch
+        /// draft persistence). Session sub-threads use `sessionID`, not
+        /// `groupID`, so a solo session's sub-thread (`groupID == nil`)
+        /// still gets its own slot, and so two different sessions in the
+        /// same group never collide.
+        var draftKey: UUID {
+            switch self {
+            case .group(let id): return id
+            case .session(let sessionID, _): return sessionID
+            }
+        }
     }
 
     let scope: Scope
@@ -170,6 +182,16 @@ struct ChatView: View {
     @State private var pickerItem: PhotosPickerItem?
     @State private var imageURLs: [UUID: URL] = [:]
     @State private var isSendingImage = false
+    // Task 6 item 1 (reliability/debt roll-up, .superpowers/sdd/progress.md:33
+    // "signed-URL cache never re-resolves after 3600s expiry"): a signed URL
+    // is only valid for 3600s (StorageService.signedChatImageURL); once
+    // `imageURLs[id]` is populated it's never touched again by
+    // `resolveImageURLs()`'s `guard imageURLs[message.id] == nil` — so a
+    // chat sitting open past an hour would show a permanently-failed image
+    // for anything scrolled into view after expiry. `imageURLRetried` bounds
+    // the fix to ONE re-fetch per message per view lifetime (a genuinely
+    // deleted/missing object must not retry forever).
+    @State private var imageURLRetried: Set<UUID> = []
 
     // Phase M Task 2 (moderation/compliance): Report/Block on message rows.
     @State private var reportTarget: ChatReportTarget?
@@ -266,6 +288,14 @@ struct ChatView: View {
             if let groupID = scope.groupIDForPushSuppression {
                 appState.activeChatGroupID = groupID
             }
+            // Task 6 item 2: restore a half-typed draft this chat had when
+            // the tab was last switched away from (MainTabView recreates
+            // this whole view on tab switch — see AppState.chatDrafts' doc
+            // comment for the adjudication). No-op (empty string) if none
+            // was saved.
+            if let saved = appState.chatDrafts[scope.draftKey] {
+                draft = saved
+            }
         }
         .onDisappear {
             // Only clear the suppression flag if it's still pointing at THIS
@@ -273,6 +303,17 @@ struct ChatView: View {
             // activeSessionID for why an unconditional nil is unsafe.
             if let groupID = scope.groupIDForPushSuppression, appState.activeChatGroupID == groupID {
                 appState.activeChatGroupID = nil
+            }
+            // Persist (or clear) the draft so a tab switch away and back
+            // doesn't silently discard in-progress composition. Empty/
+            // whitespace-only drafts are removed rather than stored as ""
+            // — nothing to restore, and keeps the dictionary from growing
+            // unbounded with every chat ever opened.
+            let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                appState.chatDrafts.removeValue(forKey: scope.draftKey)
+            } else {
+                appState.chatDrafts[scope.draftKey] = draft
             }
             Task { await realtime.unsubscribe() }
         }
@@ -401,15 +442,31 @@ struct ChatView: View {
     // MARK: - Mic Button (hold to record)
 
     /// True while a live PTT voice room is connected (any sub-state — muted
-    /// or transmitting). Gates the voice-MESSAGE mic below: `VoiceRecorder`'s
-    /// `exitRecordMode()` unconditionally resets `AVAudioSession` to
-    /// `.ambient` on every recording end path, which would silently kill the
-    /// still-connected room's audio out from under it (AUDIO SACRED RULE —
-    /// only `VoiceRoomService`/`AudioSessionManager` may own the session
-    /// while a room is live; see Dossier §B.3.4).
+    /// or transmitting) OR still connecting. Gates the voice-MESSAGE mic
+    /// below: `VoiceRecorder`'s `exitRecordMode()` unconditionally resets
+    /// `AVAudioSession` to `.ambient` on every recording end path, which
+    /// would silently kill the still-connected room's audio out from under
+    /// it (AUDIO SACRED RULE — only `VoiceRoomService`/`AudioSessionManager`
+    /// may own the session while a room is live; see Dossier §B.3.4).
+    ///
+    /// Phase O Task 5 (3e follow-up queue item 2, "chat mic gate during
+    /// .connecting" — final review's M1): `.connecting` is included, not
+    /// just `.connected`. `VoiceRoomService.join()` calls
+    /// `audioSession.enterVoiceMode()` (switching the session to
+    /// `.playAndRecord`/`.voiceChat`) BEFORE it ever reaches `.connected` —
+    /// the ownership window this gate exists to protect starts at
+    /// `.connecting`, not after. Without this, tapping the chat mic during
+    /// the connect handshake races `VoiceRecorder.startRecording()`'s own
+    /// session reconfiguration against `join()`'s, and releasing the chat
+    /// mic mid-connect would reset the session out from under a room that's
+    /// about to finish connecting.
     private var isVoiceRoomActive: Bool {
-        if case .connected = VoiceRoomService.shared.state { return true }
-        return false
+        switch VoiceRoomService.shared.state {
+        case .connected, .connecting:
+            return true
+        case .idle, .unavailable, .micDenied:
+            return false
+        }
     }
 
     private var micButton: some View {
@@ -664,6 +721,11 @@ struct ChatView: View {
                             .font(GSFont.body(12, relativeTo: .footnote))
                             .foregroundStyle(theme.neutral500)
                             .padding(10)
+                            // Most "failures" here are an expired signed URL
+                            // (3600s TTL), not a genuinely missing object —
+                            // re-resolve once so a long-dwell chat recovers
+                            // without the user having to leave and re-enter.
+                            .task { await retryImageURL(for: message) }
                     default:
                         ZStack {
                             theme.neutral300
@@ -862,6 +924,30 @@ struct ChatView: View {
             guard imageURLs[message.id] == nil,
                   let path = message.storagePath else { continue }
             imageURLs[message.id] = try? await StorageService.signedChatImageURL(path: path)
+        }
+    }
+
+    /// Re-fetches a fresh signed URL for one image bubble after
+    /// `AsyncImage` reports `.failure` — bounded to a single attempt per
+    /// message (`imageURLRetried`) so a truly-missing/orphaned object fails
+    /// once and stays failed, rather than retry-looping. See
+    /// `imageURLRetried`'s declaration for the expiry scenario this covers.
+    ///
+    /// Fix wave 1 (Task 6 review, MINOR 3): only overwrite `imageURLs[id]`
+    /// on a SUCCESSFUL retry. The retry itself is a network call and can
+    /// fail transiently — `try?` discarding that into `nil` used to replace
+    /// the (merely expired, not missing) URL with `nil`, and
+    /// `AsyncImage(url: nil)` sits in `.empty` forever (a permanent spinner,
+    /// worse than the old "Image unavailable" state it was showing before
+    /// the retry). Keeping the previous URL on failure means AsyncImage
+    /// re-evaluates the same expired URL, gets `.failure` again, and the
+    /// "Image unavailable" label renders as it did pre-retry.
+    private func retryImageURL(for message: ChatMessage) async {
+        guard !imageURLRetried.contains(message.id),
+              let path = message.storagePath else { return }
+        imageURLRetried.insert(message.id)
+        if let refreshed = try? await StorageService.signedChatImageURL(path: path) {
+            imageURLs[message.id] = refreshed
         }
     }
 

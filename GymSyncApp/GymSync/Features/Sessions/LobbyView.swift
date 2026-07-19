@@ -18,6 +18,12 @@ struct LobbyView: View {
     @State private var proposalVotes: [UUID: [ProposalVote]] = [:]
     @State private var proposerUsernames: [UUID: String] = [:]
     @State private var routineInfo: (name: String, exercises: [RoutineExercise])? = nil
+    /// Task 7 item 1 (pre-GA ledger): the full `Routine` row (not just
+    /// `routineInfo`'s name/exercises projection) for this session's
+    /// `routineID`, ONLY so `startSession()` can read `visibility`
+    /// to decide whether Starting should also fire the group-attempt hook.
+    /// See that function's doc comment for the full gating rationale.
+    @State private var routineForSession: Routine? = nil
     @State private var presenceSet: Set<UUID> = []
     @State private var realtime = LobbyRealtimeService()
 
@@ -43,6 +49,12 @@ struct LobbyView: View {
     @State private var upcomingOccurrenceCount: Int = 0
 
     @State private var showSeriesEditor = false
+
+    // MARK: - Voice chrome (Phase O Task 5, item 5 — designer follow-up frames)
+
+    @State private var showVoiceConnectedToast = false
+    @State private var showVoiceCoachMark = false
+    @State private var showVoiceMixerSheet = false
 
     // MARK: - Session chat (Task 3, Phase F)
 
@@ -108,6 +120,38 @@ struct LobbyView: View {
     private func joinVoiceIfEligible() async {
         guard isVoiceEligible else { return }
         await VoiceRoomService.shared.join(sessionID: effectiveSession.id)
+    }
+
+    /// Other participants' usernames, for `PTTDockRow`'s transmit hero
+    /// (Phase O Task 5 item 5) — `VoiceRoomService` only knows LiveKit
+    /// identity strings, never real usernames, so this view's own
+    /// `Profile` data is what supplies them.
+    private var otherParticipantNames: [String] {
+        participants
+            .filter { $0.participant.userID != selfID }
+            .map(\.profile.username)
+    }
+
+    /// True once the voice room reaches `.connected` (either sub-state) —
+    /// a plain `Bool` proxy over `VoiceRoomState` (which isn't `Equatable`,
+    /// so `.onChange(of:)` can't watch `VoiceRoomService.shared.state`
+    /// directly) that drives the connected-toast/first-run-coach-mark
+    /// trigger below.
+    private var isVoiceConnected: Bool {
+        if case .connected = VoiceRoomService.shared.state { return true }
+        return false
+    }
+
+    /// (identity, username) pairs for the voice mixer sheet — same
+    /// "VoiceRoomService only knows identity strings, this view supplies
+    /// real names" shape as `otherParticipantNames` above.
+    private var voiceMixerParticipants: [(identity: String, name: String)] {
+        let byIdentity = Dictionary(
+            uniqueKeysWithValues: participants.map { ($0.participant.userID.uuidString.lowercased(), $0.profile.username) }
+        )
+        return VoiceRoomService.shared.connectedParticipantIDs
+            .sorted()
+            .map { identity in (identity, byIdentity[identity] ?? "Someone") }
     }
 
     /// Check-in opens 20 minutes before the scheduled start (server-enforced too —
@@ -208,8 +252,27 @@ struct LobbyView: View {
             }
         }
         .background(theme.bg)
+        .overlay(alignment: .top) {
+            // "Voice connected" toast (Phase O Task 5 item 5) — transient,
+            // this view owns the show/hide timer (GSVoiceConnectedToast has
+            // no opinion on timing, matching every other voice component's
+            // "callers gate visibility" contract).
+            if showVoiceConnectedToast {
+                GSVoiceConnectedToast(groupName: groupName)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 0) {
+                // First-run coach mark (Phase O Task 5 item 5) — sits
+                // directly above the dock, per the designer follow-up frame.
+                if showVoiceCoachMark {
+                    GSVoiceCoachMark(onDismiss: { showVoiceCoachMark = false })
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 6)
+                }
                 // ── PUSH-TO-TALK DOCK ────────────────────────────────────
                 // Open layout question flagged by Dossier §A.2 (never
                 // resolved there): whether the PTT dock replaces, stacks
@@ -218,7 +281,7 @@ struct LobbyView: View {
                 // matching how GroupSessionLiveView already stacks its own
                 // soundboard dock above its bottom action bar.
                 if isVoiceEligible {
-                    PTTDockRow()
+                    PTTDockRow(otherParticipantNames: otherParticipantNames)
                 }
                 actionBar
             }
@@ -236,6 +299,17 @@ struct LobbyView: View {
                     GSConnectingVoicePill()
                 }
             }
+            // Voice mixer entry point (Phase O Task 5 item 5) — no canvas
+            // frame depicts WHERE the mixer sheet opens from (the frames
+            // show only its content), so this follows `chatButton`'s own
+            // existing "bordered icon-button toolbar item" idiom
+            // immediately beside it; see docs/design/accepted-deviations.json's
+            // "voice-mixer-entry-point" entry.
+            if isVoiceConnected {
+                ToolbarItem(placement: .topBarTrailing) {
+                    voiceMixerButton
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 chatButton
             }
@@ -246,6 +320,27 @@ struct LobbyView: View {
             }
         }
         .task { await openAndLoad() }
+        .onChange(of: isVoiceConnected) { wasConnected, nowConnected in
+            guard nowConnected, !wasConnected else { return }
+            // Phase O Task 5 item 5: fires on every genuine `.idle`/
+            // `.connecting`/etc -> `.connected` transition, not just the
+            // first ever (the toast) — but the coach mark only the first
+            // time this device has ever connected voice (marked shown
+            // immediately, not on dismiss, so it can never show twice even
+            // if the user backs out before tapping "Got it").
+            withAnimation { showVoiceConnectedToast = true }
+            if !VoiceCoachMarkStore.hasBeenShown {
+                showVoiceCoachMark = true
+                VoiceCoachMarkStore.markShown()
+            }
+            Task {
+                try? await Task.sleep(for: .seconds(3))
+                withAnimation { showVoiceConnectedToast = false }
+            }
+        }
+        .sheet(isPresented: $showVoiceMixerSheet) {
+            voiceMixerSheet
+        }
         .onChange(of: scenePhase) {
             guard scenePhase == .active else { return }
             Task { await reload() }
@@ -373,6 +468,45 @@ struct LobbyView: View {
                     }
                 }
         }
+    }
+
+    // MARK: - Voice mixer (Task 5, item 5 — same toolbar-button + sheet
+    // idiom as chatButton/chatSheet above)
+
+    private var voiceMixerButton: some View {
+        Button {
+            showVoiceMixerSheet = true
+        } label: {
+            Image(systemName: "slider.horizontal.3")
+                .font(.system(size: 18, weight: .regular))
+                .foregroundStyle(theme.text)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+        }
+    }
+
+    private var voiceMixerSheet: some View {
+        NavigationStack {
+            GSVoiceMixerSheet(
+                participants: voiceMixerParticipants,
+                mutedIdentities: VoiceRoomService.shared.remoteMutedParticipantIDs
+                    .union(VoiceRoomService.shared.locallyMutedParticipantIDs),
+                onToggleMute: { identity in
+                    let isMuted = VoiceRoomService.shared.locallyMutedParticipantIDs.contains(identity)
+                    Task { await VoiceRoomService.shared.setLocalMute(!isMuted, forParticipantIdentity: identity) }
+                }
+            )
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showVoiceMixerSheet = false }
+                        .font(GSFont.bold(14, relativeTo: .body))
+                        .foregroundStyle(theme.accent700)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 
     // MARK: - Manage Menu (functional items unchanged)
@@ -623,14 +757,27 @@ struct LobbyView: View {
         // Speaking ring (Task 4, Dossier §A.2 lobby "Who's here · voice on"
         // strip's "talking" state) — accent border + animated bars + label,
         // driven by `speakingParticipantIDs` (LiveKit identity = user UUID
-        // string, per T1). Only the "talking" sub-state is derivable from
-        // `VoiceRoomService`'s current surface — it exposes no roster of
-        // who else has joined the room at all, so the strip's "listening"/
-        // "muted" sub-states for OTHER participants can't be rendered
-        // honestly here; deliberately left as the existing check-in-only row
-        // when not speaking.
-        let isSpeaking = VoiceRoomService.shared.speakingParticipantIDs
-            .contains(item.participant.userID.uuidString.lowercased())
+        // string, per T1).
+        let identity = item.participant.userID.uuidString.lowercased()
+        let voice = VoiceRoomService.shared
+        let isSpeaking = voice.speakingParticipantIDs.contains(identity)
+
+        // Phase O Task 5 item 4 ("muted-others roster rows"): VoiceRoomService
+        // now exposes a roster (connectedParticipantIDs) plus both mute-state
+        // sets, closing the gap this doc comment used to describe (git blame:
+        // "it exposes no roster of who else has joined the room at all, so
+        // the strip's 'listening'/'muted' sub-states for OTHER participants
+        // can't be rendered honestly here"). A participant not in
+        // `connectedParticipantIDs` at all still falls through to the
+        // unchanged check-in-only row below — that "haven't joined voice"
+        // case is still not a "muted" state. "Muted" covers EITHER they
+        // muted their own mic (remoteMutedParticipantIDs) OR you've locally
+        // silenced them via the voice mixer sheet
+        // (locallyMutedParticipantIDs) — live-voice frame 2's roster rows
+        // use one shared "muted" caption for both, so this does too.
+        let isInVoiceRoom = voice.connectedParticipantIDs.contains(identity)
+        let isMuted = isInVoiceRoom && !isSpeaking &&
+            (voice.remoteMutedParticipantIDs.contains(identity) || voice.locallyMutedParticipantIDs.contains(identity))
 
         return HStack(spacing: 10) {
             // Presence dot + initials avatar
@@ -680,6 +827,12 @@ struct LobbyView: View {
                         .font(GSFont.bold(9, relativeTo: .caption2))
                         .foregroundStyle(theme.accent700)
                 }
+            } else if isMuted {
+                // Live-voice frame 2's dimmed "muted" caption (no bars) —
+                // Phase O Task 5 item 4.
+                Text("muted")
+                    .font(GSFont.body(9, relativeTo: .caption2))
+                    .foregroundStyle(theme.neutral500)
             }
 
             Spacer()
@@ -691,6 +844,7 @@ struct LobbyView: View {
         .padding(.vertical, 8)
         .background(theme.surface)
         .overlay(Rectangle().strokeBorder(isSpeaking ? theme.accent : theme.divider, lineWidth: isSpeaking ? 2 : 1))
+        .opacity(isMuted ? 0.7 : 1)
     }
 
     @ViewBuilder
@@ -979,6 +1133,7 @@ struct LobbyView: View {
             if let routineID = effectiveRoutineID {
                 if let (routine, exercises) = try await RoutineRepository.fetch(id: routineID) {
                     routineInfo = (name: routine.name, exercises: exercises)
+                    routineForSession = routine
                 }
             }
 
@@ -1071,6 +1226,119 @@ struct LobbyView: View {
         errorText = nil
         do {
             try await SessionRepository.start(sessionID: session.id)
+            // Task 7 item 1 (pre-GA ledger, .superpowers/sdd/task-7-brief.md
+            // item 1; ledger origin: .superpowers/sdd/progress.md's "PRE-GA
+            // LEDGER: (1) group-attempt start hook at LobbyView Start" under
+            // Phase L's merge entry) — closes Discover's "Attempt with
+            // Friends" entry-less flow: that CTA (`DiscoverWorkoutDetailView.
+            // attemptCTAs`) opens `ScheduleSessionView(preloadedRoutine:)`,
+            // which seeds `selectedRoutineID` from the Discover routine and
+            // splices it into the picker (ScheduleSessionView.swift:14-20,
+            // 597-603) — but `SessionRepository.schedule` never calls
+            // `start_attempt` (20260723000002_attempt_plumbing.sql:74-114),
+            // unlike the SOLO path (`WorkoutSessionView.startIfNeeded()`,
+            // WorkoutSessionView.swift:633-661), so a completed group
+            // "attempt" never reaches `workout_attempts` and therefore never
+            // appears on the leaderboard.
+            //
+            // Honest v1 scope (organizer-only, no invented consent flow):
+            // the RPC's own contract (start_attempt(p_routine_id, p_session_
+            // id, p_opt_in)) requires an explicit per-user opt-in choice, and
+            // there is genuinely no UI today that collects that choice from
+            // GROUP participants — no opt-in prompt at join/lobby time, and
+            // (verified by reading it) ScheduleSessionView's Discover-
+            // preloaded path carries no opt-in flag either
+            // (ScheduleSessionView.swift:16-20; `SessionRepository.schedule`
+            // takes no opt-in param). Inventing a multi-participant consent
+            // flow here would be new product surface, not a debt fix — out
+            // of this item's scope (deferred; a real candidate for Phase D's
+            // designed-surface backlog, alongside "discover-detail" in
+            // docs/design/accepted-deviations.json). So this wires ONLY the
+            // organizer's own attempt, since they're the one who actually
+            // clicked "Attempt with Friends" from Discover — the same
+            // "explicit intent" standard Solo's confirmationDialog captures,
+            // just without a second confirmation prompt (see optIn default
+            // below).
+            //
+            // Gate — fix wave 1 (reviewer Finding 1, 2026-07-19): the original
+            // gate used ownership mismatch (`routine.ownerID != selfID`) as a
+            // proxy for "reached via Discover," reasoning that ordinary
+            // scheduling only ever offers the organizer their OWN routines.
+            // That proxy was wrong: Discover shows curators their OWN public
+            // routines too, and "Attempt with Friends" works on them from
+            // there — so a curator group-attempting their own public routine
+            // silently hit the `routine.ownerID != selfID` branch as false
+            // and skipped this hook entirely. That is exactly the entry-less
+            // bug this item exists to fix, just for a narrower set of
+            // organizers (curators of their own public work, not everyone).
+            //
+            // Fix: gate on the honest, directly-available condition instead —
+            // this session's routine (`routineForSession`, the loaded routine
+            // model captured in `reload()`, already matched to
+            // `effectiveSession.routineID` above) has `visibility == "public"`.
+            // No ownership check. This necessarily over-matches relative to
+            // "reached via Discover" — it now also fires for a curator
+            // re-running their own already-published routine through
+            // ordinary scheduling, not just the Discover preload splice. With
+            // the optIn fix below (hardcoded `false`, not `true`), that
+            // over-match is harmless: an attempt ROW on any public-routine
+            // group session is exactly what the leaderboard system wants —
+            // Attempt flows are already treated as explicitly separate from
+            // ordinary session creation by the RPC's own design rationale
+            // (`20260723000002_attempt_plumbing.sql:34-51`, Finding 2 in that
+            // migration — the citation here previously pointed at
+            // `20260723000003:11-24`, mislabeled "Finding 2"; that's actually
+            // Finding 1 in the FIXES migration, about a different check
+            // entirely — routine/session binding — corrected) — and public
+            // visibility into the leaderboard stays off regardless, until a
+            // real per-attempt opt-in surface exists.
+            //
+            // optIn — fix wave 1 (reviewer Finding 2, 2026-07-19): hardcoded
+            // `true` was wrong. `start_attempt`'s `COALESCE(p_opt_in, false)`
+            // (`20260723000002_attempt_plumbing.sql:93`, unchanged by the
+            // `20260723000003` fix-forward) only controls the stored
+            // `is_opt_in_leaderboard` boolean — the `workout_attempts` ROW
+            // itself, and its `leaderboard_entries` row (computed
+            // unconditionally by the completion recompute trigger regardless
+            // of opt-in; opt-in only gates PUBLIC READ visibility, via the
+            // `USING (is_opt_in_leaderboard = true OR user_id = auth.uid())` /
+            // `EXISTS (... wa.is_opt_in_leaderboard = true)` SELECT RLS
+            // policies, `20260723000001_public_workout_repository.sql:
+            // 130-143`), get created either way. Forcing `true` bought
+            // nothing toward closing the entry-less bug — the row is written
+            // regardless of the flag — and cost real consent: no group-flow
+            // UI (this hook included) discloses to the organizer that
+            // starting the session will make this run visible on a public
+            // leaderboard, contradicting the spec's per-attempt opt-in
+            // framing (Flow 4's "Show me on the leaderboard?" toggle) and
+            // re-creating the exact unconsented-visibility shape item 2 of
+            // this same task just un-leaked for the seed fixture.
+            //
+            // Fix: pass `optIn: false`. Visibility deferred until a real
+            // group-flow consent toggle exists (Phase D designed-surface
+            // candidate, same status as "discover-detail" in
+            // docs/design/accepted-deviations.json) — the organizer (and any
+            // other participants) can't yet express the choice anywhere in
+            // this flow, so the conservative RPC default is the honest value.
+            // The attempt row and its leaderboard_entries row still record
+            // (per the RPC contract above); only the PUBLIC READ visibility
+            // flag stays off.
+            if isOrganizer,
+               let routineID = effectiveSession.routineID,
+               let routine = routineForSession, routine.id == routineID,
+               routine.visibility == "public" {
+                do {
+                    _ = try await PublicWorkoutRepository.startAttempt(
+                        routineID: routineID, sessionID: effectiveSession.id, optIn: false)
+                } catch {
+                    // Mirrors WorkoutSessionView.startIfNeeded()'s solo idiom
+                    // (minus solo's failure toast — best-effort here): a
+                    // failed leaderboard opt-in must never block the session
+                    // itself from starting.
+                    AppLogger.db.error(
+                        "group startAttempt failed: \(error.localizedDescription, privacy: .public)")
+                }
+            }
             // Unsubscribe lobby realtime BEFORE navigating to live session
             // so the lobby channel doesn't compete with the live-session channel.
             await realtime.unsubscribe()
@@ -1171,14 +1439,27 @@ struct LobbyView: View {
 
             try await SeriesRepository.cancelSeriesForward(seriesID: sid)
 
-            // EventKit sync (Phase H Task 2): best-effort remove every
-            // mapped event for the occurrences just deleted. Ungated on the
-            // toggle — same "cleanup always runs" reasoning as
-            // `cancelOccurrence()` above.
-            for sessionID in upcomingIDs {
-                await EventKitBridge.removeEvent(sessionID: sessionID)
-            }
             dismiss()
+
+            // EventKit sync (Phase H Task 2; moved AFTER dismiss in Phase O
+            // Task 2): best-effort remove every mapped event for the
+            // occurrences just deleted. Ungated on the toggle — same
+            // "cleanup always runs" reasoning as `cancelOccurrence()`
+            // above. The server delete (already awaited above) is the
+            // operation that matters to the caller; this per-occurrence
+            // removal loop no longer gates the sheet close, running
+            // fire-and-forget in a detached `Task` instead
+            // (`EventKitBridge.removeEvent` never throws). If the app is
+            // killed mid-loop, the app-foreground `EventKitBridge.
+            // reconcile()` sweep IS the safety net here — the deleted
+            // sessions are already gone server-side, so reconcile's next
+            // pass will find their ids missing from the batch fetch and
+            // remove the leftover events itself.
+            Task {
+                for sessionID in upcomingIDs {
+                    await EventKitBridge.removeEvent(sessionID: sessionID)
+                }
+            }
         } catch let error as GymSyncError {
             errorText = error.errorDescription
         } catch {

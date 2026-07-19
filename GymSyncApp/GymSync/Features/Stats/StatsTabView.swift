@@ -388,11 +388,19 @@ struct StatsTabView: View {
                 // the range picker right-aligned on its own row above the
                 // chart — same top-right position it occupies everywhere
                 // else (fix wave 2).
+                //
+                // `valueLabel: "Weight"` (Phase O Task 2): without this,
+                // TrendChartView's chart marks/a11y default to "Est. 1RM" —
+                // correct for ExerciseHistoryView's trend but wrong here
+                // (this card has nothing to do with 1RM estimation), so
+                // VoiceOver was announcing every body-weight data point
+                // with the wrong label.
                 TrendChartView(
                     title: "",
                     data: bodyWeightChartData,
                     selectedRange: $selectedBodyWeightRange,
-                    embedInCard: false
+                    embedInCard: false,
+                    valueLabel: "Weight"
                 )
             }
             .frame(maxWidth: .infinity, alignment: .leading)

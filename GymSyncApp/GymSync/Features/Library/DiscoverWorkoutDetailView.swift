@@ -523,7 +523,15 @@ struct DiscoverWorkoutDetailView: View {
         do {
             async let exercisesFetch = ExerciseRepository.fetchAll()
             async let routineFetch = RoutineRepository.fetch(id: workout.routine.id)
-            async let leaderboardFetch = PublicWorkoutRepository.leaderboard(routineID: workout.routine.id)
+            // Task 7 item 3: pass the routine's own ranking axis through so
+            // the server-side LIMIT(200) is taken along the metric this
+            // leaderboard is actually judged by, not a hardcoded recency
+            // window — see `leaderboard()`'s own doc comment for the full
+            // fix rationale.
+            async let leaderboardFetch = PublicWorkoutRepository.leaderboard(
+                routineID: workout.routine.id,
+                defaultSort: workout.defaultSort,
+                topSetExerciseID: workout.scoringTopSetExerciseID)
             let (exercises, routineResult, entries) = try await (exercisesFetch, routineFetch, leaderboardFetch)
             allExercises = exercises
             if let (_, exs) = routineResult {

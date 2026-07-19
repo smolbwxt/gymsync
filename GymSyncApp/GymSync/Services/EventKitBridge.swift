@@ -21,19 +21,22 @@ import Foundation
 /// preference itself, only the live system authorization, so it stays a
 /// thin EventKit wrapper rather than owning app-level policy. No function
 /// here is ever called from anywhere except: the toggle's own enable/disable
-/// actions, and the schedule/reschedule/cancel call sites that gate on the
+/// actions, the schedule/reschedule/cancel call sites that gate on the
 /// preference first (`ScheduleSessionView.schedule()`,
 /// `LobbyView.applyReschedule()/cancelOccurrence()/cancelSeriesForward()`,
-/// `SeriesEditorView.save()`).
+/// `SeriesEditorView.save()`), and `RootView`'s app-foreground hook into
+/// `reconcile()` (see that function's own doc comment below).
 ///
-/// KNOWN LIMITATION (v1, controller-accepted — deferred to Phase O): the
-/// only state transitions that ever remove a mapped event are the client-
-/// initiated ones above. A session the server-side cron moves to
-/// `abandoned` with no client involvement — `enqueue_scheduled_pushes()`'s
-/// "Abandon at 6 hours" step (`supabase/migrations/20260716000004_
-/// reminder_window_fix.sql:107-124`, superseding `20260716000003_push_
-/// cron.sql`) — never has `removeEvent` called for it, so its calendar
-/// event is left behind.
+/// FORMER KNOWN LIMITATION (v1, controller-accepted — Phase O Task 2
+/// closed this): the only state transitions that used to remove a mapped
+/// event were the client-initiated ones above. A session the server-side
+/// cron moves to `abandoned` with no client involvement —
+/// `enqueue_scheduled_pushes()`'s "Abandon at 6 hours" step (`supabase/
+/// migrations/20260716000004_reminder_window_fix.sql:107-124`, superseding
+/// `20260716000003_push_cron.sql`) — never had `removeEvent` called for
+/// it. `reconcile()` (below) now catches this on the next app foreground,
+/// alongside the toggle-race/stale-reschedule/just-past-backfill findings
+/// it also absorbs — see its doc comment for the full list.
 enum EventKitBridge {
     static let store = EKEventStore()
 
@@ -94,6 +97,32 @@ enum EventKitBridge {
         return TimeInterval(minutes * 60)
     }
 
+    /// `reconcile()`'s stale-detection rule (Phase O Task 2, fix wave 1 —
+    /// reviewer Finding 3), extracted as a pure helper: no `EKEventStore` or
+    /// network access, just a dictionary lookup over already-fetched data,
+    /// so it's hermetically testable without a live `SessionRepository`
+    /// fetch. A mapped session id is stale when either:
+    ///   - it's ABSENT from `liveStates` — `reconcile()`'s own doc comment
+    ///     already establishes why "cancelled" and "nonexistent" collapse
+    ///     into this one "missing" signal: `sessions.state`'s CHECK
+    ///     constraint has no `'cancelled'` value at all (cancel hard-DELETEs
+    ///     the row), so a cancelled session's id simply never comes back
+    ///     from the batch fetch — indistinguishable, by design, from an id
+    ///     that never existed or that RLS no longer lets this user see; or
+    ///   - its live state IS present but equals `"abandoned"` (the
+    ///     cron-driven "Abandon at 6 hours" transition — see `reconcile()`'s
+    ///     doc comment for the migration citation).
+    /// `"completed"` and every other live state (`scheduled`, `lobby_open`,
+    /// `editing`, `voting`, `locked`, `in_progress`) are deliberately kept —
+    /// a session that already happened, or is still in some active
+    /// pre-workout state, keeps its calendar footprint.
+    static func staleSessionIDs(mappedIDs: [UUID], liveStates: [UUID: String]) -> [UUID] {
+        mappedIDs.filter { id in
+            guard let state = liveStates[id] else { return true } // cancelled/nonexistent
+            return state == "abandoned"
+        }
+    }
+
     // MARK: - Writes (best-effort — log, never throw into a caller's
     // server-mutation flow; every caller's own write must already have
     // succeeded before it reaches here)
@@ -108,6 +137,30 @@ enum EventKitBridge {
     /// (mirrors `HealthKitBridge.exportWorkout`'s own internal
     /// `HKHealthStore.isHealthDataAvailable()` guard on top of its callers'
     /// checks).
+    ///
+    /// HONEST FAILURE MODE (Phase O Task 2, fix wave 1 — reviewer Finding
+    /// 2; corrects an overstated "re-toggle recovers this" claim that used
+    /// to live in the call sites' own comments, see `ScheduleSessionView.
+    /// schedule()`/`SeriesEditorView.save()`): `store.save(event, span:)`
+    /// below and `SessionCalendarSyncStore.setEventIdentifier(...)` are two
+    /// separate statements, and a process kill lands between them the event
+    /// exists in the user's calendar but was never mapped. Verified this
+    /// window is already as narrow as it can be — the only thing between
+    /// them is the `guard let identifier = event.eventIdentifier` extraction
+    /// (required; `setEventIdentifier` needs that value), a synchronous,
+    /// non-throwing, no-I/O property read with no `await` in it, so there's
+    /// nothing left to remove — the two calls are adjacent. That narrow
+    /// window is still a REAL, permanent failure mode, not a false alarm: no
+    /// recovery path in this file (`reconcile()`, `removeEvent`'s callers,
+    /// `YouTabView.backfillCalendarSync`) ever looks at anything but MAPPED
+    /// session ids, so an unmapped-but-saved event is invisible to all of
+    /// them forever, AND the next backfill (finding no mapping) creates a
+    /// SECOND event for the same session rather than recovering the first —
+    /// re-toggling calendar sync duplicates this case, it does not fix it.
+    /// Building an orphan-detection subsystem (e.g. reverse-scanning
+    /// `EKEventStore` by title/notes against the mapping) would close this
+    /// gap but is out of scope for v1 — noted here as a possible future item,
+    /// not built.
     @discardableResult
     static func syncEvent(session: WorkoutSession, routineName: String?, exerciseCount: Int?) async -> String? {
         guard let start = session.scheduledFor else { return nil }
@@ -167,6 +220,95 @@ enum EventKitBridge {
             AppLogger.calendar.info("Removed calendar event for session \(sessionID, privacy: .public)")
         } catch {
             AppLogger.calendar.error("removeEvent failed for session \(sessionID, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    // MARK: - Reconciliation sweep (Phase O Task 2)
+
+    /// Guards against two overlapping sweeps (e.g. a quick background→
+    /// foreground→background→foreground flap firing `.onChange(of:
+    /// scenePhase)` twice before the first pass's network fetch returns).
+    /// Same "static flag, not call-site discipline" shape as
+    /// `LiveKitRoomConnection.didDisableAutomaticAudioConfiguration`
+    /// (`Services/LiveKitRoomConnection.swift:38`) — this file has no actor
+    /// isolation of its own (matches `syncEvent`/`removeEvent` above, which
+    /// already mutate `SessionCalendarSyncStore` from whatever context calls
+    /// them), so this is a best-effort de-dupe, not a hard mutual-exclusion
+    /// guarantee — acceptable here because a redundant sweep is merely
+    /// wasted work, never incorrect (each pass independently re-derives
+    /// "stale" from a fresh server fetch).
+    private static var isReconciling = false
+
+    /// App-foreground reconciliation sweep. Absorbs three Phase H gate-
+    /// review findings that all reduce to the same root cause — a mapped
+    /// session whose SERVER state moved on without any client call site
+    /// ever invoking `removeEvent` for it:
+    ///   - **N-2** (rapid toggle-off/on race): disabling sync removes every
+    ///     mapped event, but a session cancelled in the gap before the next
+    ///     enable's backfill re-adds a now-stale event for it.
+    ///   - **N-3** (stale reschedule sync after a failed refetch): a
+    ///     `LobbyView.applyReschedule()` whose post-write `reload()` fails
+    ///     leaves `effectiveSession` (and therefore the synced event) on
+    ///     the pre-reschedule time, with no later retry.
+    ///   - **N-5** (just-past sessions backfilled): a session that crosses
+    ///     `scheduledFor <= now` between `YouTabView.backfillCalendarSync`'s
+    ///     fetch and its per-session sync still gets an event for a time
+    ///     that's already passed.
+    /// Plus this file's own KNOWN LIMITATION (type doc comment above): the
+    /// cron-driven `abandoned` transition has no client call site at all;
+    /// and sessions cancelled/gone while Calendar permission was denied
+    /// (so no client `removeEvent` could have fired even if the state
+    /// change WAS client-driven).
+    ///
+    /// Rather than patching each call site's individual race window, this
+    /// sweep is the single downstream safety net: enumerate every locally-
+    /// mapped session, batch-fetch what the server currently says each
+    /// one's state is, and remove the calendar footprint for anything
+    /// that's gone or `abandoned`. "Cancelled" and "nonexistent" collapse
+    /// into ONE signal here — `SeriesRepository.cancelOccurrence`/
+    /// `cancelSeriesForward` (`SessionSeries.swift:350-358`, `:361-379`)
+    /// hard-DELETE the row (there is no `'cancelled'` value in `sessions.
+    /// state`'s check constraint — `supabase/migrations/20260709000006_
+    /// create_sessions.sql:6-7` enumerates exactly `scheduled, lobby_open,
+    /// editing, voting, locked, in_progress, completed, abandoned`), so a
+    /// cancelled session's id simply never comes back from `SessionRepository.
+    /// sessions(ids:)`'s `.in("id", values:)` fetch — same as an id that
+    /// never existed or that RLS no longer lets this user see. `completed`
+    /// sessions are deliberately left alone: an event for a session that
+    /// actually happened is a legitimate calendar record, not stale state.
+    ///
+    /// Caller contract (mirrors every other function in this file, see the
+    /// type doc comment's "Gating" paragraph): the caller checks
+    /// `CalendarSyncPrefsStore.isEnabled()` before calling; this function
+    /// only re-checks live system authorization as its own defense-in-depth
+    /// guard, same as `syncEvent`. Best-effort: any failure (the batch
+    /// fetch itself, or an individual `removeEvent`) is logged and the
+    /// sweep simply ends for this pass — every mapping stays intact for
+    /// the NEXT foreground pass to retry, this never throws into or blocks
+    /// the caller.
+    static func reconcile() async {
+        guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else { return }
+        guard !isReconciling else { return }
+        isReconciling = true
+        defer { isReconciling = false }
+
+        let ids = SessionCalendarSyncStore.allSessionIDs()
+        guard !ids.isEmpty else { return }
+
+        do {
+            let liveSessions = try await SessionRepository.sessions(ids: ids)
+            let liveStates = Dictionary(uniqueKeysWithValues: liveSessions.map { ($0.id, $0.state) })
+            let staleIDs = staleSessionIDs(mappedIDs: ids, liveStates: liveStates)
+            guard !staleIDs.isEmpty else {
+                AppLogger.calendar.info("reconcile: \(ids.count, privacy: .public) mapped session(s), 0 stale")
+                return
+            }
+            for staleID in staleIDs {
+                await removeEvent(sessionID: staleID)
+            }
+            AppLogger.calendar.info("reconcile: removed \(staleIDs.count, privacy: .public) of \(ids.count, privacy: .public) mapped session(s) (cancelled/abandoned/nonexistent)")
+        } catch {
+            AppLogger.calendar.error("reconcile: batch fetch failed, sweep aborted this pass: \(error.localizedDescription, privacy: .public)")
         }
     }
 }

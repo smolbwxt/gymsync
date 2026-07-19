@@ -184,17 +184,62 @@ enum PublicWorkoutRepository {
     /// A routine's leaderboard — every `leaderboard_entries` row RLS lets the
     /// caller read (opt-in OR own row: `20260723000001_public_workout_
     /// repository.sql:134-143`) joined with the attempting user's profile.
-    /// No server-side ORDER BY per selected metric here — Time/Volume/
-    /// TopSet/Recent are re-sorted CLIENT-SIDE from this one fetch
-    /// (`DiscoverWorkoutDetailView`'s `sortedEntries`), so switching the
-    /// segmented control never re-hits the network. `is_complete=true` is a
-    /// defensive filter, not a load-bearing one — the recompute trigger only
-    /// ever inserts a row with `is_complete=true`
-    /// (`leaderboard_recompute_on_session_completion`'s INSERT, same
-    /// migration:281-285); kept explicit so a future write path can't
-    /// silently leak an in-progress attempt's stale zeroes onto the board.
-    /// `limit(200)` is the "sane LIMIT, no pagination" non-goal from the
-    /// Phase L design (`discover-leaderboards-design.md:32`).
+    /// No PER-TAB server round trip here — Time/Volume/TopSet/Recent are
+    /// re-sorted CLIENT-SIDE from this one fetch (`DiscoverWorkoutDetailView`'s
+    /// `sortedEntries`), so switching the segmented control never re-hits the
+    /// network. `is_complete=true` is a defensive filter, not a load-bearing
+    /// one — the recompute trigger only ever inserts a row with
+    /// `is_complete=true` (`leaderboard_recompute_on_session_completion`'s
+    /// INSERT, same migration:281-285); kept explicit so a future write path
+    /// can't silently leak an in-progress attempt's stale zeroes onto the
+    /// board. `limit(200)` is the "sane LIMIT, no pagination" non-goal from
+    /// the Phase L design (`discover-leaderboards-design.md:32`).
+    ///
+    /// Task 7 item 3 (pre-GA ledger, .superpowers/sdd/task-7-brief.md item 3)
+    /// FIX — LIMIT axis: this used to ALWAYS `.order("computed_at",
+    /// ascending: false)` before the LIMIT, regardless of the routine's own
+    /// `default_sort`. That's correct only when Recent genuinely IS the
+    /// routine's primary ranking (`default_sort == 'recent'`, or unset). For
+    /// a routine whose `default_sort` is `'time'`/`'volume'`/`'top_set'` —
+    /// i.e. an actual scored leaderboard — limiting along RECENCY before the
+    /// client ever re-sorts by the METRIC silently truncates the real top-200
+    /// once a routine passes 200 attempts: a genuinely #1 all-time fastest
+    /// "Time" entry from outside the 200-most-recent window would never even
+    /// reach the client to be re-sorted into place (.superpowers/sdd/
+    /// progress.md's "PRE-GA LEDGER: ... (3) recency-vs-metric LIMIT before
+    /// any routine passes 200 entries"). Fix: order/limit along the SAME axis
+    /// the routine is actually judged by (this function's new `defaultSort`
+    /// param, sourced from `routines.default_sort`), falling back to
+    /// recency exactly when Recent genuinely is that axis — mirrors
+    /// `DiscoverWorkoutDetailView.initialSort(for:)`'s own fallback rule
+    /// (unset/invalid/offered-metric-missing `default_sort` → Recent) and the
+    /// server-side rank computation's own per-metric ordering
+    /// (`leaderboard_rank_and_passed`, `20260723000001_public_workout_
+    /// repository.sql:160-205`: time ASC NULLS LAST / volume DESC NULLS LAST /
+    /// top_set DESC NULLS LAST on the routine's chosen exercise) — same three
+    /// metrics, same NULLS LAST placement, kept in lockstep with the ranking
+    /// this leaderboard is FOR rather than an independently-invented order.
+    /// `top_sets->>id` JSONB-path ordering verified live (read-only probe
+    /// against `leaderboard_entries`, 2026-07-19: `?order=top_sets->>x.desc.
+    /// nullslast` returns 200, PostgREST accepts JSON-path order expressions
+    /// the same as `select`); `order()`'s signature (`nullsFirst: Bool =
+    /// false`) confirmed against the pinned dependency source
+    /// (`raw.githubusercontent.com/supabase/supabase-swift/2.5.0/Sources/
+    /// PostgREST/PostgrestTransformBuilder.swift`, matching `project.yml`'s
+    /// `Supabase` package pin — Swift compiles in CI only, so this couldn't
+    /// be confirmed by a local build).
+    ///
+    /// Honest residual (documented, not silently accepted): this is still
+    /// ONE fetch for ALL four tabs, so only the routine's OWN primary axis
+    /// gets a true top-200 — a NON-default tab (e.g. viewing "Volume" on a
+    /// `default_sort='time'` routine with 250+ attempts) still re-sorts
+    /// within whatever 200 rows the TIME axis limited to, same shape of gap
+    /// as before, just narrowed from "every tab, always" to "every
+    /// non-default tab, only past 200 attempts." Fixing that fully would mean
+    /// a fetch per tab, reintroducing the exact network cost `sortedEntries`'s
+    /// own doc comment deliberately avoided — out of this item's scope; a
+    /// routine with 200+ attempts on more than one scored axis is a real
+    /// future-scale problem, not a pre-GA blocker today.
     ///
     /// `workout_attempts!inner(is_opt_in_leaderboard)` + the trailing
     /// `.eq("workout_attempts.is_opt_in_leaderboard", value: true)` (review
@@ -210,15 +255,35 @@ enum PublicWorkoutRepository {
     /// `.eq("session_participants.user_id", ...)`) — no schema change, no new
     /// denormalized column, the flag is read straight off `workout_attempts`
     /// through the FK `leaderboard_entries.attempt_id` already has.
-    static func leaderboard(routineID: UUID) async throws -> [LeaderboardEntryRow] {
+    static func leaderboard(
+        routineID: UUID, defaultSort: String? = nil, topSetExerciseID: UUID? = nil
+    ) async throws -> [LeaderboardEntryRow] {
         do {
-            let rows: [LeaderboardEntryRow] = try await client
+            let query = client
                 .from("leaderboard_entries")
                 .select("*, profiles!leaderboard_entries_user_id_fkey(username, avatar_url), workout_attempts!inner(is_opt_in_leaderboard)")
                 .eq("routine_id", value: routineID)
                 .eq("is_complete", value: true)
                 .eq("workout_attempts.is_opt_in_leaderboard", value: true)
-                .order("computed_at", ascending: false)
+
+            let ordered: PostgrestTransformBuilder
+            switch (defaultSort, topSetExerciseID) {
+            case ("time", _):
+                ordered = query.order("time_seconds", ascending: true, nullsFirst: false)
+            case ("volume", _):
+                ordered = query.order("total_volume", ascending: false, nullsFirst: false)
+            case ("top_set", .some(let exerciseID)):
+                ordered = query.order(
+                    "top_sets->>\(exerciseID.uuidString.lowercased())",
+                    ascending: false, nullsFirst: false)
+            default:
+                // 'recent', unset, or 'top_set' with no chosen exercise —
+                // same fallback set `DiscoverWorkoutDetailView.initialSort`
+                // already treats as Recent.
+                ordered = query.order("computed_at", ascending: false)
+            }
+
+            let rows: [LeaderboardEntryRow] = try await ordered
                 .limit(200)
                 .execute()
                 .value

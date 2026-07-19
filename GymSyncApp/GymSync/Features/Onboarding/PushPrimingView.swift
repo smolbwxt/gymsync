@@ -51,6 +51,22 @@ struct PushPrimingView: View {
         pushReceiver.authorizationStatus == .denied
     }
 
+    // Fix wave 1 (Task 6 review, scope correction from CI run 29679007547 on
+    // b358748): `isRestricted`/`isBlocked`/`restrictedContent` (added by
+    // b88ec93 for the original "`.restricted` auth status falls to
+    // pre-prompt branch" audit item) are REMOVED here — the item's premise
+    // was a false API assumption. `PushReceiver.authorizationStatus` is
+    // `UNUserNotificationCenter`'s `UNAuthorizationStatus`
+    // (Services/PushReceiver.swift:16), whose full case list is
+    // `.notDetermined`, `.denied`, `.authorized`, `.provisional`,
+    // `.ephemeral` — there is no `.restricted` case. (`.restricted` is a
+    // real case on `CLAuthorizationStatus` in Core Location, which is
+    // almost certainly how the original audit note's wording got crossed
+    // with this framework.) `pushReceiver.authorizationStatus ==
+    // .restricted` therefore does not compile
+    // ("type 'UNAuthorizationStatus' has no member 'restricted'"). Reverted
+    // to the pre-b88ec93 `isDenied`-only gating throughout this file; see
+    // task-6-report.md's "Fix wave 1" section for the full writeup.
     var body: some View {
         ZStack(alignment: .bottom) {
             theme.bg.ignoresSafeArea()

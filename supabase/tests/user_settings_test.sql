@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(12);
+SELECT plan(13);
 
 -- ── Fixtures ──────────────────────────────────────────────────────────────────
 -- cu1 alice = owner
@@ -55,6 +55,32 @@ SELECT results_eq(
   $$VALUES (180, 'arena'::text)$$,
   'owner update changes default_rest_seconds and palette'
 );
+
+-- ── 5b. Task 7 item 5: UPDATE bumps updated_at (BEFORE UPDATE trigger,
+--         20260726000006) — the client's upsert() only ever sends {user_id,
+--         default_rest_seconds, palette}, so without the trigger this column
+--         would stay frozen at row-creation time forever. Same idiom as
+--         curation_test.sql's soundboard_favorites proof (assertion 5b
+--         there): clock_timestamp(), not now()/transaction_timestamp()
+--         (frozen at this whole test's transaction start), is what makes the
+--         INSERT-time updated_at and this UPDATE's stamp compare greater
+--         rather than equal. The writable CTE (UPDATE ... RETURNING) must be
+--         top-level, not nested inside ok()'s argument list (Postgres: "WITH
+--         clause containing a data-modifying statement must be at the top
+--         level") — so this whole statement IS the WITH, with `SELECT
+--         ok(...)` as its final query.
+WITH before_val AS (
+  SELECT updated_at FROM user_settings
+  WHERE user_id = '00000000-0000-0000-0000-0000000c0001'
+), after_update AS (
+  UPDATE user_settings SET palette = 'ink'
+  WHERE user_id = '00000000-0000-0000-0000-0000000c0001'
+  RETURNING updated_at
+)
+SELECT ok(
+  after_update.updated_at > before_val.updated_at,
+  'UPDATE bumps updated_at past its pre-update value')
+FROM before_val, after_update;
 
 -- ── 6. CHECK constraint: palette outside the 4 allowed values raises 23514 ─────
 SELECT throws_ok(

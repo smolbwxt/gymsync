@@ -1,3 +1,4 @@
+import SwiftData
 import SwiftUI
 
 struct RootView: View {
@@ -11,6 +12,21 @@ struct RootView: View {
     // `.midnight`) is what makes the whole app re-render live when
     // `AppearanceView` calls `ThemeStore.select(_:)`.
     @State private var themeStore = ThemeStore.shared
+    // Phase O Task 2: app-level foreground hook for the calendar reconcile
+    // sweep (`EventKitBridge.reconcile()`) — see the `.onChange` below for
+    // why this lives HERE rather than following the per-screen `scenePhase`
+    // idiom every other consumer uses (HomeView/YouTabView/LobbyView/
+    // GroupSessionLiveView/ChatView/SocialTabView/PushPrimingView/
+    // NotificationPreferencesView all read `@Environment(\.scenePhase)`
+    // themselves).
+    @Environment(\.scenePhase) private var scenePhase
+    // Phase O Task 3 — offline set-log queue. `RootView` is the one view
+    // instance alive for the whole signed-in session (same rationale as the
+    // calendar-reconcile hook above), so it's the right place to both
+    // configure the queue's ModelContext once and drive its two
+    // app-level replay triggers (connectivity restored, app foreground).
+    @Environment(\.modelContext) private var modelContext
+    @State private var connectivity = ConnectivityMonitor.shared
 
     var body: some View {
         Group {
@@ -43,6 +59,122 @@ struct RootView: View {
         // the SwiftUI back button; this environment tint does.
         .tint(themeStore.current.accent)
         .background(themeStore.current.bg.ignoresSafeArea())
+        // Phase O Task 2: calendar reconcile sweep, app-foreground gated.
+        // `RootView` is the one view instance that's alive for the entire
+        // signed-in session regardless of which tab is selected —
+        // `MainTabView.body` below only ever mounts the CURRENTLY selected
+        // tab (`switch appState.selectedTab { case .home: HomeView() ... }`
+        // inside a bare `ZStack`, not a `TabView` that keeps every tab
+        // alive), so a `scenePhase` hook placed on any one tab's own view
+        // (the idiom every other consumer above uses) would silently miss
+        // every foreground transition that happens while a DIFFERENT tab is
+        // selected. Hooking here instead guarantees "fires on every
+        // foreground transition" regardless of the user's current screen —
+        // the actual requirement for a sweep that has to run app-wide.
+        // `.onChange(of: scenePhase)` itself already fires at most once per
+        // transition (SwiftUI semantics, same as every other consumer's
+        // `guard scenePhase == .active else { return }` idiom); `reconcile()`
+        // additionally guards its own re-entrancy (`EventKitBridge.
+        // isReconciling`) in case two transitions land close together.
+        .onChange(of: scenePhase) {
+            guard scenePhase == .active else { return }
+            guard case .signedIn = auth.state else { return }
+            guard CalendarSyncPrefsStore.isEnabled() else { return }
+            Task { await EventKitBridge.reconcile() }
+        }
+        // Phase O Task 3 — configure the queue's ModelContext once, then
+        // attempt an initial drain (covers "was offline when the app was
+        // last force-quit, is online again by the time it relaunches").
+        .task {
+            OfflineSetLogQueue.shared.configure(modelContext: modelContext)
+            guard case .signedIn = auth.state else { return }
+            await OfflineSetLogQueue.shared.replay()
+        }
+        // Replay trigger 1/4 — auth-state transition to .signedIn. Phase O
+        // Task 3 fix wave 1 (reviewer Finding 2): the `.task` above gates on
+        // `auth.state == .signedIn` at the single moment it first runs, but
+        // `AuthService.state` starts `.pending` and resolves asynchronously
+        // (`AuthService.bootstrap()`, Services/AuthService.swift ~22-54,
+        // kicked off fire-and-forget from `private init()` ~18-20) — a cold
+        // launch that's already online can have `.task` evaluate its guard
+        // WHILE bootstrap is still in flight, silently skipping the launch
+        // drain. Before this hook, nothing else re-checked: if connectivity
+        // and scenePhase never change afterward (device already online,
+        // app already foreground), that launch's queued sets would sit
+        // undrained indefinitely. This hook closes the gap by observing
+        // every auth-state transition and draining whenever the NEW state
+        // is `.signedIn` — including the ordinary sign-in transition, where
+        // it's a harmless extra call: `OfflineSetLogQueue.replay()` is
+        // idempotent and reentrancy-guarded (`isReplaying`, Services/
+        // OfflineSetLogQueue.swift — declared ~154, checked/set ~218-219;
+        // shifted again by the gate fix below, re-verified post-edit same
+        // as fix wave 2's own NEW-2 correction did), so overlapping with
+        // the `.task`'s own call is a no-op, not a double-submit.
+        //
+        // Gate fix (shared-device queue-scoping finding, task-3-report.md
+        // "## Gate fix"): `OfflineSetLogQueue.refreshPendingIDs()` is now
+        // ALSO re-called on every transition through this same hook — not
+        // just from `configure()`'s one-time call in the `.task` above.
+        // `pendingSetLogIDs` drives the "syncing" UI badges
+        // (`WorkoutSessionView.loggedSetsTable`, `GroupSessionLiveView.
+        // feedRow`) and, like `replay()`, is now scoped to the CURRENT
+        // signed-in user (`OfflineSetLogQueue.swift`'s class doc comment).
+        // Without re-syncing here, a second user signing into a shared
+        // device would keep seeing whatever was left in memory from the
+        // first user's session until the next `configure()` call (which
+        // never happens again post-launch) — this hook is the one place
+        // guaranteed to fire on every sign-in AND sign-out.
+        .onChange(of: auth.state) {
+            OfflineSetLogQueue.shared.refreshPendingIDs()
+            guard case .signedIn = auth.state else { return }
+            Task { await OfflineSetLogQueue.shared.replay() }
+        }
+        // Replay trigger 2/4 — connectivity restored. `.onChange` fires only
+        // on a transition, so this is exactly the "path becomes satisfied"
+        // edge (not a repeat while already online, not the offline edge).
+        .onChange(of: connectivity.isOnline) {
+            guard connectivity.isOnline else { return }
+            guard case .signedIn = auth.state else { return }
+            Task { await OfflineSetLogQueue.shared.replay() }
+        }
+        // Replay trigger 3/4 — app foreground. A SEPARATE `.onChange(of:
+        // scenePhase)` block, deliberately not merged into the calendar
+        // reconcile hook above — brief's explicit "do NOT duplicate the
+        // reconcile throttle, add alongside": `EventKitBridge.isReconciling`
+        // and `OfflineSetLogQueue`'s own reentrancy guard are independent,
+        // unrelated concerns that just happen to share the same trigger
+        // shape. Same "one instance alive all session" rationale as the
+        // reconcile hook for why this lives on RootView rather than a
+        // per-tab `scenePhase` read.
+        .onChange(of: scenePhase) {
+            guard scenePhase == .active else { return }
+            guard case .signedIn = auth.state else { return }
+            Task { await OfflineSetLogQueue.shared.replay() }
+        }
+        // Phase O Task 4 (Sentry, master spec §6.8.5) — refresh the
+        // crash-time context snapshot on every foreground transition. A
+        // SEPARATE `.onChange(of: scenePhase)` block, same rationale as the
+        // calendar-reconcile and offline-queue-replay blocks above (each
+        // keeps an unrelated concern in its own block instead of overloading
+        // one closure). `SentryContext.refreshAppWide()` is a no-op whenever
+        // Sentry isn't started (`CrashReporting.shared.isEnabled == false`,
+        // today's DSN-absent default), so this costs nothing in the common
+        // case. See `GroupSessionLiveView`'s own scenePhase hook for the
+        // equivalent in-live-session refresh (has real session/roster data
+        // this app-wide one can't see).
+        .onChange(of: scenePhase) {
+            guard scenePhase == .active else { return }
+            SentryContext.refreshAppWide()
+        }
+        // Replay trigger 4/4 — post-submit "cheap drain": NOT a RootView
+        // hook. Fired inline, fire-and-forget, right after every successful
+        // ONLINE set-log submit (WorkoutSessionView.swift ~726-731,
+        // GroupSessionLiveView.swift's logSetAndAdvance/logSet cheap-drain
+        // call sites) — opportunistically flushes anything still queued
+        // from an earlier offline stretch now that a submit just proved
+        // we're back online. Listed here only so this file's trigger
+        // enumeration is the complete set (reviewer Finding 2's phrasing:
+        // "signed-in transition, foreground, connectivity, post-submit").
     }
 }
 

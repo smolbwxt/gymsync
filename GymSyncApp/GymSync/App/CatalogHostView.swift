@@ -20,6 +20,9 @@ enum CatalogScreen: String, CaseIterable {
     case voiceTransmitting = "voice-transmitting"
     case voiceMicDenied = "voice-mic-denied"
     case voiceUnavailable = "voice-unavailable"
+    case voiceCoachMark = "voice-coach-mark"
+    case voiceConnectedToast = "voice-connected-toast"
+    case voiceMixerSheet = "voice-mixer-sheet"
     case onboardingSignIn = "onboarding-signin"
     case onboardingUsername = "onboarding-username"
     case onboardingHomeGym = "onboarding-homegym"
@@ -57,6 +60,9 @@ struct CatalogHostView: View {
             case .voiceTransmitting:          content_voice(.transmitting)
             case .voiceMicDenied:             content_voice(.micDenied)
             case .voiceUnavailable:           content_voice(.unavailable)
+            case .voiceCoachMark:             content_voiceCoachMark
+            case .voiceConnectedToast:        content_voiceConnectedToast
+            case .voiceMixerSheet:            content_voiceMixerSheet
             case .onboardingSignIn:           SignInView()
             case .onboardingUsername:         content_onboardingUsername
             case .onboardingHomeGym:          content_homeGym(searching: false)
@@ -136,6 +142,48 @@ struct CatalogHostView: View {
             PTTDockRow()
                 .onAppear { VoiceRoomService.shared.debugSetState(state) }
         }
+    }
+
+    // MARK: - Voice chrome (Phase O Task 5 item 5 — designer follow-up
+    // frames, docs/design/sections/2026-07-live-voice.dc.html; see
+    // docs/design/accepted-deviations.json's "voice-coach-mark"/
+    // "voice-connected-toast"/"voice-mixer-sheet" entries for frame
+    // authority + fidelity notes)
+
+    private var content_voiceCoachMark: some View {
+        VStack(spacing: 0) {
+            Spacer()
+            GSVoiceCoachMark(onDismiss: {})
+                .padding(.horizontal, 16)
+                .padding(.bottom, 6)
+            PTTDockRow()
+                .onAppear { VoiceRoomService.shared.debugSetState(.connected(.muted)) }
+        }
+    }
+
+    private var content_voiceConnectedToast: some View {
+        VStack(spacing: 0) {
+            GSVoiceConnectedToast(groupName: "Push Crew")
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+            Spacer()
+        }
+    }
+
+    private static let mixerFixtureJordan = "jordan-uuid"
+    private static let mixerFixtureSam = "sam-uuid"
+    private static let mixerFixturePriya = "priya-uuid"
+
+    private var content_voiceMixerSheet: some View {
+        GSVoiceMixerSheet(
+            participants: [
+                (Self.mixerFixtureJordan, "Jordan"),
+                (Self.mixerFixtureSam, "Sam"),
+                (Self.mixerFixturePriya, "Priya"),
+            ],
+            mutedIdentities: [Self.mixerFixturePriya],
+            onToggleMute: { _ in }
+        )
     }
 
     // MARK: - Onboarding: username

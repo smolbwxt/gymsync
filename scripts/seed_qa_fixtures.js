@@ -20,6 +20,17 @@
  * Requires SUPABASE_URL + SUPABASE_SECRET_KEY (+ SUPABASE_DB_PASSWORD, only
  * needed the first time to create the fixture-friend auth user) in .env.local
  * (service role).
+ *
+ * NOTE on production visibility (Task 7 item 2, pre-GA ledger): this script
+ * runs against the SAME Supabase project CI and production share (one
+ * project total — see .github/workflows/ios.yml's Seed QA fixture world
+ * step) — every row it writes is genuinely live in production, not an
+ * isolated test copy. Every fixture below is scoped to be inert for real
+ * users EXCEPT the "The Murph" attempt fixture, which used to set
+ * `is_opt_in_leaderboard: true` and therefore put the CI account's row on
+ * the real, public "The Murph" leaderboard next to genuine users — see that
+ * block's own comment for the full adjudication (why `false` now, why not
+ * env-scoped seeding or a separate cleanup script).
  */
 const fs = require('node:fs');
 const path = require('node:path');
@@ -538,15 +549,76 @@ async function main() {
   // workout_attempts: find-or-create by the table's own UNIQUE(session_id,
   // user_id) index (`workout_attempts_session_user_idx`) — never a second
   // row for a re-run, same idempotency key `start_attempt` itself relies on.
+  //
+  // Task 7 item 2 (pre-GA ledger, .superpowers/sdd/task-7-brief.md item 2)
+  // ADJUDICATION — is_opt_in_leaderboard hardcoded FALSE (was `true`):
+  // this CI fixture attempt was live in production with opt-in TRUE, which
+  // put ci_test_user_2's "42:13" row on the REAL public "The Murph"
+  // leaderboard next to genuine users — the pre-GA blocker
+  // (.superpowers/sdd/progress.md's "PRE-GA LEDGER: ... (2) scope QA seeding
+  // off prod / remove CI Murph entry before GA").
+  //
+  // Considered and rejected: (b) env-scoped seeding — this repo has ONE
+  // Supabase project for both CI and production (no separate CI database to
+  // scope into; confirmed by this script's own single SUPABASE_URL and the
+  // ios.yml workflow seeding the same project every run,
+  // .github/workflows/ios.yml:139,151) — nothing to scope into.
+  // (c) a standalone cleanup script + re-seed cadence — heavier: it would
+  // need to run on some cadence forever to keep re-hiding a value THIS
+  // script itself keeps re-creating as visible; that's fixing the symptom
+  // on a timer instead of the cause.
+  //
+  // Chosen: (a) is_opt_in_leaderboard=false at the source. Verified this
+  // doesn't cost anything CI actually exercises, by reading BOTH consumers:
+  //   - The Discover/leaderboard SCREENSHOTS (`testCatalogDiscover`,
+  //     `testCatalogDiscoverDetail`, `testCatalogTopLifters`,
+  //     GymSyncUITests/ScreenshotTests.swift:221-223) never touch the
+  //     network at all — they launch straight into `CatalogHostView`'s
+  //     `#if DEBUG` fixture screens with `UITEST_CATALOG=<id>`, which use
+  //     HARDCODED `PublicWorkout`/`LeaderboardEntryRow` literals
+  //     (`discoverFixtureMurph` et al, GymSyncApp/GymSync/App/
+  //     CatalogHostView.swift:559-645) via each view's `catalogFixture*`
+  //     init + `catalogSkipLoad = true` — the live DB is never queried, so
+  //     none of these captures can depend on this row's visibility either
+  //     way. No screenshot test in the repo drives the REAL
+  //     `PublicWorkoutRepository.leaderboard()` fetch at all (grepped
+  //     GymSyncUITests/ + GymSyncTests/ for it — zero hits).
+  //   - This block's OWN verification below (console.log of time_seconds/
+  //     total_volume/is_complete, :~600) reads `leaderboard_entries`
+  //     directly with the service-role key, which bypasses RLS entirely —
+  //     unaffected by is_opt_in_leaderboard either way.
+  // The RLS policy itself (`"opt-in or owner can read workout attempts"` /
+  // `"...leaderboard entries"`, 20260723000001_public_workout_repository.
+  // sql:141-153: `USING (is_opt_in_leaderboard = true OR user_id =
+  // auth.uid())`) keeps this row readable by the CI account itself (owner
+  // path) even at opt-in=false — only OTHER real users lose visibility,
+  // which is exactly the fix: the row stops appearing on the PUBLIC board
+  // while remaining a fully real, trigger-computed attempt for CI's own
+  // purposes.
+  //
+  // Applies on EVERY run, not just first creation (`false` is now baked
+  // into the create body below AND enforced by an unconditional PATCH right
+  // after find-or-create) — a bare "only set at INSERT" fix would leave
+  // this exact regression live for anyone who already has a pre-existing
+  // row from before this fix (which is precisely how the row got exposed:
+  // this script previously only wrote opt-in=true at creation and never
+  // revisited it on later runs).
   let [murphAttempt] = await rest(
-    `workout_attempts?select=id,is_complete&session_id=eq.${murphSession.id}&user_id=eq.${me.id}`);
+    `workout_attempts?select=id,is_complete,is_opt_in_leaderboard&session_id=eq.${murphSession.id}&user_id=eq.${me.id}`);
   if (!murphAttempt) {
     [murphAttempt] = await rest('workout_attempts', { method: 'POST', headers: rep,
       body: JSON.stringify({
         routine_id: murphID, user_id: me.id, session_id: murphSession.id,
-        is_opt_in_leaderboard: true, started_at: MURPH_ATTEMPT_SCHEDULED_FOR,
+        is_opt_in_leaderboard: false, started_at: MURPH_ATTEMPT_SCHEDULED_FOR,
         is_complete: false,
       }) });
+  } else if (murphAttempt.is_opt_in_leaderboard !== false) {
+    // Self-heals a pre-existing row seeded before this fix (the live
+    // production case this adjudication exists to close).
+    await rest(`workout_attempts?id=eq.${murphAttempt.id}`, { method: 'PATCH',
+      body: JSON.stringify({ is_opt_in_leaderboard: false }) });
+    console.log(`  Murph attempt fixture: pre-existing row ${murphAttempt.id} had ` +
+      `is_opt_in_leaderboard=true — corrected to false (Task 7 item 2 fix)`);
   }
 
   if (murphAttempt.is_complete) {

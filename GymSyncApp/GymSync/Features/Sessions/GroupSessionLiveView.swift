@@ -32,6 +32,14 @@ import SwiftUI
 struct GroupSessionLiveView: View {
     let session: WorkoutSession
 
+    /// True only when this view was reached via LobbyView ->
+    /// `SessionInProgressView` (the Lobby<->Live push/pop pair for the SAME
+    /// session) — false for every other route, currently `BurpeeLedgerView`'s
+    /// direct `NavigationLink` (Phase O Task 5, 3e follow-up queue item 6,
+    /// "Lobby<->Live back-nav rejoin blip"). See `onDisappear`'s doc comment
+    /// below for what this actually guards.
+    let voicePersistsOnPop: Bool
+
     @Environment(AppState.self)       private var appState
     @Environment(\.dismiss)          private var dismiss
     @Environment(\.scenePhase)       private var scenePhase
@@ -89,6 +97,13 @@ struct GroupSessionLiveView: View {
     @State private var showChatSheet        = false
     @State private var isEnding             = false
     @State private var errorText: String?
+    // Phase O Task 5 item 5 — mirrors LobbyView's identical trio (this
+    // view's own `voicePersistsOnPop` doc comment already notes it's not
+    // the only route in: `BurpeeLedgerView`'s direct push means voice can
+    // first connect here without ever having shown Lobby's copies).
+    @State private var showVoiceConnectedToast = false
+    @State private var showVoiceCoachMark = false
+    @State private var showVoiceMixerSheet = false
     /// Canvas Completion Task 4 fix round 1 (proof p31-errors, "Couldn't load
     /// the roster"): `reload()` previously swallowed participants/session
     /// fetch failures with only an `AppLogger` line — no UI signal at all.
@@ -101,6 +116,16 @@ struct GroupSessionLiveView: View {
     /// red caption for skipTurn/endSession/penalty-log failures, unchanged).
     /// Cleared optimistically at the start of every `logSetAndAdvance` call.
     @State private var logSetErrorText: String?
+    /// Phase O Task 3 fix wave 1 (reviewer Finding 1): set when the most
+    /// recent `logSetAndAdvance` attempt queued its set offline (rather than
+    /// hitting a real, retryable failure) — drives the calmer, non-retry
+    /// `GSInlineNoticeBanner` in `body` instead of `GSInlineErrorBanner`.
+    /// Deliberately separate from `logSetErrorText`: the two states are
+    /// mutually exclusive (a queued attempt never throws), but keeping them
+    /// as distinct optionals/booleans avoids overloading one property with
+    /// two different meanings. Cleared optimistically at the start of every
+    /// `logSetAndAdvance` call, same convention as `logSetErrorText`.
+    @State private var didQueueSetOffline = false
     @State private var recapData: RecapData?          // non-nil → sheet
     @State private var penaltyLogged        = 0       // reps logged this session as penalty by me
     /// Fetched lazily when this is a group session — backs the penalty
@@ -180,6 +205,32 @@ struct GroupSessionLiveView: View {
     private func joinVoiceIfEligible() async {
         guard isVoiceEligible else { return }
         await VoiceRoomService.shared.join(sessionID: liveSession.id)
+    }
+
+    /// Other participants' usernames, for `PTTDockRow`'s transmit hero —
+    /// mirrors `LobbyView`'s identical property (same "no shared home for
+    /// session-state helpers" reasoning as `voiceEligibleStates` above).
+    private var otherParticipantNames: [String] {
+        participants
+            .filter { $0.participant.userID != selfID }
+            .map(\.profile.username)
+    }
+
+    /// Mirrors `LobbyView.isVoiceConnected`/`voiceMixerParticipants` —
+    /// same reasoning in both places (`VoiceRoomState` isn't `Equatable`;
+    /// `VoiceRoomService` only knows identity strings, not usernames).
+    private var isVoiceConnected: Bool {
+        if case .connected = VoiceRoomService.shared.state { return true }
+        return false
+    }
+
+    private var voiceMixerParticipants: [(identity: String, name: String)] {
+        let byIdentity = Dictionary(
+            uniqueKeysWithValues: participants.map { ($0.participant.userID.uuidString.lowercased(), $0.profile.username) }
+        )
+        return VoiceRoomService.shared.connectedParticipantIDs
+            .sorted()
+            .map { identity in (identity, byIdentity[identity] ?? "Someone") }
     }
 
     private var myParticipant: SessionParticipant? {
@@ -343,8 +394,9 @@ struct GroupSessionLiveView: View {
 
     // MARK: - Init
 
-    init(session: WorkoutSession) {
+    init(session: WorkoutSession, voicePersistsOnPop: Bool = false) {
         self.session = session
+        self.voicePersistsOnPop = voicePersistsOnPop
         _liveSession = State(initialValue: session)
     }
 
@@ -390,6 +442,15 @@ struct GroupSessionLiveView: View {
                                     title: "Set didn't save.",
                                     message: "Check your connection, then try again — your reps are still filled in above.",
                                     retry: { commitInlineLog() }
+                                )
+                            } else if didQueueSetOffline {
+                                // Phase O Task 3 fix wave 1 (reviewer Finding 1) — see
+                                // `logSetAndAdvance`'s offline-queue branch for the full
+                                // rationale. No retry CTA: the set already saved locally,
+                                // so a retry here would only mint a duplicate queue entry.
+                                GSInlineNoticeBanner(
+                                    title: "Saved on this phone.",
+                                    message: "Your turn will pass once you're back online."
                                 )
                             }
                             if !rotationTiles.isEmpty {
@@ -492,11 +553,18 @@ struct GroupSessionLiveView: View {
                 }
                 // ── SOUNDBOARD DOCK ──────────────────────────────────────
                 soundboardDock
+                // First-run coach mark (Phase O Task 5 item 5) — mirrors
+                // LobbyView's identical placement directly above the dock.
+                if showVoiceCoachMark {
+                    GSVoiceCoachMark(onDismiss: { showVoiceCoachMark = false })
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 6)
+                }
                 // ── PUSH-TO-TALK DOCK ────────────────────────────────────
                 // Dossier §A.2 confirms the exact insertion point: between
                 // the HYPE strip and the bottom action bar.
                 if isVoiceEligible {
-                    PTTDockRow()
+                    PTTDockRow(otherParticipantNames: otherParticipantNames)
                 }
                 // ── BOTTOM ACTION BAR ────────────────────────────────────
                 // My turn → pinned "Log Set & Pass" CTA (per proof, lives OUTSIDE the
@@ -532,6 +600,38 @@ struct GroupSessionLiveView: View {
         .sheet(isPresented: $showLogSetSheet) { logSetSheetContent }
         // Session chat sheet (Task 3)
         .sheet(isPresented: $showChatSheet) { chatSheet }
+        // Voice mixer sheet (Phase O Task 5 item 5)
+        .sheet(isPresented: $showVoiceMixerSheet) { voiceMixerSheet }
+        .onChange(of: isVoiceConnected) { wasConnected, nowConnected in
+            guard nowConnected, !wasConnected else { return }
+            // Mirrors LobbyView's identical trigger — see that view's
+            // `.onChange(of: isVoiceConnected)` doc comment for the full
+            // "toast every time, coach mark only the first time ever"
+            // reasoning.
+            withAnimation { showVoiceConnectedToast = true }
+            if !VoiceCoachMarkStore.hasBeenShown {
+                showVoiceCoachMark = true
+                VoiceCoachMarkStore.markShown()
+            }
+            Task {
+                try? await Task.sleep(for: .seconds(3))
+                withAnimation { showVoiceConnectedToast = false }
+            }
+        }
+        .overlay(alignment: .top) {
+            // "Voice connected" toast (Phase O Task 5 item 5) — mirrors
+            // LobbyView's identical overlay.
+            if showVoiceConnectedToast {
+                // Unlike LobbyView, this view has no fetched group-name
+                // state to hand the toast's subtitle — `nil` renders just
+                // the "Voice connected" headline (GSVoiceConnectedToast's
+                // `groupName` param is optional exactly for this reason).
+                GSVoiceConnectedToast(groupName: nil)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
         // Recap sheet — Phase F Task 4: the frame-8 group celebration
         // (GroupRecapView) replaces this sheet's content for genuine
         // group-backed sessions (data.groupPayload != nil); solo/ad-hoc
@@ -590,12 +690,20 @@ struct GroupSessionLiveView: View {
                 // one call per foreground transition, no timer. Best-effort:
                 // a failed heartbeat must never disrupt the live session UI.
                 try? await SessionRepository.touchActivity(sessionID: liveSession.id)
+                // Phase O Task 4 (Sentry, master spec §6.8.5) — piggybacks
+                // this existing foreground hook rather than adding a new
+                // one; refreshed AFTER reload() so the participant count is
+                // current. No-op when Sentry isn't started.
+                SentryContext.refreshLiveSession(rawState: liveSession.state, participantCount: participants.count)
             }
         }
         .onAppear {
             // Suppresses the push banner for this same session while it's
             // open live (AppDelegate.willPresent, AppState.activeSessionID).
             appState.activeSessionID = liveSession.id
+            // Phase O Task 4 (Sentry) — "session join" refresh; see
+            // SentryContext.refreshLiveSession's doc comment.
+            SentryContext.refreshLiveSession(rawState: liveSession.state, participantCount: participants.count)
         }
         .onDisappear {
             // Only clear the suppression flag if it's still pointing at THIS
@@ -606,20 +714,45 @@ struct GroupSessionLiveView: View {
             // whichever session is now actually live.
             if appState.activeSessionID == session.id {
                 appState.activeSessionID = nil
+                // Phase O Task 4 (Sentry) — "session leave" refresh, only
+                // when THIS view was genuinely the active one (mirrors the
+                // guard above) so a stale disappear from a covered view
+                // doesn't overwrite a still-live session's context.
+                SentryContext.refreshAppWide()
             }
             Task {
                 await liveService.unsubscribe()
                 await broadcastService.unsubscribe()
-                // Unconditional, mirroring the two unsubscribes above — this
-                // is the top of the voice-eligible flow (no further "more
-                // live" view to hand the room off to, unlike LobbyView's
-                // guarded leave() for its Lobby -> live-session transition),
-                // so every disappearance here is a genuine "stop talking"
-                // moment (session ended, backed out, or a child pushed on
-                // top — the latter already re-subscribes everything else on
-                // return via this same `.task`, so voice re-joining too is
-                // consistent, not a new blip class introduced here).
-                await VoiceRoomService.shared.leave()
+                // Phase O Task 5 (3e follow-up queue item 6, "Lobby<->Live
+                // back-nav rejoin blip"): this used to be unconditional
+                // (every disappearance treated as a genuine "stop talking"
+                // moment). That's still right for a child pushed on top
+                // (re-subscribes everything, voice included, on return via
+                // this same `.task`) and for `BurpeeLedgerView`'s direct
+                // route into a DIFFERENT session (`voicePersistsOnPop` false
+                // there — no Lobby is about to reclaim the room). Fix wave 1
+                // (Finding F4): that direct route can no longer target the
+                // SAME session this view is already showing — `Burpee
+                // LedgerView`'s CTA now pops back to THIS instance instead
+                // of pushing a duplicate one in that case, so this view's
+                // own `onDisappear` never fires for that push/pop pair at
+                // all. But backing OUT to LobbyView
+                // for the SAME still-live session (`voicePersistsOnPop`
+                // true — `SessionInProgressView` is the only route that
+                // sets it, per its own "LobbyView navigates here" doc
+                // comment) is exactly LobbyView's own guarded-leave case,
+                // mirrored: LobbyView's `.task` re-fires `joinVoiceIfEligible
+                // ()` on reappearance and `VoiceRoomService.join()`'s
+                // idempotent guard no-ops against an already-`.connected`
+                // room — so tearing the room down here just to have Lobby
+                // immediately reconnect it produced an audible disconnect/
+                // reconnect blip for no reason. Only leave() when EITHER
+                // this isn't that persisting route OR the session has left
+                // the voice-eligible window (ended/cancelled/abandoned) —
+                // a genuine "stop talking" moment either way.
+                if !voicePersistsOnPop || !isVoiceEligible {
+                    await VoiceRoomService.shared.leave()
+                }
             }
         }
     }
@@ -772,6 +905,26 @@ struct GroupSessionLiveView: View {
                     .font(.custom("Archivo-Bold", size: 14).monospacedDigit())
                     .foregroundStyle(theme.neutral700)
                     .monospacedDigit()
+            }
+
+            // Voice mixer entry point (Phase O Task 5 item 5) — same
+            // bordered-square idiom as the chat/X buttons beside it; no
+            // canvas frame shows WHERE the mixer opens from (only its own
+            // content), see docs/design/accepted-deviations.json's
+            // "voice-mixer-entry-point" entry.
+            if isVoiceConnected {
+                Button {
+                    showVoiceMixerSheet = true
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(theme.neutral700)
+                        .frame(width: 30, height: 30)
+                        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
 
             // Session chat (Task 3) — same bordered-square idiom as the X
@@ -928,11 +1081,12 @@ struct GroupSessionLiveView: View {
             // "Plates" row renders (LogSetSheet.swift:124), instead of copy-pasting its
             // body per the reviewer's explicit ruling against that approach. Same
             // hidden/inert-for-empty/invalid/non-positive-weight gate as LogSetSheet
-            // and the same `Decimal(string:)` parse idiom `commitInlineLog()`
-            // (line 1502 below) already uses for this exact field — this card just
+            // and the same `Decimal.parseUserInput(_:)` locale-safe parse idiom
+            // `commitInlineLog()` (below) already uses for this exact field (Phase O
+            // Task 2 — was the bare `Decimal(string:)` initializer) — this card just
             // holds its weight in `logWeight` rather than LogSetSheet's `weight`
             // (LogSetSheet.swift:22).
-            if let targetWeight = Decimal(string: logWeight), targetWeight > 0 {
+            if let targetWeight = Decimal.parseUserInput(logWeight), targetWeight > 0 {
                 PlateStackDisclosure(target: targetWeight, theme: theme, isExpanded: $showPlateStack)
             }
 
@@ -1097,13 +1251,18 @@ struct GroupSessionLiveView: View {
         let status = rosterStatus(for: item.participant.userID)
         let isLifting = status == .lifting
         // Speaking ring (Task 4, Dossier §A.2's lobby-strip "talking" state,
-        // reused here for the live-session roster grid). `VoiceRoomService`
-        // exposes only WHO is currently speaking, not a full roster of who
-        // else has joined the room — so "listening"/"muted" for other
-        // participants isn't derivable here either (same honest limitation
-        // as `LobbyView.participantRow`); only the "talking" ring is real.
-        let isSpeaking = VoiceRoomService.shared.speakingParticipantIDs
-            .contains(item.participant.userID.uuidString.lowercased())
+        // reused here for the live-session roster grid).
+        let identity = item.participant.userID.uuidString.lowercased()
+        let voice = VoiceRoomService.shared
+        let isSpeaking = voice.speakingParticipantIDs.contains(identity)
+        // Phase O Task 5 item 4 ("muted-others roster rows") — mirrors
+        // LobbyView.participantRow's identical derivation now that
+        // VoiceRoomService exposes a roster + both mute-state sets; see
+        // that view's doc comment for the full "muted" definition (own-mic
+        // mute OR muted-by-you via the mixer, one shared caption for both).
+        let isInVoiceRoom = voice.connectedParticipantIDs.contains(identity)
+        let isMuted = isInVoiceRoom && !isSpeaking &&
+            (voice.remoteMutedParticipantIDs.contains(identity) || voice.locallyMutedParticipantIDs.contains(identity))
 
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 5) {
@@ -1121,6 +1280,10 @@ struct GroupSessionLiveView: View {
                     Text("talking")
                         .font(GSFont.bold(9, relativeTo: .caption2))
                         .foregroundStyle(isLifting ? theme.bg.opacity(0.85) : theme.accent700)
+                } else if isMuted {
+                    Text("muted")
+                        .font(GSFont.body(9, relativeTo: .caption2))
+                        .foregroundStyle(isLifting ? theme.bg.opacity(0.7) : theme.neutral500)
                 }
             }
 
@@ -1158,6 +1321,7 @@ struct GroupSessionLiveView: View {
         .overlay(Rectangle().strokeBorder(
             isSpeaking ? theme.accent700 : (isLifting ? Color.clear : theme.divider),
             lineWidth: isSpeaking ? 2 : 1))
+        .opacity(isMuted ? 0.7 : 1)
     }
 
     private func rosterStatusLabel(_ status: RosterStatus) -> String {
@@ -1308,7 +1472,12 @@ struct GroupSessionLiveView: View {
             // ad-hoc/solo sessions have no group-scoped ledger to show.
             if let ledgerGroup {
                 NavigationLink {
-                    BurpeeLedgerView(group: ledgerGroup)
+                    // Fix wave 1 (reviewer Finding F4): threads this view's
+                    // own session id through so BurpeeLedgerView's "Log
+                    // burpees now" CTA can tell whether ITS target session
+                    // is the SAME one already live further down the nav
+                    // stack — see that property's doc comment for why.
+                    BurpeeLedgerView(group: ledgerGroup, pushedFromLiveSessionID: session.id)
                 } label: {
                     HStack(spacing: 4) {
                         Text("Crew ledger")
@@ -1396,6 +1565,13 @@ struct GroupSessionLiveView: View {
                     if log.isFailed {
                         GSTag(text: "failed", style: .neutral)
                     }
+                    // Phase O Task 3 — syncing indicator (system-designed, no canvas
+                    // frame; docs/design/accepted-deviations.json's
+                    // "offline-syncing-indicator" entry). Same GSTag(.outline) chip
+                    // idiom this row's own penalty/failed tags already use.
+                    if OfflineSetLogQueue.shared.pendingSetLogIDs.contains(log.id) {
+                        GSTag(text: "syncing", style: .outline)
+                    }
                 }
             }
 
@@ -1454,6 +1630,33 @@ struct GroupSessionLiveView: View {
         }
     }
 
+    // MARK: - Voice mixer (Phase O Task 5 item 5) — mirrors LobbyView's
+    // identical sheet, same toolbar-button + sheet idiom as chatSheet above.
+
+    private var voiceMixerSheet: some View {
+        NavigationStack {
+            GSVoiceMixerSheet(
+                participants: voiceMixerParticipants,
+                mutedIdentities: VoiceRoomService.shared.remoteMutedParticipantIDs
+                    .union(VoiceRoomService.shared.locallyMutedParticipantIDs),
+                onToggleMute: { identity in
+                    let isMuted = VoiceRoomService.shared.locallyMutedParticipantIDs.contains(identity)
+                    Task { await VoiceRoomService.shared.setLocalMute(!isMuted, forParticipantIdentity: identity) }
+                }
+            )
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showVoiceMixerSheet = false }
+                        .font(GSFont.bold(14, relativeTo: .body))
+                        .foregroundStyle(theme.accent700)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
     /// Best-guess current exercise for the turn (first routine exercise, or first from allExercises).
     private var currentExerciseForSheet: Exercise? {
         if let firstRE = routineExercises.first {
@@ -1499,7 +1702,10 @@ struct GroupSessionLiveView: View {
         guard let ex = currentExerciseForSheet else { return }
         isLoggingSet = true
         let reps = Int(logReps)
-        let weight = Decimal(string: logWeight)
+        // Phase O Task 2: `Decimal.parseUserInput(_:)` — see the "Plates"
+        // disclosure gate above for why the bare `Decimal(string:)`
+        // initializer was locale-unsafe.
+        let weight = Decimal.parseUserInput(logWeight)
         let rpe = Decimal(logRPE)
         let note = logNote.isEmpty ? nil : logNote
         let failed = logIsFailed
@@ -1543,6 +1749,14 @@ struct GroupSessionLiveView: View {
                 Task { await reloadParticipants() }
             },
             onSetLogged: { log in
+                // Phase O Task 3 — dedupe guard: an optimistically-appended offline
+                // set (queued via OfflineSetLogQueue, see logSetAndAdvance/logSet
+                // above) shares its `id` with the eventual realtime echo of its own
+                // successful replay. Without this guard, that echo would double
+                // -append the row (and double-count penaltyLogged) once reconnected.
+                // No-op for the ordinary online path — a fresh id is never already
+                // in feedSets.
+                guard !feedSets.contains(where: { $0.id == log.id }) else { return }
                 // Prepend to feed (newest-first), cap 30
                 feedSets.insert(log, at: 0)
                 if feedSets.count > 30 { feedSets = Array(feedSets.prefix(30)) }
@@ -1725,6 +1939,11 @@ struct GroupSessionLiveView: View {
         // convention) so a retry that succeeds drops the banner immediately,
         // and a retry that fails re-sets it fresh below.
         logSetErrorText = nil
+        // Phase O Task 3 fix wave 1 (reviewer Finding 1) — same "clear
+        // optimistically at the start of every attempt" convention as
+        // `logSetErrorText` above, so a fresh attempt never shows a stale
+        // notice left over from a previous set.
+        didQueueSetOffline = false
         let log = SetLog(
             id: UUID(), userID: userID, sessionID: session.id,
             exerciseID: exerciseID,
@@ -1740,13 +1959,69 @@ struct GroupSessionLiveView: View {
             var isPR = false
             var priorBest: Decimal = 0
             if !isFailed, let weight, weight > 0 {
-                let prior = try await priorMax(exerciseID: exerciseID,
-                                               weight: weight, userID: userID)
-                priorBest = prior
-                isPR = weight > prior
+                // Phase O Task 3 — see WorkoutSessionView.log's identical catch for
+                // the full rationale: without this, an offline attempt throws HERE
+                // (before the set-log write below), so a group-session lifter could
+                // never queue a set while offline either. Only `.network` is tolerant.
+                do {
+                    let prior = try await priorMax(exerciseID: exerciseID,
+                                                   weight: weight, userID: userID)
+                    priorBest = prior
+                    isPR = weight > prior
+                } catch let error as GymSyncError {
+                    guard case .network = error else { throw error }
+                    // Offline — PR check skipped (best-effort, never blocks logging).
+                }
             }
 
-            try await SessionRepository.logSet(log)
+            do {
+                try await SessionRepository.logSet(log)
+                Task { await OfflineSetLogQueue.shared.replay() }   // cheap drain
+            } catch let error as GymSyncError {
+                guard case .network = error else { throw error }
+                // Offline — queue for replay + optimistic local append. `feedSets`/
+                // `allSessionSets` normally only ever get a set from the realtime
+                // echo (`onSetLogged` below — "single source" per its own comment);
+                // that echo can't arrive while offline, so this is now this path's
+                // ONLY way the set becomes visible / counts toward mySetCount()
+                // until reconnect. `onSetLogged` gained a dedupe-by-id guard (below)
+                // so the eventual echo of this same id, once replay succeeds, does
+                // not double-append the row.
+                OfflineSetLogQueue.shared.enqueue(log)
+                feedSets.insert(log, at: 0)
+                if feedSets.count > 30 { feedSets = Array(feedSets.prefix(30)) }
+                allSessionSets.append(log)
+                // Phase O Task 3 fix wave 1 (reviewer Finding 1) — advanceTurn
+                // below is now deliberately SKIPPED (via `didQueueSetOffline`)
+                // rather than "attempted below (unchanged)" as this comment used
+                // to claim. That claim was wrong in practice: the set-log write
+                // above already succeeded LOCALLY (queued + optimistically
+                // applied), so calling advanceTurn unconditionally next would
+                // just throw its own `.network` and land in the outer catch,
+                // which showed "Set didn't save" — false, the set DID save — with
+                // a "Try again" retry that mints a BRAND NEW `SetLog(id: UUID(),
+                // ...)` at an advanced `setIndex` (mySetCount() already counts
+                // this optimistic append, commitInlineLog() ~1505-1522). Every
+                // offline retry tap therefore queued one more DISTINCT duplicate
+                // row — different UUIDs, so the 23505 dedupe in
+                // OfflineSetLogQueue.replay() can't catch them.
+                //
+                // Accepted consequence (reviewer + spec scope both accept this):
+                // this lifter's turn does NOT auto-advance while offline, and it
+                // never auto-advances for this specific set even once the queued
+                // row replays successfully — `OfflineSetLogQueue.replay()` only
+                // ever resubmits the set_logs INSERT itself (Services/
+                // OfflineSetLogQueue.swift:120-182 → `SupabaseSetLogSubmitter.
+                // submit` → `SessionRepository.logSet`), advanceTurn is not part
+                // of replay. The closest existing session-level fallback is the
+                // idle-ladder's "Still Going"/"Wrap Up" push actions
+                // (PushReceiver.stillGoing/wrapUpSession, App/AppDelegate.swift
+                // ~91-92) — but that's a session-idle heartbeat, not a per-turn
+                // advance, so it won't unstick this turn either. Honestly: the
+                // organizer (or this lifter, once back online, by logging their
+                // next set — `isMyTurn` stays true) advances manually.
+                didQueueSetOffline = true
+            }
 
             if isPR, let weight {
                 let name = await ExerciseNameCache.name(for: exerciseID)
@@ -1773,6 +2048,15 @@ struct GroupSessionLiveView: View {
                 }
             }
 
+            // Phase O Task 3 fix wave 1 (reviewer Finding 1) — skip advanceTurn
+            // entirely when this attempt queued offline; see the queuing
+            // branch's comment above for the full rationale. The normal
+            // ONLINE path is unaffected: `didQueueSetOffline` stays false, so
+            // advanceTurn still runs, and a genuine failure here (e.g. a real
+            // permanent error, or connectivity dropping between logSet and
+            // advanceTurn) still falls into the catch below and shows the
+            // existing retry banner exactly as before.
+            guard !didQueueSetOffline else { return }
             try await SessionRepository.advanceTurn(sessionID: session.id)
         } catch let error as GymSyncError {
             // Upgraded treatment (Canvas Completion Task 4 fix round 1, proof
@@ -1828,9 +2112,24 @@ struct GroupSessionLiveView: View {
         )
         do {
             try await SessionRepository.logSet(log)
+            Task { await OfflineSetLogQueue.shared.replay() }   // cheap drain
             // penaltyLogged updates via the realtime echo (single source; reload() re-seeds)
         } catch let error as GymSyncError {
-            errorText = error.errorDescription
+            guard case .network = error else {
+                errorText = error.errorDescription
+                return
+            }
+            // Phase O Task 3 — offline: queue for replay + optimistic local append.
+            // This function's "single source: realtime echo" comment above no longer
+            // holds while offline (there is no realtime channel to echo from) — the
+            // local append here is this path's ONLY way the set becomes visible /
+            // counts toward penaltyLogged until reconnect. Mirrors what the realtime
+            // echo (onSetLogged, below) does for the exact same fields.
+            OfflineSetLogQueue.shared.enqueue(log)
+            feedSets.insert(log, at: 0)
+            if feedSets.count > 30 { feedSets = Array(feedSets.prefix(30)) }
+            allSessionSets.append(log)
+            if isPenalty && !isFailed { penaltyLogged += reps ?? 0 }
         } catch {
             errorText = error.localizedDescription
         }

@@ -22,6 +22,15 @@ enum TransmitState {
     case transmitting
 }
 
+/// Fallback for `VoiceRoomState.unavailable`'s associated `Error` when
+/// LiveKit reports an unexpected disconnect with a `nil` underlying error
+/// (its `room(_:didDisconnectWithError:)` carries `LiveKitError?` — Phase O
+/// Task 5 fix wave 2). `.unavailable` carries a non-optional `Error` by
+/// contract, so a nil SDK error still needs a concrete value.
+struct VoiceRoomUnexpectedDisconnectError: LocalizedError {
+    var errorDescription: String? { "Voice connection lost" }
+}
+
 // MARK: - Token fetch seam
 
 /// The token-fetch response shape `livekit-token` returns on success
@@ -119,6 +128,39 @@ protocol VoiceRoomConnecting: AnyObject {
     /// `RoomDelegate.room(_:didUpdateSpeakingParticipants:)` fires.
     var onSpeakingParticipantsChanged: ((Set<String>) -> Void)? { get set }
 
+    /// Set once by `VoiceRoomService` right after construction. Fired with
+    /// the full current set of REMOTE participant identities in the room
+    /// (self excluded, same lowercased-UUID-string identity shape as
+    /// `onSpeakingParticipantsChanged`) whenever a participant joins or
+    /// leaves. Phase O Task 5 (3e follow-up queue item 4, "muted-others
+    /// roster rows" — the ledger's own "needs room-roster service surface"
+    /// note): `VoiceRoomService` previously exposed no roster at all, so
+    /// callers couldn't tell "not speaking" apart from "not even in the
+    /// room."
+    var onRosterChanged: ((Set<String>) -> Void)? { get set }
+
+    /// Set once by `VoiceRoomService` right after construction. Fired with
+    /// `(identity, isMuted)` whenever a REMOTE participant's OWN published
+    /// mic track's mute state changes (they muted/unmuted themselves) —
+    /// distinct from `setLocalVolume`'s muted-BY-YOU below, which is a pure
+    /// local override nobody else observes.
+    var onRemoteMuteChanged: ((String, Bool) -> Void)? { get set }
+
+    /// Set once by `VoiceRoomService` right after construction. Fired when
+    /// the CURRENT connection's transport dies out from under a successfully
+    /// established connection (Phase O Task 5 fix wave 2 — LiveKit's
+    /// `room(_:didDisconnectWithError:)`, whose SDK doc reads "Client
+    /// disconnected from the room unexpectedly after a successful
+    /// connection"). CONTRACT: the conformer must NEVER fire this for an
+    /// intentional `disconnect()` teardown, nor for a stale/superseded
+    /// previous connection generation — `LiveKitRoomConnection` enforces
+    /// both via a Room-identity gate before forwarding (it detaches the
+    /// current room synchronously at the top of `disconnect()`, so an
+    /// intentional teardown's own disconnect event no longer matches).
+    /// The service cannot distinguish generations at this seam; that
+    /// filtering is the conformer's responsibility by contract.
+    var onUnexpectedDisconnect: ((Error?) -> Void)? { get set }
+
     /// Connects to `url` with `token` and publishes the mic track muted.
     /// Throws on any failure — token rejected, network, SDK-level error.
     func connectAndPublishMuted(url: String, token: String) async throws
@@ -127,6 +169,15 @@ protocol VoiceRoomConnecting: AnyObject {
     /// — mute/unmute is the low-latency path for hold-to-talk (Dossier
     /// §B.4/§B.3.5).
     func setMicrophoneMuted(_ muted: Bool) async throws
+
+    /// Sets LOCAL playback volume (0...1) for one remote participant's
+    /// audio — client-side only; doesn't touch what they publish or what
+    /// anyone else hears. Powers the voice mixer sheet's per-person
+    /// "tap to mute" (volume 0) and level control (Phase O Task 5 item 5).
+    /// Best-effort — never throws; a failed volume change degrades to "the
+    /// mixer's mute toggle didn't take" (device-QA-visible), never a torn
+    /// room. No-op for an identity that isn't currently in the room.
+    func setLocalVolume(_ volume: Double, forParticipantIdentity identity: String) async
 
     /// Disconnects the room. Best-effort — never throws; `leave()` must
     /// always be able to restore audio/state regardless of network state.
@@ -161,6 +212,21 @@ final class VoiceRoomService {
     private(set) var state: VoiceRoomState = .idle
     private(set) var speakingParticipantIDs: Set<String> = []
 
+    /// REMOTE participants currently in the room (self excluded). Phase O
+    /// Task 5 item 4 — the roster surface `PTTDockRow`'s roster rows and
+    /// the voice mixer sheet both need to tell "not speaking" apart from
+    /// "not even in the room."
+    private(set) var connectedParticipantIDs: Set<String> = []
+    /// Subset of `connectedParticipantIDs` who have muted THEIR OWN mic
+    /// (LiveKit publish-mute state — a fact about them, visible to
+    /// everyone in the room, not just you).
+    private(set) var remoteMutedParticipantIDs: Set<String> = []
+    /// Subset of `connectedParticipantIDs` YOU have locally silenced via
+    /// the voice mixer sheet (`setLocalMute`) — a pure client-side
+    /// override nobody else observes, distinct from
+    /// `remoteMutedParticipantIDs` above.
+    private(set) var locallyMutedParticipantIDs: Set<String> = []
+
     private let tokenFetcher: VoiceTokenFetching
     private let micPermission: MicPermissionChecking
     private let audioSession: VoiceAudioSessionManaging
@@ -174,6 +240,12 @@ final class VoiceRoomService {
     /// overwrite `.idle` with `.connected` — a live room the caller believes
     /// it left. All access is MainActor-serialized, so an equality check
     /// between awaits is race-free.
+    ///
+    /// Fix wave 1 (reviewer Finding F3b): `leave()` now also gates its OWN
+    /// state-restoring `defer` against this epoch (see that method) — an
+    /// abandoned `leave()` call that resolves after a NEWER `leave()`/
+    /// `join()` has already run must not clobber whatever that newer call
+    /// left behind.
     private var lifecycleEpoch = 0
 
     init(
@@ -199,6 +271,68 @@ final class VoiceRoomService {
         self.room.onSpeakingParticipantsChanged = { [weak self] identities in
             self?.speakingParticipantIDs = identities
         }
+        self.room.onRosterChanged = { [weak self] identities in
+            guard let self else { return }
+            self.connectedParticipantIDs = identities
+            // A participant who left the room can no longer be "muted" in
+            // either sense — drop them from both derived sets so a
+            // reconnecting participant starts from a clean slate rather
+            // than inheriting a stale badge from their previous stint.
+            self.remoteMutedParticipantIDs.formIntersection(identities)
+            self.locallyMutedParticipantIDs.formIntersection(identities)
+        }
+        self.room.onRemoteMuteChanged = { [weak self] identity, isMuted in
+            guard let self else { return }
+            if isMuted {
+                self.remoteMutedParticipantIDs.insert(identity)
+            } else {
+                self.remoteMutedParticipantIDs.remove(identity)
+            }
+        }
+        self.room.onUnexpectedDisconnect = { [weak self] error in
+            self?.handleUnexpectedDisconnect(error)
+        }
+    }
+
+    /// Phase O Task 5 fix wave 2: the transport died out from under a live,
+    /// successfully established connection (network drop, server-side kick,
+    /// LiveKit engine failure). Without this the service would sit in a
+    /// zombie `.connected(.muted)` with dead audio — no signal to the UI,
+    /// no retry path. Transitions to `.unavailable` (the existing
+    /// error-carrying state — the UI shows the "voice unavailable" pill +
+    /// one manual retry) and restores the ambient audio-session baseline;
+    /// `currentSessionID` is deliberately KEPT so `retry()` can re-join
+    /// this same session.
+    ///
+    /// Staleness discipline, both layers:
+    /// - Stale-GENERATION events (a torn-down old room's late disconnect)
+    ///   never reach this handler at all — `LiveKitRoomConnection` drops
+    ///   them at its Room-identity gate (see `onUnexpectedDisconnect`'s
+    ///   protocol doc comment). That contract is the conformer's to keep;
+    ///   this handler cannot re-check it (the service knows nothing of
+    ///   room generations, by design).
+    /// - Stale-EPOCH delivery (the event hops to the main actor and runs
+    ///   AFTER a `leave()` already reset state, or before any connection
+    ///   exists) is filtered by the `.connected` state guard — every state
+    ///   transition is MainActor-serialized, so the guard is race-free.
+    /// - The epoch BUMP below mirrors `leave()`'s: this is a
+    ///   lifecycle-ending event, and without the bump an in-flight
+    ///   `beginTransmit()`/`endTransmit()` parked on its mute await could
+    ///   resume afterward, pass its own epoch check, and resurrect
+    ///   `.connected` over the `.unavailable` this handler just set.
+    private func handleUnexpectedDisconnect(_ error: Error?) {
+        guard case .connected = state else { return }
+        lifecycleEpoch += 1
+        AppLogger.voice.error(
+            "unexpected voice disconnect: \(String(describing: error), privacy: .public)"
+        )
+        audioSession.exitVoiceMode()
+        state = .unavailable(error ?? VoiceRoomUnexpectedDisconnectError())
+        speakingParticipantIDs = []
+        connectedParticipantIDs = []
+        remoteMutedParticipantIDs = []
+        locallyMutedParticipantIDs = []
+        // currentSessionID deliberately NOT cleared — retry() requires it.
     }
 
     /// Auto-join entry point (LobbyView/GroupSessionLiveView `.onAppear` —
@@ -214,6 +348,42 @@ final class VoiceRoomService {
     /// .mixWithOthers`) must never be left stuck on `.playAndRecord` because
     /// of a half-finished join.
     func join(sessionID: UUID) async {
+        // Phase O Task 5 (3e follow-up queue item 3, "join session-scope
+        // guard"): the two no-op guards below used to be SESSION-BLIND —
+        // they treated "already connecting/connected" as reason enough to
+        // return, regardless of which session that flight is FOR. While
+        // still `.connecting` FOR A DIFFERENT SESSION, that in-flight join
+        // is stale relative to THIS call — if left alone it can still land
+        // its own connect a moment later and silently establish the WRONG
+        // session's room. Extend the SAME `lifecycleEpoch` machinery
+        // `leave()` already uses to guard resumption-after-suspension (see
+        // that var's doc comment): route through `leave()` here too, which
+        // bumps the epoch, disconnects whatever the stale flight has
+        // connected so far (nothing yet, at this point), and resets state
+        // to `.idle` — so when the stale join resumes past its next epoch
+        // check (right after the token fetch, or right after connect), it
+        // recognizes itself as stale and stands down exactly like a
+        // leave()-during-join race today.
+        //
+        // Fix wave 1 (reviewer Finding F3a): the already-`.connected` guard
+        // was ALSO session-blind, and that half was NOT harmless — a join
+        // for session B arriving while `.connected` to session A silently
+        // no-op'd, stranding the caller on the wrong room with no signal
+        // that anything went wrong. The one legitimate same-session case
+        // (LobbyView -> GroupSessionLiveView deliberately re-calling join()
+        // for the SAME session to let the room persist across that push)
+        // only needs the no-op when the session ID actually matches — so
+        // `.connected` now gets the identical "different session ->
+        // leave() first" treatment `.connecting` already had, and only
+        // no-ops when the session matches. `leave()` bumping the epoch
+        // synchronously before its first `await` (see that method) is what
+        // makes this safe to call unconditionally here.
+        if case .connecting = state, currentSessionID != sessionID {
+            await leave()
+        }
+        if case .connected = state, currentSessionID != sessionID {
+            await leave()
+        }
         if case .connecting = state { return }
         if case .connected = state { return }
 
@@ -274,6 +444,22 @@ final class VoiceRoomService {
         await join(sessionID: sessionID)
     }
 
+    /// Voice mixer sheet's per-person "tap to mute" (Phase O Task 5, item
+    /// 5) — a pure LOCAL playback override, never touching what `identity`
+    /// publishes or what anyone else in the room hears. No-op unless
+    /// currently connected AND `identity` is actually in the room —
+    /// silently dropping a stale toggle for someone who already left is
+    /// safer than surfacing an error for a UI action that's already moot.
+    func setLocalMute(_ muted: Bool, forParticipantIdentity identity: String) async {
+        guard case .connected = state, connectedParticipantIDs.contains(identity) else { return }
+        await room.setLocalVolume(muted ? 0 : 1, forParticipantIdentity: identity)
+        if muted {
+            locallyMutedParticipantIDs.insert(identity)
+        } else {
+            locallyMutedParticipantIDs.remove(identity)
+        }
+    }
+
     /// Hold-to-talk press. Unmutes the already-published mic track (NOT
     /// publish/unpublish — Dossier §B.4). No-op unless currently
     /// `.connected(.muted)`; a failed unmute leaves the state at `.muted`
@@ -313,22 +499,129 @@ final class VoiceRoomService {
     }
 
     /// Disconnects and restores audio, unconditionally — guaranteed on
-    /// session end, view dismiss (Task 4's `.onDisappear` wiring), and
-    /// sign-out (`AuthService.signOut()` calls this before tearing down the
-    /// Supabase session). Safe to call from `.idle` (never-joined) —
-    /// `room.disconnect()`/`exitVoiceMode()` are both no-ops/idempotent in
-    /// that case. Also invalidates any in-flight `join()`/transmit call via
+    /// session end and view dismiss (Task 4's `.onDisappear` wiring). Safe
+    /// to call from `.idle` (never-joined) — `room.disconnect()`/
+    /// `exitVoiceMode()` are both no-ops/idempotent in that case. Also
+    /// invalidates any in-flight `join()`/transmit call via
     /// `lifecycleEpoch` — a suspended join that resumes after this cannot
-    /// reconnect or overwrite the `.idle` state.
+    /// reconnect or overwrite the `.idle` state. `AuthService.signOut()`
+    /// calls `leave(timeout:)` below instead of this directly (Phase O
+    /// Task 5, 3e follow-up queue item 1) — sign-out must never hang on a
+    /// wedged `room.disconnect()`.
     func leave() async {
         lifecycleEpoch += 1
+        // Fix wave 1 (reviewer Finding F3b): captured AFTER the bump, same
+        // convention as `join()`'s `let epoch = lifecycleEpoch` right after
+        // `state = .connecting`. An abandoned, late-resolving `leave()` call
+        // (e.g. the loser of `leave(timeout:)`'s race below, left running in
+        // the background per that method's own doc comment) used to
+        // unconditionally restore `.idle` + exit voice mode in this defer
+        // whenever `room.disconnect()` eventually returned — even after a
+        // NEWER join()/leave() for a different session had already
+        // superseded it, clobbering that newer session's `.connected` state
+        // and tearing its audio mode down out from under it. Gating the
+        // state restore on "no newer leave() has run since I bumped the
+        // epoch" fixes that: only the leave() call that's still the most
+        // recent one gets to write `.idle`.
+        //
+        // The room-level disconnect below stays UNCONDITIONAL regardless —
+        // `room.disconnect()` "must always be able to restore audio/state"
+        // per this method's contract above, epoch or no epoch. Fix wave 2
+        // closed the transport-level residual this comment previously
+        // carried: `LiveKitRoomConnection` now creates a fresh `Room` PER
+        // CONNECTION generation (`private var room: Room?`,
+        // LiveKitRoomConnection.swift:124 — was a single shared instance
+        // for the object's whole lifetime), and its `disconnect()` detaches
+        // the current generation synchronously before awaiting its
+        // teardown. An abandoned late disconnect therefore tears down only
+        // ITS OWN room object and is structurally incapable of touching a
+        // newer generation's transport — verified against live SDK source
+        // (Room.connect()'s unconditional cleanUp / Room.disconnect()'s
+        // generation-blind cleanUp were a real clobber hazard on a shared
+        // Room; see LiveKitRoomConnection.swift's FIX WAVE 2 header note).
+        let epoch = lifecycleEpoch
         defer {
-            audioSession.exitVoiceMode()
-            state = .idle
-            currentSessionID = nil
-            speakingParticipantIDs = []
+            if lifecycleEpoch == epoch {
+                audioSession.exitVoiceMode()
+                state = .idle
+                currentSessionID = nil
+                speakingParticipantIDs = []
+                // Phase O Task 5 item 4/5: the roster and both derived mute
+                // sets are meaningless once the room is gone — a later
+                // join() into a fresh room must start from an empty roster,
+                // not carry over whoever was in the PREVIOUS room.
+                connectedParticipantIDs = []
+                remoteMutedParticipantIDs = []
+                locallyMutedParticipantIDs = []
+            }
         }
         await room.disconnect()
+    }
+
+    /// `leave()`, bounded to `timeout`. `room.disconnect()` is LiveKit's own
+    /// network teardown — `leave()`'s contract says it "must always be able
+    /// to restore audio/state" but makes no promise about HOW LONG that
+    /// takes. Sign-out (`AuthService.signOut()`, the one caller of this
+    /// method — Phase O Task 5, 3e follow-up queue item 1; final review's
+    /// minor 4 flagged the previous unbounded duration as brief-sanctioned
+    /// but worth revisiting) is a user-initiated action that must never
+    /// hang on a wedged network teardown.
+    ///
+    /// Races the real `leave()` against a hard timeout — the same
+    /// "whichever fires first wins" idiom `CheckInService.fetchLocation()`
+    /// already establishes for its CLLocationManager-delegate-vs-timeout
+    /// race (CheckInService.swift), adapted here for `leave()` vs a sleep.
+    /// Both spawned `Task`s inherit this method's `@MainActor` isolation
+    /// (this class is `@MainActor`), so `ContinuationBox`'s guard against a
+    /// double-resume needs no lock — a single nil-check is race-free.
+    ///
+    /// Deliberately does NOT cancel the losing `leave()` call on timeout:
+    /// LiveKit's `Room.disconnect()` isn't cancellation-aware and
+    /// `leave()` itself never checks `Task.isCancelled`, so cancelling it
+    /// would only set a flag nothing reads. The real `leave()` keeps
+    /// running in the background and still restores state/audio via its
+    /// own `defer` whenever `room.disconnect()` eventually resolves —
+    /// timing out here means "the caller stops waiting," not "voice
+    /// teardown was aborted."
+    func leave(timeout: Duration) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let box = ContinuationBox(continuation)
+            Task { @MainActor in
+                await self.leave()
+                box.resume()
+            }
+            Task { @MainActor in
+                try? await Task.sleep(for: timeout)
+                if box.resume() {
+                    AppLogger.voice.error("leave(timeout:) exceeded its bound — caller is proceeding; teardown continues in the background")
+                }
+            }
+        }
+    }
+}
+
+/// MainActor-isolated single-resume guard for a `CheckedContinuation` two
+/// independent unstructured `Task`s race to finish (Swift traps at runtime
+/// on a double-resume). See `VoiceRoomService.leave(timeout:)`'s doc
+/// comment for why a lock isn't needed here.
+@MainActor
+private final class ContinuationBox {
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    init(_ continuation: CheckedContinuation<Void, Never>) {
+        self.continuation = continuation
+    }
+
+    /// Resumes the continuation exactly once across however many callers
+    /// race to call this. Returns whether THIS call was the one that fired
+    /// it — callers use that to know whether they won the race (e.g. to
+    /// decide whether to log a timeout).
+    @discardableResult
+    func resume() -> Bool {
+        guard let continuation else { return false }
+        self.continuation = nil
+        continuation.resume()
+        return true
     }
 }
 
@@ -346,3 +639,27 @@ extension VoiceRoomService {
     }
 }
 #endif
+
+// MARK: - VoiceCoachMarkStore
+
+/// `UserDefaults`-backed "has the first-run voice coach mark been shown"
+/// flag (Phase O Task 5 item 5). Mirrors `StatTilesSnapshotStore`'s
+/// enum-of-static-members shape (`Models/StatTilesSnapshot.swift`) — no
+/// existing UserDefaults-based idiom for a single boolean flag exists in
+/// this codebase, so this follows that file's snapshot-store shape scaled
+/// down to a `Bool`. Deliberately NOT cleared by `AuthService.signOut()`'s
+/// per-user cleanup sweep (unlike `StatTilesSnapshotStore`/
+/// `SessionCalendarSyncStore`) — the coach mark explains a DEVICE-level
+/// gesture (tap/hold), not per-user data, so a second account signing in
+/// on the same device shouldn't see it again either.
+enum VoiceCoachMarkStore {
+    private static let defaultsKey = "voice.coachMark.shown.v1"
+
+    static var hasBeenShown: Bool {
+        UserDefaults.standard.bool(forKey: defaultsKey)
+    }
+
+    static func markShown() {
+        UserDefaults.standard.set(true, forKey: defaultsKey)
+    }
+}

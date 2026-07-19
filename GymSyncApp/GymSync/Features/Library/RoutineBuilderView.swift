@@ -126,6 +126,41 @@ struct RoutineBuilderView: View {
                     if publishAsFeatured {
                         publishFieldsSection
                     }
+                } else if publishAsFeatured {
+                    // Task 6 item 10 (reliability/debt roll-up —
+                    // .superpowers/sdd/progress.md:346, "demoted curator's
+                    // still-public routine can never save again under the
+                    // RLS WITH CHECK"). `routines`' UPDATE policy WITH CHECK
+                    // ("users can update their own routines",
+                    // 20260717000003_curation.sql:63-69) re-evaluates on
+                    // EVERY update to the row, not just ones that touch
+                    // `visibility` — so once `is_curator` is revoked (server-
+                    // side only; there is no client demotion flow at all
+                    // today), any further save of a routine that's STILL
+                    // `visibility='public'` fails outright, even a plain
+                    // name/description edit, because the toggle section
+                    // above (and the only way to flip `publishAsFeatured`
+                    // back to false) was entirely hidden for a non-curator.
+                    // That left a genuine dead end reachable only by a
+                    // direct DB fix — no client escape hatch existed.
+                    //
+                    // Fix: still show the toggle (NOT the curator-only
+                    // scoring/sort pickers below it — those stay
+                    // curator-gated) whenever the routine being edited is
+                    // CURRENTLY public, regardless of the editor's current
+                    // curator status. This matches what the DB policy
+                    // already permits — `visibility <> 'public'` passes the
+                    // WITH CHECK unconditionally — so unpublishing was
+                    // always allowed server-side, only the UI never offered
+                    // it. A demoted curator can now unpublish their own
+                    // routine (unblocking every other edit) but still
+                    // cannot re-publish or edit the scoring/sort fields
+                    // while it stays public — both correctly require being
+                    // a curator again, which only a service-role/superuser
+                    // action can restore. Intentional residual, not a bug:
+                    // there is still no self-serve republish path, by
+                    // design (curator status is not user-grantable).
+                    publishToggleRow
                 }
 
                 if let errorText {

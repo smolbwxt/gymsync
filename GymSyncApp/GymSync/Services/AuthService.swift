@@ -73,7 +73,13 @@ final class AuthService {
         // restore the audio session — never throws, so this can't block
         // sign-out itself, and it's a harmless no-op if no room was ever
         // joined (VoiceRoomService.leave() is idempotent from `.idle`).
-        await VoiceRoomService.shared.leave()
+        // Phase O Task 5 (3e follow-up queue item 1): bounded to 2s —
+        // `leave()`'s own `await room.disconnect()` is LiveKit's network
+        // teardown and could hang on a wedged connection; sign-out must
+        // proceed regardless. See VoiceRoomService.leave(timeout:)'s doc
+        // comment for the full contract (it logs and lets the real
+        // teardown keep running in the background rather than blocking).
+        await VoiceRoomService.shared.leave(timeout: .seconds(2))
         try await SupabaseService.shared.signOut()
         // Phase U (Task 1 fix): wipe the cached stat-tile snapshot so a
         // second user signing into a shared device doesn't see the first
@@ -103,6 +109,43 @@ final class AuthService {
         // `CatalogHostView.content_sessionChat`, which sets
         // `AppState.shared.currentProfile` the same way).
         AppState.shared.currentProfile = nil
+        // Fix wave 1 (Task 6 review, CRITICAL): same shared-device reasoning
+        // as StatTilesSnapshotStore/SessionCalendarSyncStore/
+        // CalendarSyncPrefsStore/currentProfile above — chatDrafts is keyed
+        // by conversation UUID only, so a second user signing into a shared
+        // device would otherwise inherit the first user's unsent draft text
+        // via ChatView.onAppear (AppState.chatDrafts' doc comment).
+        AppState.shared.chatDrafts.removeAll()
+        // Same shared-device reasoning: a pending push route (deep-link
+        // UUID) consumed by the NEXT account's HomeView is cross-account
+        // state, even though RLS makes the fetch a silent no-op in the
+        // common case.
+        AppState.shared.pendingRoute = nil
+        // Deliberately NOT cleared here: `OfflineSetLogQueue`'s SwiftData-
+        // backed pending-writes queue (Services/OfflineSetLogQueue.swift).
+        // This looks like the same shared-device gap as chatDrafts/
+        // pendingRoute/currentProfile above, but it isn't — a gate finding
+        // caught an actual instance of the naive fix (clear-on-signout)
+        // being WORSE than doing nothing: this device may hold this user's
+        // own not-yet-synced reps (still offline, or online but not yet
+        // drained), and wiping them here would silently destroy real
+        // workout data the lifter believes is saved. The finding also
+        // caught the OPPOSITE failure mode of leaving the queue
+        // unscoped — the next user to sign in on this device would have
+        // their auth-transition drain (`RootView`'s `.onChange(of:
+        // auth.state)`) replay THIS user's still-queued rows under the
+        // next user's Supabase session, hitting an RLS denial that
+        // `OfflineSetLogQueue.replay()`'s permanent-drop bucket would then
+        // silently discard — losing this user's reps AND submitting their
+        // set content under someone else's identity.
+        // Fix (see `OfflineSetLogQueue`'s class doc comment): every row
+        // already carries `PendingSetLog.userID`, so `replay()` and
+        // `refreshPendingIDs()` now scope to rows where `userID` equals the
+        // CURRENTLY signed-in user's id instead. That makes leaving the
+        // queue unscoped by sign-out actually SAFE: this user's queued rows sit invisible
+        // and unreplayable to anyone else until this same user signs back
+        // in on this device, at which point they drain normally — the
+        // honest fix, not clear-on-signout's data loss.
         state = .signedOut
     }
 
@@ -121,6 +164,11 @@ final class AuthService {
     func forceSignedOutAfterDeletion() async {
         try? await SupabaseService.shared.signOut()
         AppState.shared.currentProfile = nil
+        // Fix wave 1 (Task 6 review, CRITICAL): same gap as signOut() above
+        // — this path also lands a shared device at .signedOut without
+        // clearing chatDrafts, so it needs the identical clear.
+        AppState.shared.chatDrafts.removeAll()
+        AppState.shared.pendingRoute = nil
         state = .signedOut
     }
 

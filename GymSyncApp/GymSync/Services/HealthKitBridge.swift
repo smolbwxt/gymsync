@@ -105,7 +105,19 @@ enum HealthKitBridge {
                 of: HKObjectType.workoutType(),
                 predicate: exportPredicate(sessionID: session.id)
             )
-            AppLogger.health.info("replaceWorkout: deleted \(deletedCount, privacy: .public) prior export(s) for session \(session.id, privacy: .public)")
+            // Phase O Task 2: disambiguate 0-deleted from N-deleted — a bare
+            // "deleted 0" line read as ambiguous (Task 1's ledgered Minor:
+            // could mean "this session's export predates the metadata
+            // stamp" OR "something is broken"). It's neither by default —
+            // see the HONEST LIMITATION doc comment above: any export from
+            // before this Phase H change has no `HKMetadataKeyExternalUUID`
+            // stamp to match on, so 0-deleted is the EXPECTED outcome for
+            // those, not a failure signal.
+            if deletedCount == 0 {
+                AppLogger.health.info("replaceWorkout: 0 prior export(s) matched for session \(session.id, privacy: .public) (pre-stamp export or none existed — expected for old exports)")
+            } else {
+                AppLogger.health.info("replaceWorkout: deleted \(deletedCount, privacy: .public) prior export(s) for session \(session.id, privacy: .public)")
+            }
         } catch {
             AppLogger.health.error("replaceWorkout: delete failed for session \(session.id, privacy: .public): \(error.localizedDescription, privacy: .public)")
             // Fall through and re-export anyway — worst case a delete

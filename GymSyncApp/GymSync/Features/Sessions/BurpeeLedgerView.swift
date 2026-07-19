@@ -34,8 +34,45 @@ import SwiftUI
 struct BurpeeLedgerView: View {
     let group: GymGroup
 
+    /// Set only by `GroupSessionLiveView`'s "Crew ledger" NavigationLink
+    /// (`GroupSessionLiveView.swift:1469` — the ONE other construction site
+    /// is `GroupView.swift:344`'s primary Sessions-tab entry, which leaves
+    /// this `nil` since there's no live session anywhere below it on the
+    /// nav stack). Fix wave 1 (reviewer Finding F4): before this fix, the
+    /// "Log burpees now" CTA below unconditionally pushed a SECOND
+    /// `GroupSessionLiveView` — if `liveSessionForCTA` happened to be the
+    /// SAME session as the one this view was pushed from (reachable: the
+    /// penalty banner that hosts the "Crew ledger" link only renders for a
+    /// session you currently owe burpees in, which is exactly the session
+    /// `liveSessionForCTA` resolves to whenever its most-recent-late session
+    /// is still live), popping that duplicate back out fired ITS
+    /// `onDisappear` with the default `voicePersistsOnPop: false` —
+    /// unconditionally tearing down voice out from under the ORIGINAL,
+    /// still-live `GroupSessionLiveView` instance sitting right below it.
+    /// Read `GroupSessionLiveView.swift`'s nav structure (init at line 397,
+    /// `onDisappear`'s `voicePersistsOnPop` guard at ~708-750) before
+    /// choosing a fix: threading `voicePersistsOnPop: true` through was one
+    /// option, but it only patches the SYMPTOM (the duplicate instance would
+    /// still exist, still re-run `.onAppear`/`.task` roster/realtime
+    /// subscriptions it doesn't need, and still leave two live copies of the
+    /// same session on the stack simultaneously). Popping back to the
+    /// EXISTING instance instead — via `@Environment(\.dismiss)` — is
+    /// smaller and more honest: no duplicate is ever created, so there's
+    /// nothing for a second `onDisappear` to mishandle. Deliberately a
+    /// session id, not `VoiceRoomService.currentSessionID` (not exposed
+    /// publicly for this per the task's own instruction) — this view has no
+    /// business reaching into voice internals just to make a navigation
+    /// decision.
+    let pushedFromLiveSessionID: UUID?
+
     @Environment(\.gsTheme) private var theme
+    @Environment(\.dismiss) private var dismiss
     @Environment(AppState.self) private var appState
+
+    init(group: GymGroup, pushedFromLiveSessionID: UUID? = nil) {
+        self.group = group
+        self.pushedFromLiveSessionID = pushedFromLiveSessionID
+    }
 
     // Fix round 1 (task-3-report.md): the group-wide crew debt list and the
     // self-only "YOU OWE" detail now come from two separate queries — see
@@ -132,29 +169,56 @@ struct BurpeeLedgerView: View {
             // Only actionable when the contributing session is still live —
             // burpee logging has no standalone flow outside a live session's
             // LogSetSheet (see GroupSessionLiveView.logSetSheetContent).
+            //
+            // Fix wave 1 (reviewer Finding F4, see `pushedFromLiveSessionID`'s
+            // doc comment above for the full reachability trace): if `live`
+            // is the SAME session this view was pushed FROM, pop back to
+            // that already-live instance instead of pushing a second one —
+            // avoids ever creating the duplicate `GroupSessionLiveView`
+            // whose later pop used to tear down voice under the original.
+            // Any other case (opened from GroupView's Sessions tab with no
+            // live session below, or `live` genuinely is a different
+            // session) is unaffected — still a normal push.
             if let live = liveSessionForCTA {
-                NavigationLink {
-                    GroupSessionLiveView(session: live)
-                } label: {
-                    HStack {
-                        Text("Log burpees now")
-                            .font(GSFont.bold(14, relativeTo: .body))
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 13, weight: .semibold))
+                if live.id == pushedFromLiveSessionID {
+                    Button {
+                        dismiss()
+                    } label: {
+                        logBurpeesNowLabel
                     }
-                    .foregroundStyle(theme.text)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 12)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .background(theme.bg)
+                    .buttonStyle(.plain)
+                } else {
+                    NavigationLink {
+                        GroupSessionLiveView(session: live)
+                    } label: {
+                        logBurpeesNowLabel
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.accent)
+    }
+
+    /// Shared visual content for the "Log burpees now" CTA — identical
+    /// whichever of the two navigation actions above wraps it (push vs.
+    /// pop-back), so the fix's dismiss-instead-of-push branch (Finding F4)
+    /// reads as a pure behavior change, not a redesign.
+    private var logBurpeesNowLabel: some View {
+        HStack {
+            Text("Log burpees now")
+                .font(GSFont.bold(14, relativeTo: .body))
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+        }
+        .foregroundStyle(theme.text)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .background(theme.bg)
     }
 
     private func detailLine(_ summary: BurpeeLedgerMath.YouOweSummary) -> String? {
