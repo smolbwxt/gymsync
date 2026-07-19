@@ -109,6 +109,13 @@ final class AuthService {
         // `CatalogHostView.content_sessionChat`, which sets
         // `AppState.shared.currentProfile` the same way).
         AppState.shared.currentProfile = nil
+        // Fix wave 1 (Task 6 review, CRITICAL): same shared-device reasoning
+        // as StatTilesSnapshotStore/SessionCalendarSyncStore/
+        // CalendarSyncPrefsStore/currentProfile above — chatDrafts is keyed
+        // by conversation UUID only, so a second user signing into a shared
+        // device would otherwise inherit the first user's unsent draft text
+        // via ChatView.onAppear (AppState.chatDrafts' doc comment).
+        AppState.shared.chatDrafts.removeAll()
         state = .signedOut
     }
 
@@ -127,6 +134,10 @@ final class AuthService {
     func forceSignedOutAfterDeletion() async {
         try? await SupabaseService.shared.signOut()
         AppState.shared.currentProfile = nil
+        // Fix wave 1 (Task 6 review, CRITICAL): same gap as signOut() above
+        // — this path also lands a shared device at .signedOut without
+        // clearing chatDrafts, so it needs the identical clear.
+        AppState.shared.chatDrafts.removeAll()
         state = .signedOut
     }
 
