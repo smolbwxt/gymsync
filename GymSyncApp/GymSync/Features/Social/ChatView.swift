@@ -401,15 +401,31 @@ struct ChatView: View {
     // MARK: - Mic Button (hold to record)
 
     /// True while a live PTT voice room is connected (any sub-state — muted
-    /// or transmitting). Gates the voice-MESSAGE mic below: `VoiceRecorder`'s
-    /// `exitRecordMode()` unconditionally resets `AVAudioSession` to
-    /// `.ambient` on every recording end path, which would silently kill the
-    /// still-connected room's audio out from under it (AUDIO SACRED RULE —
-    /// only `VoiceRoomService`/`AudioSessionManager` may own the session
-    /// while a room is live; see Dossier §B.3.4).
+    /// or transmitting) OR still connecting. Gates the voice-MESSAGE mic
+    /// below: `VoiceRecorder`'s `exitRecordMode()` unconditionally resets
+    /// `AVAudioSession` to `.ambient` on every recording end path, which
+    /// would silently kill the still-connected room's audio out from under
+    /// it (AUDIO SACRED RULE — only `VoiceRoomService`/`AudioSessionManager`
+    /// may own the session while a room is live; see Dossier §B.3.4).
+    ///
+    /// Phase O Task 5 (3e follow-up queue item 2, "chat mic gate during
+    /// .connecting" — final review's M1): `.connecting` is included, not
+    /// just `.connected`. `VoiceRoomService.join()` calls
+    /// `audioSession.enterVoiceMode()` (switching the session to
+    /// `.playAndRecord`/`.voiceChat`) BEFORE it ever reaches `.connected` —
+    /// the ownership window this gate exists to protect starts at
+    /// `.connecting`, not after. Without this, tapping the chat mic during
+    /// the connect handshake races `VoiceRecorder.startRecording()`'s own
+    /// session reconfiguration against `join()`'s, and releasing the chat
+    /// mic mid-connect would reset the session out from under a room that's
+    /// about to finish connecting.
     private var isVoiceRoomActive: Bool {
-        if case .connected = VoiceRoomService.shared.state { return true }
-        return false
+        switch VoiceRoomService.shared.state {
+        case .connected, .connecting:
+            return true
+        case .idle, .unavailable, .micDenied:
+            return false
+        }
     }
 
     private var micButton: some View {
