@@ -240,6 +240,24 @@ final class OfflineSetLogQueueTests: XCTestCase {
         insertPending(second, enqueuedAt: now.addingTimeInterval(10), into: context)
         insertPending(third, enqueuedAt: now.addingTimeInterval(20), into: context)
         try context.save()
+        // `insertPending` writes directly into `context` (bypassing
+        // `enqueue()`) so each item's `enqueuedAt` can be pinned for a
+        // deterministic ordering assertion — see its doc comment above. Side
+        // effect: `queue.pendingSetLogIDs` is only ever kept in sync by
+        // `enqueue()`'s add, `remove()`'s remove, and `configure()`'s
+        // `refreshPendingIDs()` resync — never by a raw `context.insert`. The
+        // `configure()` call above (line 233) ran BEFORE these 3 rows
+        // existed, so without a resync `pendingSetLogIDs` would still read
+        // empty here even though all 3 rows are genuinely persisted (fix
+        // wave 1, diagnosing CI's reported failure on this exact assertion:
+        // `context.fetch(...).count == 3` a few lines below already passed
+        // beforehand, proving the real SwiftData-persisted queue was never
+        // touched — this was a test-fixture gap, not production data loss).
+        // Production never hits this gap: the only insertion path there is
+        // `enqueue()`, which keeps `pendingSetLogIDs` in sync itself. Re-
+        // calling `configure()` here is therefore a test-fixture correction
+        // only, not a change to any production code path.
+        queue.configure(modelContext: context)
         submitter.outcomes[first.id] = .failure(.network)
 
         await queue.replay()
@@ -277,6 +295,58 @@ final class OfflineSetLogQueueTests: XCTestCase {
 
         XCTAssertTrue(queue.pendingSetLogIDs.contains(log.id), ".unauthorized must NOT drop the item")
         XCTAssertNil(queue.lastPermanentFailure)
+    }
+
+    // MARK: - .unauthorized bounded escalation (reviewer Finding 3, fix wave 1)
+
+    /// Below `maxUnauthorizedAttempts`, `.unauthorized` must keep behaving
+    /// exactly like `testReplayTreatsUnauthorizedAsTransientNotPermanentDrop`
+    /// above — each failed pass stops (doesn't drop) and bumps
+    /// `attemptCount` by exactly one.
+    func testReplayKeepsUnauthorizedBelowEscalationThreshold() async throws {
+        let context = try makeInMemoryContext()
+        let submitter = FakeSetLogSubmitter()
+        let queue = OfflineSetLogQueue(submitter: submitter)
+        queue.configure(modelContext: context)
+
+        let log = makeSetLog()
+        submitter.outcomes[log.id] = .failure(.unauthorized)
+        queue.enqueue(log)
+
+        // One short of the threshold — still transient-kept every time.
+        for _ in 0..<(OfflineSetLogQueue.maxUnauthorizedAttempts - 1) {
+            await queue.replay()
+        }
+
+        XCTAssertTrue(queue.pendingSetLogIDs.contains(log.id),
+                       "below the escalation threshold, .unauthorized must stay queued")
+        XCTAssertNil(queue.lastPermanentFailure)
+        let stored = try context.fetch(FetchDescriptor<PendingSetLog>())
+        XCTAssertEqual(stored.first?.attemptCount, OfflineSetLogQueue.maxUnauthorizedAttempts - 1)
+    }
+
+    /// At exactly `maxUnauthorizedAttempts` failed attempts, `.unauthorized`
+    /// must flip from "keep, stop the pass" to "drop as permanent" —
+    /// removed from the queue and store, surfaced via `lastPermanentFailure`.
+    func testReplayDropsUnauthorizedAtEscalationThreshold() async throws {
+        let context = try makeInMemoryContext()
+        let submitter = FakeSetLogSubmitter()
+        let queue = OfflineSetLogQueue(submitter: submitter)
+        queue.configure(modelContext: context)
+
+        let log = makeSetLog()
+        submitter.outcomes[log.id] = .failure(.unauthorized)
+        queue.enqueue(log)
+
+        for _ in 0..<OfflineSetLogQueue.maxUnauthorizedAttempts {
+            await queue.replay()
+        }
+
+        XCTAssertFalse(queue.pendingSetLogIDs.contains(log.id),
+                        "at the escalation threshold, .unauthorized must be dropped as permanent")
+        XCTAssertEqual(queue.lastPermanentFailure?.setLogID, log.id)
+        XCTAssertEqual(queue.lastPermanentFailure?.message, GymSyncError.unauthorized.errorDescription)
+        XCTAssertTrue(try context.fetch(FetchDescriptor<PendingSetLog>()).isEmpty)
     }
 
     // MARK: - 90-day prune

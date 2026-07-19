@@ -947,6 +947,51 @@ public struct GSInlineErrorBanner: View {
     }
 }
 
+// MARK: - GSInlineNoticeBanner
+//
+// Calmer sibling of `GSInlineErrorBanner` directly above — same solid-accent,
+// icon + bold-lead-in + continuation-copy shape, but for a NON-failure,
+// non-retryable notice: something already succeeded (locally) and there's
+// nothing actionable left for the lifter to retry. Added in Phase O Task 3
+// fix wave 1 (reviewer Finding 1 — see GroupSessionLiveView.logSetAndAdvance
+// and docs/design/accepted-deviations.json's "offline-syncing-indicator"
+// entry): the offline group-set-logging path needed an inline state that's
+// honest about a non-retry outcome ("saved locally, turn won't advance")
+// without `GSInlineErrorBanner`'s mandatory "Try again" CTA — retrying an
+// already-saved set there would mint a brand-new duplicate queue entry on
+// every tap. A checkmark glyph (not the exclamation-circle) signals "this
+// already succeeded," not "this failed."
+
+public struct GSInlineNoticeBanner: View {
+    @Environment(\.gsTheme) private var theme
+
+    private let title: String
+    private let message: String
+
+    public init(title: String, message: String) {
+        self.title = title
+        self.message = message
+    }
+
+    public var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "checkmark.circle")
+                .font(.system(size: 18, weight: .regular))
+                .foregroundStyle(theme.bg)
+
+            (
+                Text(title).font(GSFont.bold(13, relativeTo: .footnote))
+                + Text(" \(message)").font(GSFont.body(13, relativeTo: .footnote))
+            )
+            .foregroundStyle(theme.bg)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .background(theme.accent)
+    }
+}
+
 // MARK: - GSTalkingBars
 //
 // Small animated 3-bar level meter — canvas's `gsTalk .9s ease-in-out

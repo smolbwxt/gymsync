@@ -45,6 +45,22 @@ final class OfflineSetLogQueue {
     /// (last 90 days), set_logs (last 90 days)").
     static let retentionWindow: TimeInterval = 90 * 24 * 60 * 60
 
+    /// Bounded escalation for `.unauthorized` (reviewer Finding 3, fix wave
+    /// 1). The original judgment call below (see the `.unauthorized` case
+    /// in `replay()`) treats "no valid session right now" as recoverable —
+    /// right for a brief auth hiccup — but with no cap, an item whose
+    /// session never comes back (permanently signed out, account deleted,
+    /// a stuck/expired token that never refreshes) would sit in the queue
+    /// forever, re-attempted on every trigger forever, with `attemptCount`
+    /// (PendingSetLog.swift's `attemptCount` field) incrementing and never
+    /// read by anything. 10 is a defensible, generous bound: replay is
+    /// triggered on every foreground/connectivity/signed-in-transition/
+    /// post-submit event (RootView.swift), so 10 attempts is 10 separate
+    /// trigger firings, not 10 app launches — several orders of magnitude
+    /// more slack than a normal "signed back in within the session" recovery
+    /// would ever need.
+    static let maxUnauthorizedAttempts = 10
+
     /// IDs currently queued (enqueued, not yet confirmed landed server-side).
     /// Views check membership to render the "syncing" indicator — e.g.
     /// `WorkoutSessionView.loggedSetsTable`'s row icon,
@@ -112,9 +128,14 @@ final class OfflineSetLogQueue {
     ///                              replay; treat as success, remove
     ///   - `.network`             → transient; STOP the pass, keep this
     ///                              item and everything after it queued
-    ///   - anything else          → permanent (RLS denial, validation, …);
-    ///                              drop + surface (AppLogger +
-    ///                              `lastPermanentFailure`)
+    ///   - `.unauthorized`        → transient, same as `.network`, UNLESS
+    ///                              this was the item's `maxUnauthorizedAttempts`th
+    ///                              failure, in which case: permanent (see
+    ///                              below)
+    ///   - anything else          → permanent (RLS denial, validation, an
+    ///                              `.unauthorized` that exhausted its
+    ///                              attempts, …); drop + surface (AppLogger
+    ///                              + `lastPermanentFailure`)
     /// Also prunes entries older than `retentionWindow` before attempting
     /// any submits (spec's 90-day window).
     func replay() async {
@@ -160,8 +181,29 @@ final class OfflineSetLogQueue {
                     // .signedIn` before calling `replay()` at all, so this case
                     // should be rare in practice — reached only by a race
                     // between the gate check and the actual request.
-                    try? modelContext.save()
-                    return
+                    //
+                    // Reviewer Finding 3, fix wave 1: "rare in practice" isn't
+                    // "never" — bounded via `maxUnauthorizedAttempts` above so
+                    // a session that genuinely never comes back doesn't queue
+                    // this item forever. `item.attemptCount` was already
+                    // incremented for THIS attempt above, so `>=` here means
+                    // "this was the Nth failure."
+                    if item.attemptCount >= Self.maxUnauthorizedAttempts {
+                        let message = error.errorDescription ?? "You're signed out. Please sign in again."
+                        AppLogger.workout.error("offline set-log \(item.id, privacy: .public) dropped after \(item.attemptCount) unauthorized attempts: \(message, privacy: .public)")
+                        lastPermanentFailure = (item.id, message)
+                        remove(item, modelContext: modelContext)
+                        // Deliberately falls through to the next item (no
+                        // `return`) — matches the `default:` permanent-drop
+                        // case's behavior below, not `.network`'s pass-stopping
+                        // behavior. Only this one stale item exceeded its
+                        // budget; a fresher item later in the same pass hasn't,
+                        // and still deserves its own "stop the pass" chance if
+                        // it also hits `.unauthorized`.
+                    } else {
+                        try? modelContext.save()
+                        return
+                    }
                 default:
                     let message = error.errorDescription ?? "Couldn't save that set."
                     AppLogger.workout.error("offline set-log \(item.id, privacy: .public) dropped permanently: \(message, privacy: .public)")

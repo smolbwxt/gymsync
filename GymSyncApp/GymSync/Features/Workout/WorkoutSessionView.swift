@@ -725,9 +725,11 @@ struct WorkoutSessionView: View {
 
             do {
                 try await SessionRepository.logSet(log)
-                // Cheap drain (brief's "after each successful online submit") —
-                // opportunistically flushes any earlier queued sets now that we know
-                // we're online. Fire-and-forget: never blocks this submit.
+                // Cheap drain — this task's own design decision (not a brief
+                // requirement; the brief contains no "after each successful
+                // online submit" phrase — reviewer Finding 4, fix wave 1):
+                // opportunistically flushes any earlier queued sets now that we
+                // know we're online. Fire-and-forget: never blocks this submit.
                 Task { await OfflineSetLogQueue.shared.replay() }
             } catch let error as GymSyncError {
                 guard case .network = error else { throw error }

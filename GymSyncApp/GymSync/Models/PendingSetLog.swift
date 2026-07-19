@@ -46,12 +46,16 @@ final class PendingSetLog {
     /// by enqueue time" per brief) and the 90-day prune window (master
     /// spec §6.4's stated cache/queue retention).
     var enqueuedAt: Date
-    /// Bumped on every replay attempt. Not currently used to cap/backoff
-    /// retries (every transient failure just stops the pass and retries
-    /// next trigger — see `OfflineSetLogQueue.replay()`); kept as a
-    /// diagnostic field per the brief's explicit "mirror SetLog's fields +
-    /// enqueue timestamp + attempt count" requirement, and to leave room
-    /// for a future backoff policy without a schema change.
+    /// Bumped on every replay attempt. Originally a pure diagnostic field
+    /// (kept per the brief's explicit "mirror SetLog's fields + enqueue
+    /// timestamp + attempt count" requirement, with room for a future
+    /// backoff policy without a schema change) — every transient `.network`
+    /// failure still just stops the pass and retries next trigger with no
+    /// cap (see `OfflineSetLogQueue.replay()`). Reviewer Finding 3 (fix wave
+    /// 1) gave it its first real reader: the `.unauthorized` case now checks
+    /// this value against `OfflineSetLogQueue.maxUnauthorizedAttempts` and
+    /// escalates to a permanent drop once it's exceeded, so a session that
+    /// never comes back doesn't queue an item forever.
     var attemptCount: Int
 
     init(setLog: SetLog, enqueuedAt: Date = Date()) {

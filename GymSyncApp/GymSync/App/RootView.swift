@@ -90,7 +90,29 @@ struct RootView: View {
             guard case .signedIn = auth.state else { return }
             await OfflineSetLogQueue.shared.replay()
         }
-        // Replay trigger 1/2 — connectivity restored. `.onChange` fires only
+        // Replay trigger 1/4 — auth-state transition to .signedIn. Phase O
+        // Task 3 fix wave 1 (reviewer Finding 2): the `.task` above gates on
+        // `auth.state == .signedIn` at the single moment it first runs, but
+        // `AuthService.state` starts `.pending` and resolves asynchronously
+        // (`AuthService.bootstrap()`, Services/AuthService.swift ~22-54,
+        // kicked off fire-and-forget from `private init()` ~18-20) — a cold
+        // launch that's already online can have `.task` evaluate its guard
+        // WHILE bootstrap is still in flight, silently skipping the launch
+        // drain. Before this hook, nothing else re-checked: if connectivity
+        // and scenePhase never change afterward (device already online,
+        // app already foreground), that launch's queued sets would sit
+        // undrained indefinitely. This hook closes the gap by observing
+        // every auth-state transition and draining whenever the NEW state
+        // is `.signedIn` — including the ordinary sign-in transition, where
+        // it's a harmless extra call: `OfflineSetLogQueue.replay()` is
+        // idempotent and reentrancy-guarded (Services/OfflineSetLogQueue.swift
+        // ~120-124), so overlapping with the `.task`'s own call is a no-op,
+        // not a double-submit.
+        .onChange(of: auth.state) {
+            guard case .signedIn = auth.state else { return }
+            Task { await OfflineSetLogQueue.shared.replay() }
+        }
+        // Replay trigger 2/4 — connectivity restored. `.onChange` fires only
         // on a transition, so this is exactly the "path becomes satisfied"
         // edge (not a repeat while already online, not the offline edge).
         .onChange(of: connectivity.isOnline) {
@@ -98,7 +120,7 @@ struct RootView: View {
             guard case .signedIn = auth.state else { return }
             Task { await OfflineSetLogQueue.shared.replay() }
         }
-        // Replay trigger 2/2 — app foreground. A SEPARATE `.onChange(of:
+        // Replay trigger 3/4 — app foreground. A SEPARATE `.onChange(of:
         // scenePhase)` block, deliberately not merged into the calendar
         // reconcile hook above — brief's explicit "do NOT duplicate the
         // reconcile throttle, add alongside": `EventKitBridge.isReconciling`
@@ -112,6 +134,15 @@ struct RootView: View {
             guard case .signedIn = auth.state else { return }
             Task { await OfflineSetLogQueue.shared.replay() }
         }
+        // Replay trigger 4/4 — post-submit "cheap drain": NOT a RootView
+        // hook. Fired inline, fire-and-forget, right after every successful
+        // ONLINE set-log submit (WorkoutSessionView.swift ~726-731,
+        // GroupSessionLiveView.swift's logSetAndAdvance/logSet cheap-drain
+        // call sites) — opportunistically flushes anything still queued
+        // from an earlier offline stretch now that a submit just proved
+        // we're back online. Listed here only so this file's trigger
+        // enumeration is the complete set (reviewer Finding 2's phrasing:
+        // "signed-in transition, foreground, connectivity, post-submit").
     }
 }
 

@@ -101,6 +101,16 @@ struct GroupSessionLiveView: View {
     /// red caption for skipTurn/endSession/penalty-log failures, unchanged).
     /// Cleared optimistically at the start of every `logSetAndAdvance` call.
     @State private var logSetErrorText: String?
+    /// Phase O Task 3 fix wave 1 (reviewer Finding 1): set when the most
+    /// recent `logSetAndAdvance` attempt queued its set offline (rather than
+    /// hitting a real, retryable failure) — drives the calmer, non-retry
+    /// `GSInlineNoticeBanner` in `body` instead of `GSInlineErrorBanner`.
+    /// Deliberately separate from `logSetErrorText`: the two states are
+    /// mutually exclusive (a queued attempt never throws), but keeping them
+    /// as distinct optionals/booleans avoids overloading one property with
+    /// two different meanings. Cleared optimistically at the start of every
+    /// `logSetAndAdvance` call, same convention as `logSetErrorText`.
+    @State private var didQueueSetOffline = false
     @State private var recapData: RecapData?          // non-nil → sheet
     @State private var penaltyLogged        = 0       // reps logged this session as penalty by me
     /// Fetched lazily when this is a group session — backs the penalty
@@ -390,6 +400,15 @@ struct GroupSessionLiveView: View {
                                     title: "Set didn't save.",
                                     message: "Check your connection, then try again — your reps are still filled in above.",
                                     retry: { commitInlineLog() }
+                                )
+                            } else if didQueueSetOffline {
+                                // Phase O Task 3 fix wave 1 (reviewer Finding 1) — see
+                                // `logSetAndAdvance`'s offline-queue branch for the full
+                                // rationale. No retry CTA: the set already saved locally,
+                                // so a retry here would only mint a duplicate queue entry.
+                                GSInlineNoticeBanner(
+                                    title: "Saved on this phone.",
+                                    message: "Your turn will pass once you're back online."
                                 )
                             }
                             if !rotationTiles.isEmpty {
@@ -1744,6 +1763,11 @@ struct GroupSessionLiveView: View {
         // convention) so a retry that succeeds drops the banner immediately,
         // and a retry that fails re-sets it fresh below.
         logSetErrorText = nil
+        // Phase O Task 3 fix wave 1 (reviewer Finding 1) — same "clear
+        // optimistically at the start of every attempt" convention as
+        // `logSetErrorText` above, so a fresh attempt never shows a stale
+        // notice left over from a previous set.
+        didQueueSetOffline = false
         let log = SetLog(
             id: UUID(), userID: userID, sessionID: session.id,
             exerciseID: exerciseID,
@@ -1791,13 +1815,36 @@ struct GroupSessionLiveView: View {
                 feedSets.insert(log, at: 0)
                 if feedSets.count > 30 { feedSets = Array(feedSets.prefix(30)) }
                 allSessionSets.append(log)
-                // advanceTurn below is deliberately NOT attempted in this branch —
-                // running/coordinating a live session (turn state) stays
-                // online-required per master spec §6.4's explicit bucket split; only
-                // the set-log WRITE itself is offline-capable. It will still be
-                // attempted below (unchanged), and — being offline — will itself
-                // throw and surface the existing, accurate "check your connection"
-                // banner via the outer catch. The set's rep data is safe either way.
+                // Phase O Task 3 fix wave 1 (reviewer Finding 1) — advanceTurn
+                // below is now deliberately SKIPPED (via `didQueueSetOffline`)
+                // rather than "attempted below (unchanged)" as this comment used
+                // to claim. That claim was wrong in practice: the set-log write
+                // above already succeeded LOCALLY (queued + optimistically
+                // applied), so calling advanceTurn unconditionally next would
+                // just throw its own `.network` and land in the outer catch,
+                // which showed "Set didn't save" — false, the set DID save — with
+                // a "Try again" retry that mints a BRAND NEW `SetLog(id: UUID(),
+                // ...)` at an advanced `setIndex` (mySetCount() already counts
+                // this optimistic append, commitInlineLog() ~1505-1522). Every
+                // offline retry tap therefore queued one more DISTINCT duplicate
+                // row — different UUIDs, so the 23505 dedupe in
+                // OfflineSetLogQueue.replay() can't catch them.
+                //
+                // Accepted consequence (reviewer + spec scope both accept this):
+                // this lifter's turn does NOT auto-advance while offline, and it
+                // never auto-advances for this specific set even once the queued
+                // row replays successfully — `OfflineSetLogQueue.replay()` only
+                // ever resubmits the set_logs INSERT itself (Services/
+                // OfflineSetLogQueue.swift:120-182 → `SupabaseSetLogSubmitter.
+                // submit` → `SessionRepository.logSet`), advanceTurn is not part
+                // of replay. The closest existing session-level fallback is the
+                // idle-ladder's "Still Going"/"Wrap Up" push actions
+                // (PushReceiver.stillGoing/wrapUpSession, App/AppDelegate.swift
+                // ~91-92) — but that's a session-idle heartbeat, not a per-turn
+                // advance, so it won't unstick this turn either. Honestly: the
+                // organizer (or this lifter, once back online, by logging their
+                // next set — `isMyTurn` stays true) advances manually.
+                didQueueSetOffline = true
             }
 
             if isPR, let weight {
@@ -1825,6 +1872,15 @@ struct GroupSessionLiveView: View {
                 }
             }
 
+            // Phase O Task 3 fix wave 1 (reviewer Finding 1) — skip advanceTurn
+            // entirely when this attempt queued offline; see the queuing
+            // branch's comment above for the full rationale. The normal
+            // ONLINE path is unaffected: `didQueueSetOffline` stays false, so
+            // advanceTurn still runs, and a genuine failure here (e.g. a real
+            // permanent error, or connectivity dropping between logSet and
+            // advanceTurn) still falls into the catch below and shows the
+            // existing retry banner exactly as before.
+            guard !didQueueSetOffline else { return }
             try await SessionRepository.advanceTurn(sessionID: session.id)
         } catch let error as GymSyncError {
             // Upgraded treatment (Canvas Completion Task 4 fix round 1, proof
