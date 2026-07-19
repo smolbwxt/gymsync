@@ -51,6 +51,28 @@ struct PushPrimingView: View {
         pushReceiver.authorizationStatus == .denied
     }
 
+    /// Task 6 item 6 (reliability/debt roll-up — .superpowers/sdd/
+    /// progress.md:254 "`.restricted` auth status falls to pre-prompt
+    /// branch (silent no-op CTA)"). `.restricted` means the OS itself is
+    /// blocking the permission (Screen Time / parental controls / MDM
+    /// profile) — the user did NOT deny it, and re-requesting it produces
+    /// no system prompt at all (`UNUserNotificationCenter` silently
+    /// returns not-granted), so before this fix `handleTurnOn()`'s "Turn
+    /// on notifications" button under `prePromptContent`/`footer`'s
+    /// `else` branch was a real, tappable CTA that visibly did nothing —
+    /// no prompt, no error, no state change. Distinct from `isDenied`
+    /// (user-actionable via iOS Settings) — restricted is outside the
+    /// user's control on this device, so `restrictedContent`'s copy says
+    /// so instead of pointing at Settings.
+    private var isRestricted: Bool {
+        pushReceiver.authorizationStatus == .restricted
+    }
+
+    /// Shared "nothing to request" gate for the icon badge / back-button
+    /// treatment — denied and restricted both render the closed-bell
+    /// badge; only their body copy and footer CTA differ.
+    private var isBlocked: Bool { isDenied || isRestricted }
+
     var body: some View {
         ZStack(alignment: .bottom) {
             theme.bg.ignoresSafeArea()
@@ -60,7 +82,7 @@ struct PushPrimingView: View {
                     // Drawn back affordance — denied + re-entry only (see
                     // type doc). Onboarding-denied keeps its "Continue"
                     // ghost button in the footer instead.
-                    if isDenied && !isOnboarding {
+                    if isBlocked && !isOnboarding {
                         backButton
                             .padding(.horizontal, 16)
                             .padding(.top, 20)
@@ -70,7 +92,9 @@ struct PushPrimingView: View {
                         .padding(.horizontal, 20)
                         .padding(.top, iconBadgeTopPadding)
 
-                    if isDenied {
+                    if isRestricted {
+                        restrictedContent
+                    } else if isDenied {
                         deniedContent
                     } else {
                         prePromptContent
@@ -118,7 +142,7 @@ struct PushPrimingView: View {
     private var iconBadgeTopPadding: CGFloat {
         // When the back-button row is present, it already carries the
         // screen's top spacing — the badge only needs a small gap under it.
-        if isDenied && !isOnboarding { return 20 }
+        if isBlocked && !isOnboarding { return 20 }
         return isOnboarding ? 72 : 32
     }
 
@@ -126,7 +150,7 @@ struct PushPrimingView: View {
 
     @ViewBuilder
     private var iconBadge: some View {
-        if isDenied {
+        if isBlocked {
             ZStack {
                 Rectangle()
                     .strokeBorder(theme.divider, lineWidth: 2)
@@ -200,6 +224,26 @@ struct PushPrimingView: View {
         }
     }
 
+    // MARK: - Restricted state (Task 6 item 6 — `.restricted`, distinct
+    // from user-denied: OS/MDM/Screen-Time blocked, not user-actionable
+    // via this app or iOS Settings)
+
+    private var restrictedContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Notifications are restricted")
+                .font(GSFont.bold(34, relativeTo: .title))
+                .foregroundColor(theme.text)
+                .padding(.horizontal, 20)
+                .padding(.top, 24)
+
+            Text("This device's settings don't allow GymSync to ask for notification permission. If that's unexpected, check Screen Time or your device management profile.")
+                .font(GSFont.body(15, relativeTo: .subheadline))
+                .foregroundColor(theme.neutral700)
+                .padding(.horizontal, 20)
+                .padding(.top, 14)
+        }
+    }
+
     // MARK: - Footer
 
     @ViewBuilder
@@ -207,7 +251,25 @@ struct PushPrimingView: View {
         VStack(spacing: 0) {
             GSDivider()
             VStack(spacing: 10) {
-                if isDenied {
+                if isRestricted {
+                    // No "Turn on notifications" here — under `.restricted`
+                    // that button is a proven silent no-op (no system
+                    // prompt fires, nothing for `handleTurnOn()` to do).
+                    // Onboarding still needs a way forward; re-entry mode
+                    // already has the drawn back button above (isBlocked &&
+                    // !isOnboarding), so no footer CTA is needed there —
+                    // there's nothing this app can offer to fix an OS/MDM
+                    // restriction.
+                    if isOnboarding {
+                        Button {
+                            advance()
+                        } label: {
+                            Text("Continue").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(GSGhostButtonStyle())
+                        .frame(minHeight: 44)
+                    }
+                } else if isDenied {
                     Button {
                         openSettings()
                     } label: {
