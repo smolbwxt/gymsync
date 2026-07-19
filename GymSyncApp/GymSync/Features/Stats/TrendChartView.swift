@@ -47,6 +47,25 @@ struct TrendChartView: View {
     /// entirely, which would reject the `embedInCard: false` call site.
     var embedInCard: Bool = true
 
+    /// The chart's own `LineMark`/`PointMark` value label AND its VoiceOver
+    /// a11y label (Swift Charts derives the accessibility description from
+    /// each mark's `.value(_:_:)` label string — there's no separate a11y
+    /// override anywhere in `chartContent` below). Defaulted to
+    /// `"Est. 1RM"` — every call site's exact prior appearance (this chart
+    /// was estimated-1RM-only before Phase O Task 2) — so
+    /// `ExerciseHistoryView`'s existing call (`ExerciseHistoryView.swift:
+    /// 76-78`, doesn't pass this parameter at all) keeps rendering and
+    /// announcing IDENTICALLY. `StatsTabView.bodyWeightCardView` passes
+    /// `"Weight"` explicitly — the a11y bug this fixes: a VoiceOver user on
+    /// the Body Weight card was hearing every data point announced as
+    /// "Est. 1RM", which is simply wrong for a body-weight series.
+    /// Declared last (after `embedInCard`) and as `var` with a default for
+    /// the exact same memberwise-init reason documented on `embedInCard`
+    /// above — a `let` with an initial value is dropped from the
+    /// synthesized memberwise init entirely, which would reject any call
+    /// site that tries to pass `valueLabel:`.
+    var valueLabel: String = "Est. 1RM"
+
     private var filteredData: [(Date, Double)] {
         guard let cutoff = Calendar.current.date(byAdding: .day, value: -selectedRange.days, to: .now) else {
             return data
@@ -80,9 +99,9 @@ struct TrendChartView: View {
                     .foregroundStyle(theme.neutral500)
             } else {
                 Chart(Array(filteredData.enumerated()), id: \.offset) { _, point in
-                    LineMark(x: .value("Date", point.0), y: .value("Est. 1RM", point.1))
+                    LineMark(x: .value("Date", point.0), y: .value(valueLabel, point.1))
                         .foregroundStyle(theme.accent)
-                    PointMark(x: .value("Date", point.0), y: .value("Est. 1RM", point.1))
+                    PointMark(x: .value("Date", point.0), y: .value(valueLabel, point.1))
                         .foregroundStyle(theme.accent)
                 }
                 .chartXAxis {
