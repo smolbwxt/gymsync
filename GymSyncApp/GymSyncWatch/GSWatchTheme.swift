@@ -21,8 +21,8 @@ import SwiftUI
 // ledger glance) is a settings/appearance screen, and "Watch UI polish
 // beyond system idioms" is explicitly deferred to Phase D. If/when a
 // palette choice syncs from the phone (design §3, WatchConnectivity
-// applicationContext), `GSWatchPalettes.theme(for:)` below is what that
-// sync would resolve against.
+// applicationContext), re-port GSPalettes' id->theme lookup from
+// GSTheme.swift at that point (trimmed here as YAGNI — T1 review).
 public struct GSWatchTheme {
     public let bg: Color
     public let surface: Color
@@ -38,49 +38,11 @@ public struct GSWatchTheme {
         divider: Color.white.opacity(0.15)
     )
 
-    public static let arena = GSWatchTheme(
-        bg:      Color(hex: 0x101310),
-        surface: Color(hex: 0x1b1f19),
-        text:    Color(hex: 0xeef3e8),
-        accent:  Color(hex: 0xb6f236),
-        divider: Color.white.opacity(0.14)
-    )
-
-    public static let ink = GSWatchTheme(
-        bg:      Color(hex: 0xf3efe6),
-        surface: Color(hex: 0xe8e2d5),
-        text:    Color(hex: 0x1b2540),
-        accent:  Color(hex: 0x22345c),
-        divider: Color(hex: 0x1b2540).opacity(0.26)
-    )
-
-    public static let modernist = GSWatchTheme(
-        bg:      Color(hex: 0xf3f2f2),
-        surface: Color(hex: 0xeae9e9),
-        text:    Color(hex: 0x201e1d),
-        accent:  Color(hex: 0xec3013),
-        divider: Color(hex: 0x201e1d).opacity(0.4)
-    )
-}
-
-// MARK: - GSWatchPalettes
-//
-// Mirrors GSPalettes' id -> theme lookup (GSTheme.swift) so a future
-// WatchConnectivity applicationContext palette sync can resolve the
-// phone's `user_settings.palette` string (midnight/arena/ink/modernist)
-// the same way RootView/ThemeStore do on iOS. Same total-function,
-// unrecognized-id-falls-back-to-midnight convention as `GSPalettes.
-// theme(for:)`.
-
-public enum GSWatchPalettes {
-    public static func theme(for id: String) -> GSWatchTheme {
-        switch id {
-        case "arena": return .arena
-        case "ink": return .ink
-        case "modernist": return .modernist
-        default: return .midnight
-        }
-    }
+    // Trimmed to `.midnight`-only per the T1 review's YAGNI adjudication:
+    // the other 3 palettes (arena/ink/modernist) and the id->theme lookup
+    // had zero call sites here, and no spec'd phone->watch palette sync
+    // exists yet. Re-port them from GSTheme.swift (GSPalettes) alongside
+    // whichever task actually wires palette sync.
 }
 
 // MARK: - Hex Color initialiser (fileprivate)

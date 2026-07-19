@@ -152,8 +152,6 @@ targets:
         # without the phone app reachable, so it must not run
         # independently.
         WKRunsIndependentlyOfCompanionApp: false
-        # No WKCompanionAppBundleIdentifier: inferred from the bundle-id
-        # convention above.
 
   GymSyncTests:
     type: bundle.unit-test
