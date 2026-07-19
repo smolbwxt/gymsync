@@ -231,7 +231,12 @@ final class LiveKitRoomConnection: VoiceRoomConnecting {
         // shared-Room `cleanUp()` hazard documented in the header — and
         // (b) this room's own `didDisconnectWithError` event fails the
         // identity gate below (an INTENTIONAL teardown must never surface
-        // as an unexpected disconnect).
+        // as an unexpected disconnect). SOURCE-VERIFIED (wave-2 re-review,
+        // Room+EngineDelegate.swift:58-66): the SDK fires that event on
+        // EVERY entry into .disconnected except from .connecting —
+        // including intentional disconnects — so the detach-before-first-
+        // await ordering here is LOAD-BEARING, not defensive. Weakening it
+        // makes every normal leave() surface as a spurious .unavailable.
         guard let roomToTearDown = room else { return }
         room = nil
         micPublication = nil
