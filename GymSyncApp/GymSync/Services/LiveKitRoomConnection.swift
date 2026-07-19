@@ -34,16 +34,24 @@ import LiveKit
 //      `room(_:didUpdateSpeakingParticipants:)` shape.
 //   5. `RoomDelegate.room(_:participant:didUpdatePublication:muted:)` for a
 //      remote participant's OWN mic mute state (distinct from #6 — this is
-//      a fact ABOUT them, visible to everyone in the room).
+//      a fact ABOUT them, visible to everyone in the room). Phase O Task 5
+//      fix wave 1 (reviewer Finding F2, verified against the live SDK
+//      source): WRONG — this selector compiles (RoomDelegate is @objc
+//      optional, so a near-miss signature silently never fires) but doesn't
+//      exist on `RoomDelegate`. The real, current signature is
+//      `room(_:participant:trackPublication:didUpdateIsMuted:)`. Fixed
+//      below.
 //   6. `RemoteAudioTrack.set(volume:)` for LOCAL-only playback volume
 //      (`setLocalVolume` below) — the mixer sheet's per-person "tap to
 //      mute"/level control never touches what the participant publishes,
 //      only how loud WE play it back. Ledger precedent (Task 4 round
 //      research, .superpowers/sdd/progress.md line 330: "per-person volume
 //      + mute — LiveKit supports client-side") is why this method was
-//      assumed to exist rather than invented from nothing, but the exact
-//      symbol/type (`RemoteAudioTrack` vs some other `AudioTrack`-
-//      conforming type) is unverified.
+//      assumed to exist rather than invented from nothing. Phase O Task 5
+//      fix wave 1 (reviewer Finding F1, verified against the live SDK
+//      source): WRONG — no such method exists. `RemoteAudioTrack.volume` is
+//      a settable `public var volume: Double` (clamped 0...10) instead.
+//      Fixed below.
 //
 // These three touch `Room`/`RemoteParticipant`/track-publication surface
 // this file didn't previously reach, and — like #1-3 — are contained
@@ -103,13 +111,15 @@ final class LiveKitRoomConnection: VoiceRoomConnecting {
         }
     }
 
-    /// See ASSUMPTION #6 at the top of this file — `RemoteAudioTrack.set
-    /// (volume:)` is unverified against SDK source. Looks the participant
-    /// up by matching `identity?.stringValue.lowercased()` (same
-    /// canonicalization boundary as `speakingParticipantsDidChange` below)
-    /// rather than reconstructing a `Participant.Identity` directly — this
-    /// file has no confirmed public initializer for that type to build one
-    /// from a raw `String`. No-op (silently) if the identity isn't
+    /// See ASSUMPTION #6 at the top of this file — Phase O Task 5 fix wave 1
+    /// (reviewer Finding F1, verified against the live SDK source):
+    /// `RemoteAudioTrack` has no `set(volume:)` method; `volume` is a
+    /// settable `public var volume: Double` (clamped 0...10) instead. Looks
+    /// the participant up by matching `identity?.stringValue.lowercased()`
+    /// (same canonicalization boundary as `speakingParticipantsDidChange`
+    /// below) rather than reconstructing a `Participant.Identity` directly —
+    /// this file has no confirmed public initializer for that type to build
+    /// one from a raw `String`. No-op (silently) if the identity isn't
     /// currently in `room.remoteParticipants` or has no audio track yet —
     /// matches this method's documented "best-effort, never throws"
     /// protocol contract.
@@ -119,7 +129,7 @@ final class LiveKitRoomConnection: VoiceRoomConnecting {
         }) else { return }
         for publication in participant.audioTracks {
             guard let audioTrack = publication.track as? RemoteAudioTrack else { continue }
-            audioTrack.set(volume: volume)
+            audioTrack.volume = volume
         }
     }
 
@@ -197,23 +207,32 @@ private final class SpeakingParticipantsForwarder: RoomDelegate {
     }
 
     /// Forwards a REMOTE participant's own publish-mute state (Phase O Task
-    /// 5 item 4's "muted themselves" case). `participant is RemoteParticipant`
-    /// guards against also picking up our own local mic's mute callback (if
-    /// LiveKit fires this same delegate method for the local participant
-    /// too) — our own mute state is already driven explicitly via
-    /// `setMicrophoneMuted(_:)` and doesn't need an echo through this path.
-    /// `publication.kind == .audio` scopes to mic mute only — this app never
-    /// publishes video, but a non-audio publication's mute state isn't a
-    /// concept the roster/mixer UI has any use for either way.
+    /// 5 item 4's "muted themselves" case). Phase O Task 5 fix wave 1
+    /// (reviewer Finding F2, verified against the live SDK source): the
+    /// original `room(_:participant:didUpdatePublication:muted:)` selector
+    /// is a near-miss that COMPILES (`RoomDelegate` is `@objc optional`, so
+    /// a method that merely resembles a protocol requirement is silently
+    /// accepted as an unrelated extra method) but is never invoked by
+    /// LiveKit — the real, current requirement is
+    /// `room(_:participant:trackPublication:didUpdateIsMuted:)`. Fixed to
+    /// that exact signature; the body's logic is unchanged.
+    /// `participant is RemoteParticipant` guards against also picking up our
+    /// own local mic's mute callback (if LiveKit fires this same delegate
+    /// method for the local participant too) — our own mute state is
+    /// already driven explicitly via `setMicrophoneMuted(_:)` and doesn't
+    /// need an echo through this path. `trackPublication.kind == .audio`
+    /// scopes to mic mute only — this app never publishes video, but a
+    /// non-audio publication's mute state isn't a concept the roster/mixer
+    /// UI has any use for either way.
     nonisolated func room(
         _ room: Room,
         participant: Participant,
-        didUpdatePublication publication: TrackPublication,
-        muted: Bool
+        trackPublication: TrackPublication,
+        didUpdateIsMuted isMuted: Bool
     ) {
-        guard participant is RemoteParticipant, publication.kind == .audio else { return }
+        guard participant is RemoteParticipant, trackPublication.kind == .audio else { return }
         Task { @MainActor [weak owner] in
-            owner?.remoteMuteDidChange(participant: participant, isMuted: muted)
+            owner?.remoteMuteDidChange(participant: participant, isMuted: isMuted)
         }
     }
 }
