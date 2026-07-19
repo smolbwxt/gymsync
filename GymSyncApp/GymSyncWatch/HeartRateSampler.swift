@@ -137,6 +137,13 @@ final class HeartRateSampler: NSObject {
             do {
                 try await requestAuthorizationIfNeeded()
             } catch {
+                // Generation guard (T5 re-review NEW-Minor): if THIS task
+                // was cancelled by stop() and a NEWER start() is already
+                // in flight (state == .starting again, the new
+                // generation's), an unconditional reset here would clobber
+                // that successor. Task.isCancelled disambiguates
+                // generations — a cancelled task must never mutate state.
+                guard !Task.isCancelled else { return }
                 state = .idle
                 startTask = nil
                 Self.logger.error("HeartRateSampler start failed: \(error.localizedDescription, privacy: .public)")
@@ -317,6 +324,14 @@ extension HeartRateSampler: HKWorkoutSessionDelegate {
         guard toState == .ended else { return }
         Task { @MainActor [weak self] in
             guard let self, let builder = self.builder else { return }
+            // Generation identity check (T5 re-review NEW-Important): a
+            // quick stop()->start() installs a NEW session/builder before
+            // the OLD session's async .ended callback lands; without this
+            // guard the stale callback would discard the NEW builder and
+            // nil the handles while state == .running — leaving a live
+            // HKWorkoutSession nothing can ever stop (the exact leak class
+            // the state machine exists to close, via the delegate side).
+            guard workoutSession === self.workoutSession else { return }
             builder.endCollection(withEnd: date) { [weak self] _, error in
                 if let error {
                     Self.logger.error("HeartRateSampler endCollection failed: \(error.localizedDescription, privacy: .public)")
