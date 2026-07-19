@@ -556,6 +556,37 @@ final class WCSessionProvider: NSObject, WatchSessionProviding, WCSessionDelegat
             self?.onMessageReceived?(message, replyHandler)
         }
     }
+
+    /// Fix wave 2 (found while adjudicating the hrSample dispatch test) —
+    /// the NO-reply variant. WatchConnectivity delivers a `sendMessage`
+    /// sent WITHOUT a reply handler to THIS delegate method, not the
+    /// reply-expecting one above (Apple's documented pairing: the delegate
+    /// method invoked matches whether the sender supplied a
+    /// `replyHandler`), and `WCSessionDelegate`'s message methods are
+    /// optional — an unimplemented variant means the message is silently
+    /// dropped. The watch's HR sampler sends hrSample EXACTLY this way
+    /// (`GymSyncWatch/HeartRateSampler.swift`, `send(bpm:recordedAt:)`:
+    /// `sendMessage(message, replyHandler: nil, errorHandler:)` — honest
+    /// fire-and-forget for a high-frequency ephemeral stream, per its own
+    /// doc comment), so before this method existed, every production HR
+    /// sample died right here: delivered to an unimplemented delegate
+    /// method, never reaching `handleHRSample` at all. (`logSet`/
+    /// `soundboardTap` are unaffected — the watch sends both WITH a reply
+    /// handler, `WatchSessionStore.logSet`/`tapSoundboard`, so they arrive
+    /// via the variant above.)
+    ///
+    /// Routes into the SAME `onMessageReceived` seam with a no-op reply
+    /// closure: `handle`'s "every code path calls `replyHandler` EXACTLY
+    /// ONCE" contract is satisfied harmlessly — for a fire-and-forget
+    /// send there is no counterpart waiting, so the reply goes nowhere by
+    /// design, and no second seam callback (with all its fake/test
+    /// plumbing) is needed for what is only a difference in delivery, not
+    /// in routing.
+    nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+        Task { @MainActor [weak self] in
+            self?.onMessageReceived?(message, { _ in })
+        }
+    }
 }
 
 // MARK: - SoundboardBroadcasting (soundboard-tap routing seam)

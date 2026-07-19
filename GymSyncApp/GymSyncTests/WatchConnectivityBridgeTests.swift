@@ -513,7 +513,7 @@ final class WatchConnectivityBridgeTests: XCTestCase {
         XCTAssertEqual(outcome.outcome, .failure)
     }
 
-    func testDispatchRepliesFailureForHRSampleKind() throws {
+    func testDispatchRepliesFailureForHRSampleKind() async throws {
         // Phase W Task 5 — wired for real now (see the dedicated `hrSample
         // routing (Task 5)` section below for the full success/gating
         // coverage). This particular case still replies `.failure`, but
@@ -521,14 +521,41 @@ final class WatchConnectivityBridgeTests: XCTestCase {
         // `lastPushedState` is nil ("No active session"), the exact same
         // "no active session" gate `handleLogSet`/`handleSoundboardTap`
         // enforce — not because the kind is unimplemented.
+        //
+        // Fix wave 2 ADJUDICATION (this test previously read `captured`
+        // synchronously and was ruled WRONG in shape — the implementation
+        // is right): `handle`'s `.hrSample` case spawns `Task { await
+        // self.handleHRSample(...) }` (same as `.logSet`/`.soundboardTap`),
+        // and `handleHRSample` DOES reply exactly once on every path — but
+        // asynchronously. This whole class is `@MainActor`, so that
+        // spawned MainActor `Task` cannot run until the (previously
+        // synchronous) test method returned — `captured` was still `[:]`
+        // at the read, and `WatchActionReply.from(message: [:])` returned
+        // nil (the XCTUnwrap failure CI saw). The section comment above
+        // ("reply SYNCHRONOUSLY... no `Task` spawned") covers the
+        // malformed/unsupported/unknown ENVELOPE gates only — hrSample
+        // passes those gates and dispatches async, so this test needs the
+        // same `withCheckedContinuation` shape as
+        // `testDispatchRoutesLogSetKindThroughToHandler` above (that
+        // shape's own safety reasoning applies unchanged). Kept (not
+        // deleted): the scenario IS constructible — the current watch
+        // build sends hrSample fire-and-forget (`HeartRateSampler.send`,
+        // `replyHandler: nil`), but a version-skewed/future watch build
+        // sending WITH a reply handler must still get a clean, fast
+        // `.failure` rather than stranding its reply timeout (WCSession
+        // fires the sender's errorHandler if the receiver never calls the
+        // reply handler) — this test pins exactly that contract.
         let h = makeHarness()
-        let onMessageReceived = try XCTUnwrap(h.session.onMessageReceived)
         let payload = WatchHRSamplePayload(bpm: 140, recordedAt: Date())
         let envelope = try WatchEnvelope.encode(kind: .hrSample, payload: payload)
         let message = try envelope.asMessage()
+        let onMessageReceived = try XCTUnwrap(h.session.onMessageReceived)
 
-        var captured: [String: Any] = [:]
-        onMessageReceived(message, { captured = $0 })
+        let captured: [String: Any] = await withCheckedContinuation { continuation in
+            onMessageReceived(message) { reply in
+                continuation.resume(returning: reply)
+            }
+        }
 
         let outcome = try reply(from: captured)
         XCTAssertEqual(outcome.outcome, .failure)

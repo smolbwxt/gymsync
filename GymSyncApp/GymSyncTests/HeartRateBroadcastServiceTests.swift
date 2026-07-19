@@ -6,8 +6,12 @@ import XCTest
 /// `HeartRatePayload` wire shape, and the per-user throttle. No Supabase,
 /// no Realtime channel, no `@MainActor` hop for the value-type pieces —
 /// `subscribe`/`publish`/`unsubscribe` themselves are deliberately not
-/// exercised here since they are unimplemented T5 stubs (see that type's
-/// own header comment).
+/// exercised here: implemented for real in T5, but they talk to a live
+/// Supabase Realtime channel with no seam to fake it behind (the
+/// `HeartRateBroadcasting` protocol abstracts this SERVICE for ITS
+/// callers, not the SDK for this service), so they stay device-QA/CI
+/// territory. (Fix wave 2 doc correction — this clause previously said
+/// "unimplemented T5 stubs", stale since `95dd7a3`.)
 // @MainActor: the service's statics are MainActor-isolated (CI-caught
 // nonisolated-context error) — same annotation WatchConnectivityBridgeTests
 // carries for the same reason.
@@ -52,18 +56,41 @@ final class HeartRateBroadcastServiceTests: XCTestCase {
         XCTAssertEqual((raw["ts"] as? Double) ?? -1, 1_741_800_000_123, accuracy: 1.0)
     }
 
-    /// `zone` is optional on the wire (spec's own shorthand: "{user_id,
-    /// bpm, zone?}") — `nil` must encode as JSON `null`, not be omitted,
-    /// so a receiver's `Decodable` (T5) can rely on the key always being
-    /// present.
-    func testHeartRatePayloadEncodesNilZoneAsNull() throws {
+    /// `zone` is optional on the wire (the design doc's own shorthand:
+    /// "the payload is {user_id, bpm, zone?}",
+    /// `docs/superpowers/specs/2026-07-19-watch-hr-design.md:22`) — `nil`
+    /// encodes by OMISSION, not as explicit JSON `null`.
+    ///
+    /// Fix wave 2 ADJUDICATION (this test previously asserted explicit
+    /// `"zone": null` and was ruled WRONG — the implementation is right):
+    /// (1) the spec's literal payload example
+    /// (`docs/superpowers/specs/2026-06-28-gymsync-design.md:1041`) shows
+    /// `zone` only WITH a value ("hard") and never demonstrates a null —
+    /// it does not demand an always-present-nullable key; the design doc's
+    /// `zone?` shorthand above marks it optional. (2) The phone-side
+    /// receiver (`HeartRateBroadcastService.subscribe`'s
+    /// `payload["zone"]?.stringValue`) returns `nil` identically for an
+    /// absent key and an explicit null — the T4-era rationale this test
+    /// carried ("so a receiver's `Decodable` (T5) can rely on the key
+    /// always being present") never came true: T5's receiver is manual
+    /// `AnyJSON` reads, not a `Decodable`. (3) The ACTUAL T5 production
+    /// send path (`HeartRatePayload.wireMessage`) already omits `zone`
+    /// when `nil`, with its own documented justification — this
+    /// `Encodable` conformance is exercised only by these tests, and
+    /// synthesized `Encodable` (no custom `encode(to:)` has ever existed
+    /// on this type, checked back to T4's `7c537e1`) uses
+    /// `encodeIfPresent` semantics: nil optionals are dropped. The old
+    /// assertion contradicted the implementation from the day it was
+    /// written and simply never ran (T5's CI died at a compile error
+    /// before the suite executed).
+    func testHeartRatePayloadOmitsNilZone() throws {
         let payload = HeartRatePayload(userID: UUID(), bpm: 60, zone: nil)
 
         let data = try JSONEncoder().encode(payload)
         let raw = try XCTUnwrap(try JSONSerialization.jsonObject(with: data) as? [String: Any])
 
-        XCTAssertTrue(raw.keys.contains("zone"))
-        XCTAssertTrue(raw["zone"] is NSNull)
+        XCTAssertFalse(raw.keys.contains("zone"), "nil zone encodes by omission — matching wireMessage's own documented behavior and the receiver's absent-or-null-identical decode")
+        XCTAssertEqual(Set(raw.keys), ["user_id", "bpm", "ts"])
     }
 
     // MARK: - Throttle (pure decision core)
