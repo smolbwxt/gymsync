@@ -22,6 +22,15 @@ enum TransmitState {
     case transmitting
 }
 
+/// Fallback for `VoiceRoomState.unavailable`'s associated `Error` when
+/// LiveKit reports an unexpected disconnect with a `nil` underlying error
+/// (its `room(_:didDisconnectWithError:)` carries `LiveKitError?` — Phase O
+/// Task 5 fix wave 2). `.unavailable` carries a non-optional `Error` by
+/// contract, so a nil SDK error still needs a concrete value.
+struct VoiceRoomUnexpectedDisconnectError: LocalizedError {
+    var errorDescription: String? { "Voice connection lost" }
+}
+
 // MARK: - Token fetch seam
 
 /// The token-fetch response shape `livekit-token` returns on success
@@ -136,6 +145,21 @@ protocol VoiceRoomConnecting: AnyObject {
     /// distinct from `setLocalVolume`'s muted-BY-YOU below, which is a pure
     /// local override nobody else observes.
     var onRemoteMuteChanged: ((String, Bool) -> Void)? { get set }
+
+    /// Set once by `VoiceRoomService` right after construction. Fired when
+    /// the CURRENT connection's transport dies out from under a successfully
+    /// established connection (Phase O Task 5 fix wave 2 — LiveKit's
+    /// `room(_:didDisconnectWithError:)`, whose SDK doc reads "Client
+    /// disconnected from the room unexpectedly after a successful
+    /// connection"). CONTRACT: the conformer must NEVER fire this for an
+    /// intentional `disconnect()` teardown, nor for a stale/superseded
+    /// previous connection generation — `LiveKitRoomConnection` enforces
+    /// both via a Room-identity gate before forwarding (it detaches the
+    /// current room synchronously at the top of `disconnect()`, so an
+    /// intentional teardown's own disconnect event no longer matches).
+    /// The service cannot distinguish generations at this seam; that
+    /// filtering is the conformer's responsibility by contract.
+    var onUnexpectedDisconnect: ((Error?) -> Void)? { get set }
 
     /// Connects to `url` with `token` and publishes the mic track muted.
     /// Throws on any failure — token rejected, network, SDK-level error.
@@ -265,6 +289,50 @@ final class VoiceRoomService {
                 self.remoteMutedParticipantIDs.remove(identity)
             }
         }
+        self.room.onUnexpectedDisconnect = { [weak self] error in
+            self?.handleUnexpectedDisconnect(error)
+        }
+    }
+
+    /// Phase O Task 5 fix wave 2: the transport died out from under a live,
+    /// successfully established connection (network drop, server-side kick,
+    /// LiveKit engine failure). Without this the service would sit in a
+    /// zombie `.connected(.muted)` with dead audio — no signal to the UI,
+    /// no retry path. Transitions to `.unavailable` (the existing
+    /// error-carrying state — the UI shows the "voice unavailable" pill +
+    /// one manual retry) and restores the ambient audio-session baseline;
+    /// `currentSessionID` is deliberately KEPT so `retry()` can re-join
+    /// this same session.
+    ///
+    /// Staleness discipline, both layers:
+    /// - Stale-GENERATION events (a torn-down old room's late disconnect)
+    ///   never reach this handler at all — `LiveKitRoomConnection` drops
+    ///   them at its Room-identity gate (see `onUnexpectedDisconnect`'s
+    ///   protocol doc comment). That contract is the conformer's to keep;
+    ///   this handler cannot re-check it (the service knows nothing of
+    ///   room generations, by design).
+    /// - Stale-EPOCH delivery (the event hops to the main actor and runs
+    ///   AFTER a `leave()` already reset state, or before any connection
+    ///   exists) is filtered by the `.connected` state guard — every state
+    ///   transition is MainActor-serialized, so the guard is race-free.
+    /// - The epoch BUMP below mirrors `leave()`'s: this is a
+    ///   lifecycle-ending event, and without the bump an in-flight
+    ///   `beginTransmit()`/`endTransmit()` parked on its mute await could
+    ///   resume afterward, pass its own epoch check, and resurrect
+    ///   `.connected` over the `.unavailable` this handler just set.
+    private func handleUnexpectedDisconnect(_ error: Error?) {
+        guard case .connected = state else { return }
+        lifecycleEpoch += 1
+        AppLogger.voice.error(
+            "unexpected voice disconnect: \(String(describing: error), privacy: .public)"
+        )
+        audioSession.exitVoiceMode()
+        state = .unavailable(error ?? VoiceRoomUnexpectedDisconnectError())
+        speakingParticipantIDs = []
+        connectedParticipantIDs = []
+        remoteMutedParticipantIDs = []
+        locallyMutedParticipantIDs = []
+        // currentSessionID deliberately NOT cleared — retry() requires it.
     }
 
     /// Auto-join entry point (LobbyView/GroupSessionLiveView `.onAppear` —
@@ -458,35 +526,19 @@ final class VoiceRoomService {
         //
         // The room-level disconnect below stays UNCONDITIONAL regardless —
         // `room.disconnect()` "must always be able to restore audio/state"
-        // per this method's contract above, epoch or no epoch. Room
-        // ownership: `LiveKitRoomConnection` holds a single `private let
-        // room = Room()` (LiveKitRoomConnection.swift:73) constructed once
-        // and reused for the connection's entire lifetime — NOT a fresh
-        // `Room` per connect/disconnect cycle — and `VoiceRoomService` in
-        // turn holds ONE `LiveKitRoomConnection` for its own entire
-        // lifetime (`init` above). So this is the "Room is shared" case,
-        // not "fresh Room per connection": an abandoned leave's disconnect()
-        // call and a newer leave()'s disconnect() call (routed through here
-        // via F3a's `.connected`-with-mismatched-session guard in `join()`)
-        // can both be in flight against the SAME underlying `Room` object.
-        // `join()` always `await`s its own routed `leave()` call to
-        // completion (including ITS disconnect) before attempting to
-        // connect, so by the time any new connection lands, at least one
-        // disconnect has been awaited through; an EARLIER, abandoned
-        // disconnect() resolving even later than that is a redundant call
-        // against a room whose connection state has already moved on.
-        // `VoiceRoomConnecting.disconnect()`'s contract ("best-effort,
-        // never throws") is what makes firing it unconditionally here safe
-        // to keep — but whether the underlying LiveKit `Room.disconnect()`
-        // is itself safe to invoke concurrently/redundantly without
-        // disturbing a connection established in the interim is NOT
-        // verified against SDK source in this session (no Mac/Xcode).
-        // Flagged as a residual risk in task-5-report.md's "Fix wave 1"
-        // concerns rather than silently assumed away — fixing it for real
-        // would mean either a fresh `Room` per connection or generation-
-        // tagging the disconnect call itself, both bigger than this fix's
-        // scope (epoch-gating the SERVICE's own state, which is what
-        // actually clobbered a newer session before this fix).
+        // per this method's contract above, epoch or no epoch. Fix wave 2
+        // closed the transport-level residual this comment previously
+        // carried: `LiveKitRoomConnection` now creates a fresh `Room` PER
+        // CONNECTION generation (`private var room: Room?`,
+        // LiveKitRoomConnection.swift:124 — was a single shared instance
+        // for the object's whole lifetime), and its `disconnect()` detaches
+        // the current generation synchronously before awaiting its
+        // teardown. An abandoned late disconnect therefore tears down only
+        // ITS OWN room object and is structurally incapable of touching a
+        // newer generation's transport — verified against live SDK source
+        // (Room.connect()'s unconditional cleanUp / Room.disconnect()'s
+        // generation-blind cleanUp were a real clobber hazard on a shared
+        // Room; see LiveKitRoomConnection.swift's FIX WAVE 2 header note).
         let epoch = lifecycleEpoch
         defer {
             if lifecycleEpoch == epoch {

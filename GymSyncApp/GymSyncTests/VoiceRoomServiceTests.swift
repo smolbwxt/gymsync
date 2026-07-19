@@ -123,6 +123,7 @@ final class VoiceRoomServiceTests: XCTestCase {
         var onSpeakingParticipantsChanged: ((Set<String>) -> Void)?
         var onRosterChanged: ((Set<String>) -> Void)?
         var onRemoteMuteChanged: ((String, Bool) -> Void)?
+        var onUnexpectedDisconnect: ((Error?) -> Void)?
         private var connectContinuation: CheckedContinuation<Void, Never>?
         private(set) var connectPending = false
         private(set) var connectCallCount = 0
@@ -166,6 +167,7 @@ final class VoiceRoomServiceTests: XCTestCase {
         var onSpeakingParticipantsChanged: ((Set<String>) -> Void)?
         var onRosterChanged: ((Set<String>) -> Void)?
         var onRemoteMuteChanged: ((String, Bool) -> Void)?
+        var onUnexpectedDisconnect: ((Error?) -> Void)?
 
         var connectError: Error?
         private(set) var connectCallCount = 0
@@ -239,6 +241,7 @@ final class VoiceRoomServiceTests: XCTestCase {
         var onSpeakingParticipantsChanged: ((Set<String>) -> Void)?
         var onRosterChanged: ((Set<String>) -> Void)?
         var onRemoteMuteChanged: ((String, Bool) -> Void)?
+        var onUnexpectedDisconnect: ((Error?) -> Void)?
         private var disconnectContinuation: CheckedContinuation<Void, Never>?
         private(set) var disconnectPending = false
         private(set) var disconnectCallCount = 0
@@ -855,6 +858,7 @@ final class VoiceRoomServiceTests: XCTestCase {
         var onSpeakingParticipantsChanged: ((Set<String>) -> Void)?
         var onRosterChanged: ((Set<String>) -> Void)?
         var onRemoteMuteChanged: ((String, Bool) -> Void)?
+        var onUnexpectedDisconnect: ((Error?) -> Void)?
         private var disconnectContinuation: CheckedContinuation<Void, Never>?
         private(set) var disconnectPending = false
         private(set) var disconnectCallCount = 0
@@ -942,6 +946,210 @@ final class VoiceRoomServiceTests: XCTestCase {
         XCTAssertEqual(audio.exitCallCount, exitCountAfterB, "stale leave must not have called exitVoiceMode again")
         XCTAssertEqual(room.connectCallCount, 2, "A's connect + B's connect")
         XCTAssertEqual(room.disconnectCallCount, 2, "abandoned leave's disconnect (A) + B's own routed leave's disconnect")
+    }
+
+    // MARK: - Unexpected disconnect (Phase O Task 5 fix wave 2)
+    //
+    // `onUnexpectedDisconnect` models LiveKit's
+    // `room(_:didDisconnectWithError:)` ("Client disconnected from the room
+    // unexpectedly after a successful connection"). The protocol CONTRACT
+    // says the conformer never fires it for an intentional teardown or a
+    // stale/superseded connection generation — `LiveKitRoomConnection`
+    // enforces that via a Room-identity gate that these hermetic fakes
+    // cannot (and deliberately do not) model, since the whole point of the
+    // seam is that the service knows nothing of Room generations. What IS
+    // testable here is the service's side of the contract: the `.connected`
+    // state guard (stale-epoch delivery filtered), the `.unavailable`
+    // transition + audio restore + retry path, and the epoch bump that
+    // stops a parked transmit call from resurrecting `.connected`.
+
+    func testUnexpectedDisconnectWhileConnectedBecomesUnavailableAndRetryRejoins() async throws {
+        let tokenFetcher = FakeTokenFetcher()
+        let audio = SpyAudioSession()
+        let room = FakeRoomConnection()
+        let service = VoiceRoomService(
+            tokenFetcher: tokenFetcher, micPermission: FakeMicPermission(), audioSession: audio, room: room
+        )
+
+        let sessionID = UUID()
+        await service.join(sessionID: sessionID)
+        room.onRosterChanged?(["jordan-uuid"])
+        room.onRemoteMuteChanged?("jordan-uuid", true)
+        await service.setLocalMute(true, forParticipantIdentity: "jordan-uuid")
+        room.onSpeakingParticipantsChanged?(["jordan-uuid"])
+
+        room.onUnexpectedDisconnect?(URLError(.networkConnectionLost))
+
+        guard case .unavailable = service.state else {
+            XCTFail("expected .unavailable after an unexpected disconnect, got \(service.state)"); return
+        }
+        XCTAssertFalse(audio.isInVoiceMode, "ambient baseline must be restored — the room is gone")
+        XCTAssertEqual(audio.exitCallCount, 1)
+        XCTAssertTrue(service.speakingParticipantIDs.isEmpty, "dead room's speaking set must be cleared")
+        XCTAssertTrue(service.connectedParticipantIDs.isEmpty, "dead room's roster must be cleared")
+        XCTAssertTrue(service.remoteMutedParticipantIDs.isEmpty)
+        XCTAssertTrue(service.locallyMutedParticipantIDs.isEmpty)
+
+        // The whole point of .unavailable over .idle: the user gets a
+        // manual retry, and retry() must still know WHICH session to
+        // re-join (currentSessionID kept by the handler).
+        await service.retry()
+        guard case .connected(.muted) = service.state else {
+            XCTFail("retry() after an unexpected disconnect must be able to re-join, got \(service.state)")
+            return
+        }
+        XCTAssertEqual(tokenFetcher.requestedSessionIDs, [sessionID.uuidString, sessionID.uuidString])
+        XCTAssertEqual(room.connectCallCount, 2)
+        XCTAssertTrue(audio.isInVoiceMode)
+    }
+
+    /// LiveKit's `didDisconnectWithError` carries `LiveKitError?` — a nil
+    /// error must still land `.unavailable` with a concrete `Error`
+    /// (`VoiceRoomUnexpectedDisconnectError` fallback), since that state's
+    /// associated value is non-optional by contract.
+    func testUnexpectedDisconnectWithNilErrorStillMapsToUnavailable() async throws {
+        let room = FakeRoomConnection()
+        let service = VoiceRoomService(
+            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(),
+            audioSession: SpyAudioSession(), room: room
+        )
+        await service.join(sessionID: UUID())
+
+        room.onUnexpectedDisconnect?(nil)
+
+        guard case .unavailable(let error) = service.state else {
+            XCTFail("expected .unavailable even with a nil SDK error, got \(service.state)"); return
+        }
+        XCTAssertTrue(error is VoiceRoomUnexpectedDisconnectError, "nil SDK error must map to the dedicated fallback error")
+    }
+
+    func testUnexpectedDisconnectWhileIdleIsIgnored() async throws {
+        let audio = SpyAudioSession()
+        let room = FakeRoomConnection()
+        let service = VoiceRoomService(
+            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(), audioSession: audio, room: room
+        )
+
+        room.onUnexpectedDisconnect?(URLError(.networkConnectionLost))
+
+        guard case .idle = service.state else {
+            XCTFail("an unexpected-disconnect event with no connection must be ignored, got \(service.state)"); return
+        }
+        XCTAssertEqual(audio.exitCallCount, 0, "must not touch the audio session it never entered")
+    }
+
+    /// A disconnect event arriving while a join is still `.connecting`
+    /// (parked on its token fetch — parked-continuation pattern) belongs to
+    /// no established connection and must not disturb the in-flight join.
+    func testUnexpectedDisconnectWhileConnectingIsIgnored() async throws {
+        let tokenFetcher = PendingTokenFetcher()
+        let room = FakeRoomConnection()
+        let service = VoiceRoomService(
+            tokenFetcher: tokenFetcher, micPermission: FakeMicPermission(),
+            audioSession: SpyAudioSession(), room: room
+        )
+
+        let joinTask = Task { await service.join(sessionID: UUID()) }
+        let reached = await settleUntil { tokenFetcher.pending }
+        XCTAssertTrue(reached, "join never reached the token fetch — test harness broken")
+
+        room.onUnexpectedDisconnect?(URLError(.networkConnectionLost))
+        guard case .connecting = service.state else {
+            XCTFail("a disconnect event must not disturb a still-.connecting join, got \(service.state)"); return
+        }
+
+        tokenFetcher.resume(.success(VoiceTokenResponse(token: "tok", url: "wss://example.livekit.cloud")))
+        await joinTask.value
+        guard case .connected(.muted) = service.state else {
+            XCTFail("the in-flight join must complete normally, got \(service.state)"); return
+        }
+    }
+
+    /// The service-side analog of a stale-generation event: a late
+    /// disconnect notification landing AFTER `leave()` already reset state.
+    /// (A stale event landing after a NEWER session connected is filtered
+    /// one layer down, by `LiveKitRoomConnection`'s Room-identity gate —
+    /// see this section's MARK comment.)
+    func testUnexpectedDisconnectAfterLeaveIsIgnored() async throws {
+        let audio = SpyAudioSession()
+        let room = FakeRoomConnection()
+        let service = VoiceRoomService(
+            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(), audioSession: audio, room: room
+        )
+        await service.join(sessionID: UUID())
+        await service.leave()
+        XCTAssertEqual(audio.exitCallCount, 1)
+
+        room.onUnexpectedDisconnect?(URLError(.networkConnectionLost))
+
+        guard case .idle = service.state else {
+            XCTFail("a late disconnect event after leave() must not overwrite .idle, got \(service.state)"); return
+        }
+        XCTAssertEqual(audio.exitCallCount, 1, "must not exit voice mode a second time")
+    }
+
+    /// Room whose `setMicrophoneMuted` PARKS until resumed — for proving
+    /// `handleUnexpectedDisconnect`'s epoch bump. Same `@MainActor`/
+    /// continuation-before-observable safety shape as `PendingConnectRoom`.
+    @MainActor
+    private final class PendingMuteRoom: VoiceRoomConnecting {
+        var onSpeakingParticipantsChanged: ((Set<String>) -> Void)?
+        var onRosterChanged: ((Set<String>) -> Void)?
+        var onRemoteMuteChanged: ((String, Bool) -> Void)?
+        var onUnexpectedDisconnect: ((Error?) -> Void)?
+        private var muteContinuation: CheckedContinuation<Void, Never>?
+        private(set) var mutePending = false
+
+        func connectAndPublishMuted(url: String, token: String) async throws {}
+        func setLocalVolume(_ volume: Double, forParticipantIdentity identity: String) async {}
+        func disconnect() async {}
+
+        func setMicrophoneMuted(_ muted: Bool) async throws {
+            await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                muteContinuation = cont
+                mutePending = true
+            }
+        }
+
+        func resumeMute() {
+            mutePending = false
+            muteContinuation?.resume()
+            muteContinuation = nil
+        }
+    }
+
+    /// The epoch bump in `handleUnexpectedDisconnect` is load-bearing:
+    /// without it, a `beginTransmit()` parked on its unmute await when the
+    /// transport dies would resume, pass its own epoch check, and resurrect
+    /// `.connected(.transmitting)` OVER the `.unavailable` the handler just
+    /// set — a zombie state pointing at a dead room. Same discipline
+    /// `leave()` already established for its own interleavings.
+    func testUnexpectedDisconnectWhileTransmitCallParkedDoesNotResurrectConnected() async throws {
+        let room = PendingMuteRoom()
+        let service = VoiceRoomService(
+            tokenFetcher: FakeTokenFetcher(), micPermission: FakeMicPermission(),
+            audioSession: SpyAudioSession(), room: room
+        )
+        await service.join(sessionID: UUID())
+        guard case .connected(.muted) = service.state else {
+            XCTFail("setup: expected .connected(.muted)"); return
+        }
+
+        let transmitTask = Task { await service.beginTransmit() }
+        let reached = await settleUntil { room.mutePending }
+        XCTAssertTrue(reached, "beginTransmit never reached its unmute call — test harness broken")
+
+        room.onUnexpectedDisconnect?(URLError(.networkConnectionLost))
+        guard case .unavailable = service.state else {
+            XCTFail("expected .unavailable, got \(service.state)"); return
+        }
+
+        room.resumeMute()
+        await transmitTask.value
+
+        guard case .unavailable = service.state else {
+            XCTFail("resumed transmit call resurrected state over .unavailable: \(service.state)"); return
+        }
     }
 
     // MARK: - Active speakers
