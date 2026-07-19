@@ -116,6 +116,11 @@ final class AuthService {
         // device would otherwise inherit the first user's unsent draft text
         // via ChatView.onAppear (AppState.chatDrafts' doc comment).
         AppState.shared.chatDrafts.removeAll()
+        // Same shared-device reasoning: a pending push route (deep-link
+        // UUID) consumed by the NEXT account's HomeView is cross-account
+        // state, even though RLS makes the fetch a silent no-op in the
+        // common case.
+        AppState.shared.pendingRoute = nil
         state = .signedOut
     }
 
@@ -138,6 +143,7 @@ final class AuthService {
         // — this path also lands a shared device at .signedOut without
         // clearing chatDrafts, so it needs the identical clear.
         AppState.shared.chatDrafts.removeAll()
+        AppState.shared.pendingRoute = nil
         state = .signedOut
     }
 
