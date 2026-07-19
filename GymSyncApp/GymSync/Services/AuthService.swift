@@ -73,7 +73,13 @@ final class AuthService {
         // restore the audio session — never throws, so this can't block
         // sign-out itself, and it's a harmless no-op if no room was ever
         // joined (VoiceRoomService.leave() is idempotent from `.idle`).
-        await VoiceRoomService.shared.leave()
+        // Phase O Task 5 (3e follow-up queue item 1): bounded to 2s —
+        // `leave()`'s own `await room.disconnect()` is LiveKit's network
+        // teardown and could hang on a wedged connection; sign-out must
+        // proceed regardless. See VoiceRoomService.leave(timeout:)'s doc
+        // comment for the full contract (it logs and lets the real
+        // teardown keep running in the background rather than blocking).
+        await VoiceRoomService.shared.leave(timeout: .seconds(2))
         try await SupabaseService.shared.signOut()
         // Phase U (Task 1 fix): wipe the cached stat-tile snapshot so a
         // second user signing into a shared device doesn't see the first

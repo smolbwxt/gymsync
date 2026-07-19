@@ -214,6 +214,30 @@ final class VoiceRoomService {
     /// .mixWithOthers`) must never be left stuck on `.playAndRecord` because
     /// of a half-finished join.
     func join(sessionID: UUID) async {
+        // Phase O Task 5 (3e follow-up queue item 3, "join session-scope
+        // guard"): the two no-op guards below are SESSION-BLIND — they
+        // treat "already connecting/connected" as reason enough to return,
+        // regardless of which session that flight is FOR. That's correct
+        // (and load-bearing — `testJoinIsNoOpWhileAlreadyConnected` locks
+        // it) once already `.connected`: LobbyView -> GroupSessionLiveView
+        // deliberately re-calls join() for the SAME session to let the room
+        // persist across that push, and a second view's spurious call with
+        // a stale/different id must not steal or duplicate that connection.
+        // But while still `.connecting` FOR A DIFFERENT SESSION, that
+        // in-flight join is stale relative to THIS call — if left alone it
+        // can still land its own connect a moment later and silently
+        // establish the WRONG session's room. Extend the SAME
+        // `lifecycleEpoch` machinery `leave()` already uses to guard
+        // resumption-after-suspension (see that var's doc comment): route
+        // through `leave()` here too, which bumps the epoch, disconnects
+        // whatever the stale flight has connected so far (nothing yet, at
+        // this point), and resets state to `.idle` — so when the stale
+        // join resumes past its next epoch check (right after the token
+        // fetch, or right after connect), it recognizes itself as stale and
+        // stands down exactly like a leave()-during-join race today.
+        if case .connecting = state, currentSessionID != sessionID {
+            await leave()
+        }
         if case .connecting = state { return }
         if case .connected = state { return }
 
@@ -313,13 +337,15 @@ final class VoiceRoomService {
     }
 
     /// Disconnects and restores audio, unconditionally — guaranteed on
-    /// session end, view dismiss (Task 4's `.onDisappear` wiring), and
-    /// sign-out (`AuthService.signOut()` calls this before tearing down the
-    /// Supabase session). Safe to call from `.idle` (never-joined) —
-    /// `room.disconnect()`/`exitVoiceMode()` are both no-ops/idempotent in
-    /// that case. Also invalidates any in-flight `join()`/transmit call via
+    /// session end and view dismiss (Task 4's `.onDisappear` wiring). Safe
+    /// to call from `.idle` (never-joined) — `room.disconnect()`/
+    /// `exitVoiceMode()` are both no-ops/idempotent in that case. Also
+    /// invalidates any in-flight `join()`/transmit call via
     /// `lifecycleEpoch` — a suspended join that resumes after this cannot
-    /// reconnect or overwrite the `.idle` state.
+    /// reconnect or overwrite the `.idle` state. `AuthService.signOut()`
+    /// calls `leave(timeout:)` below instead of this directly (Phase O
+    /// Task 5, 3e follow-up queue item 1) — sign-out must never hang on a
+    /// wedged `room.disconnect()`.
     func leave() async {
         lifecycleEpoch += 1
         defer {
@@ -329,6 +355,72 @@ final class VoiceRoomService {
             speakingParticipantIDs = []
         }
         await room.disconnect()
+    }
+
+    /// `leave()`, bounded to `timeout`. `room.disconnect()` is LiveKit's own
+    /// network teardown — `leave()`'s contract says it "must always be able
+    /// to restore audio/state" but makes no promise about HOW LONG that
+    /// takes. Sign-out (`AuthService.signOut()`, the one caller of this
+    /// method — Phase O Task 5, 3e follow-up queue item 1; final review's
+    /// minor 4 flagged the previous unbounded duration as brief-sanctioned
+    /// but worth revisiting) is a user-initiated action that must never
+    /// hang on a wedged network teardown.
+    ///
+    /// Races the real `leave()` against a hard timeout — the same
+    /// "whichever fires first wins" idiom `CheckInService.fetchLocation()`
+    /// already establishes for its CLLocationManager-delegate-vs-timeout
+    /// race (CheckInService.swift), adapted here for `leave()` vs a sleep.
+    /// Both spawned `Task`s inherit this method's `@MainActor` isolation
+    /// (this class is `@MainActor`), so `ContinuationBox`'s guard against a
+    /// double-resume needs no lock — a single nil-check is race-free.
+    ///
+    /// Deliberately does NOT cancel the losing `leave()` call on timeout:
+    /// LiveKit's `Room.disconnect()` isn't cancellation-aware and
+    /// `leave()` itself never checks `Task.isCancelled`, so cancelling it
+    /// would only set a flag nothing reads. The real `leave()` keeps
+    /// running in the background and still restores state/audio via its
+    /// own `defer` whenever `room.disconnect()` eventually resolves —
+    /// timing out here means "the caller stops waiting," not "voice
+    /// teardown was aborted."
+    func leave(timeout: Duration) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let box = ContinuationBox(continuation)
+            Task { @MainActor in
+                await self.leave()
+                box.resume()
+            }
+            Task { @MainActor in
+                try? await Task.sleep(for: timeout)
+                if box.resume() {
+                    AppLogger.voice.error("leave(timeout:) exceeded its bound — caller is proceeding; teardown continues in the background")
+                }
+            }
+        }
+    }
+}
+
+/// MainActor-isolated single-resume guard for a `CheckedContinuation` two
+/// independent unstructured `Task`s race to finish (Swift traps at runtime
+/// on a double-resume). See `VoiceRoomService.leave(timeout:)`'s doc
+/// comment for why a lock isn't needed here.
+@MainActor
+private final class ContinuationBox {
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    init(_ continuation: CheckedContinuation<Void, Never>) {
+        self.continuation = continuation
+    }
+
+    /// Resumes the continuation exactly once across however many callers
+    /// race to call this. Returns whether THIS call was the one that fired
+    /// it — callers use that to know whether they won the race (e.g. to
+    /// decide whether to log a timeout).
+    @discardableResult
+    func resume() -> Bool {
+        guard let continuation else { return false }
+        self.continuation = nil
+        continuation.resume()
+        return true
     }
 }
 
