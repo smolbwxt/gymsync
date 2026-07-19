@@ -81,6 +81,17 @@ final class WatchConnectivityBridgeTests: XCTestCase {
         }
     }
 
+    /// Phase W Task 5 — records every `publish` call so relay-gating tests
+    /// can assert "no publish happened" without linking Supabase/Realtime.
+    /// Same "protocol + fake" idiom as `FakeSoundboardBroadcasting` above.
+    private final class FakeHeartRateBroadcasting: HeartRateBroadcasting {
+        private(set) var published: [(sessionID: UUID, userID: UUID, bpm: Int, zone: String?)] = []
+
+        func publish(sessionID: UUID, userID: UUID, bpm: Int, zone: String?) async {
+            published.append((sessionID, userID, bpm, zone))
+        }
+    }
+
     // MARK: - Helpers
 
     private struct Harness {
@@ -88,33 +99,45 @@ final class WatchConnectivityBridgeTests: XCTestCase {
         let session: FakeWatchSession
         let submitter: FakeSetLogSubmitter
         let soundboard: FakeSoundboardBroadcasting
+        let heartRateBroadcast: FakeHeartRateBroadcasting
     }
 
     private func makeHarness(userID: UUID? = UUID()) -> Harness {
         let session = FakeWatchSession()
         let submitter = FakeSetLogSubmitter()
         let soundboard = FakeSoundboardBroadcasting()
+        let heartRateBroadcast = FakeHeartRateBroadcasting()
         let bridge = WatchConnectivityBridge(
             session: session,
             submitter: submitter,
             userIDProvider: FakeCurrentUserIDProvider(currentUserID: userID),
-            soundboard: soundboard
+            soundboard: soundboard,
+            heartRateBroadcast: heartRateBroadcast
         )
-        return Harness(bridge: bridge, session: session, submitter: submitter, soundboard: soundboard)
+        return Harness(bridge: bridge, session: session, submitter: submitter, soundboard: soundboard, heartRateBroadcast: heartRateBroadcast)
     }
 
     /// Seeds `bridge.lastPushedState` the same way `GroupSessionLiveView.
     /// pushWatchSessionState()` does in production — through the real
     /// `updateSessionState(_:)` call, not by poking a private field.
+    /// `isActive`/`shareHeartRate` (Phase W Task 5) default to the SAME
+    /// defaults `WatchSessionStatePayload.init` itself uses (`isActive:
+    /// true`, `shareHeartRate: false`) so every PRE-Task-5 call site below
+    /// (none of which pass either) keeps seeding an active,
+    /// opted-OUT-of-HR-sharing session, exactly as before.
+    @discardableResult
     private func seedSessionState(
         _ harness: Harness,
         sessionID: UUID = UUID(),
-        groupID: UUID? = UUID()
+        groupID: UUID? = UUID(),
+        isActive: Bool = true,
+        shareHeartRate: Bool = false
     ) -> WatchSessionStatePayload {
         let payload = WatchSessionStatePayload(
             sessionID: sessionID, groupID: groupID, sessionName: "Push Day",
             currentExerciseName: "Bench Press", currentLifterName: "tommy",
-            isMyTurn: true, burpeesOwed: 0
+            isMyTurn: true, burpeesOwed: 0,
+            isActive: isActive, shareHeartRate: shareHeartRate
         )
         harness.bridge.updateSessionState(payload)
         return payload
@@ -458,8 +481,13 @@ final class WatchConnectivityBridgeTests: XCTestCase {
     }
 
     func testDispatchRepliesFailureForHRSampleKind() throws {
-        // T5 scope — not yet implemented; must fail honestly rather than
-        // silently vanish (see `handle`'s `.hrSample` case doc comment).
+        // Phase W Task 5 — wired for real now (see the dedicated `hrSample
+        // routing (Task 5)` section below for the full success/gating
+        // coverage). This particular case still replies `.failure`, but
+        // for an ORDINARY reason now — no `seedSessionState` call, so
+        // `lastPushedState` is nil ("No active session"), the exact same
+        // "no active session" gate `handleLogSet`/`handleSoundboardTap`
+        // enforce — not because the kind is unimplemented.
         let h = makeHarness()
         let onMessageReceived = try XCTUnwrap(h.session.onMessageReceived)
         let payload = WatchHRSamplePayload(bpm: 140, recordedAt: Date())
@@ -471,5 +499,126 @@ final class WatchConnectivityBridgeTests: XCTestCase {
 
         let outcome = try reply(from: captured)
         XCTAssertEqual(outcome.outcome, .failure)
+        XCTAssertTrue(h.heartRateBroadcast.published.isEmpty, "no active session — must never publish")
+    }
+
+    // MARK: - hrSample routing (Task 5, watch-hr design §4)
+
+    func testHRSampleRoutesToHeartRateBroadcastAndRepliesSuccess() async throws {
+        let h = makeHarness()
+        let state = seedSessionState(h, isActive: true, shareHeartRate: true)
+        let payload = WatchHRSamplePayload(bpm: 172, recordedAt: Date())
+        let envelope = try WatchEnvelope.encode(kind: .hrSample, payload: payload)
+
+        var captured: [String: Any] = [:]
+        await h.bridge.handleHRSample(envelope, replyHandler: { captured = $0 })
+
+        XCTAssertEqual(h.heartRateBroadcast.published.count, 1)
+        let published = try XCTUnwrap(h.heartRateBroadcast.published.first)
+        XCTAssertEqual(published.sessionID, state.sessionID)
+        XCTAssertEqual(published.bpm, 172)
+        // 172/190 ≈ 90.5% -> .max (HeartRateZoneTests covers the boundary
+        // math itself; this just proves the bridge actually calls it and
+        // forwards the result on the wire).
+        XCTAssertEqual(published.zone, HeartRateZone.max.rawValue)
+
+        let outcome = try reply(from: captured)
+        XCTAssertEqual(outcome.outcome, .success)
+    }
+
+    /// Relay gating: opt-in false -> no publish (task-5-brief.md item 2's
+    /// "Only while in the live session" + the design's opt-in law).
+    func testHRSampleWithShareHeartRateFalseDoesNotPublish() async throws {
+        let h = makeHarness()
+        _ = seedSessionState(h, isActive: true, shareHeartRate: false)
+        let payload = WatchHRSamplePayload(bpm: 140, recordedAt: Date())
+        let envelope = try WatchEnvelope.encode(kind: .hrSample, payload: payload)
+
+        var captured: [String: Any] = [:]
+        await h.bridge.handleHRSample(envelope, replyHandler: { captured = $0 })
+
+        XCTAssertTrue(h.heartRateBroadcast.published.isEmpty)
+        let outcome = try reply(from: captured)
+        XCTAssertEqual(outcome.outcome, .failure)
+    }
+
+    /// Relay gating: session not active -> no publish (a stale/racing watch
+    /// build that hasn't caught up to a just-ended session yet).
+    func testHRSampleWithSessionNotActiveDoesNotPublish() async throws {
+        let h = makeHarness()
+        _ = seedSessionState(h, isActive: false, shareHeartRate: true)
+        let payload = WatchHRSamplePayload(bpm: 140, recordedAt: Date())
+        let envelope = try WatchEnvelope.encode(kind: .hrSample, payload: payload)
+
+        var captured: [String: Any] = [:]
+        await h.bridge.handleHRSample(envelope, replyHandler: { captured = $0 })
+
+        XCTAssertTrue(h.heartRateBroadcast.published.isEmpty)
+        let outcome = try reply(from: captured)
+        XCTAssertEqual(outcome.outcome, .failure)
+    }
+
+    /// Relay gating: no active session at all (never pushed) -> no publish.
+    func testHRSampleWithNoActiveSessionDoesNotPublish() async throws {
+        let h = makeHarness()
+        // No seedSessionState call — bridge.lastPushedState is still nil.
+        let payload = WatchHRSamplePayload(bpm: 140, recordedAt: Date())
+        let envelope = try WatchEnvelope.encode(kind: .hrSample, payload: payload)
+
+        var captured: [String: Any] = [:]
+        await h.bridge.handleHRSample(envelope, replyHandler: { captured = $0 })
+
+        XCTAssertTrue(h.heartRateBroadcast.published.isEmpty)
+        let outcome = try reply(from: captured)
+        XCTAssertEqual(outcome.outcome, .failure)
+    }
+
+    func testHRSampleWithNoSignedInUserRepliesFailure() async throws {
+        let h = makeHarness(userID: nil)
+        _ = seedSessionState(h, isActive: true, shareHeartRate: true)
+        let payload = WatchHRSamplePayload(bpm: 140, recordedAt: Date())
+        let envelope = try WatchEnvelope.encode(kind: .hrSample, payload: payload)
+
+        var captured: [String: Any] = [:]
+        await h.bridge.handleHRSample(envelope, replyHandler: { captured = $0 })
+
+        XCTAssertTrue(h.heartRateBroadcast.published.isEmpty, "must never attempt to publish with no user to attribute it to")
+        let outcome = try reply(from: captured)
+        XCTAssertEqual(outcome.outcome, .failure)
+    }
+
+    func testHRSampleWithMalformedPayloadRepliesFailure() async throws {
+        let h = makeHarness()
+        _ = seedSessionState(h, isActive: true, shareHeartRate: true)
+        let envelope = WatchEnvelope(kind: .hrSample, payload: Data("not json".utf8))
+
+        var captured: [String: Any] = [:]
+        await h.bridge.handleHRSample(envelope, replyHandler: { captured = $0 })
+
+        XCTAssertTrue(h.heartRateBroadcast.published.isEmpty)
+        let outcome = try reply(from: captured)
+        XCTAssertEqual(outcome.outcome, .failure)
+    }
+
+    /// End-to-end proof the `.hrSample` KIND really does route through
+    /// `handle(message:replyHandler:)` to `handleHRSample`, same shape as
+    /// `testDispatchRoutesLogSetKindThroughToHandler` above.
+    func testDispatchRoutesHRSampleKindThroughToHandler() async throws {
+        let h = makeHarness()
+        _ = seedSessionState(h, isActive: true, shareHeartRate: true)
+        let payload = WatchHRSamplePayload(bpm: 150, recordedAt: Date())
+        let envelope = try WatchEnvelope.encode(kind: .hrSample, payload: payload)
+        let message = try envelope.asMessage()
+        let onMessageReceived = try XCTUnwrap(h.session.onMessageReceived)
+
+        let captured: [String: Any] = await withCheckedContinuation { continuation in
+            onMessageReceived(message) { reply in
+                continuation.resume(returning: reply)
+            }
+        }
+
+        XCTAssertEqual(h.heartRateBroadcast.published.count, 1)
+        let outcome = try reply(from: captured)
+        XCTAssertEqual(outcome.outcome, .success)
     }
 }
