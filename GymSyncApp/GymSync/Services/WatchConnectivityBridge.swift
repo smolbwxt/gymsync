@@ -89,6 +89,15 @@ final class WatchConnectivityBridge {
     /// separate `HeartRateBroadcastService` instance for SUBSCRIBING/
     /// rendering pills; this one only ever calls `publish`.
     private let heartRateBroadcast: HeartRateBroadcasting
+    /// Phase W gate finding I-2 (adjudicated) — best-effort turn-advance
+    /// seam for `handleLogSet`'s post-submit `attemptTurnAdvance` below.
+    /// Same "protocol + production conformer + test fake" idiom as
+    /// `submitter` (`SetLogSubmitting`, `Services/OfflineSetLogQueue.swift:13-25`)
+    /// — sibling-seamed rather than folded into `SetLogSubmitting` itself
+    /// since the two wrap distinct repository calls with distinct
+    /// signatures (`logSet(_:)` vs `advanceTurn(sessionID:)`). See
+    /// `TurnAdvancing`'s own declaration at the bottom of this file.
+    private let turnAdvancer: TurnAdvancing
 
     private var didActivate = false
 
@@ -110,7 +119,8 @@ final class WatchConnectivityBridge {
         submitter: SetLogSubmitting = SupabaseSetLogSubmitter(),
         userIDProvider: CurrentUserIDProviding = AuthServiceCurrentUserIDProvider(),
         soundboard: SoundboardBroadcasting? = nil,
-        heartRateBroadcast: HeartRateBroadcasting? = nil
+        heartRateBroadcast: HeartRateBroadcasting? = nil,
+        turnAdvancer: TurnAdvancing = SupabaseTurnAdvancer()
     ) {
         // `WCSessionProvider()`/`LiveSoundboardBroadcasting(...)`/
         // `HeartRateBroadcastService()` are constructed HERE, in the init
@@ -128,6 +138,7 @@ final class WatchConnectivityBridge {
         self.userIDProvider = userIDProvider
         self.soundboard = soundboard ?? LiveSoundboardBroadcasting(broadcastService: SessionBroadcastService())
         self.heartRateBroadcast = heartRateBroadcast ?? HeartRateBroadcastService()
+        self.turnAdvancer = turnAdvancer
         self.session.onMessageReceived = { [weak self] message, replyHandler in
             self?.handle(message: message, replyHandler: replyHandler)
         }
@@ -249,21 +260,90 @@ final class WatchConnectivityBridge {
     /// note: "Watch-side offline set queue (phone's queue covers it — Watch
     /// requires phone reachability for logging, honest v1)".
     ///
-    /// DELIBERATELY NOT WIRED (out of this task's scope): PR detection
-    /// (`PersonalRecordRepository.record`) and turn-advance
-    /// (`SessionRepository.advanceTurn`) — both of those are
-    /// `logSetAndAdvance`'s OWN additional concerns on top of the bare
-    /// submit, tied to `GroupSessionLiveView`'s live turn-rotation UI
-    /// state (`isPR`/`priorBest`/`didQueueSetOffline` machinery,
-    /// GroupSessionLiveView.swift:2005-2110). This task built the
-    /// PLUMBING (design §3); the Watch "Tap-to-log-set" surface now EXISTS
-    /// (T3, `GymSyncWatch/LogSetView.swift`) but the turn-advance / PR
-    /// decision was NOT revisited with it — a watch-logged set does NOT
-    /// advance the turn (Phase W gate finding I-2: pending PRODUCT
-    /// adjudication, not a silent deferral). Whoever resolves it decides
-    /// how (or whether) a watch-submitted set should also
-    /// show that outcome. Noted here so this is a known, intentional
-    /// boundary — not a silent omission.
+    /// TURN-ADVANCE PARITY (Phase W gate finding I-2, ADJUDICATED — a
+    /// watch-logged set now advances the turn, on parity with a
+    /// phone-logged one): after a SUCCESSFUL ONLINE submit (the `try`
+    /// branch below only — NOT the `.network`/queued branch), this method
+    /// attempts `turnAdvancer.advanceTurn(sessionID:)` best-effort via
+    /// `attemptTurnAdvance` below, mirroring `logSetAndAdvance`'s own
+    /// online-only call: `guard !didQueueSetOffline else { return };
+    /// try await SessionRepository.advanceTurn(sessionID: session.id)`
+    /// (GroupSessionLiveView.swift:2415-2416). That method's own comment
+    /// block immediately above it (GroupSessionLiveView.swift:2350-2378)
+    /// documents why a queued-OFFLINE set does NOT auto-advance, even once
+    /// the queued row replays — `OfflineSetLogQueue.replay()` only ever
+    /// resubmits the INSERT, advanceTurn was never part of replay. This
+    /// bridge inherits that identical limitation for the identical reason:
+    /// there is no separate watch-side replay path to wire an advance into
+    /// either. Per the T3-era offline law that same phone comment states —
+    /// "the organizer (or this lifter, once back online, by logging their
+    /// next set...) advances manually" — the turn simply does not move
+    /// until a genuine online logSet happens, watch or phone.
+    ///
+    /// NOT gated on `lastPushedState.currentTurnUserID`: that field is a
+    /// phone-side PUSH snapshot that can go stale the instant a turn
+    /// changes elsewhere — the exact "second net sharing one stale input"
+    /// trap `handleHRSample`'s own Fix-wave-1 doc comment below diagnoses
+    /// for `shareHeartRate` (fixed there by reading LIVE `ThemeStore.shared
+    /// .shareHeartRate` instead of the pushed snapshot). The authority here
+    /// is the server-side `advance_turn` RPC instead — it re-validates
+    /// against the CURRENT session row under `FOR UPDATE`, independent of
+    /// whatever this bridge last pushed
+    /// (`supabase/migrations/20260714000002_live_plumbing.sql`, "Fix-forward:
+    /// advance_turn with liveness guard" — the migration that added the
+    /// liveness check on top of the original 20260714000001 definition).
+    /// Concretely, `advance_turn(p_session_id)`:
+    ///   - `RAISE EXCEPTION 'not your turn'` (SQLSTATE P0001) unless
+    ///     `auth.uid()` is either the row's CURRENT `current_turn_user_id`
+    ///     OR its `organizer_id`;
+    ///   - `RAISE EXCEPTION 'session is not in progress'` (P0001) unless
+    ///     `sessions.state = 'in_progress'`;
+    ///   - `RAISE EXCEPTION 'no active participants remain'` (P0001) — the
+    ///     liveness-hole fix itself — if every remaining participant is
+    ///     `no_show`.
+    /// None of those is a silent no-op: each is a genuine thrown Postgres
+    /// exception, and `ErrorMapping.map` turns it into
+    /// `GymSyncError.validation(pg.message)`
+    /// (`Models/SessionRepository.swift:388-397`,
+    /// `Utilities/ErrorMapping.swift:48-56`). A watch tap that lands
+    /// out-of-turn (stale watch UI, a race with another lifter's own
+    /// advance, session ended between logSet and advance, etc.) therefore
+    /// THROWS here — caught by `attemptTurnAdvance` and deliberately NOT
+    /// surfaced as a reply failure: the SET itself already committed via
+    /// `submitter.submit(log)` above, so failing the reply would tell the
+    /// watch "your set didn't save" when it did. Every outcome (advanced,
+    /// or rejected/failed and why) is logged at `.info` — an out-of-turn
+    /// rejection is an ordinary, EXPECTED outcome of a best-effort
+    /// attempt, not an error condition this bridge caused or must alert on.
+    ///
+    /// A turn-advance that fails from a network drop AFTER a successful
+    /// `submitter.submit(log)` — as opposed to a genuine RPC rejection —
+    /// gets the identical "documented, not retried" posture
+    /// `logSetAndAdvance`'s own catch block already accepts on the phone
+    /// (GroupSessionLiveView.swift:2417-2425: any `GymSyncError` here
+    /// surfaces as `logSetErrorText`, no automatic retry of JUST the
+    /// advance): this bridge has no separate advance-retry queue either,
+    /// for the same reason cited on the phone's own comment
+    /// (GroupSessionLiveView.swift:2372-2378) — the closest existing
+    /// unstick mechanism is unchanged on both surfaces.
+    ///
+    /// The reply shape to the watch is UNCHANGED by any of this — still
+    /// exactly `.success` on a saved set regardless of the turn-advance
+    /// outcome (`LogSetView.replyBadge`, `GymSyncWatch/LogSetView.swift:94-106`,
+    /// renders only `.success`/`.queued`/`.failure` — no 4th "saved, but
+    /// turn didn't move" state was added; judged minimally: that's
+    /// additive wire/UI surface for a best-effort side effect the watch UI
+    /// has no actionable response to, not worth gold-plating this ruling
+    /// with).
+    ///
+    /// PR detection (`PersonalRecordRepository.record`) remains
+    /// DELIBERATELY NOT WIRED, unchanged from before — that is
+    /// `logSetAndAdvance`'s own additional concern tied to its live
+    /// celebratory-overlay UI state (`isPR`/`priorBest`,
+    /// GroupSessionLiveView.swift:2315-2404), which has no watch-side
+    /// equivalent surface to render into. Only the turn-advance half of
+    /// the original "DELIBERATELY NOT WIRED" note is resolved by I-2; PR
+    /// detection was never in that finding's scope.
     ///
     /// `setIndex: 1` — same "not turn-tracked" value
     /// `GroupSessionLiveView.logSet`'s OWN penalty-log path already uses
@@ -307,6 +387,11 @@ final class WatchConnectivityBridge {
             // enumeration, App/RootView.swift:169-177, explicitly lists
             // this as "trigger 4/4").
             Task { await OfflineSetLogQueue.shared.replay() }
+            // I-2 ruling — ONLY reached on a successful ONLINE submit (this
+            // `do` block never runs the advance for the `.network`/queued
+            // branch below); see this method's own TURN-ADVANCE PARITY doc
+            // comment above for the full rationale.
+            await attemptTurnAdvance(sessionID: sessionID)
             reply(.success, message: nil, to: replyHandler)
         } catch let error as GymSyncError {
             guard case .network = error else {
@@ -317,6 +402,23 @@ final class WatchConnectivityBridge {
             reply(.queued, message: nil, to: replyHandler)
         } catch {
             reply(.failure, message: error.localizedDescription, to: replyHandler)
+        }
+    }
+
+    /// Best-effort turn-advance after a successful ONLINE `logSet` — see
+    /// `handleLogSet`'s TURN-ADVANCE PARITY doc comment above for the full
+    /// I-2 ruling and the `advance_turn` RPC contract this attempt is
+    /// subject to. Never throws out of this function and never touches
+    /// `replyHandler`: every outcome is logged at `.info` and otherwise
+    /// swallowed, so `handleLogSet`'s `.success` reply can never depend on
+    /// this call's result — the set already saved regardless of whether
+    /// the turn actually moved.
+    private func attemptTurnAdvance(sessionID: UUID) async {
+        do {
+            try await turnAdvancer.advanceTurn(sessionID: sessionID)
+            AppLogger.watch.info("advanceTurn succeeded after watch logSet (session \(sessionID, privacy: .public))")
+        } catch {
+            AppLogger.watch.info("advanceTurn did not apply after watch logSet (session \(sessionID, privacy: .public)): \(error, privacy: .public)")
         }
     }
 
@@ -616,5 +718,35 @@ struct LiveSoundboardBroadcasting: SoundboardBroadcasting {
 
     func sendSound(sessionID: UUID, groupID: UUID?, slug: String) async {
         await broadcastService.sendSound(sessionID: sessionID, groupID: groupID, slug: slug)
+    }
+}
+
+// MARK: - TurnAdvancing (best-effort turn-advance seam, Phase W gate finding I-2)
+
+/// Abstracts `SessionRepository.advanceTurn(sessionID:)` for `handleLogSet`'s
+/// `attemptTurnAdvance` — same "protocol seam, production conformer
+/// delegates 1:1 to the real repository call, test fake substitutes" idiom
+/// as `SetLogSubmitting` (`submitter` above, `Services/
+/// OfflineSetLogQueue.swift:13-25`). NOT `@MainActor`: unlike
+/// `SoundboardBroadcasting` immediately above (whose production conformer
+/// touches the `@MainActor` `SoundboardPlayer.shared`/`SessionBroadcastService`),
+/// `SessionRepository.advanceTurn` is a plain nonisolated `static func`
+/// (`enum SessionRepository`, `Models/SessionRepository.swift:4,388`), so
+/// this protocol stays nonisolated too — same shape `SetLogSubmitting`
+/// itself already uses for the same reason (`SessionRepository.logSet`).
+protocol TurnAdvancing {
+    func advanceTurn(sessionID: UUID) async throws
+}
+
+/// Production conformer — delegates to the SAME repository call
+/// `GroupSessionLiveView.logSetAndAdvance`'s own online path already uses
+/// (GroupSessionLiveView.swift:2416, `SessionRepository.advanceTurn(sessionID:)`),
+/// so a watch-triggered advance is byte-identical, RPC-wise, to a
+/// phone-triggered one — same `advance_turn` RPC, same server-side
+/// authorization/liveness validation
+/// (`supabase/migrations/20260714000002_live_plumbing.sql`).
+struct SupabaseTurnAdvancer: TurnAdvancing {
+    func advanceTurn(sessionID: UUID) async throws {
+        try await SessionRepository.advanceTurn(sessionID: sessionID)
     }
 }
