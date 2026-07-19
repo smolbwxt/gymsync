@@ -39,6 +39,22 @@ targets:
     platform: iOS
     sources:
       - GymSync
+      # Phase W Task 2 (watch-hr design §3) — the WatchConnectivity message
+      # envelope (`WatchEnvelope`/per-kind payloads/`WatchActionReply`,
+      # GymSyncShared/WatchEnvelope.swift) must be a compiled member of
+      # BOTH this target and `GymSyncWatch` below. xcodegen lets the same
+      # directory appear in two different targets' `sources:` lists (Task 1's
+      # own report already flagged this as the mechanism, task-1-report.md's
+      # "Shared target-membership for the future envelope file" section) —
+      # each target compiles the shared file into its OWN separate module
+      # (iOS app vs watchOS app), so it stays plain `internal` access on
+      # both sides, no `public`/framework needed. Picked a shared FOLDER
+      # (`GymSyncShared/`) over listing the individual file path under both
+      # targets: every future shared file (this phase's design doc names at
+      # least the HR pipeline's pure zone/throttle logic as a T5 candidate)
+      # lands here for free with zero further project.yml edits, vs. having
+      # to remember to add each new file's path to TWO lists.
+      - GymSyncShared
     resources:
       - GymSync/DesignSystem/Fonts
     dependencies:
@@ -121,6 +137,11 @@ targets:
     platform: watchOS
     sources:
       - GymSyncWatch
+      # Phase W Task 2 — see the identical comment on the `GymSync` target's
+      # `sources:` list above (`GymSyncShared/`'s doc comment there is the
+      # canonical explanation; not duplicated here to avoid drift between
+      # two copies of the same rationale).
+      - GymSyncShared
     settings:
       base:
         # Apple's `<ios-bundle-id>.watchkitapp` companion convention (task

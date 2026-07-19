@@ -680,6 +680,10 @@ struct GroupSessionLiveView: View {
         .task { await openAndSubscribe() }
         .onChange(of: liveSession.currentTurnUserID) { _, newValue in
             if newValue == selfID { prefillLogInputs() }
+            // Phase W Task 2 — the turn passing is exactly the moment the
+            // Watch's "whose turn" state goes stale; re-push immediately
+            // rather than waiting for the next scenePhase/reload cycle.
+            pushWatchSessionState()
         }
         .onChange(of: scenePhase) {
             guard scenePhase == .active else { return }
@@ -704,6 +708,16 @@ struct GroupSessionLiveView: View {
             // Phase O Task 4 (Sentry) — "session join" refresh; see
             // SentryContext.refreshLiveSession's doc comment.
             SentryContext.refreshLiveSession(rawState: liveSession.state, participantCount: participants.count)
+            // Phase W Task 2 (watch-hr design §3) — lazy WCSession
+            // activation, triggered by the SAME "session went live" signal
+            // as the `activeSessionID` assignment right above (see
+            // `WatchConnectivityBridge.activateIfNeeded`'s doc comment for
+            // why this exact call site was chosen over launch-time
+            // activation). Push an initial state snapshot immediately after
+            // so a Watch that's already reachable doesn't wait for the
+            // first turn change to see anything.
+            WatchConnectivityBridge.shared.activateIfNeeded()
+            pushWatchSessionState()
         }
         .onDisappear {
             // Only clear the suppression flag if it's still pointing at THIS
@@ -1716,11 +1730,48 @@ struct GroupSessionLiveView: View {
         }
     }
 
+    // MARK: - Watch bridge (Phase W Task 2, watch-hr design §3)
+
+    /// Builds a `WatchSessionStatePayload` from this view's OWN already-
+    /// fetched models — `liveSession` (`WorkoutSession`), `rotationOrder`
+    /// (`[(SessionParticipant, Profile)]`, this file's line 257),
+    /// `currentExerciseForSheet` (`Exercise`, this file's own property
+    /// above) — the exact same
+    /// derivations `spotlightHeaderCard`/`spectatingHeaderCard` already
+    /// render, not a second computation. See `WatchConnectivityBridge`'s
+    /// header doc comment for why the bridge itself accepts this
+    /// already-built payload instead of re-deriving it. Called from
+    /// `.onAppear` (initial snapshot) and `.onChange(of: liveSession.currentTurnUserID)`
+    /// (turn passes — the state most likely to matter to someone glancing
+    /// at their Watch). Best-effort: `WatchConnectivityBridge.updateSessionState`
+    /// itself never throws into this call site.
+    private func pushWatchSessionState() {
+        let currentLifter = rotationOrder.first(where: { $0.participant.userID == liveSession.currentTurnUserID })?.profile
+        let payload = WatchSessionStatePayload(
+            sessionID: liveSession.id,
+            groupID: liveSession.groupID,
+            sessionName: routineName ?? "Session",
+            currentExerciseName: currentExerciseForSheet?.name,
+            currentLifterName: currentLifter?.username,
+            isMyTurn: isMyTurn,
+            burpeesOwed: burpeesRemaining
+        )
+        WatchConnectivityBridge.shared.updateSessionState(payload)
+    }
+
     // MARK: - Data loading
 
     @MainActor
     private func openAndSubscribe() async {
         await reload()
+        // Phase W Task 2 — `.onAppear`'s push (right after this `.task`
+        // fires) runs before `reload()` has populated `routineExercises`/
+        // `allExercises`/`routineName`, so its payload's exercise/session
+        // name fields are still nil/placeholder at that point. Re-push now
+        // that the real models are in, so a Watch that's already reachable
+        // sees the actual current exercise shortly after entering, not
+        // only after the first turn change.
+        pushWatchSessionState()
         await ExerciseNameCache.preload()
         if let groupID = liveSession.groupID {
             // Fast-follow wave, Fix 3: this used to be a bare `try?` — a

@@ -17,4 +17,8 @@ enum AppLogger {
     static let audio = Logger(subsystem: subsystem, category: "audio")
     static let push = Logger(subsystem: subsystem, category: "push")
     static let voice = Logger(subsystem: subsystem, category: "voice")
+    // Phase W Task 2 (watch-hr design §3) — WatchConnectivityBridge (phone
+    // side only; the watchOS target has no AppLogger — see that file's
+    // `GymSyncWatch/`-only doc comment for why this isn't a shared file).
+    static let watch = Logger(subsystem: subsystem, category: "watch")
 }
