@@ -7,8 +7,10 @@ import XCTest
 /// AVFoundation: `WCSession` is faked via the `WatchSessionProviding`
 /// seam, the set-log submit path via `SetLogSubmitting` (the SAME seam
 /// `OfflineSetLogQueueTests` already fakes — see that file's header doc
-/// comment for the shared idiom this mirrors), and the soundboard
-/// play/broadcast pair via `SoundboardBroadcasting`.
+/// comment for the shared idiom this mirrors), the soundboard
+/// play/broadcast pair via `SoundboardBroadcasting`, and (Phase W gate
+/// finding I-2) the best-effort post-submit turn-advance call via
+/// `TurnAdvancing`.
 ///
 /// `WatchEnvelope`'s own codec properties (round-trip, unknown-kind
 /// tolerance, version gate) are covered separately in
@@ -70,6 +72,29 @@ final class WatchConnectivityBridgeTests: XCTestCase {
         init(currentUserID: UUID?) { self.currentUserID = currentUserID }
     }
 
+    /// Phase W gate finding I-2 — same "protocol + production conformer +
+    /// test fake" idiom as `FakeSetLogSubmitter` above, sibling-seamed for
+    /// `TurnAdvancing` (`Services/WatchConnectivityBridge.swift`, bottom of
+    /// file). Records every `advanceTurn(sessionID:)` call so the
+    /// turn-advance-parity tests below can assert call count/argument
+    /// without linking Supabase or the real `advance_turn` RPC.
+    private final class FakeTurnAdvancing: TurnAdvancing {
+        enum Outcome {
+            case success
+            case failure(Error)
+        }
+        var outcome: Outcome = .success
+        private(set) var advancedSessionIDs: [UUID] = []
+
+        func advanceTurn(sessionID: UUID) async throws {
+            advancedSessionIDs.append(sessionID)
+            switch outcome {
+            case .success: return
+            case .failure(let error): throw error
+            }
+        }
+    }
+
     private final class FakeSoundboardBroadcasting: SoundboardBroadcasting {
         private(set) var playedSlugs: [String] = []
         private(set) var sentSounds: [(sessionID: UUID, groupID: UUID?, slug: String)] = []
@@ -100,6 +125,7 @@ final class WatchConnectivityBridgeTests: XCTestCase {
         let submitter: FakeSetLogSubmitter
         let soundboard: FakeSoundboardBroadcasting
         let heartRateBroadcast: FakeHeartRateBroadcasting
+        let turnAdvancer: FakeTurnAdvancing
     }
 
     private func makeHarness(userID: UUID? = UUID()) -> Harness {
@@ -107,14 +133,16 @@ final class WatchConnectivityBridgeTests: XCTestCase {
         let submitter = FakeSetLogSubmitter()
         let soundboard = FakeSoundboardBroadcasting()
         let heartRateBroadcast = FakeHeartRateBroadcasting()
+        let turnAdvancer = FakeTurnAdvancing()
         let bridge = WatchConnectivityBridge(
             session: session,
             submitter: submitter,
             userIDProvider: FakeCurrentUserIDProvider(currentUserID: userID),
             soundboard: soundboard,
-            heartRateBroadcast: heartRateBroadcast
+            heartRateBroadcast: heartRateBroadcast,
+            turnAdvancer: turnAdvancer
         )
-        return Harness(bridge: bridge, session: session, submitter: submitter, soundboard: soundboard, heartRateBroadcast: heartRateBroadcast)
+        return Harness(bridge: bridge, session: session, submitter: submitter, soundboard: soundboard, heartRateBroadcast: heartRateBroadcast, turnAdvancer: turnAdvancer)
     }
 
     /// Seeds `bridge.lastPushedState` the same way `GroupSessionLiveView.
@@ -354,6 +382,79 @@ final class WatchConnectivityBridgeTests: XCTestCase {
         await h.bridge.handleLogSet(envelope, replyHandler: { captured = $0 })
 
         XCTAssertEqual(h.submitter.submittedLogs.count, 0)
+        let outcome = try reply(from: captured)
+        XCTAssertEqual(outcome.outcome, .failure)
+    }
+
+    // MARK: - logSet turn-advance parity (Phase W gate finding I-2)
+    //
+    // A watch-logged set now advances the turn on parity with the phone's
+    // own `logSetAndAdvance` online path (GroupSessionLiveView.swift:2416)
+    // — see `WatchConnectivityBridge.handleLogSet`'s TURN-ADVANCE PARITY
+    // doc comment for the full ruling. These 4 cases are the ones that
+    // doc comment's own contract promises: online success advances once
+    // with the right sessionID, queued-offline and failed-submit never
+    // attempt it, and a rejected/failed advance never turns the watch's
+    // reply into a failure (the set already saved).
+
+    func testLogSetOnlineSuccessCallsAdvanceTurnOnceWithSessionID() async throws {
+        let h = makeHarness()
+        let state = seedSessionState(h)
+        let payload = WatchLogSetPayload(exerciseID: UUID(), reps: 10, weight: 185, rpe: 7, isFailed: false, note: nil)
+        let envelope = try WatchEnvelope.encode(kind: .logSet, payload: payload)
+
+        var captured: [String: Any] = [:]
+        await h.bridge.handleLogSet(envelope, replyHandler: { captured = $0 })
+
+        XCTAssertEqual(h.turnAdvancer.advancedSessionIDs, [state.sessionID])
+        let outcome = try reply(from: captured)
+        XCTAssertEqual(outcome.outcome, .success)
+    }
+
+    func testLogSetQueuedOfflineDoesNotCallAdvanceTurn() async throws {
+        let h = makeHarness()
+        _ = seedSessionState(h)
+        h.submitter.outcome = .failure(.network)
+        let payload = WatchLogSetPayload(exerciseID: UUID(), reps: 5, weight: 45, rpe: 6, isFailed: false, note: nil)
+        let envelope = try WatchEnvelope.encode(kind: .logSet, payload: payload)
+
+        var captured: [String: Any] = [:]
+        await h.bridge.handleLogSet(envelope, replyHandler: { captured = $0 })
+
+        XCTAssertTrue(h.turnAdvancer.advancedSessionIDs.isEmpty, "a queued-offline set must not attempt to advance the turn — matches logSetAndAdvance's own online-only advance (GroupSessionLiveView.swift:2415-2416)")
+        let outcome = try reply(from: captured)
+        XCTAssertEqual(outcome.outcome, .queued)
+    }
+
+    func testLogSetAdvanceTurnFailureStillRepliesSuccess() async throws {
+        let h = makeHarness()
+        _ = seedSessionState(h)
+        // Simulates the `advance_turn` RPC's own `'not your turn'`
+        // rejection (P0001 -> ErrorMapping.map -> .validation) — see
+        // handleLogSet's doc comment for the full RPC contract citation.
+        h.turnAdvancer.outcome = .failure(GymSyncError.validation("not your turn"))
+        let payload = WatchLogSetPayload(exerciseID: UUID(), reps: 10, weight: 185, rpe: 7, isFailed: false, note: nil)
+        let envelope = try WatchEnvelope.encode(kind: .logSet, payload: payload)
+
+        var captured: [String: Any] = [:]
+        await h.bridge.handleLogSet(envelope, replyHandler: { captured = $0 })
+
+        XCTAssertEqual(h.turnAdvancer.advancedSessionIDs.count, 1, "the advance was still attempted")
+        let outcome = try reply(from: captured)
+        XCTAssertEqual(outcome.outcome, .success, "the SET saved — an out-of-turn/failed advance must never turn the reply into a failure")
+    }
+
+    func testLogSetFailedSubmitDoesNotCallAdvanceTurn() async throws {
+        let h = makeHarness()
+        _ = seedSessionState(h)
+        h.submitter.outcome = .failure(.validation("bad reps"))
+        let payload = WatchLogSetPayload(exerciseID: UUID(), reps: -1, weight: nil, rpe: nil, isFailed: false, note: nil)
+        let envelope = try WatchEnvelope.encode(kind: .logSet, payload: payload)
+
+        var captured: [String: Any] = [:]
+        await h.bridge.handleLogSet(envelope, replyHandler: { captured = $0 })
+
+        XCTAssertTrue(h.turnAdvancer.advancedSessionIDs.isEmpty, "a failed submit (the set never saved) must never attempt to advance the turn")
         let outcome = try reply(from: captured)
         XCTAssertEqual(outcome.outcome, .failure)
     }
