@@ -32,6 +32,12 @@ struct SupabaseSetLogSubmitter: SetLogSubmitting {
 /// "## Gate fix" section) is hermetically testable, same "protocol +
 /// production conformer + test fake" idiom as `SetLogSubmitting` above and
 /// `VoiceRoomService`'s `VoiceTokenFetching` seam.
+/// `@MainActor` because the production conformer reads the MainActor-
+/// isolated `AuthService.shared.state`, and every consumer
+/// (`OfflineSetLogQueue`, itself `@MainActor`) calls it from the main
+/// actor anyway — isolating the protocol keeps the conformer's read legal
+/// without an isolation hop.
+@MainActor
 protocol CurrentUserIDProviding {
     var currentUserID: UUID? { get }
 }
