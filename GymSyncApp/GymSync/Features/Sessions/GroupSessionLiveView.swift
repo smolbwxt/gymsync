@@ -729,8 +729,14 @@ struct GroupSessionLiveView: View {
                 // moment). That's still right for a child pushed on top
                 // (re-subscribes everything, voice included, on return via
                 // this same `.task`) and for `BurpeeLedgerView`'s direct
-                // route (`voicePersistsOnPop` false there — no Lobby is
-                // about to reclaim the room). But backing OUT to LobbyView
+                // route into a DIFFERENT session (`voicePersistsOnPop` false
+                // there — no Lobby is about to reclaim the room). Fix wave 1
+                // (Finding F4): that direct route can no longer target the
+                // SAME session this view is already showing — `Burpee
+                // LedgerView`'s CTA now pops back to THIS instance instead
+                // of pushing a duplicate one in that case, so this view's
+                // own `onDisappear` never fires for that push/pop pair at
+                // all. But backing OUT to LobbyView
                 // for the SAME still-live session (`voicePersistsOnPop`
                 // true — `SessionInProgressView` is the only route that
                 // sets it, per its own "LobbyView navigates here" doc
@@ -1466,7 +1472,12 @@ struct GroupSessionLiveView: View {
             // ad-hoc/solo sessions have no group-scoped ledger to show.
             if let ledgerGroup {
                 NavigationLink {
-                    BurpeeLedgerView(group: ledgerGroup)
+                    // Fix wave 1 (reviewer Finding F4): threads this view's
+                    // own session id through so BurpeeLedgerView's "Log
+                    // burpees now" CTA can tell whether ITS target session
+                    // is the SAME one already live further down the nav
+                    // stack — see that property's doc comment for why.
+                    BurpeeLedgerView(group: ledgerGroup, pushedFromLiveSessionID: session.id)
                 } label: {
                     HStack(spacing: 4) {
                         Text("Crew ledger")
