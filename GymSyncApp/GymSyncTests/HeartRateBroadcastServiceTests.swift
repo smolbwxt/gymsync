@@ -8,6 +8,10 @@ import XCTest
 /// `subscribe`/`publish`/`unsubscribe` themselves are deliberately not
 /// exercised here since they are unimplemented T5 stubs (see that type's
 /// own header comment).
+// @MainActor: the service's statics are MainActor-isolated (CI-caught
+// nonisolated-context error) — same annotation WatchConnectivityBridgeTests
+// carries for the same reason.
+@MainActor
 final class HeartRateBroadcastServiceTests: XCTestCase {
 
     // MARK: - Channel name
