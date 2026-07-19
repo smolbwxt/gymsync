@@ -1946,6 +1946,98 @@ struct GSVoiceMixerSheet: View {
 // a single `onLongPressGesture` is enough to derive both tap and hold
 // behavior.
 
+// MARK: - GSHeartRatePill
+//
+// Phase W Task 5 (watch-hr design §4 + master spec §5 "Heart rate
+// broadcast"). Canvas-AUTHORITATIVE shape (docs/design/accepted-
+// deviations.json's "tab-you" entry already found and cited these two real
+// frames — grepped `frame-map.json` and every `.dc.html` canvas for "heart
+// rate"/"bpm"): `Gym Sync App Designs.dc.html` frame 2A (Live — Spotlight,
+// lines 653-658 — heart icon + large BPM number + "BPM · LIVE" caption,
+// top-right of the accent "YOUR TURN" hero) and frame 2B (Live — Roster,
+// lines 808-813 — same heart+number shape, smaller, "BPM" only, bottom of
+// the LIFTING NOW roster card). Both frames render exactly ONE static bpm
+// reading each, so neither demonstrates the spec's REQUIRED zone-color
+// behavior (master spec:1047, "Rendered as color on the HR pill") — the
+// icon+number tint below is system-designed (no frame authority for the
+// color mapping itself; see docs/design/accepted-deviations.json's
+// "hr-pill-zone-color" entry). Shape/placement/caption text ARE
+// frame-verbatim.
+//
+// GENERALIZATION beyond the frames: frame 2B only shows the pill on the one
+// "LIFTING NOW" roster card it depicts — that's an artifact of the mock
+// showing a single populated example, not a restriction (nothing in the
+// design implies HR only broadcasts for whoever currently holds the turn;
+// any participant with `share_heart_rate` on broadcasts continuously).
+// `GroupSessionLiveView.rosterCard` renders this pill for ANY roster card
+// with live data, in the same bottom slot the frame shows — recorded in
+// docs/design/accepted-deviations.json.
+
+struct GSHeartRatePill: View {
+    @Environment(\.gsTheme) private var theme
+
+    let bpm: Int
+    let zone: HeartRateZone?
+    /// "BPM · LIVE" (Spotlight hero, frame 2A) vs "BPM" (Roster card, frame
+    /// 2B) — the two frames use different caption text for the identical
+    /// heart+number shape.
+    var showsLiveSuffix: Bool = false
+    /// Caller-supplied — the caption's color must match whatever surface
+    /// this pill sits on (an accent-filled hero/lifting card vs a plain
+    /// `theme.surface` card); this view has no opinion on its own
+    /// background, matching every other reused atom in this file
+    /// (`GSTalkingBars`' `color:` parameter is the same shape). `nil`
+    /// (default) falls back to `theme.neutral500`, the plain-surface case.
+    var captionColor: Color? = nil
+
+    @State private var beat = false
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 4) {
+            Image(systemName: "heart.fill")
+                .font(.system(size: 12, weight: .bold))
+                .scaleEffect(beat ? 1.12 : 1.0)
+            Text("\(bpm)")
+                .font(GSFont.bold(15, relativeTo: .subheadline))
+            Text(showsLiveSuffix ? "BPM · LIVE" : "BPM")
+                .font(GSFont.bold(9, relativeTo: .caption2))
+                .tracking(0.4)
+                .foregroundStyle(captionColor ?? theme.neutral500)
+        }
+        .foregroundStyle(zoneColor)
+        .onAppear {
+            withAnimation(.easeInOut(duration: 0.55).repeatForever(autoreverses: true)) {
+                beat = true
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(bpm) beats per minute")
+    }
+
+    /// System-designed zone→color mapping (no canvas authority — see this
+    /// type's header comment). A standard 4-color effort-intensity ramp
+    /// (blue → green → orange → red) — the near-universal HR-zone
+    /// convention mainstream fitness apps already use, so it reads
+    /// correctly without any legend. Plain SwiftUI system colors, not a
+    /// `GSTheme` token: `GSTheme`'s accent ramp is a single BRAND hue per
+    /// palette, not an intensity spectrum, so there is no themed token this
+    /// mapping could reuse — same "no themed token exists, use a plain
+    /// system color directly" precedent `YouTabView.deleteAccountRow`
+    /// already established for this app's other non-`GSTheme` color use.
+    /// `nil` zone (unrecognized/future wire value — forward-compat, mirrors
+    /// `WatchEnvelope`'s own unknown-kind tolerance) falls back to the
+    /// caption's own neutral tone rather than guessing.
+    private var zoneColor: Color {
+        switch zone {
+        case .warmup:   return .blue
+        case .moderate: return .green
+        case .hard:     return .orange
+        case .max:      return .red
+        case nil:       return captionColor ?? theme.neutral500
+        }
+    }
+}
+
 private struct PTTPressGesture: ViewModifier {
     let threshold: TimeInterval
     let onPressBegan: () -> Void

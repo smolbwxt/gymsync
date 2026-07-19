@@ -17,6 +17,19 @@ public final class ThemeStore {
 
     public private(set) var paletteID: String = "midnight"
     public private(set) var current: GSTheme = .midnight
+    /// Phase W Task 5 (watch-hr design §4) — the live `user_settings
+    /// .share_heart_rate` value, mirrored here for the SAME reason
+    /// `paletteID` is: this class is already the app's one cross-view
+    /// `@Observable` cache of the current `user_settings` row, updated by
+    /// both `load()` (below) and `noteExternalSettingsWrite(_:)`
+    /// (`YouTabView.setShareHeartRate`'s own success-path call, already
+    /// existing since Task 4). `GroupSessionLiveView.pushWatchSessionState()`
+    /// reads this DIRECTLY instead of caching its own copy once at
+    /// `openAndSubscribe()` time — the fix for the carried-in T4 review
+    /// finding ("shareHeartRate is cached once... a mid-session toggle flip
+    /// never reaches the Watch"). Defaults `false`, matching `UserSettings
+    /// .defaults`' own safe opt-out default.
+    public private(set) var shareHeartRate: Bool = false
 
     /// Cached most-recent settings row — kept so `select(_:)` can persist the
     /// new palette without clobbering `defaultRestSeconds` (mutates a copy of
@@ -52,6 +65,7 @@ public final class ThemeStore {
     public func load() async {
         guard let settings = try? await UserSettingsRepository.get() else { return }
         lastKnownSettings = settings
+        shareHeartRate = settings.shareHeartRate
         apply(paletteID: settings.palette)
     }
 
@@ -124,6 +138,12 @@ public final class ThemeStore {
             incoming: settings,
             persistInFlight: persistTask != nil
         )
+        // `shareHeartRate` always adopts the merged result — `select(_:)`'s
+        // in-flight task only ever owns `.palette` (see the merge rule's
+        // own doc comment below), so `shareHeartRate` is never the field
+        // being protected from clobber; it always wins from whichever
+        // write reported it, same as `defaultRestSeconds`.
+        shareHeartRate = lastKnownSettings?.shareHeartRate ?? false
     }
 
     /// Pure merge rule behind `noteExternalSettingsWrite` — extracted (and

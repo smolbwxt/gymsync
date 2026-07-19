@@ -60,6 +60,33 @@ struct GroupSessionLiveView: View {
     // MARK: - Soundboard & broadcast state
 
     @State private var broadcastService = SessionBroadcastService()
+    /// Phase W Task 5 (watch-hr design §4) — separate `HeartRateBroadcastService`
+    /// instance from `WatchConnectivityBridge`'s own send-only one (see that
+    /// type's own doc comment on `heartRateBroadcast`); THIS instance is for
+    /// SUBSCRIBING/rendering, mirroring how `broadcastService` above is this
+    /// view's own subscribe-side `SessionBroadcastService` instance while
+    /// `WatchConnectivityBridge` holds a separate send-only one via
+    /// `LiveSoundboardBroadcasting`.
+    @State private var heartRateService = HeartRateBroadcastService()
+    /// Live HR readings keyed by participant userID — includes the CURRENT
+    /// (self) user, since `heartRateService.subscribe`'s self-echo delivers
+    /// this phone's own published samples back through the same callback
+    /// (see that method's own doc comment). Consumed by `heartRateFor(_:)`
+    /// below, which both `rosterCard` (frame 2B) and `spotlightHeaderCard`
+    /// (frame 2A, self only) read from.
+    @State private var heartRates: [UUID: (bpm: Int, zone: HeartRateZone?, receivedAt: Date)] = [:]
+    /// One self-clearing `Task` per userID (task-5-brief.md item 4:
+    /// "pills fade/remove when no sample for >15s (sender may stop
+    /// anytime)") — same "sleep, then clear if nothing newer arrived"
+    /// shape this file's own `showSoundOverlay`/`showReactionOverlay`
+    /// already use for their own transient overlay state, just keyed per
+    /// user instead of a single shared property. Purely a memory-hygiene +
+    /// re-render trigger: `heartRateFor(_:)` is the AUTHORITATIVE
+    /// freshness check (`HeartRateFreshness.isFresh`, hermetically tested)
+    /// — a delayed or cancelled purge can never cause a stale reading to
+    /// render, only a slightly-late removal from this dictionary.
+    @State private var heartRateExpiryTasks: [UUID: Task<Void, Never>] = [:]
+    private static let heartRateStaleAfter: TimeInterval = 15
     /// Full sound catalog (Task 3 — favorites ribbon + library sheet), populated
     /// async on first appear. Failures degrade to an empty catalog silently —
     /// `dockSounds` below falls back to the curated-first-4 behavior either way.
@@ -77,13 +104,28 @@ struct GroupSessionLiveView: View {
     /// Transient floating reaction pill — cleared after 2s.
     @State private var reactionOverlay: String? = nil
     @State private var reactionOverlayVisible = false
-    /// Task 4 (watch-hr design §4) — the CURRENT user's live
-    /// `user_settings.share_heart_rate` opt-in, populated async on first
-    /// appear (same best-effort `try?` degrade as `soundFavorites`/
-    /// `soundCatalog` above — a fetch failure here just leaves the Watch
-    /// not told to start sampling, never blocks the session). Fed straight
-    /// into `pushWatchSessionState()`'s `shareHeartRate` field.
-    @State private var shareHeartRate = false
+    /// Task 5 (watch-hr design §4) — REMOVED (was: `@State private var
+    /// shareHeartRate = false`, populated once from `UserSettingsRepository
+    /// .get()` in `openAndSubscribe()`). That one-shot cache was the exact
+    /// bug T4's review carried in: a mid-session toggle flip in `YouTabView`
+    /// never reached an already-open `GroupSessionLiveView` (this app's
+    /// `TabView` keeps a pushed session view alive across tab switches — it
+    /// isn't torn down and re-`.task`-ed just by navigating to the You tab
+    /// and back). Fixed by DERIVING the value live from `ThemeStore.shared
+    /// .shareHeartRate` at every `pushWatchSessionState()` call instead of
+    /// caching a local copy once — the same "derive from observed state,
+    /// don't cache a snapshot" fix T3's `isActive` finding already
+    /// established for this exact function (see `pushWatchSessionState`'s
+    /// own doc comment on that precedent). `ThemeStore` is already this
+    /// app's one cross-view `@Observable` cache of the live `user_settings`
+    /// row (`DesignSystem/ThemeStore.swift`'s own Task 5 extension) and
+    /// `YouTabView.setShareHeartRate`'s success path already calls
+    /// `ThemeStore.shared.noteExternalSettingsWrite(updated)` — that call
+    /// site needed NO changes; only `ThemeStore` itself (new `shareHeartRate`
+    /// property) and this view's read site changed.
+    ///
+    /// Heart-rate roster/pill state (Task 5) lives further down, near
+    /// `broadcastService` — see `heartRateService`/`heartRates` below.
 
     // MARK: - Routine state
 
@@ -761,9 +803,25 @@ struct GroupSessionLiveView: View {
                 // doesn't overwrite a still-live session's context.
                 SentryContext.refreshAppWide()
             }
+            // Phase W Task 5 — HR channel teardown is its OWN path,
+            // independent of the Watch-side sampler stop condition (design
+            // brief: "trace both teardown paths"). This is the PHONE
+            // unsubscribing from `session:{id}:hr` because THIS VIEW is
+            // going away; the Watch's own sampler stop is driven purely by
+            // `isActive`/`shareHeartRate` signals in `WatchSessionStore
+            // .syncHeartRateSampler()` (`GymSyncWatch/WatchSessionStore.swift`)
+            // and does NOT depend on whether the phone happens to be
+            // looking at this screen — the session may still be live for
+            // other participants. Cancelling the pending expiry `Task`s too
+            // (not just `unsubscribe()`) so none of them fires a late,
+            // harmless-but-pointless mutation against a dictionary this
+            // view is about to stop observing.
+            heartRateExpiryTasks.values.forEach { $0.cancel() }
+            heartRateExpiryTasks = [:]
             Task {
                 await liveService.unsubscribe()
                 await broadcastService.unsubscribe()
+                await heartRateService.unsubscribe()
                 // Phase O Task 5 (3e follow-up queue item 6, "Lobby<->Live
                 // back-nav rejoin blip"): this used to be unconditional
                 // (every disappearance treated as a genuine "stop talking"
@@ -1004,20 +1062,40 @@ struct GroupSessionLiveView: View {
 
     // MARK: - Spotlight header card (my turn) — p06
     // Exercise-name headline (not the lifter's name — per finding p06 #1), "Set N of M ·
-    // target W × R" subtitle. BPM/waveform decorations from the proof are skipped: no
-    // heart-rate data source exists anywhere in the app (canvas chrome, not real data).
+    // target W × R" subtitle. BPM waveform decoration from the proof is skipped (no
+    // continuous waveform data source exists — the pill's bpm NUMBER is now real,
+    // Phase W Task 5, but the small sparkline under it in frame 2A stays chrome-only:
+    // this app's HR feed is discrete ~5s samples, not a continuous trace to plot).
 
     private var spotlightHeaderCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("YOUR TURN")
-                .font(GSFont.bold(10, relativeTo: .caption2))
-                .tracking(1.4)
-                .foregroundStyle(theme.bg.opacity(0.85))
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("YOUR TURN")
+                        .font(GSFont.bold(10, relativeTo: .caption2))
+                        .tracking(1.4)
+                        .foregroundStyle(theme.bg.opacity(0.85))
 
-            Text(currentExerciseForSheet?.name ?? "Exercise")
-                .font(GSFont.heading(26, relativeTo: .title))
-                .foregroundStyle(theme.bg)
-                .lineLimit(2)
+                    Text(currentExerciseForSheet?.name ?? "Exercise")
+                        .font(GSFont.heading(26, relativeTo: .title))
+                        .foregroundStyle(theme.bg)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 8)
+                // Phase W Task 5 (watch-hr design §4) — canvas frame 2A's
+                // own HR pill: this is the SPOTLIGHT hero, "your turn" —
+                // always the current (self) user, so `selfID` is the only
+                // key this slot ever reads. See `GSHeartRatePill`'s header
+                // comment for the frame citation.
+                if let mine = heartRateFor(selfID) {
+                    GSHeartRatePill(
+                        bpm: mine.bpm,
+                        zone: mine.zone,
+                        showsLiveSuffix: true,
+                        captionColor: theme.bg.opacity(0.85)
+                    )
+                }
+            }
 
             HStack(spacing: 4) {
                 Text("Set \(currentTurnSetNumber) of \(targetSetsPerLifter)")
@@ -1355,6 +1433,19 @@ struct GroupSessionLiveView: View {
             }
 
             rosterCardDetail(item.participant.userID, status: status)
+
+            // Phase W Task 5 (watch-hr design §4) — zone-colored HR pill,
+            // canvas frame 2B's exact heart+number+"BPM" shape (see
+            // `GSHeartRatePill`'s own header comment for the frame
+            // citation + the "any status, not just LIFTING NOW" generalization).
+            if let hr = heartRateFor(item.participant.userID) {
+                GSHeartRatePill(
+                    bpm: hr.bpm,
+                    zone: hr.zone,
+                    captionColor: isLifting ? theme.bg.opacity(0.85) : theme.neutral500
+                )
+                .padding(.top, 2)
+            }
         }
         .padding(10)
         .frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
@@ -1847,14 +1938,18 @@ struct GroupSessionLiveView: View {
             soundboardFavorites: dockSounds.map(\.slug),
             soundboardFavoriteLabels: dockSounds.map(\.label),
             isActive: WatchDisplayFormatting.isSessionActive(state: liveSession.state),
-            // Task 4 (watch-hr design §4) — tells the Watch whether to start
-            // its HR sampler for this session (T5 builds the sampler itself;
-            // this is the opt-in signal it will read). Sourced from
-            // `shareHeartRate` (populated in `openAndSubscribe()` above),
-            // not re-fetched here — same "already-fetched state, not a
-            // reimplementation" shape every other field on this payload
-            // already follows.
-            shareHeartRate: shareHeartRate
+            // Task 5 (watch-hr design §4) — tells the Watch whether to start
+            // its HR sampler for this session. DERIVED live from
+            // `ThemeStore.shared.shareHeartRate` on every call, the same
+            // "derive from observed state" fix `isActive` immediately above
+            // already established (see that field's own doc comment for
+            // the T3 precedent this mirrors) — NOT a locally cached
+            // `@State` snapshot fetched once, which was T4's carried-in bug
+            // (a mid-session toggle flip in `YouTabView` never reaching an
+            // already-open live session). `ThemeStore` is the live,
+            // cross-view cache of `user_settings` this app already
+            // maintains for exactly this purpose.
+            shareHeartRate: ThemeStore.shared.shareHeartRate
         )
         WatchConnectivityBridge.shared.updateSessionState(payload)
     }
@@ -1928,10 +2023,14 @@ struct GroupSessionLiveView: View {
         // to the curated-first-4 fallback in `dockSounds` — never blocks the session.
         soundCatalog = (try? await SoundboardRepository.fetchCatalog()) ?? []
         soundFavorites = (try? await SoundboardFavoritesRepository.get()) ?? []
-        // Task 4 (watch-hr design §4) — same best-effort fetch shape as
-        // `soundFavorites` immediately above; feeds `pushWatchSessionState()`'s
-        // `shareHeartRate` field below.
-        shareHeartRate = (try? await UserSettingsRepository.get())?.shareHeartRate ?? false
+        // Task 5 — the `shareHeartRate` fetch that used to live here was
+        // removed: `pushWatchSessionState()` now reads `ThemeStore.shared
+        // .shareHeartRate` live on every call instead (see that call site's
+        // own doc comment) — `ThemeStore.shared.load()` is bootstrapped
+        // once at `MainTabView`'s own `.task` (`App/RootView.swift:215-221`,
+        // "runs on every launch that reaches signed-in + profile-loaded
+        // state"), well before a user can navigate deep enough to reach a
+        // live session, so no separate fetch is needed here.
         // Phase W Task 3 — `soundFavorites` finishes loading AFTER the
         // `pushWatchSessionState()` call above (which itself already re-runs
         // post-`reload()`), so a Watch that's already reachable would
@@ -1972,6 +2071,66 @@ struct GroupSessionLiveView: View {
                 }
             }
         )
+        // Phase W Task 5 (watch-hr design §4) — subscribes alongside the
+        // soundboard/reaction broadcast subscribe immediately above, per
+        // the task brief's explicit instruction to add this "alongside its
+        // existing broadcast subscriptions." `onHeartRate` is already
+        // `@MainActor`-typed (`HeartRateBroadcastService.subscribe`'s own
+        // signature), so `receiveHeartRate` is called directly here, same
+        // as `onSoundboard`'s guard-then-mutate shape — no extra `Task {
+        // @MainActor in ... }` wrapper needed the way `onReaction` above
+        // uses one (that wrapper exists only because `showReactionOverlay`
+        // is itself `async`; `receiveHeartRate` is synchronous).
+        await heartRateService.subscribe(
+            sessionID: liveSession.id,
+            onHeartRate: { userID, bpm, zone in
+                receiveHeartRate(userID: userID, bpm: bpm, zone: zone)
+            }
+        )
+    }
+
+    // MARK: - Heart rate roster state (Phase W Task 5, watch-hr design §4)
+
+    /// Records a live HR reading and (re)schedules its 15s auto-expiry.
+    /// Cancels any PRIOR pending expiry `Task` for the same user first — a
+    /// fresh sample resets the clock, matching the design's own "one
+    /// broadcast per 5s" cadence (a healthy stream re-arms this every ~5s,
+    /// well under the 15s staleness window; three consecutive missed
+    /// broadcasts is what actually lets a pill go stale).
+    @MainActor
+    private func receiveHeartRate(userID: UUID, bpm: Int, zone: String?) {
+        let now = Date()
+        heartRates[userID] = (bpm, HeartRateZone(rawValue: zone ?? ""), now)
+        heartRateExpiryTasks[userID]?.cancel()
+        heartRateExpiryTasks[userID] = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(Self.heartRateStaleAfter * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            // Only purge if THIS task's own sample is still the latest one
+            // recorded — a cancel-race where a newer sample's replacement
+            // task already started is handled by the `cancel()` above, but
+            // this timestamp check is the second, authoritative guard
+            // (same "check right before mutating" discipline `ThemeStore
+            // .select(_:)`'s own cancellation-race doc comment describes).
+            if heartRates[userID]?.receivedAt == now {
+                withAnimation(.easeOut(duration: 0.3)) {
+                    heartRates[userID] = nil
+                }
+            }
+            heartRateExpiryTasks[userID] = nil
+        }
+    }
+
+    /// Freshness-gated read — `HeartRateFreshness.isFresh` (`Services/
+    /// HeartRateZone.swift`) is the AUTHORITATIVE staleness check (see that
+    /// type's own doc comment); the auto-purge `Task` above is memory
+    /// hygiene + a re-render trigger, not the source of truth. `rosterCard`
+    /// and `spotlightHeaderCard` both call this rather than reading
+    /// `heartRates` directly.
+    private func heartRateFor(_ userID: UUID) -> (bpm: Int, zone: HeartRateZone?)? {
+        guard let entry = heartRates[userID],
+              HeartRateFreshness.isFresh(receivedAt: entry.receivedAt, now: Date(), staleAfter: Self.heartRateStaleAfter)
+        else { return nil }
+        return (entry.bpm, entry.zone)
     }
 
     /// Show the incoming-sound transient overlay for 2.5 seconds.
