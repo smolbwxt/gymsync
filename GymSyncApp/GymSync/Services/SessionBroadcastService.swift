@@ -174,39 +174,67 @@ final class SessionBroadcastService {
         return true
     }
 
-    /// Send a broadcast message.  Uses the subscribed channel when available;
-    /// falls back to a disposable channel for send-without-subscribe callers.
+    /// Send a broadcast message.  Uses the subscribed channel when
+    /// available; falls back to a disposable channel for
+    /// send-without-subscribe callers — but only when the client-wide
+    /// topic registry shows nobody else already holds this exact topic.
+    ///
+    /// CHANNEL-COLLISION GUARD (debt-zero sprint, gate finding I-1 sibling
+    /// path): `WatchConnectivityBridge` owns a SEPARATE, send-only
+    /// `SessionBroadcastService` instance for the watch `soundboardTap`
+    /// relay (`Services/WatchConnectivityBridge.swift:129`,
+    /// `LiveSoundboardBroadcasting(broadcastService: SessionBroadcastService())`)
+    /// whose `channel` stays `nil` forever — every one of ITS sends used
+    /// to take the `else` branch below unconditionally, on the SAME
+    /// `session:{id}` topic `GroupSessionLiveView`'s own subscribed
+    /// instance already holds for the whole session. See
+    /// `BroadcastChannelDecision`'s doc comment
+    /// (`Services/BroadcastChannelDecision.swift`) for the full SDK-quote
+    /// writeup (hazard, fix, and residual-risk note) —
+    /// `HeartRateBroadcastService.publish` applies the identical fix to
+    /// its own topic.
     private func broadcastRaw(
         sessionID: UUID,
         event: String,
         message: JSONObject
     ) async {
+        let topic = "session:\(sessionID.uuidString)"
+        let client = SupabaseService.shared.client
+        let registryEntry = client.realtimeV2.channels["realtime:\(topic)"]
+
+        let decision = BroadcastChannelDecision.decide(
+            hasHeldChannel: channel != nil,
+            topicRegistered: registryEntry != nil
+        )
+
+        // Force-unwraps below are safe by construction — see
+        // `HeartRateBroadcastService.publish`'s identical comment
+        // (`Services/HeartRateBroadcastService.swift`) for the full
+        // reasoning; the same synchronous-no-await argument applies here.
         let ch: RealtimeChannelV2
-        if let active = channel {
-            ch = active
-        } else {
-            let tmp = SupabaseService.shared.client
-                .channel("session:\(sessionID.uuidString)")
-            await tmp.subscribe()
-            ch = tmp
-            // RIDER: disposable-channel fallback — remove it immediately after sending
-            // so we don't leak a dangling Realtime subscription.
-            defer {
-                Task { await SupabaseService.shared.client.removeChannel(tmp) }
-            }
-            do {
-                try await ch.broadcast(event: event, message: message)
-            } catch {
-                AppLogger.soundboard.error(
-                    "broadcast send failed (\(event, privacy: .public)): \(error, privacy: .public)")
-            }
-            return
+        switch decision {
+        case .reuseHeld:
+            ch = channel!
+        case .reuseRegistry:
+            ch = registryEntry!
+        case .createDisposable:
+            ch = client.channel(topic)
+            await ch.subscribe()
         }
+
         do {
             try await ch.broadcast(event: event, message: message)
         } catch {
             AppLogger.soundboard.error(
                 "broadcast send failed (\(event, privacy: .public)): \(error, privacy: .public)")
+        }
+
+        if decision == .createDisposable {
+            // RIDER: disposable-channel fallback — remove it immediately
+            // after sending so we don't leak a dangling Realtime
+            // subscription. Only reached when the registry check above
+            // found no existing holder for this topic at call time.
+            Task { await client.removeChannel(ch) }
         }
     }
 
