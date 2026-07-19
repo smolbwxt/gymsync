@@ -178,14 +178,21 @@ targets:
         # same as iOS whenever a target calls `HKHealthStore
         # .requestAuthorization` (`HeartRateSampler.requestAuthorizationIfNeeded`)
         # — omitting it is an instant HealthKit authorization-request crash
-        # on-device, not just an App Store rejection. No
-        # `NSHealthUpdateUsageDescription` here: this target only ever
-        # READS heart-rate samples (`toShare: []` in that same call) — it
-        # never writes to Health, unlike the PHONE target's own two health
-        # usage strings (`GymSync` target's `info.properties` above, which
-        # DOES export completed workouts). Copy mirrors the phone's own
-        # tone/specificity (`NSHealthShareUsageDescription` above).
+        # on-device, not just an App Store rejection. Copy mirrors the
+        # phone's own tone/specificity.
         NSHealthShareUsageDescription: "Gym Sync reads your heart rate during a live session to share it with the crew you're training with."
+        # EXPORT-VALIDATION-PROVEN REQUIRED (build 229's deploy failure,
+        # run 29705396236): Apple's exportArchive validation demands this
+        # key whenever the HealthKit ENTITLEMENT exists on the bundle,
+        # regardless of whether any write API is called — "While your app
+        # might not use these APIs, a purpose string is still required."
+        # The earlier reasoning here ("this target only ever READS, so no
+        # Update string") was plausible and empirically wrong. The string
+        # is honest: HKWorkoutBuilder's beginCollection is technically a
+        # Health-store write session even though every workout is
+        # discarded, never saved (see HeartRateSampler's header — the
+        # ephemeral law).
+        NSHealthUpdateUsageDescription: "Gym Sync uses a temporary workout session to read your heart rate continuously; nothing is ever saved to Apple Health by the watch app."
         # Background Modes -> Workout Processing. REQUIRED for
         # `HKWorkoutSession` to keep running (and therefore keep the
         # `HKAnchoredObjectQuery` update handler firing) once the watch
