@@ -20,7 +20,7 @@ struct LobbyView: View {
     @State private var routineInfo: (name: String, exercises: [RoutineExercise])? = nil
     /// Task 7 item 1 (pre-GA ledger): the full `Routine` row (not just
     /// `routineInfo`'s name/exercises projection) for this session's
-    /// `routineID`, ONLY so `startSession()` can read `visibility`/`ownerID`
+    /// `routineID`, ONLY so `startSession()` can read `visibility`
     /// to decide whether Starting should also fire the group-attempt hook.
     /// See that function's doc comment for the full gating rationale.
     @State private var routineForSession: Routine? = nil
