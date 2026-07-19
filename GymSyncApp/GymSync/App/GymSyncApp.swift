@@ -10,18 +10,19 @@ struct GymSyncApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     init() {
-        try? AudioSessionManager.shared.configure()
-        GSAppearance.apply()
         // Phase O Task 4 (master spec §6.8.5) — DSN-gated no-op when
         // `Secrets.sentryDSN` is empty (no Sentry project created yet, see
         // Config/Secrets.swift.template's USER ACTION note). See
         // `CrashReporting` (Services/CrashReporting.swift) for the
-        // hermetically-provable no-op path.
+        // hermetically-provable no-op path. Runs FIRST in init so a crash
+        // in any later setup call is already captured once a DSN is live.
         CrashReporting.shared.start(
             dsn: Secrets.sentryDSN,
             environment: Self.sentryEnvironment,
             release: Self.buildNumber
         )
+        try? AudioSessionManager.shared.configure()
+        GSAppearance.apply()
     }
 
     /// Sentry `environment` tag — separates noisy debug/simulator crashes

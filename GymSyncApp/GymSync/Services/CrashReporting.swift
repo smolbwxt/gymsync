@@ -64,6 +64,17 @@ struct SentryCrashReportingStarter: CrashReportingStarting {
             // breadcrumbs were skipped rather than added on top of this.
             options.enableAutoBreadcrumbTracking = false
 
+            // Reviewer-caught (Phase O T4 review, verified against live
+            // Sentry docs): these two are SEPARATE flags from
+            // `enableAutoBreadcrumbTracking`, both default TRUE, and both
+            // capture request URLs. `enableCaptureFailedRequests` is the
+            // dangerous one — it promotes failed HTTP responses (e.g. an
+            // RLS-denied Supabase call) to full Sentry ERROR EVENTS whose
+            // URL embeds `user_id=eq.<uuid>` — the exact leak the comment
+            // above exists to prevent.
+            options.enableNetworkBreadcrumbs = false
+            options.enableCaptureFailedRequests = false
+
             // No IP address / device-identifying PII beyond Sentry's own
             // install id (covers the "NO location" rule too — IP-based
             // geolocation is exactly what this flag would otherwise send).
