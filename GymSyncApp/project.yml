@@ -16,22 +16,59 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_TEAM: "299EBDGH62"
 
+## Debt-zero sprint, Task 2 Part 2 (2026-07-19): `from:` floors converted to
+## `exactVersion:` pins. GOAL: deterministic archive-time SDK resolution.
+## `Package.resolved` itself cannot be generated or committed from this
+## Windows machine (no Xcode/SPM here — see CLAUDE.md's Maestro branch
+## table: this is an `infra/*`-adjacent, non-macOS session); `exactVersion:`
+## pins in this file achieve the same determinism without one, since
+## xcodegen writes the resolved graph fresh from THIS file on every CI
+## checkout (the Xcode project itself is never committed, per the repo's
+## own law — "Swift compiles ONLY in GitHub Actions CI").
+##
+## REASONING: each pin below is the latest STABLE release satisfying the
+## previous `from:` floor, as of the last GREEN master CI run (commit
+## 62fa562, run 29706646158, completed 2026-07-19T22:42:57Z — `gh run list
+## --branch master --workflow ios.yml`). Because CI always resolves
+## "latest version satisfying the floor" at checkout time (no
+## Package.resolved was ever committed before this change), the most
+## recent stable release AS OF that run IS what that run actually built
+## against — pinning to it changes nothing about what's already shipped,
+## it just freezes it. Evidence (`gh api repos/<org>/<repo>/releases`,
+## checked against the last-green-run timestamp above):
+##   - Supabase 2.52.0: published 2026-07-15T18:30:43Z (4 days before the
+##     last green run; no newer release since — confirmed latest as of
+##     this edit).
+##   - LiveKit 2.15.2: published 2026-07-17T12:48:30Z (2 days before the
+##     last green run; no newer 2.x release since).
+##   - Sentry 8.58.4: published 2026-07-07T07:20:05Z. NOTE: sentry-cocoa's
+##     latest release overall is 9.22.0, but the pre-existing `from:
+##     8.36.0` floor is `upToNextMajor` (SPM/xcodegen semantics) — locked
+##     to the 8.x line, matching this file's OWN prior comment ("pinned to
+##     the newest sentry-cocoa release citable... 8.36.0, 2024" — an
+##     8.x choice, not an accident). 8.58.4 is the newest 8.x release and
+##     predates the last green run by 12 days.
+## RISK: a release landing between a package's own last-shipped date above
+## and "now" could shift behavior the pin doesn't reflect — none of the
+## three had such a gap (all last-released before the cited green run),
+## so this pin set matches what CI most recently built and shipped, not a
+## guess. Bumping any of these is a DELIBERATE, reviewed action (edit this
+## file), never automatic — that is the entire point of moving off `from:`.
 packages:
   Supabase:
     url: https://github.com/supabase/supabase-swift
-    from: 2.5.0
+    exactVersion: 2.52.0
   LiveKit:
     url: https://github.com/livekit/client-sdk-swift
-    from: 2.15.0
+    exactVersion: 2.15.2
   # Phase O Task 4 (master spec §6.8.5) — crash reporting, DSN-gated (see
   # Config/Secrets.swift[.template] and Services/CrashReporting.swift).
-  # `from:` floor pinned to the newest sentry-cocoa release citable from
-  # training knowledge at the time this was written (8.36.0, 2024) — same
-  # "from: <minimum>" idiom as Supabase/LiveKit above, so SPM/CI resolve
-  # whatever compatible version is newest at build time, not a hard pin.
+  # Pinned to the newest 8.x release (see the block comment above this
+  # `packages:` section for the full major-version-lock rationale — the
+  # original `from: 8.36.0` floor was itself an intentional 8.x choice).
   Sentry:
     url: https://github.com/getsentry/sentry-cocoa
-    from: 8.36.0
+    exactVersion: 8.58.4
 
 targets:
   GymSync:
