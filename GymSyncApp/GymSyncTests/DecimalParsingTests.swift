@@ -63,6 +63,28 @@ final class DecimalParsingTests: XCTestCase {
         XCTAssertNil(Decimal.parseUserInput("   "))
     }
 
+    func testTabOnlyIsInvalid() {
+        // Same bug class as the space-only case: `Decimal(string:locale:)`
+        // parses ANY whitespace-only string as 0 rather than failing — the
+        // fix trims via `.whitespacesAndNewlines`, which covers tabs too.
+        XCTAssertNil(Decimal.parseUserInput("\t"))
+    }
+
+    func testLoneSeparatorAfterTrimIsInvalid() {
+        // A string that trims down to just a separator with no digits
+        // (" . " -> ".") must still fail — trimming doesn't change this.
+        XCTAssertNil(Decimal.parseUserInput(" . "))
+    }
+
+    // MARK: - Incidental leading/trailing whitespace around real digits
+    // (deliberately ACCEPTED after trimming — see the helper's own
+    // "WHITESPACE FIX" doc comment for why: trimmed "5" is an unambiguous
+    // user intent, no reason to reject it just because of stray whitespace)
+
+    func testLeadingAndTrailingWhitespaceAroundDigitsIsAccepted() {
+        XCTAssertEqual(Decimal.parseUserInput(" 5 "), 5)
+    }
+
     // MARK: - Zero / negative pass-through (this helper only parses — the
     // "> 0" business rule stays each call site's own responsibility, same
     // as before this fix)

@@ -444,6 +444,21 @@ struct SeriesEditorView: View {
             // `routines`/`routineExerciseCounts` are snapshotted into local
             // `let`s before the `Task` so this closure doesn't depend on
             // `self` still being around after the sheet closes.
+            //
+            // Recovery picture if the app is killed mid-`Task` (added —
+            // Phase O Task 2 fix wave 1, reviewer Finding 2, same correction
+            // as `ScheduleSessionView.schedule()`'s equivalent comment): the
+            // remove-old loop is self-healing regardless (`removeEvent`
+            // only clears a mapping on confirmed-gone, so a killed remove
+            // just leaves that mapping for a later `reconcile()`/retry to
+            // clean up — see `removeEvent`'s own doc comment). The sync-new
+            // loop shares `syncEvent`'s narrower risk: an occurrence
+            // `syncEvent` was actively writing when the kill landed can hit
+            // the save-then-map window documented on `EventKitBridge.
+            // syncEvent` ("HONEST FAILURE MODE") and become a permanent,
+            // unmapped orphan event that duplicates on the next backfill —
+            // re-toggling calendar sync recovers occurrences this loop
+            // hadn't reached yet, not that one.
             let routinesSnapshot = routines
             let exerciseCountsSnapshot = routineExerciseCounts
             Task {

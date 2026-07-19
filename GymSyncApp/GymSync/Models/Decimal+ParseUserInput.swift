@@ -34,24 +34,49 @@ enum DecimalParsing {
     /// Parses user-typed weight/decimal input, accepting either `.` or `,`
     /// as the decimal separator.
     ///
-    /// Algorithm: reject anything with more than one separator character
-    /// total (across `.` and `,` combined) — a string like "1.234,5" or
-    /// "1,234.5" (thousands-grouped input) is NOT a case this helper
-    /// supports; every call site here is a small numeric-pad field for a
-    /// single weight/count value, never a thousands-formatted number, so
-    /// treating a double-separator string as invalid (rather than guessing
-    /// which one is the "real" decimal point) is the honest behavior — same
-    /// posture as the pre-existing `Decimal(string:)` call, which already
-    /// returned `nil` for malformed input and every caller already handles
-    /// that `nil` (disabled submit button / early return). A comma is then
-    /// normalized to a period and handed to `Decimal(string:)` with the
-    /// FIXED `Locale(identifier: "en_US_POSIX")` — not `Locale.current` —
-    /// so parsing behavior is deterministic and independent of the device's
-    /// actual locale once the separator itself has already been normalized.
+    /// Algorithm: trim leading/trailing whitespace first and reject an
+    /// empty (or whitespace-only) result outright — see "WHITESPACE FIX"
+    /// below for why this step exists. Then reject anything with more than
+    /// one separator character total (across `.` and `,` combined) — a
+    /// string like "1.234,5" or "1,234.5" (thousands-grouped input) is NOT
+    /// a case this helper supports; every call site here is a small
+    /// numeric-pad field for a single weight/count value, never a
+    /// thousands-formatted number, so treating a double-separator string as
+    /// invalid (rather than guessing which one is the "real" decimal
+    /// point) is the honest behavior — same posture as the pre-existing
+    /// `Decimal(string:)` call, which already returned `nil` for malformed
+    /// input and every caller already handles that `nil` (disabled submit
+    /// button / early return). A comma is then normalized to a period and
+    /// handed to `Decimal(string:)` with the FIXED `Locale(identifier:
+    /// "en_US_POSIX")` — not `Locale.current` — so parsing behavior is
+    /// deterministic and independent of the device's actual locale once the
+    /// separator itself has already been normalized.
+    ///
+    /// WHITESPACE FIX (Phase O Task 2, fix wave 1 — CI-caught: `Decimal
+    /// (string:locale:)`/`NSDecimalNumber` parses a whitespace-only string
+    /// as `0` rather than failing, so `DecimalParsingTests.
+    /// testWhitespaceOnlyIsInvalid` — which correctly expects `nil` — was
+    /// failing against the un-trimmed helper). Trimming BEFORE the
+    /// separator count/parse also means a string with incidental
+    /// leading/trailing whitespace around real digits (`" 5 "`) parses as
+    /// `5` rather than failing — a deliberate choice, not a side effect
+    /// left unexamined: none of this helper's `.decimalPad` call sites can
+    /// actually produce a string with leading/trailing whitespace around
+    /// digits today, but accepting it is strictly more permissive/correct
+    /// than rejecting it (a keyboard string with stray whitespace around an
+    /// otherwise-valid number is still an unambiguous user intent), so
+    /// there's no reason to special-case it back to `nil`. A string that
+    /// trims down to just a lone separator (e.g. `" . "` -> `"."`) still
+    /// fails after the fix too — `Decimal(string: ".", locale:
+    /// en_US_POSIX)` has no digits to parse, so it returns `nil` same as
+    /// any other non-numeric input; trimming doesn't change that outcome,
+    /// it only changes what reaches the separator-count/parse steps below.
     static func parse(_ input: String) -> Decimal? {
-        let separatorCount = input.filter { $0 == "." || $0 == "," }.count
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let separatorCount = trimmed.filter { $0 == "." || $0 == "," }.count
         guard separatorCount <= 1 else { return nil }
-        let normalized = input.replacingOccurrences(of: ",", with: ".")
+        let normalized = trimmed.replacingOccurrences(of: ",", with: ".")
         return Decimal(string: normalized, locale: Locale(identifier: "en_US_POSIX"))
     }
 }

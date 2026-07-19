@@ -97,6 +97,32 @@ enum EventKitBridge {
         return TimeInterval(minutes * 60)
     }
 
+    /// `reconcile()`'s stale-detection rule (Phase O Task 2, fix wave 1 —
+    /// reviewer Finding 3), extracted as a pure helper: no `EKEventStore` or
+    /// network access, just a dictionary lookup over already-fetched data,
+    /// so it's hermetically testable without a live `SessionRepository`
+    /// fetch. A mapped session id is stale when either:
+    ///   - it's ABSENT from `liveStates` — `reconcile()`'s own doc comment
+    ///     already establishes why "cancelled" and "nonexistent" collapse
+    ///     into this one "missing" signal: `sessions.state`'s CHECK
+    ///     constraint has no `'cancelled'` value at all (cancel hard-DELETEs
+    ///     the row), so a cancelled session's id simply never comes back
+    ///     from the batch fetch — indistinguishable, by design, from an id
+    ///     that never existed or that RLS no longer lets this user see; or
+    ///   - its live state IS present but equals `"abandoned"` (the
+    ///     cron-driven "Abandon at 6 hours" transition — see `reconcile()`'s
+    ///     doc comment for the migration citation).
+    /// `"completed"` and every other live state (`scheduled`, `lobby_open`,
+    /// `editing`, `voting`, `locked`, `in_progress`) are deliberately kept —
+    /// a session that already happened, or is still in some active
+    /// pre-workout state, keeps its calendar footprint.
+    static func staleSessionIDs(mappedIDs: [UUID], liveStates: [UUID: String]) -> [UUID] {
+        mappedIDs.filter { id in
+            guard let state = liveStates[id] else { return true } // cancelled/nonexistent
+            return state == "abandoned"
+        }
+    }
+
     // MARK: - Writes (best-effort — log, never throw into a caller's
     // server-mutation flow; every caller's own write must already have
     // succeeded before it reaches here)
@@ -111,6 +137,30 @@ enum EventKitBridge {
     /// (mirrors `HealthKitBridge.exportWorkout`'s own internal
     /// `HKHealthStore.isHealthDataAvailable()` guard on top of its callers'
     /// checks).
+    ///
+    /// HONEST FAILURE MODE (Phase O Task 2, fix wave 1 — reviewer Finding
+    /// 2; corrects an overstated "re-toggle recovers this" claim that used
+    /// to live in the call sites' own comments, see `ScheduleSessionView.
+    /// schedule()`/`SeriesEditorView.save()`): `store.save(event, span:)`
+    /// below and `SessionCalendarSyncStore.setEventIdentifier(...)` are two
+    /// separate statements, and a process kill lands between them the event
+    /// exists in the user's calendar but was never mapped. Verified this
+    /// window is already as narrow as it can be — the only thing between
+    /// them is the `guard let identifier = event.eventIdentifier` extraction
+    /// (required; `setEventIdentifier` needs that value), a synchronous,
+    /// non-throwing, no-I/O property read with no `await` in it, so there's
+    /// nothing left to remove — the two calls are adjacent. That narrow
+    /// window is still a REAL, permanent failure mode, not a false alarm: no
+    /// recovery path in this file (`reconcile()`, `removeEvent`'s callers,
+    /// `YouTabView.backfillCalendarSync`) ever looks at anything but MAPPED
+    /// session ids, so an unmapped-but-saved event is invisible to all of
+    /// them forever, AND the next backfill (finding no mapping) creates a
+    /// SECOND event for the same session rather than recovering the first —
+    /// re-toggling calendar sync duplicates this case, it does not fix it.
+    /// Building an orphan-detection subsystem (e.g. reverse-scanning
+    /// `EKEventStore` by title/notes against the mapping) would close this
+    /// gap but is out of scope for v1 — noted here as a possible future item,
+    /// not built.
     @discardableResult
     static func syncEvent(session: WorkoutSession, routineName: String?, exerciseCount: Int?) async -> String? {
         guard let start = session.scheduledFor else { return nil }
@@ -248,10 +298,7 @@ enum EventKitBridge {
         do {
             let liveSessions = try await SessionRepository.sessions(ids: ids)
             let liveStates = Dictionary(uniqueKeysWithValues: liveSessions.map { ($0.id, $0.state) })
-            let staleIDs = ids.filter { id in
-                guard let state = liveStates[id] else { return true } // cancelled/nonexistent
-                return state == "abandoned"
-            }
+            let staleIDs = staleSessionIDs(mappedIDs: ids, liveStates: liveStates)
             guard !staleIDs.isEmpty else {
                 AppLogger.calendar.info("reconcile: \(ids.count, privacy: .public) mapped session(s), 0 stale")
                 return

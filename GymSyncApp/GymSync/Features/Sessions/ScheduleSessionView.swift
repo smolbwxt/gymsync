@@ -691,14 +691,30 @@ struct ScheduleSessionView: View {
                 // `onScheduled` needed — the per-occurrence EventKit loop
                 // no longer gates the sheet close; it now runs fire-and-
                 // forget in a detached `Task`, best-effort as always
-                // (`EventKitBridge.syncEvent` never throws). If the app is
-                // killed mid-loop, `EventKitBridge.reconcile()`'s
-                // app-foreground sweep is NOT the safety net here (this
-                // loop only ADDS events, reconcile only REMOVES stale
-                // ones) — a killed-mid-loop series would simply be missing
-                // some of its calendar events, recoverable by toggling
-                // calendar sync off/on again (re-triggers
-                // `backfillCalendarSync`).
+                // (`EventKitBridge.syncEvent` never throws).
+                //
+                // TRUE recovery picture if the app is killed mid-loop
+                // (corrected — Phase O Task 2 fix wave 1, reviewer Finding
+                // 2; the previous version of this comment overstated
+                // re-toggle as full recovery). `EventKitBridge.reconcile()`'s
+                // app-foreground sweep is NOT the safety net here (this loop
+                // only ADDS events, reconcile only REMOVES stale ones).
+                // Occurrences the loop hadn't REACHED yet ARE fully
+                // recovered by toggling calendar sync off/on again
+                // (re-triggers `backfillCalendarSync`, which syncs every
+                // upcoming organized session with no existing mapping). But
+                // the ONE occurrence `syncEvent` was actively processing at
+                // the moment of the kill has a narrower, worse failure mode:
+                // see `EventKitBridge.syncEvent`'s own "HONEST FAILURE MODE"
+                // doc comment — if the kill lands in the one-statement-wide
+                // window between `store.save` and
+                // `SessionCalendarSyncStore.setEventIdentifier`, that
+                // event becomes a PERMANENT orphan (invisible to every
+                // recovery path here, all of which only look at mapped
+                // ids), and the next backfill creates a DUPLICATE for it
+                // rather than recovering it. Re-toggling is not a full fix
+                // for a mid-loop kill — it's a fix for the unreached tail
+                // only.
                 Task { await syncScheduledSessionsToCalendar(occurrences) }
             } catch let error as GymSyncError {
                 errorText = error.errorDescription

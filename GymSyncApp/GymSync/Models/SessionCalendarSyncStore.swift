@@ -31,26 +31,76 @@ import Foundation
 enum SessionCalendarSyncStore {
     private static let defaultsKey = "session_calendar_sync_map_v1"
 
+    /// Serializes every access below (Phase O Task 2, fix wave 1 — reviewer
+    /// Finding 1). `EventKitBridge.reconcile()`'s app-foreground sweep and
+    /// `YouTabView.disableCalendarSync()`'s toggle-off teardown both walk
+    /// `allSessionIDs()` and call `removeMapping`/`setEventIdentifier` from
+    /// their own independent `Task`s, with no actor or queue of their own
+    /// serializing them against each other — two such calls can genuinely
+    /// overlap (e.g. a reconcile sweep still running when the user flips the
+    /// toggle off). Each individual `UserDefaults` get/set is already
+    /// thread-safe, but the load-mutate-save SEQUENCE below is not: two
+    /// interleaved sequences can each read the same starting dictionary,
+    /// mutate their own copy, and save it back — the second save silently
+    /// overwrites (loses) the first's update, which can resurrect a mapping
+    /// whose `EKEvent` was already deleted by the other caller.
+    ///
+    /// Fix: one plain `NSLock` around every function's ENTIRE body (not just
+    /// `removeMapping`, which is where the race was first spotted — every
+    /// method here does its own load-mutate-save or load-only sequence and
+    /// needs the same guarantee). No API change — every call site
+    /// (`EventKitBridge`, `YouTabView`, `AuthService.signOut()`, and the
+    /// existing `SessionCalendarSyncStoreTests`) keeps calling these as
+    /// plain synchronous static functions. Judged against converting this to
+    /// an `actor`: an actor would force `await` onto every one of those call
+    /// sites (several of which are themselves already deep in `Task { }`
+    /// closures started after a UI dismiss — see `EventKitBridge.swift`'s
+    /// Item 2 history) for no benefit this store's callers need, since
+    /// nothing here ever awaits WHILE holding the lock (pure in-memory dict
+    /// work + synchronous `UserDefaults` calls) — a lock can never be held
+    /// across a suspension point here, so there's no actor-reentrancy
+    /// concern a lock would introduce that an actor wouldn't also have.
+    /// `NSLock` (not a `DispatchQueue`) because there's no async dispatch
+    /// need, just mutual exclusion around synchronous work — the lightest
+    /// idiom that fits.
+    private static let lock = NSLock()
+
     static func load(defaults: UserDefaults = .standard) -> [String: String] {
+        lock.lock()
+        defer { lock.unlock() }
+        return loadLocked(defaults: defaults)
+    }
+
+    /// Raw load with NO locking of its own — only ever called from inside a
+    /// block that already holds `lock`, so every public entry point below
+    /// can compose a multi-step load-mutate-save sequence under ONE lock
+    /// acquisition without `NSLock`'s non-reentrant self-deadlock risk.
+    private static func loadLocked(defaults: UserDefaults) -> [String: String] {
         guard let data = defaults.data(forKey: defaultsKey),
               let map = try? JSONDecoder().decode([String: String].self, from: data)
         else { return [:] }
         return map
     }
 
-    private static func save(_ map: [String: String], defaults: UserDefaults) {
+    /// Raw save, same "caller already holds `lock`" contract as
+    /// `loadLocked` above.
+    private static func saveLocked(_ map: [String: String], defaults: UserDefaults) {
         guard let data = try? JSONEncoder().encode(map) else { return }
         defaults.set(data, forKey: defaultsKey)
     }
 
     static func eventIdentifier(for sessionID: UUID, defaults: UserDefaults = .standard) -> String? {
-        load(defaults: defaults)[sessionID.uuidString]
+        lock.lock()
+        defer { lock.unlock() }
+        return loadLocked(defaults: defaults)[sessionID.uuidString]
     }
 
     static func setEventIdentifier(_ identifier: String, for sessionID: UUID, defaults: UserDefaults = .standard) {
-        var map = load(defaults: defaults)
+        lock.lock()
+        defer { lock.unlock() }
+        var map = loadLocked(defaults: defaults)
         map[sessionID.uuidString] = identifier
-        save(map, defaults: defaults)
+        saveLocked(map, defaults: defaults)
     }
 
     /// Removes the mapping for one session, returning the identifier that
@@ -59,9 +109,11 @@ enum SessionCalendarSyncStore {
     /// with `Dictionary.removeValue(forKey:)`'s own signature.
     @discardableResult
     static func removeMapping(for sessionID: UUID, defaults: UserDefaults = .standard) -> String? {
-        var map = load(defaults: defaults)
+        lock.lock()
+        defer { lock.unlock() }
+        var map = loadLocked(defaults: defaults)
         let removed = map.removeValue(forKey: sessionID.uuidString)
-        save(map, defaults: defaults)
+        saveLocked(map, defaults: defaults)
         return removed
     }
 
@@ -70,7 +122,9 @@ enum SessionCalendarSyncStore {
     /// walk every session this device has ever synced without the caller
     /// tracking that list separately.
     static func allSessionIDs(defaults: UserDefaults = .standard) -> [UUID] {
-        load(defaults: defaults).keys.compactMap(UUID.init)
+        lock.lock()
+        defer { lock.unlock() }
+        return loadLocked(defaults: defaults).keys.compactMap(UUID.init)
     }
 
     /// Wipes the mapping. Call on sign-out (`AuthService.signOut()`) — same
@@ -82,6 +136,8 @@ enum SessionCalendarSyncStore {
     /// `StatTilesSnapshotStore.clear()` forgets cached numbers without
     /// un-doing anything server-side.
     static func clear(defaults: UserDefaults = .standard) {
+        lock.lock()
+        defer { lock.unlock() }
         defaults.removeObject(forKey: defaultsKey)
     }
 }
