@@ -121,6 +121,31 @@ final class AuthService {
         // state, even though RLS makes the fetch a silent no-op in the
         // common case.
         AppState.shared.pendingRoute = nil
+        // Deliberately NOT cleared here: `OfflineSetLogQueue`'s SwiftData-
+        // backed pending-writes queue (Services/OfflineSetLogQueue.swift).
+        // This looks like the same shared-device gap as chatDrafts/
+        // pendingRoute/currentProfile above, but it isn't — a gate finding
+        // caught an actual instance of the naive fix (clear-on-signout)
+        // being WORSE than doing nothing: this device may hold this user's
+        // own not-yet-synced reps (still offline, or online but not yet
+        // drained), and wiping them here would silently destroy real
+        // workout data the lifter believes is saved. The finding also
+        // caught the OPPOSITE failure mode of leaving the queue
+        // unscoped — the next user to sign in on this device would have
+        // their auth-transition drain (`RootView`'s `.onChange(of:
+        // auth.state)`) replay THIS user's still-queued rows under the
+        // next user's Supabase session, hitting an RLS denial that
+        // `OfflineSetLogQueue.replay()`'s permanent-drop bucket would then
+        // silently discard — losing this user's reps AND submitting their
+        // set content under someone else's identity.
+        // Fix (see `OfflineSetLogQueue`'s class doc comment): every row
+        // already carries `PendingSetLog.userID`, so `replay()` and
+        // `refreshPendingIDs()` now scope to rows where `userID` equals the
+        // CURRENTLY signed-in user's id instead. That makes leaving the
+        // queue unscoped by sign-out actually SAFE: this user's queued rows sit invisible
+        // and unreplayable to anyone else until this same user signs back
+        // in on this device, at which point they drain normally — the
+        // honest fix, not clear-on-signout's data loss.
         state = .signedOut
     }
 

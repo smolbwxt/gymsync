@@ -68,7 +68,27 @@ final class OfflineSetLogQueueTests: XCTestCase {
         }
     }
 
+    /// Fake for `CurrentUserIDProviding` (Services/OfflineSetLogQueue.swift)
+    /// — lets a test pin exactly which user the queue currently believes is
+    /// signed in, without ever touching the real `AuthService.shared`
+    /// singleton (whose `init` kicks off an async `bootstrap()` that hits
+    /// `SupabaseService` — not hermetic). Same "protocol + test fake" idiom
+    /// as `FakeSetLogSubmitter`/`ParkingSubmitter` above.
+    private final class FakeCurrentUserIDProvider: CurrentUserIDProviding {
+        var currentUserID: UUID?
+        init(currentUserID: UUID?) { self.currentUserID = currentUserID }
+    }
+
     // MARK: - Helpers
+
+    /// Fixed per-test-instance default so `makeSetLog()`'s default `userID`
+    /// and `makeQueue()`'s default fake `currentUserID` agree without every
+    /// test written before the gate's user-scoping fix (none of which
+    /// mention a user at all) needing to pass either explicitly — see both
+    /// helpers below. XCTest creates a fresh `OfflineSetLogQueueTests`
+    /// instance (and so a fresh UUID here) per test method, so this can't
+    /// leak identity across tests.
+    private let defaultUserID = UUID()
 
     private func makeInMemoryContext() throws -> ModelContext {
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
@@ -76,10 +96,24 @@ final class OfflineSetLogQueueTests: XCTestCase {
         return ModelContext(container)
     }
 
-    private func makeSetLog(id: UUID = UUID(), reps: Int = 5, weight: Decimal = 100,
+    /// Constructs the queue under test with a `FakeCurrentUserIDProvider`
+    /// ALWAYS injected explicitly — never `OfflineSetLogQueue`'s production
+    /// default (`AuthServiceCurrentUserIDProvider`), which would touch the
+    /// real `AuthService.shared` singleton the moment `configure()` (called
+    /// by nearly every test) triggers `refreshPendingIDs()`. Defaults to
+    /// `defaultUserID`, matching `makeSetLog()`'s own default, so every
+    /// pre-gate-fix test keeps working unmodified — the queue's "current
+    /// user" and the fixture's "set owner" agree unless a test explicitly
+    /// says otherwise (the foreign-user tests below do, via both params).
+    private func makeQueue(submitter: SetLogSubmitting, userID: UUID? = nil) -> OfflineSetLogQueue {
+        OfflineSetLogQueue(submitter: submitter,
+                            userIDProvider: FakeCurrentUserIDProvider(currentUserID: userID ?? defaultUserID))
+    }
+
+    private func makeSetLog(id: UUID = UUID(), userID: UUID? = nil, reps: Int = 5, weight: Decimal = 100,
                              isFailed: Bool = false, isPenalty: Bool = false) -> SetLog {
         SetLog(
-            id: id, userID: UUID(), sessionID: UUID(), exerciseID: UUID(),
+            id: id, userID: userID ?? defaultUserID, sessionID: UUID(), exerciseID: UUID(),
             setIndex: 1, reps: reps, weight: weight, rpe: 7,
             isFailed: isFailed, isPenalty: isPenalty, note: nil, loggedAt: Date()
         )
@@ -108,7 +142,7 @@ final class OfflineSetLogQueueTests: XCTestCase {
 
     func testEnqueueAddsToPendingIDsAndPersists() throws {
         let context = try makeInMemoryContext()
-        let queue = OfflineSetLogQueue(submitter: FakeSetLogSubmitter())
+        let queue = makeQueue(submitter: FakeSetLogSubmitter())
         queue.configure(modelContext: context)
 
         let log = makeSetLog()
@@ -124,7 +158,7 @@ final class OfflineSetLogQueueTests: XCTestCase {
 
     func testEnqueueIsIdempotentOnDuplicateID() throws {
         let context = try makeInMemoryContext()
-        let queue = OfflineSetLogQueue(submitter: FakeSetLogSubmitter())
+        let queue = makeQueue(submitter: FakeSetLogSubmitter())
         queue.configure(modelContext: context)
 
         let log = makeSetLog()
@@ -137,7 +171,7 @@ final class OfflineSetLogQueueTests: XCTestCase {
 
     func testEnqueueBeforeConfigureIsHarmlessNoOp() {
         // No configure(modelContext:) call — enqueue must not crash.
-        let queue = OfflineSetLogQueue(submitter: FakeSetLogSubmitter())
+        let queue = makeQueue(submitter: FakeSetLogSubmitter())
         queue.enqueue(makeSetLog())
         XCTAssertTrue(queue.pendingSetLogIDs.isEmpty)
     }
@@ -147,7 +181,7 @@ final class OfflineSetLogQueueTests: XCTestCase {
     func testReplaySubmitsInEnqueueOrderOldestFirst() async throws {
         let context = try makeInMemoryContext()
         let submitter = FakeSetLogSubmitter()
-        let queue = OfflineSetLogQueue(submitter: submitter)
+        let queue = makeQueue(submitter: submitter)
         queue.configure(modelContext: context)
 
         let now = Date()
@@ -172,7 +206,7 @@ final class OfflineSetLogQueueTests: XCTestCase {
     func testReplayTreatsConflictAsSuccessAndRemoves() async throws {
         let context = try makeInMemoryContext()
         let submitter = FakeSetLogSubmitter()
-        let queue = OfflineSetLogQueue(submitter: submitter)
+        let queue = makeQueue(submitter: submitter)
         queue.configure(modelContext: context)
 
         let log = makeSetLog()
@@ -191,7 +225,7 @@ final class OfflineSetLogQueueTests: XCTestCase {
     func testReplayDropsPermanentFailureAndSurfacesReason() async throws {
         let context = try makeInMemoryContext()
         let submitter = FakeSetLogSubmitter()
-        let queue = OfflineSetLogQueue(submitter: submitter)
+        let queue = makeQueue(submitter: submitter)
         queue.configure(modelContext: context)
 
         let log = makeSetLog()
@@ -209,7 +243,7 @@ final class OfflineSetLogQueueTests: XCTestCase {
     func testReplayDropsNotFoundAndUnknownAsPermanentToo() async throws {
         let context = try makeInMemoryContext()
         let submitter = FakeSetLogSubmitter()
-        let queue = OfflineSetLogQueue(submitter: submitter)
+        let queue = makeQueue(submitter: submitter)
         queue.configure(modelContext: context)
 
         let notFound = makeSetLog()
@@ -229,7 +263,7 @@ final class OfflineSetLogQueueTests: XCTestCase {
     func testReplayStopsPassOnTransientFailureKeepingRemainderQueued() async throws {
         let context = try makeInMemoryContext()
         let submitter = FakeSetLogSubmitter()
-        let queue = OfflineSetLogQueue(submitter: submitter)
+        let queue = makeQueue(submitter: submitter)
         queue.configure(modelContext: context)
 
         let now = Date()
@@ -284,7 +318,7 @@ final class OfflineSetLogQueueTests: XCTestCase {
         // lifter's captured reps are never dropped over an auth hiccup.
         let context = try makeInMemoryContext()
         let submitter = FakeSetLogSubmitter()
-        let queue = OfflineSetLogQueue(submitter: submitter)
+        let queue = makeQueue(submitter: submitter)
         queue.configure(modelContext: context)
 
         let log = makeSetLog()
@@ -307,7 +341,7 @@ final class OfflineSetLogQueueTests: XCTestCase {
     func testReplayKeepsUnauthorizedBelowEscalationThreshold() async throws {
         let context = try makeInMemoryContext()
         let submitter = FakeSetLogSubmitter()
-        let queue = OfflineSetLogQueue(submitter: submitter)
+        let queue = makeQueue(submitter: submitter)
         queue.configure(modelContext: context)
 
         let log = makeSetLog()
@@ -332,7 +366,7 @@ final class OfflineSetLogQueueTests: XCTestCase {
     func testReplayDropsUnauthorizedAtEscalationThreshold() async throws {
         let context = try makeInMemoryContext()
         let submitter = FakeSetLogSubmitter()
-        let queue = OfflineSetLogQueue(submitter: submitter)
+        let queue = makeQueue(submitter: submitter)
         queue.configure(modelContext: context)
 
         let log = makeSetLog()
@@ -360,7 +394,7 @@ final class OfflineSetLogQueueTests: XCTestCase {
     func testMixedNetworkThenUnauthorizedDoesNotInflateEscalation() async throws {
         let context = try makeInMemoryContext()
         let submitter = FakeSetLogSubmitter()
-        let queue = OfflineSetLogQueue(submitter: submitter)
+        let queue = makeQueue(submitter: submitter)
         queue.configure(modelContext: context)
 
         let log = makeSetLog()
@@ -394,7 +428,7 @@ final class OfflineSetLogQueueTests: XCTestCase {
     func testReplayPrunesEntriesOlderThan90DaysBeforeSubmitting() async throws {
         let context = try makeInMemoryContext()
         let submitter = FakeSetLogSubmitter()
-        let queue = OfflineSetLogQueue(submitter: submitter)
+        let queue = makeQueue(submitter: submitter)
         queue.configure(modelContext: context)
 
         let stale = makeSetLog()
@@ -415,7 +449,7 @@ final class OfflineSetLogQueueTests: XCTestCase {
     func testReplayKeepsEntriesJustUnder90Days() async throws {
         let context = try makeInMemoryContext()
         let submitter = FakeSetLogSubmitter()
-        let queue = OfflineSetLogQueue(submitter: submitter)
+        let queue = makeQueue(submitter: submitter)
         queue.configure(modelContext: context)
 
         let almostStale = makeSetLog()
@@ -427,11 +461,173 @@ final class OfflineSetLogQueueTests: XCTestCase {
         XCTAssertEqual(submitter.submittedIDsInOrder, [almostStale.id])
     }
 
+    /// ADJUDICATION test (see `pruneExpired()`'s own doc comment in
+    /// Services/OfflineSetLogQueue.swift): the 90-day prune pass is
+    /// deliberately GLOBAL, not scoped to the current user — age-based
+    /// on-device housekeeping never talks to the server, so a different
+    /// user's >90-day-old row must still be pruned from the store even
+    /// though `replay()` itself would never submit it.
+    func testReplayPrunesForeignUsersStaleEntriesToo() async throws {
+        let context = try makeInMemoryContext()
+        let submitter = FakeSetLogSubmitter()
+        let foreignUserID = UUID()
+        let queue = makeQueue(submitter: submitter)
+        queue.configure(modelContext: context)
+
+        let staleForeign = makeSetLog(userID: foreignUserID)
+        insertPending(staleForeign, enqueuedAt: Date().addingTimeInterval(-91 * 24 * 60 * 60), into: context)
+        try context.save()
+
+        await queue.replay()
+
+        XCTAssertTrue(submitter.submittedIDsInOrder.isEmpty, "a foreign row is never submitted, stale or not")
+        XCTAssertTrue(try context.fetch(FetchDescriptor<PendingSetLog>()).isEmpty,
+                       "prune is global — a foreign user's stale row must still be deleted from the on-device store")
+    }
+
+    // MARK: - User-scoping (gate finding — shared-device queue leak)
+    //
+    // Prior to this fix, `replay()` fetched EVERY `PendingSetLog` row with
+    // no user filter and the SwiftData container is device-global, not
+    // per-user. On a shared device: user A queues sets offline, signs out
+    // (the queue is deliberately NOT cleared, see AuthService.signOut()'s
+    // doctrine comment), user B signs in — the auth-transition drain would
+    // replay A's rows under B's Supabase session, hit an RLS denial
+    // (42501 → `.validation` via ErrorMapping), and silently drop them via
+    // the permanent-failure bucket: A's captured reps lost, and A's set
+    // content transmitted under B's identity. These tests exercise the fix
+    // (`PendingSetLog.userID`-scoped fetches in `replay()` and
+    // `refreshPendingIDs()`).
+
+    /// A DIFFERENT user's queued row must survive a full `replay()` pass
+    /// completely untouched: never submitted (never even fetched under the
+    /// current user's session), never dropped, never removed from the
+    /// SwiftData store or reported via `lastPermanentFailure`.
+    func testReplaySkipsForeignUserRowsEntirely() async throws {
+        let context = try makeInMemoryContext()
+        let submitter = FakeSetLogSubmitter()
+        let foreignUserID = UUID()
+        let queue = makeQueue(submitter: submitter) // current user = defaultUserID
+
+        let foreignLog = makeSetLog(userID: foreignUserID)
+        insertPending(foreignLog, enqueuedAt: Date(), into: context)
+        try context.save()
+        queue.configure(modelContext: context)
+
+        await queue.replay()
+
+        XCTAssertTrue(submitter.submittedIDsInOrder.isEmpty,
+                       "a foreign user's row must never be submitted under the current user's session")
+        XCTAssertNil(queue.lastPermanentFailure, "a skipped foreign row must not read as a dropped/failed submit")
+        let stored = try context.fetch(FetchDescriptor<PendingSetLog>())
+        XCTAssertEqual(stored.map(\.id), [foreignLog.id], "the foreign row must survive untouched in the store")
+        XCTAssertFalse(queue.pendingSetLogIDs.contains(foreignLog.id),
+                        "the foreign row must not appear in the current user's pendingSetLogIDs either")
+    }
+
+    /// A queue holding BOTH a foreign user's row and the current user's own
+    /// row: `replay()` must submit only the current user's row, leave the
+    /// foreign row queued and untouched, and remove only the current
+    /// user's row from the store on success.
+    func testReplaySubmitsOnlyCurrentUserRowsWhenQueueIsMixed() async throws {
+        let context = try makeInMemoryContext()
+        let submitter = FakeSetLogSubmitter()
+        let foreignUserID = UUID()
+        let queue = makeQueue(submitter: submitter)
+
+        let mine = makeSetLog() // defaultUserID — matches makeQueue()'s default current user
+        let theirs = makeSetLog(userID: foreignUserID)
+        insertPending(theirs, enqueuedAt: Date(), into: context)
+        insertPending(mine, enqueuedAt: Date().addingTimeInterval(10), into: context)
+        try context.save()
+        queue.configure(modelContext: context)
+
+        await queue.replay()
+
+        XCTAssertEqual(submitter.submittedIDsInOrder, [mine.id],
+                        "only the current user's row should ever reach the submitter")
+        XCTAssertTrue(queue.pendingSetLogIDs.isEmpty, "the current user's own row drains normally")
+        let stored = try context.fetch(FetchDescriptor<PendingSetLog>())
+        XCTAssertEqual(stored.map(\.id), [theirs.id], "the foreign row must be the only one left in the store")
+    }
+
+    /// `refreshPendingIDs()` — the UI-badge cache backing the "syncing"
+    /// chips (`WorkoutSessionView.loggedSetsTable`, `GroupSessionLiveView.
+    /// feedRow`) — must exclude a foreign user's rows: a second user on a
+    /// shared device must never see a syncing indicator for content that
+    /// isn't theirs. Exercised both via `configure()`'s internal call and a
+    /// direct re-call (mirrors RootView's `.onChange(of: auth.state)` hook).
+    func testRefreshPendingIDsExcludesForeignUserRows() throws {
+        let context = try makeInMemoryContext()
+        let submitter = FakeSetLogSubmitter()
+        let foreignUserID = UUID()
+        let queue = makeQueue(submitter: submitter)
+
+        let mine = makeSetLog()
+        let theirs = makeSetLog(userID: foreignUserID)
+        insertPending(theirs, enqueuedAt: Date(), into: context)
+        insertPending(mine, enqueuedAt: Date(), into: context)
+        try context.save()
+
+        queue.configure(modelContext: context) // configure() calls refreshPendingIDs() internally
+        XCTAssertEqual(queue.pendingSetLogIDs, [mine.id],
+                        "pendingSetLogIDs must contain only the current user's rows, never a foreign user's")
+
+        queue.refreshPendingIDs() // direct re-call, same as RootView's auth-transition hook
+        XCTAssertEqual(queue.pendingSetLogIDs, [mine.id])
+    }
+
+    /// Defensive nil-handling (brief's explicit requirement): no signed-in
+    /// user — e.g. a replay call racing a sign-out transition, or running
+    /// before `AuthService.bootstrap()` resolves — must skip the ENTIRE
+    /// pass rather than guess which rows are "safe." Nothing submitted,
+    /// nothing dropped, nothing even pruned (the guard returns before
+    /// `pruneExpired()` runs).
+    func testReplaySkipsEntirePassWhenNoUserSignedIn() async throws {
+        let context = try makeInMemoryContext()
+        let submitter = FakeSetLogSubmitter()
+        let queue = OfflineSetLogQueue(submitter: submitter,
+                                        userIDProvider: FakeCurrentUserIDProvider(currentUserID: nil))
+
+        let log = makeSetLog()
+        insertPending(log, enqueuedAt: Date(), into: context)
+        try context.save()
+        queue.configure(modelContext: context)
+
+        await queue.replay()
+
+        XCTAssertTrue(submitter.submittedIDsInOrder.isEmpty, "no signed-in user means nothing should ever be submitted")
+        XCTAssertNil(queue.lastPermanentFailure)
+        XCTAssertEqual(try context.fetch(FetchDescriptor<PendingSetLog>()).count, 1,
+                        "the row must survive completely untouched — not even pruned")
+    }
+
+    /// `refreshPendingIDs()` with no signed-in user must reset to empty,
+    /// not "leave whatever was cached" — a prior user's in-memory IDs must
+    /// not linger into a signed-out state either.
+    func testRefreshPendingIDsIsEmptyWhenNoUserSignedIn() throws {
+        let context = try makeInMemoryContext()
+        let provider = FakeCurrentUserIDProvider(currentUserID: defaultUserID)
+        let queue = OfflineSetLogQueue(submitter: FakeSetLogSubmitter(), userIDProvider: provider)
+
+        let mine = makeSetLog()
+        insertPending(mine, enqueuedAt: Date(), into: context)
+        try context.save()
+        queue.configure(modelContext: context)
+        XCTAssertEqual(queue.pendingSetLogIDs, [mine.id])
+
+        provider.currentUserID = nil // simulate the sign-out transition
+        queue.refreshPendingIDs()
+
+        XCTAssertTrue(queue.pendingSetLogIDs.isEmpty,
+                       "signing out must clear the in-memory badge cache, not leave the previous user's IDs cached")
+    }
+
     // MARK: - Not configured
 
     func testReplayIsNoOpWhenNeverConfigured() async {
         let submitter = FakeSetLogSubmitter()
-        let queue = OfflineSetLogQueue(submitter: submitter)
+        let queue = makeQueue(submitter: submitter)
         await queue.replay() // must not crash
         XCTAssertTrue(submitter.submittedIDsInOrder.isEmpty)
     }
@@ -441,7 +637,7 @@ final class OfflineSetLogQueueTests: XCTestCase {
     func testReplayReentrancyGuardSkipsConcurrentPass() async throws {
         let context = try makeInMemoryContext()
         let submitter = ParkingSubmitter()
-        let queue = OfflineSetLogQueue(submitter: submitter)
+        let queue = makeQueue(submitter: submitter)
         queue.configure(modelContext: context)
         queue.enqueue(makeSetLog())
 

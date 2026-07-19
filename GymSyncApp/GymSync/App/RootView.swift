@@ -106,10 +106,26 @@ struct RootView: View {
         // is `.signedIn` — including the ordinary sign-in transition, where
         // it's a harmless extra call: `OfflineSetLogQueue.replay()` is
         // idempotent and reentrancy-guarded (`isReplaying`, Services/
-        // OfflineSetLogQueue.swift — declared ~102, checked/set ~154-156),
-        // so overlapping with the `.task`'s own call is a no-op,
-        // not a double-submit.
+        // OfflineSetLogQueue.swift — declared ~154, checked/set ~218-219;
+        // shifted again by the gate fix below, re-verified post-edit same
+        // as fix wave 2's own NEW-2 correction did), so overlapping with
+        // the `.task`'s own call is a no-op, not a double-submit.
+        //
+        // Gate fix (shared-device queue-scoping finding, task-3-report.md
+        // "## Gate fix"): `OfflineSetLogQueue.refreshPendingIDs()` is now
+        // ALSO re-called on every transition through this same hook — not
+        // just from `configure()`'s one-time call in the `.task` above.
+        // `pendingSetLogIDs` drives the "syncing" UI badges
+        // (`WorkoutSessionView.loggedSetsTable`, `GroupSessionLiveView.
+        // feedRow`) and, like `replay()`, is now scoped to the CURRENT
+        // signed-in user (`OfflineSetLogQueue.swift`'s class doc comment).
+        // Without re-syncing here, a second user signing into a shared
+        // device would keep seeing whatever was left in memory from the
+        // first user's session until the next `configure()` call (which
+        // never happens again post-launch) — this hook is the one place
+        // guaranteed to fire on every sign-in AND sign-out.
         .onChange(of: auth.state) {
+            OfflineSetLogQueue.shared.refreshPendingIDs()
             guard case .signedIn = auth.state else { return }
             Task { await OfflineSetLogQueue.shared.replay() }
         }

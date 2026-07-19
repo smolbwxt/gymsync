@@ -30,6 +30,14 @@ import SwiftData
 @Model
 final class PendingSetLog {
     @Attribute(.unique) var id: UUID
+    /// Mirrors `SetLog.userID`. The SwiftData store is device-global, not
+    /// per-user, so this field is what `OfflineSetLogQueue.replay()` and
+    /// `.refreshPendingIDs()` filter on to scope both the replay pass and
+    /// the UI "syncing" badge cache to the CURRENTLY signed-in user only —
+    /// gate finding on a shared-device leak where a second user's replay
+    /// could otherwise pick up and submit the first user's still-queued
+    /// rows under the wrong auth session (see `OfflineSetLogQueue`'s class
+    /// doc comment and task-3-report.md's "## Gate fix" section).
     var userID: UUID
     var sessionID: UUID
     var exerciseID: UUID

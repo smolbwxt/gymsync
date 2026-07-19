@@ -24,6 +24,32 @@ struct SupabaseSetLogSubmitter: SetLogSubmitting {
     }
 }
 
+// MARK: - Current-user seam
+
+/// Abstracts "who's the signed-in user right now" so `replay()`'s and
+/// `refreshPendingIDs()`'s per-user scoping (gate finding on the shared-
+/// device queue leak — see class doc comment below and task-3-report.md's
+/// "## Gate fix" section) is hermetically testable, same "protocol +
+/// production conformer + test fake" idiom as `SetLogSubmitting` above and
+/// `VoiceRoomService`'s `VoiceTokenFetching` seam.
+protocol CurrentUserIDProviding {
+    var currentUserID: UUID? { get }
+}
+
+/// Production conformer — reads `AuthService.state`, the SAME synchronous
+/// accessor `RootView` already pattern-matches on for every replay trigger
+/// (`case .signedIn(let userID) = auth.state`, App/RootView.swift), so this
+/// isn't a second source of truth, just the existing one made injectable.
+/// `nil` for `.pending`/`.signedOut` — a call that races a sign-out (or
+/// runs before bootstrap resolves) has no user to scope to and must skip
+/// cleanly rather than guess.
+struct AuthServiceCurrentUserIDProvider: CurrentUserIDProviding {
+    var currentUserID: UUID? {
+        guard case .signedIn(let userID) = AuthService.shared.state else { return nil }
+        return userID
+    }
+}
+
 // MARK: - Offline set-log queue
 
 /// Master spec §6.4's "pending writes queue" for set logs — SCOPE: set
@@ -36,6 +62,23 @@ struct SupabaseSetLogSubmitter: SetLogSubmitting {
 /// `@MainActor` also keeps every `ModelContext` touch on one actor, which
 /// SwiftData expects (a context is not meant to be used concurrently from
 /// multiple threads).
+///
+/// **User-scoped (gate finding, post-ship).** The SwiftData container is
+/// global to the device, not per-user — on a shared device, user A could
+/// queue sets offline, sign out (this queue is deliberately NOT cleared on
+/// sign-out, see `AuthService.signOut()`'s doctrine comment), and user B
+/// could sign in and have the auth-transition drain (`RootView`'s
+/// `.onChange(of: auth.state)`) replay A's rows under B's Supabase session
+/// — landing a server-side RLS denial (42501) that `ErrorMapping` maps to
+/// `.validation`, which `replay()`'s permanent-drop bucket then silently
+/// discards. Net effect: A's captured reps lost, and A's set content sent
+/// to the server under B's identity. Fixed by scoping `replay()` and
+/// `refreshPendingIDs()` to rows where `PendingSetLog.userID` equals the
+/// CURRENTLY signed-in user's id (`PendingSetLog.swift` already carried
+/// `userID` — it mirrors every `SetLog` field 1:1). USER-SCOPING was chosen over
+/// clear-on-signout: clearing would destroy A's still-legitimate queued
+/// sets; scoping preserves them for A's own return while making them
+/// invisible (and unreplayable) to anyone else in the meantime.
 @Observable
 @MainActor
 final class OfflineSetLogQueue {
@@ -70,8 +113,11 @@ final class OfflineSetLogQueue {
     /// this threshold now means exactly what its name says.
     static let maxUnauthorizedAttempts = 10
 
-    /// IDs currently queued (enqueued, not yet confirmed landed server-side).
-    /// Views check membership to render the "syncing" indicator — e.g.
+    /// IDs currently queued (enqueued, not yet confirmed landed server-side)
+    /// for the CURRENT signed-in user only (gate finding — see class doc
+    /// comment: a shared-device second user must never see a "syncing" chip
+    /// on rows that are actually the FIRST user's still-queued sets). Views
+    /// check membership to render the "syncing" indicator — e.g.
     /// `WorkoutSessionView.loggedSetsTable`'s row icon,
     /// `GroupSessionLiveView.feedRow`'s tag row (both wired in Phase O
     /// Task 3). Read directly like `ConnectivityMonitor.shared.isOnline` —
@@ -93,6 +139,12 @@ final class OfflineSetLogQueue {
     private(set) var lastPermanentFailure: (setLogID: UUID, message: String)?
 
     private let submitter: SetLogSubmitting
+    /// Gate finding's scoping seam (see class doc comment) — production
+    /// default reads `AuthService.state`; tests inject a fake so this file
+    /// never touches the real `AuthService.shared` singleton (whose `init`
+    /// kicks off an async `bootstrap()` that hits `SupabaseService` — not
+    /// hermetic).
+    private let userIDProvider: CurrentUserIDProviding
     private var modelContext: ModelContext?
     /// Reentrancy guard — mirrors `EventKitBridge.isReconciling`'s exact
     /// idiom (Services/EventKitBridge.swift:240): best-effort de-dupe, not a
@@ -101,8 +153,10 @@ final class OfflineSetLogQueue {
     /// incorrect, since each pass re-fetches from the SwiftData store fresh).
     private var isReplaying = false
 
-    init(submitter: SetLogSubmitting = SupabaseSetLogSubmitter()) {
+    init(submitter: SetLogSubmitting = SupabaseSetLogSubmitter(),
+         userIDProvider: CurrentUserIDProviding = AuthServiceCurrentUserIDProvider()) {
         self.submitter = submitter
+        self.userIDProvider = userIDProvider
     }
 
     /// Must be called once (RootView, Phase O Task 3) with the app's
@@ -149,15 +203,36 @@ final class OfflineSetLogQueue {
     ///                              + `lastPermanentFailure`)
     /// Also prunes entries older than `retentionWindow` before attempting
     /// any submits (spec's 90-day window).
+    ///
+    /// Scoped to the CURRENT signed-in user only (gate finding — class doc
+    /// comment): fetches only `PendingSetLog` rows whose `userID` matches
+    /// `userIDProvider.currentUserID`, so a different user's still-queued
+    /// rows are never even fetched, let alone submitted under this user's
+    /// auth session. No signed-in user → skip the WHOLE pass (nothing to
+    /// scope to); every real trigger site (RootView) already gates on
+    /// `.signedIn` before calling this, so that should be rare in practice
+    /// — logged so a gap is traceable, matching this file's existing
+    /// "log what's dropped/skipped" norm.
     func replay() async {
         guard let modelContext else { return }
         guard !isReplaying else { return }
         isReplaying = true
         defer { isReplaying = false }
 
+        guard let userID = userIDProvider.currentUserID else {
+            AppLogger.workout.notice("OfflineSetLogQueue.replay skipped — no signed-in user")
+            return
+        }
+
+        // Prune stays GLOBAL (not scoped to `userID`) — deliberate, see
+        // pruneExpired()'s own doc comment: age-based housekeeping of
+        // another user's >90-day-old rows is fine, unlike replay, which
+        // would submit those rows to the server under the WRONG user's
+        // auth session.
         pruneExpired(modelContext: modelContext)
 
         let descriptor = FetchDescriptor<PendingSetLog>(
+            predicate: #Predicate { $0.userID == userID },
             sortBy: [SortDescriptor(\.enqueuedAt, order: .forward)]
         )
         guard let items = try? modelContext.fetch(descriptor), !items.isEmpty else { return }
@@ -254,6 +329,16 @@ final class OfflineSetLogQueue {
     /// windows that read `set_logs`, so silently losing them is the
     /// accepted trade-off of the window, not a bug; the log line exists so
     /// it's traceable if a user ever reports a missing old set.
+    ///
+    /// ADJUDICATION (gate finding, user-scoping fix): deliberately NOT
+    /// scoped to `userIDProvider.currentUserID`, unlike `replay()` and
+    /// `refreshPendingIDs()`. This is pure age-based local housekeeping —
+    /// it only ever deletes from the on-device store, it never talks to the
+    /// server — so pruning a DIFFERENT user's ancient (>90d) rows on a
+    /// shared device is harmless and arguably correct (nobody's still
+    /// waiting on a 90-day-stale queued set regardless of whose it is).
+    /// Scoping this pass would just leave other users' stale rows to pile
+    /// up forever on a device they may never sign back into.
     private func pruneExpired(modelContext: ModelContext) {
         let cutoff = Date().addingTimeInterval(-Self.retentionWindow)
         let descriptor = FetchDescriptor<PendingSetLog>(
@@ -268,9 +353,23 @@ final class OfflineSetLogQueue {
         try? modelContext.save()
     }
 
-    private func refreshPendingIDs() {
+    /// Rebuilds `pendingSetLogIDs` for the CURRENT signed-in user only (gate
+    /// finding — class doc comment). Not `private`: `configure()` below
+    /// calls it once at setup, and `RootView`'s auth-transition hook
+    /// (`.onChange(of: auth.state)`) also calls it directly so a shared
+    /// device re-syncs the in-memory badge cache on EVERY sign-in/sign-out,
+    /// not just at cold launch — otherwise user B could briefly inherit
+    /// user A's "syncing" chips left over in memory from A's session.
+    /// No signed-in user → empty set, not "leave whatever was there": a
+    /// prior user's IDs must not linger across the transition either.
+    func refreshPendingIDs() {
         guard let modelContext else { return }
-        let items = (try? modelContext.fetch(FetchDescriptor<PendingSetLog>())) ?? []
+        guard let userID = userIDProvider.currentUserID else {
+            pendingSetLogIDs = []
+            return
+        }
+        let descriptor = FetchDescriptor<PendingSetLog>(predicate: #Predicate { $0.userID == userID })
+        let items = (try? modelContext.fetch(descriptor)) ?? []
         pendingSetLogIDs = Set(items.map(\.id))
     }
 }
