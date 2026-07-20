@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(39);
+SELECT plan(41);
 
 -- ============================================================
 -- campaigns / campaign_participants / campaign_progress — Phase C Task 1
@@ -27,9 +27,19 @@ SELECT plan(39);
 --     session_participants row is 'no_show' (not 'ready') at completion ->
 --     readiness gate excludes him -> zero campaign_progress row.
 -- Campaign B (DRAFT, individual_target={"workouts_completed":1},
---   curated_routine_ids=[routine_B]). Sole participant: grace. Grace has
---   NO group memberships -- proves a completion crossing with zero groups
---   silently produces zero chat rows (not an error).
+--   curated_routine_ids=[routine_B]). Participants: grace, noah.
+--   grace: has NO group memberships -- her crossing historically proved
+--     "zero groups -> zero chat rows, no error" on the fan-out path;
+--     since 20260728000005 the draft gate suppresses her message before
+--     fan-out is even reached (the zero-groups fan-out behavior itself is
+--     still exercised by liam/mia below, who cross NON-draft Campaign W's
+--     target with zero group memberships).
+--   noah (Fix wave 1 / 20260728000005): IS in a group ("Camp Draft
+--     Crew") and crosses draft Campaign B's target -- the pointed
+--     draft-gate proof: before 000005 his completion message WOULD have
+--     fanned into his group (the exact live pollution incident the
+--     migration's header records); after it, progress must still accrue
+--     but zero chat rows may land.
 -- Campaign E (non-draft, individual_target=NULL,
 --   curated_routine_ids=[routine_E]). Sole participant: karen -- proves a
 --   NULL individual_target never raises and never sends a completion
@@ -67,7 +77,8 @@ INSERT INTO auth.users (id, email) VALUES
   ('ca000000-0000-0000-0000-0000000000aa', 'camp_jack@t.com'),
   ('ca000000-0000-0000-0000-0000000000ab', 'camp_karen@t.com'),
   ('ca000000-0000-0000-0000-0000000000ac', 'camp_liam@t.com'),
-  ('ca000000-0000-0000-0000-0000000000ad', 'camp_mia@t.com');
+  ('ca000000-0000-0000-0000-0000000000ad', 'camp_mia@t.com'),
+  ('ca000000-0000-0000-0000-0000000000ae', 'camp_noah@t.com');
 INSERT INTO profiles (id, username) VALUES
   ('ca000000-0000-0000-0000-0000000000a1', 'ca_alice'),
   ('ca000000-0000-0000-0000-0000000000a2', 'ca_bob'),
@@ -81,12 +92,15 @@ INSERT INTO profiles (id, username) VALUES
   ('ca000000-0000-0000-0000-0000000000aa', 'ca_jack'),
   ('ca000000-0000-0000-0000-0000000000ab', 'ca_karen'),
   ('ca000000-0000-0000-0000-0000000000ac', 'ca_liam'),
-  ('ca000000-0000-0000-0000-0000000000ad', 'ca_mia');
+  ('ca000000-0000-0000-0000-0000000000ad', 'ca_mia'),
+  ('ca000000-0000-0000-0000-0000000000ae', 'ca_noah');
 
 INSERT INTO groups (id, name, created_by) VALUES
-  ('cf000000-0000-0000-0000-000000000001', 'Camp Test Crew', 'ca000000-0000-0000-0000-0000000000a1');
+  ('cf000000-0000-0000-0000-000000000001', 'Camp Test Crew', 'ca000000-0000-0000-0000-0000000000a1'),
+  ('cf000000-0000-0000-0000-000000000002', 'Camp Draft Crew', 'ca000000-0000-0000-0000-0000000000ae');
 INSERT INTO group_members (group_id, user_id, role) VALUES
-  ('cf000000-0000-0000-0000-000000000001', 'ca000000-0000-0000-0000-0000000000a1', 'admin');
+  ('cf000000-0000-0000-0000-000000000001', 'ca000000-0000-0000-0000-0000000000a1', 'admin'),
+  ('cf000000-0000-0000-0000-000000000002', 'ca000000-0000-0000-0000-0000000000ae', 'admin');
 
 -- Routines: routine_A (curated by A), routine_dave (curated by nobody),
 -- routine_B (curated by B), routine_E (curated by E), routine_W (curated
@@ -128,6 +142,7 @@ INSERT INTO campaign_participants (campaign_id, user_id) VALUES
   ('cb000000-0000-0000-0000-000000000001', 'ca000000-0000-0000-0000-0000000000a5'), -- erin
   ('cb000000-0000-0000-0000-000000000001', 'ca000000-0000-0000-0000-0000000000a6'), -- frank
   ('cb000000-0000-0000-0000-000000000002', 'ca000000-0000-0000-0000-0000000000a7'), -- grace (draft)
+  ('cb000000-0000-0000-0000-000000000002', 'ca000000-0000-0000-0000-0000000000ae'), -- noah (draft, HAS a group)
   ('cb000000-0000-0000-0000-000000000003', 'ca000000-0000-0000-0000-0000000000ab'), -- karen
   ('cb000000-0000-0000-0000-000000000004', 'ca000000-0000-0000-0000-0000000000ac'), -- liam
   ('cb000000-0000-0000-0000-000000000004', 'ca000000-0000-0000-0000-0000000000ad'); -- mia
@@ -317,8 +332,11 @@ SELECT results_eq(
 
 -- ============================================================
 -- Grace: draft Campaign B, workouts_completed=1 target, crosses on her
--- only completion. She belongs to zero groups -- the fan-out INSERT must
--- silently produce zero rows, not error.
+-- only completion. Progress must accrue normally (draft-ness never gates
+-- ACCRUAL -- 20260728000002's own header, reaffirmed by 20260728000005).
+-- Her message is suppressed by the draft gate (she also belongs to zero
+-- groups, which would have produced zero chat rows anyway pre-000005 --
+-- noah below is the fixture that actually distinguishes the gate).
 -- ============================================================
 INSERT INTO sessions (id, organizer_id, routine_id, state, started_at) VALUES
   ('ce000000-0000-0000-0000-000000000008', 'ca000000-0000-0000-0000-0000000000a7',
@@ -337,6 +355,42 @@ SELECT results_eq(
     WHERE campaign_id = 'cb000000-0000-0000-0000-000000000002' AND user_id = 'ca000000-0000-0000-0000-0000000000a7'$$,
   $$VALUES (1, 1, 480.00::numeric)$$,
   'grace: draft campaign, 1/1 crosses workouts_completed target, progress still accrues normally'
+);
+
+
+-- ============================================================
+-- Noah (Fix wave 1 / 20260728000005 — the draft-gate proof): draft
+-- Campaign B participant who, unlike grace, DOES belong to a group
+-- ("Camp Draft Crew"). His crossing must accrue progress but land ZERO
+-- chat rows — before 000005 the fan-out would have posted the completion
+-- message into his group (the exact live "Men for Christ" pollution
+-- incident the migration's header records); the draft gate must now
+-- suppress it even though the fan-out target genuinely exists.
+-- ============================================================
+INSERT INTO sessions (id, organizer_id, routine_id, state, started_at) VALUES
+  ('ce000000-0000-0000-0000-00000000000c', 'ca000000-0000-0000-0000-0000000000ae',
+   'cd000000-0000-0000-0000-000000000003', 'in_progress', now() - interval '20 minutes');
+INSERT INTO session_participants (session_id, user_id, check_in_state, check_in_at) VALUES
+  ('ce000000-0000-0000-0000-00000000000c', 'ca000000-0000-0000-0000-0000000000ae', 'ready', now() - interval '18 minutes');
+INSERT INTO set_logs (id, user_id, session_id, exercise_id, set_index, reps, weight, is_penalty, is_failed)
+SELECT gen_random_uuid(), 'ca000000-0000-0000-0000-0000000000ae',
+       'ce000000-0000-0000-0000-00000000000c', ex.id, 1, 5, 60, false, false
+  FROM (SELECT id FROM exercises WHERE slug = 'bench-press' LIMIT 1) ex;
+UPDATE sessions SET state = 'completed', completed_at = now() - interval '2 minutes'
+  WHERE id = 'ce000000-0000-0000-0000-00000000000c';
+
+SELECT results_eq(
+  $$SELECT sessions_completed, workouts_completed, volume_lifted FROM campaign_progress
+    WHERE campaign_id = 'cb000000-0000-0000-0000-000000000002' AND user_id = 'ca000000-0000-0000-0000-0000000000ae'$$,
+  $$VALUES (1, 1, 300.00::numeric)$$,
+  'noah: draft campaign crossing -- progress accrues normally (draft gate never touches accrual)'
+);
+
+SELECT results_eq(
+  $$SELECT count(*)::int FROM chat_messages
+    WHERE kind = 'system_campaign' AND payload->>'user_id' = 'ca000000-0000-0000-0000-0000000000ae'$$,
+  ARRAY[0],
+  'noah: draft campaign crossing WITH a real group -- draft gate suppresses the completion message (would have fanned into Camp Draft Crew pre-000005)'
 );
 
 
@@ -392,7 +446,7 @@ SELECT results_eq(
 SELECT results_eq(
   $$SELECT count(*)::int FROM chat_messages WHERE kind = 'system_campaign'$$,
   ARRAY[1],
-  'exactly one system_campaign message total -- grace''s crossing (zero groups) produced zero chat rows, no error'
+  'exactly one system_campaign message total -- alice''s non-draft crossing; grace/noah suppressed by the draft gate (000005), liam/mia''s non-draft crossings fan into zero groups without error'
 );
 
 
@@ -420,12 +474,14 @@ SELECT throws_ok(
   'campaign_community_progress: draft campaign rejects a non-participant stranger'
 );
 
--- Campaign B, queried by its own participant (grace): succeeds.
+-- Campaign B, queried by its own participant (grace): succeeds. Sum:
+-- grace(1,1,480) + noah(1,1,300) = (2,2,780) since the Fix wave 1 noah
+-- fixture joined B and accrued.
 SET LOCAL request.jwt.claim.sub = 'ca000000-0000-0000-0000-0000000000a7'; -- grace
 SELECT results_eq(
   $$SELECT sessions_completed, workouts_completed, volume_lifted
     FROM public.campaign_community_progress('cb000000-0000-0000-0000-000000000002')$$,
-  $$VALUES (1::bigint, 1::bigint, 480.00::numeric)$$,
+  $$VALUES (2::bigint, 2::bigint, 780.00::numeric)$$,
   'campaign_community_progress: draft campaign readable by its own participant'
 );
 

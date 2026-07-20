@@ -750,60 +750,77 @@ async function main() {
   }
   console.log(`  campaign_participants: ${me.username} joined (${existingParticipant ? 'already' : 'this run'})`);
 
-  // Fixture session completion — same "walk it through for real via a
+  // Fixture session completions — same "walk it through for real via a
   // genuine scheduled -> completed transition" idiom as the streak/Murph
   // blocks above, so the REAL `campaign_progress_on_session_completion`
   // trigger computes campaign_progress itself (never hand-written).
   // `routine_id` = The Murph (a member of `campaignCuratedIDs` above) so the
   // trigger's `NEW.routine_id = ANY(c.curated_routine_ids)` predicate
-  // matches. Fixed, deterministic timestamps (never `now()`) as this
-  // block's natural key, same reasoning as MURPH_ATTEMPT_SCHEDULED_FOR
+  // matches. Fixed, deterministic timestamps (never `now()`) as each
+  // session's natural key, same reasoning as MURPH_ATTEMPT_SCHEDULED_FOR
   // above — the `state=eq.scheduled` filter on the completion PATCH makes
   // every run after the first a no-op (0 rows), so the trigger fires
-  // EXACTLY once regardless of how many times this script re-runs, even if
-  // a much later re-run has since PATCHed the campaign's own starts_at/
-  // ends_at window forward past this fixed completed_at — the accrual
-  // already happened and is not re-derived from the campaign's current
-  // window on every read (same "this session's own completed_at decided
-  // membership once, at the one moment the trigger runs" contract the
-  // trigger's own header documents, `20260728000002:77-87`).
-  const CAMPAIGN_PROGRESS_SCHEDULED_FOR = '2026-07-19T15:00:00.000Z';
-  const CAMPAIGN_PROGRESS_COMPLETED_AT = '2026-07-19T15:45:00.000Z';
+  // EXACTLY once per session regardless of how many times this script
+  // re-runs, even if a much later re-run has since PATCHed the campaign's
+  // own starts_at/ends_at window forward past these fixed completed_ats —
+  // the accrual already happened and is not re-derived from the campaign's
+  // current window on every read (same "this session's own completed_at
+  // decided membership once, at the one moment the trigger runs" contract
+  // the trigger's own header documents, `20260728000002:77-87`).
+  //
+  // TWO sessions (Fix wave 1): the second exists for the post-
+  // 20260728000005 live re-proof — the draft gate migration needed a
+  // FRESH trigger firing to verify against (session 1's completion had
+  // already fired, pre-fix, and can never re-fire). On a fresh database
+  // both complete in order; on the live database session 2 provided the
+  // post-fix crossing (after a one-time, ad-hoc service-role reset of the
+  // QA campaign's own campaign_progress row — our test artifact — so the
+  // completion genuinely re-crossed the {"sessions":1} target; documented
+  // in task-3-report.md's Fix wave 1 transcript, deliberately NOT part of
+  // this script: an in-script progress reset would re-cross the target on
+  // every run, which is exactly the repeated-firing shape idempotency
+  // exists to prevent).
+  const CAMPAIGN_FIXTURE_SESSIONS = [
+    { scheduledFor: '2026-07-19T15:00:00.000Z', completedAt: '2026-07-19T15:45:00.000Z' },
+    { scheduledFor: '2026-07-19T18:00:00.000Z', completedAt: '2026-07-19T18:45:00.000Z' },
+  ];
   const murphRoutineID = featuredWorkoutIDs['The Murph'];
 
-  let [progressSession] = await rest(
-    `sessions?select=id,state&organizer_id=eq.${me.id}&routine_id=eq.${murphRoutineID}` +
-    `&scheduled_for=eq.${encodeURIComponent(CAMPAIGN_PROGRESS_SCHEDULED_FOR)}`);
-  if (!progressSession) {
-    [progressSession] = await rest('sessions', { method: 'POST', headers: rep,
+  for (const fx of CAMPAIGN_FIXTURE_SESSIONS) {
+    let [progressSession] = await rest(
+      `sessions?select=id,state&organizer_id=eq.${me.id}&routine_id=eq.${murphRoutineID}` +
+      `&scheduled_for=eq.${encodeURIComponent(fx.scheduledFor)}`);
+    if (!progressSession) {
+      [progressSession] = await rest('sessions', { method: 'POST', headers: rep,
+        body: JSON.stringify({
+          organizer_id: me.id, routine_id: murphRoutineID, state: 'scheduled',
+          scheduled_for: fx.scheduledFor,
+        }) });
+    }
+
+    await rest('session_participants', { method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates' },
       body: JSON.stringify({
-        organizer_id: me.id, routine_id: murphRoutineID, state: 'scheduled',
-        scheduled_for: CAMPAIGN_PROGRESS_SCHEDULED_FOR,
+        session_id: progressSession.id, user_id: me.id,
+        check_in_state: 'ready', check_in_at: fx.scheduledFor,
       }) });
+
+    // One real set_log per session so volume_lifted accrues a nonzero,
+    // honest number (back-squat, 5 reps @ 135 lbs = 675) rather than 0 —
+    // same "weight IS NOT NULL" shape the trigger's own volume SUM
+    // requires (20260728000002_campaign_progress_trigger.sql:256-261).
+    const existingProgressLogs = await rest(
+      `set_logs?select=id&session_id=eq.${progressSession.id}&user_id=eq.${me.id}`);
+    if (!existingProgressLogs.length) {
+      await rest('set_logs', { method: 'POST', body: JSON.stringify([{
+        id: randomUUID(), user_id: me.id, session_id: progressSession.id,
+        exercise_id: bySlug['back-squat'], set_index: 1, reps: 5, weight: 135,
+      }]) });
+    }
+
+    await rest(`sessions?id=eq.${progressSession.id}&state=eq.scheduled`, { method: 'PATCH',
+      body: JSON.stringify({ state: 'completed', completed_at: fx.completedAt }) });
   }
-
-  await rest('session_participants', { method: 'POST',
-    headers: { Prefer: 'resolution=merge-duplicates' },
-    body: JSON.stringify({
-      session_id: progressSession.id, user_id: me.id,
-      check_in_state: 'ready', check_in_at: CAMPAIGN_PROGRESS_SCHEDULED_FOR,
-    }) });
-
-  // One real set_log so volume_lifted accrues a nonzero, honest number
-  // (back-squat, 5 reps @ 135 lbs = 675) rather than 0 — same "weight IS
-  // NOT NULL" shape the trigger's own volume SUM requires
-  // (20260728000002_campaign_progress_trigger.sql:256-261).
-  const existingProgressLogs = await rest(
-    `set_logs?select=id&session_id=eq.${progressSession.id}&user_id=eq.${me.id}`);
-  if (!existingProgressLogs.length) {
-    await rest('set_logs', { method: 'POST', body: JSON.stringify([{
-      id: randomUUID(), user_id: me.id, session_id: progressSession.id,
-      exercise_id: bySlug['back-squat'], set_index: 1, reps: 5, weight: 135,
-    }]) });
-  }
-
-  await rest(`sessions?id=eq.${progressSession.id}&state=eq.scheduled`, { method: 'PATCH',
-    body: JSON.stringify({ state: 'completed', completed_at: CAMPAIGN_PROGRESS_COMPLETED_AT }) });
 
   const [progressRow] = await rest(
     `campaign_progress?select=sessions_completed,workouts_completed,volume_lifted&campaign_id=eq.${campaign.id}&user_id=eq.${me.id}`);
