@@ -62,32 +62,32 @@ final class CampaignTests: XCTestCase {
 
     // MARK: - CampaignProgressMath.fractionComplete (progress %)
 
-    func testFractionComplete_partialProgress() {
+    func testFractionComplete_partialProgress() throws {
         let target = CampaignIndividualTarget(sessions: 12, workoutsCompleted: nil)
         let fraction = CampaignProgressMath.fractionComplete(progress: progress(sessions: 3, workouts: 3), target: target)
-        XCTAssertEqual(fraction, 0.25, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(fraction), 0.25, accuracy: 0.0001)
     }
 
-    func testFractionComplete_zeroProgress_isZero() {
+    func testFractionComplete_zeroProgress_isZero() throws {
         let target = CampaignIndividualTarget(sessions: 12, workoutsCompleted: nil)
         let fraction = CampaignProgressMath.fractionComplete(progress: nil, target: target)
-        XCTAssertEqual(fraction, 0.0, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(fraction), 0.0, accuracy: 0.0001)
     }
 
-    func testFractionComplete_exactlyAtTarget_isOne() {
+    func testFractionComplete_exactlyAtTarget_isOne() throws {
         let target = CampaignIndividualTarget(sessions: 12, workoutsCompleted: nil)
         let fraction = CampaignProgressMath.fractionComplete(progress: progress(sessions: 12, workouts: 12), target: target)
-        XCTAssertEqual(fraction, 1.0, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(fraction), 1.0, accuracy: 0.0001)
     }
 
-    func testFractionComplete_pastTarget_clampsToOne() {
+    func testFractionComplete_pastTarget_clampsToOne() throws {
         // A late duration-edit or a campaign whose window re-triggers can
         // never actually push counters past the target in this schema (the
         // trigger only ever increments), but the math itself must not
         // render a >100% bar if it somehow did.
         let target = CampaignIndividualTarget(sessions: 12, workoutsCompleted: nil)
         let fraction = CampaignProgressMath.fractionComplete(progress: progress(sessions: 15, workouts: 15), target: target)
-        XCTAssertEqual(fraction, 1.0, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(fraction), 1.0, accuracy: 0.0001)
     }
 
     func testFractionComplete_noRecognizedTarget_isNil() {
