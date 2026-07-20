@@ -5,13 +5,13 @@ import SwiftUI
 // Phase C Task 2 — reached from `CampaignsTabView`'s rows and `HomeView`'s
 // carousel card. Flow 8 (spec :867): "Campaign detail page: description,
 // dates, curated workout list, current community progress bar, individual
-// target, per-campaign leaderboard." Curated workout list is scoped OUT —
-// `curated_routine_ids` resolves to `Routine` rows via `RoutineRepository`,
-// which is real work with its own layout/empty-state decisions and isn't
-// named as a blocking dependency for the progress/leaderboard/join surfaces
-// this task's brief actually enumerates (repository/sub-tab/carousel/
-// detail's progress+leaderboard+join+badge) — ledgered as a gap for a
-// follow-up task, not silently dropped.
+// target, per-campaign leaderboard." Curated workout list closes here (Phase
+// C Task 3, folded in from the T2 review's ruling) — `curated_routine_ids`
+// resolves to `PublicWorkout` rows via `PublicWorkoutRepository.
+// workoutsByIDs(_:)` (`Models/PublicWorkout.swift`), rendered by
+// `curatedWorkoutsSection` below and tapping through to
+// `DiscoverWorkoutDetailView`, the same "existing routine detail/attempt
+// surface" Discover itself navigates to (`DiscoverView.swift:66-71`).
 //
 // No canvas frame exists for this screen (see `CampaignsTabView.swift`'s
 // own header for the grep). System-designed: leaderboard row shape mirrors
@@ -30,6 +30,7 @@ struct CampaignDetailView: View {
     @State private var myProgress: CampaignProgress?
     @State private var community: CampaignCommunityProgress?
     @State private var leaderboard: [CampaignLeaderboardRow] = []
+    @State private var curatedWorkouts: [PublicWorkout] = []
     @State private var loading = true
     @State private var errorText: String?
     @State private var joinLeaveInFlight = false
@@ -54,6 +55,15 @@ struct CampaignDetailView: View {
                     GSErrorCard(message: errorText) { Task { await loadAll() } }
                         .padding(16)
                 } else {
+                    // Flow 8's own field order (spec :867): "description,
+                    // dates, curated workout list, current community
+                    // progress bar, individual target, per-campaign
+                    // leaderboard" — header (description/dates) already
+                    // rendered above; curated list comes next, ahead of the
+                    // progress bars.
+                    if !curatedWorkouts.isEmpty {
+                        curatedWorkoutsSection
+                    }
                     communitySection
                     if isJoined {
                         myProgressSection
@@ -139,6 +149,67 @@ struct CampaignDetailView: View {
 
     private var windowStateTagStyle: GSTagStyle {
         campaign.windowState() == .active ? .accent : .neutral
+    }
+
+    // MARK: - Curated workout list (Flow 8 :867 — closes the header's own
+    // former scope-out note, Phase C Task 3)
+    //
+    // Empty `curated_routine_ids` -> section hidden entirely (checked at the
+    // call site above, `!curatedWorkouts.isEmpty`) — no empty-state noise
+    // for a campaign that names no workouts.
+    //
+    // Row shape: name + owner caption + FEATURED tag, borrowed from
+    // `DiscoverView.workoutCard`'s content fields (`DiscoverView.swift:133-
+    // 183`) but as a compact tappable ROW (not a grid card with an image
+    // placeholder) — this is one supplementary section within a scrolling
+    // detail page, not its own grid destination, same "smaller local re-
+    // implementation, not a cross-file extraction" convention this file
+    // already uses for `leaderboardRow`/`communitySection` above (each
+    // borrows a shape and cites it rather than sharing a component).
+    // Divider-between-rows + chevron-affordance idiom reused directly from
+    // this file's own `leaderboardSection`/`DiscoverView.topLiftersRow`.
+    private var curatedWorkoutsSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            GSSectionHeader("Workouts")
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 10)
+            ForEach(Array(curatedWorkouts.enumerated()), id: \.element.id) { index, workout in
+                NavigationLink {
+                    DiscoverWorkoutDetailView(workout: workout)
+                } label: {
+                    curatedWorkoutRow(workout)
+                }
+                .buttonStyle(.plain)
+                if index < curatedWorkouts.count - 1 {
+                    Rectangle().fill(theme.divider).frame(height: 1).padding(.horizontal, 16)
+                }
+            }
+        }
+    }
+
+    private func curatedWorkoutRow(_ workout: PublicWorkout) -> some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(workout.routine.name)
+                        .font(GSFont.bold(14, relativeTo: .subheadline))
+                        .foregroundStyle(theme.text)
+                    if workout.isFeatured {
+                        GSTag(text: "FEATURED", style: .accent)
+                    }
+                }
+                Text("by \(workout.ownerUsername)")
+                    .font(GSFont.body(11, relativeTo: .caption2))
+                    .foregroundStyle(theme.neutral500)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(theme.neutral500)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
     }
 
     // MARK: - Community progress (Flow 8 :877-880)
@@ -278,11 +349,20 @@ struct CampaignDetailView: View {
             // attempted — CampaignRepository.leaderboard's own doc comment
             // explains why a non-participant must not call it at all rather
             // than rendering its (always-empty, RLS-denied) result.
+            // Curated workouts is best-effort (try?, same posture as
+            // DiscoverView.load()'s attemptCounts fetch,
+            // `DiscoverView.swift:207-208`) — a transient failure here
+            // shouldn't blank the whole detail page over a supplementary
+            // section; it just renders as if `curated_routine_ids` were empty.
             async let participationFetch = CampaignRepository.myParticipation(campaignID: campaign.id)
             async let communityFetch = CampaignRepository.communityProgress(campaignID: campaign.id)
+            async let curatedFetch: [PublicWorkout] = (try? await PublicWorkoutRepository.workoutsByIDs(
+                campaign.curatedRoutineIDs
+            )) ?? []
             let participation = try await participationFetch
             myParticipation = participation
             community = try await communityFetch
+            curatedWorkouts = await curatedFetch
             if participation != nil {
                 async let progressFetch = CampaignRepository.myProgress(campaignID: campaign.id)
                 async let leaderboardFetch = CampaignRepository.leaderboard(campaignID: campaign.id)
@@ -389,13 +469,15 @@ extension CampaignDetailView {
         catalogFixtureParticipation participation: CampaignParticipant?,
         catalogFixtureProgress progress: CampaignProgress?,
         catalogFixtureCommunity community: CampaignCommunityProgress,
-        catalogFixtureLeaderboard leaderboard: [CampaignLeaderboardRow] = []
+        catalogFixtureLeaderboard leaderboard: [CampaignLeaderboardRow] = [],
+        catalogFixtureCuratedWorkouts curatedWorkouts: [PublicWorkout] = []
     ) {
         self.campaign = campaign
         _myParticipation = State(initialValue: participation)
         _myProgress = State(initialValue: progress)
         _community = State(initialValue: community)
         _leaderboard = State(initialValue: leaderboard)
+        _curatedWorkouts = State(initialValue: curatedWorkouts)
         _loading = State(initialValue: false)
         catalogSkipLoad = true
     }

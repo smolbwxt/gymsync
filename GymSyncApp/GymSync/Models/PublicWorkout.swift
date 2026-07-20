@@ -333,6 +333,39 @@ enum PublicWorkoutRepository {
         } catch { throw ErrorMapping.map(error) }
     }
 
+    /// Bulk lookup by routine id — backs `CampaignDetailView`'s curated
+    /// workout list (Phase C Task 3, Flow 8 spec :867, "curated workout
+    /// list"; the header comment this task closes lives in
+    /// `CampaignDetailView.swift`). Same join shape as `publicWorkouts()`
+    /// above (needed so the result can navigate straight into
+    /// `DiscoverWorkoutDetailView`, "the existing routine detail/attempt
+    /// surface", `DiscoverView.swift:66-71`), scoped to specific ids via
+    /// `.in("id", ...)` instead of `.eq("visibility", "public")` — same
+    /// bulk-by-ids idiom as `GymGroup.fetchMany(ids:)` (`GymGroup.swift:
+    /// 155-168`) and `RoutineRepository.exercisesForRoutines(ids:)`
+    /// (`Routine.swift:250-262`).
+    ///
+    /// No extra visibility filter needed: `routines`' own SELECT RLS
+    /// (public OR owner OR shared-session member, spec :652) already governs
+    /// what a `.in("id", ...)` query can return — a `curated_routine_ids`
+    /// entry the caller can't see (private, not owned, no shared session)
+    /// simply isn't in the result set, which IS "handle non-visible ids
+    /// gracefully (skip)" — no compactMap/existence-check needed on top of
+    /// what RLS already enforces, same reasoning `myParticipations`'
+    /// doc comment gives for its own `.in()` filter (`Campaign.swift:343-353`).
+    static func workoutsByIDs(_ ids: [UUID]) async throws -> [PublicWorkout] {
+        guard !ids.isEmpty else { return [] }
+        do {
+            let rows: [PublicWorkout] = try await client
+                .from("routines")
+                .select("*, profiles!routines_owner_id_fkey(username)")
+                .in("id", values: ids.map(\.uuidString))
+                .execute()
+                .value
+            return rows
+        } catch { throw ErrorMapping.map(error) }
+    }
+
     /// `start_attempt(p_routine_id, p_session_id, p_opt_in) returns uuid` —
     /// backend contract per `.superpowers/sdd/task-2-report.md`: call AFTER
     /// creating the session with that routine (Task 2's RPC gates on

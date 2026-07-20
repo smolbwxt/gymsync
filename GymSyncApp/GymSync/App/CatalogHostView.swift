@@ -799,6 +799,15 @@ struct CatalogHostView: View {
     private static let campaignFixtureID = UUID()
     private static let campaignFixtureUserID = UUID()
 
+    // Phase C Task 3: curated workout list section — reuses the EXISTING
+    // `discoverFixtureMurph`/`discoverFixturePushDay` `PublicWorkout`
+    // fixtures (defined above, `content_discover`'s own fixtures) rather
+    // than minting new ones, same "extend additively" instruction as the
+    // task brief. `curatedRoutineIDs` below is updated to reference their
+    // real fixture ids so the fixture stays internally consistent for
+    // anyone reading it, even though catalog-fixture mode renders from
+    // `catalogFixtureCuratedWorkouts:` directly and never actually resolves
+    // ids -> workouts via the network path (`catalogSkipLoad`).
     private static let campaignFixtureActive = Campaign(
         id: campaignFixtureID,
         name: "Spring Break Prep 2026",
@@ -808,7 +817,7 @@ struct CatalogHostView: View {
         bannerURL: nil,
         globalTarget: CampaignTarget(metric: "total_volume", target: 100_000_000),
         individualTarget: CampaignIndividualTarget(sessions: 12, workoutsCompleted: nil),
-        curatedRoutineIDs: [],
+        curatedRoutineIDs: [Self.discoverFixtureMurphID, Self.discoverFixturePushDayID],
         isFeatured: true,
         isDraft: false,
         createdAt: .now
@@ -874,7 +883,8 @@ struct CatalogHostView: View {
                 catalogFixtureParticipation: nil,
                 catalogFixtureProgress: nil,
                 catalogFixtureCommunity: Self.campaignFixtureCommunity,
-                catalogFixtureLeaderboard: []
+                catalogFixtureLeaderboard: [],
+                catalogFixtureCuratedWorkouts: [Self.discoverFixtureMurph, Self.discoverFixturePushDay]
             )
         }
     }
@@ -886,7 +896,8 @@ struct CatalogHostView: View {
                 catalogFixtureParticipation: Self.campaignFixtureParticipant,
                 catalogFixtureProgress: Self.campaignFixtureMyProgress,
                 catalogFixtureCommunity: Self.campaignFixtureCommunity,
-                catalogFixtureLeaderboard: Self.campaignFixtureLeaderboard
+                catalogFixtureLeaderboard: Self.campaignFixtureLeaderboard,
+                catalogFixtureCuratedWorkouts: [Self.discoverFixtureMurph, Self.discoverFixturePushDay]
             )
         }
     }
