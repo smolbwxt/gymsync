@@ -65,12 +65,6 @@ enum SessionCalendarSyncStore {
     /// idiom that fits.
     private static let lock = NSLock()
 
-    static func load(defaults: UserDefaults = .standard) -> [String: String] {
-        lock.lock()
-        defer { lock.unlock() }
-        return loadLocked(defaults: defaults)
-    }
-
     /// Raw load with NO locking of its own — only ever called from inside a
     /// block that already holds `lock`, so every public entry point below
     /// can compose a multi-step load-mutate-save sequence under ONE lock

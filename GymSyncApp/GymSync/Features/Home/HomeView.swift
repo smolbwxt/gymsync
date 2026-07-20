@@ -553,10 +553,16 @@ struct HomeView: View {
     ///
     /// Session-name derivation mirrors `upcomingCard`'s own kicker text
     /// exactly (`HomeView.swift:334-346`: group name if resolvable, else
-    /// "Session") — NOT `routineLabel(for:)` (`HomeView.swift:543-548`),
-    /// which is a pre-existing, undifferentiated "Workout" placeholder for
-    /// every session regardless of which one it is; the kicker is the one
-    /// piece of this card that actually varies per session today.
+    /// "Session") — NOT `routineLabel(for:)` (`HomeView.swift:613`, fixed
+    /// in the debt-zero sprint to resolve a real name from `ownedRoutines`
+    /// when possible, honest "Workout" fallback otherwise — see its own
+    /// doc comment). Kept separate deliberately, not swapped in here too:
+    /// `routineLabel`'s lookup only resolves routines the CURRENT user
+    /// owns, so a session on someone else's routine would silently fall
+    /// back to "Workout" — worse for THIS payload's purpose than the
+    /// group-name-or-"Session" kicker text, which resolves correctly for
+    /// every session the current user can see on Home regardless of who
+    /// owns the routine.
     private func pushWatchIdleStateIfNoLiveSession() {
         guard appState.activeSessionID == nil else { return }
         WatchConnectivityBridge.shared.activateIfNeeded()
@@ -636,11 +642,26 @@ struct HomeView: View {
 
     // MARK: - Helpers
 
+    /// Debt-zero sprint item 4 (T3-era placeholder fix — this function
+    /// previously returned the fixed string "Workout" unconditionally for
+    /// every session, real routine or not). No new eager-loading network
+    /// call is added: `ownedRoutines` is ALREADY fetched every `refresh()`
+    /// pass for other Task 5 canvas content (the "Today's routine" card,
+    /// `RoutinePickerSheet`) — the exact same already-fetched-data reuse
+    /// `pushWatchIdleStateIfNoLiveSession`'s kicker-text derivation uses for
+    /// `groups.first(where:)` just above. Only covers routines the CURRENT
+    /// user owns (`RoutineRepository.fetchAll(ownerID:)`) — a session tied
+    /// to a routine owned by someone else (e.g. a group organizer's
+    /// routine this user merely participates in) still falls through to
+    /// the honest "Workout" fallback, same as before, rather than guessing
+    /// or adding a second per-session network round trip just for this
+    /// label.
     private func routineLabel(for session: WorkoutSession) -> String {
-        // Without eager-loading routine names here, use a generic label.
-        // If a routineID is present, "Workout" serves as a placeholder;
-        // the full name is visible in LobbyView.
-        "Workout"
+        guard let routineID = session.routineID,
+              let routine = ownedRoutines.first(where: { $0.id == routineID }) else {
+            return "Workout"
+        }
+        return routine.name
     }
 
     private func trimmedDecimal(_ value: Decimal) -> String {
