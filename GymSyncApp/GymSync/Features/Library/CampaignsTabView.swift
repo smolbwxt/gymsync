@@ -31,6 +31,7 @@ struct CampaignsTabView: View {
 
     @State private var active: [Campaign] = []
     @State private var upcoming: [Campaign] = []
+    @State private var past: [Campaign] = []
     @State private var loading = true
     @State private var errorText: String?
 
@@ -51,7 +52,7 @@ struct CampaignsTabView: View {
                 } else if let errorText {
                     GSErrorCard(message: errorText) { Task { await load() } }
                         .padding(16)
-                } else if active.isEmpty && upcoming.isEmpty {
+                } else if active.isEmpty && upcoming.isEmpty && past.isEmpty {
                     GSEmptyState(
                         icon: "flag.checkered",
                         title: "No campaigns right now",
@@ -85,6 +86,25 @@ struct CampaignsTabView: View {
                                 CampaignDetailView(campaign: campaign)
                             } label: {
                                 campaignRow(campaign, trailing: countdownText(campaign))
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 6)
+                        }
+                    }
+                    // "Past" — ended campaigns the user joined (Flow 8 :884's
+                    // frozen final state stays reachable for participants).
+                    // Opus pre-GA closeout: closes gate MINOR-2.
+                    if !past.isEmpty {
+                        GSSectionHeader("Past")
+                            .padding(.horizontal, 16)
+                            .padding(.top, 16)
+                            .padding(.bottom, 10)
+                        ForEach(past) { campaign in
+                            NavigationLink {
+                                CampaignDetailView(campaign: campaign)
+                            } label: {
+                                campaignRow(campaign, trailing: "Ended")
                             }
                             .buttonStyle(.plain)
                             .padding(.horizontal, 16)
@@ -165,6 +185,10 @@ struct CampaignsTabView: View {
         } catch {
             errorText = ErrorMapping.map(error).errorDescription
         }
+        // Past challenges are additive — a failure here must never blank the
+        // active/upcoming screen, so it's a best-effort fetch outside the
+        // primary do/catch above (empty on failure, no error surfaced).
+        past = (try? await CampaignRepository.endedParticipated()) ?? []
         loading = false
     }
 }
@@ -181,9 +205,10 @@ extension CampaignsTabView {
     /// (not the synthesized memberwise one) because `_active`/`_upcoming`
     /// are `private @State` — only reachable from an initializer in this
     /// same file.
-    init(catalogFixtureActive active: [Campaign], catalogFixtureUpcoming upcoming: [Campaign] = []) {
+    init(catalogFixtureActive active: [Campaign], catalogFixtureUpcoming upcoming: [Campaign] = [], catalogFixturePast past: [Campaign] = []) {
         _active = State(initialValue: active)
         _upcoming = State(initialValue: upcoming)
+        _past = State(initialValue: past)
         _loading = State(initialValue: false)
         catalogSkipLoad = true
     }
