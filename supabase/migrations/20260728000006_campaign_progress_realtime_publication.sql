@@ -1,0 +1,56 @@
+-- ============================================================
+-- Phase C fix-forward (fix wave 2, gate MAJOR-1): add campaign_progress
+-- to the supabase_realtime publication.
+-- ============================================================
+-- ── The gate finding this closes ────────────────────────────────────────
+-- The Phase C whole-branch gate live-probed `pg_publication_tables` and
+-- found ZERO campaign rows in `supabase_realtime` (and `pg_publication.
+-- puballtables = false`, so nothing is published implicitly). Flow 8
+-- (spec :877-879) requires the community progress bar "Updated live via
+-- a postgres_changes subscription on the Campaigns detail page", and
+-- Task 2 shipped exactly that consumer (`CampaignLiveService.swift`:
+-- channel `campaign:{campaign_id}`, postgres_changes INSERT+UPDATE on
+-- `campaign_progress`, `campaign_id=eq.{id}` filter) — but a
+-- postgres_changes subscription on a table absent from the publication
+-- can never receive an event: WAL rows for it are simply never shipped
+-- to the Realtime service. The live bar was structurally dead in
+-- production; every tick the detail screen would have animated on was
+-- silently dropped server-side.
+--
+-- ── The law that was missed (T1) ────────────────────────────────────────
+-- Repo doctrine, stated verbatim in 20260720000001_session_kudos.sql:
+-- 80-82: "Realtime publication — same migration as the table (repo
+-- doctrine, plan's Global Constraints: 'every postgres_changes consumer
+-- ships its publication migration in the same task')." Task 1 created
+-- campaign_progress and Task 2 shipped its postgres_changes consumer,
+-- and neither shipped this line. Fix-forward doctrine (handoff §3.2):
+-- 20260728000001 is immutable, so the publication membership lands here,
+-- append-only, next timestamp.
+--
+-- ── WALRUS note: delivery is per-subscriber RLS-filtered ────────────────
+-- Same note session_kudos' own publication line carries (:83-85):
+-- publication membership is table-level, but Realtime (WALRUS) evaluates
+-- each subscriber's SELECT RLS per event before delivering.
+-- campaign_progress's SELECT policy is participant-scoped
+-- ("participants can read campaign progress",
+-- 20260728000001_campaigns_schema.sql:282-284, gated on
+-- private.is_campaign_participant(campaign_id, auth.uid())) — so ONLY a
+-- campaign's own participants ever receive its progress ticks. A
+-- non-participant's subscription (or a stranger guessing a campaign id
+-- in a filter) receives nothing: adding the table to the publication
+-- widens no read surface beyond what the RLS policy already grants.
+--
+-- ── CONTROLLER ADJUDICATION (recorded per the fix-wave-2 ruling) ────────
+-- Consequence of the RLS-filtered delivery above: a NON-participant
+-- browsing a campaign's detail page keeps a STATIC community bar —
+-- populated on screen entry via the campaign_community_progress() RPC
+-- (whose DEFINER gate deliberately serves any viewer who can see the
+-- campaign at all, 20260728000001 item 8) and refreshed only on
+-- re-entry, never by live ticks. ACCEPTED as correct participant-benefit
+-- semantics: consistent with the roster leaderboard's own participant
+-- gating (non-participants get community-total + join CTA only,
+-- CampaignRepository.leaderboard's adjudication), and Flow 8's "updated
+-- live" is satisfied for the audience that can receive rows at all
+-- under RLS. Joining — the action the static bar's join CTA drives —
+-- upgrades the viewer to live delivery on their next subscribe.
+ALTER PUBLICATION supabase_realtime ADD TABLE public.campaign_progress;

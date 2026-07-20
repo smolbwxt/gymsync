@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(41);
+SELECT plan(42);
 
 -- ============================================================
 -- campaigns / campaign_participants / campaign_progress — Phase C Task 1
@@ -655,6 +655,22 @@ SELECT throws_ok(
   $$INSERT INTO chat_messages (group_id, author_id, kind, body) VALUES
     ('cf000000-0000-0000-0000-000000000001', 'ca000000-0000-0000-0000-0000000000a1', 'bogus_kind', 'nope')$$,
   '23514', NULL, 'chat_messages.kind CHECK still rejects an unrecognized kind after the extension'
+);
+
+
+-- ============================================================
+-- Realtime publication membership (Fix wave 2 / gate MAJOR-1,
+-- 20260728000006): CampaignLiveService's postgres_changes subscription
+-- can only ever receive an event if campaign_progress is in the
+-- supabase_realtime publication (puballtables=false on this project, so
+-- membership is explicit-only). Same assertion idiom as
+-- session_realtime_publication_test.sql.
+-- ============================================================
+SELECT results_eq(
+  $$SELECT count(*)::int FROM pg_publication_tables
+    WHERE pubname='supabase_realtime'
+      AND schemaname='public' AND tablename='campaign_progress'$$,
+  ARRAY[1], 'campaign_progress is in the supabase_realtime publication (gate MAJOR-1 fix)'
 );
 
 SELECT * FROM finish();
