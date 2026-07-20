@@ -4,8 +4,11 @@
  * the app's real internal fetches return known data on every screen: a group
  * (with the account as admin member), sessions in every lifecycle state, a
  * mixed chat thread, friends (one accepted, one incoming pending request),
- * a small routine library with exercises, personal records, and one
- * published/featured routine for the Library "Featured" shelf.
+ * a small routine library with exercises, personal records, one
+ * published/featured routine for the Library "Featured" shelf, a featured
+ * public workouts pack (Discover), and one draft seasonal campaign (Phase C
+ * Task 3) with the CI account joined and a completed fixture session proving
+ * live progress accrual.
  *
  * Idempotent: every block deletes this account's own prior fixture rows
  * (keyed on a stable marker — a `[QA]` name prefix, or — for the group,
@@ -662,6 +665,167 @@ async function main() {
       `time_seconds=${entry?.time_seconds ?? '?'}, total_volume=${entry?.total_volume ?? '?'}, ` +
       `is_complete=${entry?.is_complete ?? '?'}`);
   }
+
+  // --- Phase C Task 3: seeded test campaign + CI-account join + live
+  //     progress-accrual proof ------------------------------------------
+  // Flow 8 (spec :862-884) + phase spec (`docs/superpowers/specs/2026-07-19-
+  // campaigns-design.md:14`, "isolation mechanism per spec §3... a test
+  // campaign must NOT pollute real users' active-campaign surfaces") +
+  // Task 1's own Adjudication 3 (`supabase/migrations/20260728000001_
+  // campaigns_schema.sql:91-111`): `is_draft=true` is the shipped isolation
+  // mechanism — a draft campaign is invisible to everyone except its own
+  // participants (RLS: "campaigns are globally readable unless draft"), so
+  // this fixture can exist without ever surfacing on a real user's Library/
+  // Home carousel query.
+  //
+  // Find-or-create by name (never delete-then-recreate): `campaign_
+  // participants`/`campaign_progress` both carry `ON DELETE CASCADE` on
+  // `campaign_id` (`20260728000001_campaigns_schema.sql:171,201`) — deleting
+  // this row on every run would erase the join + any accrued progress, the
+  // exact "orphan a stable cross-run reference" mistake this file's own
+  // group/Murph-pack blocks above already learned to avoid. Dates are
+  // recomputed and PATCHed on EVERY run (unlike the group/Murph-pack finds,
+  // which only PATCH content fields) so "a real date window spanning now"
+  // stays true no matter how long after the initial seed this script is
+  // re-run — same "PATCH fields in place on every run" idiom as the
+  // FEATURED_WORKOUTS block above, just extended to the date columns too
+  // because staying "active" IS this fixture's whole point.
+  //
+  // `campaigns` has NO client INSERT/UPDATE/DELETE policy at all (v1 team
+  // curation is service-role/SQL-only, Adjudication 1 in the same
+  // migration) — this script already writes with the service-role key for
+  // everything, so this insert/PATCH is exactly the shipped curation path,
+  // not a bypass of anything.
+  const CAMPAIGN_NAME = 'QA Test Campaign';
+  const campaignCuratedIDs = [
+    featuredWorkoutIDs['The Murph'],
+    featuredWorkoutIDs['StrongLifts 5x5 — Workout A'],
+    featuredWorkoutIDs['Hypertrophy Push Day'],
+  ];
+  const campaignNowWindow = {
+    starts_at: new Date(Date.now() - 5 * 86400_000).toISOString(),
+    ends_at: new Date(Date.now() + 20 * 86400_000).toISOString(),
+  };
+  let [campaign] = await rest(`campaigns?select=id&name=eq.${encodeURIComponent(CAMPAIGN_NAME)}`);
+  const campaignFields = {
+    name: CAMPAIGN_NAME,
+    description: '[QA] Seeded test campaign — Phase C live-proof fixture. Not real content.',
+    ...campaignNowWindow,
+    // {"sessions":1}: the trigger's own supported keys are "sessions" or
+    // "workouts_completed" (20260728000002_campaign_progress_trigger.sql:
+    // 298-309) — target=1 so ONE fixture session completion below both
+    // increments campaign_progress AND crosses the individual_target in the
+    // same run, proving both halves of the acceptance bar (progress
+    // increment + the completion system_campaign chat message) from a
+    // single completed session, per this task's own "target met vs every
+    // increment" reading of the trigger.
+    individual_target: { sessions: 1 },
+    curated_routine_ids: campaignCuratedIDs,
+    is_featured: false,
+    is_draft: true,
+  };
+  if (!campaign) {
+    [campaign] = await rest('campaigns', { method: 'POST', headers: rep, body: JSON.stringify(campaignFields) });
+  } else {
+    await rest(`campaigns?id=eq.${campaign.id}`, { method: 'PATCH', body: JSON.stringify(campaignFields) });
+  }
+  console.log(`  campaign: ${CAMPAIGN_NAME} (${campaign.id}), window ${campaignNowWindow.starts_at} -> ${campaignNowWindow.ends_at}`);
+
+  // CI-account join via SERVICE-ROLE insert. The client INSERT path is
+  // correctly blocked for a draft campaign (`campaign_participants`'
+  // "user joins a campaign as themselves" policy, fixed-forward twice —
+  // `20260728000003` then, correctly, `20260728000004_campaign_
+  // participants_draft_join_fix_v2.sql`'s header: "WITH CHECK (user_id =
+  // auth.uid() AND NOT private.is_campaign_draft(campaign_id))" — closing
+  // the exact bypass IMPORTANT-1 was opened for). Service-role bypasses RLS
+  // entirely (same posture as every other write in this script), which is
+  // the documented seeding route that migration's header points to for a
+  // draft campaign's own fixture participant. Idempotent via a pre-check
+  // (the table's own composite PK would 409 on a raw re-POST otherwise).
+  const [existingParticipant] = await rest(
+    `campaign_participants?select=campaign_id&campaign_id=eq.${campaign.id}&user_id=eq.${me.id}`);
+  if (!existingParticipant) {
+    await rest('campaign_participants', { method: 'POST',
+      body: JSON.stringify({ campaign_id: campaign.id, user_id: me.id }) });
+  }
+  console.log(`  campaign_participants: ${me.username} joined (${existingParticipant ? 'already' : 'this run'})`);
+
+  // Fixture session completions — same "walk it through for real via a
+  // genuine scheduled -> completed transition" idiom as the streak/Murph
+  // blocks above, so the REAL `campaign_progress_on_session_completion`
+  // trigger computes campaign_progress itself (never hand-written).
+  // `routine_id` = The Murph (a member of `campaignCuratedIDs` above) so the
+  // trigger's `NEW.routine_id = ANY(c.curated_routine_ids)` predicate
+  // matches. Fixed, deterministic timestamps (never `now()`) as each
+  // session's natural key, same reasoning as MURPH_ATTEMPT_SCHEDULED_FOR
+  // above — the `state=eq.scheduled` filter on the completion PATCH makes
+  // every run after the first a no-op (0 rows), so the trigger fires
+  // EXACTLY once per session regardless of how many times this script
+  // re-runs, even if a much later re-run has since PATCHed the campaign's
+  // own starts_at/ends_at window forward past these fixed completed_ats —
+  // the accrual already happened and is not re-derived from the campaign's
+  // current window on every read (same "this session's own completed_at
+  // decided membership once, at the one moment the trigger runs" contract
+  // the trigger's own header documents, `20260728000002:77-87`).
+  //
+  // TWO sessions (Fix wave 1): the second exists for the post-
+  // 20260728000005 live re-proof — the draft gate migration needed a
+  // FRESH trigger firing to verify against (session 1's completion had
+  // already fired, pre-fix, and can never re-fire). On a fresh database
+  // both complete in order; on the live database session 2 provided the
+  // post-fix crossing (after a one-time, ad-hoc service-role reset of the
+  // QA campaign's own campaign_progress row — our test artifact — so the
+  // completion genuinely re-crossed the {"sessions":1} target; documented
+  // in task-3-report.md's Fix wave 1 transcript, deliberately NOT part of
+  // this script: an in-script progress reset would re-cross the target on
+  // every run, which is exactly the repeated-firing shape idempotency
+  // exists to prevent).
+  const CAMPAIGN_FIXTURE_SESSIONS = [
+    { scheduledFor: '2026-07-19T15:00:00.000Z', completedAt: '2026-07-19T15:45:00.000Z' },
+    { scheduledFor: '2026-07-19T18:00:00.000Z', completedAt: '2026-07-19T18:45:00.000Z' },
+  ];
+  const murphRoutineID = featuredWorkoutIDs['The Murph'];
+
+  for (const fx of CAMPAIGN_FIXTURE_SESSIONS) {
+    let [progressSession] = await rest(
+      `sessions?select=id,state&organizer_id=eq.${me.id}&routine_id=eq.${murphRoutineID}` +
+      `&scheduled_for=eq.${encodeURIComponent(fx.scheduledFor)}`);
+    if (!progressSession) {
+      [progressSession] = await rest('sessions', { method: 'POST', headers: rep,
+        body: JSON.stringify({
+          organizer_id: me.id, routine_id: murphRoutineID, state: 'scheduled',
+          scheduled_for: fx.scheduledFor,
+        }) });
+    }
+
+    await rest('session_participants', { method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates' },
+      body: JSON.stringify({
+        session_id: progressSession.id, user_id: me.id,
+        check_in_state: 'ready', check_in_at: fx.scheduledFor,
+      }) });
+
+    // One real set_log per session so volume_lifted accrues a nonzero,
+    // honest number (back-squat, 5 reps @ 135 lbs = 675) rather than 0 —
+    // same "weight IS NOT NULL" shape the trigger's own volume SUM
+    // requires (20260728000002_campaign_progress_trigger.sql:256-261).
+    const existingProgressLogs = await rest(
+      `set_logs?select=id&session_id=eq.${progressSession.id}&user_id=eq.${me.id}`);
+    if (!existingProgressLogs.length) {
+      await rest('set_logs', { method: 'POST', body: JSON.stringify([{
+        id: randomUUID(), user_id: me.id, session_id: progressSession.id,
+        exercise_id: bySlug['back-squat'], set_index: 1, reps: 5, weight: 135,
+      }]) });
+    }
+
+    await rest(`sessions?id=eq.${progressSession.id}&state=eq.scheduled`, { method: 'PATCH',
+      body: JSON.stringify({ state: 'completed', completed_at: fx.completedAt }) });
+  }
+
+  const [progressRow] = await rest(
+    `campaign_progress?select=sessions_completed,workouts_completed,volume_lifted&campaign_id=eq.${campaign.id}&user_id=eq.${me.id}`);
+  console.log(`  campaign_progress: sessions_completed=${progressRow?.sessions_completed ?? '?'}, ` +
+    `workouts_completed=${progressRow?.workouts_completed ?? '?'}, volume_lifted=${progressRow?.volume_lifted ?? '?'}`);
 
   console.log('\ndone — QA fixture world seeded (idempotent).');
 }

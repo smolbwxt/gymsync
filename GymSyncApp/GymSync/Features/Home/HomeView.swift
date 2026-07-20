@@ -39,6 +39,14 @@ struct HomeView: View {
     @State private var statsLoading = true
     @State private var connectivity = ConnectivityMonitor.shared
 
+    // MARK: - Campaigns carousel state (Phase C Task 2, Flow 8 :866)
+    @State private var activeCampaigns: [Campaign] = []
+    @State private var joinedCampaignIDs: Set<UUID> = []
+    @State private var campaignProgressByID: [UUID: CampaignProgress] = [:]
+    @State private var campaignCommunityByID: [UUID: CampaignCommunityProgress] = [:]
+    @State private var joiningCampaignIDs: Set<UUID> = []
+    @State private var campaignJoinErrorText: String?
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -51,6 +59,9 @@ struct HomeView: View {
                     }
                     if let routine = todaysRoutine {
                         todaysRoutineCardView(routine)
+                    }
+                    if !activeCampaigns.isEmpty {
+                        campaignsSection
                     }
                     statTileRow
                     GSDivider()
@@ -290,6 +301,141 @@ struct HomeView: View {
         return "\(shown) +\(names.count - 3) more"
     }
 
+    // MARK: - Campaigns carousel (Phase C Task 2)
+    //
+    // Flow 8 (spec :866): "Home tab surfaces a 'Campaigns you might like'
+    // carousel when one is starting soon." "Active campaigns only" per the
+    // task brief — `activeCampaigns` (populated in `refresh()`) is already
+    // filtered to the active half of `CampaignRepository.activeAndUpcoming(
+    // )`'s result, so this section renders nothing at all when zero
+    // campaigns are currently active (no empty-state chrome, same "absent
+    // entirely when empty" posture `LibraryTabView.featuredShelf` already
+    // uses for its own optional shelf). No canvas frame depicts this
+    // carousel — see `docs/design/accepted-deviations.json`'s
+    // "home-campaigns-carousel" entry.
+    //
+    // Shelf shape borrows `LibraryTabView.featuredShelf`'s kicker +
+    // horizontal-scroll-of-cards idiom (`LibraryTabView.swift:118-155`): a
+    // single card renders full-width (no scroll chrome needed for one item),
+    // 2+ renders as a horizontal `ScrollView`.
+    private var campaignsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "flag.checkered")
+                    .font(.system(size: 15))
+                    .foregroundStyle(theme.accent700)
+                Text("Campaigns you might like")
+                    .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
+                    .foregroundStyle(theme.text.opacity(0.6))
+            }
+            .padding(.horizontal, 16)
+
+            if activeCampaigns.count == 1, let only = activeCampaigns.first {
+                campaignCard(only)
+                    .padding(.horizontal, 16)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(activeCampaigns) { campaign in
+                            campaignCard(campaign)
+                                .frame(width: 260)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                }
+            }
+
+            if let campaignJoinErrorText {
+                Text(campaignJoinErrorText)
+                    .font(GSFont.body(12, relativeTo: .caption))
+                    .foregroundStyle(.red)
+                    .padding(.horizontal, 16)
+            }
+        }
+        .padding(.top, 6)
+        .padding(.bottom, 16)
+    }
+
+    /// ONE card design (per task brief) covering both states — a `joined`
+    /// branch inside the SAME card body, not two separate card views.
+    /// Joined: whole card is a `NavigationLink` to the detail screen — same
+    /// "whole bordered card navigates" idiom as `upcomingCard`
+    /// (`HomeView.swift:369-413`). Unjoined: the card is NOT wrapped in a
+    /// NavigationLink at all — it carries its own inline "Join Campaign"
+    /// button instead, same "button lives directly on a non-navigating
+    /// card, fires immediately, no confirmation" idiom as `LibraryTabView.
+    /// heroCard`'s "Add to my routines" button (`LibraryTabView.swift:199-
+    /// 213`) — chosen deliberately over nesting a `Button` inside a
+    /// `NavigationLink`'s label (a known SwiftUI gesture-conflict hazard
+    /// neither existing idiom in this codebase risks) and matches Flow 8's
+    /// own "no commitment beyond opt-in" framing for why a one-tap join
+    /// needs no confirmation step.
+    @ViewBuilder
+    private func campaignCard(_ campaign: Campaign) -> some View {
+        if joinedCampaignIDs.contains(campaign.id) {
+            NavigationLink {
+                CampaignDetailView(campaign: campaign)
+            } label: {
+                campaignCardBody(campaign, joined: true)
+            }
+            .buttonStyle(.plain)
+        } else {
+            campaignCardBody(campaign, joined: false)
+        }
+    }
+
+    private func campaignCardBody(_ campaign: Campaign, joined: Bool) -> some View {
+        GSCard(bordered: false) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("CAMPAIGN")
+                    .font(GSFont.bodyMedium(11, relativeTo: .caption2))
+                    .tracking(1.2)
+                    .foregroundStyle(theme.neutral700)
+                Text(campaign.name)
+                    .font(GSFont.heading(16, relativeTo: .headline))
+                    .foregroundStyle(theme.text)
+                    .lineLimit(1)
+
+                if joined {
+                    if let resolved = campaign.individualTarget?.resolvedTarget {
+                        let achieved = CampaignProgressMath.achievedCount(
+                            progress: campaignProgressByID[campaign.id], target: campaign.individualTarget) ?? 0
+                        Text("Your progress: \(achieved)/\(resolved.count) \(resolved.unitLabel)")
+                            .font(GSFont.body(12, relativeTo: .caption))
+                            .foregroundStyle(theme.neutral500)
+                    }
+                    if let community = campaignCommunityByID[campaign.id] {
+                        Text("Community: \(trimmedDecimal(community.volumeLifted)) lbs")
+                            .font(GSFont.body(12, relativeTo: .caption))
+                            .foregroundStyle(theme.neutral500)
+                    }
+                } else {
+                    Text(campaign.description ?? "Join a seasonal challenge with the community.")
+                        .font(GSFont.body(12, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral500)
+                        .lineLimit(2)
+                    Button {
+                        Task { await joinCampaignFromHome(campaign) }
+                    } label: {
+                        HStack {
+                            Text("Join Campaign")
+                            Spacer()
+                            Image(systemName: "plus")
+                                .font(.system(size: 13, weight: .semibold))
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(GSPrimaryButtonStyle(fontSize: 13, verticalPadding: 10))
+                    .disabled(joiningCampaignIDs.contains(campaign.id))
+                    .opacity(joiningCampaignIDs.contains(campaign.id) ? 0.6 : 1)
+                    .padding(.top, 4)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+        }
+    }
+
     // MARK: - Stat Tile Row (Task 5 canvas content; states = Phase U frame 41)
 
     private var statTileRow: some View {
@@ -481,6 +627,7 @@ struct HomeView: View {
         async let prsFetch       = fetchRecentPRs(userID: userID)
         async let prCountFetch   = fetchPRCountThisMonth(userID: userID)
         async let profileFetch   = fetchProfile(userID: userID)
+        async let campaignsFetch = fetchActiveCampaigns(userID: userID)
 
         if let sessions = try? await sessionsFetch { upcomingSessions = sessions }
         if let fetchedGroups = try? await groupsFetch { groups = fetchedGroups }
@@ -506,6 +653,9 @@ struct HomeView: View {
         if let prCount { prsThisMonth = prCount }
         let refreshedProfile = await profileFetch
         if let refreshedProfile { profile = refreshedProfile }
+        let campaigns = await campaignsFetch
+        activeCampaigns = campaigns ?? []
+        await loadCampaignJoinState(for: activeCampaigns)
 
         // Phase U frame 41 (OFFLINE·STALE-CACHE): cache whichever of the 3
         // stat-tile fields succeeded THIS pass — `nil` means that fetch
@@ -607,6 +757,58 @@ struct HomeView: View {
     private func fetchProfile(userID: UUID?) async -> Profile? {
         guard let userID else { return nil }
         return try? await ProfileRepository.refresh(userID: userID)
+    }
+
+    // MARK: - Campaigns (Phase C Task 2)
+
+    private func fetchActiveCampaigns(userID: UUID?) async -> [Campaign]? {
+        guard userID != nil else { return nil }
+        guard let result = try? await CampaignRepository.activeAndUpcoming() else { return nil }
+        return result.active
+    }
+
+    /// Batched joined-state lookup, then per-joined-campaign progress +
+    /// community totals — sequential per-campaign awaits (not a
+    /// `TaskGroup`), deliberately: the campaign design's own scale note
+    /// (spec :1375, "1-2 active seasonal campaigns at a time") bounds this
+    /// to at most a couple of round trips in practice, so the added
+    /// concurrency complexity of a `TaskGroup` isn't worth it here.
+    @MainActor
+    private func loadCampaignJoinState(for campaigns: [Campaign]) async {
+        guard !campaigns.isEmpty else {
+            joinedCampaignIDs = []
+            campaignProgressByID = [:]
+            campaignCommunityByID = [:]
+            return
+        }
+        let joined = (try? await CampaignRepository.myParticipations(campaignIDs: campaigns.map(\.id))) ?? []
+        joinedCampaignIDs = joined
+        for campaign in campaigns where joined.contains(campaign.id) {
+            campaignProgressByID[campaign.id] = try? await CampaignRepository.myProgress(campaignID: campaign.id)
+            campaignCommunityByID[campaign.id] = try? await CampaignRepository.communityProgress(campaignID: campaign.id)
+        }
+    }
+
+    /// The Home card's inline "Join Campaign" button action —
+    /// `campaignCardBody`'s doc comment explains why this fires immediately
+    /// with no confirmation step. Best-effort refresh of that one campaign's
+    /// progress/community state on success so the card's `joined` branch
+    /// renders real (zero-state) numbers immediately rather than waiting
+    /// for the next full `refresh()` pass.
+    @MainActor
+    private func joinCampaignFromHome(_ campaign: Campaign) async {
+        guard !joiningCampaignIDs.contains(campaign.id) else { return }
+        joiningCampaignIDs.insert(campaign.id)
+        campaignJoinErrorText = nil
+        defer { joiningCampaignIDs.remove(campaign.id) }
+        do {
+            try await CampaignRepository.join(campaignID: campaign.id)
+            joinedCampaignIDs.insert(campaign.id)
+            campaignProgressByID[campaign.id] = try? await CampaignRepository.myProgress(campaignID: campaign.id)
+            campaignCommunityByID[campaign.id] = try? await CampaignRepository.communityProgress(campaignID: campaign.id)
+        } catch {
+            campaignJoinErrorText = ErrorMapping.map(error).errorDescription
+        }
     }
 
     @MainActor

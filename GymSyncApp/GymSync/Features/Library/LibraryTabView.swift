@@ -3,10 +3,12 @@ import SwiftUI
 struct LibraryTabView: View {
     // Phase L Task 3: added `.discover` — master spec's four-sub-tab
     // structure (`docs/superpowers/specs/2026-06-28-gymsync-design.md:690`:
-    // "Routines / Exercises / Discover / Campaigns"). Campaigns stays out
+    // "Routines / Exercises / Discover / Campaigns"). Campaigns stayed out
     // per Phase L design §3 ("Campaigns stays Phase C",
     // `docs/superpowers/specs/2026-07-18-discover-leaderboards-design.md:18`).
-    enum SubTab: Hashable { case routines, exercises, discover }
+    // Phase C Task 2: added `.campaigns` — the four-sub-tab structure
+    // completes (Flow 8, spec :864-865).
+    enum SubTab: Hashable { case routines, exercises, discover, campaigns }
     @State private var selection: SubTab = .routines
     @Environment(\.gsTheme) private var theme
 
@@ -55,6 +57,8 @@ struct LibraryTabView: View {
                     ExercisesListView()
                 case .discover:
                     DiscoverView()
+                case .campaigns:
+                    CampaignsTabView()
                 }
             }
             .background(theme.bg)
@@ -69,9 +73,10 @@ struct LibraryTabView: View {
     }
 
     // Canvas: `.seg` — flat rectangle, 1px divider border, no radius, hugs
-    // content. Phase L Task 3: widened from 2 to 3 segments (Discover
-    // added) — each non-first segment gets the same leading-divider overlay
-    // the original Routines/Exercises pair used.
+    // content. Phase L Task 3 widened this from 2 to 3 segments (Discover
+    // added); Phase C Task 2 widens it again, 3 -> 4 (Campaigns added) —
+    // every non-first segment gets the same leading-divider overlay the
+    // original Routines/Exercises pair established.
     private var segmentedControl: some View {
         HStack(spacing: 0) {
             segmentOption(title: "Routines", tab: .routines)
@@ -82,6 +87,12 @@ struct LibraryTabView: View {
                         .frame(width: 1)
                 }
             segmentOption(title: "Discover", tab: .discover)
+                .overlay(alignment: .leading) {
+                    Rectangle()
+                        .fill(theme.divider)
+                        .frame(width: 1)
+                }
+            segmentOption(title: "Campaigns", tab: .campaigns)
                 .overlay(alignment: .leading) {
                     Rectangle()
                         .fill(theme.divider)

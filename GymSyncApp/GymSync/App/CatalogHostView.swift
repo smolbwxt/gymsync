@@ -46,6 +46,9 @@ enum CatalogScreen: String, CaseIterable {
     case bodyWeightLog = "body-weight-log"
     case plateMath = "plate-math"
     case heartRatePill = "heart-rate-pill"
+    case campaignsTab = "campaigns-tab"
+    case campaignDetailUnjoined = "campaign-detail-unjoined"
+    case campaignDetailJoined = "campaign-detail-joined"
 }
 
 struct CatalogHostView: View {
@@ -87,6 +90,9 @@ struct CatalogHostView: View {
             case .bodyWeightLog:              content_bodyWeightLog
             case .plateMath:                  content_plateMath
             case .heartRatePill:              content_heartRatePill
+            case .campaignsTab:               content_campaignsTab
+            case .campaignDetailUnjoined:     content_campaignDetailUnjoined
+            case .campaignDetailJoined:       content_campaignDetailJoined
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -773,6 +779,127 @@ struct CatalogHostView: View {
         }
         .padding(20)
         .background(theme.surface)
+    }
+
+    // MARK: - Campaigns (Phase C Task 2 — no canvas frame, catalog cases)
+    //
+    // No canvas frame depicts any campaigns surface — grepped `docs/design/
+    // frame-map.json` + every `.dc.html` canvas file for "campaign": zero
+    // hits, same "undesigned -> system-designed + deviations" finding as
+    // `discover`/`discover-detail` above. See `docs/design/accepted-
+    // deviations.json`'s "campaigns-tab"/"campaign-detail" entries.
+    //
+    // `Campaign`/`CampaignParticipant`/`CampaignProgress`/
+    // `CampaignCommunityProgress`/`CampaignLeaderboardRow` are all plain
+    // `Decodable` (or plain) structs with NO custom `init(from decoder:)`
+    // override (`Models/Campaign.swift`) — unlike `Profile`/`ChatMessage`
+    // above, the compiler-synthesized memberwise init is still available,
+    // so these fixtures are built directly with no extension-init workaround
+    // needed.
+    private static let campaignFixtureID = UUID()
+    private static let campaignFixtureUserID = UUID()
+
+    // Phase C Task 3: curated workout list section — reuses the EXISTING
+    // `discoverFixtureMurph`/`discoverFixturePushDay` `PublicWorkout`
+    // fixtures (defined above, `content_discover`'s own fixtures) rather
+    // than minting new ones, same "extend additively" instruction as the
+    // task brief. `curatedRoutineIDs` below is updated to reference their
+    // real fixture ids so the fixture stays internally consistent for
+    // anyone reading it, even though catalog-fixture mode renders from
+    // `catalogFixtureCuratedWorkouts:` directly and never actually resolves
+    // ids -> workouts via the network path (`catalogSkipLoad`).
+    private static let campaignFixtureActive = Campaign(
+        id: campaignFixtureID,
+        name: "Spring Break Prep 2026",
+        description: "12 sessions before break — every rep counts toward the community goal.",
+        startsAt: Date.now.addingTimeInterval(-5 * 86400),
+        endsAt: Date.now.addingTimeInterval(20 * 86400),
+        bannerURL: nil,
+        globalTarget: CampaignTarget(metric: "total_volume", target: 100_000_000),
+        individualTarget: CampaignIndividualTarget(sessions: 12, workoutsCompleted: nil),
+        curatedRoutineIDs: [Self.discoverFixtureMurphID, Self.discoverFixturePushDayID],
+        isFeatured: true,
+        isDraft: false,
+        createdAt: .now
+    )
+
+    private static let campaignFixtureUpcoming = Campaign(
+        id: UUID(),
+        name: "Summer Shred",
+        description: "8 weeks, 4 workouts a week.",
+        startsAt: Date.now.addingTimeInterval(14 * 86400),
+        endsAt: Date.now.addingTimeInterval(70 * 86400),
+        bannerURL: nil,
+        globalTarget: nil,
+        individualTarget: CampaignIndividualTarget(sessions: nil, workoutsCompleted: 16),
+        curatedRoutineIDs: [],
+        isFeatured: false,
+        isDraft: false,
+        createdAt: .now
+    )
+
+    private static let campaignFixtureCommunity = CampaignCommunityProgress(
+        sessionsCompleted: 812, workoutsCompleted: 812, volumeLifted: 47_300_000
+    )
+
+    private static let campaignFixtureMyProgress = CampaignProgress(
+        campaignID: campaignFixtureID, userID: campaignFixtureUserID,
+        sessionsCompleted: 7, workoutsCompleted: 7, volumeLifted: 18_400, updatedAt: .now
+    )
+
+    private static let campaignFixtureParticipant = CampaignParticipant(
+        campaignID: campaignFixtureID, userID: campaignFixtureUserID,
+        joinedAt: Date.now.addingTimeInterval(-4 * 86400)
+    )
+
+    private static let campaignFixtureLeaderboard: [CampaignLeaderboardRow] = [
+        CampaignLeaderboardRow(userID: UUID(), username: "coach_dana", avatarURL: nil,
+                                sessionsCompleted: 11, workoutsCompleted: 11, volumeLifted: 28_900),
+        CampaignLeaderboardRow(userID: campaignFixtureUserID, username: "you", avatarURL: nil,
+                                sessionsCompleted: 7, workoutsCompleted: 7, volumeLifted: 18_400),
+        CampaignLeaderboardRow(userID: UUID(), username: "sam_t", avatarURL: nil,
+                                sessionsCompleted: 5, workoutsCompleted: 5, volumeLifted: 12_050),
+    ]
+
+    // `campaigns-tab`: no NavigationStack wrapper, matching `content_discover`
+    // above exactly — `CampaignsTabView` (like `DiscoverView`) sets no
+    // `.navigationTitle` of its own; LibraryTabView's own outer
+    // NavigationStack owns that chrome when live.
+    private var content_campaignsTab: some View {
+        CampaignsTabView(
+            catalogFixtureActive: [Self.campaignFixtureActive],
+            catalogFixtureUpcoming: [Self.campaignFixtureUpcoming]
+        )
+    }
+
+    // `campaign-detail-*`: DOES need the NavigationStack wrapper (same
+    // reasoning as `content_discoverDetail` above) — `CampaignDetailView`
+    // sets `.navigationTitle`/`.navigationBarTitleDisplayMode`, which is a
+    // no-op without a NavigationStack ancestor.
+    private var content_campaignDetailUnjoined: some View {
+        NavigationStack {
+            CampaignDetailView(
+                campaign: Self.campaignFixtureActive,
+                catalogFixtureParticipation: nil,
+                catalogFixtureProgress: nil,
+                catalogFixtureCommunity: Self.campaignFixtureCommunity,
+                catalogFixtureLeaderboard: [],
+                catalogFixtureCuratedWorkouts: [Self.discoverFixtureMurph, Self.discoverFixturePushDay]
+            )
+        }
+    }
+
+    private var content_campaignDetailJoined: some View {
+        NavigationStack {
+            CampaignDetailView(
+                campaign: Self.campaignFixtureActive,
+                catalogFixtureParticipation: Self.campaignFixtureParticipant,
+                catalogFixtureProgress: Self.campaignFixtureMyProgress,
+                catalogFixtureCommunity: Self.campaignFixtureCommunity,
+                catalogFixtureLeaderboard: Self.campaignFixtureLeaderboard,
+                catalogFixtureCuratedWorkouts: [Self.discoverFixtureMurph, Self.discoverFixturePushDay]
+            )
+        }
     }
 }
 
