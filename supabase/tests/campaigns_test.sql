@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(36);
+SELECT plan(39);
 
 -- ============================================================
 -- campaigns / campaign_participants / campaign_progress — Phase C Task 1
@@ -34,8 +34,20 @@ SELECT plan(36);
 --   curated_routine_ids=[routine_E]). Sole participant: karen -- proves a
 --   NULL individual_target never raises and never sends a completion
 --   message, even though progress still accrues normally.
+-- Campaign W (non-draft, individual_target={"sessions":1},
+--   curated_routine_ids=[routine_W]), window boundary fixture (Fix wave 1 /
+--   MINOR-2): starts_at = now()-1day, ends_at = now()+1day exactly.
+--   Participants: liam, mia.
+--   liam: completes routine_W with completed_at set to the campaign's
+--     starts_at EXACTLY -> must count (BETWEEN is inclusive at the lower
+--     bound).
+--   mia:  completes routine_W with completed_at set to the campaign's
+--     ends_at EXACTLY -> must count (BETWEEN is inclusive at the upper
+--     bound).
 -- henry: stranger to every campaign (RLS negative reads, aggregate-gate
---   negative).
+--   negative, and -- Fix wave 1 / IMPORTANT-1 -- the draft-join-denial
+--   negative: henry knows draft Campaign B's UUID but was never a
+--   participant and cannot become one via client INSERT).
 -- iris:  join/leave RLS positive fixture (joins/leaves Campaign A live).
 -- jack:  join-spoof negative-test target (never actually joins anything).
 -- "Camp Test Crew": group containing only alice -- backs the completion
@@ -53,7 +65,9 @@ INSERT INTO auth.users (id, email) VALUES
   ('ca000000-0000-0000-0000-0000000000a8', 'camp_henry@t.com'),
   ('ca000000-0000-0000-0000-0000000000a9', 'camp_iris@t.com'),
   ('ca000000-0000-0000-0000-0000000000aa', 'camp_jack@t.com'),
-  ('ca000000-0000-0000-0000-0000000000ab', 'camp_karen@t.com');
+  ('ca000000-0000-0000-0000-0000000000ab', 'camp_karen@t.com'),
+  ('ca000000-0000-0000-0000-0000000000ac', 'camp_liam@t.com'),
+  ('ca000000-0000-0000-0000-0000000000ad', 'camp_mia@t.com');
 INSERT INTO profiles (id, username) VALUES
   ('ca000000-0000-0000-0000-0000000000a1', 'ca_alice'),
   ('ca000000-0000-0000-0000-0000000000a2', 'ca_bob'),
@@ -65,7 +79,9 @@ INSERT INTO profiles (id, username) VALUES
   ('ca000000-0000-0000-0000-0000000000a8', 'ca_henry'),
   ('ca000000-0000-0000-0000-0000000000a9', 'ca_iris'),
   ('ca000000-0000-0000-0000-0000000000aa', 'ca_jack'),
-  ('ca000000-0000-0000-0000-0000000000ab', 'ca_karen');
+  ('ca000000-0000-0000-0000-0000000000ab', 'ca_karen'),
+  ('ca000000-0000-0000-0000-0000000000ac', 'ca_liam'),
+  ('ca000000-0000-0000-0000-0000000000ad', 'ca_mia');
 
 INSERT INTO groups (id, name, created_by) VALUES
   ('cf000000-0000-0000-0000-000000000001', 'Camp Test Crew', 'ca000000-0000-0000-0000-0000000000a1');
@@ -73,12 +89,14 @@ INSERT INTO group_members (group_id, user_id, role) VALUES
   ('cf000000-0000-0000-0000-000000000001', 'ca000000-0000-0000-0000-0000000000a1', 'admin');
 
 -- Routines: routine_A (curated by A), routine_dave (curated by nobody),
--- routine_B (curated by B), routine_E (curated by E).
+-- routine_B (curated by B), routine_E (curated by E), routine_W (curated
+-- by W, window-boundary fixture).
 INSERT INTO routines (id, owner_id, name, visibility) VALUES
   ('cd000000-0000-0000-0000-000000000001', 'ca000000-0000-0000-0000-0000000000a1', 'Campaign A Routine', 'private'),
   ('cd000000-0000-0000-0000-000000000002', 'ca000000-0000-0000-0000-0000000000a4', 'Uncurated Routine', 'private'),
   ('cd000000-0000-0000-0000-000000000003', 'ca000000-0000-0000-0000-0000000000a7', 'Campaign B Routine', 'private'),
-  ('cd000000-0000-0000-0000-000000000004', 'ca000000-0000-0000-0000-0000000000ab', 'Campaign E Routine', 'private');
+  ('cd000000-0000-0000-0000-000000000004', 'ca000000-0000-0000-0000-0000000000ab', 'Campaign E Routine', 'private'),
+  ('cd000000-0000-0000-0000-000000000005', 'ca000000-0000-0000-0000-0000000000ac', 'Campaign W Routine', 'private');
 
 -- Campaign A: active window, sessions=2 target.
 INSERT INTO campaigns (id, name, description, starts_at, ends_at, individual_target, curated_routine_ids, is_draft) VALUES
@@ -95,6 +113,13 @@ INSERT INTO campaigns (id, name, description, starts_at, ends_at, individual_tar
   ('cb000000-0000-0000-0000-000000000003', 'Test Campaign E (no target)', 'pgTAP fixture — null target',
    now() - interval '2 days', now() + interval '2 days',
    NULL, ARRAY['cd000000-0000-0000-0000-000000000004']::uuid[], false);
+-- Campaign W: non-draft, window-boundary inclusivity fixture (Fix wave 1 /
+-- MINOR-2). starts_at/ends_at captured exactly 1 day out on each side so
+-- the boundary sessions below can set completed_at to these EXACT values.
+INSERT INTO campaigns (id, name, description, starts_at, ends_at, individual_target, curated_routine_ids, is_draft) VALUES
+  ('cb000000-0000-0000-0000-000000000004', 'Test Campaign W (window boundary)', 'pgTAP fixture — BETWEEN inclusivity',
+   now() - interval '1 day', now() + interval '1 day',
+   '{"sessions":1}'::jsonb, ARRAY['cd000000-0000-0000-0000-000000000005']::uuid[], false);
 
 INSERT INTO campaign_participants (campaign_id, user_id) VALUES
   ('cb000000-0000-0000-0000-000000000001', 'ca000000-0000-0000-0000-0000000000a1'), -- alice
@@ -103,7 +128,9 @@ INSERT INTO campaign_participants (campaign_id, user_id) VALUES
   ('cb000000-0000-0000-0000-000000000001', 'ca000000-0000-0000-0000-0000000000a5'), -- erin
   ('cb000000-0000-0000-0000-000000000001', 'ca000000-0000-0000-0000-0000000000a6'), -- frank
   ('cb000000-0000-0000-0000-000000000002', 'ca000000-0000-0000-0000-0000000000a7'), -- grace (draft)
-  ('cb000000-0000-0000-0000-000000000003', 'ca000000-0000-0000-0000-0000000000ab'); -- karen
+  ('cb000000-0000-0000-0000-000000000003', 'ca000000-0000-0000-0000-0000000000ab'), -- karen
+  ('cb000000-0000-0000-0000-000000000004', 'ca000000-0000-0000-0000-0000000000ac'), -- liam
+  ('cb000000-0000-0000-0000-000000000004', 'ca000000-0000-0000-0000-0000000000ad'); -- mia
 
 
 -- ============================================================
@@ -247,6 +274,44 @@ SELECT results_eq(
   $$SELECT count(*)::int FROM campaign_progress
     WHERE campaign_id = 'cb000000-0000-0000-0000-000000000001' AND user_id = 'ca000000-0000-0000-0000-0000000000a6'$$,
   ARRAY[0], 'frank: no_show at completion -> readiness gate excludes him, zero progress row'
+);
+
+
+-- ============================================================
+-- Window inclusivity (Fix wave 1 / MINOR-2): the trigger's window predicate
+-- (NEW.completed_at BETWEEN c.starts_at AND c.ends_at) is a CLOSED interval
+-- -- Postgres BETWEEN is inclusive at both ends. liam completes exactly AT
+-- Campaign W's starts_at; mia completes exactly AT its ends_at. Both must
+-- count.
+-- ============================================================
+INSERT INTO sessions (id, organizer_id, routine_id, state, started_at) VALUES
+  ('ce000000-0000-0000-0000-00000000000a', 'ca000000-0000-0000-0000-0000000000ac',
+   'cd000000-0000-0000-0000-000000000005', 'in_progress', now() - interval '25 hours');
+INSERT INTO session_participants (session_id, user_id, check_in_state, check_in_at) VALUES
+  ('ce000000-0000-0000-0000-00000000000a', 'ca000000-0000-0000-0000-0000000000ac', 'ready', now() - interval '25 hours');
+UPDATE sessions SET state = 'completed',
+    completed_at = (SELECT starts_at FROM campaigns WHERE id = 'cb000000-0000-0000-0000-000000000004')
+  WHERE id = 'ce000000-0000-0000-0000-00000000000a';
+
+SELECT results_eq(
+  $$SELECT sessions_completed FROM campaign_progress
+    WHERE campaign_id = 'cb000000-0000-0000-0000-000000000004' AND user_id = 'ca000000-0000-0000-0000-0000000000ac'$$,
+  ARRAY[1], 'liam: completed_at exactly = starts_at counts (BETWEEN inclusive at the lower bound)'
+);
+
+INSERT INTO sessions (id, organizer_id, routine_id, state, started_at) VALUES
+  ('ce000000-0000-0000-0000-00000000000b', 'ca000000-0000-0000-0000-0000000000ad',
+   'cd000000-0000-0000-0000-000000000005', 'in_progress', now() - interval '20 minutes');
+INSERT INTO session_participants (session_id, user_id, check_in_state, check_in_at) VALUES
+  ('ce000000-0000-0000-0000-00000000000b', 'ca000000-0000-0000-0000-0000000000ad', 'ready', now() - interval '20 minutes');
+UPDATE sessions SET state = 'completed',
+    completed_at = (SELECT ends_at FROM campaigns WHERE id = 'cb000000-0000-0000-0000-000000000004')
+  WHERE id = 'ce000000-0000-0000-0000-00000000000b';
+
+SELECT results_eq(
+  $$SELECT sessions_completed FROM campaign_progress
+    WHERE campaign_id = 'cb000000-0000-0000-0000-000000000004' AND user_id = 'ca000000-0000-0000-0000-0000000000ad'$$,
+  ARRAY[1], 'mia: completed_at exactly = ends_at counts (BETWEEN inclusive at the upper bound)'
 );
 
 
@@ -431,6 +496,24 @@ SELECT throws_ok(
     ('cb000000-0000-0000-0000-000000000001', 'ca000000-0000-0000-0000-0000000000aa')$$,
   '42501', NULL, 'iris cannot join Campaign A on jack''s behalf'
 );
+
+-- Fix wave 1 / IMPORTANT-1: a stranger who knows (or guesses) a draft
+-- campaign's UUID cannot self-join it -- the INSERT policy's WITH CHECK
+-- now re-derives the same "NOT is_draft" half of the predicate the
+-- campaigns SELECT policy and campaign_community_progress() already use.
+-- henry has never seen draft Campaign B anywhere (its SELECT policy makes
+-- it globally invisible to non-participants), but the UUID itself is a
+-- plain value he could still learn or guess -- the fix must hold even
+-- though he "shouldn't" know it, per the live-proof this migration closes.
+SET LOCAL request.jwt.claim.sub = 'ca000000-0000-0000-0000-0000000000a8'; -- henry, stranger
+SELECT throws_ok(
+  $$INSERT INTO campaign_participants (campaign_id, user_id) VALUES
+    ('cb000000-0000-0000-0000-000000000002', 'ca000000-0000-0000-0000-0000000000a8')$$,
+  '42501', NULL,
+  'IMPORTANT-1 fix: a stranger cannot self-join a draft campaign even knowing its UUID'
+);
+
+SET LOCAL request.jwt.claim.sub = 'ca000000-0000-0000-0000-0000000000a9'; -- iris (restore)
 SELECT results_eq(
   $$WITH upd AS (
       UPDATE campaign_participants SET joined_at = now()
