@@ -162,6 +162,21 @@ final class AuthService {
     /// every error from the local revoke — it always lands the app in
     /// `.signedOut`, unconditionally.
     func forceSignedOutAfterDeletion() async {
+        // Debt-zero sprint item 3 (Phase O gate ledger, gate fix de85ec4:
+        // "forceSignedOutAfterDeletion could purge the deleted user's
+        // queue rows (inert + 90d-pruned meanwhile — nice-to-have)").
+        // Captured from `state` BEFORE anything below overwrites it — this
+        // function is only ever called while `state` is still `.signedIn`
+        // for the account that's just been hard-deleted server-side
+        // (`DeleteAccountSheet.performDelete()`'s sole call site, right
+        // after `AccountDeletionRepository.deleteAccount()` returns).
+        // Unlike `signOut()` above, whose doctrine comment explains why
+        // that path deliberately does NOT purge (the user can sign back
+        // in and drain the queue normally), THIS user never can — the
+        // account is gone, so its queued rows can never sync.
+        if case .signedIn(let userID) = state {
+            OfflineSetLogQueue.shared.purge(userID: userID)
+        }
         try? await SupabaseService.shared.signOut()
         AppState.shared.currentProfile = nil
         // Fix wave 1 (Task 6 review, CRITICAL): same gap as signOut() above

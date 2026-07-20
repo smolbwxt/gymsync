@@ -44,6 +44,7 @@ struct HomeView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     greetingHeader
+                    replayFailureNotice
                     startSoloWorkoutButton
                     if let pr = recentPRs.first {
                         prCardView(pr)
@@ -124,6 +125,45 @@ struct HomeView: View {
         guard let session = try? await SessionRepository.session(id: sessionID) else { return }
         joinedSession = session
         navigateToJoined = true
+    }
+
+    // MARK: - Replay-failure notice (debt-zero sprint item 2)
+    //
+    // `OfflineSetLogQueue.lastPermanentFailure` (Services/
+    // OfflineSetLogQueue.swift) is set whenever a background `replay()`
+    // pass permanently drops a queued set (RLS denial, validation failure,
+    // or an `.unauthorized` escalation past `maxUnauthorizedAttempts`) with
+    // NO existing observable surface — that property's own doc comment:
+    // "today it's paired with an AppLogger.workout line as the actual,
+    // honest surfacing mechanism." HomeView is the render site: the one
+    // always-visible surface regardless of which screen the set was
+    // originally logged from (a background replay pass can drop an item
+    // long after `WorkoutSessionView`/`GroupSessionLiveView` — the screens
+    // that queued it — have been backgrounded or dismissed). Reuses
+    // `GSInlineNoticeBanner` (DesignSystem/GSComponents.swift) — the same
+    // component `GroupSessionLiveView`'s offline-queue notice already
+    // uses — via this task's additive `icon`/`onDismiss` parameters,
+    // rather than inventing a new banner type. Read directly off the
+    // `@Observable` singleton like every other direct-read precedent in
+    // this codebase (`ConnectivityMonitor.shared`, `ThemeStore.shared`) —
+    // no environment plumbing, no local `@State` mirror needed.
+    // Catalog/deviation record: extends the "offline-syncing-indicator"
+    // entry in docs/design/accepted-deviations.json (same "live SwiftData
+    // queue, not deterministically fixturable" judgment call already made
+    // there for the sibling "Saved on this phone" notice) rather than
+    // opening a new entry.
+    @ViewBuilder
+    private var replayFailureNotice: some View {
+        if OfflineSetLogQueue.shared.lastPermanentFailure != nil {
+            GSInlineNoticeBanner(
+                title: "A set couldn't sync and was removed —",
+                message: "check your session history.",
+                icon: "exclamationmark.circle",
+                onDismiss: { OfflineSetLogQueue.shared.clearLastPermanentFailure() }
+            )
+            .padding(.horizontal, 16)
+            .padding(.bottom, 16)
+        }
     }
 
     // MARK: - Greeting Header
@@ -512,11 +552,17 @@ struct HomeView: View {
     /// info.
     ///
     /// Session-name derivation mirrors `upcomingCard`'s own kicker text
-    /// exactly (`HomeView.swift:334-346`: group name if resolvable, else
-    /// "Session") — NOT `routineLabel(for:)` (`HomeView.swift:543-548`),
-    /// which is a pre-existing, undifferentiated "Workout" placeholder for
-    /// every session regardless of which one it is; the kicker is the one
-    /// piece of this card that actually varies per session today.
+    /// exactly (`HomeView.swift:~370-386`: group name if resolvable, else
+    /// "Session") — NOT `routineLabel(for:)` (`HomeView.swift:~659`, fixed
+    /// in the debt-zero sprint to resolve a real name from `ownedRoutines`
+    /// when possible, honest "Workout" fallback otherwise — see its own
+    /// doc comment). Kept separate deliberately, not swapped in here too:
+    /// `routineLabel`'s lookup only resolves routines the CURRENT user
+    /// owns, so a session on someone else's routine would silently fall
+    /// back to "Workout" — worse for THIS payload's purpose than the
+    /// group-name-or-"Session" kicker text, which resolves correctly for
+    /// every session the current user can see on Home regardless of who
+    /// owns the routine.
     private func pushWatchIdleStateIfNoLiveSession() {
         guard appState.activeSessionID == nil else { return }
         WatchConnectivityBridge.shared.activateIfNeeded()
@@ -596,11 +642,26 @@ struct HomeView: View {
 
     // MARK: - Helpers
 
+    /// Debt-zero sprint item 4 (T3-era placeholder fix — this function
+    /// previously returned the fixed string "Workout" unconditionally for
+    /// every session, real routine or not). No new eager-loading network
+    /// call is added: `ownedRoutines` is ALREADY fetched every `refresh()`
+    /// pass for other Task 5 canvas content (the "Today's routine" card,
+    /// `RoutinePickerSheet`) — the exact same already-fetched-data reuse
+    /// `pushWatchIdleStateIfNoLiveSession`'s kicker-text derivation uses for
+    /// `groups.first(where:)` just above. Only covers routines the CURRENT
+    /// user owns (`RoutineRepository.fetchAll(ownerID:)`) — a session tied
+    /// to a routine owned by someone else (e.g. a group organizer's
+    /// routine this user merely participates in) still falls through to
+    /// the honest "Workout" fallback, same as before, rather than guessing
+    /// or adding a second per-session network round trip just for this
+    /// label.
     private func routineLabel(for session: WorkoutSession) -> String {
-        // Without eager-loading routine names here, use a generic label.
-        // If a routineID is present, "Workout" serves as a placeholder;
-        // the full name is visible in LobbyView.
-        "Workout"
+        guard let routineID = session.routineID,
+              let routine = ownedRoutines.first(where: { $0.id == routineID }) else {
+            return "Workout"
+        }
+        return routine.name
     }
 
     private func trimmedDecimal(_ value: Decimal) -> String {

@@ -126,6 +126,13 @@ struct RootView: View {
         // guaranteed to fire on every sign-in AND sign-out.
         .onChange(of: auth.state) {
             OfflineSetLogQueue.shared.refreshPendingIDs()
+            // Debt-zero gate IMPORTANT-1: the replay-failure surface is
+            // per-identity state and must not survive an auth transition —
+            // user B on a shared device must never see user A's "a set
+            // couldn't sync" banner (same shared-device doctrine as
+            // signOut()'s chatDrafts/pendingRoute clears and this hook's
+            // own refreshPendingIDs re-scope directly above).
+            OfflineSetLogQueue.shared.clearLastPermanentFailure()
             guard case .signedIn = auth.state else { return }
             Task { await OfflineSetLogQueue.shared.replay() }
         }

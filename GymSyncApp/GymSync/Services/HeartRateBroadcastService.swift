@@ -253,38 +253,59 @@ final class HeartRateBroadcastService {
     /// version skew where an older watch build throttles differently.
     ///
     /// Caller: `WatchConnectivityBridge.handleHRSample` — this is a SEND-ONLY
-    /// call site (see `channel`'s own doc comment above), so this method
-    /// always takes the same disposable-channel-fallback path
-    /// `SessionBroadcastService.broadcastRaw`'s `else` branch does
-    /// (`Services/SessionBroadcastService.swift:184-203`), rather than
-    /// duplicating that fallback as a separate private helper for a single
-    /// call site.
+    /// call site (see `channel`'s own doc comment above; that instance's
+    /// `channel` stays `nil` forever), so this method always starts from
+    /// the "no held channel" branch below.
+    ///
+    /// CHANNEL-COLLISION GUARD (debt-zero sprint, gate finding I-1): before
+    /// creating a disposable channel, checks the client's own topic
+    /// registry so this send-only instance never tears down
+    /// `GroupSessionLiveView`'s receive-side subscription on the same
+    /// `session:{id}:hr` topic — see `BroadcastChannelDecision`'s doc
+    /// comment (`Services/BroadcastChannelDecision.swift`) for the full
+    /// SDK-quote writeup (hazard, fix, and residual-risk note); this
+    /// method and `SessionBroadcastService.broadcastRaw`
+    /// (`Services/SessionBroadcastService.swift`) apply the identical
+    /// fix to their respective topics.
     func publish(sessionID: UUID, userID: UUID, bpm: Int, zone: String?) async {
         guard throttle.rateAllowed(userID: userID) else { return }
         let payload = HeartRatePayload(userID: userID, bpm: bpm, zone: zone)
         let message = payload.wireMessage
+        let topic = Self.channelName(sessionID: sessionID)
+        let client = SupabaseService.shared.client
+        let registryEntry = client.realtimeV2.channels["realtime:\(topic)"]
 
+        let decision = BroadcastChannelDecision.decide(
+            hasHeldChannel: channel != nil,
+            topicRegistered: registryEntry != nil
+        )
+
+        // Force-unwraps below are safe by construction: `decision` was
+        // just derived from these exact `channel != nil`/`registryEntry
+        // != nil` reads, synchronously, with no `await` in between — no
+        // other `@MainActor`-isolated code can mutate either between the
+        // check and this switch (see `BroadcastChannelDecision`'s doc
+        // comment for the narrower, SDK-internal residual race this does
+        // NOT close).
         let ch: RealtimeChannelV2
-        if let active = channel {
-            ch = active
-        } else {
-            let tmp = SupabaseService.shared.client
-                .channel(Self.channelName(sessionID: sessionID))
-            await tmp.subscribe()
-            defer {
-                Task { await SupabaseService.shared.client.removeChannel(tmp) }
-            }
-            do {
-                try await tmp.broadcast(event: "heart_rate", message: message)
-            } catch {
-                AppLogger.heartRate.error("broadcast send failed: \(error, privacy: .public)")
-            }
-            return
+        switch decision {
+        case .reuseHeld:
+            ch = channel!
+        case .reuseRegistry:
+            ch = registryEntry!
+        case .createDisposable:
+            ch = client.channel(topic)
+            await ch.subscribe()
         }
+
         do {
             try await ch.broadcast(event: "heart_rate", message: message)
         } catch {
             AppLogger.heartRate.error("broadcast send failed: \(error, privacy: .public)")
+        }
+
+        if decision == .createDisposable {
+            Task { await client.removeChannel(ch) }
         }
     }
 }

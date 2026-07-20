@@ -347,8 +347,13 @@ final class WatchConnectivityBridge {
     ///
     /// `setIndex: 1` — same "not turn-tracked" value
     /// `GroupSessionLiveView.logSet`'s OWN penalty-log path already uses
-    /// unconditionally (GroupSessionLiveView.swift:2158), not a new
-    /// invented shortcut. `set_index` has no uniqueness constraint
+    /// unconditionally (GroupSessionLiveView.swift:2464 — debt-zero sprint
+    /// citation fix; the SAME `SetLog(... setIndex: 1 ...)` literal sat at
+    /// line 2158 when this comment was originally written (commit a3c3acc,
+    /// confirmed via `git show a3c3acc:...GroupSessionLiveView.swift`),
+    /// but later commits inserted ~300 lines earlier in the file and this
+    /// citation was never updated to follow), not a new invented shortcut.
+    /// `set_index` has no uniqueness constraint
     /// (`supabase/migrations/20260709000007_create_set_logs.sql:6`,
     /// `CHECK (set_index >= 1)` only) and — grepped across this entire
     /// target — is written in 6 places but never READ back by any query or
