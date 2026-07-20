@@ -97,10 +97,19 @@ enum BroadcastChannelDecision: Equatable {
     ///   channel registry is guarded by a cross-thread lock
     ///   (`LockIsolated`), not an actor, so a same-instant race with a
     ///   genuinely concurrent non-MainActor SDK-internal mutation is not
-    ///   provably closed by application code alone. This narrows the I-1
-    ///   hazard from "reproduces on virtually every relayed sample/tap"
-    ///   (the steady-state bug this fix targets and closes) to a
-    ///   session-startup-window edge case; device QA (gate finding I-1's
+    ///   provably closed by application code alone. GATE CORRECTION
+    ///   (debt-zero whole-branch review, MINOR-1): the window is wider
+    ///   than SDK-internal — the `createDisposable` arm itself SUSPENDS
+    ///   at `await subscribe()`/`broadcast()` before its removeChannel
+    ///   Task, and MainActor reentrancy during those suspensions lets the
+    ///   view's own `subscribe()` adopt the SAME disposable object (the
+    ///   SDK returns the registered instance), which the send path then
+    ///   tears down. Reachable at EVERY subscribe boundary (view re-entry
+    ///   mid-session while the watch relays), not only session startup —
+    ///   still sub-second and strictly better than pre-fix. This narrows
+    ///   the I-1 hazard from "reproduces on virtually every relayed
+    ///   sample/tap" (the steady-state bug this fix targets and closes)
+    ///   to subscribe-boundary windows; device QA (gate finding I-1's
     ///   named check) remains the empirical arbiter per the debt-zero
     ///   sprint's brief.
     static func decide(hasHeldChannel: Bool, topicRegistered: Bool) -> BroadcastChannelDecision {
