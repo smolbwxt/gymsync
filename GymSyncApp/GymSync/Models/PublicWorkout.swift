@@ -346,10 +346,12 @@ enum PublicWorkoutRepository {
     /// (`Routine.swift:250-262`).
     ///
     /// No extra visibility filter needed: `routines`' own SELECT RLS
-    /// (public OR owner OR shared-session member, spec :652) already governs
-    /// what a `.in("id", ...)` query can return — a `curated_routine_ids`
-    /// entry the caller can't see (private, not owned, no shared session)
-    /// simply isn't in the result set, which IS "handle non-visible ids
+    /// (LIVE-VERIFIED at C-T3 review: public OR owner ONLY — spec :652's
+    /// third branch, shared-session member, was never implemented for
+    /// `routines` and is tracked as a spec/implementation gap, not assumed
+    /// here) already governs what a `.in("id", ...)` query can return — a
+    /// `curated_routine_ids` entry the caller can't see (private, not
+    /// owned) simply isn't in the result set, which IS "handle non-visible ids
     /// gracefully (skip)" — no compactMap/existence-check needed on top of
     /// what RLS already enforces, same reasoning `myParticipations`'
     /// doc comment gives for its own `.in()` filter (`Campaign.swift:343-353`).
