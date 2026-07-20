@@ -44,6 +44,7 @@ struct HomeView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     greetingHeader
+                    replayFailureNotice
                     startSoloWorkoutButton
                     if let pr = recentPRs.first {
                         prCardView(pr)
@@ -124,6 +125,45 @@ struct HomeView: View {
         guard let session = try? await SessionRepository.session(id: sessionID) else { return }
         joinedSession = session
         navigateToJoined = true
+    }
+
+    // MARK: - Replay-failure notice (debt-zero sprint item 2)
+    //
+    // `OfflineSetLogQueue.lastPermanentFailure` (Services/
+    // OfflineSetLogQueue.swift) is set whenever a background `replay()`
+    // pass permanently drops a queued set (RLS denial, validation failure,
+    // or an `.unauthorized` escalation past `maxUnauthorizedAttempts`) with
+    // NO existing observable surface — that property's own doc comment:
+    // "today it's paired with an AppLogger.workout line as the actual,
+    // honest surfacing mechanism." HomeView is the render site: the one
+    // always-visible surface regardless of which screen the set was
+    // originally logged from (a background replay pass can drop an item
+    // long after `WorkoutSessionView`/`GroupSessionLiveView` — the screens
+    // that queued it — have been backgrounded or dismissed). Reuses
+    // `GSInlineNoticeBanner` (DesignSystem/GSComponents.swift) — the same
+    // component `GroupSessionLiveView`'s offline-queue notice already
+    // uses — via this task's additive `icon`/`onDismiss` parameters,
+    // rather than inventing a new banner type. Read directly off the
+    // `@Observable` singleton like every other direct-read precedent in
+    // this codebase (`ConnectivityMonitor.shared`, `ThemeStore.shared`) —
+    // no environment plumbing, no local `@State` mirror needed.
+    // Catalog/deviation record: extends the "offline-syncing-indicator"
+    // entry in docs/design/accepted-deviations.json (same "live SwiftData
+    // queue, not deterministically fixturable" judgment call already made
+    // there for the sibling "Saved on this phone" notice) rather than
+    // opening a new entry.
+    @ViewBuilder
+    private var replayFailureNotice: some View {
+        if OfflineSetLogQueue.shared.lastPermanentFailure != nil {
+            GSInlineNoticeBanner(
+                title: "A set couldn't sync and was removed —",
+                message: "check your session history.",
+                icon: "exclamationmark.circle",
+                onDismiss: { OfflineSetLogQueue.shared.clearLastPermanentFailure() }
+            )
+            .padding(.horizontal, 16)
+            .padding(.bottom, 16)
+        }
     }
 
     // MARK: - Greeting Header

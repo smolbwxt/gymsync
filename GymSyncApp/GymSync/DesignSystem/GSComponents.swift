@@ -967,15 +967,41 @@ public struct GSInlineNoticeBanner: View {
 
     private let title: String
     private let message: String
+    private let icon: String
+    private let onDismiss: (() -> Void)?
 
-    public init(title: String, message: String) {
+    /// `icon` defaults to the checkmark this component was originally built
+    /// around (see the MARK header above) — the ORIGINAL call site
+    /// (`GroupSessionLiveView`'s offline-queue "Saved on this phone" notice)
+    /// keeps rendering byte-identically since it never passes this param.
+    /// Debt-zero sprint item 2 (HomeView's replay-failure notice) passes
+    /// `"exclamationmark.circle"` — the SAME glyph `GSInlineErrorBanner`
+    /// uses — because that notice IS reporting something unwanted (a queued
+    /// set was permanently dropped), and a checkmark there would read as
+    /// good news it isn't; the icon stays honest even without a retry CTA.
+    ///
+    /// `onDismiss` defaults to `nil` (no dismiss control, matching the
+    /// original call site exactly, which clears itself via its own local
+    /// `@State` the instant the underlying condition changes and was never
+    /// meant to be user-dismissed). Passing a closure renders a small
+    /// trailing "xmark" tap target — same `() -> Void` callback shape
+    /// `GSVoiceCoachMark.onDismiss` already uses for its own dismiss
+    /// control, not a new idiom.
+    public init(
+        title: String,
+        message: String,
+        icon: String = "checkmark.circle",
+        onDismiss: (() -> Void)? = nil
+    ) {
         self.title = title
         self.message = message
+        self.icon = icon
+        self.onDismiss = onDismiss
     }
 
     public var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "checkmark.circle")
+            Image(systemName: icon)
                 .font(.system(size: 18, weight: .regular))
                 .foregroundStyle(theme.bg)
 
@@ -985,6 +1011,18 @@ public struct GSInlineNoticeBanner: View {
             )
             .foregroundStyle(theme.bg)
             .fixedSize(horizontal: false, vertical: true)
+
+            if let onDismiss {
+                Spacer(minLength: 8)
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(theme.bg.opacity(0.8))
+                        .frame(width: 32, height: 32)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)

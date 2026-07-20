@@ -328,6 +328,65 @@ final class OfflineSetLogQueue {
         }
     }
 
+    /// Clears the observable replay-failure surface (HomeView's dismissible
+    /// notice, debt-zero sprint item 2, `DesignSystem/GSComponents.swift`'s
+    /// `GSInlineNoticeBanner.onDismiss`) — called ONLY on user dismissal.
+    /// Deliberately does NOT get cleared by anything else (a later
+    /// SUCCESSFUL `replay()` pass leaves it alone; only a NEW permanent
+    /// drop reassigns it, in `replay()` itself, or an explicit dismissal
+    /// here). "Must not re-appear forever" (task brief) means "does not
+    /// re-show the SAME dismissed failure," not "auto-dismisses on its
+    /// own" — a genuinely NEW future permanent drop is new information and
+    /// SHOULD surface again.
+    func clearLastPermanentFailure() {
+        lastPermanentFailure = nil
+    }
+
+    /// Purges every locally queued row belonging to one user — called ONLY
+    /// by `AuthService.forceSignedOutAfterDeletion()` (debt-zero sprint
+    /// item 3), after that user's `auth.users` row has already been
+    /// hard-deleted server-side. Unlike `signOut()`'s DELIBERATE non-purge
+    /// (see that function's own doctrine comment in AuthService.swift —
+    /// this device may hold this user's own not-yet-synced reps, and that
+    /// user can sign back in later to drain them normally), a deleted
+    /// account can NEVER sign back in, so its queued rows can never be
+    /// replayed — leaving them queued would only mean silently discarding
+    /// them LATER via `pruneExpired()`'s 90-day window (or via `replay()`'s
+    /// permanent-drop bucket hitting an auth failure on some future
+    /// trigger) instead of NOW, for no benefit either way. Cites the Phase
+    /// O gate ledger entry that first named this gap: "forceSignedOut
+    /// AfterDeletion could purge the deleted user's queue rows (inert +
+    /// 90d-pruned meanwhile — nice-to-have)" (`.superpowers/sdd/
+    /// progress.md`, gate fix de85ec4).
+    ///
+    /// Scoped to `userID` (like `replay()`/`refreshPendingIDs()`, UNLIKE
+    /// `pruneExpired()`'s deliberately global sweep) — this device may
+    /// still hold OTHER, still-legitimate users' queued rows that must not
+    /// be touched by one user's own deletion.
+    ///
+    /// Lock discipline: none needed, matching this class's existing
+    /// internals (`remove`/`pruneExpired`/`refreshPendingIDs` above) — the
+    /// whole class is `@MainActor`-isolated, so every `ModelContext` touch
+    /// (including this one) is already serialized by the actor itself.
+    /// `SessionCalendarSyncStore`'s `NSLock` (Models/
+    /// SessionCalendarSyncStore.swift) exists for the OPPOSITE reason: it's
+    /// a plain `enum` with `static` functions and no actor isolation at
+    /// all, called from multiple independent `Task`s with nothing else
+    /// serializing them — an `NSLock` here would be redundant, not
+    /// additive safety, since MainActor isolation already rules out the
+    /// exact interleaved-mutation race that store's lock exists to close.
+    func purge(userID: UUID) {
+        guard let modelContext else { return }
+        let descriptor = FetchDescriptor<PendingSetLog>(predicate: #Predicate { $0.userID == userID })
+        guard let items = try? modelContext.fetch(descriptor), !items.isEmpty else { return }
+        for item in items {
+            AppLogger.workout.notice("purging offline set-log \(item.id, privacy: .public) for deleted user \(userID, privacy: .public)")
+            modelContext.delete(item)
+            pendingSetLogIDs.remove(item.id)
+        }
+        try? modelContext.save()
+    }
+
     // MARK: - Internals
 
     private func remove(_ item: PendingSetLog, modelContext: ModelContext) {

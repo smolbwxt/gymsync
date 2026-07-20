@@ -632,6 +632,131 @@ final class OfflineSetLogQueueTests: XCTestCase {
         XCTAssertTrue(submitter.submittedIDsInOrder.isEmpty)
     }
 
+    // MARK: - Replay-failure notice clear contract (debt-zero sprint item 2)
+
+    /// `clearLastPermanentFailure()` nils the property — the dismiss action
+    /// HomeView's `GSInlineNoticeBanner.onDismiss` calls.
+    func testClearLastPermanentFailureNilsTheProperty() async throws {
+        let context = try makeInMemoryContext()
+        let submitter = FakeSetLogSubmitter()
+        let queue = makeQueue(submitter: submitter)
+        queue.configure(modelContext: context)
+
+        let log = makeSetLog()
+        submitter.outcomes[log.id] = .failure(.validation("bad value"))
+        queue.enqueue(log)
+        await queue.replay()
+        XCTAssertNotNil(queue.lastPermanentFailure, "precondition: a permanent drop must have set it")
+
+        queue.clearLastPermanentFailure()
+
+        XCTAssertNil(queue.lastPermanentFailure)
+    }
+
+    /// "Must not re-appear forever" (task brief): dismissing must not
+    /// suppress a LATER, genuinely NEW permanent drop — only the dismissed
+    /// one should stay gone. Proves `clearLastPermanentFailure()` doesn't
+    /// latch the property into a permanently-suppressed state.
+    func testANewPermanentFailureAfterClearSurfacesAgain() async throws {
+        let context = try makeInMemoryContext()
+        let submitter = FakeSetLogSubmitter()
+        let queue = makeQueue(submitter: submitter)
+        queue.configure(modelContext: context)
+
+        let first = makeSetLog()
+        submitter.outcomes[first.id] = .failure(.validation("bad value"))
+        queue.enqueue(first)
+        await queue.replay()
+        XCTAssertEqual(queue.lastPermanentFailure?.setLogID, first.id)
+
+        queue.clearLastPermanentFailure()
+        XCTAssertNil(queue.lastPermanentFailure)
+
+        let second = makeSetLog()
+        submitter.outcomes[second.id] = .failure(.notFound)
+        queue.enqueue(second)
+        await queue.replay()
+
+        XCTAssertEqual(queue.lastPermanentFailure?.setLogID, second.id,
+                        "a new, distinct permanent drop must surface after a prior dismissal")
+    }
+
+    // MARK: - purge(userID:) (debt-zero sprint item 3)
+    //
+    // Backs `AuthService.forceSignedOutAfterDeletion()` — a hard-deleted
+    // account's queued rows can never sync (the user can never sign back
+    // in to drain them), unlike `signOut()`'s deliberate non-purge.
+
+    /// The common case: every row for the target user is removed from both
+    /// the SwiftData store and the in-memory `pendingSetLogIDs` cache.
+    func testPurgeRemovesAllRowsForTheGivenUser() async throws {
+        let context = try makeInMemoryContext()
+        let queue = makeQueue(submitter: FakeSetLogSubmitter())
+        queue.configure(modelContext: context)
+
+        let first = makeSetLog()
+        let second = makeSetLog()
+        queue.enqueue(first)
+        queue.enqueue(second)
+        XCTAssertEqual(queue.pendingSetLogIDs, [first.id, second.id])
+
+        queue.purge(userID: defaultUserID)
+
+        XCTAssertTrue(queue.pendingSetLogIDs.isEmpty)
+        XCTAssertTrue(try context.fetch(FetchDescriptor<PendingSetLog>()).isEmpty)
+    }
+
+    /// A DIFFERENT user's queued rows on the same (shared-device) store
+    /// must survive a purge of one user's rows completely untouched —
+    /// mirrors the same isolation `testReplaySkipsForeignUserRowsEntirely`
+    /// proves for `replay()`.
+    func testPurgeOnlyRemovesTheTargetUsersRowsNotOthers() async throws {
+        let context = try makeInMemoryContext()
+        let queue = makeQueue(submitter: FakeSetLogSubmitter())
+        queue.configure(modelContext: context)
+
+        let foreignUserID = UUID()
+        let mine = makeSetLog()
+        let theirs = makeSetLog(userID: foreignUserID)
+        insertPending(theirs, enqueuedAt: Date(), into: context)
+        try context.save()
+        queue.enqueue(mine)
+
+        queue.purge(userID: defaultUserID)
+
+        XCTAssertFalse(queue.pendingSetLogIDs.contains(mine.id))
+        let stored = try context.fetch(FetchDescriptor<PendingSetLog>())
+        XCTAssertEqual(stored.map(\.id), [theirs.id], "a different user's row must survive the purge untouched")
+    }
+
+    /// Purging a user with nothing queued must be a harmless no-op — not a
+    /// crash, not a spurious `modelContext.save()` side effect that could
+    /// disturb other rows.
+    func testPurgeIsNoOpWhenTheUserHasNothingQueued() async throws {
+        let context = try makeInMemoryContext()
+        let queue = makeQueue(submitter: FakeSetLogSubmitter())
+        queue.configure(modelContext: context)
+
+        let foreignUserID = UUID()
+        let theirs = makeSetLog(userID: foreignUserID)
+        insertPending(theirs, enqueuedAt: Date(), into: context)
+        try context.save()
+        queue.refreshPendingIDs()
+
+        queue.purge(userID: defaultUserID) // defaultUserID has nothing queued
+
+        let stored = try context.fetch(FetchDescriptor<PendingSetLog>())
+        XCTAssertEqual(stored.map(\.id), [theirs.id], "an unrelated user's row must be unaffected by a no-op purge")
+    }
+
+    /// Defensive nil-handling, same "never configured" contract as
+    /// `testReplayIsNoOpWhenNeverConfigured` — must not crash.
+    func testPurgeIsNoOpWhenNeverConfigured() {
+        let queue = makeQueue(submitter: FakeSetLogSubmitter())
+        queue.purge(userID: defaultUserID) // must not crash
+        XCTAssertTrue(queue.pendingSetLogIDs.isEmpty)
+    }
+
     // MARK: - Reentrancy guard
 
     func testReplayReentrancyGuardSkipsConcurrentPass() async throws {
