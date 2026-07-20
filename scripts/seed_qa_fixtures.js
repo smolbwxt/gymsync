@@ -211,6 +211,28 @@ async function main() {
   if (!me) { console.error(`No profile for "${values.username}"`); process.exit(1); }
   console.log(`Seeding QA world for @${me.username} (${me.id})`);
 
+  // --- pollution guard (Opus pre-GA closeout, 2026-07-20) -----------------
+  // Every group the CI account belongs to receives its fan-out system
+  // messages (PR / streak / campaign-completion — the trigger loops ALL of
+  // the achiever's groups, draft-blind). A CI-account membership in a REAL
+  // user's group therefore silently posts test chatter into that chat: it
+  // happened once (ci_test_user_2 was a member of "Men for Christ", leaking
+  // system_pr + system_campaign rows — cleaned + membership removed live).
+  // Every fixture below deliberately uses only the `[QA]`-prefixed group,
+  // so any membership OUTSIDE that marker is unwanted by construction. This
+  // guard makes the invariant self-healing: on every run, strip the CI
+  // account out of any non-`[QA]` group before a single fixture fires, and
+  // warn loudly so a stray membership surfaces instead of polluting in
+  // silence.
+  const myGroups = await rest(`group_members?user_id=eq.${me.id}&select=group_id,groups(name)`);
+  for (const gm of myGroups) {
+    const gname = gm.groups && gm.groups.name;
+    if (!gname || !gname.startsWith(MARK)) {
+      console.warn(`  ⚠ POLLUTION GUARD: @${me.username} is in non-QA group "${gname ?? gm.group_id}" — removing (fan-out system messages would leak into it).`);
+      await rest(`group_members?group_id=eq.${gm.group_id}&user_id=eq.${me.id}`, { method: 'DELETE' });
+    }
+  }
+
   // --- group + membership -------------------------------------------------
   // Find-or-create by natural key (created_by, name) rather than
   // delete-then-recreate: sessions.group_id is ON DELETE SET NULL (not

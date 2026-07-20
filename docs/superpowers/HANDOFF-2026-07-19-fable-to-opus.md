@@ -129,6 +129,26 @@ WILL happen; the ledger is the recovery map. Trust it over memory.
 - **The clobber class**: `user_settings` full-row upserts must preserve concurrent
   fields — every writer routes through `ThemeStore.noteExternalSettingsWrite`. New
   user-preference fields extend the merge rule or get their own table.
+- **RLS-recursion** (Phase C scar): a subquery or function call inside a policy
+  `USING`/`WITH CHECK` evaluates with the INVOKING role's privileges, so any table
+  it references has ITS OWN RLS applied for that same role. A gate that must "see
+  past" a row's own visibility restriction (e.g. check a draft campaign's
+  draft-ness when the caller can't SELECT it) CANNOT use an inline `EXISTS`/`NOT
+  EXISTS` — it inherits the very restriction it exists to enforce, and goes
+  silently vacuous. The only honest bypass is a `SECURITY DEFINER` function owned
+  by an RLS-exempt role (the `private.is_campaign_draft` fix). AUDIT HEURISTIC:
+  inline `EXISTS` against an RLS table inside a policy → ask "is that table visible
+  to the invoking role in the FAILING case?" If not, the gate does nothing.
+- **Realtime publication with the table** (Phase C gate scar): any table consumed
+  via `postgres_changes` (a live-updating UI surface) MUST be added to the
+  `supabase_realtime` publication (`ALTER PUBLICATION supabase_realtime ADD TABLE
+  ...`) in the SAME migration that creates it, AND ship a pgTAP assertion against
+  `pg_publication_tables`. pgTAP cannot observe WAL and hermetic tests cannot
+  observe delivery, so a missing `ADD TABLE` makes a "live" bar structurally dead
+  yet passes every other check — caught only at the whole-branch gate once, via a
+  direct `pg_publication_tables` probe. The membership assertion is the regression
+  lock. (Precedent the campaigns migration should have followed:
+  `20260720000001_session_kudos.sql`'s own "publication in the same migration" law.)
 
 ### 3.3 Product/privacy laws
 - **HR data is EPHEMERAL**: never persisted, never logged (no bpm in AppLogger/Sentry),

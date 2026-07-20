@@ -44,6 +44,13 @@ struct CampaignDetailView: View {
 
     private var isJoined: Bool { myParticipation != nil }
 
+    /// An ended campaign is a frozen historical record (Flow 8 :884), not
+    /// something to join or leave — suppress the join/leave CTA and the
+    /// (pointless) live subscription when the window has closed. Reachable
+    /// only via the Campaigns sub-tab's "Past" section, which only lists
+    /// campaigns the user already participated in (Opus pre-GA closeout).
+    private var isEnded: Bool { campaign.windowState() == .ended }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
@@ -69,7 +76,9 @@ struct CampaignDetailView: View {
                         myProgressSection
                         leaderboardSection
                     }
-                    joinLeaveSection
+                    if !isEnded {
+                        joinLeaveSection
+                    }
                 }
             }
             .padding(.bottom, 24)
@@ -93,7 +102,9 @@ struct CampaignDetailView: View {
             // Live community progress bar (Flow 8 :879, "Updated live via a
             // postgres_changes subscription on the Campaigns detail page").
             // Channel-guard doctrine reasoning: CampaignLiveService.swift's
-            // own header.
+            // own header. Ended campaigns never tick (their progress is
+            // frozen), so skip the subscription entirely.
+            guard !isEnded else { return }
             await liveService.subscribe(campaignID: campaign.id) {
                 Task { await refreshProgress() }
             }

@@ -230,9 +230,9 @@ enum CampaignRepository {
     /// like a real one). Flow 8 (spec :865): "Library -> Campaigns sub-tab
     /// shows all active campaigns + a countdown to upcoming ones" — an
     /// already-ended campaign is deliberately excluded from this list (it
-    /// stays reachable via its own detail page, per the campaigns SELECT
-    /// policy's own "ended campaigns stay browsable" comment — just not
-    /// surfaced on the discovery list, which Flow 8's text never asks for).
+    /// surfaced on the discovery list, which Flow 8's text never asks for.
+    /// Ended campaigns the user PARTICIPATED IN remain reachable via
+    /// `endedParticipated()` below + the Campaigns sub-tab's "Past" section.
     static func activeAndUpcoming() async throws -> (active: [Campaign], upcoming: [Campaign]) {
         do {
             let nowString = Date.now.ISO8601Format(
@@ -253,13 +253,49 @@ enum CampaignRepository {
         }
     }
 
-    // No single-campaign-by-id fetch: both callers of `CampaignDetailView`
-    // (`CampaignsTabView`'s rows, `HomeView`'s carousel card) already hold
-    // the full `Campaign` value from `activeAndUpcoming()` and pass it
-    // directly — no push/deep-link path exists that would need an id-only
-    // lookup (Task 1's own header: "No push notification: NONE named,
-    // therefore none built"). Adding an unused id-fetch method here would
-    // be dead code with no caller to keep it honest against drift.
+    /// Ended campaigns the current user joined — the "Past challenges"
+    /// surface (Opus pre-GA closeout, 2026-07-20). Closes the gate's
+    /// MINOR-2: an ended campaign dropped off `activeAndUpcoming` and had NO
+    /// reachable path, so Flow 8 :884's "leaderboard is frozen; final
+    /// community total is displayed as historical fact" was unreachable
+    /// once a campaign ended — a participant lost their own frozen result.
+    /// Scoped to PARTICIPANTS (an ended campaign is a memory only for those
+    /// who ran it), which the `campaign_participants!inner(user_id)` embed
+    /// enforces at the query layer AND the RLS backs (campaigns SELECT =
+    /// `NOT is_draft OR participant`; a participant reads their ended row).
+    /// `!inner` + dot-notation eq is the Phase L opt-in-embed idiom
+    /// (`PublicWorkoutRepository.leaderboard`'s `workout_attempts!inner`).
+    /// `CampaignDetailView` already renders the `.ended` window state (its
+    /// frozen leaderboard + "Ended" tag) — this just gives it a door.
+    static func endedParticipated() async throws -> [Campaign] {
+        guard let me = await SupabaseService.shared.currentUserID() else {
+            throw GymSyncError.unauthorized
+        }
+        do {
+            let nowString = Date.now.ISO8601Format(
+                .iso8601(timeZone: TimeZone(secondsFromGMT: 0)!, includingFractionalSeconds: true))
+            let rows: [Campaign] = try await client
+                .from("campaigns")
+                .select("*, campaign_participants!inner(user_id)")
+                .eq("campaign_participants.user_id", value: me.uuidString)
+                .lt("ends_at", value: nowString)
+                .order("ends_at", ascending: false)
+                .execute()
+                .value
+            return rows
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
+
+    // No single-campaign-by-id fetch: every caller of `CampaignDetailView`
+    // (`CampaignsTabView`'s active/upcoming/past rows, `HomeView`'s carousel
+    // card) already holds the full `Campaign` value from
+    // `activeAndUpcoming()`/`endedParticipated()` and passes it directly —
+    // no push/deep-link path exists that would need an id-only lookup
+    // (Task 1's own header: "No push notification: NONE named, therefore
+    // none built"). Adding an unused id-fetch method here would be dead
+    // code with no caller to keep it honest against drift.
 
     // MARK: - Join / Leave
     //

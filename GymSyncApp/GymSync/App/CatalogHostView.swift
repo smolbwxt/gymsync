@@ -838,6 +838,24 @@ struct CatalogHostView: View {
         createdAt: .now
     )
 
+    // Ended (window closed) — feeds the Campaigns sub-tab's "Past" section
+    // (Opus pre-GA closeout, gate MINOR-2). `endsAt` in the past so
+    // `windowState()` reads `.ended`.
+    private static let campaignFixturePast = Campaign(
+        id: UUID(),
+        name: "New Year Kickoff",
+        description: "January's 20-session challenge — final standings below.",
+        startsAt: Date.now.addingTimeInterval(-40 * 86400),
+        endsAt: Date.now.addingTimeInterval(-10 * 86400),
+        bannerURL: nil,
+        globalTarget: CampaignTarget(metric: "total_volume", target: 50_000_000),
+        individualTarget: CampaignIndividualTarget(sessions: 20, workoutsCompleted: nil),
+        curatedRoutineIDs: [],
+        isFeatured: false,
+        isDraft: false,
+        createdAt: .now
+    )
+
     private static let campaignFixtureCommunity = CampaignCommunityProgress(
         sessionsCompleted: 812, workoutsCompleted: 812, volumeLifted: 47_300_000
     )
@@ -868,7 +886,8 @@ struct CatalogHostView: View {
     private var content_campaignsTab: some View {
         CampaignsTabView(
             catalogFixtureActive: [Self.campaignFixtureActive],
-            catalogFixtureUpcoming: [Self.campaignFixtureUpcoming]
+            catalogFixtureUpcoming: [Self.campaignFixtureUpcoming],
+            catalogFixturePast: [Self.campaignFixturePast]
         )
     }
 
