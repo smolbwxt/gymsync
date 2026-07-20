@@ -552,8 +552,8 @@ struct HomeView: View {
     /// info.
     ///
     /// Session-name derivation mirrors `upcomingCard`'s own kicker text
-    /// exactly (`HomeView.swift:334-346`: group name if resolvable, else
-    /// "Session") — NOT `routineLabel(for:)` (`HomeView.swift:613`, fixed
+    /// exactly (`HomeView.swift:~370-386`: group name if resolvable, else
+    /// "Session") — NOT `routineLabel(for:)` (`HomeView.swift:~659`, fixed
     /// in the debt-zero sprint to resolve a real name from `ownedRoutines`
     /// when possible, honest "Workout" fallback otherwise — see its own
     /// doc comment). Kept separate deliberately, not swapped in here too:
