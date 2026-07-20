@@ -146,7 +146,9 @@ Spec Flow 8: `campaigns`/`campaign_participants`/`campaign_progress` tables + pr
 4. **Definition of done:** every `app-*.png` capture maps to an authoritative frame and scores in the structural-noise band; `accepted-deviations.json` contains only genuinely-permanent entries (behavior notes, photo-vs-mock); the app icon and pack artwork are real.
 5. **Cheap wins first inside each family:** the harness's worst-first report IS the priority order — start each family sprint at the top of its divergence list.
 
-## Phase V — Local venue hubs (18+, last development phase)
+## Phase V — Local venue hubs (18+) — **BENCHED (user decision, 2026-07-20)**
+
+**Status: parked, not next.** Rationale: SMS phone verification is inherently usage-priced (Twilio Verify needs a funded account; no free production path), and V additionally requires a privacy-policy update + legal review for 18+ phone-number handling — the only roadmap phase with recurring external cost AND legal weight, and the least load-bearing (the shipped phases are a complete product without venues). Twilio account credentials remain in GH secrets (`TWILIO_ACCOUNT_SID`/`TWILIO_API_KEY_SID`/`TWILIO_API_KEY_SECRET`) if/when it's revived; a Verify Service SID (`VA…`) was never created. Revive only when there's budget + a completed legal review.
 
 Spec Flow 9 + §6.7: `venues`/`venue_users`/`venue_join_requests`; QR scan flow; Gym Hub view (local leaderboard, open crews, anonymized activity); crew join requests. **Prerequisites before build:** Twilio Verify account (phone verification), age-gate copy, privacy-policy update + legal review for phone-number handling, venue seeding strategy. Safety measures per spec are mandatory scope, not optional.
 

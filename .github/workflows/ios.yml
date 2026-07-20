@@ -9,6 +9,11 @@ on:
     paths:
       - "GymSyncApp/**"
       - ".github/workflows/ios.yml"
+  # Manual trigger — lets the controller/user run a build+deploy without a
+  # code change (e.g. to bake a newly-added GH secret like SENTRY_DSN into a
+  # fresh build, or re-deploy master). deploy-testflight's own `if:` still
+  # gates it to master, so a dispatch off any other ref build-tests only.
+  workflow_dispatch:
 
 jobs:
   build-test:
@@ -280,7 +285,7 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 45
     needs: build-test
-    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     steps:
       - uses: actions/checkout@v4
 
