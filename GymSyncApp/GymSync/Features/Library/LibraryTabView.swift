@@ -72,50 +72,39 @@ struct LibraryTabView: View {
         .task { await loadFeatured() }
     }
 
-    // Canvas: `.seg` — flat rectangle, 1px divider border, no radius, hugs
-    // content. Phase L Task 3 widened this from 2 to 3 segments (Discover
-    // added); Phase C Task 2 widens it again, 3 -> 4 (Campaigns added) —
-    // every non-first segment gets the same leading-divider overlay the
-    // original Routines/Exercises pair established.
+    // Redesign: rounded pill segments in a surface container — the old flat
+    // 1px-divider box (`.seg`) becomes the proof's segmented control:
+    // selected = accent-filled rounded pill, unselected = transparent, no
+    // internal separator lines. Segments stretch to equal widths so the
+    // control spans the row (the "buttons don't extend across the full
+    // screen" critique).
     private var segmentedControl: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 3) {
             segmentOption(title: "Routines", tab: .routines)
             segmentOption(title: "Exercises", tab: .exercises)
-                .overlay(alignment: .leading) {
-                    Rectangle()
-                        .fill(theme.divider)
-                        .frame(width: 1)
-                }
             segmentOption(title: "Discover", tab: .discover)
-                .overlay(alignment: .leading) {
-                    Rectangle()
-                        .fill(theme.divider)
-                        .frame(width: 1)
-                }
             segmentOption(title: "Campaigns", tab: .campaigns)
-                .overlay(alignment: .leading) {
-                    Rectangle()
-                        .fill(theme.divider)
-                        .frame(width: 1)
-                }
         }
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .padding(4)
+        .background(theme.surface)
+        .cornerRadius(13)
     }
 
-    // Canvas: `.seg-opt` — selected = accent fill + bg text, unselected = transparent.
-    // 44pt minimum tap height per DEFECT audit, independent of the 7/12px visual padding.
+    // 44pt minimum tap height per DEFECT audit, independent of visual padding.
     private func segmentOption(title: String, tab: SubTab) -> some View {
         let isSelected = selection == tab
         return Button {
             selection = tab
         } label: {
             Text(title)
-                .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
-                .foregroundStyle(isSelected ? theme.bg : theme.text)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .frame(minHeight: 44)
+                .font(GSFont.bold(12.5, relativeTo: .subheadline))
+                .foregroundStyle(isSelected ? theme.bg : theme.neutral700)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, minHeight: 40)
                 .background(isSelected ? theme.accent : Color.clear)
+                .cornerRadius(9)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -263,7 +252,7 @@ struct LibraryTabView: View {
             .padding(10)
         }
         .frame(width: 150)
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
     }
 
     // MARK: - Data

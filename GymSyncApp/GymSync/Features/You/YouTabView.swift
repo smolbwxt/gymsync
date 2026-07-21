@@ -296,7 +296,10 @@ struct YouTabView: View {
             healthSyncRow
             calendarSyncRow
         }
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        // Redesign: rounded settings group — the container clips the rows'
+        // square surface fills, so the group reads as one rounded widget.
+        .clipShape(RoundedRectangle(cornerRadius: GSMetrics.radiusMd))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusMd).strokeBorder(theme.divider, lineWidth: 1))
     }
 
     // MARK: - Solo-workout privacy toggle (Phase M Task 4)
@@ -481,7 +484,8 @@ struct YouTabView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
             .background(theme.surface)
-            .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+            .cornerRadius(GSMetrics.radiusSm)
+            .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
