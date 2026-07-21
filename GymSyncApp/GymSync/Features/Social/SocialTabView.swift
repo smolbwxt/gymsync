@@ -66,13 +66,10 @@ struct SocialTabView: View {
                         // below (in the `else` branch) rather than being
                         // masked by this friendlier empty state.
                         if groups.isEmpty && friendCount == 0 && errorText == nil {
-                            // Anchor the empty state in the upper-middle (~28%
-                            // from the top) rather than dead-center: on a tall
-                            // device, full-height centering left it floating in
-                            // a void above and below. Capping the top spacer
-                            // keeps it proportional across screen sizes.
-                            Spacer(minLength: 0)
-                                .frame(maxHeight: proxy.size.height * 0.28)
+                            // Redesign v2 (user feedback 2026-07-21): TOP-anchored
+                            // — the card-anchored empty state sits right under the
+                            // title like any other content (the old ~28%-viewport
+                            // spacer was a leftover from the centered-float era).
                             GSEmptyState(
                                 icon: "person.2",
                                 title: "No crew yet",
@@ -81,17 +78,36 @@ struct SocialTabView: View {
                                 action: { navigateToFriendsFocused = true }
                             )
                             .padding(.horizontal, 16)
-                            // Recorded deviation (same finding as FriendsView's
-                            // identical empty state): the proof's secondary
-                            // "Enter a room code" link is omitted here too — no
-                            // room-code/join-by-code feature exists for
-                            // friends or groups anywhere in the codebase
-                            // (grepped `room code|joinCode|inviteCode|
-                            // groupCode`; the only code-join flow is
-                            // HomeView's session-join-by-code, an unrelated
-                            // domain). `GSEmptyState` still supports an
-                            // optional secondary link for whenever a real
-                            // join-by-code feature exists.
+                            .padding(.top, 12)
+                            // (Recorded deviation: the proof's secondary "Enter a
+                            // room code" link stays omitted — no such feature
+                            // exists for friends/groups; HomeView's session
+                            // join-by-code is an unrelated domain.)
+
+                            // Null-states proof: dimmed preview of what the hub
+                            // hero will show once a crew exists — fills the space
+                            // below with intent instead of void.
+                            GSSectionHeader("Preview")
+                                .padding(.horizontal, 16)
+                                .padding(.top, 18)
+                                .padding(.bottom, 8)
+                            GSCard(bordered: false) {
+                                VStack(alignment: .leading, spacing: 0) {
+                                    GSSectionHeader("Your crews will move")
+                                    Text("— lbs")
+                                        .font(GSFont.heading(30, relativeTo: .largeTitle))
+                                        .foregroundStyle(theme.neutral500)
+                                        .padding(.top, 7)
+                                    Text("once you've got a crew")
+                                        .font(GSFont.body(12, relativeTo: .caption))
+                                        .foregroundStyle(theme.neutral500)
+                                        .padding(.top, 4)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(16)
+                            }
+                            .opacity(0.55)
+                            .padding(.horizontal, 16)
                             Spacer(minLength: 0)
                         } else {
                             // ── Hub hero (redesign: "cumulative weight moved") ──
