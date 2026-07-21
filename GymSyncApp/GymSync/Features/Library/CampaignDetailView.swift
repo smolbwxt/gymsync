@@ -296,7 +296,10 @@ struct CampaignDetailView: View {
     }
 
     private func leaderboardRow(rank: Int, row: CampaignLeaderboardRow) -> some View {
-        HStack(spacing: 10) {
+        // Redesign (deep-screens proof): the caller's own row is highlighted
+        // with an accent-soft rounded fill so "where am I?" answers at a glance.
+        let isMe = row.userID == myParticipation?.userID
+        return HStack(spacing: 10) {
             Text("\(rank)")
                 .font(GSFont.heading(15, relativeTo: .body))
                 .foregroundStyle(rank == 1 ? theme.accent : theme.neutral700)
@@ -305,7 +308,7 @@ struct CampaignDetailView: View {
             GSInitialsAvatar(name: row.username, avatarURL: row.avatarURL, size: 32)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.username)
+                Text(isMe ? "You" : row.username)
                     .font(GSFont.bold(13, relativeTo: .body))
                     .foregroundStyle(theme.text)
                 Text("\(formattedNumber(row.volumeLifted)) lbs")
@@ -317,6 +320,9 @@ struct CampaignDetailView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
+        .background(isMe ? theme.accent100 : Color.clear)
+        .cornerRadius(isMe ? 12 : 0)
+        .padding(.horizontal, isMe ? 8 : 0)
     }
 
     // MARK: - Join / Leave CTA
