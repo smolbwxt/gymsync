@@ -570,7 +570,7 @@ struct GroupSessionLiveView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 8)
                     .background(theme.surface)
-                    .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
                     .opacity(reactionOverlayVisible ? 1 : 0)
                     .offset(y: reactionOverlayVisible ? -120 : -80)
                     .animation(.easeOut(duration: 0.3), value: reactionOverlayVisible)
@@ -638,7 +638,7 @@ struct GroupSessionLiveView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 5)
                 .background(theme.surface)
-                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
                 .padding(.bottom, 130)  // float above dock
                 .transition(.opacity)
                 .id(txt)
@@ -932,7 +932,7 @@ struct GroupSessionLiveView: View {
                             .padding(.vertical, 10)
                             .padding(.horizontal, 4)
                             .background(theme.surface)
-                            .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                            .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
                         }
                         .buttonStyle(.plain)
                     }
@@ -949,7 +949,7 @@ struct GroupSessionLiveView: View {
                         .foregroundStyle(theme.accent)
                         .frame(width: 52)
                         .frame(minHeight: 44)
-                        .overlay(Rectangle().strokeBorder(theme.accent, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+                        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.accent, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Open sound library")
@@ -970,7 +970,7 @@ struct GroupSessionLiveView: View {
                                 .padding(.horizontal, 9)
                                 .padding(.vertical, 6)
                                 .background(theme.surface)
-                                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
                         }
                         .buttonStyle(.plain)
                         .fixedSize()
@@ -1046,7 +1046,7 @@ struct GroupSessionLiveView: View {
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(theme.neutral700)
                         .frame(width: 30, height: 30)
-                        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
@@ -1064,7 +1064,7 @@ struct GroupSessionLiveView: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(theme.neutral700)
                     .frame(width: 30, height: 30)
-                    .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
@@ -1077,7 +1077,7 @@ struct GroupSessionLiveView: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(theme.neutral700)
                     .frame(width: 30, height: 30)
-                    .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
@@ -1191,7 +1191,7 @@ struct GroupSessionLiveView: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.surface)
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
     }
 
     // MARK: - Inline "LOG THIS SET" card — p06
@@ -1283,7 +1283,7 @@ struct GroupSessionLiveView: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.surface)
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
     }
 
     // Reps/weight stepper cell and its arithmetic helpers now live in LogSetSheet.swift
@@ -1320,7 +1320,7 @@ struct GroupSessionLiveView: View {
                     .padding(.vertical, 10)
                     .frame(maxWidth: .infinity, minHeight: 44)
                     .background(isNow ? theme.accent : theme.surface)
-                    .overlay(Rectangle().strokeBorder(
+                    .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(
                         isSpeaking ? theme.accent700 : (isNow ? Color.clear : theme.divider),
                         lineWidth: isSpeaking ? 2 : 1))
                 }
@@ -1373,7 +1373,7 @@ struct GroupSessionLiveView: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.surface)
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
     }
 
     private var progressSegments: some View {
@@ -1486,7 +1486,7 @@ struct GroupSessionLiveView: View {
         .padding(10)
         .frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
         .background(isLifting ? theme.accent : theme.surface)
-        .overlay(Rectangle().strokeBorder(
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(
             isSpeaking ? theme.accent700 : (isLifting ? Color.clear : theme.divider),
             lineWidth: isSpeaking ? 2 : 1))
         .opacity(isMuted ? 0.7 : 1)
@@ -1590,7 +1590,7 @@ struct GroupSessionLiveView: View {
                 .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
                 .foregroundStyle(theme.neutral700)
                 .frame(maxWidth: .infinity, minHeight: 48)
-                .overlay(Rectangle().strokeBorder(theme.divider, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 .background(theme.bg)
@@ -1631,7 +1631,7 @@ struct GroupSessionLiveView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
                 .background(theme.bg.opacity(0.15))
-                .overlay(Rectangle().strokeBorder(theme.bg.opacity(0.4), lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.bg.opacity(0.4), lineWidth: 1))
             }
             .buttonStyle(.plain)
 

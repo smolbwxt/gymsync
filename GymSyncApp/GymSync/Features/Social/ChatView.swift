@@ -371,7 +371,7 @@ struct ChatView: View {
                                 .foregroundStyle(theme.neutral700)
                                 .frame(width: 38, height: 38)
                                 .background(theme.bg)
-                                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
                         }
                         .disabled(isSendingImage)
                     }
@@ -385,7 +385,7 @@ struct ChatView: View {
                         .padding(.horizontal, 12)
                         .frame(minHeight: 38)
                         .background(theme.surface)
-                        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
 
                     if case .group = scope {
                         // Mic (empty draft) or Send (non-empty draft) — matches the proof's
@@ -475,7 +475,7 @@ struct ChatView: View {
             .foregroundStyle(theme.neutral700)
             .frame(width: 44, height: 44)
             .background(theme.bg)
-            .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
             .opacity((isSendingVoice || isVoiceRoomActive) ? 0.4 : 1)
             // onLongPressGesture with pressing: true → start, false → stop
             .onLongPressGesture(minimumDuration: 0.15, pressing: { pressing in
@@ -643,7 +643,7 @@ struct ChatView: View {
                     .fill(theme.accent)
                     .frame(width: 3)
             }
-            .overlay(Rectangle().strokeBorder(theme.accent.opacity(0.35), lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.accent.opacity(0.35), lineWidth: 1))
             .padding(.horizontal, 8)
         } else {
             // Standard system message: centered, inline border per canvas
@@ -653,7 +653,7 @@ struct ChatView: View {
                 .multilineTextAlignment(.center)
                 .padding(.vertical, 5)
                 .padding(.horizontal, 12)
-                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
                 .frame(maxWidth: .infinity, alignment: .center)
         }
     }

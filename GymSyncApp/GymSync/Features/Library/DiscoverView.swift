@@ -115,7 +115,7 @@ struct DiscoverView: View {
             }
             .padding(12)
             .background(theme.surface)
-            .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 16)
@@ -179,7 +179,7 @@ struct DiscoverView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.surface)
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
     }
 
     /// Shared with `DiscoverWorkoutDetailView`'s metric chips/segmented sort

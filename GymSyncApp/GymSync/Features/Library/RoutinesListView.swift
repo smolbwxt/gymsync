@@ -98,7 +98,7 @@ struct RoutinesListView: View {
                 .foregroundStyle(theme.accent)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .overlay(Rectangle().strokeBorder(theme.accent, lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.accent, lineWidth: 1))
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)

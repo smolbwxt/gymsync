@@ -61,7 +61,7 @@ struct ExerciseDetailView: View {
                     .frame(maxWidth: .infinity)
                     .frame(height: 220)
                     .clipped()
-                    .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
 
                 // Canvas: Muscles worked section header + accent/neutral tags
                 VStack(alignment: .leading, spacing: 8) {
@@ -137,7 +137,7 @@ struct ExerciseDetailView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(theme.surface)
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
     }
 
     // "190 × 5" — weight-first, matches the app-wide PR/set-display convention.

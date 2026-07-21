@@ -246,7 +246,7 @@ struct BurpeeLedgerView: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.surface)
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
     }
 
     // MARK: - Crew debts
@@ -352,12 +352,12 @@ struct BurpeeLedgerView: View {
                 .foregroundStyle(theme.neutral500)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .overlay(Rectangle().strokeBorder(theme.neutral400, lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.neutral400, lineWidth: 1))
         }
         .padding(12)
         .frame(maxWidth: .infinity, minHeight: 44)
         .background(theme.surface)
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
     }
 
     // MARK: - Data loading

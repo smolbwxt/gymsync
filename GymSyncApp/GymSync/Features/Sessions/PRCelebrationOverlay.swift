@@ -97,7 +97,7 @@ struct PRCelebrationOverlay: View {
                             .foregroundStyle(theme.bg)
                             .frame(maxWidth: .infinity, minHeight: 44)
                     }
-                    .overlay(Rectangle().strokeBorder(theme.bg.opacity(0.6), lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.bg.opacity(0.6), lineWidth: 1))
 
                     Button {
                         onDismiss()

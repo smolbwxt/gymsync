@@ -235,7 +235,7 @@ struct ScheduleSessionView: View {
             }
         }
         .background(theme.surface)
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
     }
 
     @ViewBuilder
@@ -287,7 +287,7 @@ struct ScheduleSessionView: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 9)
                 .background(theme.surface)
-                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
             }
         }
     }
@@ -336,7 +336,7 @@ struct ScheduleSessionView: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 9)
                         .background(isSelected ? theme.accent100 : theme.surface)
-                        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                     .padding(.bottom, 4)
@@ -390,7 +390,7 @@ struct ScheduleSessionView: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 9)
                 .background(theme.surface)
-                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
             }
             .padding(.horizontal, 16)
         }
@@ -427,7 +427,7 @@ struct ScheduleSessionView: View {
                 .padding(.vertical, 10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(theme.surface)
-                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
 
                 // Time tile
                 VStack(alignment: .leading, spacing: 2) {
@@ -448,7 +448,7 @@ struct ScheduleSessionView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
                 .background(theme.surface)
-                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
             }
             .padding(.horizontal, 16)
         }

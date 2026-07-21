@@ -693,7 +693,7 @@ struct LobbyView: View {
                     .hidden() // top/bottom via alignment
             }, alignment: .leading
         )
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
     }
 
     // MARK: - Proposals Section
@@ -843,7 +843,7 @@ struct LobbyView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(theme.surface)
-        .overlay(Rectangle().strokeBorder(isSpeaking ? theme.accent : theme.divider, lineWidth: isSpeaking ? 2 : 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(isSpeaking ? theme.accent : theme.divider, lineWidth: isSpeaking ? 2 : 1))
         .opacity(isMuted ? 0.7 : 1)
     }
 
@@ -999,7 +999,7 @@ struct LobbyView: View {
                         .padding(.vertical, 12)
                         .frame(maxWidth: .infinity)
                         .background(theme.accent100)
-                        .overlay(Rectangle().strokeBorder(theme.accent, lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.accent, lineWidth: 1))
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)

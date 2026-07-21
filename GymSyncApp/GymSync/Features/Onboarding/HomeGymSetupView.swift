@@ -181,7 +181,7 @@ struct HomeGymSetupView: View {
         }
         .frame(height: 230)
         .clipped()
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
     }
 
     // MARK: - Search (canvas frame 42)
@@ -222,7 +222,7 @@ struct HomeGymSetupView: View {
             .frame(height: 48)
             .background(theme.surface)
             .overlay(
-                Rectangle().strokeBorder(
+                RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(
                     searchQuery.isEmpty ? theme.divider : theme.accent, lineWidth: 1
                 )
             )

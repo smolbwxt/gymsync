@@ -48,7 +48,7 @@ struct CreateGroupView: View {
                                 .padding(.horizontal, 12)
                                 .frame(height: 44)
                                 .background(theme.surface)
-                                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
                         }
                         .padding(.horizontal, 16)
                     }
@@ -106,7 +106,7 @@ struct CreateGroupView: View {
                                     )
                                     .overlay(
                                         selected.contains(profile.id)
-                                            ? Rectangle().strokeBorder(theme.accent, lineWidth: 1)
+                                            ? RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.accent, lineWidth: 1)
                                             : nil
                                     )
                                 }
@@ -231,7 +231,7 @@ struct CreateGroupView: View {
         ZStack {
             Rectangle()
                 .fill(isSelected ? theme.accent : Color.clear)
-                .overlay(Rectangle().strokeBorder(isSelected ? theme.accent : theme.neutral400, lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(isSelected ? theme.accent : theme.neutral400, lineWidth: 1))
             if isSelected {
                 Image(systemName: "checkmark")
                     .font(.system(size: 11, weight: .bold))

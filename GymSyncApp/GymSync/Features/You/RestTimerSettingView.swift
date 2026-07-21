@@ -54,7 +54,7 @@ struct RestTimerSettingView: View {
                         presetRow(seconds: seconds, isLast: index == Self.presets.count - 1)
                     }
                 }
-                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
 
                 GSSectionHeader("Custom")
                 customStepperRow()
@@ -134,7 +134,7 @@ struct RestTimerSettingView: View {
         .padding(.horizontal, 16)
         .frame(minHeight: 44)
         .background(theme.surface)
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
     }
 
     /// A single "small drawn box" stepper button — 44×44 bordered square
@@ -150,7 +150,7 @@ struct RestTimerSettingView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
     }
 
     private func clamped(_ seconds: Int) -> Int {

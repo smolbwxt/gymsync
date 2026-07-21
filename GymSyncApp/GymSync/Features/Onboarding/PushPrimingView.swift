@@ -125,7 +125,7 @@ struct PushPrimingView: View {
                 .font(.system(size: 13, weight: .bold))
                 .foregroundColor(theme.text)
                 .frame(width: 30, height: 30)
-                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
                 .contentShape(Rectangle())
         }
         .frame(minWidth: 44, minHeight: 44)

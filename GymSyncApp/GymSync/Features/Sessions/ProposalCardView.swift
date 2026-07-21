@@ -59,7 +59,7 @@ struct ProposalCardView: View {
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 7)
                                 .background(theme.surface)
-                                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
                                 .frame(minHeight: 44)
                                 .contentShape(Rectangle())
                         }
@@ -84,7 +84,7 @@ struct ProposalCardView: View {
         }
         .padding(12)
         .background(rowBackground)
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
         .listRowBackground(theme.bg)
         .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
         .listRowSeparator(.hidden)

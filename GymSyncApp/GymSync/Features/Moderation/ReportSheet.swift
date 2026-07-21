@@ -80,7 +80,7 @@ struct ReportSheet: View {
                     reasonRow(reason)
                 }
             }
-            .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
 
             GSSectionHeader("Details (optional)")
                 .padding(.top, 20)
@@ -92,7 +92,7 @@ struct ReportSheet: View {
                 .lineLimit(3...6)
                 .padding(12)
                 .background(theme.surface)
-                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
 
             if let errorText {
                 Text(errorText)

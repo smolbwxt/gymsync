@@ -170,7 +170,7 @@ struct SoundLibrarySheet: View {
         .listRowBackground(
             Rectangle()
                 .fill(theme.bg)
-                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
         )
     }
 
@@ -210,7 +210,7 @@ struct SoundLibrarySheet: View {
         .padding(.vertical, 4)
         .frame(minHeight: 44)
         .background(theme.bg)
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
         .contentShape(Rectangle())
         .onTapGesture {
             onSend(sound.slug)

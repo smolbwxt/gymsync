@@ -239,7 +239,7 @@ struct GroupRecapView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(theme.accent)
                     .frame(width: 30, height: 30)
-                    .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
@@ -383,7 +383,7 @@ struct GroupRecapView: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.accent100)
-        .overlay(Rectangle().strokeBorder(theme.accent300, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.accent300, lineWidth: 1))
         .padding(.horizontal, 16)
     }
 
@@ -403,7 +403,7 @@ struct GroupRecapView: View {
                         Text(emoji)
                             .font(.system(size: 20))
                             .frame(maxWidth: .infinity, minHeight: 44)
-                            .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                            .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                     // No participants to send to (e.g. a 1-person "crew" edge

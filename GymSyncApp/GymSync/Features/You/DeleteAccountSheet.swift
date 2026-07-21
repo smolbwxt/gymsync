@@ -41,7 +41,7 @@ struct DeleteAccountSheet: View {
                         .textInputAutocapitalization(.characters)
                         .padding(12)
                         .background(theme.surface)
-                        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
 
                     if let errorText {
                         Text(errorText)

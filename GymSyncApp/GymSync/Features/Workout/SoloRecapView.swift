@@ -139,7 +139,7 @@ struct SoloRecapView: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(theme.accent)
                     .frame(width: 30, height: 30)
-                    .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }

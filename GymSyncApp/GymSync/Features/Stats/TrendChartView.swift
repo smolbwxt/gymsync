@@ -130,7 +130,7 @@ struct TrendChartView: View {
                         .frame(minWidth: 44, minHeight: 44)
                         .background(isSelected ? theme.accent : Color.clear)
                         .overlay(
-                            Rectangle().strokeBorder(theme.neutral400, lineWidth: isSelected ? 0 : 1)
+                            RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.neutral400, lineWidth: isSelected ? 0 : 1)
                         )
                         .contentShape(Rectangle())
                 }

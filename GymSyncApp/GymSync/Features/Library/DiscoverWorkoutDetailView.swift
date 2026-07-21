@@ -258,7 +258,7 @@ struct DiscoverWorkoutDetailView: View {
         }
         .padding(12)
         .background(theme.surface)
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
     }
 
     private func targetSummary(_ re: RoutineExercise) -> String {
@@ -460,7 +460,7 @@ struct DiscoverWorkoutDetailView: View {
                     }
             }
         }
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
     }
 
     private func sortSegmentOption(_ metric: SortMetric) -> some View {

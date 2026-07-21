@@ -156,7 +156,7 @@ struct NotificationPreferencesView: View {
                     toggleRow(category: entry.category, label: entry.label, isLast: index == entries.count - 1)
                 }
             }
-            .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
         }
     }
 

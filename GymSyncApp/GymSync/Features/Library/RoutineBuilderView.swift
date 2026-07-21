@@ -54,7 +54,7 @@ struct RoutineBuilderView: View {
                         .padding(.vertical, 12)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(theme.surface)
-                        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
                 }
 
                 // Optional description — not in canvas, kept for parity with the
@@ -67,7 +67,7 @@ struct RoutineBuilderView: View {
                     .padding(.vertical, 10)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(theme.surface)
-                    .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
 
                 // Canvas: "N EXERCISES · ≈ X min" header (GSSectionHeader tracking,
                 // reuses the shared duration heuristic Home/Library already use).
@@ -106,7 +106,7 @@ struct RoutineBuilderView: View {
                         .padding(.vertical, 14)
                         .contentShape(Rectangle())
                 }
-                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
 
                 // Curator-only publish toggle (frame 3's Featured shelf is
                 // fed by this) — visible only to curators; server-enforced
@@ -239,7 +239,7 @@ struct RoutineBuilderView: View {
         .padding(.vertical, 12)
         .frame(minHeight: 44)
         .background(theme.surface)
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
     }
 
     // MARK: - Publish fields (Phase L Task 4)
@@ -284,7 +284,7 @@ struct RoutineBuilderView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 12)
         .background(theme.surface)
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
     }
 
     // "None" + the 4 `SortMetric` cases — a curator can leave a published
@@ -303,7 +303,7 @@ struct RoutineBuilderView: View {
                     }
             }
         }
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
     }
 
     private func defaultSortOption(_ metric: DiscoverWorkoutDetailView.SortMetric?, label: String) -> some View {
@@ -376,7 +376,7 @@ struct RoutineBuilderView: View {
         ZStack {
             Rectangle()
                 .fill(isSelected ? theme.accent : Color.clear)
-                .overlay(Rectangle().strokeBorder(isSelected ? theme.accent : theme.neutral400, lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(isSelected ? theme.accent : theme.neutral400, lineWidth: 1))
             if isSelected {
                 Image(systemName: "checkmark")
                     .font(.system(size: 11, weight: .bold))
@@ -539,7 +539,7 @@ struct RoutineBuilderView: View {
         }
         .padding(12)
         .background(theme.surface)
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
     }
 
     // Canvas: stat tile — muted uppercase kicker + bold value, 1px divider border
@@ -558,7 +558,7 @@ struct RoutineBuilderView: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .frame(maxWidth: .infinity)
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
     }
 
     private func updateItem(_ id: UUID, mutate: (inout RoutineExercise) -> Void) {

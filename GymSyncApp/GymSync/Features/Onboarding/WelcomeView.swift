@@ -107,7 +107,7 @@ struct WelcomeView: View {
             .padding(.vertical, 12)
             .frame(minHeight: 44)
             .background(theme.surface)
-            .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

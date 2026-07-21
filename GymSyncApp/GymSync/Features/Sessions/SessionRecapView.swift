@@ -249,7 +249,7 @@ struct SessionRecapView: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.accent100)
-        .overlay(Rectangle().strokeBorder(theme.accent300, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.accent300, lineWidth: 1))
     }
 
     // MARK: - Hero banner

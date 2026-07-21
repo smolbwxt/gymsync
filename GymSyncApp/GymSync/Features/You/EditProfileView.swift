@@ -71,7 +71,7 @@ struct EditProfileView: View {
                     .padding(.horizontal, 12)
                     .frame(height: 44)
                     .background(theme.surface)
-                    .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
 
                 if let profile {
                     Text("@\(profile.username)")

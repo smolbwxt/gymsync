@@ -68,7 +68,7 @@ struct WeekdayRuleEditor: View {
                         .background(selected ? theme.accent : Color.clear)
                         .overlay(
                             selected ? nil :
-                                Rectangle().strokeBorder(theme.divider, lineWidth: 1)
+                                RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1)
                         )
                 }
                 .buttonStyle(.plain)
@@ -150,7 +150,7 @@ struct WeekdayRuleEditor: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(theme.surface)
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
     }
 
     // MARK: - Helpers

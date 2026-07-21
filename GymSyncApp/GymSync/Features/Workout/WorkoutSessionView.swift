@@ -169,7 +169,7 @@ struct WorkoutSessionView: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 5)
                     .background(theme.surface)
-                    .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
                     .padding(.top, 8)
                     .transition(.opacity)
                     .id(txt)

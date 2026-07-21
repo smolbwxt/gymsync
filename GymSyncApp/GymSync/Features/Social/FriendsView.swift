@@ -63,7 +63,7 @@ struct FriendsView: View {
                         .padding(.horizontal, 12)
                         .frame(height: 44)
                         .background(theme.surface)
-                        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
 
                         Button("Send") {
                             Task { await sendRequest() }

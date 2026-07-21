@@ -94,7 +94,7 @@ struct UsernameView: View {
                         .frame(height: 52)
                         .background(theme.surface)
                         .overlay(
-                            Rectangle().strokeBorder(
+                            RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(
                                 username.isEmpty ? theme.divider : theme.accent,
                                 lineWidth: 1
                             )
@@ -132,7 +132,7 @@ struct UsernameView: View {
                                 }
                                 .buttonStyle(.plain)
                                 .background(theme.surface)
-                                .overlay(Rectangle().strokeBorder(theme.neutral300, lineWidth: 1))
+                                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.neutral300, lineWidth: 1))
                                 .frame(minHeight: 44)
                                 .contentShape(Rectangle())
                             }

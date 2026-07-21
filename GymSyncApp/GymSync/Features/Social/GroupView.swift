@@ -126,7 +126,7 @@ struct GroupView: View {
             }
         }
         .background(theme.surface)
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(theme.bg)
@@ -179,7 +179,7 @@ struct GroupView: View {
                         .padding(.horizontal, 12)
                         .frame(height: 44)
                         .background(theme.surface)
-                        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
 
                         Button("Add") { Task { await addMember() } }
                             .buttonStyle(GSPrimaryButtonStyle())
@@ -254,7 +254,7 @@ struct GroupView: View {
         .foregroundStyle(theme.accent)
         .frame(maxWidth: .infinity, minHeight: 44)
         .contentShape(Rectangle())
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(theme.bg)

@@ -315,7 +315,7 @@ func stepperCell(
                 Rectangle().fill(borderColor.opacity(0.6)).frame(width: 1)
             }
         }
-        .overlay(Rectangle().strokeBorder(borderColor, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(borderColor, lineWidth: 1))
     }
     .frame(maxWidth: .infinity)
 }
@@ -376,7 +376,7 @@ struct RPESegmentBar: View {
                 theme.accent200
             } else {
                 theme.surface
-                    .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
             }
 
             if isSelected {
