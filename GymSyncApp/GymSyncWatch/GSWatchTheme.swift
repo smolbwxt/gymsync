@@ -30,6 +30,19 @@ public struct GSWatchTheme {
     public let accent: Color
     public let divider: Color
 
+    /// Onyx — the 2026-07-20 redesign's near-black default (values verbatim
+    /// from GSTheme.onyx). Accent is the sky default: the phone's
+    /// user-selected accent does NOT sync to the watch yet (no
+    /// applicationContext plumbing for it) — wire alongside palette sync
+    /// if/when that lands, per the note above.
+    public static let onyx = GSWatchTheme(
+        bg:      Color(hex: 0x0A0B0D),
+        surface: Color(hex: 0x16181D),
+        text:    Color(hex: 0xF3F5F8),
+        accent:  Color(hex: 0x38BDF8),
+        divider: Color.white.opacity(0.07)
+    )
+
     public static let midnight = GSWatchTheme(
         bg:      Color(hex: 0x13161c),
         surface: Color(hex: 0x1e232c),
@@ -38,11 +51,10 @@ public struct GSWatchTheme {
         divider: Color.white.opacity(0.15)
     )
 
-    // Trimmed to `.midnight`-only per the T1 review's YAGNI adjudication:
-    // the other 3 palettes (arena/ink/modernist) and the id->theme lookup
-    // had zero call sites here, and no spec'd phone->watch palette sync
-    // exists yet. Re-port them from GSTheme.swift (GSPalettes) alongside
-    // whichever task actually wires palette sync.
+    // Trimmed per the T1 review's YAGNI adjudication: no arena/ink/modernist
+    // and no id->theme lookup — zero call sites, no phone->watch palette
+    // sync. Re-port from GSTheme.swift (GSPalettes) alongside whichever task
+    // actually wires palette sync.
 }
 
 // MARK: - Hex Color initialiser (fileprivate)
@@ -63,7 +75,7 @@ fileprivate extension Color {
 // MARK: - Environment
 
 private struct GSWatchThemeKey: EnvironmentKey {
-    static let defaultValue: GSWatchTheme = .midnight
+    static let defaultValue: GSWatchTheme = .onyx   // redesign default
 }
 
 public extension EnvironmentValues {
