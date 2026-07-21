@@ -1,0 +1,234 @@
+<title>GymSync — Home redesign (direction study)</title>
+<style>
+@font-face{font-family:'Archivo';font-weight:400;font-style:normal;font-display:swap;src:url(data:font/ttf;base64,__ARCHIVO_REGULAR__) format('truetype');}
+@font-face{font-family:'Archivo';font-weight:700;font-style:normal;font-display:swap;src:url(data:font/ttf;base64,__ARCHIVO_BOLD__) format('truetype');}
+
+:root{--page:#e9e9ec;--page-ink:#1b1c1f;--page-muted:#6a6c72;--panel:#f6f6f8;--line:rgba(0,0,0,.10);}
+@media (prefers-color-scheme:dark){:root{--page:#0f1012;--page-ink:#e9eaec;--page-muted:#9a9ca3;--panel:#191a1e;--line:rgba(255,255,255,.10);}}
+:root[data-theme="dark"]{--page:#0f1012;--page-ink:#e9eaec;--page-muted:#9a9ca3;--panel:#191a1e;--line:rgba(255,255,255,.10);}
+:root[data-theme="light"]{--page:#e9e9ec;--page-ink:#1b1c1f;--page-muted:#6a6c72;--panel:#f6f6f8;--line:rgba(0,0,0,.10);}
+
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Archivo',system-ui,sans-serif;background:var(--page);color:var(--page-ink);-webkit-font-smoothing:antialiased;}
+.wrap{max-width:820px;margin:0 auto;padding:40px 24px 64px;}
+.head h1{font-weight:700;font-size:26px;letter-spacing:-.02em;}
+.head p{color:var(--page-muted);font-size:15px;margin-top:8px;line-height:1.55;}
+.layout{display:flex;gap:34px;flex-wrap:wrap;justify-content:center;align-items:flex-start;margin-top:34px;}
+.side{flex:1;min-width:260px;max-width:320px;display:flex;flex-direction:column;gap:22px;position:sticky;top:24px;}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:20px;}
+.panel h3{font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--page-muted);}
+.panel p{font-size:13.5px;color:var(--page-muted);line-height:1.5;margin-top:6px;}
+.swatches{display:flex;flex-wrap:wrap;gap:12px;margin-top:16px;}
+.sw{width:34px;height:34px;border-radius:50%;cursor:pointer;position:relative;border:2px solid transparent;transition:transform .12s;}
+.sw:hover{transform:scale(1.08);}
+.sw.on{border-color:var(--page-ink);box-shadow:0 0 0 3px var(--page);}
+.sw.mono{background:#f3f5f8;}
+.swname{font-size:12px;color:var(--page-muted);margin-top:12px;}
+.swname b{color:var(--page-ink);font-weight:700;}
+.glist{display:flex;flex-direction:column;gap:12px;margin-top:16px;}
+.grp{display:flex;align-items:center;gap:11px;font-size:13.5px;}
+.gav{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-size:10px;font-weight:700;color:#0a0b0d;flex:0 0 auto;}
+.grp b{font-weight:700;color:var(--page-ink);}
+.grp span{color:var(--page-muted);}
+
+/* ============ THE APP ============ */
+.phone{
+  --bg:#0a0b0d; --surface:#16181d; --surface-2:#1e222a; --hair:rgba(255,255,255,.07);
+  --text:#f3f5f8; --muted:#868b95; --dim:#5c616b;
+  --radius:26px; --radius-sm:18px;
+  --accent:#38bdf8; --accent-soft:rgba(56,189,248,.15); --on-accent:#04222e;
+  --grp-a:#f5b83d; --grp-b:#5ecb8f; /* group identity colors — independent of accent */
+  width:352px;flex:0 0 auto;background:var(--bg);border-radius:46px;padding:12px;
+  border:1px solid rgba(255,255,255,.08);
+  box-shadow:0 40px 90px rgba(0,0,0,.45), inset 0 0 0 8px #050506;
+  font-family:'Archivo',sans-serif;color:var(--text);
+}
+.screen{background:var(--bg);border-radius:36px;overflow:hidden;height:726px;display:flex;flex-direction:column;}
+.statusbar{display:flex;justify-content:space-between;align-items:center;padding:14px 26px 4px;font-size:14px;font-weight:700;color:var(--text);}
+.statusbar .dots{display:flex;gap:5px;align-items:center;color:var(--muted)}
+.scroll{flex:1;overflow:hidden;padding:8px 18px 0;}
+.tabbar{display:flex;justify-content:space-around;align-items:center;padding:12px 10px;border-top:1px solid var(--hair);background:var(--bg);}
+.tabbar .t{display:flex;flex-direction:column;align-items:center;gap:5px;color:var(--dim);font-size:10px;font-weight:600;}
+.tabbar .t.on{color:var(--accent);}
+.tabbar .t svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;}
+
+.greet{display:flex;justify-content:space-between;align-items:flex-start;padding:14px 6px 16px;}
+.greet h2{font-weight:700;font-size:23px;letter-spacing:-.02em;line-height:1.1;}
+.greet .date{color:var(--muted);font-size:13px;margin-top:4px;}
+.avatar{width:38px;height:38px;border-radius:50%;background:var(--surface-2);display:grid;place-items:center;color:var(--muted);border:1px solid var(--hair);flex:0 0 auto;}
+.avatar svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8}
+
+.card{background:var(--surface);border-radius:var(--radius);padding:18px;border:1px solid var(--hair);}
+.row{display:flex;gap:12px;}.row>*{flex:1;}.mt{margin-top:12px;}
+.big{font-family:'Archivo';font-weight:700;letter-spacing:-.03em;line-height:.95;}
+.kicker{font-size:10.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--muted);}
+
+.cta{background:var(--surface);border:1px solid var(--hair);border-radius:var(--radius);padding:20px;display:flex;align-items:center;justify-content:space-between;}
+.cta .lbl{font-weight:700;font-size:18px;letter-spacing:-.01em;}
+.cta .sub{color:var(--muted);font-size:12.5px;margin-top:3px;}
+.play{width:48px;height:48px;border-radius:50%;background:var(--accent);color:var(--on-accent);display:grid;place-items:center;flex:0 0 auto;}
+.play svg{width:20px;height:20px;fill:currentColor;margin-left:2px;}
+
+.pr .top{display:flex;align-items:center;gap:7px;color:var(--accent);}
+.pr .top svg{width:15px;height:15px;fill:currentColor;}
+.pr .top span{font-size:10.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;}
+.pr .name{font-weight:700;font-size:14px;margin-top:9px;}
+.pr .val{font-size:30px;margin-top:6px;}
+.pr .val small{font-size:14px;color:var(--muted);font-weight:700;letter-spacing:0;}
+.pr .delta{color:var(--muted);font-size:11.5px;margin-top:4px;}
+
+.ring{display:flex;align-items:center;gap:14px;}
+.ring svg{width:60px;height:60px;flex:0 0 auto;}
+.ring .rn{font-size:26px;}
+.ring .rl{color:var(--muted);font-size:11.5px;margin-top:2px;line-height:1.25;}
+
+.cal .hd{display:flex;justify-content:space-between;align-items:center;}
+.cal .months{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);font-weight:600;margin:14px 4px 10px;}
+.grid{display:grid;grid-template-columns:repeat(18,1fr);gap:6px;}
+.grid i{aspect-ratio:1;border-radius:3px;background:var(--surface-2);}
+.grid i.f{background:rgba(255,255,255,.34);}
+.grid i.solo{background:var(--accent);}
+.grid i.ga{background:var(--grp-a);}
+.grid i.gb{background:var(--grp-b);}
+.callegend{display:flex;gap:14px;flex-wrap:wrap;margin-top:12px;}
+.cl{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--muted);font-weight:600;}
+.cl i{width:9px;height:9px;border-radius:2px;}
+.up{margin-top:15px;border-top:1px solid var(--hair);padding-top:14px;display:flex;flex-direction:column;gap:13px;}
+.upr{display:flex;align-items:center;gap:11px;}
+.uav{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;font-size:10.5px;font-weight:700;color:#0a0b0d;flex:0 0 auto;}
+.upr .u-t{font-weight:700;font-size:13.5px;}
+.upr .u-s{color:var(--muted);font-size:11.5px;margin-top:2px;}
+.upr .u-r{margin-left:auto;color:var(--muted);font-size:11px;font-weight:600;text-align:right;}
+
+.tile .k{font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);}
+.tile .v{font-size:22px;margin-top:8px;}
+.tile .v small{font-size:12px;color:var(--muted);font-weight:700;}
+.fade{position:relative;}
+.fade:after{content:"";position:absolute;left:0;right:0;bottom:0;height:30px;background:linear-gradient(transparent,var(--bg));pointer-events:none;}
+</style>
+
+<div class="wrap">
+  <div class="head">
+    <h1>Home — new direction</h1>
+    <p>Near-black floating-widget language. <b>Your accent is user-pickable</b> (default sky blue) — click the swatches and the app updates live. The <b>calendar carries per-group identity</b>: each group has its own color (or profile photo), shown independently of your accent.</p>
+  </div>
+
+  <div class="layout">
+    <div class="side">
+      <div class="panel">
+        <h3>Your accent</h3>
+        <p>A personal choice — recolors your buttons, active tab, PR flame and solo markers. Defaults to sky blue.</p>
+        <div class="swatches" id="swatches"></div>
+        <div class="swname" id="swname">Selected: <b>Sky blue</b></div>
+      </div>
+      <div class="panel">
+        <h3>Your groups</h3>
+        <p>Each group keeps its own identity color (or avatar) on the calendar — never changes with your accent.</p>
+        <div class="glist">
+          <div class="grp"><span class="gav" style="background:var(--grp-a,#f5b83d)">MC</span><span><b>Men for Christ</b> · 12 members</span></div>
+          <div class="grp"><span class="gav" style="background:var(--grp-b,#5ecb8f)">SL</span><span><b>Sunday Lifters</b> · 6 members</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="phone" id="app"></div>
+  </div>
+</div>
+
+<script>
+const SCREEN = `
+<div class="screen">
+  <div class="statusbar"><span>9:41</span><span class="dots">
+    <svg width="17" height="12" viewBox="0 0 17 12" fill="currentColor"><rect x="0" y="7" width="3" height="5" rx="1"/><rect x="4.5" y="4" width="3" height="8" rx="1"/><rect x="9" y="1.5" width="3" height="10.5" rx="1"/><rect x="13.5" y="0" width="3" height="12" rx="1"/></svg>
+    <svg width="16" height="12" viewBox="0 0 16 12" fill="currentColor"><path d="M8 2.6c2.3 0 4.4.9 6 2.4l1.4-1.5A11 11 0 0 0 8 .3 11 11 0 0 0 .6 3.5L2 5A8.4 8.4 0 0 1 8 2.6Z"/><circle cx="8" cy="10" r="1.8"/></svg>
+    <svg width="26" height="12" viewBox="0 0 26 12" fill="none"><rect x="0.6" y="0.6" width="21" height="10.8" rx="2.6" stroke="currentColor" stroke-opacity=".5"/><rect x="2.2" y="2.2" width="16" height="7.6" rx="1.4" fill="currentColor"/><rect x="23" y="4" width="1.8" height="4" rx=".9" fill="currentColor" fill-opacity=".5"/></svg>
+  </span></div>
+
+  <div class="scroll fade">
+    <div class="greet">
+      <div><h2>Good morning, Tommy</h2><div class="date">Thursday, July 16</div></div>
+      <div class="avatar"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-6 8-6s8 2 8 6"/></svg></div>
+    </div>
+
+    <div class="cta">
+      <div><div class="lbl">Start Solo Workout</div><div class="sub">Back Squat · ~15 min queued</div></div>
+      <div class="play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+    </div>
+
+    <div class="row mt">
+      <div class="card pr">
+        <div class="top"><svg viewBox="0 0 24 24"><path d="M12 2c1 3-1 4-1 6a3 3 0 0 0 5 2c1 2 2 3 2 6a6 6 0 0 1-12 0c0-4 3-5 3-8 0-2 2-3 3-6Z"/></svg><span>New PR</span></div>
+        <div class="name">Bench Press</div>
+        <div class="val big">225<small> lbs</small></div>
+        <div class="delta">3 reps · +20 lbs on your best</div>
+      </div>
+      <div class="card ring">
+        <svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5" fill="none" stroke="var(--surface-2)" stroke-width="4"/><circle cx="18" cy="18" r="15.5" fill="none" stroke="var(--accent)" stroke-width="4" stroke-linecap="round" stroke-dasharray="97.4" stroke-dashoffset="14" transform="rotate(-90 18 18)"/><path d="M18 9c1.2 3-1.2 4.4-1.2 6.6a3.2 3.2 0 0 0 5.4 2.2c1.1 2.1 2.1 3.2 2.1 6.2a6.3 6.3 0 0 1-12.6 0c0-4.2 3.2-5.3 3.2-8.4 0-2.2 2-3.2 3.1-6.6Z" fill="var(--accent)" transform="scale(.62) translate(11 6.5)"/></svg>
+        <div><div class="rn big">12</div><div class="rl">day streak<br><span style="color:var(--accent)">2 to badge</span></div></div>
+      </div>
+    </div>
+
+    <div class="card cal mt">
+      <div class="hd"><span class="kicker">Training calendar</span><span class="kicker">3 upcoming</span></div>
+      <div class="months"><span>May</span><span>Jun</span><span>Jul</span></div>
+      <div class="grid" id="grid"></div>
+      <div class="callegend">
+        <span class="cl"><i style="background:var(--accent)"></i>Solo</span>
+        <span class="cl"><i style="background:var(--grp-a)"></i>Men for Christ</span>
+        <span class="cl"><i style="background:var(--grp-b)"></i>Sunday Lifters</span>
+      </div>
+      <div class="up">
+        <div class="upr"><span class="uav" style="background:var(--grp-a)">MC</span><div><div class="u-t">Push Day</div><div class="u-s">Men for Christ · 6 going</div></div><div class="u-r">Sat Jul 18<br>7:15 PM</div></div>
+        <div class="upr"><span class="uav" style="background:var(--grp-b)">SL</span><div><div class="u-t">Sunday Heavy</div><div class="u-s">Sunday Lifters · 4 going</div></div><div class="u-r">Sun Jul 19<br>9:00 AM</div></div>
+        <div class="upr"><span class="uav" style="background:var(--accent);color:var(--on-accent)">You</span><div><div class="u-t">Leg Day</div><div class="u-s">Solo</div></div><div class="u-r">Mon Jul 20<br>6:00 AM</div></div>
+      </div>
+    </div>
+
+    <div class="row mt">
+      <div class="card tile"><div class="k">Lifetime</div><div class="v big">269.2<small>k lbs</small></div></div>
+      <div class="card tile"><div class="k">PRs / mo</div><div class="v big">176</div></div>
+    </div>
+    <div style="height:24px"></div>
+  </div>
+
+  <div class="tabbar">
+    <div class="t on"><svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>Home</div>
+    <div class="t"><svg viewBox="0 0 24 24"><path d="M4 5.5A2 2 0 0 1 6 4h5v16H6a2 2 0 0 1-2-1.6z"/><path d="M20 5.5A2 2 0 0 0 18 4h-5v16h5a2 2 0 0 0 2-1.6z"/></svg>Library</div>
+    <div class="t"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 20c0-3 2.7-4.5 6-4.5s6 1.5 6 4.5"/><path d="M16 5.5A3 3 0 0 1 16 11"/><path d="M21 20c0-2.4-1.6-3.9-4-4.3"/></svg>Social</div>
+    <div class="t"><svg viewBox="0 0 24 24"><path d="M5 20V11"/><path d="M12 20V4"/><path d="M19 20v-6"/></svg>Stats</div>
+    <div class="t"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-6 8-6s8 2 8 6"/></svg>You</div>
+  </div>
+</div>`;
+
+const app=document.getElementById('app');
+app.innerHTML=SCREEN;
+// dot-grid: neutral density + a few solo/group-colored recent sessions
+(function(){
+  const solo=new Set([3,8,20,27,40]); const ga=new Set([4,13,31,44]); const gb=new Set([11,24,49]);
+  const filled=new Set([1,7,16,19,33,37,45,52]);
+  let s=""; for(let i=0;i<54;i++){ s+= solo.has(i)?'<i class="solo"></i>':ga.has(i)?'<i class="ga"></i>':gb.has(i)?'<i class="gb"></i>':filled.has(i)?'<i class="f"></i>':'<i></i>'; }
+  app.querySelector('#grid').innerHTML=s;
+})();
+
+// live accent picker
+const ACCENTS=[
+  ['Sky blue','#38bdf8','rgba(56,189,248,.15)','#04222e'],
+  ['Violet','#a78bfa','rgba(167,139,250,.16)','#1c1233'],
+  ['Amber','#ffb020','rgba(255,176,32,.16)','#2a1c04'],
+  ['Lime','#b6f236','rgba(182,242,54,.15)','#1c2a06'],
+  ['Coral','#ff6b5e','rgba(255,107,94,.16)','#2e0f0b'],
+  ['Rose','#fb7bb5','rgba(251,123,181,.16)','#2e0f20'],
+  ['Mono','#f3f5f8','rgba(255,255,255,.12)','#0a0b0d'],
+];
+const wrapSw=document.getElementById('swatches'); const nameEl=document.getElementById('swname');
+ACCENTS.forEach(([n,c,soft,on],i)=>{
+  const b=document.createElement('div'); b.className='sw'+(i===0?' on':'')+(n==='Mono'?' mono':''); b.title=n;
+  if(n!=='Mono') b.style.background=c;
+  b.onclick=()=>{
+    app.style.setProperty('--accent',c); app.style.setProperty('--accent-soft',soft); app.style.setProperty('--on-accent',on);
+    document.querySelectorAll('.sw').forEach(x=>x.classList.remove('on')); b.classList.add('on');
+    nameEl.innerHTML='Selected: <b>'+n+'</b>';
+  };
+  wrapSw.appendChild(b);
+});
+</script>

@@ -1,0 +1,244 @@
+<title>GymSync — Redesign proofs (all tabs)</title>
+<style>
+@font-face{font-family:'Archivo';font-weight:400;font-style:normal;src:url(data:font/ttf;base64,__ARCHIVO_REGULAR__) format('truetype');}
+@font-face{font-family:'Archivo';font-weight:700;font-style:normal;src:url(data:font/ttf;base64,__ARCHIVO_BOLD__) format('truetype');}
+
+:root{--page:#e9e9ec;--ink:#1b1c1f;--muted:#6a6c72;--panel:#f6f6f8;--line:rgba(0,0,0,.10);}
+@media (prefers-color-scheme:dark){:root{--page:#0f1012;--ink:#e9eaec;--muted:#9a9ca3;--panel:#191a1e;--line:rgba(255,255,255,.10);}}
+:root[data-theme="dark"]{--page:#0f1012;--ink:#e9eaec;--muted:#9a9ca3;--panel:#191a1e;--line:rgba(255,255,255,.10);}
+:root[data-theme="light"]{--page:#e9e9ec;--ink:#1b1c1f;--muted:#6a6c72;--panel:#f6f6f8;--line:rgba(0,0,0,.10);}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Archivo',system-ui,sans-serif;background:var(--page);color:var(--ink);-webkit-font-smoothing:antialiased;}
+.wrap{max-width:1180px;margin:0 auto;padding:38px 24px 72px;}
+.head h1{font-weight:700;font-size:27px;letter-spacing:-.02em;}
+.head p{color:var(--muted);font-size:15px;margin-top:8px;line-height:1.55;max-width:78ch;}
+.controls{display:flex;gap:26px;flex-wrap:wrap;align-items:center;margin-top:22px;padding:18px 20px;background:var(--panel);border:1px solid var(--line);border-radius:16px;}
+.controls .lab{font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);}
+.swatches{display:flex;gap:11px;align-items:center;flex-wrap:wrap;}
+.sw{width:30px;height:30px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:transform .12s;}
+.sw:hover{transform:scale(1.1)}.sw.on{border-color:var(--ink);box-shadow:0 0 0 3px var(--panel)}.sw.mono{background:#f3f5f8}
+.sw.wheel{background:conic-gradient(from 0deg,#f43f5e,#f59e0b,#eab308,#22c55e,#06b6d4,#6366f1,#d946ef,#f43f5e);display:grid;place-items:center;font-size:14px;color:#fff;font-weight:700}
+.selname{font-size:13px;color:var(--muted)}.selname b{color:var(--ink)}
+.grpnote{font-size:12.5px;color:var(--muted);display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;gap:6px}.chip i{width:11px;height:11px;border-radius:3px}
+
+.gallery{display:flex;gap:30px;flex-wrap:wrap;justify-content:center;margin-top:32px;}
+.col{display:flex;flex-direction:column;align-items:center;gap:12px;}
+.col .cap{font-size:12px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--muted)}
+.col .cap em{font-style:normal;color:var(--ink)}
+
+/* ---------------- phone ---------------- */
+.phone{
+  --bg:#0a0b0d;--surface:#16181d;--surface-2:#1e222a;--hair:rgba(255,255,255,.07);
+  --text:#f3f5f8;--muted:#868b95;--dim:#5c616b;--radius:24px;--radius-sm:16px;
+  --accent:#38bdf8;--accent-soft:rgba(56,189,248,.15);--on-accent:#04222e;
+  --grp-a:#E69F00;--grp-b:#009E73;--grp-c:#CC79A7; /* Okabe-Ito colorblind-safe */
+  width:340px;flex:0 0 auto;background:var(--bg);border-radius:44px;padding:11px;
+  border:1px solid rgba(255,255,255,.08);box-shadow:0 36px 80px rgba(0,0,0,.45),inset 0 0 0 7px #050506;
+  font-family:'Archivo',sans-serif;color:var(--text);
+}
+.screen{background:var(--bg);border-radius:34px;overflow:hidden;height:712px;display:flex;flex-direction:column}
+.sb{display:flex;justify-content:space-between;align-items:center;padding:13px 24px 3px;font-size:13.5px;font-weight:700}
+.sb .d{display:flex;gap:5px;align-items:center;color:var(--muted)}
+.sc{flex:1;overflow:hidden;padding:6px 16px 0;position:relative}
+.sc:after{content:"";position:absolute;left:0;right:0;bottom:0;height:26px;background:linear-gradient(transparent,var(--bg));pointer-events:none}
+.title{font-weight:700;font-size:21px;letter-spacing:-.02em;padding:12px 4px 6px}
+.tb{display:flex;justify-content:space-around;align-items:center;padding:11px 8px;border-top:1px solid var(--hair)}
+.tb .t{display:flex;flex-direction:column;align-items:center;gap:4px;color:var(--dim);font-size:9.5px;font-weight:600}
+.tb .t.on{color:var(--accent)}.tb .t svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.8}
+
+.card{background:var(--surface);border-radius:var(--radius);padding:16px;border:1px solid var(--hair)}
+.row{display:flex;gap:11px}.row>*{flex:1}.mt{margin-top:11px}
+.big{font-weight:700;letter-spacing:-.03em;line-height:.95}
+.k{font-size:10px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;color:var(--muted)}
+
+/* home bits */
+.cta{background:var(--surface);border:1px solid var(--hair);border-radius:var(--radius);padding:18px;display:flex;align-items:center;justify-content:space-between}
+.cta .lbl{font-weight:700;font-size:17px}.cta .sub{color:var(--muted);font-size:12px;margin-top:3px}
+.solo2{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;margin-top:9px;background:transparent;border:1px solid var(--hair);color:var(--text);border-radius:var(--radius-sm);padding:13px;font-weight:700;font-size:13.5px;font-family:inherit}
+.solo2 svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2.2}
+.play{width:44px;height:44px;border-radius:50%;background:var(--accent);color:var(--on-accent);display:grid;place-items:center;flex:0 0 auto}.play svg{width:18px;height:18px;fill:currentColor;margin-left:2px}
+.greet{display:flex;justify-content:space-between;align-items:flex-start;padding:12px 4px 14px}
+.greet h2{font-weight:700;font-size:21px;letter-spacing:-.02em}.greet .dt{color:var(--muted);font-size:12.5px;margin-top:3px}
+.av{width:36px;height:36px;border-radius:50%;background:var(--surface-2);display:grid;place-items:center;color:var(--muted);border:1px solid var(--hair);flex:0 0 auto}.av svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.8}
+.pr .tp{display:flex;align-items:center;gap:6px;color:var(--accent)}.pr .tp svg{width:14px;height:14px;fill:currentColor}.pr .tp span{font-size:10px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
+.pr .nm{font-weight:700;font-size:13px;margin-top:8px}.pr .vl{font-size:27px;margin-top:5px}.pr .vl small{font-size:13px;color:var(--muted);font-weight:700}.pr .dl{color:var(--muted);font-size:11px;margin-top:4px}
+.ring{display:flex;align-items:center;gap:12px}.ring svg{width:56px;height:56px;flex:0 0 auto}.ring .rn{font-size:24px}.ring .rl{color:var(--muted);font-size:11px;margin-top:2px;line-height:1.25}
+.cal .mo{display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted);font-weight:600;margin:12px 4px 9px}
+.grid{display:grid;grid-template-columns:repeat(18,1fr);gap:5px}.grid i{aspect-ratio:1;border-radius:2.5px;background:var(--surface-2)}
+.grid i.f{background:rgba(255,255,255,.30)}.grid i.solo{background:var(--accent)}.grid i.ga{background:var(--grp-a)}.grid i.gb{background:var(--grp-b)}
+.leg{display:flex;gap:12px;flex-wrap:wrap;margin-top:11px}.cl{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--muted);font-weight:600}.cl i{width:8px;height:8px;border-radius:2px}
+.up{margin-top:13px;border-top:1px solid var(--hair);padding-top:12px;display:flex;flex-direction:column;gap:11px}
+.upr{display:flex;align-items:center;gap:10px}.uav{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;font-size:10px;font-weight:700;color:#0a0b0d;flex:0 0 auto}
+.upr .ut{font-weight:700;font-size:13px}.upr .us{color:var(--muted);font-size:11px;margin-top:1px}.upr .ur{margin-left:auto;color:var(--muted);font-size:10.5px;font-weight:600;text-align:right}
+.tile .v{font-size:20px;margin-top:7px}.tile .v small{font-size:11px;color:var(--muted);font-weight:700}
+
+/* library */
+.seg{display:flex;background:var(--surface);border:1px solid var(--hair);border-radius:13px;padding:4px;gap:4px;margin:6px 0 4px}
+.seg b{flex:1;text-align:center;padding:9px;border-radius:9px;font-size:13px;font-weight:700;color:var(--muted)}
+.seg b.on{background:var(--accent);color:var(--on-accent)}
+.pack{border-radius:var(--radius);overflow:hidden;border:1px solid var(--hair);background:var(--surface);position:relative}
+.pack .art{height:118px;background:linear-gradient(135deg,#22262e,#12141a);display:grid;place-items:center;color:var(--dim);position:relative}
+.pack .art svg{width:30px;height:30px;stroke:currentColor;fill:none;stroke-width:1.4}
+.pack .tag{position:absolute;top:12px;left:12px;background:var(--accent);color:var(--on-accent);font-size:9px;font-weight:700;letter-spacing:.1em;padding:4px 8px;border-radius:6px}
+.pack .bd{padding:14px}.pack .pt{font-weight:700;font-size:16px}.pack .pb{color:var(--muted);font-size:11.5px;margin-top:3px}
+.hrow{display:flex;align-items:center;justify-content:space-between;padding:0 4px}
+.new{border:1px solid var(--hair);color:var(--accent);font-size:12px;font-weight:700;padding:7px 14px;border-radius:10px}
+.rt{display:flex;align-items:center;gap:12px}.rt .rc{flex:1}.rt .rtt{font-weight:700;font-size:15px}.rt .rts{color:var(--muted);font-size:12px;margin-top:2px}
+.tags{display:flex;gap:6px;margin-top:8px}.tag{font-size:10px;font-weight:600;color:var(--muted);background:var(--surface-2);padding:3px 8px;border-radius:6px}
+.rt .chev{color:var(--dim)}.rt .chev svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2}
+
+/* social */
+.hub{background:linear-gradient(160deg,var(--surface),#101216);border:1px solid var(--hair);border-radius:var(--radius);padding:18px}
+.hub .hv{font-size:33px;margin-top:8px}.hub .hv small{font-size:14px;color:var(--muted);font-weight:700}.hub .hs{color:var(--muted);font-size:12px;margin-top:5px}
+.hub .hmembers{display:flex;margin-top:14px}.hub .hmembers span{width:26px;height:26px;border-radius:50%;border:2px solid var(--surface);margin-left:-7px;display:grid;place-items:center;font-size:9px;font-weight:700;color:#0a0b0d}
+.gc{display:flex;align-items:center;gap:12px}.gc .gav{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;font-size:13px;font-weight:700;color:#0a0b0d;flex:0 0 auto}
+.gc .gi{flex:1}.gc .gn{font-weight:700;font-size:15px}.gc .gm{color:var(--muted);font-size:11.5px;margin-top:2px}
+.gc .gnext{margin-left:auto;text-align:right;font-size:10.5px;color:var(--muted);font-weight:600}
+.feed{display:flex;align-items:center;gap:11px;padding:11px 0;border-top:1px solid var(--hair)}
+.feed .fav{width:32px;height:32px;border-radius:50%;background:var(--surface-2);flex:0 0 auto;display:grid;place-items:center;font-size:11px;font-weight:700;color:var(--text)}
+.feed .ft{font-size:12.5px;line-height:1.35}.feed .ft b{font-weight:700}.feed .fx{color:var(--muted);font-size:10.5px;margin-top:2px}
+
+/* stats */
+.chart{height:120px;margin-top:12px;position:relative}
+.chart svg{width:100%;height:100%;overflow:visible}
+.xr{display:flex;justify-content:space-between;font-size:9.5px;color:var(--dim);font-weight:600;margin-top:6px}
+.prl{display:flex;align-items:center;gap:10px;padding:11px 0;border-top:1px solid var(--hair)}
+.prl:first-of-type{border-top:none}.prl .pi{flex:1;font-weight:700;font-size:13.5px}.prl .pw{font-weight:700;font-size:14px}.prl .pd{color:var(--muted);font-size:10.5px;width:52px;text-align:right}
+.updot{width:15px;height:15px;color:var(--accent);flex:0 0 auto}.updot svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:2.4}
+.bw .spark{height:52px;margin-top:10px}
+
+/* you */
+.profile{display:flex;flex-direction:column;align-items:center;text-align:center;padding:8px 0 4px}
+.profile .pav{width:78px;height:78px;border-radius:50%;background:var(--surface-2);border:1px solid var(--hair);display:grid;place-items:center;color:var(--muted)}.profile .pav svg{width:38px;height:38px;stroke:currentColor;fill:none;stroke-width:1.6}
+.profile .pn{font-weight:700;font-size:20px;margin-top:12px}.profile .ph{color:var(--accent);font-size:12.5px;margin-top:3px}
+.pstats{display:flex;margin-top:16px}.pstats>div{flex:1;text-align:center}.pstats .pv{font-weight:700;font-size:19px}.pstats .pl{color:var(--muted);font-size:10px;margin-top:3px;text-transform:uppercase;letter-spacing:.08em}
+.pstats .sep{flex:0 0 1px;background:var(--hair);margin:4px 0}
+.inpick{display:flex;gap:9px;flex-wrap:wrap;margin-top:12px}
+.inpick .p{width:28px;height:28px;border-radius:50%;cursor:pointer;border:2px solid transparent}.inpick .p.on{border-color:var(--text)}.inpick .p.mono{background:#f3f5f8}
+.inpick .p.wheel{background:conic-gradient(from 0deg,#f43f5e,#f59e0b,#22c55e,#06b6d4,#6366f1,#d946ef,#f43f5e);display:grid;place-items:center;color:#fff;font-size:13px;font-weight:700}
+.setrow{display:flex;align-items:center;gap:13px;padding:14px 0;border-top:1px solid var(--hair)}
+.setrow:first-of-type{border-top:none}.setrow .si{width:20px;height:20px;color:var(--muted)}.setrow .si svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8}
+.setrow .sl{flex:1;font-weight:600;font-size:13.5px}.setrow .sc2{color:var(--muted);font-size:12px}.setrow .sch{color:var(--dim)}.setrow .sch svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:2}
+</style>
+
+<div class="wrap">
+  <div class="head">
+    <h1>GymSync — redesign proofs</h1>
+    <p>All five tabs in the near-black floating-widget language. One <b>global accent</b> (default sky blue) recolors every screen — try the swatches or the wheel. <b>Group colors</b> are drawn from the colorblind-safe Okabe-Ito palette and never move with your accent. The accent picker's real home is the <b>You</b> tab (far right).</p>
+    <div class="controls">
+      <span class="lab">Your accent</span>
+      <div class="swatches" id="sw"></div>
+      <span class="selname" id="seln">Selected: <b>Sky blue</b></span>
+      <span class="grpnote"><span class="lab" style="margin-right:2px">Groups</span>
+        <span class="chip"><i style="background:#E69F00"></i>Men for Christ</span>
+        <span class="chip"><i style="background:#009E73"></i>Sunday Lifters</span>
+        <span style="opacity:.7">— fixed, colorblind-safe</span>
+      </span>
+    </div>
+  </div>
+  <div class="gallery" id="gallery"></div>
+</div>
+
+<script>
+const SB=`<div class="sb"><span>9:41</span><span class="d">
+<svg width="16" height="11" viewBox="0 0 17 12" fill="currentColor"><rect y="7" width="3" height="5" rx="1"/><rect x="4.5" y="4" width="3" height="8" rx="1"/><rect x="9" y="1.5" width="3" height="10.5" rx="1"/><rect x="13.5" width="3" height="12" rx="1"/></svg>
+<svg width="15" height="11" viewBox="0 0 16 12" fill="currentColor"><path d="M8 2.6c2.3 0 4.4.9 6 2.4l1.4-1.5A11 11 0 0 0 8 .3 11 11 0 0 0 .6 3.5L2 5A8.4 8.4 0 0 1 8 2.6Z"/><circle cx="8" cy="10" r="1.8"/></svg>
+<svg width="25" height="11" viewBox="0 0 26 12" fill="none"><rect x=".6" y=".6" width="21" height="10.8" rx="2.6" stroke="currentColor" stroke-opacity=".5"/><rect x="2.2" y="2.2" width="16" height="7.6" rx="1.4" fill="currentColor"/><rect x="23" y="4" width="1.8" height="4" rx=".9" fill="currentColor" fill-opacity=".5"/></svg></span></div>`;
+
+const I={home:'<path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/>',lib:'<path d="M4 5.5A2 2 0 0 1 6 4h5v16H6a2 2 0 0 1-2-1.6z"/><path d="M20 5.5A2 2 0 0 0 18 4h-5v16h5a2 2 0 0 0 2-1.6z"/>',soc:'<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3 2.7-4.5 6-4.5s6 1.5 6 4.5"/><path d="M16 5.5A3 3 0 0 1 16 11"/><path d="M21 20c0-2.4-1.6-3.9-4-4.3"/>',stat:'<path d="M5 20V11"/><path d="M12 20V4"/><path d="M19 20v-6"/>',you:'<circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-6 8-6s8 2 8 6"/>'};
+const tb=a=>`<div class="tb">${[['home','Home'],['lib','Library'],['soc','Social'],['stat','Stats'],['you','You']].map(([k,l])=>`<div class="t ${a===k?'on':''}"><svg viewBox="0 0 24 24">${I[k]}</svg>${l}</div>`).join('')}</div>`;
+const chev=`<span class="chev"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></span>`;
+const scr=(inner,active)=>`<div class="screen">${SB}<div class="sc">${inner}</div>${tb(active)}</div>`;
+
+/* ---------- HOME ---------- */
+function gridHTML(){const solo=new Set([3,8,20,27,40]),ga=new Set([4,13,31,44]),gb=new Set([11,24,49]),f=new Set([1,7,16,19,33,37,45,52]);let s="";for(let i=0;i<54;i++)s+=solo.has(i)?'<i class="solo"></i>':ga.has(i)?'<i class="ga"></i>':gb.has(i)?'<i class="gb"></i>':f.has(i)?'<i class="f"></i>':'<i></i>';return s;}
+const HOME=scr(`
+<div class="greet"><div><h2>Good morning, Tommy</h2><div class="dt">Thursday, July 16</div></div><div class="av"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-6 8-6s8 2 8 6"/></svg></div></div>
+<div class="cta"><div><div class="lbl">Join Push Day</div><div class="sub">Men for Christ · starts 7:15 PM</div></div><div class="play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div></div>
+<button class="solo2"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Start solo workout</button>
+<div class="row mt">
+ <div class="card pr"><div class="tp"><svg viewBox="0 0 24 24"><path d="M12 2c1 3-1 4-1 6a3 3 0 0 0 5 2c1 2 2 3 2 6a6 6 0 0 1-12 0c0-4 3-5 3-8 0-2 2-3 3-6Z"/></svg><span>New PR</span></div><div class="nm">Bench Press</div><div class="vl big">225<small> lbs</small></div><div class="dl">3 reps · +20 lbs on your best</div></div>
+ <div class="card ring"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5" fill="none" stroke="var(--surface-2)" stroke-width="4"/><circle cx="18" cy="18" r="15.5" fill="none" stroke="var(--accent)" stroke-width="4" stroke-linecap="round" stroke-dasharray="97.4" stroke-dashoffset="14" transform="rotate(-90 18 18)"/></svg><div><div class="rn big">12</div><div class="rl">day streak<br><span style="color:var(--accent)">2 to badge</span></div></div></div>
+</div>
+<div class="card cal mt"><div style="display:flex;justify-content:space-between"><span class="k">Training calendar</span><span class="k">3 upcoming</span></div>
+ <div class="mo"><span>May</span><span>Jun</span><span>Jul</span></div><div class="grid">${gridHTML()}</div>
+ <div class="leg"><span class="cl"><i style="background:var(--accent)"></i>Solo</span><span class="cl"><i style="background:var(--grp-a)"></i>Men for Christ</span><span class="cl"><i style="background:var(--grp-b)"></i>Sunday Lifters</span></div>
+ <div class="up"><div class="upr"><span class="uav" style="background:var(--grp-a)">MC</span><div><div class="ut">Push Day</div><div class="us">Men for Christ · 6 going</div></div><div class="ur">Sat Jul 18<br>7:15 PM</div></div>
+ <div class="upr"><span class="uav" style="background:var(--grp-b)">SL</span><div><div class="ut">Sunday Heavy</div><div class="us">Sunday Lifters · 4 going</div></div><div class="ur">Sun Jul 19<br>9:00 AM</div></div></div></div>
+<div class="row mt"><div class="card tile"><div class="k">Lifetime</div><div class="v big">269<small>k lbs</small></div></div><div class="card tile"><div class="k">PRs / mo</div><div class="v big">176</div></div></div>
+<div style="height:22px"></div>`,'home');
+
+/* ---------- LIBRARY ---------- */
+const LIB=scr(`
+<div class="title">Library</div>
+<div class="seg"><b class="on">Routines</b><b>Exercises</b></div>
+<div class="k" style="margin:14px 4px 10px">Featured · curated packs</div>
+<div class="pack"><div class="art"><span class="tag">SEASONAL</span><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m4 16 5-4 4 3 3-2 4 3"/></svg></div><div class="bd"><div class="pt">New Year Legs</div><div class="pb">by Smola · 6 exercises · ~40 min</div></div></div>
+<div class="row mt"><div class="pack"><div class="art" style="height:88px"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="m4 16 5-4 4 3 3-2 4 3"/></svg></div><div class="bd"><div class="pt" style="font-size:14px">12 Days of Liftmas</div><div class="pb">3 exercises</div></div></div>
+ <div class="pack"><div class="art" style="height:88px"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="m4 16 5-4 4 3 3-2 4 3"/></svg></div><div class="bd"><div class="pt" style="font-size:14px">Push / Pull / Legs</div><div class="pb">9 exercises</div></div></div></div>
+<div class="hrow mt" style="margin-top:18px"><span class="k">Your routines</span><span class="new">+ New</span></div>
+<div class="card mt rt"><div class="rc"><div class="rtt">Upper Power</div><div class="rts">Bench · Row · Overhead</div><div class="tags"><span class="tag">Compound</span><span class="tag">Barbell</span></div></div>${chev}</div>
+<div class="card mt rt"><div class="rc"><div class="rtt">Leg Day</div><div class="rts">Back Squat · RDL · Calf</div><div class="tags"><span class="tag">3 exercises</span><span class="tag">~45 min</span></div></div>${chev}</div>
+<div style="height:22px"></div>`,'lib');
+
+/* ---------- SOCIAL ---------- */
+const SOC=scr(`
+<div class="title">Social</div>
+<div class="hub"><span class="k">Your crews moved</span><div class="hv big">1.24<small>M lbs</small></div><div class="hs">this week across 2 groups · your share 34%</div>
+ <div class="hmembers"><span style="background:var(--grp-a)">MC</span><span style="background:var(--grp-b)">SL</span><span style="background:var(--surface-2);color:var(--muted)">+16</span></div></div>
+<div class="k" style="margin:16px 4px 10px">Your groups</div>
+<div class="card gc"><span class="gav" style="background:var(--grp-a)">MC</span><div class="gi"><div class="gn">Men for Christ</div><div class="gm">12 members · 428k lbs this wk</div></div><div class="gnext">Next<br>Sat 7:15</div></div>
+<div class="card mt gc"><span class="gav" style="background:var(--grp-b)">SL</span><div class="gi"><div class="gn">Sunday Lifters</div><div class="gm">6 members · 812k lbs this wk</div></div><div class="gnext">Next<br>Sun 9:00</div></div>
+<div class="k" style="margin:16px 4px 4px">Recent activity</div>
+<div class="card" style="padding:4px 16px">
+ <div class="feed" style="border-top:none"><div class="fav" style="background:var(--grp-b)">JR</div><div><div class="ft"><b>Jordan</b> hit a PR — Deadlift 315 lbs</div><div class="fx">Sunday Lifters · 2h ago</div></div></div>
+ <div class="feed"><div class="fav" style="background:var(--grp-a)">PA</div><div><div class="ft"><b>Priya</b> finished Push Day</div><div class="fx">Men for Christ · 5h ago</div></div></div>
+ <div class="feed"><div class="fav">TS</div><div><div class="ft"><b>You</b> gave kudos to Marcus</div><div class="fx">Yesterday</div></div></div>
+</div><div style="height:22px"></div>`,'soc');
+
+/* ---------- STATS ---------- */
+const STAT=scr(`
+<div class="title">Stats</div>
+<div class="card"><span class="k">Lifetime volume</span><div class="big" style="font-size:34px;margin-top:8px">269,175<span style="font-size:16px;color:var(--muted)"> lbs</span></div><div style="color:var(--accent);font-size:12px;margin-top:6px;font-weight:700">▲ 8% vs last month</div></div>
+<div class="card mt"><span class="k">Weekly volume</span>
+ <div class="chart"><svg viewBox="0 0 300 120" preserveAspectRatio="none">
+   <defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".28"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>
+   <path d="M0 96 L43 88 L86 92 L129 70 L171 74 L214 44 L257 30 L300 16 L300 120 L0 120 Z" fill="url(#g)"/>
+   <path d="M0 96 L43 88 L86 92 L129 70 L171 74 L214 44 L257 30 L300 16" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+   <circle cx="300" cy="16" r="3.5" fill="var(--accent)"/></svg></div>
+ <div class="xr"><span>W1</span><span>W2</span><span>W3</span><span>W4</span><span>W5</span><span>W6</span><span>W7</span><span>W8</span></div></div>
+<div class="row mt"><div class="card tile"><div class="k">Current streak</div><div class="v big">12<small> days</small></div></div><div class="card tile"><div class="k">Sessions / mo</div><div class="v big">18</div></div></div>
+<div class="card mt"><span class="k">Recent PRs</span>
+ <div class="prl" style="border-top:none;margin-top:6px"><span class="updot"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></span><span class="pi">Deadlift</span><span class="pw">405 lbs</span><span class="pd">Jul 16</span></div>
+ <div class="prl"><span class="updot"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></span><span class="pi">Back Squat</span><span class="pw">315 lbs</span><span class="pd">Jul 14</span></div>
+ <div class="prl"><span class="updot"><svg viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></svg></span><span class="pi">Bench Press</span><span class="pw">225 lbs</span><span class="pd">Jul 12</span></div></div>
+<div class="card mt bw"><span class="k">Body weight · 190 lbs</span><div class="spark"><svg viewBox="0 0 300 52" preserveAspectRatio="none"><path d="M0 34 L50 30 L100 36 L150 24 L200 26 L250 18 L300 20" fill="none" stroke="var(--muted)" stroke-width="2" stroke-linejoin="round"/></svg></div></div>
+<div style="height:22px"></div>`,'stat');
+
+/* ---------- YOU ---------- */
+const YOU=scr(`
+<div class="title">You</div>
+<div class="profile"><div class="pav"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-6 8-6s8 2 8 6"/></svg></div><div class="pn">Tommy Smola</div><div class="ph">@smolatommy</div>
+ <div class="pstats"><div><div class="pv">341</div><div class="pl">Workouts</div></div><div class="sep"></div><div><div class="pv">2</div><div class="pl">Groups</div></div><div class="sep"></div><div><div class="pv">269k</div><div class="pl">Lbs moved</div></div></div></div>
+<div class="card mt"><span class="k">Appearance · your accent</span><div class="inpick" id="inpick"></div><div style="color:var(--muted);font-size:11.5px;margin-top:11px">Tap a color, or the wheel for a custom hex. Group colors stay colorblind-safe automatically.</div></div>
+<div class="card mt" style="padding:4px 16px">
+ <div class="setrow"><span class="si"><svg viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21a2 2 0 0 0 4 0"/></svg></span><span class="sl">Notifications</span><span class="sch"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></span></div>
+ <div class="setrow"><span class="si"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M3 10h18"/></svg></span><span class="sl">Calendar sync</span><span class="sc2">On</span><span class="sch"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></span></div>
+ <div class="setrow"><span class="si"><svg viewBox="0 0 24 24"><path d="M12 21s-7-4.3-9.3-9A5 5 0 0 1 12 6a5 5 0 0 1 9.3 6C19 16.7 12 21 12 21Z"/></svg></span><span class="sl">Heart rate &amp; health</span><span class="sch"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></span></div>
+ <div class="setrow"><span class="si"><svg viewBox="0 0 24 24"><path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7Z"/></svg></span><span class="sl">Privacy &amp; blocking</span><span class="sch"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></span></div>
+</div><div style="height:22px"></div>`,'you');
+
+const SCREENS=[['Home',HOME],['Library',LIB],['Social',SOC],['Stats',STAT],['You',YOU]];
+const g=document.getElementById('gallery');
+SCREENS.forEach(([cap,html])=>{const c=document.createElement('div');c.className='col';c.innerHTML=`<div class="cap">Tab · <em>${cap}</em></div><div class="phone">${html}</div>`;g.appendChild(c);});
+
+/* accent picker (global) + in-app You picker sync */
+const ACC=[['Sky blue','#38bdf8','rgba(56,189,248,.15)','#04222e'],['Violet','#a78bfa','rgba(167,139,250,.16)','#1c1233'],['Amber','#ffb020','rgba(255,176,32,.16)','#2a1c04'],['Lime','#b6f236','rgba(182,242,54,.15)','#1c2a06'],['Coral','#ff6b5e','rgba(255,107,94,.16)','#2e0f0b'],['Rose','#fb7bb5','rgba(251,123,181,.16)','#2e0f20'],['Mono','#f3f5f8','rgba(255,255,255,.12)','#0a0b0d']];
+function setAccent(c,soft,on,name){document.querySelectorAll('.phone').forEach(p=>{p.style.setProperty('--accent',c);p.style.setProperty('--accent-soft',soft);p.style.setProperty('--on-accent',on);});document.getElementById('seln').innerHTML='Selected: <b>'+name+'</b>';document.querySelectorAll('.sw,.inpick .p').forEach(x=>x.classList.toggle('on',x.dataset.c===c));}
+const sw=document.getElementById('sw');
+ACC.forEach(([n,c,s,o],i)=>{const b=document.createElement('div');b.className='sw'+(i===0?' on':'')+(n==='Mono'?' mono':'');b.dataset.c=c;if(n!=='Mono')b.style.background=c;b.title=n;b.onclick=()=>setAccent(c,s,o,n);sw.appendChild(b);});
+const wheel=document.createElement('div');wheel.className='sw wheel';wheel.title='Custom (wheel / hex)';wheel.textContent='+';wheel.onclick=()=>{const c=prompt('Custom accent hex (e.g. #7c9cff):','#7c9cff');if(c)setAccent(c,c+'26',' #06121f','Custom '+c);};sw.appendChild(wheel);
+// in-app You picker mirrors the same set
+const ip=document.querySelector('#inpick');if(ip){ACC.forEach(([n,c,s,o],i)=>{const b=document.createElement('div');b.className='p'+(i===0?' on':'')+(n==='Mono'?' mono':'');b.dataset.c=c;if(n!=='Mono')b.style.background=c;b.title=n;b.onclick=()=>setAccent(c,s,o,n);ip.appendChild(b);});const w=document.createElement('div');w.className='p wheel';w.textContent='+';w.onclick=()=>wheel.onclick();ip.appendChild(w);}
+</script>
