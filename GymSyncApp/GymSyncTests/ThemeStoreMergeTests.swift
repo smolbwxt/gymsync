@@ -105,4 +105,25 @@ final class ThemeStoreMergeTests: XCTestCase {
         XCTAssertEqual(result.palette, "arena", "in-flight palette must not be clobbered")
         XCTAssertTrue(result.shareHeartRate, "shareHeartRate must still be adopted from incoming, same as defaultRestSeconds")
     }
+
+    /// Redesign: `.accent` joins `.palette` on the PROTECTED side. A
+    /// `selectAccent(_:)` persist in flight owns the accent until it lands, so a
+    /// concurrent rest-timer / HR save must NOT clobber it — while
+    /// `defaultRestSeconds` is still adopted from incoming. Symmetric to
+    /// `testPersistInFlightMergesOnlyRestSecondsAndKeepsCachedPalette` above.
+    func testPersistInFlightKeepsCachedAccent() {
+        var cached = settings(rest: 120, palette: "onyx")
+        cached.accent = "amber"                        // in-flight selectAccent(_:) target
+        var incoming = settings(rest: 90, palette: "onyx")
+        incoming.accent = "lime"                       // some other save carrying a stale accent
+
+        let result = ThemeStore.mergeExternalSettingsWrite(
+            cached: cached,
+            incoming: incoming,
+            persistInFlight: true
+        )
+
+        XCTAssertEqual(result.accent, "amber", "in-flight accent must not be clobbered")
+        XCTAssertEqual(result.defaultRestSeconds, 90, "rest seconds must still be adopted")
+    }
 }

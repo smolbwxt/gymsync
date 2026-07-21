@@ -5,18 +5,26 @@ import SwiftUI
 /// (which injects `\.gsTheme` + `.preferredColorScheme` from `current`) and
 /// any Settings Hub row/picker can observe and mutate the same instance.
 ///
-/// Seeded to `.midnight` (matches `UserSettings.defaults`' own "midnight"
-/// column default) so the app renders correctly before `load()` resolves —
-/// same "seed with the default, refine once the network read lands"
-/// convention as `YouTabView`'s other `.task`-loaded state.
+/// Seeded to `.onyx` / `sky` (matches `UserSettings.defaults`' own "onyx"
+/// palette + "sky" accent column defaults after 20260728000007) so the app
+/// renders the redesign's default look before `load()` resolves — same "seed
+/// with the default, refine once the network read lands" convention as
+/// `YouTabView`'s other `.task`-loaded state.
 @Observable
 @MainActor
 public final class ThemeStore {
     public static let shared = ThemeStore()
     private init() {}
 
-    public private(set) var paletteID: String = "midnight"
-    public private(set) var current: GSTheme = .midnight
+    public private(set) var paletteID: String = "onyx"
+    public private(set) var current: GSTheme = .onyx
+
+    /// The user's personal accent (redesign) — decoupled from the palette,
+    /// persisted in `user_settings.accent`, injected app-wide by `RootView` as
+    /// `\.gsAccent`. Mutated by `selectAccent(_:)` with the same race-guarded
+    /// persistence `select(_:)` uses for `paletteID`.
+    public private(set) var accentID: String = "sky"
+    public private(set) var accent: GSAccent = GSAccents.sky
     /// Phase W Task 5 (watch-hr design §4) — the live `user_settings
     /// .share_heart_rate` value, mirrored here for the SAME reason
     /// `paletteID` is: this class is already the app's one cross-view
@@ -99,6 +107,7 @@ public final class ThemeStore {
         lastKnownSettings = settings
         setShareHeartRate(settings.shareHeartRate)
         apply(paletteID: settings.palette)
+        applyAccent(settings.accent)
     }
 
     /// Updates the live theme immediately — the whole app re-renders via the
@@ -138,6 +147,40 @@ public final class ThemeStore {
             guard let userID = await SupabaseService.shared.currentUserID() else { return }
             var updated = lastKnownSettings ?? UserSettings.defaults(userID: userID)
             updated.palette = paletteID
+            // Carry the currently-applied accent too, so a palette persist that
+            // wins a race against a concurrent selectAccent(_:) can't revert the
+            // accent to a stale lastKnownSettings value (and vice-versa below).
+            updated.accent = accentID
+
+            guard !Task.isCancelled else { return }
+            let succeeded = (try? await UserSettingsRepository.upsert(updated)) != nil
+
+            guard !Task.isCancelled, succeeded else { return }
+            lastKnownSettings = updated
+        }
+    }
+
+    /// The accent twin of `select(_:)` — applies the chosen accent immediately
+    /// (the whole app re-renders via `\.gsAccent`) then persists best-effort,
+    /// using the exact same race-guarded pattern: rapid taps cancel the prior
+    /// in-flight persist, and the task re-checks `Task.isCancelled` around the
+    /// upsert. Writes both the current palette AND accent (see `select`'s
+    /// comment) so the two pickers can't clobber each other's field.
+    public func selectAccent(_ id: String) {
+        applyAccent(id)
+        persistTask?.cancel()
+        persistGeneration += 1
+        let generation = persistGeneration
+        persistTask = Task {
+            defer {
+                if generation == persistGeneration {
+                    persistTask = nil
+                }
+            }
+            guard let userID = await SupabaseService.shared.currentUserID() else { return }
+            var updated = lastKnownSettings ?? UserSettings.defaults(userID: userID)
+            updated.accent = id
+            updated.palette = paletteID   // preserve the current palette
 
             guard !Task.isCancelled else { return }
             let succeeded = (try? await UserSettingsRepository.upsert(updated)) != nil
@@ -240,6 +283,11 @@ public final class ThemeStore {
         }
         merged.defaultRestSeconds = incoming.defaultRestSeconds
         merged.shareHeartRate = incoming.shareHeartRate
+        // `.accent` joins `.palette` on the protected side: it is intentionally
+        // NOT adopted from `incoming` while a persist is in flight, because
+        // `selectAccent(_:)`'s in-flight task owns it until it lands. `merged`
+        // began as a copy of `cached`, so leaving accent untouched keeps the
+        // cached value — no explicit line needed, but the omission is deliberate.
         return merged
     }
 
@@ -252,5 +300,15 @@ public final class ThemeStore {
         // until next presented — a documented UIAppearance-proxy limitation,
         // not something SwiftUI's environment propagation can reach around.
         GSAppearance.apply(theme: current)
+    }
+
+    /// The accent twin of `apply(paletteID:)` — resolves the id to a `GSAccent`
+    /// and updates the live pair. Pure SwiftUI-token resolution: unlike
+    /// `apply(paletteID:)` there is no `GSAppearance` re-stamp, because the
+    /// accent lives in the `\.gsAccent` environment, not in the
+    /// UIAppearance-proxied UIKit chrome.
+    private func applyAccent(_ id: String) {
+        self.accentID = id
+        self.accent = GSAccents.accent(for: id)
     }
 }
