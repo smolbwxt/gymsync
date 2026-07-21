@@ -20,6 +20,9 @@ struct HomeView: View {
     @State private var allExercises: [Exercise] = []
     @State private var recentPRs: [PersonalRecord] = []
     @State private var prsThisMonth: Int = 0
+    /// Redesign: feeds the streak-ring widget (proof: ring fills toward the
+    /// next milestone). Fetched alongside the other Home data in `refresh()`.
+    @State private var userStreak: UserStreak?
     @State private var profile: Profile?
     @State private var todaysRoutine: Routine?
     @State private var todaysRoutineExercises: [RoutineExercise] = []
@@ -50,25 +53,20 @@ struct HomeView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
+                // Redesign (all-tabs proof): bento of floating widgets on the
+                // Onyx ground — consistent 12pt rhythm, no full-width divider
+                // rules between sections. Every data/action path from the old
+                // layout is preserved; only the arrangement changed.
                 VStack(alignment: .leading, spacing: 0) {
                     greetingHeader
                     replayFailureNotice
-                    startSoloWorkoutButton
-                    if let pr = recentPRs.first {
-                        prCardView(pr)
-                    }
-                    if let routine = todaysRoutine {
-                        todaysRoutineCardView(routine)
-                    }
+                    primaryCTASection
+                    prAndStreakRow
+                    calendarWidget
                     if !activeCampaigns.isEmpty {
                         campaignsSection
                     }
                     statTileRow
-                    GSDivider()
-                    scheduleButton
-                    GSDivider()
-                    upcomingSection
-                    GSDivider()
                     joinWithCodeSection
                 }
             }
@@ -180,18 +178,44 @@ struct HomeView: View {
     // MARK: - Greeting Header
 
     private var greetingHeader: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(greetingText)
-                .font(GSFont.heading(28, relativeTo: .largeTitle))
-                .foregroundStyle(theme.text)
-            Text(Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day()))
-                .font(GSFont.body(13, relativeTo: .caption))
-                .foregroundStyle(theme.neutral500)
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(greetingText)
+                    .font(GSFont.heading(24, relativeTo: .largeTitle))
+                    .foregroundStyle(theme.text)
+                Text(Date.now.formatted(.dateTime.weekday(.wide).month(.wide).day()))
+                    .font(GSFont.body(13, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+            }
+            Spacer(minLength: 0)
+            // Redesign: profile avatar (initials) — taps through to the You tab.
+            Button {
+                appState.selectedTab = .you
+            } label: {
+                Circle()
+                    .fill(theme.surface)
+                    .frame(width: 38, height: 38)
+                    .overlay(Circle().strokeBorder(theme.divider, lineWidth: 1))
+                    .overlay(
+                        Text(avatarInitials)
+                            .font(GSFont.bold(13, relativeTo: .caption))
+                            .foregroundStyle(theme.neutral700)
+                    )
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Your profile")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
         .padding(.top, 16)
         .padding(.bottom, 16)
+    }
+
+    private var avatarInitials: String {
+        let name = firstName
+        guard !name.isEmpty else { return "?" }
+        return String(name.prefix(2)).uppercased()
     }
 
     /// "Good {morning/afternoon/evening}, {first name}" — first name comes from
@@ -218,87 +242,241 @@ struct HomeView: View {
         return profile.username
     }
 
-    // MARK: - Start Solo Workout CTA (Task 5 — canvas content)
+    // MARK: - Primary CTA (redesign: context-aware + persistent solo)
+    //
+    // Smart primary: when a session is scheduled TODAY, the hero card is
+    // "Join {session}" (NavigationLink → LobbyView — the app's single session
+    // entry point); the persistent "Start solo workout" secondary sits right
+    // beneath it so a spontaneous lift is always one predictable tap. When
+    // nothing is on today, the hero IS the solo start (today's-routine info
+    // folded into its subtitle — absorbs the old standalone routine card).
 
-    private var startSoloWorkoutButton: some View {
+    private var todaysSession: WorkoutSession? {
+        upcomingSessions.first { session in
+            guard let when = session.scheduledFor else { return false }
+            return Calendar.current.isDateInToday(when)
+        }
+    }
+
+    @ViewBuilder
+    private var primaryCTASection: some View {
+        VStack(spacing: 9) {
+            if let session = todaysSession {
+                NavigationLink {
+                    LobbyView(session: session)
+                } label: {
+                    ctaCard(
+                        title: "Join \(routineLabel(for: session))",
+                        subtitle: ctaSubtitle(for: session)
+                    )
+                }
+                .buttonStyle(.plain)
+                soloSecondaryButton
+            } else {
+                Button {
+                    routinePickerPreselected = todaysRoutine
+                    showRoutinePicker = true
+                } label: {
+                    ctaCard(title: "Start Solo Workout", subtitle: soloSubtitle)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 12)
+    }
+
+    private func ctaCard(title: String, subtitle: String) -> some View {
+        GSCard(bordered: false) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(GSFont.bold(17, relativeTo: .headline))
+                        .foregroundStyle(theme.text)
+                        .lineLimit(1)
+                    Text(subtitle)
+                        .font(GSFont.body(12.5, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral500)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                Circle()
+                    .fill(theme.accent)
+                    .frame(width: 46, height: 46)
+                    .overlay(
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 17, weight: .bold))
+                            .foregroundStyle(theme.bg)
+                            .offset(x: 1)
+                    )
+            }
+            .padding(18)
+        }
+        .contentShape(Rectangle())
+    }
+
+    private var soloSecondaryButton: some View {
         Button {
             routinePickerPreselected = nil
             showRoutinePicker = true
         } label: {
-            Text("Start Solo Workout")
-        }
-        .buttonStyle(GSPrimaryButtonStyle(fontSize: 15, verticalPadding: 14))
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 16)
-        .padding(.bottom, 16)
-    }
-
-    // MARK: - PR Card (Task 5 — canvas content)
-
-    @ViewBuilder
-    private func prCardView(_ pr: PersonalRecord) -> some View {
-        let exerciseName = allExercises.first(where: { $0.id == pr.exerciseID })?.name ?? "Exercise"
-        GSCard(bordered: false, backgroundColor: theme.accent100) {
-            VStack(alignment: .leading, spacing: 4) {
-                GSSectionHeader("🔥 New personal record")
-                Text("\(exerciseName) — \(trimmedDecimal(pr.weight)) lbs × \(pr.reps)")
-                    .font(GSFont.heading(16, relativeTo: .headline))
-                    .foregroundStyle(theme.text)
-                Text("Beat previous best by \(trimmedDecimal(pr.weight - pr.previousBest)) lbs")
-                    .font(GSFont.body(13, relativeTo: .caption))
-                    .foregroundStyle(theme.neutral500)
+            HStack(spacing: 7) {
+                Spacer(minLength: 0)
+                Image(systemName: "plus")
+                    .font(.system(size: 13, weight: .bold))
+                Text("Start solo workout")
+                    .font(GSFont.bold(13.5, relativeTo: .subheadline))
+                Spacer(minLength: 0)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-        }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 16)
-    }
-
-    // MARK: - Today's Routine Card (Task 5 — canvas content)
-
-    @ViewBuilder
-    private func todaysRoutineCardView(_ routine: Routine) -> some View {
-        Button {
-            routinePickerPreselected = routine
-            showRoutinePicker = true
-        } label: {
-            GSCard(bordered: false) {
-                VStack(alignment: .leading, spacing: 4) {
-                    GSSectionHeader("Today's routine")
-                    Text(routine.name)
-                        .font(GSFont.heading(16, relativeTo: .headline))
-                        .foregroundStyle(theme.text)
-                    if !todaysRoutineBody.isEmpty {
-                        Text(todaysRoutineBody)
-                            .font(GSFont.body(13, relativeTo: .subheadline))
-                            .foregroundStyle(theme.neutral700)
-                    }
-                    Text("\(todaysRoutineExercises.count) exercises · ~\(StatMath.estimatedMinutes(exerciseCount: todaysRoutineExercises.count)) min")
-                        .font(GSFont.body(12, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral500)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(16)
-            }
+            .foregroundStyle(theme.text)
+            .padding(.vertical, 13)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .contentShape(Rectangle())
-        .frame(minHeight: 44)
-        .padding(.horizontal, 16)
-        .padding(.bottom, 16)
+        .overlay(
+            RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
+                .strokeBorder(theme.divider, lineWidth: 1)
+        )
     }
 
-    private var todaysRoutineBody: String {
-        let names = todaysRoutineExercises
-            .sorted { $0.position < $1.position }
-            .compactMap { re in allExercises.first(where: { $0.id == re.exerciseID })?.name }
-        guard !names.isEmpty else { return "" }
-        if names.count <= 3 {
-            return names.joined(separator: " · ")
+    private func ctaSubtitle(for session: WorkoutSession) -> String {
+        let who = session.groupID.flatMap { gid in groups.first(where: { $0.id == gid })?.name } ?? "Session"
+        if let when = session.scheduledFor {
+            return "\(who) · \(when.formatted(.dateTime.hour().minute()))"
         }
-        let shown = names.prefix(3).joined(separator: " · ")
-        return "\(shown) +\(names.count - 3) more"
+        return who
+    }
+
+    private var soloSubtitle: String {
+        if let routine = todaysRoutine {
+            return "\(routine.name) · \(todaysRoutineExercises.count) exercises · ~\(StatMath.estimatedMinutes(exerciseCount: todaysRoutineExercises.count)) min"
+        }
+        return "Pick a routine or go freestyle"
+    }
+
+    // MARK: - PR + Streak row (redesign: the hero pair)
+
+    private static let streakMilestones = [7, 14, 30, 60, 100, 365]
+
+    private var prAndStreakRow: some View {
+        HStack(alignment: .top, spacing: 11) {
+            prWidget
+            streakWidget
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 12)
+    }
+
+    @ViewBuilder
+    private var prWidget: some View {
+        GSCard(bordered: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                if let pr = recentPRs.first {
+                    let exerciseName = allExercises.first(where: { $0.id == pr.exerciseID })?.name ?? "Exercise"
+                    HStack(spacing: 6) {
+                        Image(systemName: "flame.fill")
+                            .font(.system(size: 12, weight: .bold))
+                        Text("NEW PR")
+                            .font(GSFont.bold(10, relativeTo: .caption2))
+                            .tracking(1.3)
+                    }
+                    .foregroundStyle(theme.accent)
+                    Text(exerciseName)
+                        .font(GSFont.bold(13, relativeTo: .subheadline))
+                        .foregroundStyle(theme.text)
+                        .lineLimit(1)
+                        .padding(.top, 8)
+                    HStack(alignment: .firstTextBaseline, spacing: 3) {
+                        Text(trimmedDecimal(pr.weight))
+                            .font(GSFont.heading(27, relativeTo: .title2))
+                            .foregroundStyle(theme.text)
+                        Text("lbs")
+                            .font(GSFont.bold(13, relativeTo: .caption))
+                            .foregroundStyle(theme.neutral500)
+                    }
+                    .padding(.top, 5)
+                    Text("\(pr.reps) reps · +\(trimmedDecimal(pr.weight - pr.previousBest)) on your best")
+                        .font(GSFont.body(11, relativeTo: .caption2))
+                        .foregroundStyle(theme.neutral500)
+                        .lineLimit(1)
+                        .padding(.top, 4)
+                } else {
+                    // Null state (spec §6): card-anchored, inviting, no CTA —
+                    // the start action is directly above in the hero.
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(theme.neutral300)
+                        .frame(width: 34, height: 34)
+                        .overlay(
+                            Image(systemName: "flame.fill")
+                                .font(.system(size: 15))
+                                .foregroundStyle(theme.accent)
+                        )
+                    Text("No PRs yet")
+                        .font(GSFont.bold(14, relativeTo: .subheadline))
+                        .foregroundStyle(theme.text)
+                        .padding(.top, 9)
+                    Text("Log a lift and your first personal record lands here.")
+                        .font(GSFont.body(11, relativeTo: .caption2))
+                        .foregroundStyle(theme.neutral500)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 3)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(15)
+        }
+    }
+
+    private var streakWidget: some View {
+        let current = userStreak?.currentStreak ?? 0
+        let next = Self.streakMilestones.first(where: { $0 > current }) ?? Self.streakMilestones.last!
+        let progress = min(1, Double(current) / Double(next))
+        return GSCard(bordered: false) {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .stroke(theme.neutral300, lineWidth: 4)
+                    Circle()
+                        .trim(from: 0, to: progress)
+                        .stroke(theme.accent, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                    Image(systemName: "flame.fill")
+                        .font(.system(size: 15))
+                        .foregroundStyle(current > 0 ? theme.accent : theme.neutral500)
+                }
+                .frame(width: 52, height: 52)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(current)")
+                        .font(GSFont.heading(24, relativeTo: .title2))
+                        .foregroundStyle(theme.text)
+                    Text("day streak")
+                        .font(GSFont.body(11, relativeTo: .caption2))
+                        .foregroundStyle(theme.neutral500)
+                    Text(current > 0 ? "\(next - current) to badge" : "start one today")
+                        .font(GSFont.bold(10.5, relativeTo: .caption2))
+                        .foregroundStyle(current > 0 ? theme.accent : theme.neutral500)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(15)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(current) day streak, \(next - current) days to the next badge")
+    }
+
+    // MARK: - Training calendar (redesign: replaces the Upcoming list)
+
+    private var calendarWidget: some View {
+        TrainingCalendarWidget(
+            completedSessions: historySessions,
+            upcomingSessions: upcomingSessions,
+            groups: groups,
+            titleFor: { routineLabel(for: $0) },
+            onSchedule: { showScheduleSheet = true },
+            onFindCrew: { appState.selectedTab = .social }
+        )
+        .padding(.horizontal, 16)
+        .padding(.bottom, 12)
     }
 
     // MARK: - Campaigns carousel (Phase C Task 2)
@@ -470,93 +648,10 @@ struct HomeView: View {
         )
     }
 
-    // MARK: - Schedule Button
-
-    private var scheduleButton: some View {
-        Button {
-            showScheduleSheet = true
-        } label: {
-            Text("+ Schedule Session")
-        }
-        .buttonStyle(GSPrimaryButtonStyle())
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-    }
-
-    // MARK: - Upcoming Section
-
-    private var upcomingSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            GSSectionHeader("Upcoming Sessions")
-                .padding(.horizontal, 16)
-                .padding(.top, 16)
-                .padding(.bottom, 10)
-
-            if upcomingSessions.isEmpty {
-                Text("No upcoming sessions — schedule one above.")
-                    .font(GSFont.body(14, relativeTo: .subheadline))
-                    .foregroundStyle(theme.neutral500)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
-            } else {
-                ForEach(upcomingSessions) { session in
-                    NavigationLink {
-                        LobbyView(session: session)
-                    } label: {
-                        upcomingCard(session)
-                    }
-                    .buttonStyle(.plain)
-                    GSDivider()
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func upcomingCard(_ session: WorkoutSession) -> some View {
-        GSCard(bordered: false) {
-            VStack(alignment: .leading, spacing: 4) {
-                // Kicker: group name or "Session"
-                HStack(spacing: 6) {
-                    if let groupID = session.groupID,
-                       let group = groups.first(where: { $0.id == groupID }) {
-                        Text(group.name.uppercased())
-                            .font(GSFont.bodyMedium(11, relativeTo: .caption2))
-                            .tracking(1.2)
-                            .foregroundStyle(theme.neutral700)
-                    } else {
-                        Text("SESSION")
-                            .font(GSFont.bodyMedium(11, relativeTo: .caption2))
-                            .tracking(1.2)
-                            .foregroundStyle(theme.neutral700)
-                    }
-                    if session.seriesID != nil {
-                        Image(systemName: "repeat")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(theme.accent700)
-                    }
-                }
-                // Title: routine label
-                Text(routineLabel(for: session))
-                    .font(GSFont.heading(16, relativeTo: .headline))
-                    .foregroundStyle(theme.text)
-                // Meta: scheduled time or status
-                if let scheduledFor = session.scheduledFor {
-                    Text(scheduledFor.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().hour().minute()))
-                        .font(GSFont.body(13, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral500)
-                } else {
-                    Text(session.state.replacingOccurrences(of: "_", with: " ").capitalized)
-                        .font(GSFont.body(13, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral500)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 6)
-    }
+    // (Redesign: the old standalone "+ Schedule Session" button and the
+    // "Upcoming Sessions" list were absorbed into `TrainingCalendarWidget` —
+    // the calendar header carries the schedule action, and upcoming sessions
+    // render as group-avatared rows inside the widget.)
 
     // MARK: - Join with Code Section
 
@@ -628,6 +723,7 @@ struct HomeView: View {
         async let prCountFetch   = fetchPRCountThisMonth(userID: userID)
         async let profileFetch   = fetchProfile(userID: userID)
         async let campaignsFetch = fetchActiveCampaigns(userID: userID)
+        async let streakFetch    = fetchStreak(userID: userID)
 
         if let sessions = try? await sessionsFetch { upcomingSessions = sessions }
         if let fetchedGroups = try? await groupsFetch { groups = fetchedGroups }
@@ -655,6 +751,7 @@ struct HomeView: View {
         if let refreshedProfile { profile = refreshedProfile }
         let campaigns = await campaignsFetch
         activeCampaigns = campaigns ?? []
+        if let streak = await streakFetch { userStreak = streak }
         await loadCampaignJoinState(for: activeCampaigns)
 
         // Phase U frame 41 (OFFLINE·STALE-CACHE): cache whichever of the 3
@@ -731,7 +828,16 @@ struct HomeView: View {
 
     private func fetchHistory(userID: UUID?) async -> [WorkoutSession]? {
         guard let userID else { return nil }
-        return try? await SessionRepository.history(userID: userID, limit: 20)
+        // Limit 60 (was 20): the calendar widget renders 12 weeks of dot-grid
+        // texture, so it needs deeper history than the old stat tiles did.
+        return try? await SessionRepository.history(userID: userID, limit: 60)
+    }
+
+    /// Redesign: feeds the streak-ring widget. `try?` on the throwing
+    /// `UserStreak?` return double-wraps; the trailing `?? nil` flattens it.
+    private func fetchStreak(userID: UUID?) async -> UserStreak? {
+        guard let userID else { return nil }
+        return (try? await StreakRepository.userStreak(userID: userID)) ?? nil
     }
 
     private func fetchOwnedRoutines(userID: UUID?) async -> [Routine]? {

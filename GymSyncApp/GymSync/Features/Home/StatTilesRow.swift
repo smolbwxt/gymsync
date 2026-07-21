@@ -110,7 +110,8 @@ struct StatTilesRow: View {
         }
         .padding(16)
         .overlay(
-            Rectangle().strokeBorder(theme.neutral400, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+            RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
+                .strokeBorder(theme.neutral400, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
         )
     }
 
