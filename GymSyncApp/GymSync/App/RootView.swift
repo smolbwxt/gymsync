@@ -51,6 +51,11 @@ struct RootView: View {
         // luminance-based determination.
         .preferredColorScheme(themeStore.current.isDark ? .dark : .light)
         .environment(\.gsTheme, themeStore.current)
+        // Redesign: the user's personal accent, decoupled from the palette.
+        // `themeStore` is @Observable, so a `selectAccent(_:)` re-renders the
+        // whole tree with the new `\.gsAccent` — the one token every redesigned
+        // component reads for its accent color.
+        .environment(\.gsAccent, themeStore.accent)
         // Tint every NavigationStack's bar items — chiefly the back button —
         // with the theme accent. Without this, SwiftUI falls back to the
         // system-blue environment tint, so pushed screens (Appearance,
