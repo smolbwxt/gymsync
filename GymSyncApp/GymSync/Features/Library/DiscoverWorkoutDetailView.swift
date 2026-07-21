@@ -495,11 +495,13 @@ struct DiscoverWorkoutDetailView: View {
                 .foregroundStyle(theme.text)
 
             if entry.isEdited {
-                // Flow 6 (`:836`): "an '✏️ edited' indicator appears next to
-                // the entry" — session duration was corrected post-hoc,
-                // time_seconds stays locked to the original.
-                Text("✏️")
-                    .font(.system(size: 12))
+                // Flow 6 (`:836`): an "edited" indicator next to the entry —
+                // session duration was corrected post-hoc, time_seconds stays
+                // locked to the original. SF pencil (emoji sweep, spec §7).
+                Image(systemName: "pencil")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(theme.neutral500)
+                    .accessibilityLabel("Edited")
             }
 
             Spacer()

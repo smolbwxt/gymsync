@@ -220,9 +220,13 @@ struct SoloRecapView: View {
         let delta = pr.weight - pr.previousBest
         return GSCard(backgroundColor: theme.accent100) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("🔥 New personal record")
-                    .font(GSFont.bodyMedium(11, relativeTo: .caption))
-                    .foregroundStyle(theme.accent)
+                HStack(spacing: 5) {
+                    Image(systemName: "flame.fill")
+                        .font(.system(size: 10, weight: .bold))
+                    Text("New personal record")
+                        .font(GSFont.bodyMedium(11, relativeTo: .caption))
+                }
+                .foregroundStyle(theme.accent)
                 Text("\(pr.exerciseName) — \(decimalString(pr.weight)) lbs × \(pr.reps)")
                     .font(GSFont.bold(15, relativeTo: .body))
                     .foregroundStyle(theme.text)

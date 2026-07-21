@@ -53,8 +53,9 @@ struct PRCelebrationOverlay: View {
             VStack(spacing: 16) {
                 Spacer()
 
-                Text("🔥")
+                Image(systemName: "flame.fill")
                     .font(.system(size: 44))
+                    .foregroundStyle(theme.bg)
 
                 Text("NEW PERSONAL RECORD")
                     .font(GSFont.bold(13, relativeTo: .caption))
@@ -80,12 +81,17 @@ struct PRCelebrationOverlay: View {
                     .foregroundStyle(theme.bg.opacity(0.9))
 
                 if let count = monthlyCount, count > 0 {
-                    Text("🏆 \(ordinal(count)) PR this month")
-                        .font(GSFont.bold(12, relativeTo: .caption))
-                        .foregroundStyle(theme.bg)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(theme.bg.opacity(0.18))
+                    HStack(spacing: 5) {
+                        Image(systemName: "trophy.fill")
+                            .font(.system(size: 11, weight: .bold))
+                        Text("\(ordinal(count)) PR this month")
+                            .font(GSFont.bold(12, relativeTo: .caption))
+                    }
+                    .foregroundStyle(theme.bg)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(theme.bg.opacity(0.18))
+                    .cornerRadius(10)
                 }
 
                 Spacer()

@@ -258,7 +258,7 @@ struct CampaignDetailView: View {
                         .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
                         .foregroundStyle(theme.text)
                     if CampaignProgressMath.isComplete(progress: myProgress, target: campaign.individualTarget) {
-                        GSTag(text: "🌊 Completed", style: .accent)
+                        GSTag(text: "Completed", style: .accent)   // emoji sweep (spec §7): accent tag alone signals success
                     }
                 }
             } else {

@@ -294,7 +294,9 @@ struct CompletedSessionView: View {
                     GSTag(text: "\(prs) PR\(prs == 1 ? "" : "s")", style: .accent)
                 }
                 if stat.penaltyReps > 0 {
-                    Text("late · \(stat.penaltyReps) 🔥")
+                    // Emoji sweep (spec §7): the flame implied the burpee
+                    // penalty — say it plainly instead.
+                    Text("late · \(stat.penaltyReps) burpees")
                         .font(GSFont.body(10, relativeTo: .caption2))
                         .foregroundStyle(theme.accent700)
                 }

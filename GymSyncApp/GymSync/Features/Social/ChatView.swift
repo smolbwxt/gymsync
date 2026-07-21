@@ -624,11 +624,12 @@ struct ChatView: View {
     @ViewBuilder
     private func systemMessageView(_ message: ChatMessage) -> some View {
         if message.kind == .systemPR {
-            // Canvas celebration card: accent-fill/border, single inline sentence
-            // ("🔥 " + bold body), matching the proof's one-line composition.
+            // Celebration card: accent-fill/border, single inline sentence
+            // (flame + bold body). SF flame per the emoji sweep (spec §7).
             HStack(alignment: .firstTextBaseline, spacing: 5) {
-                Text("🔥")
-                    .font(.system(size: 14))
+                Image(systemName: "flame.fill")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(theme.accent)
                 Text(message.body ?? "")
                     .font(.custom("Archivo-Bold", size: 13))
                     .foregroundStyle(theme.text)
@@ -693,7 +694,7 @@ struct ChatView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "speaker.wave.2")
                         .font(.system(size: 11, weight: .semibold))
-                    Text(message.body ?? "🔊")
+                    Text(message.body ?? "Sound")
                         .font(GSFont.bold(11, relativeTo: .caption2))
                         .lineLimit(2)
                 }

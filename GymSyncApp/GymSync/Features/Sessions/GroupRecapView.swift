@@ -369,10 +369,14 @@ struct GroupRecapView: View {
 
     private func prCard(_ pr: HeaviestPR) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("🔥 YOUR PR THIS SESSION")
-                .font(GSFont.bold(10, relativeTo: .caption2))
-                .tracking(1.2)
-                .foregroundStyle(theme.accent)
+            HStack(spacing: 5) {
+                Image(systemName: "flame.fill")
+                    .font(.system(size: 10, weight: .bold))
+                Text("YOUR PR THIS SESSION")
+                    .font(GSFont.bold(10, relativeTo: .caption2))
+                    .tracking(1.2)
+            }
+            .foregroundStyle(theme.accent)
             Text("\(pr.exerciseName) — \(decimalString(pr.weight)) lbs × \(pr.reps)")
                 .font(GSFont.bold(15, relativeTo: .headline))
                 .foregroundStyle(theme.text)
