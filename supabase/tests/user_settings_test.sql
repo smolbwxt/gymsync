@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(17);
+SELECT plan(18);
 
 -- ── Fixtures ──────────────────────────────────────────────────────────────────
 -- cu1 alice = owner
@@ -26,11 +26,12 @@ SELECT lives_ok(
   'owner can insert own user_settings row'
 );
 
--- ── 2. Column defaults apply when omitted (120 / 'midnight') ──────────────────
+-- ── 2. Column defaults apply when omitted (120 / 'onyx') ──────────────────────
+--      Redesign 20260728000007 flipped the palette default midnight -> onyx.
 SELECT results_eq(
   $$SELECT default_rest_seconds, palette FROM user_settings
     WHERE user_id = '00000000-0000-0000-0000-0000000c0001'$$,
-  $$VALUES (120, 'midnight'::text)$$,
+  $$VALUES (120, 'onyx'::text)$$,
   'default_rest_seconds/palette fall back to their column defaults when omitted'
 );
 
@@ -41,6 +42,15 @@ SELECT results_eq(
     WHERE user_id = '00000000-0000-0000-0000-0000000c0001'$$,
   ARRAY[false],
   'share_heart_rate column exists and defaults to false when omitted'
+);
+
+-- ── 2c. Redesign (20260728000007): accent column exists and defaults to 'sky'
+--         when omitted ──────────────────────────────────────────────────────────
+SELECT results_eq(
+  $$SELECT accent FROM user_settings
+    WHERE user_id = '00000000-0000-0000-0000-0000000c0001'$$,
+  $$VALUES ('sky'::text)$$,
+  'accent column exists and defaults to sky when omitted'
 );
 
 -- ── 3. Owner sees own row (exactly 1) ──────────────────────────────────────────
@@ -126,12 +136,12 @@ SELECT ok(
   'share_heart_rate UPDATE also bumps updated_at (trigger fires for every column, not just palette/rest)')
 FROM before_val, after_update;
 
--- ── 6. CHECK constraint: palette outside the 4 allowed values raises 23514 ─────
+-- ── 6. CHECK constraint: palette outside the 5 allowed values raises 23514 ─────
 SELECT throws_ok(
   $$UPDATE user_settings SET palette = 'sunburst'
     WHERE user_id = '00000000-0000-0000-0000-0000000c0001'$$,
   '23514', NULL,
-  'palette outside (midnight, arena, ink, modernist) violates the CHECK constraint'
+  'palette outside (onyx, midnight, arena, ink, modernist) violates the CHECK constraint'
 );
 
 -- ── 7. CHECK constraint: default_rest_seconds below 15 raises 23514 ────────────
