@@ -50,11 +50,13 @@ struct RootView: View {
         // midnight/arena (dark) — see GSTheme.isDark's doc comment for the
         // luminance-based determination.
         .preferredColorScheme(themeStore.current.isDark ? .dark : .light)
-        .environment(\.gsTheme, themeStore.current)
-        // Redesign: the user's personal accent, decoupled from the palette.
-        // `themeStore` is @Observable, so a `selectAccent(_:)` re-renders the
-        // whole tree with the new `\.gsAccent` — the one token every redesigned
-        // component reads for its accent color.
+        // Redesign: inject the palette with its accent ramp overridden by the
+        // user's chosen accent, so every component reading `theme.accent*` picks
+        // up the personal accent without being individually rewired.
+        .environment(\.gsTheme, themeStore.current.withAccent(themeStore.accent))
+        // The precise `GSAccent` too, for components that need base/soft/onAccent
+        // distinctly (e.g. GSAccentPicker). `themeStore` is @Observable, so a
+        // `selectAccent(_:)` re-renders the whole tree with both updated.
         .environment(\.gsAccent, themeStore.accent)
         // Tint every NavigationStack's bar items — chiefly the back button —
         // with the theme accent. Without this, SwiftUI falls back to the
@@ -62,7 +64,7 @@ struct RootView: View {
         // Notifications, …) showed an iOS-blue "‹ Back" against the themed
         // chrome. UINavigationBar.appearance().tintColor alone does NOT reach
         // the SwiftUI back button; this environment tint does.
-        .tint(themeStore.current.accent)
+        .tint(themeStore.accent.base)
         .background(themeStore.current.bg.ignoresSafeArea())
         // Phase O Task 2: calendar reconcile sweep, app-foreground gated.
         // `RootView` is the one view instance that's alive for the entire

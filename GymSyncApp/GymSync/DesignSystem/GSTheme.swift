@@ -195,6 +195,35 @@ public struct GSTheme {
 
         isDark: false
     )
+
+    // MARK: - Accent override (redesign)
+
+    /// Returns a copy of this palette with its accent ramp replaced by the
+    /// user's chosen `GSAccent`. The redesign decouples accent from palette:
+    /// `RootView` injects `current.withAccent(themeStore.accent)` as `\.gsTheme`,
+    /// so every existing component that reads `theme.accent*` transparently
+    /// picks up the user's accent without being individually rewired.
+    /// `bg`/`surface`/`neutral*` are untouched — only the accent ramp changes.
+    /// `bg` (which the button styles use as the on-accent text color) stays the
+    /// palette's ground; on Onyx that near-black reads correctly on every bright
+    /// preset accent. The ramp steps collapse to base/soft because `GSAccent`
+    /// carries a single hue (base) + one tint (soft), not a full 100–900 scale.
+    public func withAccent(_ accent: GSAccent) -> GSTheme {
+        GSTheme(
+            bg: bg, surface: surface, text: text, divider: divider,
+            accent: accent.base,
+            accent100: accent.soft,
+            accent200: accent.soft,
+            accent300: accent.soft,
+            accent600: accent.base,
+            accent700: accent.base,
+            accent800: accent.base,
+            neutral100: neutral100, neutral300: neutral300, neutral400: neutral400,
+            neutral500: neutral500, neutral700: neutral700, neutral800: neutral800,
+            neutral900: neutral900,
+            isDark: isDark
+        )
+    }
 }
 
 // MARK: - GSPalettes

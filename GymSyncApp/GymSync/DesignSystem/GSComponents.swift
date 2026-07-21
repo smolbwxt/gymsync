@@ -32,7 +32,7 @@ public struct GSPrimaryButtonStyle: ButtonStyle {
         .padding(.horizontal, 16)
         .padding(.vertical, verticalPadding)
         .background(configuration.isPressed ? theme.accent600 : theme.accent)
-        .cornerRadius(0)
+        .cornerRadius(GSMetrics.radiusSm)
         .contentShape(Rectangle())
         .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
     }
@@ -74,9 +74,9 @@ public struct GSSecondaryButtonStyle: ButtonStyle {
         .padding(.horizontal, horizontalPadding)
         .padding(.vertical, verticalPadding)
         .background(configuration.isPressed ? theme.text.opacity(0.08) : Color.clear)
-        .cornerRadius(0)
+        .cornerRadius(GSMetrics.radiusSm)
         .overlay(
-            Rectangle().strokeBorder(theme.divider, lineWidth: 1)
+            RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1)
         )
         .contentShape(Rectangle())
         .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
@@ -103,7 +103,7 @@ public struct GSGhostButtonStyle: ButtonStyle {
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .background(configuration.isPressed ? theme.neutral100 : Color.clear)
-        .cornerRadius(0)
+        .cornerRadius(GSMetrics.radiusSm)
         .contentShape(Rectangle())
         .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
     }
@@ -132,10 +132,10 @@ public struct GSCard<Content: View>: View {
     public var body: some View {
         content
             .background(backgroundColor ?? theme.surface)
-            .cornerRadius(0)
+            .cornerRadius(GSMetrics.radiusMd)   // redesign: softer 24pt on the main card widget
             .overlay(
                 bordered
-                    ? Rectangle().strokeBorder(theme.neutral300, lineWidth: 1)
+                    ? RoundedRectangle(cornerRadius: GSMetrics.radiusMd).strokeBorder(theme.neutral300, lineWidth: 1)
                     : nil
             )
     }
@@ -167,10 +167,10 @@ public struct GSTag: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(backgroundColor)
-            .cornerRadius(0)
+            .cornerRadius(GSMetrics.radiusSm)
             .overlay(
                 style == .outline
-                    ? Rectangle().strokeBorder(theme.neutral400, lineWidth: 1)
+                    ? RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.neutral400, lineWidth: 1)
                     : nil
             )
     }
@@ -456,7 +456,7 @@ public struct GSSecondarySignOutButtonStyle: ButtonStyle {
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .background(configuration.isPressed ? theme.accent100 : Color.clear)
-        .cornerRadius(0)
+        .cornerRadius(GSMetrics.radiusSm)
         .overlay(
             Rectangle()
                 .strokeBorder(
@@ -523,7 +523,7 @@ public struct GSStatTile: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.surface)
-        .cornerRadius(0)
+        .cornerRadius(GSMetrics.radiusSm)
     }
 }
 
@@ -598,10 +598,10 @@ public struct GSSquareToggleStyle: ToggleStyle {
             configuration.isOn.toggle()
         } label: {
             ZStack(alignment: configuration.isOn ? .trailing : .leading) {
-                Rectangle()
+                Capsule()
                     .fill(configuration.isOn ? theme.accent : theme.neutral300)
                     .frame(width: 46, height: 27)
-                Rectangle()
+                Circle()   // redesign: round knob on a pill track (was a square knob)
                     .fill(configuration.isOn ? theme.bg : theme.neutral500)
                     .frame(width: 21, height: 21)
                     .padding(3)
@@ -714,7 +714,7 @@ public struct GSEmptyState: View {
     public var body: some View {
         VStack(spacing: 0) {
             ZStack {
-                Rectangle().strokeBorder(theme.divider, lineWidth: 2)
+                RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 2)
                 Image(systemName: icon)
                     .font(.system(size: 30, weight: .regular))
                     .foregroundStyle(theme.text.opacity(0.45))
@@ -789,7 +789,7 @@ public struct GSErrorCard: View {
     public var body: some View {
         VStack(spacing: 0) {
             ZStack {
-                Rectangle().strokeBorder(theme.divider, lineWidth: 2)
+                RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 2)
                 Image(systemName: "arrow.clockwise")
                     .font(.system(size: 26, weight: .regular))
                     .foregroundStyle(theme.text.opacity(0.45))
@@ -860,7 +860,7 @@ public struct GSOfflineBanner: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(theme.surface)
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
         .onAppear {
             // Canvas Completion Task 4 fix round 1: `repeatForever(autoreverses:
             // true)` doubles a single-leg duration into a full forward+reverse
@@ -936,7 +936,7 @@ public struct GSInlineErrorBanner: View {
                         .foregroundStyle(theme.bg)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
-                        .overlay(Rectangle().strokeBorder(theme.bg.opacity(0.6), lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.bg.opacity(0.6), lineWidth: 1))
                 }
                 .buttonStyle(.plain)
             }
@@ -1090,7 +1090,7 @@ struct GSConnectingVoicePill: View {
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
         .onAppear {
             withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) {
                 isDimmed = true
@@ -1152,7 +1152,7 @@ struct GSVoiceUnavailableBanner: View {
                 .fill(theme.accent)
                 .frame(width: 3)
         }
-        .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
     }
 }
 
@@ -1409,7 +1409,7 @@ struct PTTDockRow: View {
             bar()
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .background(theme.surface)
-                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
         }
     }
 
@@ -1581,7 +1581,7 @@ struct PTTDockRow: View {
             .padding(.vertical, 13)
             .frame(minHeight: 44)
             .background(theme.bg)
-            .overlay(Rectangle().strokeBorder(theme.accent, lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.accent, lineWidth: 1))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1861,7 +1861,7 @@ struct GSVoiceMixerSheet: View {
                         ForEach(0..<12, id: \.self) { i in
                             Rectangle()
                                 .fill(i < 7 ? theme.accent : theme.surface)
-                                .overlay(i < 7 ? nil : Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                                .overlay(i < 7 ? nil : RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
                                 .frame(height: 20)
                         }
                     }
@@ -1908,7 +1908,7 @@ struct GSVoiceMixerSheet: View {
                 }
                 .opacity(0.6)
                 .tint(theme.accent)
-                .overlay(Rectangle().strokeBorder(theme.divider, lineWidth: 1))
+                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
 
                 if !participants.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
@@ -1967,7 +1967,7 @@ struct GSVoiceMixerSheet: View {
                     .font(.system(size: 14, weight: .regular))
                     .foregroundStyle(isMuted ? theme.accent : theme.neutral700)
                     .frame(width: 32, height: 32)
-                    .overlay(Rectangle().strokeBorder(isMuted ? theme.accent : theme.divider, lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(isMuted ? theme.accent : theme.divider, lineWidth: 1))
             }
             .buttonStyle(.plain)
             .accessibilityLabel(isMuted ? "Unmute \(p.name)" : "Mute \(p.name)")
