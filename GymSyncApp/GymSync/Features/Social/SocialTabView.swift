@@ -6,6 +6,9 @@ struct SocialTabView: View {
     @State private var previews: [UUID: String] = [:]
     @State private var friendCount = 0
     @State private var pendingCount = 0
+    /// Redesign: per-group `group_stats` aggregates feeding the hub hero
+    /// ("your crews have moved X lbs") and each group card's volume meta.
+    @State private var groupStatsByID: [UUID: GroupStats] = [:]
     @State private var showCreateGroup = false
     // Also doubles as the "did the last groups load fail" flag (Canvas
     // Completion Task 4) — it's already a String? set from `refresh()`'s
@@ -84,7 +87,14 @@ struct SocialTabView: View {
                             // join-by-code feature exists.
                             Spacer(minLength: 0)
                         } else {
-                            // Friends row
+                            // ── Hub hero (redesign: "cumulative weight moved") ──
+                            if !groups.isEmpty {
+                                hubHero
+                                    .padding(.horizontal, 16)
+                                    .padding(.top, 16)
+                            }
+
+                            // Friends row (redesign: rounded card row)
                             NavigationLink {
                                 FriendsView()
                             } label: {
@@ -106,22 +116,20 @@ struct SocialTabView: View {
                                         .font(.system(size: 13, weight: .semibold))
                                         .foregroundStyle(theme.neutral500)
                                 }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 12)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 13)
                                 .background(theme.surface)
+                                .cornerRadius(GSMetrics.radiusSm)
+                                .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                             .padding(.horizontal, 16)
-                            .padding(.top, 16)
-
-                            GSDivider()
-                                .padding(.horizontal, 16)
-                                .padding(.top, 12)
+                            .padding(.top, 12)
 
                             // Groups header
-                            GSSectionHeader("Groups")
+                            GSSectionHeader("Your groups")
                                 .padding(.horizontal, 16)
-                                .padding(.top, 16)
+                                .padding(.top, 18)
                                 .padding(.bottom, 8)
 
                             // Canvas Completion Task 4 (proof p30/p31): the blank-list
@@ -276,43 +284,100 @@ struct SocialTabView: View {
     }
 
     @ViewBuilder
+    // MARK: - Hub hero (redesign)
+
+    /// "Your crews have moved X lbs" — the cumulative-weight-moved summary,
+    /// summed from each group's `group_stats` aggregate (all-time, matching
+    /// the RPC's shape), with the crew avatars stacked in their identity
+    /// colors. Renders with whatever stats have loaded — a group whose stats
+    /// fetch failed simply isn't counted yet (best-effort, like every other
+    /// fetch on this screen).
+    private var hubHero: some View {
+        let totalVolume = groupStatsByID.values.reduce(Decimal(0)) { $0 + $1.totalVolume }
+        let totalSessions = groupStatsByID.values.reduce(0) { $0 + $1.sessionCount }
+        return GSCard(bordered: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                GSSectionHeader("Your crews have moved")
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Text(StatMath.compactNumber(totalVolume))
+                        .font(GSFont.heading(34, relativeTo: .largeTitle))
+                        .foregroundStyle(theme.text)
+                        .monospacedDigit()
+                    Text("lbs")
+                        .font(GSFont.bold(15, relativeTo: .subheadline))
+                        .foregroundStyle(theme.neutral500)
+                }
+                .padding(.top, 7)
+                Text("\(totalSessions) sessions across \(groups.count) \(groups.count == 1 ? "crew" : "crews")")
+                    .font(GSFont.body(12, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+                    .padding(.top, 4)
+                HStack(spacing: -7) {
+                    ForEach(groups.prefix(5)) { group in
+                        GSInitialsAvatar(
+                            name: group.name,
+                            avatarURL: group.avatarURL,
+                            size: 26,
+                            fill: GSGroupColor.color(for: group.id),
+                            ink: GSGroupColor.onColor(for: group.id)
+                        )
+                        .overlay(RoundedRectangle(cornerRadius: 26 * 0.28).strokeBorder(theme.surface, lineWidth: 2))
+                    }
+                }
+                .padding(.top, 12)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+        }
+    }
+
     private func groupRow(_ group: GymGroup) -> some View {
-        HStack(spacing: 10) {
-            // 36×36 square avatar — Phase F Task 6: GSInitialsAvatar now
-            // renders the photo itself when avatarURL is non-nil (see its
-            // doc comment); this used to hand-roll the same AsyncImage
-            // block inline.
-            GSInitialsAvatar(name: group.name, avatarURL: group.avatarURL, size: 36)
+        HStack(spacing: 11) {
+            // Redesign: group avatar carries the group's identity color
+            // (photo when set, colored initials otherwise).
+            GSInitialsAvatar(
+                name: group.name,
+                avatarURL: group.avatarURL,
+                size: 40,
+                fill: GSGroupColor.color(for: group.id),
+                ink: GSGroupColor.onColor(for: group.id)
+            )
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(group.name)
-                    .font(GSFont.bold(14, relativeTo: .headline))
+                    .font(GSFont.bold(14.5, relativeTo: .headline))
                     .foregroundStyle(theme.text)
                     .lineLimit(1)
 
-                // Canvas: last-message preview line (Dossier §B — audit §2.6)
                 if let preview = previews[group.id] {
                     Text(preview)
-                        .font(GSFont.body(13, relativeTo: .subheadline))
+                        .font(GSFont.body(12.5, relativeTo: .subheadline))
                         .foregroundStyle(theme.neutral700)
                         .lineLimit(1)
                         .truncationMode(.tail)
+                } else if let stats = groupStatsByID[group.id] {
+                    Text("\(StatMath.compactNumber(stats.totalVolume)) lbs moved · \(stats.sessionCount) sessions")
+                        .font(GSFont.body(12.5, relativeTo: .subheadline))
+                        .foregroundStyle(theme.neutral500)
+                        .lineLimit(1)
                 }
             }
 
             Spacer(minLength: 0)
 
-            // Unread dot — square, 9×9, accent fill per canvas
+            // Unread dot — round in the redesign.
             if unread.contains(group.id) {
-                Rectangle()
+                Circle()
                     .fill(theme.accent)
                     .frame(width: 9, height: 9)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
         .background(theme.surface)
+        .cornerRadius(GSMetrics.radiusSm)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
     }
 
     private func refresh() async {
@@ -348,6 +413,22 @@ struct SocialTabView: View {
             unread = unreadIDs
             previews = previewsByGroup
 
+            // Redesign: per-group aggregates for the hub hero + card meta.
+            // Best-effort per group — a failed fetch leaves that group's
+            // stale entry in place rather than clobbering it.
+            var statsByID = groupStatsByID
+            await withTaskGroup(of: (UUID, GroupStats?).self) { taskGroup in
+                for group in currentGroups {
+                    taskGroup.addTask {
+                        (group.id, try? await GroupRepository.stats(groupID: group.id))
+                    }
+                }
+                for await (id, stats) in taskGroup {
+                    if let stats { statsByID[id] = stats }
+                }
+            }
+            groupStatsByID = statsByID
+
             errorText = nil
         } catch {
             errorText = (error as? GymSyncError)?.errorDescription
@@ -357,11 +438,12 @@ struct SocialTabView: View {
 
     /// Maps a chat message to its group-row preview line.
     /// text/soundboard_echo/system kinds show the body as-is; image and audio
-    /// kinds show a fixed placeholder (no body to display).
+    /// kinds show a fixed placeholder (no body to display). Plain words, no
+    /// emoji — redesign emoji sweep (spec §7: attachment labels lose 📷/🎤).
     private static func previewText(for message: ChatMessage) -> String? {
         switch message.kind {
-        case .image: return "📷 Photo"
-        case .audio: return "🎤 Voice message"
+        case .image: return "Photo"
+        case .audio: return "Voice message"
         case .text, .soundboardEcho, .systemPR, .systemSession, .systemLate, .systemLeaderboard:
             return message.body
         }
@@ -388,6 +470,11 @@ struct GSInitialsAvatar: View {
     private let initialsText: String
     let avatarURL: URL?
     var size: CGFloat = 34
+    /// Redesign (spec §4): GROUP avatars carry the group's identity color
+    /// (`GSGroupColor`), independent of the user's accent. `nil` keeps the
+    /// pre-redesign accent fill for non-group callers.
+    var fill: Color? = nil
+    var ink: Color? = nil
 
     @Environment(\.gsTheme) private var theme
 
@@ -401,33 +488,39 @@ struct GSInitialsAvatar: View {
     /// its typography — see that file's `profileRow` doc comment. No other
     /// caller needs anything but name-splitting, so that overload was
     /// dropped rather than kept unused.
-    init(name: String, avatarURL: URL? = nil, size: CGFloat = 34) {
+    init(name: String, avatarURL: URL? = nil, size: CGFloat = 34, fill: Color? = nil, ink: Color? = nil) {
         let parts = name.split(separator: " ").prefix(2)
         self.initialsText = parts.map { String($0.prefix(1)).uppercased() }.joined()
         self.avatarURL = avatarURL
         self.size = size
+        self.fill = fill
+        self.ink = ink
     }
 
     var body: some View {
-        if let avatarURL {
-            AsyncImage(url: avatarURL) { image in
-                image.resizable().scaledToFill()
-            } placeholder: {
+        // Redesign: rounded avatar tile (was zero-radius square).
+        Group {
+            if let avatarURL {
+                AsyncImage(url: avatarURL) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: {
+                    initialsView
+                }
+                .frame(width: size, height: size)
+                .clipped()
+            } else {
                 initialsView
             }
-            .frame(width: size, height: size)
-            .clipped()
-        } else {
-            initialsView
         }
+        .clipShape(RoundedRectangle(cornerRadius: size * 0.28))
     }
 
     private var initialsView: some View {
         Text(initialsText)
             .font(GSFont.bold(size * 0.31, relativeTo: .caption))
-            .foregroundStyle(theme.bg)
+            .foregroundStyle(ink ?? theme.bg)
             .frame(width: size, height: size)
-            .background(theme.accent)
+            .background(fill ?? theme.accent)
     }
 }
 

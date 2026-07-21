@@ -711,44 +711,53 @@ public struct GSEmptyState: View {
         self.secondaryAction = secondaryAction
     }
 
+    // Redesign (2026-07-20 spec §6 + null-states proof): empty states are
+    // CARD-ANCHORED and LEFT-ALIGNED — an icon tile, title, body, and inline
+    // actions inside a rounded surface widget — never a centered float on the
+    // bare ground (the old "No crew yet" center-center failure). One change
+    // here restyles every call site (Social, Friends, etc.) at once.
     public var body: some View {
-        VStack(spacing: 0) {
-            ZStack {
-                RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 2)
-                Image(systemName: icon)
-                    .font(.system(size: 30, weight: .regular))
-                    .foregroundStyle(theme.text.opacity(0.45))
+        GSCard(bordered: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(theme.neutral300)
+                    .frame(width: 40, height: 40)
+                    .overlay(
+                        Image(systemName: icon)
+                            .font(.system(size: 19, weight: .regular))
+                            .foregroundStyle(theme.accent)
+                    )
+
+                Text(title)
+                    .font(GSFont.bold(16, relativeTo: .headline))
+                    .foregroundStyle(theme.text)
+                    .padding(.top, 12)
+
+                Text(message)
+                    .font(GSFont.body(12.5, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 4)
+
+                if ctaTitle != nil || secondaryTitle != nil {
+                    HStack(spacing: 9) {
+                        if let ctaTitle, let action {
+                            Button(ctaTitle, action: action)
+                                .buttonStyle(GSPrimaryButtonStyle(fontSize: 13, verticalPadding: 11))
+                                .fixedSize()
+                        }
+                        if let secondaryTitle, let secondaryAction {
+                            Button(secondaryTitle, action: secondaryAction)
+                                .buttonStyle(GSSecondaryButtonStyle(fontSize: 13, horizontalPadding: 15, verticalPadding: 11))
+                                .fixedSize()
+                        }
+                    }
+                    .padding(.top, 14)
+                }
             }
-            .frame(width: 64, height: 64)
-            .padding(.bottom, 18)
-
-            Text(title)
-                .font(GSFont.heading(22, relativeTo: .title2))
-                .foregroundStyle(theme.text)
-
-            Text(message)
-                .font(GSFont.body(14, relativeTo: .subheadline))
-                .foregroundStyle(theme.neutral500)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 250)
-                .padding(.top, 6)
-
-            if let ctaTitle, let action {
-                Button(ctaTitle, action: action)
-                    .buttonStyle(GSPrimaryButtonStyle(fontSize: 14, verticalPadding: 12))
-                    .padding(.top, 18)
-            }
-
-            if let secondaryTitle, let secondaryAction {
-                Button(secondaryTitle, action: secondaryAction)
-                    .buttonStyle(GSGhostButtonStyle())
-                    .padding(.top, 8)
-            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(18)
         }
-        .multilineTextAlignment(.center)
-        .padding(.horizontal, 32)
-        .padding(.vertical, 24)
-        .frame(maxWidth: .infinity)
     }
 }
 
