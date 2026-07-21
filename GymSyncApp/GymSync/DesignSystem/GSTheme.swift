@@ -76,6 +76,40 @@ public struct GSTheme {
         isDark: true
     )
 
+    // MARK: - Onyx palette (redesign default) — near-black surfaces.
+    //
+    // The redesign decouples the accent from the palette: the user's accent is
+    // applied separately via `\.gsAccent` (GSAccent.swift), so the accent ramp
+    // below is a placeholder (reused midnight cyan values) present only to
+    // satisfy the `GSTheme` initializer. Redesigned components read `\.gsAccent`,
+    // never `theme.accent`. neutral100/300 intentionally equal surface/surface2
+    // (#16181D / #1E222A) so existing `neutral*`-keyed chrome lands on the new
+    // elevated surfaces.
+    public static let onyx = GSTheme(
+        bg:         Color(hex: 0x0A0B0D),
+        surface:    Color(hex: 0x16181D),
+        text:       Color(hex: 0xF3F5F8),
+        divider:    Color.white.opacity(0.07),
+
+        accent:     Color(hex: 0x38BDF8),   // placeholder; UI reads \.gsAccent
+        accent100:  Color(hex: 0x0E2C3A),
+        accent200:  Color(hex: 0x123A4D),
+        accent300:  Color(hex: 0x17506B),
+        accent600:  Color(hex: 0x22A6E4),
+        accent700:  Color(hex: 0x7DD3FC),
+        accent800:  Color(hex: 0xBAE6FD),
+
+        neutral100: Color(hex: 0x16181D),
+        neutral300: Color(hex: 0x1E222A),
+        neutral400: Color(hex: 0x3A414B),
+        neutral500: Color(hex: 0x5C616B),
+        neutral700: Color(hex: 0x868B95),
+        neutral800: Color(hex: 0xCFD4DB),
+        neutral900: Color(hex: 0xF3F5F8),
+
+        isDark: true
+    )
+
     // MARK: - Arena palette
     // Canvas: .gs-theme[data-palette="arena"] — "Near-black · volt lime".
 
@@ -181,6 +215,7 @@ public struct GSPaletteOption: Identifiable {
 
 public enum GSPalettes {
     public static let all: [GSPaletteOption] = [
+        GSPaletteOption(id: "onyx",      name: "Onyx",      subtitle: "Near-black · your accent", theme: .onyx),
         GSPaletteOption(id: "midnight",  name: "Midnight",  subtitle: "Charcoal · electric cyan", theme: .midnight),
         GSPaletteOption(id: "arena",     name: "Arena",     subtitle: "Near-black · volt lime",    theme: .arena),
         GSPaletteOption(id: "ink",       name: "Ink",       subtitle: "Warm bone · deep navy",     theme: .ink),
@@ -216,7 +251,7 @@ fileprivate extension Color {
 // MARK: - Environment
 
 private struct GSThemeKey: EnvironmentKey {
-    static let defaultValue: GSTheme = .midnight
+    static let defaultValue: GSTheme = .onyx   // redesign default
 }
 
 public extension EnvironmentValues {

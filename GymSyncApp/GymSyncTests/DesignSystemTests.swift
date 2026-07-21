@@ -106,6 +106,53 @@ final class DesignSystemTests: XCTestCase {
         XCTAssertEqual(GSPalettes.name(for: "not-a-palette"), "Midnight")
     }
 
+    // MARK: - Onyx palette (redesign default)
+
+    func testOnyxTokens() {
+        assertColor(GSTheme.onyx.bg,      hex: 0x0A0B0D, label: "onyx.bg")
+        assertColor(GSTheme.onyx.surface, hex: 0x16181D, label: "onyx.surface")
+        assertColor(GSTheme.onyx.text,    hex: 0xF3F5F8, label: "onyx.text")
+        XCTAssertTrue(GSTheme.onyx.isDark, "onyx is a near-black dark palette")
+    }
+
+    func testOnyxRegisteredAsDefault() {
+        XCTAssertEqual(GSPalettes.all.first?.id, "onyx", "onyx leads the palette list")
+        XCTAssertEqual(GSPalettes.name(for: "onyx"), "Onyx")
+        assertColor(GSPalettes.theme(for: "onyx").bg, hex: 0x0A0B0D, label: "resolved onyx.bg")
+    }
+
+    // MARK: - GSAccent (decoupled user-selectable accent)
+
+    func testAccentKnownPresetResolves() {
+        XCTAssertEqual(GSAccents.accent(for: "amber").id, "amber")
+        XCTAssertEqual(GSAccents.accent(for: "lime").name, "Lime")
+        assertColor(GSAccents.sky.base, hex: 0x38BDF8, label: "sky.base")
+    }
+
+    func testAccentUnknownFallsBackToSky() {
+        XCTAssertEqual(GSAccents.accent(for: "banana").id, "sky")
+        XCTAssertEqual(GSAccents.accent(for: "").id, "sky")
+    }
+
+    func testAccentCustomHexParses() {
+        let c = GSAccents.accent(for: "#7c9cff")
+        XCTAssertEqual(c.id, "#7c9cff")
+        assertColor(c.base, hex: 0x7C9CFF, label: "custom accent base")
+    }
+
+    func testAccentCustomHexRejectsMalformed() {
+        // wrong length, missing '#', and non-hex all degrade to sky
+        XCTAssertEqual(GSAccents.accent(for: "#7c9cf").id, "sky")
+        XCTAssertEqual(GSAccents.accent(for: "7c9cff").id, "sky")
+        XCTAssertEqual(GSAccents.accent(for: "#zzzzzz").id, "sky")
+    }
+
+    func testAccentOnAccentLuminanceSplit() {
+        // A light custom accent gets dark ink text; a dark one gets near-white.
+        assertColor(GSAccents.accent(for: "#f5f5f5").onAccent, hex: 0x0A0B0D, label: "onAccent on light custom")
+        assertColor(GSAccents.accent(for: "#101010").onAccent, hex: 0xF3F5F8, label: "onAccent on dark custom")
+    }
+
     // MARK: - Helpers
 
     /// Asserts `color` resolves to `hex` (24-bit RGB, alpha 1.0) within a
