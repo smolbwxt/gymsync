@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 
 struct StatsTabView: View {
     @Environment(AppState.self) private var appState
@@ -37,54 +38,35 @@ struct StatsTabView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 16)
-
-                    GSDivider()
-                        .padding(.vertical, 16)
+                    .padding(.bottom, 12)
 
                     // ── Weekly Volume Card ──────────────────────────────────────
                     weeklyVolumeCardView
                         .padding(.horizontal, 16)
-                        .padding(.bottom, 16)
+                        .padding(.bottom, 12)
 
                     // ── Streak Card (Task 5, Phase S) ───────────────────────────
                     streakCardView
                         .padding(.horizontal, 16)
-                        .padding(.bottom, 16)
+                        .padding(.bottom, 12)
 
-                    // ── Recent PRs Table ────────────────────────────────────────
+                    // ── Recent PRs ─────────────────────────────────────────────
                     recentPRsCardView
                         .padding(.horizontal, 16)
-                        .padding(.bottom, 16)
+                        .padding(.bottom, 12)
 
                     // ── Body Weight Card (Task 3, Phase H) ──────────────────────
                     bodyWeightCardView
                         .padding(.horizontal, 16)
-                        .padding(.bottom, 16)
+                        .padding(.bottom, 12)
 
-                    // ── Recent Activity Row ────────────────────────────────────
-                    GSSectionHeader("Recent Activity")
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 10)
-
+                    // ── Recent Activity Row (redesign: rounded card row) ───────
                     NavigationLink { ActivityFeedView() } label: {
-                        HStack {
-                            Text("Activity")
-                                .font(GSFont.bodyMedium(15, relativeTo: .body))
-                                .foregroundStyle(theme.accent)
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(theme.neutral500)
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 14)
-                        .background(theme.surface)
+                        navRow(title: "Activity", tint: theme.accent)
                     }
                     .buttonStyle(.plain)
                     .padding(.horizontal, 16)
-
-                    GSDivider()
-                        .padding(.vertical, 16)
+                    .padding(.bottom, 12)
 
                     // ── Per-Exercise History ───────────────────────────────────
                     GSSectionHeader("Per-Exercise History")
@@ -92,32 +74,31 @@ struct StatsTabView: View {
                         .padding(.bottom, 10)
 
                     if exercises.isEmpty {
-                        Text("No exercises yet.")
-                            .font(GSFont.body(14, relativeTo: .subheadline))
-                            .foregroundStyle(theme.neutral500)
-                            .padding(.horizontal, 16)
-                            .padding(.bottom, 24)
-                    } else {
-                        ForEach(exercises) { ex in
-                            NavigationLink { ExerciseHistoryView(exercise: ex) } label: {
-                                HStack {
-                                    Text(ex.name)
-                                        .font(GSFont.bodyMedium(15, relativeTo: .body))
-                                        .foregroundStyle(theme.text)
-                                    Spacer()
-                                    Image(systemName: "chevron.right")
-                                        .font(.system(size: 13, weight: .semibold))
-                                        .foregroundStyle(theme.neutral500)
-                                }
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 14)
-                                .background(theme.surface)
+                        // Null state (spec §6): card-anchored, never a bare float.
+                        GSCard(bordered: false) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("No exercises yet")
+                                    .font(GSFont.bold(14, relativeTo: .subheadline))
+                                    .foregroundStyle(theme.text)
+                                Text("Exercise history builds automatically as you train.")
+                                    .font(GSFont.body(12, relativeTo: .caption))
+                                    .foregroundStyle(theme.neutral500)
                             }
-                            .buttonStyle(.plain)
-                            .padding(.horizontal, 16)
-                            GSDivider()
-                                .padding(.horizontal, 16)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(16)
                         }
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 24)
+                    } else {
+                        VStack(spacing: 8) {
+                            ForEach(exercises) { ex in
+                                NavigationLink { ExerciseHistoryView(exercise: ex) } label: {
+                                    navRow(title: ex.name, tint: theme.text)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.horizontal, 16)
                     }
 
                     Spacer(minLength: 24)
@@ -160,7 +141,13 @@ struct StatsTabView: View {
         return "\(formatter.string(from: NSNumber(value: raw)) ?? "0") lbs"
     }
 
-    // MARK: - Weekly Volume Card (Task 6)
+    // MARK: - Weekly Volume Card (Task 6; redesign: area chart)
+    //
+    // Redesign (all-tabs proof): the 6 discrete bars become a smooth accent
+    // area chart — gradient fill under an accent line with an emphasized
+    // latest point, axes hidden, W1…W6 labels below. Same `weeklyVolumes`
+    // data, purely a presentation change. All-zero data renders the honest
+    // empty message instead of a flat line pretending to be a trend.
 
     @ViewBuilder
     private var weeklyVolumeCardView: some View {
@@ -168,22 +155,45 @@ struct StatsTabView: View {
             VStack(alignment: .leading, spacing: 10) {
                 GSSectionHeader("Weekly volume")
 
-                HStack(alignment: .bottom, spacing: 8) {
-                    ForEach(Array(weeklyVolumes.enumerated()), id: \.offset) { index, volume in
-                        Rectangle()
-                            .fill(index == weeklyVolumes.count - 1 ? theme.accent : theme.neutral400)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: barHeight(for: volume))
+                if weeklyVolumes.allSatisfy({ $0 == 0 }) {
+                    Text("No sessions logged yet — your first workout starts the trend.")
+                        .font(GSFont.body(12.5, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral500)
+                        .padding(.vertical, 20)
+                } else {
+                    Chart {
+                        ForEach(Array(weeklyVolumes.enumerated()), id: \.offset) { index, volume in
+                            let v = NSDecimalNumber(decimal: volume).doubleValue
+                            AreaMark(x: .value("Week", index), y: .value("Volume", v))
+                                .interpolationMethod(.catmullRom)
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [theme.accent.opacity(0.28), theme.accent.opacity(0)],
+                                        startPoint: .top, endPoint: .bottom
+                                    )
+                                )
+                            LineMark(x: .value("Week", index), y: .value("Volume", v))
+                                .interpolationMethod(.catmullRom)
+                                .foregroundStyle(theme.accent)
+                                .lineStyle(StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+                            if index == weeklyVolumes.count - 1 {
+                                PointMark(x: .value("Week", index), y: .value("Volume", v))
+                                    .foregroundStyle(theme.accent)
+                                    .symbolSize(46)
+                            }
+                        }
                     }
-                }
-                .frame(height: 76, alignment: .bottom)
+                    .chartXAxis(.hidden)
+                    .chartYAxis(.hidden)
+                    .frame(height: 110)
 
-                HStack(spacing: 8) {
-                    ForEach(0..<weeklyVolumes.count, id: \.self) { index in
-                        Text("W\(index + 1)")
-                            .font(GSFont.body(9, relativeTo: .caption2))
-                            .foregroundStyle(index == weeklyVolumes.count - 1 ? theme.accent700 : theme.neutral700)
-                            .frame(maxWidth: .infinity, alignment: .center)
+                    HStack(spacing: 8) {
+                        ForEach(0..<weeklyVolumes.count, id: \.self) { index in
+                            Text("W\(index + 1)")
+                                .font(GSFont.body(9, relativeTo: .caption2))
+                                .foregroundStyle(index == weeklyVolumes.count - 1 ? theme.accent : theme.neutral700)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                        }
                     }
                 }
             }
@@ -192,15 +202,25 @@ struct StatsTabView: View {
         }
     }
 
-    /// Bar height in points for a 76pt-tall chart: proportional to the max
-    /// week's volume (max week = full 76pt), with a 2pt floor for zero-volume
-    /// weeks (and for the degenerate all-zero case).
-    private func barHeight(for volume: Decimal) -> CGFloat {
-        guard volume > 0 else { return 2 }
-        let maxVolume = weeklyVolumes.max() ?? 0
-        guard maxVolume > 0 else { return 2 }
-        let ratio = NSDecimalNumber(decimal: volume / maxVolume).doubleValue
-        return max(CGFloat(ratio) * 76, 2)
+    // MARK: - Shared nav row (redesign)
+
+    /// Rounded surface nav row — the card-anchored replacement for the old
+    /// square edge-to-edge rows (Activity, per-exercise history).
+    private func navRow(title: String, tint: Color) -> some View {
+        HStack {
+            Text(title)
+                .font(GSFont.bodyMedium(15, relativeTo: .body))
+                .foregroundStyle(tint)
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(theme.neutral500)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(theme.surface)
+        .cornerRadius(GSMetrics.radiusSm)
+        .contentShape(Rectangle())
     }
 
     // MARK: - Streak Card (Task 5, Phase S)
@@ -253,16 +273,13 @@ struct StatsTabView: View {
         return theme.accent700
     }
 
-    /// "🔥 N" for a live streak — the same flame the backend's own
-    /// celebratory copy uses for this exact concept
-    /// (20260719000008_streak_pushes.sql's push_streak_milestone_group:
-    /// "🔥 Crew streak: N sessions strong!"), reused here rather than
-    /// inventing a different glyph for the same idea. Plain "0" (no flame)
-    /// once the streak is broken or never started — a dead streak isn't a
-    /// "live" one worth decorating.
+    /// Plain "N" — the redesign's emoji sweep (spec §7) replaced the "🔥 N"
+    /// tile value: liveness is signaled by the accent `streakValueColor`
+    /// above (and by Home's streak-ring flame, which uses `flame.fill`, the
+    /// SF Symbol form). The backend's push copy keeps its own 🔥 — that's
+    /// message text, not UI chrome.
     private var currentStreakValue: String {
-        let current = userStreak?.currentStreak ?? 0
-        return isStreakLive ? "🔥 \(current)" : "\(current)"
+        "\(userStreak?.currentStreak ?? 0)"
     }
 
     // MARK: - Recent PRs Card (Task 6)
@@ -274,35 +291,34 @@ struct StatsTabView: View {
                 GSSectionHeader("Recent PRs")
 
                 if recentPRs.isEmpty {
-                    Text("No PRs yet — go set one.")
+                    // Null state (spec §6): stays inside the card, invitational.
+                    Text("No PRs yet — your first record lands here.")
                         .font(GSFont.body(13, relativeTo: .caption))
                         .foregroundStyle(theme.neutral500)
                         .padding(.top, 10)
                 } else {
-                    HStack {
-                        Text("Exercise").frame(maxWidth: .infinity, alignment: .leading)
-                        Text("Best").frame(maxWidth: .infinity, alignment: .leading)
-                        Text("Date").frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .font(GSFont.bodyMedium(11, relativeTo: .caption2))
-                    .foregroundStyle(theme.neutral700)
-                    .padding(.top, 10)
-                    .padding(.bottom, 8)
-
-                    Rectangle().fill(theme.divider).frame(height: 1)
-
+                    // Redesign (all-tabs proof): accent up-arrow rows replace
+                    // the three-column table — lift · weight · date.
                     ForEach(Array(recentPRs.enumerated()), id: \.element.id) { index, pr in
-                        HStack {
+                        HStack(spacing: 10) {
+                            Image(systemName: "arrow.up")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(theme.accent)
                             Text(exerciseName(for: pr.exerciseID))
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .font(GSFont.bold(13.5, relativeTo: .subheadline))
+                                .foregroundStyle(theme.text)
+                                .lineLimit(1)
+                            Spacer(minLength: 8)
                             Text("\(trimmedDecimal(pr.weight)) lbs")
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .font(GSFont.bold(14, relativeTo: .subheadline))
+                                .foregroundStyle(theme.text)
+                                .monospacedDigit()
                             Text(shortDate(pr.achievedAt))
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .font(GSFont.body(11, relativeTo: .caption2))
+                                .foregroundStyle(theme.neutral500)
+                                .frame(width: 48, alignment: .trailing)
                         }
-                        .font(GSFont.body(13, relativeTo: .subheadline))
-                        .foregroundStyle(theme.text)
-                        .padding(.vertical, 8)
+                        .padding(.vertical, 10)
 
                         if index < recentPRs.count - 1 {
                             Rectangle().fill(theme.divider).frame(height: 1)
@@ -367,7 +383,7 @@ struct StatsTabView: View {
                         .foregroundStyle(theme.accent)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
-                        .overlay(Rectangle().strokeBorder(theme.accent, lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(theme.accent, lineWidth: 1))
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
