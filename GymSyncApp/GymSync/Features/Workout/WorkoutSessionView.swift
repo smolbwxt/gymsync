@@ -250,6 +250,22 @@ struct WorkoutSessionView: View {
             // Main scrollable content
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
+                    // Redesign (deep-screens proof): live elapsed timer at the
+                    // top — self-updating Text(timerInterval:), no Timer.
+                    if let startedAt = session?.startedAt, !completed {
+                        VStack(spacing: 2) {
+                            Text(timerInterval: startedAt...Date.distantFuture, countsDown: false, showsHours: true)
+                                .font(GSFont.heading(30, relativeTo: .largeTitle))
+                                .foregroundStyle(theme.text)
+                                .monospacedDigit()
+                            Text("ELAPSED")
+                                .font(GSFont.bold(9.5, relativeTo: .caption2))
+                                .tracking(1.6)
+                                .foregroundStyle(theme.neutral500)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+
                     if let ex = currentExercise, let re = currentRoutineExercise {
                         // Canvas: accent-filled exercise header card
                         exerciseHeaderCard(ex: ex, re: re)
@@ -331,9 +347,10 @@ struct WorkoutSessionView: View {
                     .foregroundStyle(theme.bg.opacity(0.9))
             }
         }
-        .padding(14)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.accent)
+        .cornerRadius(GSMetrics.radiusMd)   // redesign: rounded accent hero
         .padding(.horizontal, 16)
     }
 

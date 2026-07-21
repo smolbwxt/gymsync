@@ -953,6 +953,7 @@ public struct GSInlineErrorBanner: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
         .background(theme.accent)
+        .cornerRadius(GSMetrics.radiusSm)   // redesign: rounded banner
     }
 }
 
@@ -1036,6 +1037,7 @@ public struct GSInlineNoticeBanner: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
         .background(theme.accent)
+        .cornerRadius(GSMetrics.radiusSm)   // redesign: rounded banner
     }
 }
 
@@ -1758,6 +1760,7 @@ struct GSVoiceConnectedToast: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
         .background(theme.accent)
+        .cornerRadius(GSMetrics.radiusSm)   // redesign: rounded banner
         .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
     }
 }
@@ -1798,6 +1801,7 @@ struct GSVoiceCoachMark: View {
             }
             .padding(14)
             .background(theme.text)
+            .cornerRadius(GSMetrics.radiusSm)   // redesign: rounded banner
 
             // Pointer triangle toward the mic dock below (frame's downward-
             // pointing bubble tail) — a local `Path`, not a new reusable

@@ -435,6 +435,7 @@ struct ChatView: View {
                 .foregroundStyle(theme.bg)
                 .frame(width: 38, height: 38)
                 .background(theme.accent)
+                .clipShape(Circle())   // redesign: rounded accent surface
         }
         .buttonStyle(.plain)
     }

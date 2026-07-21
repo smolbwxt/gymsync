@@ -640,6 +640,7 @@ struct LobbyView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
             .background(theme.accent)
+            .cornerRadius(GSMetrics.radiusMd)   // redesign: rounded accent surface
         }
     }
 

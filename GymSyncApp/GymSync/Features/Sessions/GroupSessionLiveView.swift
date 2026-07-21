@@ -1145,6 +1145,7 @@ struct GroupSessionLiveView: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.accent)
+        .cornerRadius(GSMetrics.radiusMd)   // redesign: rounded accent surface
     }
 
     // MARK: - Stat timer row (SET TIMER / REST AFTER) — p06
@@ -1580,6 +1581,7 @@ struct GroupSessionLiveView: View {
                 .padding(.vertical, 16)
                 .frame(maxWidth: .infinity)
                 .background(theme.accent)
+                .cornerRadius(GSMetrics.radiusSm)   // redesign: rounded accent surface
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)

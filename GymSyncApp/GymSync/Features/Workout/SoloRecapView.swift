@@ -200,6 +200,7 @@ struct SoloRecapView: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.accent)
+        .cornerRadius(GSMetrics.radiusMd)   // redesign: rounded accent surface
     }
 
     private func heroStatCell(value: String, label: String) -> some View {
