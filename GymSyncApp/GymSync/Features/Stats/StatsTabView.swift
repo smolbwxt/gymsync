@@ -19,6 +19,15 @@ struct StatsTabView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
+                    // Redesign v2: in-content title replaces the nav-bar title
+                    // (the empty bar row wasted vertical space — user feedback).
+                    Text("Stats")
+                        .font(GSFont.heading(24, relativeTo: .title))
+                        .foregroundStyle(theme.text)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 14)
+                        .padding(.bottom, 4)
+
                     // ── Lifetime Volume Card ───────────────────────────────────
                     GSCard(bordered: false) {
                         VStack(alignment: .leading, spacing: 4) {
@@ -106,8 +115,7 @@ struct StatsTabView: View {
             }
             .scrollContentBackground(.hidden)
             .background(theme.bg)
-            .navigationTitle("Stats")
-            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)   // redesign v2: in-content title above
             .task {
                 exercises = (try? await ExerciseRepository.fetchAll()) ?? []
                 if let id = appState.currentProfile?.id {

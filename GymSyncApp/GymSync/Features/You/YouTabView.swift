@@ -47,9 +47,16 @@ struct YouTabView: View {
             GeometryReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
+                        // Redesign v2: in-content title replaces the nav-bar title.
+                        Text("You")
+                            .font(GSFont.heading(24, relativeTo: .title))
+                            .foregroundStyle(theme.text)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 14)
+
                         profileRow
                             .padding(.horizontal, 16)
-                            .padding(.top, 16)
+                            .padding(.top, 12)
 
                         statTileRow
                             .padding(.horizontal, 16)
@@ -86,8 +93,7 @@ struct YouTabView: View {
             }
             .scrollContentBackground(.hidden)
             .background(theme.bg)
-            .navigationTitle("You")
-            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)   // redesign v2: in-content title above
             .task { await loadData() }
             .onChange(of: scenePhase) {
                 guard scenePhase == .active else { return }

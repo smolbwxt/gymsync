@@ -37,6 +37,13 @@ struct SocialTabView: View {
             GeometryReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
+                        // Redesign v2: in-content title replaces the nav-bar title.
+                        Text("Social")
+                            .font(GSFont.heading(24, relativeTo: .title))
+                            .foregroundStyle(theme.text)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 14)
+
                         // Offline pill (Canvas Completion Task 4 — proof
                         // p30-empty-offline). Anchored at the top of this
                         // screen's content, matching the canvas frame — see
@@ -212,10 +219,7 @@ struct SocialTabView: View {
             }
             .background(theme.bg)
             .scrollContentBackground(.hidden)
-            .navigationTitle("Social")
-            // Inline (compact) title — the large-title bar left the top of the
-            // screen blank above the content (same fix as Library).
-            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)   // redesign v2: in-content title above
             .sheet(isPresented: $showCreateGroup) {
                 CreateGroupView { newGroup in
                     groups.insert(newGroup, at: 0)

@@ -1,23 +1,21 @@
 import SwiftUI
 
-/// Home's training-calendar widget (redesign, all-tabs proof: the "Upcoming
-/// Sessions" list becomes a calendar). Three stacked parts inside one Onyx
-/// widget card:
-///   1. **Dot-grid texture** — the last 12 weeks of training, one cell per
-///      day (GitHub-graph orientation: columns = weeks, rows = weekdays).
-///      Filled = a completed session that day, tinted **accent** for solo
-///      days and the **group identity color** (`GSGroupColor`, stable
-///      Okabe-Ito) when that day's session was a group session. Per spec §4
-///      the grid is TEXTURE — how busy training is — never the precise
-///      "which crew" record; that lives in the rows below with real labels.
-///   2. **Legend** — Solo (accent) + each group with its identity color.
-///   3. **Upcoming rows** — up to 3 upcoming sessions, each a NavigationLink
-///      to `LobbyView`: group-colored avatar tile (initials; "You" on the
-///      accent for solo), title, group/state subtitle, right-aligned when.
+/// Home's training-calendar widget, v2 — rebuilt to the reference screenshot's
+/// calendar (Inspo/f80af551…jpg): an **airy monochrome dot field** under month
+/// labels — small dim round dots for the last ~10 weeks, **bright near-white
+/// dots** on days you trained. Deliberately monochrome and legend-free: the
+/// v1 GitHub-style tight grid with per-group colors read as noise at 6px
+/// (user feedback 2026-07-21); precise "which crew" attribution lives in the
+/// upcoming rows below with their group-colored avatars, not in the texture.
 ///
-/// Empty state (spec §6, null-states proof): no history AND no upcoming →
-/// a card-anchored invite ("Your training calendar") with Find-a-crew +
-/// Schedule actions — never a centered float.
+/// Parts:
+///   1. Header — "TRAINING CALENDAR" kicker + "+ Schedule" action (kept).
+///   2. Month labels + dot field (column-major chronological, 4 dots per
+///      column, oldest top-left → today bottom-right, matching the ref).
+///   3. Upcoming rows (kept) — up to 3, NavigationLink → LobbyView, group
+///      avatar tiles in identity colors.
+///
+/// Empty state (spec §6): card-anchored invite, never a centered float.
 struct TrainingCalendarWidget: View {
     @Environment(\.gsTheme) private var theme
 
@@ -29,7 +27,9 @@ struct TrainingCalendarWidget: View {
     let onSchedule: () -> Void
     let onFindCrew: () -> Void
 
-    private static let weeks = 12
+    /// Ref grid: 18 columns × 4 rows = 72 days (~10 weeks).
+    private static let columns = 18
+    private static let rows = 4
 
     var body: some View {
         GSCard(bordered: false) {
@@ -38,10 +38,10 @@ struct TrainingCalendarWidget: View {
                 if isEmpty {
                     emptyBody
                 } else {
-                    dotGrid.padding(.top, 14)
-                    legend.padding(.top, 12)
+                    monthLabels.padding(.top, 14)
+                    dotField.padding(.top, 10)
                     if !upcomingSessions.isEmpty {
-                        upcomingList.padding(.top, 14)
+                        upcomingList.padding(.top, 16)
                     }
                 }
             }
@@ -51,7 +51,7 @@ struct TrainingCalendarWidget: View {
 
     private var isEmpty: Bool { completedSessions.isEmpty && upcomingSessions.isEmpty }
 
-    // MARK: Header — kicker + "+ Schedule" (absorbs the old standalone button)
+    // MARK: Header — kicker + "+ Schedule"
 
     private var header: some View {
         HStack {
@@ -72,78 +72,85 @@ struct TrainingCalendarWidget: View {
         }
     }
 
-    // MARK: Dot grid (texture)
+    // MARK: Month labels + dot field (reference style)
 
-    /// Day → fill for the last `weeks`×7 days. Group sessions win the tint for
-    /// the day (their color IS the day's story); multiple sessions collapse to
-    /// the first — texture, not a record.
-    private var dayFills: [Date: Color] {
+    /// The trained-day set, day-granular.
+    private var trainedDays: Set<Date> {
         let cal = Calendar.current
-        var fills: [Date: Color] = [:]
+        var days: Set<Date> = []
         for session in completedSessions {
             guard let when = session.completedAt ?? session.startedAt ?? session.scheduledFor else { continue }
-            let day = cal.startOfDay(for: when)
-            if let groupID = session.groupID {
-                fills[day] = GSGroupColor.color(for: groupID)
-            } else if fills[day] == nil {
-                fills[day] = theme.accent
-            }
+            days.insert(cal.startOfDay(for: when))
         }
-        return fills
+        return days
     }
 
+    /// Last `columns × rows` days, oldest first.
     private var gridDays: [Date] {
         let cal = Calendar.current
         let today = cal.startOfDay(for: .now)
-        let count = Self.weeks * 7
+        let count = Self.columns * Self.rows
         return (0..<count).compactMap { cal.date(byAdding: .day, value: -(count - 1 - $0), to: today) }
     }
 
-    private var dotGrid: some View {
-        let fills = dayFills
+    /// Month names spanning the grid, evenly spread like the reference
+    /// (Jan / Feb / Mar). Derived from the actual day range so the labels
+    /// are always truthful.
+    private var monthLabels: some View {
         let days = gridDays
-        // Columns = weeks (oldest → newest), rows = weekday.
-        return HStack(alignment: .top, spacing: 4) {
-            ForEach(0..<Self.weeks, id: \.self) { week in
-                VStack(spacing: 4) {
-                    ForEach(0..<7, id: \.self) { day in
-                        let idx = week * 7 + day
+        let cal = Calendar.current
+        var names: [String] = []
+        for day in days {
+            let name = day.formatted(.dateTime.month(.abbreviated))
+            if names.last != name { names.append(name) }
+        }
+        _ = cal
+        return HStack {
+            ForEach(Array(names.enumerated()), id: \.offset) { index, name in
+                Text(name)
+                    .font(GSFont.bodyMedium(11, relativeTo: .caption2))
+                    .foregroundStyle(theme.neutral500)
+                if index < names.count - 1 { Spacer() }
+            }
+        }
+        .padding(.horizontal, 2)
+    }
+
+    /// The airy dot field: column-major chronological (each column is 4
+    /// consecutive days, columns run oldest → newest), round 6pt dots, dim
+    /// neutral for untrained days, bright near-white for trained days —
+    /// monochrome, per the reference.
+    private var dotField: some View {
+        let days = gridDays
+        let trained = trainedDays
+        let today = Calendar.current.startOfDay(for: .now)
+        return HStack(spacing: 0) {
+            ForEach(0..<Self.columns, id: \.self) { column in
+                VStack(spacing: 10) {
+                    ForEach(0..<Self.rows, id: \.self) { row in
+                        let idx = column * Self.rows + row
                         if idx < days.count {
-                            RoundedRectangle(cornerRadius: 2.5)
-                                .fill(fills[days[idx]] ?? theme.neutral300)
-                                .aspectRatio(1, contentMode: .fit)
+                            let day = days[idx]
+                            let isTrained = trained.contains(day)
+                            Circle()
+                                .fill(isTrained ? theme.text : theme.neutral300)
+                                .frame(width: isTrained ? 7 : 5.5, height: isTrained ? 7 : 5.5)
+                                .frame(width: 7, height: 7)
+                                // Today gets a faint accent halo so "now" is
+                                // findable without breaking the mono field.
+                                .overlay(
+                                    day == today
+                                        ? Circle().strokeBorder(theme.accent.opacity(0.8), lineWidth: 1).frame(width: 11, height: 11)
+                                        : nil
+                                )
                         }
                     }
                 }
+                .frame(maxWidth: .infinity)
             }
         }
-        .frame(maxWidth: .infinity)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Training activity, last \(Self.weeks) weeks")
-    }
-
-    // MARK: Legend
-
-    private var legend: some View {
-        // Only groups that actually appear (member groups), capped for space.
-        let shown = groups.prefix(3)
-        return HStack(spacing: 14) {
-            legendChip(color: theme.accent, label: "Solo")
-            ForEach(Array(shown)) { group in
-                legendChip(color: GSGroupColor.color(for: group.id), label: group.name)
-            }
-            Spacer(minLength: 0)
-        }
-    }
-
-    private func legendChip(color: Color, label: String) -> some View {
-        HStack(spacing: 5) {
-            RoundedRectangle(cornerRadius: 2).fill(color).frame(width: 9, height: 9)
-            Text(label)
-                .font(GSFont.bodyMedium(10, relativeTo: .caption2))
-                .foregroundStyle(theme.neutral700)
-                .lineLimit(1)
-        }
+        .accessibilityLabel("Training activity, last \(Self.columns * Self.rows) days")
     }
 
     // MARK: Upcoming rows

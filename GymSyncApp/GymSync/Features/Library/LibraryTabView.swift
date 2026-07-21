@@ -31,16 +31,21 @@ struct LibraryTabView: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Canvas: segmented sub-tab control at top of Library (Dossier §6)
+                // Redesign v2: in-content title replaces the nav-bar title.
                 HStack {
-                    segmentedControl
+                    Text("Library")
+                        .font(GSFont.heading(24, relativeTo: .title))
+                        .foregroundStyle(theme.text)
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(theme.bg)
+                .padding(.top, 14)
 
-                GSDivider()
+                // Segmented sub-tab control (redesign: full-width pills)
+                segmentedControl
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(theme.bg)
 
                 switch selection {
                 case .routines:
@@ -62,12 +67,7 @@ struct LibraryTabView: View {
                 }
             }
             .background(theme.bg)
-            .navigationTitle("Library")
-            // Inline (compact) title — the large-title bar left ~15% of the
-            // screen blank above the content.
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(theme.surface, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbar(.hidden, for: .navigationBar)   // redesign v2: in-content title above
         }
         .task { await loadFeatured() }
     }

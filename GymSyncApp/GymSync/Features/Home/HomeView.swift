@@ -17,8 +17,6 @@ struct HomeView: View {
     // MARK: - Canvas content state (Task 5)
     @State private var historySessions: [WorkoutSession] = []
     @State private var ownedRoutines: [Routine] = []
-    @State private var allExercises: [Exercise] = []
-    @State private var recentPRs: [PersonalRecord] = []
     @State private var prsThisMonth: Int = 0
     /// Redesign: feeds the streak-ring widget (proof: ring fills toward the
     /// next milestone). Fetched alongside the other Home data in `refresh()`.
@@ -61,7 +59,7 @@ struct HomeView: View {
                     greetingHeader
                     replayFailureNotice
                     primaryCTASection
-                    prAndStreakRow
+                    checkInAndStreakRow
                     calendarWidget
                     if !activeCampaigns.isEmpty {
                         campaignsSection
@@ -72,8 +70,11 @@ struct HomeView: View {
             }
             .scrollContentBackground(.hidden)
             .background(theme.bg)
-            .navigationTitle("Home")
-            .navigationBarTitleDisplayMode(.inline)
+            // Redesign v2 (user feedback 2026-07-21): the "Home" nav-bar title
+            // is gone — the greeting header IS this screen's header, and the
+            // empty bar row wasted vertical space. Pushed destinations
+            // (LobbyView etc.) re-show their own nav bars.
+            .toolbar(.hidden, for: .navigationBar)
             .task {
                 await refresh()
                 await consumePendingRouteIfNeeded()
@@ -354,76 +355,146 @@ struct HomeView: View {
         return "Pick a routine or go freestyle"
     }
 
-    // MARK: - PR + Streak row (redesign: the hero pair)
+    // MARK: - Check-in + Streak row (redesign v2, user feedback 2026-07-21)
+    //
+    // The PR widget was replaced: Home's hero pair is forward-looking now.
+    // PRs still celebrate via the full-screen overlay at the moment they
+    // happen and live permanently on Stats — a backward-looking trophy was
+    // the least useful thing in this slot. The check-in widget shows the
+    // NEXT session with a live countdown, and flips into an accent "Check
+    // in" action the moment the session is actually joinable (lobby_open /
+    // in_progress — check-in opens when the organizer opens the lobby, an
+    // event, so the countdown targets the scheduled start and the button
+    // activates on live state).
+    //
+    // Equal heights: both cards' content stretches to `maxHeight: .infinity`
+    // inside an HStack that is `fixedSize(vertical: true)` — the row sizes to
+    // the taller card and the shorter one fills to match (the v1 mismatch was
+    // exactly this missing constraint).
 
     private static let streakMilestones = [7, 14, 30, 60, 100, 365]
 
-    private var prAndStreakRow: some View {
+    private var checkInAndStreakRow: some View {
         HStack(alignment: .top, spacing: 11) {
-            prWidget
+            checkInWidget
             streakWidget
         }
+        .fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, 16)
         .padding(.bottom, 12)
     }
 
+    /// The soonest upcoming session (repository order is soonest-first).
+    private var nextSession: WorkoutSession? { upcomingSessions.first }
+
+    /// True when the session can actually be checked into right now.
+    private func isJoinable(_ session: WorkoutSession) -> Bool {
+        session.state == "lobby_open" || session.state == "in_progress"
+    }
+
     @ViewBuilder
-    private var prWidget: some View {
+    private var checkInWidget: some View {
         GSCard(bordered: false) {
-            VStack(alignment: .leading, spacing: 0) {
-                if let pr = recentPRs.first {
-                    let exerciseName = allExercises.first(where: { $0.id == pr.exerciseID })?.name ?? "Exercise"
-                    HStack(spacing: 6) {
-                        Image(systemName: "flame.fill")
-                            .font(.system(size: 12, weight: .bold))
-                        Text("NEW PR")
-                            .font(GSFont.bold(10, relativeTo: .caption2))
-                            .tracking(1.3)
+            Group {
+                if let session = nextSession {
+                    NavigationLink {
+                        LobbyView(session: session)
+                    } label: {
+                        checkInBody(session)
                     }
-                    .foregroundStyle(theme.accent)
-                    Text(exerciseName)
-                        .font(GSFont.bold(13, relativeTo: .subheadline))
-                        .foregroundStyle(theme.text)
-                        .lineLimit(1)
-                        .padding(.top, 8)
-                    HStack(alignment: .firstTextBaseline, spacing: 3) {
-                        Text(trimmedDecimal(pr.weight))
-                            .font(GSFont.heading(27, relativeTo: .title2))
-                            .foregroundStyle(theme.text)
-                        Text("lbs")
-                            .font(GSFont.bold(13, relativeTo: .caption))
-                            .foregroundStyle(theme.neutral500)
-                    }
-                    .padding(.top, 5)
-                    Text("\(pr.reps) reps · +\(trimmedDecimal(pr.weight - pr.previousBest)) on your best")
-                        .font(GSFont.body(11, relativeTo: .caption2))
-                        .foregroundStyle(theme.neutral500)
-                        .lineLimit(1)
-                        .padding(.top, 4)
+                    .buttonStyle(.plain)
                 } else {
-                    // Null state (spec §6): card-anchored, inviting, no CTA —
-                    // the start action is directly above in the hero.
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(theme.neutral300)
-                        .frame(width: 34, height: 34)
-                        .overlay(
-                            Image(systemName: "flame.fill")
-                                .font(.system(size: 15))
-                                .foregroundStyle(theme.accent)
-                        )
-                    Text("No PRs yet")
-                        .font(GSFont.bold(14, relativeTo: .subheadline))
-                        .foregroundStyle(theme.text)
-                        .padding(.top, 9)
-                    Text("Log a lift and your first personal record lands here.")
-                        .font(GSFont.body(11, relativeTo: .caption2))
-                        .foregroundStyle(theme.neutral500)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 3)
+                    checkInEmptyBody
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(15)
+        }
+    }
+
+    @ViewBuilder
+    private func checkInBody(_ session: WorkoutSession) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: isJoinable(session) ? "dot.radiowaves.left.and.right" : "clock")
+                    .font(.system(size: 10, weight: .bold))
+                Text(isJoinable(session) ? "LOBBY OPEN" : "NEXT SESSION")
+                    .font(GSFont.bold(10, relativeTo: .caption2))
+                    .tracking(1.3)
+            }
+            .foregroundStyle(theme.accent)
+
+            Text(routineLabel(for: session))
+                .font(GSFont.bold(13, relativeTo: .subheadline))
+                .foregroundStyle(theme.text)
+                .lineLimit(1)
+                .padding(.top, 8)
+
+            if isJoinable(session) {
+                // Joinable NOW — the widget's whole job becomes the action.
+                HStack(spacing: 6) {
+                    Text("Check in")
+                        .font(GSFont.bold(14, relativeTo: .subheadline))
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 12, weight: .bold))
+                }
+                .foregroundStyle(theme.bg)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .background(theme.accent)
+                .cornerRadius(11)
+                .padding(.top, 10)
+            } else if let when = session.scheduledFor, when > .now {
+                // Live countdown to the scheduled start — self-updating,
+                // UI-side only (no Timer), same Text(timerInterval:) doctrine
+                // as the chess clock and PTT holding bar.
+                Text(timerInterval: Date.now...when, countsDown: true, showsHours: true)
+                    .font(GSFont.heading(24, relativeTo: .title2))
+                    .foregroundStyle(theme.text)
+                    .monospacedDigit()
+                    .padding(.top, 6)
+                Text("until start · \(when.formatted(.dateTime.weekday(.abbreviated).hour().minute()))")
+                    .font(GSFont.body(10.5, relativeTo: .caption2))
+                    .foregroundStyle(theme.neutral500)
+                    .lineLimit(1)
+                    .padding(.top, 3)
+            } else {
+                // Scheduled time has passed but the lobby hasn't opened yet
+                // (or the session is unscheduled) — honest waiting copy.
+                Text("Starting soon")
+                    .font(GSFont.heading(18, relativeTo: .title3))
+                    .foregroundStyle(theme.text)
+                    .padding(.top, 8)
+                Text("waiting for the organizer")
+                    .font(GSFont.body(10.5, relativeTo: .caption2))
+                    .foregroundStyle(theme.neutral500)
+                    .padding(.top, 3)
+            }
+        }
+        .contentShape(Rectangle())
+    }
+
+    private var checkInEmptyBody: some View {
+        // Null state (spec §6): card-anchored; the calendar header right
+        // below carries the schedule action, so this stays quiet.
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: "clock")
+                    .font(.system(size: 10, weight: .bold))
+                Text("NEXT SESSION")
+                    .font(GSFont.bold(10, relativeTo: .caption2))
+                    .tracking(1.3)
+            }
+            .foregroundStyle(theme.neutral500)
+            Text("Nothing scheduled")
+                .font(GSFont.bold(14, relativeTo: .subheadline))
+                .foregroundStyle(theme.text)
+                .padding(.top, 9)
+            Text("Plan your next lift from the calendar below.")
+                .font(GSFont.body(11, relativeTo: .caption2))
+                .foregroundStyle(theme.neutral500)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 3)
         }
     }
 
@@ -457,7 +528,7 @@ struct HomeView: View {
                         .foregroundStyle(current > 0 ? theme.accent : theme.neutral500)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .padding(15)
         }
         .accessibilityElement(children: .ignore)
@@ -718,8 +789,6 @@ struct HomeView: View {
         async let groupsFetch    = GroupRepository.myGroups()
         async let historyFetch   = fetchHistory(userID: userID)
         async let routinesFetch  = fetchOwnedRoutines(userID: userID)
-        async let exercisesFetch = fetchAllExercises(userID: userID)
-        async let prsFetch       = fetchRecentPRs(userID: userID)
         async let prCountFetch   = fetchPRCountThisMonth(userID: userID)
         async let profileFetch   = fetchProfile(userID: userID)
         async let campaignsFetch = fetchActiveCampaigns(userID: userID)
@@ -743,8 +812,6 @@ struct HomeView: View {
         let history = await historyFetch
         if let history { historySessions = history }
         if let routines = await routinesFetch { ownedRoutines = routines }
-        if let exercises = await exercisesFetch { allExercises = exercises }
-        if let prs = await prsFetch { recentPRs = prs }
         let prCount = await prCountFetch
         if let prCount { prsThisMonth = prCount }
         let refreshedProfile = await profileFetch
@@ -845,15 +912,8 @@ struct HomeView: View {
         return try? await RoutineRepository.fetchAll(ownerID: userID)
     }
 
-    private func fetchAllExercises(userID: UUID?) async -> [Exercise]? {
-        guard userID != nil else { return nil }
-        return try? await ExerciseRepository.fetchAll()
-    }
-
-    private func fetchRecentPRs(userID: UUID?) async -> [PersonalRecord]? {
-        guard let userID else { return nil }
-        return try? await PersonalRecordRepository.recent(userID: userID, limit: 1)
-    }
+    // (fetchAllExercises/fetchRecentPRs removed with the Home PR widget —
+    // redesign v2; RoutinePickerSheet fetches its own exercise list.)
 
     private func fetchPRCountThisMonth(userID: UUID?) async -> Int? {
         guard let userID else { return nil }
