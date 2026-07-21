@@ -23,7 +23,16 @@ final class UserSettingsRepositoryTests: XCTestCase {
 
         let settings = try await UserSettingsRepository.get()
         XCTAssertEqual(settings.defaultRestSeconds, 120)
-        XCTAssertEqual(settings.palette, "midnight")
+        XCTAssertEqual(settings.palette, "onyx")   // redesign 20260728000007: Onyx is the new default
+        XCTAssertEqual(settings.accent, "sky")
+    }
+
+    // MARK: - Pure defaults (no network)
+
+    func testDefaultsUseOnyxAndSky() {
+        let s = UserSettings.defaults(userID: UUID())
+        XCTAssertEqual(s.palette, "onyx")
+        XCTAssertEqual(s.accent, "sky")
     }
 
     func testUpsertRoundTripInsertsThenUpdates() async throws {
@@ -35,13 +44,19 @@ final class UserSettingsRepositoryTests: XCTestCase {
             defaultRestSeconds: 150,
             palette: "arena",
             updatedAt: Date(),
-            shareHeartRate: true
+            shareHeartRate: true,
+            accent: "amber"
         )
         try await UserSettingsRepository.upsert(first)
 
         let fetched = try await UserSettingsRepository.get()
         XCTAssertEqual(fetched.defaultRestSeconds, 150)
         XCTAssertEqual(fetched.palette, "arena")
+        // Redesign: proves `UserSettingsUpsert` actually carries `accent` over
+        // the wire — same live-DB guard against the "field on the model but
+        // missing from the Upsert struct silently never persists" bug that the
+        // `shareHeartRate` assertion below defends against.
+        XCTAssertEqual(fetched.accent, "amber")
         // Phase W Task 4 — proves `UserSettingsUpsert` actually carries
         // `shareHeartRate` over the wire (live DB round trip, not just a
         // Codable unit test): if a future edit re-introduces the
@@ -55,12 +70,14 @@ final class UserSettingsRepositoryTests: XCTestCase {
         second.defaultRestSeconds = 90
         second.palette = "ink"
         second.shareHeartRate = false
+        second.accent = "lime"
         try await UserSettingsRepository.upsert(second)
 
         let refetched = try await UserSettingsRepository.get()
         XCTAssertEqual(refetched.defaultRestSeconds, 90)
         XCTAssertEqual(refetched.palette, "ink")
         XCTAssertFalse(refetched.shareHeartRate)
+        XCTAssertEqual(refetched.accent, "lime")
     }
 
     // MARK: - "m:ss" formatting (pure function, no network required)

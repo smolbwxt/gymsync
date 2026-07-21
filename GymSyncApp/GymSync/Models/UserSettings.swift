@@ -25,22 +25,32 @@ struct UserSettings: Codable, Sendable, Equatable {
     /// comment exists to warn future edits away from.
     var shareHeartRate: Bool = false
 
+    /// Redesign foundation — user-selectable accent: a `GSAccents` preset id
+    /// ('sky'|'violet'|'amber'|'lime'|'coral'|'rose'|'mono') or a '#rrggbb'
+    /// custom hex (`supabase/migrations/20260728000007_user_settings_accent_and_onyx.sql`).
+    /// Declared LAST with a default for the exact memberwise-init reason
+    /// `shareHeartRate` documents above, and mirroring the column's own 'sky'
+    /// default. A future 5th field extends this same trailing pattern.
+    var accent: String = "sky"
+
     enum CodingKeys: String, CodingKey {
         case userID = "user_id"
         case defaultRestSeconds = "default_rest_seconds"
         case palette
         case updatedAt = "updated_at"
         case shareHeartRate = "share_heart_rate"
+        case accent
     }
 
-    /// Mirrors the table's own column defaults exactly (migration:
-    /// `default_rest_seconds int NOT NULL DEFAULT 120`, `palette text NOT
-    /// NULL DEFAULT 'midnight'`, `share_heart_rate boolean NOT NULL DEFAULT
-    /// false`) — used both by `UserSettingsRepository.get()`
-    /// when no row exists yet, and as the in-memory fallback value the You
-    /// tab and solo workout screen read before their own `.task` resolves.
+    /// Mirrors the table's own column defaults exactly (migrations:
+    /// `default_rest_seconds int NOT NULL DEFAULT 120`; `palette text NOT NULL
+    /// DEFAULT 'onyx'` and `accent text NOT NULL DEFAULT 'sky'` after
+    /// 20260728000007; `share_heart_rate boolean NOT NULL DEFAULT false`) —
+    /// used both by `UserSettingsRepository.get()` when no row exists yet, and
+    /// as the in-memory fallback value the You tab and solo workout screen read
+    /// before their own `.task` resolves.
     static func defaults(userID: UUID) -> UserSettings {
-        UserSettings(userID: userID, defaultRestSeconds: 120, palette: "midnight", updatedAt: Date(), shareHeartRate: false)
+        UserSettings(userID: userID, defaultRestSeconds: 120, palette: "onyx", updatedAt: Date(), shareHeartRate: false, accent: "sky")
     }
 
     /// "m:ss" — e.g. 125 -> "2:05". Shared by the Settings Hub's "Default rest
@@ -71,12 +81,17 @@ private struct UserSettingsUpsert: Encodable {
     /// looks like it works (optimistic local flip succeeds, no error) but
     /// never actually persists.
     let shareHeartRate: Bool
+    /// Redesign foundation — MUST stay in lockstep with `UserSettings.accent`,
+    /// same "any field absent here silently never persists" trap the
+    /// `shareHeartRate` comment above documents.
+    let accent: String
 
     enum CodingKeys: String, CodingKey {
         case userID = "user_id"
         case defaultRestSeconds = "default_rest_seconds"
         case palette
         case shareHeartRate = "share_heart_rate"
+        case accent
     }
 }
 
@@ -119,7 +134,8 @@ enum UserSettingsRepository {
                     userID: userID,
                     defaultRestSeconds: settings.defaultRestSeconds,
                     palette: settings.palette,
-                    shareHeartRate: settings.shareHeartRate
+                    shareHeartRate: settings.shareHeartRate,
+                    accent: settings.accent
                 ))
                 .execute()
         } catch {
