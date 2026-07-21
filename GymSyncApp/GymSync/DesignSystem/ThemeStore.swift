@@ -294,21 +294,31 @@ public final class ThemeStore {
     private func apply(paletteID: String) {
         self.paletteID = paletteID
         self.current = GSPalettes.theme(for: paletteID)
-        // Re-stamps the UIKit tab bar / navigation bar appearance proxies so
-        // chrome created after this point (newly pushed nav bars, etc.)
-        // matches the new palette. Already-mounted bars may not repaint
-        // until next presented — a documented UIAppearance-proxy limitation,
-        // not something SwiftUI's environment propagation can reach around.
-        GSAppearance.apply(theme: current)
+        restampAppearance()
     }
 
     /// The accent twin of `apply(paletteID:)` — resolves the id to a `GSAccent`
-    /// and updates the live pair. Pure SwiftUI-token resolution: unlike
-    /// `apply(paletteID:)` there is no `GSAppearance` re-stamp, because the
-    /// accent lives in the `\.gsAccent` environment, not in the
-    /// UIAppearance-proxied UIKit chrome.
+    /// and updates the live pair, then re-stamps UIKit chrome. The re-stamp is
+    /// REQUIRED here (gap found in the 2026-07-21 redesign assessment): the
+    /// UIAppearance proxies (`GSAppearance.apply` — nav bar tint/title, tab bar
+    /// selected color) are tinted from `theme.accent`, so an accent change that
+    /// skipped the stamp would leave UIKit chrome on the previous accent while
+    /// SwiftUI rendered the new one.
     private func applyAccent(_ id: String) {
         self.accentID = id
         self.accent = GSAccents.accent(for: id)
+        restampAppearance()
+    }
+
+    /// Single re-stamp path for both palette and accent changes. Always stamps
+    /// the ACCENT-OVERRIDDEN theme — stamping raw `current` would pin UIKit
+    /// chrome to the palette's placeholder accent ramp (invisible on onyx+sky
+    /// only by coincidence, since onyx's placeholder ramp equals the sky
+    /// default; any other accent would visibly mismatch). Already-mounted bars
+    /// may not repaint until next presented — a documented UIAppearance-proxy
+    /// limitation, not something SwiftUI's environment propagation can reach
+    /// around.
+    private func restampAppearance() {
+        GSAppearance.apply(theme: current.withAccent(accent))
     }
 }

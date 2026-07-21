@@ -53,15 +53,18 @@ struct GymSyncApp: App {
                let screen = CatalogScreen(rawValue: id) {
                 // Catalog mode bypasses auth entirely, so ThemeStore.shared.current
                 // never loads the CI user's persisted palette (it stays at its
-                // .midnight seed). Force Ink here instead — matches the Ink design
-                // proofs and the Ink tab captures the parity harness diffs catalog
-                // screens against. Also re-stamp the UIKit appearance proxies (same
-                // path ThemeStore.apply(paletteID:) uses on a real palette change)
-                // so any nav/tab bar chrome inside the catalog screen is Ink-toned
-                // too, instead of staying on the process-launch (.midnight) default.
-                let _ = GSAppearance.apply(theme: .ink)
+                // seed). Redesign (2026-07-20): pin ONYX with the default sky
+                // accent — exactly what production RootView injects for a fresh
+                // user — so catalog captures render the new visual language.
+                // (Previously pinned .ink to match the old Ink-palette proofs;
+                // those frames are superseded and the parity baseline is being
+                // rebased to the redesign per screen.) Also re-stamp the UIKit
+                // appearance proxies (same path ThemeStore uses on a real
+                // palette change) so nav/tab bar chrome matches.
+                let _ = GSAppearance.apply(theme: GSTheme.onyx.withAccent(GSAccents.sky))
                 CatalogHostView(screen: screen)
-                    .environment(\.gsTheme, .ink)
+                    .environment(\.gsTheme, GSTheme.onyx.withAccent(GSAccents.sky))
+                    .environment(\.gsAccent, GSAccents.sky)
             } else {
                 RootView()
                     .environment(AuthService.shared)
@@ -80,16 +83,18 @@ struct GymSyncApp: App {
 //
 // Configures UIKit global appearances so every NavigationStack and TabView
 // gets themed chrome without per-view modifier boilerplate. Called once at
-// launch with the default (`.midnight`) — settings haven't loaded yet at
-// process init, and every SwiftUI-rendered view already gets the live theme
-// via `\.gsTheme` regardless — then re-called by `ThemeStore` (Canvas
-// Completion Task 5) whenever the persisted/selected palette changes, so
-// newly-created tab bars/nav bars pick up the live palette instead of
-// staying pinned to midnight.
+// launch with the default (`.onyx` — the redesign's default palette) —
+// settings haven't loaded yet at process init, and every SwiftUI-rendered
+// view already gets the live theme via `\.gsTheme` regardless — then
+// re-called by `ThemeStore` whenever the persisted/selected palette OR
+// accent changes, so newly-created tab bars/nav bars pick up the live
+// look instead of staying pinned to the launch default. ThemeStore always
+// passes the ACCENT-OVERRIDDEN theme (`current.withAccent(accent)`), never
+// the raw palette, so UIKit chrome tint matches the user's chosen accent.
 
 enum GSAppearance {
 
-    static func apply(theme: GSTheme = .midnight) {
+    static func apply(theme: GSTheme = .onyx) {
         applyTabBar(theme: theme)
         applyNavigationBar(theme: theme)
     }
