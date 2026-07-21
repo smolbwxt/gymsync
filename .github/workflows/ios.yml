@@ -264,6 +264,13 @@ jobs:
             --design-dir docs/design \
             --out proofs
 
+      # Redesign (2026-07-20): render the Onyx proof phones as frames 60-68 in
+      # the SAME proofs dir — frame-map.json points redesigned screen ids here,
+      # so those pairs diff against their real authority instead of the
+      # superseded Ink canvas (docs/design/mockups/README.md).
+      - name: Render redesign (Onyx) proofs
+        run: node scripts/render_redesign_proofs.js --out proofs
+
       - name: Diff and report
         run: |
           node scripts/parity_diff.js \

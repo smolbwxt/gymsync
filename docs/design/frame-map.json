@@ -1,37 +1,122 @@
 {
-  "tab-home": { "frame": 0, "title": "Home" },
-  "tab-library": { "frame": 1, "title": "Library" },
-  "tab-social": { "frame": 2, "title": "Social" },
-  "tab-stats": { "frame": 3, "title": "Stats" },
-  "tab-you": { "frame": 35, "title": "Settings Hub" },
-  "you-appearance": { "frame": 33, "title": "Theme Picker" },
-
-  "pr-celebration": { "frame": 29, "title": "PR Celebration" },
-  "voice-idle": { "frame": 47, "title": "Dock - Idle" },
-  "voice-connecting": { "frame": 48, "title": "Dock - Connecting" },
-  "voice-unavailable": { "frame": 49, "title": "Dock - Unavailable" },
-  "voice-mic-denied": { "frame": 50, "title": "Dock - Mic denied" },
-  "onboarding-signin": { "frame": 9, "title": "Sign In" },
-  "onboarding-username": { "frame": 10, "title": "Username" },
-  "onboarding-homegym": { "frame": 11, "title": "Home Gym" },
-  "onboarding-homegym-searching": { "frame": 42, "title": "Gym Setup - searching" },
-  "onboarding-done": { "frame": 12, "title": "You're set" },
-  "onboarding-push-priming": { "frame": 36, "title": "Notif Priming" },
-  "onboarding-push-denied": { "frame": 37, "title": "Notif - Denied" },
-
-  "lobby": { "frame": 5, "title": "Lobby" },
-  "chat": { "frame": 21, "title": "Group Chat" },
-  "burpee-ledger": { "frame": 25, "title": "Penalty Ledger" },
-  "session-recap": { "frame": 34, "title": "Session Detail" },
-  "friends": { "frame": 19, "title": "Friends" },
-  "exercise-detail": { "frame": 14, "title": "Exercise Detail" },
-
-  "stattile-loading": { "frame": 41, "title": "Stat Tiles states" },
-  "stattile-error": { "frame": 41, "title": "Stat Tiles states" },
-  "stattile-empty": { "frame": 41, "title": "Stat Tiles states" },
-
-  "activity-feed": { "frame": 45, "title": "Activity Feed" },
-
-  "recap-solo": { "frame": 17, "title": "Recap" },
-  "group-recap": { "frame": 8, "title": "Group Recap" }
+  "tab-home": {
+    "frame": 60,
+    "title": "Onyx Home (redesign)"
+  },
+  "tab-library": {
+    "frame": 61,
+    "title": "Onyx Library (redesign)"
+  },
+  "tab-social": {
+    "frame": 62,
+    "title": "Onyx Social (redesign)"
+  },
+  "tab-stats": {
+    "frame": 63,
+    "title": "Onyx Stats (redesign)"
+  },
+  "tab-you": {
+    "frame": 64,
+    "title": "Onyx You (redesign)"
+  },
+  "you-appearance": {
+    "frame": 33,
+    "title": "Theme Picker"
+  },
+  "pr-celebration": {
+    "frame": 29,
+    "title": "PR Celebration"
+  },
+  "voice-idle": {
+    "frame": 47,
+    "title": "Dock - Idle"
+  },
+  "voice-connecting": {
+    "frame": 48,
+    "title": "Dock - Connecting"
+  },
+  "voice-unavailable": {
+    "frame": 49,
+    "title": "Dock - Unavailable"
+  },
+  "voice-mic-denied": {
+    "frame": 50,
+    "title": "Dock - Mic denied"
+  },
+  "onboarding-signin": {
+    "frame": 9,
+    "title": "Sign In"
+  },
+  "onboarding-username": {
+    "frame": 10,
+    "title": "Username"
+  },
+  "onboarding-homegym": {
+    "frame": 11,
+    "title": "Home Gym"
+  },
+  "onboarding-homegym-searching": {
+    "frame": 42,
+    "title": "Gym Setup - searching"
+  },
+  "onboarding-done": {
+    "frame": 12,
+    "title": "You're set"
+  },
+  "onboarding-push-priming": {
+    "frame": 36,
+    "title": "Notif Priming"
+  },
+  "onboarding-push-denied": {
+    "frame": 37,
+    "title": "Notif - Denied"
+  },
+  "lobby": {
+    "frame": 5,
+    "title": "Lobby"
+  },
+  "chat": {
+    "frame": 21,
+    "title": "Group Chat"
+  },
+  "burpee-ledger": {
+    "frame": 25,
+    "title": "Penalty Ledger"
+  },
+  "session-recap": {
+    "frame": 34,
+    "title": "Session Detail"
+  },
+  "friends": {
+    "frame": 19,
+    "title": "Friends"
+  },
+  "exercise-detail": {
+    "frame": 14,
+    "title": "Exercise Detail"
+  },
+  "stattile-loading": {
+    "frame": 41,
+    "title": "Stat Tiles states"
+  },
+  "stattile-error": {
+    "frame": 41,
+    "title": "Stat Tiles states"
+  },
+  "stattile-empty": {
+    "frame": 41,
+    "title": "Stat Tiles states"
+  },
+  "activity-feed": {
+    "frame": 45,
+    "title": "Activity Feed"
+  },
+  "recap-solo": {
+    "frame": 17,
+    "title": "Recap"
+  },
+  "group-recap": {
+    "frame": 8,
+    "title": "Group Recap"
+  }
 }

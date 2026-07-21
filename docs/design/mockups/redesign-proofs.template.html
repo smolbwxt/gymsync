@@ -65,9 +65,13 @@ body{font-family:'Archivo',system-ui,sans-serif;background:var(--page);color:var
 .pr .nm{font-weight:700;font-size:13px;margin-top:8px}.pr .vl{font-size:27px;margin-top:5px}.pr .vl small{font-size:13px;color:var(--muted);font-weight:700}.pr .dl{color:var(--muted);font-size:11px;margin-top:4px}
 .ring{display:flex;align-items:center;gap:12px}.ring svg{width:56px;height:56px;flex:0 0 auto}.ring .rn{font-size:24px}.ring .rl{color:var(--muted);font-size:11px;margin-top:2px;line-height:1.25}
 .cal .mo{display:flex;justify-content:space-between;font-size:10.5px;color:var(--muted);font-weight:600;margin:12px 4px 9px}
-.grid{display:grid;grid-template-columns:repeat(18,1fr);gap:5px}.grid i{aspect-ratio:1;border-radius:2.5px;background:var(--surface-2)}
-.grid i.f{background:rgba(255,255,255,.30)}.grid i.solo{background:var(--accent)}.grid i.ga{background:var(--grp-a)}.grid i.gb{background:var(--grp-b)}
-.leg{display:flex;gap:12px;flex-wrap:wrap;margin-top:11px}.cl{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--muted);font-weight:600}.cl i{width:8px;height:8px;border-radius:2px}
+/* v2 (2026-07-21 user feedback): airy monochrome round-dot field per the
+   reference screenshot — dim dots, bright near-white trained days, today halo,
+   NO legend / NO group colors in the texture (attribution lives in the rows). */
+.grid{display:grid;grid-template-columns:repeat(18,1fr);gap:9px 4px;justify-items:center}
+.grid i{width:5.5px;height:5.5px;border-radius:50%;background:var(--surface-2)}
+.grid i.on{width:7px;height:7px;background:var(--text)}
+.grid i.today{box-shadow:0 0 0 2.5px var(--bg),0 0 0 3.5px var(--accent)}
 .up{margin-top:13px;border-top:1px solid var(--hair);padding-top:12px;display:flex;flex-direction:column;gap:11px}
 .upr{display:flex;align-items:center;gap:10px}.uav{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;font-size:10px;font-weight:700;color:#0a0b0d;flex:0 0 auto}
 .upr .ut{font-weight:700;font-size:13px}.upr .us{color:var(--muted);font-size:11px;margin-top:1px}.upr .ur{margin-left:auto;color:var(--muted);font-size:10.5px;font-weight:600;text-align:right}
@@ -152,18 +156,17 @@ const chev=`<span class="chev"><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/>
 const scr=(inner,active)=>`<div class="screen">${SB}<div class="sc">${inner}</div>${tb(active)}</div>`;
 
 /* ---------- HOME ---------- */
-function gridHTML(){const solo=new Set([3,8,20,27,40]),ga=new Set([4,13,31,44]),gb=new Set([11,24,49]),f=new Set([1,7,16,19,33,37,45,52]);let s="";for(let i=0;i<54;i++)s+=solo.has(i)?'<i class="solo"></i>':ga.has(i)?'<i class="ga"></i>':gb.has(i)?'<i class="gb"></i>':f.has(i)?'<i class="f"></i>':'<i></i>';return s;}
+function gridHTML(){const on=new Set([3,4,8,11,13,20,24,27,31,40,44,49,52,63,66]);let s="";for(let i=0;i<72;i++){const cls=(i===71?"on today":on.has(i)?"on":"");s+=cls?`<i class="${cls}"></i>`:'<i></i>';}return s;}
 const HOME=scr(`
 <div class="greet"><div><h2>Good morning, Tommy</h2><div class="dt">Thursday, July 16</div></div><div class="av"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-6 8-6s8 2 8 6"/></svg></div></div>
 <div class="cta"><div><div class="lbl">Join Push Day</div><div class="sub">Men for Christ · starts 7:15 PM</div></div><div class="play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div></div>
 <button class="solo2"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Start solo workout</button>
 <div class="row mt">
- <div class="card pr"><div class="tp"><svg viewBox="0 0 24 24"><path d="M12 2c1 3-1 4-1 6a3 3 0 0 0 5 2c1 2 2 3 2 6a6 6 0 0 1-12 0c0-4 3-5 3-8 0-2 2-3 3-6Z"/></svg><span>New PR</span></div><div class="nm">Bench Press</div><div class="vl big">225<small> lbs</small></div><div class="dl">3 reps · +20 lbs on your best</div></div>
+ <div class="card pr"><div class="tp"><svg viewBox="0 0 24 24" style="fill:none;stroke:currentColor;stroke-width:2.4"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M9 2h6"/></svg><span>Next session</span></div><div class="nm">Push Day</div><div class="vl big" style="font-size:26px">2:41:07</div><div class="dl">until start · Sat 7:15 PM</div></div>
  <div class="card ring"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5" fill="none" stroke="var(--surface-2)" stroke-width="4"/><circle cx="18" cy="18" r="15.5" fill="none" stroke="var(--accent)" stroke-width="4" stroke-linecap="round" stroke-dasharray="97.4" stroke-dashoffset="14" transform="rotate(-90 18 18)"/></svg><div><div class="rn big">12</div><div class="rl">day streak<br><span style="color:var(--accent)">2 to badge</span></div></div></div>
 </div>
-<div class="card cal mt"><div style="display:flex;justify-content:space-between"><span class="k">Training calendar</span><span class="k">3 upcoming</span></div>
+<div class="card cal mt"><div style="display:flex;justify-content:space-between"><span class="k">Training calendar</span><span class="k" style="color:var(--accent)">+ Schedule</span></div>
  <div class="mo"><span>May</span><span>Jun</span><span>Jul</span></div><div class="grid">${gridHTML()}</div>
- <div class="leg"><span class="cl"><i style="background:var(--accent)"></i>Solo</span><span class="cl"><i style="background:var(--grp-a)"></i>Men for Christ</span><span class="cl"><i style="background:var(--grp-b)"></i>Sunday Lifters</span></div>
  <div class="up"><div class="upr"><span class="uav" style="background:var(--grp-a)">MC</span><div><div class="ut">Push Day</div><div class="us">Men for Christ · 6 going</div></div><div class="ur">Sat Jul 18<br>7:15 PM</div></div>
  <div class="upr"><span class="uav" style="background:var(--grp-b)">SL</span><div><div class="ut">Sunday Heavy</div><div class="us">Sunday Lifters · 4 going</div></div><div class="ur">Sun Jul 19<br>9:00 AM</div></div></div></div>
 <div class="row mt"><div class="card tile"><div class="k">Lifetime</div><div class="v big">269<small>k lbs</small></div></div><div class="card tile"><div class="k">PRs / mo</div><div class="v big">176</div></div></div>
