@@ -230,8 +230,16 @@ struct SocialTabView: View {
                             }
                         }
                     }
-                    .frame(minHeight: proxy.size.height)
+                    // `alignment: .top` is LOAD-BEARING (user bug report:
+                    // "starts correctly then snaps to center-center"): a bare
+                    // .frame(minHeight:) centers content shorter than the
+                    // frame, so the empty state jumped to vertical center the
+                    // moment loading resolved. Top-pin it.
+                    .frame(minHeight: proxy.size.height, alignment: .top)
                 }
+                // Dock clearance (user bug report): bottom margin so the tab
+                // dock never clips the last content.
+                .contentMargins(.bottom, 88, for: .scrollContent)
             }
             .background(theme.bg)
             .scrollContentBackground(.hidden)

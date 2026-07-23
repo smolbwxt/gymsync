@@ -47,24 +47,29 @@ struct LibraryTabView: View {
                     .padding(.vertical, 10)
                     .background(theme.bg)
 
-                switch selection {
-                case .routines:
-                    // Featured shelf rides INSIDE the routines list as its
-                    // header, so the whole tab scrolls as one (was: fixed
-                    // shelf pinning a cramped list below it).
-                    RoutinesListView(
-                        featuredHeader: featured.isEmpty ? nil : AnyView(
-                            VStack(spacing: 0) { featuredShelf; GSDivider() }
+                Group {
+                    switch selection {
+                    case .routines:
+                        // Featured shelf rides INSIDE the routines list as its
+                        // header, so the whole tab scrolls as one (was: fixed
+                        // shelf pinning a cramped list below it).
+                        RoutinesListView(
+                            featuredHeader: featured.isEmpty ? nil : AnyView(
+                                VStack(spacing: 0) { featuredShelf; GSDivider() }
+                            )
                         )
-                    )
-                    .id(routinesRefreshToken)
-                case .exercises:
-                    ExercisesListView()
-                case .discover:
-                    DiscoverView()
-                case .campaigns:
-                    CampaignsTabView()
+                        .id(routinesRefreshToken)
+                    case .exercises:
+                        ExercisesListView()
+                    case .discover:
+                        DiscoverView()
+                    case .campaigns:
+                        CampaignsTabView()
+                    }
                 }
+                // Dock clearance (user bug report) — the Group scopes the
+                // margin to the sub-tab lists only, not pushed destinations.
+                .contentMargins(.bottom, 88, for: .scrollContent)
             }
             .background(theme.bg)
             .toolbar(.hidden, for: .navigationBar)   // redesign v2: in-content title above

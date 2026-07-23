@@ -115,6 +115,7 @@ struct StatsTabView: View {
             }
             .scrollContentBackground(.hidden)
             .background(theme.bg)
+            .contentMargins(.bottom, 88, for: .scrollContent)   // dock clearance (user bug report)
             .toolbar(.hidden, for: .navigationBar)   // redesign v2: in-content title above
             .task {
                 exercises = (try? await ExerciseRepository.fetchAll()) ?? []

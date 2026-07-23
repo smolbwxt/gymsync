@@ -55,19 +55,26 @@ struct HomeView: View {
                 // Onyx ground — consistent 12pt rhythm, no full-width divider
                 // rules between sections. Every data/action path from the old
                 // layout is preserved; only the arrangement changed.
+                // Declutter round (user feedback 2026-07-21): stat tiles
+                // removed (Stats tab owns the numbers), schedule promoted to
+                // its own widget above the calendar, calendar extended.
                 VStack(alignment: .leading, spacing: 0) {
                     greetingHeader
                     replayFailureNotice
                     primaryCTASection
                     checkInAndStreakRow
+                    scheduleWidget
                     calendarWidget
                     if !activeCampaigns.isEmpty {
                         campaignsSection
                     }
-                    statTileRow
                     joinWithCodeSection
                 }
             }
+            // Dock clearance (user bug report): the bottom tab dock was
+            // clipping the last content on every tab — give the scroll
+            // content an explicit bottom margin the dock's height.
+            .contentMargins(.bottom, 88, for: .scrollContent)
             .scrollContentBackground(.hidden)
             .background(theme.bg)
             // Redesign v2 (user feedback 2026-07-21): the "Home" nav-bar title
@@ -287,31 +294,34 @@ struct HomeView: View {
         .padding(.bottom, 12)
     }
 
+    // Declutter round: the solo start is a LITTLE BIGGER everywhere it
+    // appears (user feedback) — taller hero card, larger play circle, and a
+    // weightier secondary button.
     private func ctaCard(title: String, subtitle: String) -> some View {
         GSCard(bordered: false) {
             HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(title)
-                        .font(GSFont.bold(17, relativeTo: .headline))
+                        .font(GSFont.bold(19, relativeTo: .headline))
                         .foregroundStyle(theme.text)
                         .lineLimit(1)
                     Text(subtitle)
-                        .font(GSFont.body(12.5, relativeTo: .caption))
+                        .font(GSFont.body(13, relativeTo: .caption))
                         .foregroundStyle(theme.neutral500)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 8)
                 Circle()
                     .fill(theme.accent)
-                    .frame(width: 46, height: 46)
+                    .frame(width: 54, height: 54)
                     .overlay(
                         Image(systemName: "play.fill")
-                            .font(.system(size: 17, weight: .bold))
+                            .font(.system(size: 20, weight: .bold))
                             .foregroundStyle(theme.bg)
                             .offset(x: 1)
                     )
             }
-            .padding(18)
+            .padding(22)
         }
         .contentShape(Rectangle())
     }
@@ -324,20 +334,60 @@ struct HomeView: View {
             HStack(spacing: 7) {
                 Spacer(minLength: 0)
                 Image(systemName: "plus")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.system(size: 14, weight: .bold))
                 Text("Start solo workout")
-                    .font(GSFont.bold(13.5, relativeTo: .subheadline))
+                    .font(GSFont.bold(15, relativeTo: .subheadline))
                 Spacer(minLength: 0)
             }
             .foregroundStyle(theme.text)
-            .padding(.vertical, 13)
+            .padding(.vertical, 16)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .background(theme.surface.opacity(0.55))
+        .cornerRadius(GSMetrics.radiusSm)
         .overlay(
             RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
                 .strokeBorder(theme.divider, lineWidth: 1)
         )
+    }
+
+    // MARK: - Schedule widget (declutter round: its own widget above the calendar)
+
+    private var scheduleWidget: some View {
+        Button {
+            showScheduleSheet = true
+        } label: {
+            GSCard(bordered: false) {
+                HStack(spacing: 13) {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(theme.neutral300)
+                        .frame(width: 42, height: 42)
+                        .overlay(
+                            Image(systemName: "calendar.badge.plus")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundStyle(theme.accent)
+                        )
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Schedule a session")
+                            .font(GSFont.bold(15.5, relativeTo: .headline))
+                            .foregroundStyle(theme.text)
+                        Text("Plan your next lift — solo or with a crew")
+                            .font(GSFont.body(12, relativeTo: .caption))
+                            .foregroundStyle(theme.neutral500)
+                    }
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(theme.neutral500)
+                }
+                .padding(16)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 12)
     }
 
     private func ctaSubtitle(for session: WorkoutSession) -> String {
@@ -387,9 +437,22 @@ struct HomeView: View {
     /// The soonest upcoming session (repository order is soonest-first).
     private var nextSession: WorkoutSession? { upcomingSessions.first }
 
-    /// True when the session can actually be checked into right now.
-    private func isJoinable(_ session: WorkoutSession) -> Bool {
-        session.state == "lobby_open" || session.state == "in_progress"
+    /// When check-in opens: 20 minutes before the scheduled start — the SAME
+    /// rule LobbyView.canCheckIn enforces (server-enforced too, migration
+    /// 20260715000003_checkin_window.sql). Session STATE is deliberately not
+    /// the signal: sessions can sit `lobby_open` hours early, which is exactly
+    /// the false-"Check in" bug the first on-device round caught.
+    private func checkInOpensAt(_ session: WorkoutSession) -> Date? {
+        session.scheduledFor?.addingTimeInterval(-20 * 60)
+    }
+
+    /// True when check-in is genuinely available NOW: the session is live, or
+    /// the 20-minute window has opened. No `scheduledFor` fails open —
+    /// mirroring LobbyView, whose button would be actionable there too.
+    private func checkInAvailable(_ session: WorkoutSession, now: Date) -> Bool {
+        if session.state == "in_progress" { return true }
+        guard let opensAt = checkInOpensAt(session) else { return true }
+        return now >= opensAt
     }
 
     @ViewBuilder
@@ -397,12 +460,18 @@ struct HomeView: View {
         GSCard(bordered: false) {
             Group {
                 if let session = nextSession {
-                    NavigationLink {
-                        LobbyView(session: session)
-                    } label: {
-                        checkInBody(session)
+                    // TimelineView re-evaluates every 30s so the countdown →
+                    // "Check in" flip happens while the screen sits open (the
+                    // countdown text itself is Text(timerInterval:), already
+                    // self-updating every second).
+                    TimelineView(.periodic(from: .now, by: 30)) { context in
+                        NavigationLink {
+                            LobbyView(session: session)
+                        } label: {
+                            checkInBody(session, now: context.date)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 } else {
                     checkInEmptyBody
                 }
@@ -413,12 +482,13 @@ struct HomeView: View {
     }
 
     @ViewBuilder
-    private func checkInBody(_ session: WorkoutSession) -> some View {
+    private func checkInBody(_ session: WorkoutSession, now: Date) -> some View {
+        let available = checkInAvailable(session, now: now)
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
-                Image(systemName: isJoinable(session) ? "dot.radiowaves.left.and.right" : "clock")
+                Image(systemName: available ? "dot.radiowaves.left.and.right" : "clock")
                     .font(.system(size: 10, weight: .bold))
-                Text(isJoinable(session) ? "LOBBY OPEN" : "NEXT SESSION")
+                Text(available ? "CHECK-IN OPEN" : "NEXT SESSION")
                     .font(GSFont.bold(10, relativeTo: .caption2))
                     .tracking(1.3)
             }
@@ -430,8 +500,8 @@ struct HomeView: View {
                 .lineLimit(1)
                 .padding(.top, 8)
 
-            if isJoinable(session) {
-                // Joinable NOW — the widget's whole job becomes the action.
+            if available {
+                // Window open — the widget's whole job becomes the action.
                 HStack(spacing: 6) {
                     Text("Check in")
                         .font(GSFont.bold(14, relativeTo: .subheadline))
@@ -444,23 +514,21 @@ struct HomeView: View {
                 .background(theme.accent)
                 .cornerRadius(11)
                 .padding(.top, 10)
-            } else if let when = session.scheduledFor, when > .now {
-                // Live countdown to the scheduled start — self-updating,
-                // UI-side only (no Timer), same Text(timerInterval:) doctrine
-                // as the chess clock and PTT holding bar.
-                Text(timerInterval: Date.now...when, countsDown: true, showsHours: true)
+            } else if let opensAt = checkInOpensAt(session), opensAt > now {
+                // Live countdown to when CHECK-IN OPENS (not the start) —
+                // self-updating Text(timerInterval:), no Timer.
+                Text(timerInterval: now...opensAt, countsDown: true, showsHours: true)
                     .font(GSFont.heading(24, relativeTo: .title2))
                     .foregroundStyle(theme.text)
                     .monospacedDigit()
                     .padding(.top, 6)
-                Text("until start · \(when.formatted(.dateTime.weekday(.abbreviated).hour().minute()))")
+                Text("until check-in · opens \(opensAt.formatted(date: .omitted, time: .shortened))")
                     .font(GSFont.body(10.5, relativeTo: .caption2))
                     .foregroundStyle(theme.neutral500)
                     .lineLimit(1)
                     .padding(.top, 3)
             } else {
-                // Scheduled time has passed but the lobby hasn't opened yet
-                // (or the session is unscheduled) — honest waiting copy.
+                // Window has passed but state hasn't flipped live yet.
                 Text("Starting soon")
                     .font(GSFont.heading(18, relativeTo: .title3))
                     .foregroundStyle(theme.text)
@@ -685,44 +753,13 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - Stat Tile Row (Task 5 canvas content; states = Phase U frame 41)
-
-    private var statTileRow: some View {
-        StatTilesRow(state: statTilesRowState) {
-            // Same action as `startSoloWorkoutButton` below — no new
-            // session-start path, just the existing routine-picker sheet.
-            routinePickerPreselected = nil
-            showRoutinePicker = true
-        }
-    }
-
-    /// Precedence: LOADING (cold-start fetch in flight) beats everything;
-    /// then OFFLINE·STALE-CACHE, but only when there's actually cached
-    /// activity worth showing as stale (an offline cold start with nothing
-    /// ever cached — or a cache that only ever recorded zeros, e.g. a
-    /// brand-new user's first online load — has nothing meaningfully
-    /// "stale" to render, so it falls through to the friendlier zero-card
-    /// CTA below); then FIRST-SESSION·ZERO (no completed sessions ever —
-    /// `historySessions` is `SessionRepository.history`, filtered to
-    /// `state = completed`, HomeView.swift's `fetchHistory`); else LOADED.
-    private var statTilesRowState: StatTilesRowState {
-        if statsLoading { return .loading }
-        if !connectivity.isOnline {
-            let snapshot = StatTilesSnapshotStore.load()
-            if snapshot.hasActivity { return .offlineStale(snapshot) }
-        }
-        if historySessions.isEmpty { return .firstSessionZero }
-        return .loaded(
-            workoutsThisWeek: StatMath.workoutsThisWeek(sessions: historySessions),
-            lifetimeLbs: profile?.lifetimeVolumeLifted ?? 0,
-            prsThisMonth: prsThisMonth
-        )
-    }
-
-    // (Redesign: the old standalone "+ Schedule Session" button and the
-    // "Upcoming Sessions" list were absorbed into `TrainingCalendarWidget` —
-    // the calendar header carries the schedule action, and upcoming sessions
-    // render as group-avatared rows inside the widget.)
+    // (Declutter round, 2026-07-21 feedback: the Home stat-tile row was
+    // REMOVED — Stats owns the numbers; the calendar consumes the space.
+    // `StatTilesRow` the component lives on (CatalogHostView still renders
+    // its frame-41 states), and `refresh()` still saves the offline
+    // snapshot. The old standalone schedule button and Upcoming list were
+    // previously absorbed into `TrainingCalendarWidget`; schedule is now
+    // `scheduleWidget` above the calendar.)
 
     // MARK: - Join with Code Section
 
@@ -1053,15 +1090,18 @@ struct HomeView: View {
 // `Routine?` to make that representable).
 
 private struct RoutinePickerSheet: View {
-    let routines: [Routine]
     let initialRoutine: Routine?
 
     @Environment(\.gsTheme) private var theme
 
+    /// Seeded from the caller's fetched list, then locally owned so a routine
+    /// built in-sheet (Build Routine push below) appears immediately.
+    @State private var routines: [Routine]
     @State private var chosenRoutine: Routine?
     @State private var routineExercises: [RoutineExercise] = []
     @State private var allExercises: [Exercise] = []
     @State private var startNavigation = false
+    @State private var showBuilder = false
 
     // Today's-routine card opens this sheet PAUSED: `chosenRoutine` seeds from
     // `initialRoutine` purely for the visible preselection/highlight below — it no
@@ -1069,58 +1109,138 @@ private struct RoutinePickerSheet: View {
     // to actually start. Start Solo Workout still passes `initialRoutine: nil`, so
     // this seeds to nil and the list opens with nothing highlighted — unchanged.
     init(routines: [Routine], initialRoutine: Routine?) {
-        self.routines = routines
+        _routines = State(initialValue: routines)
         self.initialRoutine = initialRoutine
         _chosenRoutine = State(initialValue: initialRoutine)
     }
 
+    // Redesign (user feedback 2026-07-21: the picker didn't follow the app's
+    // language, and a no-routines user hit a dead end): Onyx card rows in a
+    // ScrollView — freestyle card, routine cards with a selected ring — plus
+    // a "Build Routine" top action ALWAYS available, and a card-anchored
+    // empty state whose CTA routes into the real RoutineBuilderView.
     var body: some View {
         NavigationStack {
-            List {
-                Button {
-                    Task { await start(routine: nil) }
-                } label: {
-                    Text("No routine")
-                        .font(GSFont.bodyMedium(16, relativeTo: .body))
-                        .foregroundStyle(theme.text)
-                }
-                .frame(minHeight: 44)
-                .contentShape(Rectangle())
-                .listRowBackground(theme.bg)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    // Freestyle — always first.
+                    pickCard(
+                        icon: "bolt.fill",
+                        title: "Freestyle",
+                        subtitle: "No routine — log whatever you lift",
+                        selected: false
+                    ) {
+                        Task { await start(routine: nil) }
+                    }
+                    .padding(.top, 6)
 
-                ForEach(routines) { routine in
-                    let isSelected = routine.id == chosenRoutine?.id
-                    Button {
-                        Task { await start(routine: routine) }
-                    } label: {
-                        HStack {
-                            Text(routine.name)
-                                .font(GSFont.bodyMedium(16, relativeTo: .body))
-                                .foregroundStyle(theme.text)
-                            Spacer()
-                            if isSelected {
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 14, weight: .bold))
-                                    .foregroundStyle(theme.accent)
+                    if routines.isEmpty {
+                        GSEmptyState(
+                            icon: "list.bullet.rectangle",
+                            title: "No routines yet",
+                            message: "Build a routine once and start it with one tap every session after.",
+                            ctaTitle: "Build a routine",
+                            action: { showBuilder = true }
+                        )
+                        .padding(.top, 14)
+                    } else {
+                        GSSectionHeader("Your routines")
+                            .padding(.top, 18)
+                            .padding(.bottom, 8)
+                        VStack(spacing: 8) {
+                            ForEach(routines) { routine in
+                                let isSelected = routine.id == chosenRoutine?.id
+                                pickCard(
+                                    icon: "list.bullet",
+                                    title: routine.name,
+                                    subtitle: nil,
+                                    selected: isSelected
+                                ) {
+                                    Task { await start(routine: routine) }
+                                }
                             }
                         }
                     }
-                    .frame(minHeight: 44)
-                    .contentShape(Rectangle())
-                    .listRowBackground(isSelected ? theme.accent100 : theme.bg)
                 }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 24)
             }
-            .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(theme.bg)
             .navigationTitle("Start Workout")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showBuilder = true
+                    } label: {
+                        Text("Build Routine")
+                            .font(GSFont.bold(14, relativeTo: .subheadline))
+                            .foregroundStyle(theme.accent)
+                    }
+                }
+            }
+            .navigationDestination(isPresented: $showBuilder) {
+                RoutineBuilderView(editing: nil) { newRoutine in
+                    routines.insert(newRoutine, at: 0)
+                    chosenRoutine = newRoutine
+                    showBuilder = false
+                }
+            }
             .navigationDestination(isPresented: $startNavigation) {
                 WorkoutSessionView(routine: chosenRoutine,
                                    routineExercises: routineExercises,
                                    allExercises: allExercises)
             }
         }
+    }
+
+    private func pickCard(icon: String, title: String, subtitle: String?, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(theme.neutral300)
+                    .frame(width: 36, height: 36)
+                    .overlay(
+                        Image(systemName: icon)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(theme.accent)
+                    )
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(GSFont.bold(15, relativeTo: .body))
+                        .foregroundStyle(theme.text)
+                        .lineLimit(1)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(GSFont.body(12, relativeTo: .caption))
+                            .foregroundStyle(theme.neutral500)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 8)
+                if selected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(theme.accent)
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(theme.neutral500)
+                }
+            }
+            .padding(14)
+            .frame(minHeight: 44)
+            .background(theme.surface)
+            .cornerRadius(GSMetrics.radiusSm)
+            .overlay(
+                selected
+                    ? RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.accent, lineWidth: 2)
+                    : nil
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     @MainActor

@@ -27,8 +27,6 @@ struct TrainingCalendarWidget: View {
     let onSchedule: () -> Void
     let onFindCrew: () -> Void
 
-    /// Ref grid: 18 columns × 4 rows = 72 days (~10 weeks).
-    private static let columns = 18
     private static let rows = 4
 
     var body: some View {
@@ -38,10 +36,9 @@ struct TrainingCalendarWidget: View {
                 if isEmpty {
                     emptyBody
                 } else {
-                    monthLabels.padding(.top, 14)
-                    dotField.padding(.top, 10)
+                    monthGroupedField.padding(.top, 14)
                     if !upcomingSessions.isEmpty {
-                        upcomingList.padding(.top, 16)
+                        upcomingList.padding(.top, 18)
                     }
                 }
             }
@@ -51,28 +48,29 @@ struct TrainingCalendarWidget: View {
 
     private var isEmpty: Bool { completedSessions.isEmpty && upcomingSessions.isEmpty }
 
-    // MARK: Header — kicker + "+ Schedule"
+    // MARK: Header — kicker + upcoming count
+    // (v3, declutter round: the "+ Schedule" action moved out to Home's own
+    // schedule widget; the header's right side is the upcoming count again.)
 
     private var header: some View {
         HStack {
             GSSectionHeader("Training calendar")
-            Button(action: onSchedule) {
-                HStack(spacing: 4) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 11, weight: .bold))
-                    Text("Schedule")
-                        .font(GSFont.bold(12, relativeTo: .caption))
-                }
-                .foregroundStyle(theme.accent)
-                .frame(minHeight: 32)
-                .contentShape(Rectangle())
+            if !upcomingSessions.isEmpty {
+                Text("\(upcomingSessions.count) UPCOMING")
+                    .font(GSFont.bodyMedium(10, relativeTo: .caption2))
+                    .tracking(1.2)
+                    .foregroundStyle(theme.neutral500)
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Schedule session")
         }
     }
 
-    // MARK: Month labels + dot field (reference style)
+    // MARK: Month-grouped dot field (v3 — reference spacing)
+    //
+    // User feedback: the uniform run had no month delineation. Now each of
+    // the last 3 calendar months is its OWN cluster — label above, its days
+    // as a column-major mini-grid (4 rows) — separated by real gutters, like
+    // the reference's Jan / Feb / Mar grouping. Current month shows days up
+    // to today only, so the field ends exactly at "now" (today haloed).
 
     /// The trained-day set, day-granular.
     private var trainedDays: Set<Date> {
@@ -85,72 +83,83 @@ struct TrainingCalendarWidget: View {
         return days
     }
 
-    /// Last `columns × rows` days, oldest first.
-    private var gridDays: [Date] {
+    private struct MonthGroup: Identifiable {
+        let id: Date          // month start
+        let label: String
+        let days: [Date]
+    }
+
+    /// Last 3 calendar months, oldest first; the current month is truncated
+    /// at today.
+    private var monthGroups: [MonthGroup] {
         let cal = Calendar.current
         let today = cal.startOfDay(for: .now)
-        let count = Self.columns * Self.rows
-        return (0..<count).compactMap { cal.date(byAdding: .day, value: -(count - 1 - $0), to: today) }
-    }
-
-    /// Month names spanning the grid, evenly spread like the reference
-    /// (Jan / Feb / Mar). Derived from the actual day range so the labels
-    /// are always truthful.
-    private var monthLabels: some View {
-        let days = gridDays
-        let cal = Calendar.current
-        var names: [String] = []
-        for day in days {
-            let name = day.formatted(.dateTime.month(.abbreviated))
-            if names.last != name { names.append(name) }
-        }
-        _ = cal
-        return HStack {
-            ForEach(Array(names.enumerated()), id: \.offset) { index, name in
-                Text(name)
-                    .font(GSFont.bodyMedium(11, relativeTo: .caption2))
-                    .foregroundStyle(theme.neutral500)
-                if index < names.count - 1 { Spacer() }
+        guard let thisMonthStart = cal.date(from: cal.dateComponents([.year, .month], from: today)) else { return [] }
+        return (0..<3).reversed().compactMap { back in
+            guard let monthStart = cal.date(byAdding: .month, value: -back, to: thisMonthStart) else { return nil }
+            let dayCount: Int
+            if back == 0 {
+                dayCount = (cal.dateComponents([.day], from: monthStart, to: today).day ?? 0) + 1
+            } else {
+                dayCount = cal.range(of: .day, in: .month, for: monthStart)?.count ?? 30
             }
+            let days = (0..<dayCount).compactMap { cal.date(byAdding: .day, value: $0, to: monthStart) }
+            return MonthGroup(
+                id: monthStart,
+                label: monthStart.formatted(.dateTime.month(.abbreviated)),
+                days: days
+            )
         }
-        .padding(.horizontal, 2)
     }
 
-    /// The airy dot field: column-major chronological (each column is 4
-    /// consecutive days, columns run oldest → newest), round 6pt dots, dim
-    /// neutral for untrained days, bright near-white for trained days —
-    /// monochrome, per the reference.
-    private var dotField: some View {
-        let days = gridDays
+    private var monthGroupedField: some View {
         let trained = trainedDays
         let today = Calendar.current.startOfDay(for: .now)
-        return HStack(spacing: 0) {
-            ForEach(0..<Self.columns, id: \.self) { column in
-                VStack(spacing: 10) {
+        return HStack(alignment: .top, spacing: 0) {
+            ForEach(Array(monthGroups.enumerated()), id: \.element.id) { index, month in
+                if index > 0 { Spacer(minLength: 14) }   // the month gutter
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(month.label)
+                        .font(GSFont.bodyMedium(11, relativeTo: .caption2))
+                        .foregroundStyle(theme.neutral500)
+                    monthGrid(month, trained: trained, today: today)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Training activity, last 3 months")
+    }
+
+    /// One month's dots: column-major, 4 rows, day 1 top-left.
+    private func monthGrid(_ month: MonthGroup, trained: Set<Date>, today: Date) -> some View {
+        let columns = Int(ceil(Double(month.days.count) / Double(Self.rows)))
+        return HStack(alignment: .top, spacing: 4.5) {
+            ForEach(0..<columns, id: \.self) { column in
+                VStack(spacing: 9) {
                     ForEach(0..<Self.rows, id: \.self) { row in
                         let idx = column * Self.rows + row
-                        if idx < days.count {
-                            let day = days[idx]
+                        if idx < month.days.count {
+                            let day = month.days[idx]
                             let isTrained = trained.contains(day)
                             Circle()
                                 .fill(isTrained ? theme.text : theme.neutral300)
-                                .frame(width: isTrained ? 7 : 5.5, height: isTrained ? 7 : 5.5)
-                                .frame(width: 7, height: 7)
-                                // Today gets a faint accent halo so "now" is
-                                // findable without breaking the mono field.
+                                .frame(width: isTrained ? 6.5 : 5, height: isTrained ? 6.5 : 5)
+                                .frame(width: 6.5, height: 6.5)
+                                // Today: faint accent halo so "now" is findable
+                                // without breaking the mono field.
                                 .overlay(
                                     day == today
-                                        ? Circle().strokeBorder(theme.accent.opacity(0.8), lineWidth: 1).frame(width: 11, height: 11)
+                                        ? Circle().strokeBorder(theme.accent.opacity(0.8), lineWidth: 1).frame(width: 10.5, height: 10.5)
                                         : nil
                                 )
+                        } else {
+                            Color.clear.frame(width: 6.5, height: 6.5)
                         }
                     }
                 }
-                .frame(maxWidth: .infinity)
             }
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Training activity, last \(Self.columns * Self.rows) days")
     }
 
     // MARK: Upcoming rows
@@ -158,14 +167,16 @@ struct TrainingCalendarWidget: View {
     private var upcomingList: some View {
         VStack(spacing: 0) {
             Rectangle().fill(theme.divider).frame(height: 1)
-            ForEach(Array(upcomingSessions.prefix(3).enumerated()), id: \.element.id) { index, session in
+            // v3: four rows — the calendar consumes the space freed by the
+            // removed stat tiles.
+            ForEach(Array(upcomingSessions.prefix(4).enumerated()), id: \.element.id) { index, session in
                 NavigationLink {
                     LobbyView(session: session)
                 } label: {
                     upcomingRow(session)
                 }
                 .buttonStyle(.plain)
-                if index < min(upcomingSessions.count, 3) - 1 {
+                if index < min(upcomingSessions.count, 4) - 1 {
                     Rectangle().fill(theme.divider).frame(height: 1)
                 }
             }

@@ -88,8 +88,12 @@ struct YouTabView: View {
                             .padding(.horizontal, 16)
                             .padding(.bottom, 24)
                     }
-                    .frame(minHeight: proxy.size.height)
+                    // Top-pinned: a bare .frame(minHeight:) centers short
+                    // content vertically (the Social center-snap bug class).
+                    .frame(minHeight: proxy.size.height, alignment: .top)
                 }
+                // Dock clearance (user bug report).
+                .contentMargins(.bottom, 88, for: .scrollContent)
             }
             .scrollContentBackground(.hidden)
             .background(theme.bg)
