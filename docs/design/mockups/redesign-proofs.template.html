@@ -70,16 +70,16 @@ body{font-family:'Archivo',system-ui,sans-serif;background:var(--page);color:var
    its real weekday offset), month clusters separated by gutters. Dim dots,
    bright trained days, today halo; NO legend / NO group colors in the texture
    (attribution lives in the rows). */
-.calmonths{display:flex;justify-content:center;gap:5px}
+.calmonths{display:flex;justify-content:space-between;gap:12px}
 .calmonth{display:flex;flex-direction:column;gap:8px;align-items:center;flex:1}
 .calmonth .cm-label{font-size:10.5px;color:var(--muted);font-weight:600}
-.cm-grid{display:grid;grid-template-columns:repeat(7,10px);gap:7px 4px;justify-items:center;align-items:center}
-.cm-grid i{display:block;width:5px;height:5px;border-radius:50%;background:#3a414b}
-.cm-grid i.on{width:6.5px;height:6.5px;background:var(--text)}
+.cm-grid{display:grid;grid-template-columns:repeat(7,12.5px);gap:6px 0;justify-items:center;align-items:center}
+.cm-grid i{display:block;width:7px;height:7px;border-radius:50%;background:#3a414b}
+.cm-grid i.on{width:9.5px;height:9.5px;background:var(--text)}
 .cm-grid i.today{box-shadow:0 0 0 2px var(--bg),0 0 0 3px var(--accent)}
 .cm-grid i.blank{background:transparent}
 .cm-grid i.fut{background:#22262e}
-.cm-grid i.up{width:6.5px;height:6.5px;background:var(--accent)}
+.cm-grid i.up{width:9.5px;height:9.5px;background:var(--accent)}
 .up{margin-top:13px;border-top:1px solid var(--hair);padding-top:12px;display:flex;flex-direction:column;gap:11px}
 .upr{display:flex;align-items:center;gap:10px}.uav{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;font-size:10px;font-weight:700;color:#0a0b0d;flex:0 0 auto}
 .upr .ut{font-weight:700;font-size:13px}.upr .us{color:var(--muted);font-size:11px;margin-top:1px}.upr .ur{margin-left:auto;color:var(--muted);font-size:10.5px;font-weight:600;text-align:right}

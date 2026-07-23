@@ -120,13 +120,21 @@ struct TrainingCalendarWidget: View {
         return days
     }
 
+    /// Measured field width — drives dot sizing so the three month grids FILL
+    /// the card (v6, on-device feedback: fixed-size dots centered in
+    /// equal-flex thirds left large dead gaps). Seeded to a typical width;
+    /// `onGeometryChange` corrects it on first layout.
+    @State private var fieldWidth: CGFloat = 326
+
+    private var gutter: CGFloat { 12 }
+    /// Per-weekday column slot: three months × 7 columns + two gutters.
+    private var unit: CGFloat { max(8, (fieldWidth - 2 * gutter) / 21) }
+
     private var monthGroupedField: some View {
         let trained = trainedDays
         let upcoming = upcomingDays
         let today = Calendar.current.startOfDay(for: .now)
-        // Fixed 5pt gutters (~1/3 of v4's) with the trio centered as a block —
-        // the current month straddled symmetrically by its neighbors.
-        return HStack(alignment: .top, spacing: 5) {
+        return HStack(alignment: .top, spacing: gutter) {
             ForEach(monthGroups) { month in
                 VStack(alignment: .center, spacing: 10) {
                     Text(month.label)
@@ -134,10 +142,14 @@ struct TrainingCalendarWidget: View {
                         .foregroundStyle(theme.neutral500)
                     monthGrid(month, trained: trained, upcoming: upcoming, today: today)
                 }
-                .frame(maxWidth: .infinity)
             }
         }
         .frame(maxWidth: .infinity)
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.width
+        } action: { width in
+            if width > 0 { fieldWidth = width }
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Training calendar — last month, this month, next month")
     }
@@ -155,17 +167,20 @@ struct TrainingCalendarWidget: View {
         } ?? 0
         let cellCount = offset + month.days.count
         let weekRows = Int(ceil(Double(cellCount) / 7.0))
-        return VStack(alignment: .leading, spacing: 7.5) {
+        // v6: dots fill their column slots — no fixed sizes, no dead space.
+        return VStack(alignment: .leading, spacing: unit * 0.42) {
             ForEach(0..<weekRows, id: \.self) { row in
-                HStack(spacing: 4.5) {
+                HStack(spacing: 0) {
                     ForEach(0..<7, id: \.self) { column in
                         let dayIdx = row * 7 + column - offset
-                        if dayIdx >= 0 && dayIdx < month.days.count {
-                            let day = month.days[dayIdx]
-                            dot(for: day, trained: trained, upcoming: upcoming, today: today)
-                        } else {
-                            Color.clear.frame(width: 6.5, height: 6.5)
+                        Group {
+                            if dayIdx >= 0 && dayIdx < month.days.count {
+                                dot(for: month.days[dayIdx], trained: trained, upcoming: upcoming, today: today)
+                            } else {
+                                Color.clear
+                            }
                         }
+                        .frame(width: unit, height: unit * 0.7)
                     }
                 }
             }
@@ -180,16 +195,16 @@ struct TrainingCalendarWidget: View {
         let fill: Color = isTrained ? theme.text
             : isUpcoming ? theme.accent
             : isFuture ? theme.neutral300      // future: dimmer
-            : theme.neutral400                 // past untrained (300 vanished at 5px)
-        let size: CGFloat = (isTrained || isUpcoming) ? 6.5 : 5
+            : theme.neutral400                 // past untrained
+        let size: CGFloat = (isTrained || isUpcoming) ? unit * 0.68 : unit * 0.52
         Circle()
             .fill(fill)
             .frame(width: size, height: size)
-            .frame(width: 6.5, height: 6.5)
             // Today: faint accent halo so "now" is findable in the field.
             .overlay(
                 day == today
-                    ? Circle().strokeBorder(theme.accent.opacity(0.8), lineWidth: 1).frame(width: 10.5, height: 10.5)
+                    ? Circle().strokeBorder(theme.accent.opacity(0.8), lineWidth: 1.2)
+                        .frame(width: unit * 0.95, height: unit * 0.95)
                     : nil
             )
     }
