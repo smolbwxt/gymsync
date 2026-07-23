@@ -27,8 +27,6 @@ struct TrainingCalendarWidget: View {
     let onSchedule: () -> Void
     let onFindCrew: () -> Void
 
-    private static let rows = 4
-
     var body: some View {
         GSCard(bordered: false) {
             VStack(alignment: .leading, spacing: 0) {
@@ -64,13 +62,15 @@ struct TrainingCalendarWidget: View {
         }
     }
 
-    // MARK: Month-grouped dot field (v3 — reference spacing)
+    // MARK: Month-grouped dot field (v4 — true calendar shape)
     //
-    // User feedback: the uniform run had no month delineation. Now each of
-    // the last 3 calendar months is its OWN cluster — label above, its days
-    // as a column-major mini-grid (4 rows) — separated by real gutters, like
-    // the reference's Jan / Feb / Mar grouping. Current month shows days up
-    // to today only, so the field ends exactly at "now" (today haloed).
+    // v3 grouped the months but filled them column-major (abstract texture).
+    // User follow-up: months should have the NORMAL shape of a calendar —
+    // so each cluster is now a true mini-calendar: 7 weekday columns
+    // (respecting Calendar.current.firstWeekday), weeks as rows, day 1
+    // offset to its actual weekday. Besides familiarity, this makes the
+    // texture meaningful: training every Monday reads as a vertical bright
+    // line. Current month's dots stop at today (today haloed).
 
     /// The trained-day set, day-granular.
     private var trainedDays: Set<Date> {
@@ -131,19 +131,28 @@ struct TrainingCalendarWidget: View {
         .accessibilityLabel("Training activity, last 3 months")
     }
 
-    /// One month's dots: column-major, 4 rows, day 1 top-left.
+    /// One month as a true mini-calendar: 7 weekday columns × week rows,
+    /// day 1 offset to its actual weekday (locale first-weekday respected).
     private func monthGrid(_ month: MonthGroup, trained: Set<Date>, today: Date) -> some View {
-        let columns = Int(ceil(Double(month.days.count) / Double(Self.rows)))
-        return HStack(alignment: .top, spacing: 4.5) {
-            ForEach(0..<columns, id: \.self) { column in
-                VStack(spacing: 9) {
-                    ForEach(0..<Self.rows, id: \.self) { row in
-                        let idx = column * Self.rows + row
-                        if idx < month.days.count {
-                            let day = month.days[idx]
+        let cal = Calendar.current
+        // Leading blanks before day 1 (0-6), relative to the locale's week start.
+        let offset = month.days.first.map { first in
+            (cal.component(.weekday, from: first) - cal.firstWeekday + 7) % 7
+        } ?? 0
+        let cellCount = offset + month.days.count
+        let weekRows = Int(ceil(Double(cellCount) / 7.0))
+        return VStack(alignment: .leading, spacing: 7.5) {
+            ForEach(0..<weekRows, id: \.self) { row in
+                HStack(spacing: 4.5) {
+                    ForEach(0..<7, id: \.self) { column in
+                        let dayIdx = row * 7 + column - offset
+                        if dayIdx >= 0 && dayIdx < month.days.count {
+                            let day = month.days[dayIdx]
                             let isTrained = trained.contains(day)
                             Circle()
-                                .fill(isTrained ? theme.text : theme.neutral300)
+                                // neutral400 (not 300): at 5px the darker step
+                                // vanished against the surface card.
+                                .fill(isTrained ? theme.text : theme.neutral400)
                                 .frame(width: isTrained ? 6.5 : 5, height: isTrained ? 6.5 : 5)
                                 .frame(width: 6.5, height: 6.5)
                                 // Today: faint accent halo so "now" is findable
