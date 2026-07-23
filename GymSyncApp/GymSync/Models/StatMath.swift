@@ -116,6 +116,19 @@ enum StatMath {
         return weight * (1 + Decimal(reps) / 30)
     }
 
+    /// Redesign (2026-07-23): projected working weight for a routine exercise
+    /// row, from the user's best PR — inverse Epley (weight for target reps t
+    /// = est1RM / (1 + t/30)), rounded to the nearest 5 lbs. `targetReps` nil
+    /// falls back to the PR's own rep count (projection ≈ the PR itself).
+    /// Callers show NO estimate when there is no PR — never a guess.
+    static func projectedWeight(prWeight: Decimal, prReps: Int, targetReps: Int?) -> Int? {
+        let oneRM = estimatedOneRepMax(weight: prWeight, reps: prReps)
+        let t = max(1, targetReps ?? prReps)
+        let raw = NSDecimalNumber(decimal: oneRM).doubleValue / (1 + Double(t) / 30)
+        let rounded = Int((raw / 5).rounded() * 5)
+        return rounded > 0 ? rounded : nil
+    }
+
     // MARK: - Routine duration estimate (Home / Library / Routine Builder)
 
     /// Rough duration estimate for a routine card's "~X min" meta suffix.

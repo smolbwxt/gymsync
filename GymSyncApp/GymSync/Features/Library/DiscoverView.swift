@@ -174,11 +174,17 @@ struct DiscoverView: View {
                         .font(GSFont.body(10, relativeTo: .caption2))
                         .foregroundStyle(theme.neutral500)
                 }
+                Spacer(minLength: 0)
             }
             .padding(10)
+            // Redesign (user feedback 2026-07-23: "the widgets are not the
+            // same size") — a fixed text-zone height makes every grid card
+            // uniform regardless of optional chips/attempt lines.
+            .frame(height: 84, alignment: .topLeading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.surface)
+        .cornerRadius(GSMetrics.radiusSm)
         .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
     }
 

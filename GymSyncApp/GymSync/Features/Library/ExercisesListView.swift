@@ -23,7 +23,37 @@ struct ExercisesListView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Muscle filter chips — canvas: horizontal scroll row
+            // Redesign (user feedback 2026-07-23: "large blank space between
+            // the muscle groups and exercise list") — the old `.searchable(
+            // placement: .navigationBarDrawer)` reserved a drawer under the
+            // now-hidden nav bar. Replaced with an in-content search field.
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(theme.neutral500)
+                TextField("Search exercises", text: $searchText)
+                    .font(GSFont.body(14, relativeTo: .body))
+                    .foregroundStyle(theme.text)
+                    .autocorrectionDisabled()
+                if !searchText.isEmpty {
+                    Button {
+                        searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 15))
+                            .foregroundStyle(theme.neutral500)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 13)
+            .padding(.vertical, 10)
+            .background(theme.surface)
+            .cornerRadius(GSMetrics.radiusSm)
+            .padding(.horizontal, 16)
+            .padding(.top, 4)
+
+            // Muscle filter chips — horizontal scroll row
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     filterChip(label: "All", selected: muscleFilter == nil) {
@@ -39,8 +69,6 @@ struct ExercisesListView: View {
                 .padding(.vertical, 10)
             }
             .background(theme.bg)
-
-            GSDivider()
 
             if loading {
                 Spacer()
@@ -67,9 +95,6 @@ struct ExercisesListView: View {
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
                 .background(theme.bg)
-                .searchable(text: $searchText,
-                            placement: .navigationBarDrawer(displayMode: .always),
-                            prompt: "Search exercises")
             }
         }
         .background(theme.bg)
@@ -89,15 +114,16 @@ struct ExercisesListView: View {
         .padding(.vertical, 2)
     }
 
-    // Canvas: filter chip — filled accent when selected, neutral surface when not
+    // Redesign: capsule filter chips — filled accent when selected.
     private func filterChip(label: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
                 .font(GSFont.bodyMedium(12, relativeTo: .caption))
                 .foregroundStyle(selected ? theme.bg : theme.neutral700)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
+                .padding(.horizontal, 13)
+                .padding(.vertical, 7)
                 .background(selected ? theme.accent : theme.neutral300)
+                .clipShape(Capsule())
         }
         .buttonStyle(.plain)
     }

@@ -42,6 +42,8 @@ struct DiscoverWorkoutDetailView: View {
 
     @State private var routineExercises: [RoutineExercise] = []
     @State private var allExercises: [Exercise] = []
+    /// Redesign (2026-07-23): best PR per exercise → projected working weight.
+    @State private var prByExercise: [UUID: PersonalRecord] = [:]
     @State private var leaderboardEntries: [LeaderboardEntryRow] = []
     @State private var loading = true
     @State private var errorText: String?
@@ -235,10 +237,17 @@ struct DiscoverWorkoutDetailView: View {
         }
     }
 
+    // Redesign (2026-07-23): rows navigate to the exercise's own page, and
+    // carry a projected working weight from the user's best PR when one
+    // exists (no PR = no estimate).
+    @ViewBuilder
     private func exerciseRow(_ re: RoutineExercise) -> some View {
         let ex = allExercises.first { $0.id == re.exerciseID }
         let summary = targetSummary(re)
-        return HStack(alignment: .top, spacing: 10) {
+        let pr = prByExercise[re.exerciseID]
+        let targetReps = re.targetReps.flatMap { Int($0.prefix(while: { $0.isNumber })) }
+        let projected = pr.flatMap { StatMath.projectedWeight(prWeight: $0.weight, prReps: $0.reps, targetReps: targetReps) }
+        let rowContent = HStack(alignment: .top, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(ex?.name ?? "Exercise")
                     .font(GSFont.heading(15, relativeTo: .body))
@@ -250,15 +259,37 @@ struct DiscoverWorkoutDetailView: View {
                 }
             }
             Spacer()
-            if !summary.isEmpty {
-                Text(summary)
-                    .font(GSFont.body(12, relativeTo: .caption))
+            VStack(alignment: .trailing, spacing: 2) {
+                if !summary.isEmpty {
+                    Text(summary)
+                        .font(GSFont.body(12, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral500)
+                }
+                if let projected {
+                    Text("~\(projected) lbs for you")
+                        .font(GSFont.bold(11.5, relativeTo: .caption2))
+                        .foregroundStyle(theme.accent)
+                }
+            }
+            if ex != nil {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(theme.neutral500)
+                    .padding(.top, 2)
             }
         }
         .padding(12)
         .background(theme.surface)
+        .cornerRadius(GSMetrics.radiusSm)
         .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
+        .contentShape(Rectangle())
+
+        if let ex {
+            NavigationLink { ExerciseDetailView(exercise: ex) } label: { rowContent }
+                .buttonStyle(.plain)
+        } else {
+            rowContent
+        }
     }
 
     private func targetSummary(_ re: RoutineExercise) -> String {
@@ -540,6 +571,16 @@ struct DiscoverWorkoutDetailView: View {
                 routineExercises = exs
             }
             leaderboardEntries = entries
+            // Redesign (2026-07-23): best PR per exercise for the projected
+            // working-weight row line. Best-effort — no PRs, no estimates.
+            if let userID = appState.currentProfile?.id,
+               let recents = try? await PersonalRecordRepository.recent(userID: userID, limit: 500) {
+                var best: [UUID: PersonalRecord] = [:]
+                for pr in recents where (best[pr.exerciseID]?.weight ?? 0) < pr.weight {
+                    best[pr.exerciseID] = pr
+                }
+                prByExercise = best
+            }
             errorText = nil
         } catch let error as GymSyncError {
             errorText = error.errorDescription

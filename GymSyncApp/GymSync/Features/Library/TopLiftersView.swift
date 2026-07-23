@@ -90,16 +90,32 @@ struct TopLiftersView: View {
 
             GSInitialsAvatar(name: profile.username, avatarURL: profile.avatarURL, size: 32)
 
-            Text(isYou ? "You" : profile.username)
-                .font(GSFont.bold(13, relativeTo: .body))
-                .foregroundStyle(theme.text)
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(isYou ? "You" : profile.username)
+                    .font(GSFont.bold(13, relativeTo: .body))
+                    .foregroundStyle(theme.text)
+                    .lineLimit(1)
+                // Redesign (2026-07-23, "more metrics"): member-since — one of
+                // the profile's PUBLIC fields. Deliberately derived from public
+                // data only: session/PR counts are private-by-RLS aggregates,
+                // and a leaderboard must not become a privacy leak.
+                Text("since \(profile.createdAt.formatted(.dateTime.month(.abbreviated).year()))")
+                    .font(GSFont.body(10.5, relativeTo: .caption2))
+                    .foregroundStyle(theme.neutral500)
+            }
 
             Spacer()
 
-            Text("\(StatMath.compactNumber(profile.lifetimeVolumeLifted)) lbs")
-                .font(GSFont.body(12, relativeTo: .caption))
-                .foregroundStyle(theme.neutral500)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text("\(StatMath.compactNumber(profile.lifetimeVolumeLifted)) lbs")
+                    .font(GSFont.bold(13, relativeTo: .caption))
+                    .foregroundStyle(theme.text)
+                    .monospacedDigit()
+                Text("≈ \(StatMath.compactNumber(avgWeeklyVolume(profile))) lbs/wk")
+                    .font(GSFont.body(10.5, relativeTo: .caption2))
+                    .foregroundStyle(theme.accent)
+                    .monospacedDigit()
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -108,6 +124,14 @@ struct TopLiftersView: View {
         // for this screen either), a system-styling call using an existing
         // theme token rather than a new literal color.
         .background(isYou ? theme.neutral400.opacity(0.2) : Color.clear)
+    }
+
+    /// Average weekly volume — lifetime volume over full weeks since the
+    /// profile was created (min 1 week so brand-new accounts don't divide by
+    /// zero or inflate). Derived purely from the two public fields.
+    private func avgWeeklyVolume(_ profile: Profile) -> Decimal {
+        let weeks = max(1.0, Date.now.timeIntervalSince(profile.createdAt) / 604800)
+        return profile.lifetimeVolumeLifted / Decimal(weeks)
     }
 
     @MainActor

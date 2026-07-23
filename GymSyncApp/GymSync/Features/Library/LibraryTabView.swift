@@ -167,39 +167,50 @@ struct LibraryTabView: View {
     private func heroCard(_ item: (routine: Routine, ownerUsername: String)) -> some View {
         let isCloning = cloningIDs.contains(item.routine.id)
         return VStack(alignment: .leading, spacing: 8) {
-            ZStack(alignment: .bottom) {
-                Rectangle().fill(theme.neutral300)
-                Image(systemName: "photo")
-                    .font(.system(size: 40, weight: .regular))
-                    .foregroundStyle(theme.text.opacity(0.3))
+            // Redesign (user feedback 2026-07-23): the art opens the pack's
+            // CONTENTS — the same detail screen Discover uses. The Add button
+            // below stays its own control (no nested-button hazard).
+            NavigationLink {
+                DiscoverWorkoutDetailView(workout: PublicWorkout(featured: item.routine, ownerUsername: item.ownerUsername))
+            } label: {
+                ZStack(alignment: .bottom) {
+                    Rectangle().fill(theme.neutral300)
+                    Image(systemName: "photo")
+                        .font(.system(size: 40, weight: .regular))
+                        .foregroundStyle(theme.text.opacity(0.3))
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("SEASONAL")
-                        .font(GSFont.bold(10, relativeTo: .caption2))
-                        .tracking(0.6)
-                        .foregroundStyle(theme.bg)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 2)
-                        .background(theme.accent)
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("SEASONAL")
+                            .font(GSFont.bold(10, relativeTo: .caption2))
+                            .tracking(0.6)
+                            .foregroundStyle(theme.bg)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2)
+                            .background(theme.accent)
+                            .cornerRadius(6)
 
-                    Text(item.routine.name)
-                        .font(GSFont.bold(22, relativeTo: .title2))
-                        .foregroundStyle(.white)
-                        .lineLimit(2)
+                        Text(item.routine.name)
+                            .font(GSFont.bold(22, relativeTo: .title2))
+                            .foregroundStyle(.white)
+                            .lineLimit(2)
 
-                    Text("by \(item.ownerUsername)")
-                        .font(GSFont.body(12, relativeTo: .caption))
-                        .foregroundStyle(.white.opacity(0.85))
+                        Text("by \(item.ownerUsername)")
+                            .font(GSFont.body(12, relativeTo: .caption))
+                            .foregroundStyle(.white.opacity(0.85))
+                    }
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        LinearGradient(colors: [.black.opacity(0.7), .clear],
+                                       startPoint: .bottom, endPoint: .top)
+                    )
                 }
-                .padding(14)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    LinearGradient(colors: [.black.opacity(0.7), .clear],
-                                   startPoint: .bottom, endPoint: .top)
-                )
+                .frame(height: 150)
+                .clipped()
+                .cornerRadius(GSMetrics.radiusSm)
+                .contentShape(Rectangle())
             }
-            .frame(height: 150)
-            .clipped()
+            .buttonStyle(.plain)
 
             Button {
                 Task { await clone(item.routine.id) }
@@ -225,35 +236,46 @@ struct LibraryTabView: View {
         let isCloning = cloningIDs.contains(item.routine.id)
         let count = featuredExerciseCounts[item.routine.id] ?? 0
         return VStack(alignment: .leading, spacing: 0) {
-            ZStack {
-                Rectangle().fill(theme.neutral300)
-                Image(systemName: "photo")
-                    .font(.system(size: 22, weight: .regular))
-                    .foregroundStyle(theme.text.opacity(0.3))
-            }
-            .frame(width: 150, height: 84)
-            .clipped()
+            // Art + title open the pack's contents (user feedback 2026-07-23);
+            // the Add button below stays a separate control.
+            NavigationLink {
+                DiscoverWorkoutDetailView(workout: PublicWorkout(featured: item.routine, ownerUsername: item.ownerUsername))
+            } label: {
+                VStack(alignment: .leading, spacing: 0) {
+                    ZStack {
+                        Rectangle().fill(theme.neutral300)
+                        Image(systemName: "photo")
+                            .font(.system(size: 22, weight: .regular))
+                            .foregroundStyle(theme.text.opacity(0.3))
+                    }
+                    .frame(width: 150, height: 84)
+                    .clipped()
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(item.routine.name)
-                    .font(GSFont.bold(14, relativeTo: .subheadline))
-                    .foregroundStyle(theme.text)
-                    .lineLimit(1)
-                Text("\(count) exercise\(count == 1 ? "" : "s")")
-                    .font(GSFont.body(11, relativeTo: .caption2))
-                    .foregroundStyle(theme.neutral500)
-
-                Button {
-                    Task { await clone(item.routine.id) }
-                } label: {
-                    Text("Add")
-                        .frame(maxWidth: .infinity)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(item.routine.name)
+                            .font(GSFont.bold(14, relativeTo: .subheadline))
+                            .foregroundStyle(theme.text)
+                            .lineLimit(1)
+                        Text("\(count) exercise\(count == 1 ? "" : "s")")
+                            .font(GSFont.body(11, relativeTo: .caption2))
+                            .foregroundStyle(theme.neutral500)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.top, 10)
                 }
-                .buttonStyle(GSSecondaryButtonStyle(fontSize: 12, horizontalPadding: 7, verticalPadding: 7))
-                .disabled(isCloning)
-                .opacity(isCloning ? 0.6 : 1)
-                .padding(.top, 4)
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+
+            Button {
+                Task { await clone(item.routine.id) }
+            } label: {
+                Text("Add")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(GSSecondaryButtonStyle(fontSize: 12, horizontalPadding: 7, verticalPadding: 7))
+            .disabled(isCloning)
+            .opacity(isCloning ? 0.6 : 1)
             .padding(10)
         }
         .frame(width: 150)
@@ -291,5 +313,25 @@ struct LibraryTabView: View {
         } catch {
             cloneErrorText = ErrorMapping.map(error).errorDescription
         }
+    }
+}
+
+// MARK: - PublicWorkout featured-init (redesign, 2026-07-23)
+//
+// `PublicWorkout`'s custom `init(from:)` suppresses its memberwise init; the
+// featured shelf holds plain `(routine, ownerUsername)` tuples but navigates
+// into `DiscoverWorkoutDetailView`, which takes a `PublicWorkout`. This init
+// bridges them: featured rows come from `routines.is_featured = true`
+// (RoutineRepository.publicRoutines), so `isFeatured` is true by construction;
+// the scoring extras are simply unset here (the detail screen already treats
+// them as optional).
+extension PublicWorkout {
+    init(featured routine: Routine, ownerUsername: String) {
+        self.routine = routine
+        self.ownerUsername = ownerUsername
+        self.isFeatured = true
+        self.defaultSort = nil
+        self.scoringMetrics = nil
+        self.scoringTopSetExerciseID = nil
     }
 }

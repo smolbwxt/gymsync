@@ -215,6 +215,9 @@ private struct RoutineDetailChoice: View {
     @Environment(AppState.self) private var appState
     @State private var exercises: [Exercise] = []
     @State private var routineExercises: [RoutineExercise] = []
+    /// Redesign (2026-07-23): best PR per exercise, feeding the projected
+    /// working-weight line on each row. Absent PR = no estimate (honest).
+    @State private var prByExercise: [UUID: PersonalRecord] = [:]
     @State private var loading = false
     @State private var errorText: String?
 
@@ -270,6 +273,21 @@ private struct RoutineDetailChoice: View {
                         .padding(14)
                     }
 
+                    // Redesign (2026-07-23): routine CONTENTS — the exercise
+                    // list, Discover-detail style, each row navigating to the
+                    // exercise's own page, with a projected working weight
+                    // from the user's best PR when one exists.
+                    if !routineExercises.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            GSSectionHeader("Exercises")
+                            VStack(spacing: 8) {
+                                ForEach(routineExercises.sorted { $0.position < $1.position }) { re in
+                                    routineExerciseRow(re)
+                                }
+                            }
+                        }
+                    }
+
                     // Canvas: Start Workout — primary CTA
                     NavigationLink {
                         WorkoutSessionView(routine: routine,
@@ -305,6 +323,62 @@ private struct RoutineDetailChoice: View {
         .task { await load() }
     }
 
+    // MARK: - Exercise rows (redesign 2026-07-23)
+
+    @ViewBuilder
+    private func routineExerciseRow(_ re: RoutineExercise) -> some View {
+        let ex = exercises.first { $0.id == re.exerciseID }
+        let pr = prByExercise[re.exerciseID]
+        let targetReps = re.targetReps.flatMap { Int($0.prefix(while: { $0.isNumber })) }
+        let projected = pr.flatMap { StatMath.projectedWeight(prWeight: $0.weight, prReps: $0.reps, targetReps: targetReps) }
+        let rowContent = HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(ex?.name ?? "Exercise")
+                    .font(GSFont.heading(15, relativeTo: .body))
+                    .foregroundStyle(theme.text)
+                if let ex {
+                    Text("\(ex.primaryMuscle.capitalized) · \(ex.equipment.capitalized)")
+                        .font(GSFont.body(11, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral700)
+                }
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 2) {
+                let parts: [String] = [
+                    re.targetSets.map { "\($0) sets" },
+                    re.targetReps.flatMap { $0.isEmpty ? nil : $0 }
+                ].compactMap { $0 }
+                if !parts.isEmpty {
+                    Text(parts.joined(separator: " · "))
+                        .font(GSFont.body(12, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral500)
+                }
+                if let projected {
+                    Text("~\(projected) lbs for you")
+                        .font(GSFont.bold(11.5, relativeTo: .caption2))
+                        .foregroundStyle(theme.accent)
+                }
+            }
+            if ex != nil {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(theme.neutral500)
+                    .padding(.top, 2)
+            }
+        }
+        .padding(12)
+        .background(theme.surface)
+        .cornerRadius(GSMetrics.radiusSm)
+        .contentShape(Rectangle())
+
+        if let ex {
+            NavigationLink { ExerciseDetailView(exercise: ex) } label: { rowContent }
+                .buttonStyle(.plain)
+        } else {
+            rowContent
+        }
+    }
+
     @MainActor
     private func load() async {
         loading = true
@@ -313,6 +387,16 @@ private struct RoutineDetailChoice: View {
             exercises = try await ExerciseRepository.fetchAll()
             if let (_, exs) = try await RoutineRepository.fetch(id: routine.id) {
                 routineExercises = exs
+            }
+            // Best PR per exercise (max weight) — same recents-window idiom
+            // ExerciseDetailView.load() uses. Best-effort: no PRs, no lines.
+            if let userID = appState.currentProfile?.id,
+               let recents = try? await PersonalRecordRepository.recent(userID: userID, limit: 500) {
+                var best: [UUID: PersonalRecord] = [:]
+                for pr in recents where (best[pr.exerciseID]?.weight ?? 0) < pr.weight {
+                    best[pr.exerciseID] = pr
+                }
+                prByExercise = best
             }
         } catch { errorText = ErrorMapping.map(error).errorDescription }
     }
