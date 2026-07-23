@@ -70,14 +70,16 @@ body{font-family:'Archivo',system-ui,sans-serif;background:var(--page);color:var
    its real weekday offset), month clusters separated by gutters. Dim dots,
    bright trained days, today halo; NO legend / NO group colors in the texture
    (attribution lives in the rows). */
-.calmonths{display:flex;justify-content:space-between;gap:14px}
-.calmonth{display:flex;flex-direction:column;gap:8px}
+.calmonths{display:flex;justify-content:center;gap:5px}
+.calmonth{display:flex;flex-direction:column;gap:8px;align-items:center;flex:1}
 .calmonth .cm-label{font-size:10.5px;color:var(--muted);font-weight:600}
 .cm-grid{display:grid;grid-template-columns:repeat(7,10px);gap:7px 4px;justify-items:center;align-items:center}
-.cm-grid i{width:5px;height:5px;border-radius:50%;background:#3a414b}
+.cm-grid i{display:block;width:5px;height:5px;border-radius:50%;background:#3a414b}
 .cm-grid i.on{width:6.5px;height:6.5px;background:var(--text)}
 .cm-grid i.today{box-shadow:0 0 0 2px var(--bg),0 0 0 3px var(--accent)}
 .cm-grid i.blank{background:transparent}
+.cm-grid i.fut{background:#22262e}
+.cm-grid i.up{width:6.5px;height:6.5px;background:var(--accent)}
 .up{margin-top:13px;border-top:1px solid var(--hair);padding-top:12px;display:flex;flex-direction:column;gap:11px}
 .upr{display:flex;align-items:center;gap:10px}.uav{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;font-size:10px;font-weight:700;color:#0a0b0d;flex:0 0 auto}
 .upr .ut{font-weight:700;font-size:13px}.upr .us{color:var(--muted);font-size:11px;margin-top:1px}.upr .ur{margin-left:auto;color:var(--muted);font-size:10.5px;font-weight:600;text-align:right}
@@ -166,21 +168,24 @@ const scr=(inner,active)=>`<div class="screen">${SB}<div class="sc">${inner}</di
 // May/Jun full months, Jul truncated at today. Sunday-first weeks.
 function calMonthsHTML(){
   const today=new Date(2026,6,16);
-  const trainedDows=new Set([1,4,6]); // Mon/Thu/Sat habit — vertical lines emerge
+  const trainedDows=new Set([1,4,6]);
+  const upcoming=new Set(["2026-6-18","2026-6-19"]); // Jul 18/19 scheduled
   let out="";
-  for(let back=2;back>=0;back--){
-    const m=new Date(today.getFullYear(),today.getMonth()-back,1);
+  for(let off=-1;off<=1;off++){
+    const m=new Date(today.getFullYear(),today.getMonth()+off,1);
     const label=m.toLocaleString("en-US",{month:"short"});
     const daysInMonth=new Date(m.getFullYear(),m.getMonth()+1,0).getDate();
-    const count=back===0?today.getDate():daysInMonth;
-    const offset=m.getDay(); // Sunday-first
+    const offset=m.getDay();
     let cells="";
     for(let i=0;i<offset;i++)cells+='<i class="blank"></i>';
-    for(let d=1;d<=count;d++){
+    for(let d=1;d<=daysInMonth;d++){
       const dt=new Date(m.getFullYear(),m.getMonth(),d);
-      const isToday=back===0&&d===today.getDate();
-      const on=trainedDows.has(dt.getDay())&&(d%2===1||dt.getDay()===1); // sparse-ish habit
-      cells+=`<i class="${isToday?"on today":on?"on":""}"></i>`;
+      const isToday=off===0&&d===today.getDate();
+      const future=dt>today;
+      const key=`${dt.getFullYear()}-${dt.getMonth()}-${d}`;
+      const on=!future&&trainedDows.has(dt.getDay())&&(d%2===1||dt.getDay()===1);
+      const cls=isToday?(on?"on today":"today"):upcoming.has(key)?"up":on?"on":future?"fut":"";
+      cells+=cls?`<i class="${cls}"></i>`:'<i></i>';
     }
     out+=`<div class="calmonth"><span class="cm-label">${label}</span><div class="cm-grid">${cells}</div></div>`;
   }
@@ -191,7 +196,7 @@ const HOME=scr(`
 <div class="cta"><div><div class="lbl">Join Push Day</div><div class="sub">Men for Christ · starts 7:15 PM</div></div><div class="play"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div></div>
 <button class="solo2"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>Start solo workout</button>
 <div class="row mt">
- <div class="card pr"><div class="tp"><svg viewBox="0 0 24 24" style="fill:none;stroke:currentColor;stroke-width:2.4"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M9 2h6"/></svg><span>Next session</span></div><div class="nm">Push Day</div><div class="vl big" style="font-size:26px">2:41:07</div><div class="dl">until check-in · opens 6:55 PM</div></div>
+ <div class="card pr"><div class="tp"><svg viewBox="0 0 24 24" style="fill:none;stroke:currentColor;stroke-width:2.4"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M9 2h6"/></svg><span>Next session</span></div><div class="nm">Push Day</div><div class="vl big" style="font-size:30px">2h</div><div class="dl">until check-in · opens 6:55 PM</div></div>
  <div class="card ring"><svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15.5" fill="none" stroke="var(--surface-2)" stroke-width="4"/><circle cx="18" cy="18" r="15.5" fill="none" stroke="var(--accent)" stroke-width="4" stroke-linecap="round" stroke-dasharray="97.4" stroke-dashoffset="14" transform="rotate(-90 18 18)"/></svg><div><div class="rn big">12</div><div class="rl">day streak<br><span style="color:var(--accent)">2 to badge</span></div></div></div>
 </div>
 <div class="card mt" style="display:flex;align-items:center;gap:13px;padding:16px">

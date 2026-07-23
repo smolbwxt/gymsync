@@ -89,20 +89,17 @@ struct TrainingCalendarWidget: View {
         let days: [Date]
     }
 
-    /// Last 3 calendar months, oldest first; the current month is truncated
-    /// at today.
+    /// v5 (user feedback 2026-07-23): previous / CURRENT / next month — the
+    /// current month sits centered, straddled by its neighbors, and renders
+    /// its FULL shape (no truncation at today; future days are dimmer, and
+    /// days with a scheduled upcoming session are marked in the accent).
     private var monthGroups: [MonthGroup] {
         let cal = Calendar.current
         let today = cal.startOfDay(for: .now)
         guard let thisMonthStart = cal.date(from: cal.dateComponents([.year, .month], from: today)) else { return [] }
-        return (0..<3).reversed().compactMap { back in
-            guard let monthStart = cal.date(byAdding: .month, value: -back, to: thisMonthStart) else { return nil }
-            let dayCount: Int
-            if back == 0 {
-                dayCount = (cal.dateComponents([.day], from: monthStart, to: today).day ?? 0) + 1
-            } else {
-                dayCount = cal.range(of: .day, in: .month, for: monthStart)?.count ?? 30
-            }
+        return [-1, 0, 1].compactMap { offset in
+            guard let monthStart = cal.date(byAdding: .month, value: offset, to: thisMonthStart) else { return nil }
+            let dayCount = cal.range(of: .day, in: .month, for: monthStart)?.count ?? 30
             let days = (0..<dayCount).compactMap { cal.date(byAdding: .day, value: $0, to: monthStart) }
             return MonthGroup(
                 id: monthStart,
@@ -112,28 +109,45 @@ struct TrainingCalendarWidget: View {
         }
     }
 
+    /// Days with a scheduled upcoming session — accent marks in the field.
+    private var upcomingDays: Set<Date> {
+        let cal = Calendar.current
+        var days: Set<Date> = []
+        for session in upcomingSessions {
+            guard let when = session.scheduledFor else { continue }
+            days.insert(cal.startOfDay(for: when))
+        }
+        return days
+    }
+
     private var monthGroupedField: some View {
         let trained = trainedDays
+        let upcoming = upcomingDays
         let today = Calendar.current.startOfDay(for: .now)
-        return HStack(alignment: .top, spacing: 0) {
-            ForEach(Array(monthGroups.enumerated()), id: \.element.id) { index, month in
-                if index > 0 { Spacer(minLength: 14) }   // the month gutter
-                VStack(alignment: .leading, spacing: 10) {
+        // Fixed 5pt gutters (~1/3 of v4's) with the trio centered as a block —
+        // the current month straddled symmetrically by its neighbors.
+        return HStack(alignment: .top, spacing: 5) {
+            ForEach(monthGroups) { month in
+                VStack(alignment: .center, spacing: 10) {
                     Text(month.label)
                         .font(GSFont.bodyMedium(11, relativeTo: .caption2))
                         .foregroundStyle(theme.neutral500)
-                    monthGrid(month, trained: trained, today: today)
+                    monthGrid(month, trained: trained, upcoming: upcoming, today: today)
                 }
+                .frame(maxWidth: .infinity)
             }
-            Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Training activity, last 3 months")
+        .accessibilityLabel("Training calendar — last month, this month, next month")
     }
 
     /// One month as a true mini-calendar: 7 weekday columns × week rows,
     /// day 1 offset to its actual weekday (locale first-weekday respected).
-    private func monthGrid(_ month: MonthGroup, trained: Set<Date>, today: Date) -> some View {
+    /// Dot semantics: trained = bright · scheduled upcoming = accent ·
+    /// past untrained = neutral400 · future = neutral300 (dimmer) ·
+    /// today = accent halo.
+    private func monthGrid(_ month: MonthGroup, trained: Set<Date>, upcoming: Set<Date>, today: Date) -> some View {
         let cal = Calendar.current
         // Leading blanks before day 1 (0-6), relative to the locale's week start.
         let offset = month.days.first.map { first in
@@ -148,20 +162,7 @@ struct TrainingCalendarWidget: View {
                         let dayIdx = row * 7 + column - offset
                         if dayIdx >= 0 && dayIdx < month.days.count {
                             let day = month.days[dayIdx]
-                            let isTrained = trained.contains(day)
-                            Circle()
-                                // neutral400 (not 300): at 5px the darker step
-                                // vanished against the surface card.
-                                .fill(isTrained ? theme.text : theme.neutral400)
-                                .frame(width: isTrained ? 6.5 : 5, height: isTrained ? 6.5 : 5)
-                                .frame(width: 6.5, height: 6.5)
-                                // Today: faint accent halo so "now" is findable
-                                // without breaking the mono field.
-                                .overlay(
-                                    day == today
-                                        ? Circle().strokeBorder(theme.accent.opacity(0.8), lineWidth: 1).frame(width: 10.5, height: 10.5)
-                                        : nil
-                                )
+                            dot(for: day, trained: trained, upcoming: upcoming, today: today)
                         } else {
                             Color.clear.frame(width: 6.5, height: 6.5)
                         }
@@ -169,6 +170,28 @@ struct TrainingCalendarWidget: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func dot(for day: Date, trained: Set<Date>, upcoming: Set<Date>, today: Date) -> some View {
+        let isTrained = trained.contains(day)
+        let isUpcoming = upcoming.contains(day)
+        let isFuture = day > today
+        let fill: Color = isTrained ? theme.text
+            : isUpcoming ? theme.accent
+            : isFuture ? theme.neutral300      // future: dimmer
+            : theme.neutral400                 // past untrained (300 vanished at 5px)
+        let size: CGFloat = (isTrained || isUpcoming) ? 6.5 : 5
+        Circle()
+            .fill(fill)
+            .frame(width: size, height: size)
+            .frame(width: 6.5, height: 6.5)
+            // Today: faint accent halo so "now" is findable in the field.
+            .overlay(
+                day == today
+                    ? Circle().strokeBorder(theme.accent.opacity(0.8), lineWidth: 1).frame(width: 10.5, height: 10.5)
+                    : nil
+            )
     }
 
     // MARK: Upcoming rows

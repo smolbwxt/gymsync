@@ -455,40 +455,123 @@ struct HomeView: View {
         return now >= opensAt
     }
 
+    /// Gold ready-state palette — a STATUS color, deliberately independent of
+    /// the user's accent (spec §4's two-color-system discipline: status is a
+    /// third, fixed semantic).
+    private static let goldTop = Color.gsHex(0xF6C945)
+    private static let goldBottom = Color.gsHex(0xDCA426)
+    private static let goldInk = Color.gsHex(0x261A02)
+
+    @State private var checkInShimmer = false
+
     @ViewBuilder
     private var checkInWidget: some View {
-        GSCard(bordered: false) {
-            Group {
-                if let session = nextSession {
-                    // TimelineView re-evaluates every 30s so the countdown →
-                    // "Check in" flip happens while the screen sits open (the
-                    // countdown text itself is Text(timerInterval:), already
-                    // self-updating every second).
-                    TimelineView(.periodic(from: .now, by: 30)) { context in
-                        NavigationLink {
-                            LobbyView(session: session)
-                        } label: {
-                            checkInBody(session, now: context.date)
+        Group {
+            if let session = nextSession {
+                // TimelineView re-evaluates every 30s so the countdown units
+                // stay fresh and the countdown → gold flip happens while the
+                // screen sits open.
+                TimelineView(.periodic(from: .now, by: 30)) { context in
+                    NavigationLink {
+                        LobbyView(session: session)
+                    } label: {
+                        if checkInAvailable(session, now: context.date) {
+                            goldCheckInCard(session)
+                        } else {
+                            GSCard(bordered: false) {
+                                countdownBody(session, now: context.date)
+                                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                                    .padding(15)
+                            }
                         }
-                        .buttonStyle(.plain)
                     }
-                } else {
+                    .buttonStyle(.plain)
+                }
+            } else {
+                GSCard(bordered: false) {
                     checkInEmptyBody
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .padding(15)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(15)
         }
     }
 
-    @ViewBuilder
-    private func checkInBody(_ session: WorkoutSession, now: Date) -> some View {
-        let available = checkInAvailable(session, now: now)
+    /// The gold shimmering ready-state (user feedback 2026-07-23): when the
+    /// 20-minute window opens, the whole widget turns gold with a slow
+    /// diagonal shimmer sweep — unmissable "you can act now".
+    private func goldCheckInCard(_ session: WorkoutSession) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
-                Image(systemName: available ? "dot.radiowaves.left.and.right" : "clock")
+                Image(systemName: "dot.radiowaves.left.and.right")
                     .font(.system(size: 10, weight: .bold))
-                Text(available ? "CHECK-IN OPEN" : "NEXT SESSION")
+                Text("CHECK-IN OPEN")
+                    .font(GSFont.bold(10, relativeTo: .caption2))
+                    .tracking(1.3)
+            }
+            .foregroundStyle(Self.goldInk.opacity(0.75))
+
+            Text(routineLabel(for: session))
+                .font(GSFont.bold(14, relativeTo: .subheadline))
+                .foregroundStyle(Self.goldInk)
+                .lineLimit(1)
+                .padding(.top, 8)
+
+            HStack(spacing: 6) {
+                Text("Check in")
+                    .font(GSFont.bold(14, relativeTo: .subheadline))
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 12, weight: .bold))
+            }
+            .foregroundStyle(Color.gsHex(0xFFE9A8))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .background(Self.goldInk)
+            .cornerRadius(11)
+            .padding(.top, 10)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(15)
+        .background(
+            LinearGradient(colors: [Self.goldTop, Self.goldBottom],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+        )
+        // Shimmer: a soft diagonal highlight band sweeping across every ~2.4s.
+        .overlay(
+            GeometryReader { geo in
+                LinearGradient(colors: [.clear, .white.opacity(0.4), .clear],
+                               startPoint: .leading, endPoint: .trailing)
+                    .frame(width: 70)
+                    .rotationEffect(.degrees(22))
+                    .offset(x: checkInShimmer ? geo.size.width + 90 : -140)
+                    .animation(.linear(duration: 2.4).repeatForever(autoreverses: false),
+                               value: checkInShimmer)
+            }
+            .allowsHitTesting(false)
+        )
+        .cornerRadius(GSMetrics.radiusMd)
+        .onAppear { checkInShimmer = true }
+        .contentShape(Rectangle())
+    }
+
+    /// Compact countdown units (user feedback 2026-07-23): two significant
+    /// figures max — "3d", "12h", "45m" — targeting when check-in OPENS.
+    private func compactCountdown(to target: Date, from now: Date) -> String {
+        let seconds = max(0, target.timeIntervalSince(now))
+        let days = Int(seconds / 86400)
+        if days >= 1 { return "\(days)d" }
+        let hours = Int(seconds / 3600)
+        if hours >= 1 { return "\(hours)h" }
+        return "\(max(1, Int(ceil(seconds / 60))))m"
+    }
+
+    @ViewBuilder
+    private func countdownBody(_ session: WorkoutSession, now: Date) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: "clock")
+                    .font(.system(size: 10, weight: .bold))
+                Text("NEXT SESSION")
                     .font(GSFont.bold(10, relativeTo: .caption2))
                     .tracking(1.3)
             }
@@ -500,28 +583,12 @@ struct HomeView: View {
                 .lineLimit(1)
                 .padding(.top, 8)
 
-            if available {
-                // Window open — the widget's whole job becomes the action.
-                HStack(spacing: 6) {
-                    Text("Check in")
-                        .font(GSFont.bold(14, relativeTo: .subheadline))
-                    Image(systemName: "arrow.right")
-                        .font(.system(size: 12, weight: .bold))
-                }
-                .foregroundStyle(theme.bg)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 9)
-                .background(theme.accent)
-                .cornerRadius(11)
-                .padding(.top, 10)
-            } else if let opensAt = checkInOpensAt(session), opensAt > now {
-                // Live countdown to when CHECK-IN OPENS (not the start) —
-                // self-updating Text(timerInterval:), no Timer.
-                Text(timerInterval: now...opensAt, countsDown: true, showsHours: true)
-                    .font(GSFont.heading(24, relativeTo: .title2))
+            if let opensAt = checkInOpensAt(session), opensAt > now {
+                Text(compactCountdown(to: opensAt, from: now))
+                    .font(GSFont.heading(30, relativeTo: .title2))
                     .foregroundStyle(theme.text)
                     .monospacedDigit()
-                    .padding(.top, 6)
+                    .padding(.top, 5)
                 Text("until check-in · opens \(opensAt.formatted(date: .omitted, time: .shortened))")
                     .font(GSFont.body(10.5, relativeTo: .caption2))
                     .foregroundStyle(theme.neutral500)

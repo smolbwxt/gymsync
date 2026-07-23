@@ -90,22 +90,19 @@ struct ScheduleSessionView: View {
                     // WHO section
                     whoSection
 
-                    GSDivider()
-                        .padding(.horizontal, 16)
+                    Spacer().frame(height: 8)
 
                     // WHEN section
                     whenSection
 
-                    GSDivider()
-                        .padding(.horizontal, 16)
+                    Spacer().frame(height: 8)
 
                     // ROUTINE section
                     whatSection
 
                     // REPEATS section (Group-only)
                     if whoMode == .group {
-                        GSDivider()
-                            .padding(.horizontal, 16)
+                        Spacer().frame(height: 8)
                         repeatsSection
                     }
 
@@ -149,6 +146,7 @@ struct ScheduleSessionView: View {
                                 ? theme.neutral400
                                 : theme.accent
                         )
+                        .cornerRadius(GSMetrics.radiusSm)   // redesign: rounded CTA
                     }
                     .buttonStyle(.plain)
                     .disabled(isScheduleButtonDisabled || isScheduling)
@@ -217,25 +215,33 @@ struct ScheduleSessionView: View {
         .padding(.bottom, 14)
     }
 
+    // Redesign (user feedback 2026-07-23: "the old art style has persisted"):
+    // pill segments in a rounded surface container — same treatment as
+    // Library's segmented control.
     private var themedWhoSegment: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 3) {
             ForEach(WhoMode.allCases, id: \.self) { mode in
                 Button {
                     whoMode = mode
                 } label: {
                     Text(mode.rawValue)
-                        .font(GSFont.bold(11, relativeTo: .caption))
-                        .foregroundStyle(whoMode == mode ? theme.bg : theme.text)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 7)
+                        .font(GSFont.bold(12.5, relativeTo: .caption))
+                        .foregroundStyle(whoMode == mode ? theme.bg : theme.neutral700)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                        .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, minHeight: 40)
                         .background(whoMode == mode ? theme.accent : Color.clear)
-                        .frame(maxWidth: .infinity)
+                        .cornerRadius(9)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
         }
+        .padding(4)
         .background(theme.surface)
-        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
+        .cornerRadius(GSMetrics.radiusSm)   // redesign: rounded row
+        .cornerRadius(13)
     }
 
     @ViewBuilder
@@ -287,6 +293,7 @@ struct ScheduleSessionView: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 9)
                 .background(theme.surface)
+                .cornerRadius(GSMetrics.radiusSm)   // redesign: rounded row
                 .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
             }
         }
@@ -390,6 +397,7 @@ struct ScheduleSessionView: View {
                 .padding(.horizontal, 10)
                 .padding(.vertical, 9)
                 .background(theme.surface)
+                .cornerRadius(GSMetrics.radiusSm)   // redesign: rounded row
                 .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
             }
             .padding(.horizontal, 16)
@@ -427,6 +435,7 @@ struct ScheduleSessionView: View {
                 .padding(.vertical, 10)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(theme.surface)
+                .cornerRadius(GSMetrics.radiusSm)   // redesign: rounded row
                 .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
 
                 // Time tile
@@ -448,6 +457,7 @@ struct ScheduleSessionView: View {
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
                 .background(theme.surface)
+                .cornerRadius(GSMetrics.radiusSm)   // redesign: rounded row
                 .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
             }
             .padding(.horizontal, 16)
