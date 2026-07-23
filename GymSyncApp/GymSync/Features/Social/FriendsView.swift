@@ -159,8 +159,11 @@ struct FriendsView: View {
                                     await refresh()
                                 }
                             }
-                            .buttonStyle(GSSecondaryButtonStyle())
-                            .frame(width: 80)
+                            // Redesign fix (2026-07-23 screenshot: "Canc/el"
+                            // wrap): natural width at a compact scale instead
+                            // of squeezing the 16pt default into 80pt.
+                            .buttonStyle(GSSecondaryButtonStyle(fontSize: 13, horizontalPadding: 14, verticalPadding: 9))
+                            .fixedSize()
                         }
                         .listRowBackground(theme.surface)
                         .listRowSeparatorTint(theme.divider)

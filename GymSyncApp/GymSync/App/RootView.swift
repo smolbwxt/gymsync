@@ -28,6 +28,12 @@ struct RootView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var connectivity = ConnectivityMonitor.shared
 
+    // First-time walkthrough (redesign 2026-07-23, user-requested): shown once
+    // per device, the first time the signed-in main app appears (i.e. after
+    // sign-in + profile onboarding). Both Skip and "Get started" set the flag.
+    @AppStorage("hasSeenWalkthroughV1") private var hasSeenWalkthrough = false
+    @State private var showWalkthrough = false
+
     var body: some View {
         Group {
             switch auth.state {
@@ -42,6 +48,16 @@ struct RootView: View {
                 } else {
                     MainTabView()
                         .environment(appState)
+                        .onAppear {
+                            if !hasSeenWalkthrough { showWalkthrough = true }
+                        }
+                        .fullScreenCover(isPresented: $showWalkthrough) {
+                            WalkthroughView {
+                                hasSeenWalkthrough = true
+                                showWalkthrough = false
+                            }
+                            .environment(\.gsTheme, themeStore.current.withAccent(themeStore.accent))
+                        }
                 }
             }
         }

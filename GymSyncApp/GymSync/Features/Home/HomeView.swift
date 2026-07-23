@@ -326,6 +326,9 @@ struct HomeView: View {
         .contentShape(Rectangle())
     }
 
+    // Redesign fix (2026-07-23 screenshot): the solo button read as a
+    // translucent outline pill among solid widgets — now it IS a widget:
+    // solid surface fill, widget radius, no border.
     private var soloSecondaryButton: some View {
         Button {
             routinePickerPreselected = nil
@@ -340,16 +343,12 @@ struct HomeView: View {
                 Spacer(minLength: 0)
             }
             .foregroundStyle(theme.text)
-            .padding(.vertical, 16)
+            .padding(.vertical, 18)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .background(theme.surface.opacity(0.55))
-        .cornerRadius(GSMetrics.radiusSm)
-        .overlay(
-            RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
-                .strokeBorder(theme.divider, lineWidth: 1)
-        )
+        .background(theme.surface)
+        .cornerRadius(GSMetrics.radiusMd)
     }
 
     // MARK: - Schedule widget (declutter round: its own widget above the calendar)

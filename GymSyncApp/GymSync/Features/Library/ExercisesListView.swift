@@ -68,6 +68,11 @@ struct ExercisesListView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
             }
+            // Root cause of the "large gap" (2026-07-23 screenshot): a
+            // ScrollView is greedy in BOTH axes even when horizontal-only, so
+            // this row was splitting the leftover height with the List below.
+            // Pin it to its content height.
+            .fixedSize(horizontal: false, vertical: true)
             .background(theme.bg)
 
             if loading {
