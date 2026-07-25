@@ -39,6 +39,14 @@ final class ScreenshotTests: XCTestCase {
 
     private func launchApp() -> XCUIApplication {
         let app = XCUIApplication()
+        // Suppress the first-run walkthrough cover: RootView presents it off
+        // @AppStorage("hasSeenWalkthroughV1"), and a fresh CI simulator has it
+        // false. The covered tab buttons still EXIST in the AX hierarchy (so
+        // waitForTabBar passes) but aren't hittable — every tab tap then dies
+        // in kAXErrorCannotComplete scroll-to-visible. NSArgumentDomain sits
+        // first in UserDefaults.standard's search list, so this overrides
+        // without touching app code or persisted state.
+        app.launchArguments += ["-hasSeenWalkthroughV1", "YES"]
         var env = app.launchEnvironment
         // Sourced from the UI test *process's* environment — CI's
         // `xcodebuild test` step sets these via `env:`, which XCTest inherits
