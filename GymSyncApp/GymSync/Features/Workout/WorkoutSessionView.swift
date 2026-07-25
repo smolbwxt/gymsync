@@ -91,14 +91,43 @@ struct WorkoutSessionView: View {
     /// workout itself (see that function's catch block below).
     @State private var attemptOptInFailedText: String? = nil
 
-    private var currentRoutineExercise: RoutineExercise? {
-        guard currentExerciseIndex < routineExercises.count else { return nil }
-        return routineExercises[currentExerciseIndex]
+    /// Freeform (no-routine) session: exercises the lifter picks as they go.
+    /// Synthesized `RoutineExercise` values (no `routines` row exists — the
+    /// `routineID` is a throwaway UUID and never persisted; `set_logs` only
+    /// ever stores `exerciseID`) so the ENTIRE existing logging path —
+    /// header card, logged table, LogSetSheet, offline queue, PR detection,
+    /// rest timer — is reused unchanged instead of a parallel freeform path.
+    @State private var freeformExercises: [RoutineExercise] = []
+    @State private var showExercisePicker = false
+    @State private var pickerCatalog: [Exercise] = []
+
+    /// True for a session started with no routine (Home's "Start solo
+    /// workout" without picking one). Same condition the old placeholder
+    /// empty state used.
+    private var isFreeform: Bool { routineExercises.isEmpty }
+
+    /// The exercise list driving the whole screen — the routine's when there
+    /// is one, the lifter's running freeform picks otherwise.
+    private var activeExercises: [RoutineExercise] {
+        isFreeform ? freeformExercises : routineExercises
     }
+
+    private var currentRoutineExercise: RoutineExercise? {
+        guard currentExerciseIndex < activeExercises.count else { return nil }
+        return activeExercises[currentExerciseIndex]
+    }
+
+    /// Name lookups must span BOTH sources: `allExercises` is the routine's
+    /// own exercises (and is EMPTY on the freeform launch), while
+    /// `pickerCatalog` is the full catalog fetched only for freeform. A
+    /// freeform-picked exercise resolves solely through the latter — without
+    /// this union `currentExercise` stays nil and the screen never leaves
+    /// its empty state.
+    private var exerciseCatalog: [Exercise] { allExercises + pickerCatalog }
 
     private var currentExercise: Exercise? {
         guard let re = currentRoutineExercise else { return nil }
-        return allExercises.first { $0.id == re.exerciseID }
+        return exerciseCatalog.first { $0.id == re.exerciseID }
     }
 
     var body: some View {
@@ -219,6 +248,19 @@ struct WorkoutSessionView: View {
         }
         .task { await startIfNeeded() }
         .task { await loadDefaultRestSeconds() }
+        .task { await loadPickerCatalogIfFreeform() }
+        .sheet(isPresented: $showExercisePicker) {
+            // Reuses the picker built for the programs enrollment flow
+            // (Features/Library/ProgramViews.swift) rather than a second
+            // search-list implementation.
+            ExercisePickSheet(
+                exercises: pickerCatalog.isEmpty ? allExercises : pickerCatalog,
+                onPick: { exercise in
+                    addFreeformExercise(exercise)
+                    showExercisePicker = false
+                }
+            )
+        }
         .sheet(isPresented: $showLogSheet) {
             if let ex = currentExercise, let re = currentRoutineExercise {
                 LogSetSheet(
@@ -275,7 +317,7 @@ struct WorkoutSessionView: View {
 
                         restTimerRow
 
-                    } else if session != nil && routineExercises.isEmpty {
+                    } else if session != nil && activeExercises.isEmpty {
                         freeformEmptyState
                     } else {
                         HStack { Spacer(); ProgressView().tint(theme.accent); Spacer() }
@@ -309,8 +351,22 @@ struct WorkoutSessionView: View {
                     .buttonStyle(GSPrimaryButtonStyle())
                     .padding(.horizontal, 16)
                     .padding(.top, 10)
-                    .padding(.bottom, 22)
+                    // Freeform advances between exercises by hand — a routine
+                    // does it automatically off targetSets, so this control
+                    // only exists here.
+                    if isFreeform {
+                        Button {
+                            showExercisePicker = true
+                        } label: {
+                            Text("Next exercise")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(GSSecondaryButtonStyle(fontSize: 14, verticalPadding: 10))
+                        .padding(.horizontal, 16)
+                        .padding(.top, 8)
+                    }
                 }
+                .padding(.bottom, 22)
                 .background(theme.bg)
             }
         }
@@ -321,12 +377,17 @@ struct WorkoutSessionView: View {
     private func exerciseHeaderCard(ex: Exercise, re: RoutineExercise) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
-                Text("EXERCISE \(currentExerciseIndex + 1) OF \(routineExercises.count)")
+                // Freeform has no planned total — "EXERCISE 2" and a bare set
+                // counter, since "OF 2" would imply a plan the lifter never
+                // made (and would keep changing as they add exercises).
+                Text(isFreeform
+                     ? "EXERCISE \(currentExerciseIndex + 1)"
+                     : "EXERCISE \(currentExerciseIndex + 1) OF \(activeExercises.count)")
                     .font(GSFont.bodyMedium(10, relativeTo: .caption2))
                     .tracking(1.4)
                     .foregroundStyle(theme.bg.opacity(0.85))
                 Spacer()
-                Text("Set \(currentSetIndex) of \(re.targetSets ?? 1)")
+                Text(isFreeform ? "Set \(currentSetIndex)" : "Set \(currentSetIndex) of \(re.targetSets ?? 1)")
                     .font(GSFont.body(12, relativeTo: .caption))
                     .foregroundStyle(theme.bg.opacity(0.9))
             }
@@ -494,13 +555,20 @@ struct WorkoutSessionView: View {
     // Only the loaded-but-empty state renders this; the genuinely-loading
     // state (session == nil) still shows the spinner above.
     private var freeformEmptyState: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 10) {
             Text("Freeform session")
                 .font(GSFont.bold(16, relativeTo: .headline))
                 .foregroundStyle(theme.text)
-            Text("Set logging for freeform workouts is coming soon. Tap End to finish this session.")
+            Text("No routine — pick exercises as you go. Everything you log counts toward your stats and PRs.")
                 .font(GSFont.body(13, relativeTo: .caption))
                 .foregroundStyle(theme.neutral700)
+            Button {
+                showExercisePicker = true
+            } label: {
+                Text("Pick an exercise")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(GSPrimaryButtonStyle(fontSize: 14, verticalPadding: 12))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
@@ -530,7 +598,7 @@ struct WorkoutSessionView: View {
         let prExerciseIDs = Set(sessionPRs.map { $0.exerciseID })
         return order.map { exerciseID in
             let sets = setsByExercise[exerciseID] ?? []
-            let name = allExercises.first { $0.id == exerciseID }?.name ?? "Exercise"
+            let name = exerciseCatalog.first { $0.id == exerciseID }?.name ?? "Exercise"
             // Top-set value derives from completed sets only (excludes isFailed) — set
             // COUNT above still includes failed sets, matching penalty exclusion as-is.
             let topSet = sets.filter { !$0.isFailed }.max { ($0.weight ?? 0) < ($1.weight ?? 0) }
@@ -644,7 +712,7 @@ struct WorkoutSessionView: View {
     }
 
     private func exerciseName(for exerciseID: UUID) -> String {
-        allExercises.first { $0.id == exerciseID }?.name ?? "Exercise"
+        exerciseCatalog.first { $0.id == exerciseID }?.name ?? "Exercise"
     }
 
     @MainActor
@@ -790,6 +858,20 @@ struct WorkoutSessionView: View {
                 }
             }
 
+            // Freeform has no planned set count, so it must NEVER auto-advance
+            // or auto-end: `targetSets ?? 1` would fire after the very first
+            // set, walk past the (length-1) list, and end the workout. The
+            // lifter drives progression here — Log Set N+1, or "Next
+            // exercise", or Finish.
+            if isFreeform {
+                currentSetIndex += 1
+                let restSeconds = defaultRestSeconds
+                if restSeconds > 0 {
+                    restEndAt = Date().addingTimeInterval(TimeInterval(restSeconds))
+                }
+                return
+            }
+
             let targetSets = re.targetSets ?? 1
             if currentSetIndex >= targetSets {
                 currentSetIndex = 1
@@ -797,7 +879,7 @@ struct WorkoutSessionView: View {
             } else {
                 currentSetIndex += 1
             }
-            if currentExerciseIndex >= routineExercises.count {
+            if currentExerciseIndex >= activeExercises.count {
                 restEndAt = nil
                 await endSession()
             } else {
@@ -810,6 +892,41 @@ struct WorkoutSessionView: View {
                 }
             }
         } catch { errorText = ErrorMapping.map(error).errorDescription }
+    }
+
+    // MARK: - Freeform exercise picking
+
+    /// Appends a synthesized `RoutineExercise` for `exercise` and moves to
+    /// it. Nothing here is persisted — `set_logs` rows carry `exerciseID`
+    /// alone, so a freeform session needs no `routines`/`routine_exercises`
+    /// row to be fully recorded (and to feed PRs, stats, and program
+    /// baselines exactly like a routine-driven set).
+    @MainActor
+    private func addFreeformExercise(_ exercise: Exercise) {
+        let synthesized = RoutineExercise(
+            id: UUID(),
+            routineID: UUID(),
+            exerciseID: exercise.id,
+            position: freeformExercises.count + 1,
+            targetSets: nil,
+            targetReps: nil,
+            targetWeight: nil,
+            restSeconds: nil,
+            notes: nil
+        )
+        freeformExercises.append(synthesized)
+        currentExerciseIndex = freeformExercises.count - 1
+        currentSetIndex = 1
+        restEndAt = nil
+    }
+
+    /// The freeform picker needs the whole catalog; `allExercises` is only
+    /// the routine's own exercises on a routine-driven launch and is empty
+    /// on the Home no-routine path.
+    @MainActor
+    private func loadPickerCatalogIfFreeform() async {
+        guard isFreeform, pickerCatalog.isEmpty else { return }
+        pickerCatalog = (try? await ExerciseRepository.fetchAll()) ?? []
     }
 
     /// Show the full-screen, USER-DISMISSED PR celebration (p29) — no auto-timeout.

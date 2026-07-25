@@ -826,7 +826,9 @@ struct ProgramTemplateDetailView: View {
 
 // MARK: - ExercisePickSheet (minimal searchable list)
 
-private struct ExercisePickSheet: View {
+/// Internal (not private): `WorkoutSessionView`'s freeform exercise picking
+/// reuses this exact sheet rather than shipping a second search list.
+struct ExercisePickSheet: View {
     @Environment(\.gsTheme) private var theme
     let exercises: [Exercise]
     let onPick: (Exercise) -> Void
