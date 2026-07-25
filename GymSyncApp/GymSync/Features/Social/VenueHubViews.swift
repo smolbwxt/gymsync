@@ -23,8 +23,10 @@ struct AgeGateView: View {
     @State private var busy = false
 
     var body: some View {
+        // Top-anchored, not centered: this app's screens anchor content to
+        // the top (the Social empty-state feedback, 2026-07-23) and a
+        // vertically centered gate read as floating in the capture.
         VStack(alignment: .leading, spacing: 14) {
-            Spacer(minLength: 0)
             Image(systemName: "person.badge.shield.checkmark")
                 .font(.system(size: 34, weight: .regular))
                 .foregroundStyle(theme.accent)
@@ -56,7 +58,8 @@ struct AgeGateView: View {
             Spacer(minLength: 0)
         }
         .padding(20)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .padding(.top, 30)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(theme.bg)
     }
 }
@@ -334,9 +337,11 @@ struct VenueHubView: View {
                         .foregroundStyle(theme.accent)
                 }
             }
+            // "others" is load-bearing: presentMembers excludes you, so a
+            // bare "2 here right now" misreads as the total including you.
             Text(presentMembers.isEmpty
                  ? "Nobody's on the hub right now"
-                 : "\(presentMembers.count) here right now")
+                 : "\(presentMembers.count) other\(presentMembers.count == 1 ? "" : "s") here right now")
                 .font(GSFont.bodyMedium(14, relativeTo: .subheadline))
                 .foregroundStyle(theme.accent700)
         }
