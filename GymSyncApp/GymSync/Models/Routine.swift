@@ -217,8 +217,11 @@ enum RoutineRepository {
         /// encodeIfPresent (NOT the explicit-null treatment of the trio
         /// above): nil means "don't touch is_featured" — a non-curator's
         /// publish must never write the RLS-gated column at all, or the
-        /// whole UPDATE would 42501.
-        let isFeatured: Bool?
+        /// whole UPDATE would 42501. `var … = nil` (trailing, defaulted) for
+        /// the same memberwise-init reason as UserSettings.shareHeartRate:
+        /// pre-existing 3-arg call sites (PublishFieldsEncodingTests) keep
+        /// compiling unchanged.
+        var isFeatured: Bool? = nil
         enum CodingKeys: String, CodingKey {
             case defaultSort = "default_sort"
             case scoringMetrics = "scoring_metrics"
