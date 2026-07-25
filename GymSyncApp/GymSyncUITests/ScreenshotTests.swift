@@ -128,6 +128,23 @@ final class ScreenshotTests: XCTestCase {
         attachScreenshot(app, named: "app-tab-library.png")
     }
 
+    /// The Exercises SUB-tab list (search + chips + list) — added 2026-07-24:
+    /// this surface had no capture (only tab-library's default Routines view
+    /// and the pushed exercise-detail), which let the chips-row gap bug ship
+    /// twice without CI review catching it.
+    func testLibraryExercisesList() {
+        let app = launchApp()
+        guard waitForTabBar(app) else { return }
+        selectTab(app, label: "Library")
+        settle()
+        let exercisesSegment = app.buttons["Exercises"]
+        if exercisesSegment.waitForExistence(timeout: 10) {
+            exercisesSegment.tap()
+            settle()
+        }
+        attachScreenshot(app, named: "app-library-exercises.png")
+    }
+
     func testSocialTab() {
         let app = launchApp()
         guard waitForTabBar(app) else { return }
