@@ -100,6 +100,11 @@ struct ExercisesListView: View {
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
                 .background(theme.bg)
+                // Dock clearance — attached to the List itself, NOT a
+                // containing Group: on the container it cascades to the
+                // chips ScrollView above, inflating its fixedSize height by
+                // 88pt (the persistent gap in the 2026-07-24 screenshot).
+                .contentMargins(.bottom, 88, for: .scrollContent)
             }
         }
         .background(theme.bg)

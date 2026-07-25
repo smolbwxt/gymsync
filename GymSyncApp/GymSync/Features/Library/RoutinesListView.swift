@@ -67,6 +67,9 @@ struct RoutinesListView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(theme.bg)
+        // Dock clearance — on the List directly, not LibraryTabView's Group
+        // (the Group cascade inflated Exercises' chips row; see that view).
+        .contentMargins(.bottom, 88, for: .scrollContent)
         .sheet(isPresented: $showingBuilder) {
             NavigationStack {
                 RoutineBuilderView(editing: nil) { _ in

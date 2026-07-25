@@ -67,9 +67,13 @@ struct LibraryTabView: View {
                         CampaignsTabView()
                     }
                 }
-                // Dock clearance (user bug report) — the Group scopes the
-                // margin to the sub-tab lists only, not pushed destinations.
-                .contentMargins(.bottom, 88, for: .scrollContent)
+                // Dock clearance moved INTO each sub-tab view, attached to
+                // its outer List/ScrollView directly (HomeView:77's proven
+                // shape). On this Group it propagated to EVERY scrollable in
+                // the subtree — including ExercisesListView's fixedSize'd
+                // horizontal chips row, whose pinned height then grew by the
+                // 88pt bottom margin (user bug report 2026-07-24: "this gap
+                // still exists").
             }
             .background(theme.bg)
             .toolbar(.hidden, for: .navigationBar)   // redesign v2: in-content title above
@@ -146,6 +150,12 @@ struct LibraryTabView: View {
                     }
                     .padding(.horizontal, 16)
                 }
+                // This row renders inside RoutinesListView's List, which
+                // carries the 88pt dock margin — pin this horizontal
+                // scroller's vertical margins to zero so it can never
+                // inherit that margin into its own height (the exercises-tab
+                // chips-row bug, same shape).
+                .contentMargins(.vertical, 0, for: .scrollContent)
             }
 
             if let cloneErrorText {

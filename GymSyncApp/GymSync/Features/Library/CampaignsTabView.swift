@@ -116,6 +116,9 @@ struct CampaignsTabView: View {
             .padding(.bottom, 24)
         }
         .background(theme.bg)
+        // Dock clearance — on the ScrollView directly, not LibraryTabView's
+        // Group (the Group cascade inflated Exercises' chips row).
+        .contentMargins(.bottom, 88, for: .scrollContent)
         .task { await load() }
     }
 
