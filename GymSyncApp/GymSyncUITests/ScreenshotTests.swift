@@ -252,6 +252,9 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogCampaignsTab()          { captureCatalog("campaigns-tab") }
     func testCatalogCampaignDetailUnjoined() { captureCatalog("campaign-detail-unjoined") }
     func testCatalogCampaignDetailJoined()   { captureCatalog("campaign-detail-joined") }
+    func testCatalogProgramActive()          { captureCatalog("program-active") }
+    func testCatalogProgramDetail()          { captureCatalog("program-detail") }
+    func testCatalogProgramTemplateDetail()  { captureCatalog("program-template-detail") }
 
     // MARK: - Seeded deep-screen captures
     //

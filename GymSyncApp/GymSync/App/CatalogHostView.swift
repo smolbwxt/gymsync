@@ -49,6 +49,9 @@ enum CatalogScreen: String, CaseIterable {
     case campaignsTab = "campaigns-tab"
     case campaignDetailUnjoined = "campaign-detail-unjoined"
     case campaignDetailJoined = "campaign-detail-joined"
+    case programActive = "program-active"
+    case programDetail = "program-detail"
+    case programTemplateDetail = "program-template-detail"
 }
 
 struct CatalogHostView: View {
@@ -93,6 +96,9 @@ struct CatalogHostView: View {
             case .campaignsTab:               content_campaignsTab
             case .campaignDetailUnjoined:     content_campaignDetailUnjoined
             case .campaignDetailJoined:       content_campaignDetailJoined
+            case .programActive:              content_programActive
+            case .programDetail:              content_programDetail
+            case .programTemplateDetail:      content_programTemplateDetail
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -919,6 +925,65 @@ struct CatalogHostView: View {
                 catalogFixtureCuratedWorkouts: [Self.discoverFixtureMurph, Self.discoverFixturePushDay]
             )
         }
+    }
+
+    // MARK: Training Programs P1 fixtures
+
+    private static let programFixtureSquat = Exercise(
+        id: UUID(uuidString: "aaaaaaaa-1111-4111-8111-111111111111")!,
+        name: "Back Squat", slug: "back-squat", category: "strength",
+        primaryMuscle: "quads", secondaryMuscles: ["glutes"],
+        equipment: "barbell", defaultUnit: "lbs", demoVideoURL: nil
+    )
+
+    /// Week 3 of the March: started 15 days ago, one baseline lift.
+    private static let programFixtureEnrollment = ProgramEnrollment(
+        id: UUID(),
+        userID: campaignFixtureUserID,
+        templateSlug: "march-to-1rm",
+        focus: ProgramFocus(exerciseIDs: [programFixtureSquat.id]),
+        baseline: [programFixtureSquat.id.uuidString.lowercased(): 262.5],
+        startedOnString: SessionSeries.dayString(
+            for: Date.now.addingTimeInterval(-15 * 86400), in: .current),
+        weeks: 8,
+        endedAt: nil,
+        endedReason: nil,
+        createdAt: Date.now.addingTimeInterval(-15 * 86400)
+    )
+
+    // `program-active`: the campaigns tab with an enrolled program card on
+    // top — no NavigationStack, same reasoning as `content_campaignsTab`.
+    private var content_programActive: some View {
+        CampaignsTabView(
+            catalogFixtureActive: [Self.campaignFixtureActive],
+            catalogFixtureUpcoming: [Self.campaignFixtureUpcoming],
+            catalogFixtureProgram: Self.programFixtureEnrollment,
+            catalogFixtureProgramExercises: [Self.programFixtureSquat],
+            catalogFixtureProgramSessions: 1
+        )
+    }
+
+    // `program-detail`/`program-template-detail`: pushed screens that set
+    // `.navigationTitle` — NavigationStack wrapper required (same reasoning
+    // as `content_campaignDetailUnjoined`).
+    private var content_programDetail: some View {
+        var view = ProgramDetailView(
+            enrollment: Self.programFixtureEnrollment,
+            focusExercises: [Self.programFixtureSquat],
+            sessionsThisWeek: 1,
+            onChanged: {}
+        )
+        view.catalogSkipLoad = true
+        return NavigationStack { view }
+    }
+
+    private var content_programTemplateDetail: some View {
+        var view = ProgramTemplateDetailView(
+            template: ProgramTemplate.bySlug("march-to-1rm")!,
+            onEnrolled: {}
+        )
+        view.catalogSkipLoad = true
+        return NavigationStack { view }
     }
 }
 

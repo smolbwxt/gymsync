@@ -35,6 +35,14 @@ struct CampaignsTabView: View {
     @State private var loading = true
     @State private var errorText: String?
 
+    // Training Programs P1 (2026-07-24-training-programs-design.md): the
+    // self-assigned program surface shares this tab. Best-effort state — a
+    // programs fetch failure never blanks the campaigns content (and vice
+    // versa; see load()).
+    @State private var programEnrollment: ProgramEnrollment?
+    @State private var programFocusExercises: [Exercise] = []
+    @State private var programSessionsThisWeek = 0
+
     #if DEBUG
     /// Debug-only: true only via the catalog fixture init below — skips
     /// `load()`'s live network fetch entirely, same idiom as `DiscoverView.
@@ -50,9 +58,13 @@ struct CampaignsTabView: View {
                     HStack { Spacer(); ProgressView().tint(theme.accent); Spacer() }
                         .padding(.top, 60)
                 } else if let errorText {
+                    programSection
                     GSErrorCard(message: errorText) { Task { await load() } }
                         .padding(16)
                 } else if active.isEmpty && upcoming.isEmpty && past.isEmpty {
+                    programSection
+                    // Campaigns-only empty copy — the programs section above
+                    // means the tab itself is never truly empty anymore.
                     GSEmptyState(
                         icon: "flag.checkered",
                         title: "No campaigns right now",
@@ -60,6 +72,7 @@ struct CampaignsTabView: View {
                     )
                     .padding(.top, 40)
                 } else {
+                    programSection
                     if !active.isEmpty {
                         GSSectionHeader("Active")
                             .padding(.horizontal, 16)
@@ -120,6 +133,56 @@ struct CampaignsTabView: View {
         // Group (the Group cascade inflated Exercises' chips row).
         .contentMargins(.bottom, 88, for: .scrollContent)
         .task { await load() }
+    }
+
+    // MARK: - Programs section (Training Programs P1)
+
+    /// "Your program" card when enrolled, template gallery otherwise —
+    /// always ABOVE the campaigns content (spec "UI" section).
+    @ViewBuilder
+    private var programSection: some View {
+        if let enrollment = programEnrollment, let template = enrollment.template {
+            GSSectionHeader("Your program")
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 10)
+            NavigationLink {
+                ProgramDetailView(
+                    enrollment: enrollment,
+                    focusExercises: programFocusExercises,
+                    sessionsThisWeek: programSessionsThisWeek,
+                    onChanged: { Task { await load() } }
+                )
+            } label: {
+                ProgramCard(
+                    enrollment: enrollment,
+                    template: template,
+                    focusExercises: programFocusExercises,
+                    sessionsThisWeek: programSessionsThisWeek
+                )
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 6)
+        } else {
+            GSSectionHeader("Start a program")
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                .padding(.bottom, 10)
+            ForEach(ProgramTemplate.all) { template in
+                NavigationLink {
+                    ProgramTemplateDetailView(
+                        template: template,
+                        onEnrolled: { Task { await load() } }
+                    )
+                } label: {
+                    ProgramTemplateCard(template: template)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 6)
+            }
+        }
     }
 
     // MARK: - Row
@@ -192,6 +255,27 @@ struct CampaignsTabView: View {
         // active/upcoming screen, so it's a best-effort fetch outside the
         // primary do/catch above (empty on failure, no error surfaced).
         past = (try? await CampaignRepository.endedParticipated()) ?? []
+
+        // Programs (P1): best-effort, same isolation posture — a program
+        // fetch failure degrades to the template gallery, never an error.
+        programEnrollment = (try? await ProgramRepository.active()) ?? nil
+        if let enrollment = programEnrollment {
+            if let ids = enrollment.focus.exerciseIDs, !ids.isEmpty {
+                let all = (try? await ExerciseRepository.fetchAll()) ?? []
+                programFocusExercises = ids.compactMap { id in all.first { $0.id == id } }
+            } else {
+                programFocusExercises = []
+            }
+            if let userID = await SupabaseService.shared.currentUserID(),
+               let history = try? await SessionRepository.history(userID: userID, limit: 60) {
+                let week = ProgramMath.currentWeek(startedOn: enrollment.startedOn, weeks: enrollment.weeks)
+                let window = ProgramMath.weekWindow(startedOn: enrollment.startedOn, week: week)
+                programSessionsThisWeek = ProgramMath.sessionsCompleted(
+                    completionDates: history.compactMap(\.completedAt),
+                    window: window
+                )
+            }
+        }
         loading = false
     }
 }
@@ -208,10 +292,16 @@ extension CampaignsTabView {
     /// (not the synthesized memberwise one) because `_active`/`_upcoming`
     /// are `private @State` — only reachable from an initializer in this
     /// same file.
-    init(catalogFixtureActive active: [Campaign], catalogFixtureUpcoming upcoming: [Campaign] = [], catalogFixturePast past: [Campaign] = []) {
+    init(catalogFixtureActive active: [Campaign], catalogFixtureUpcoming upcoming: [Campaign] = [], catalogFixturePast past: [Campaign] = [],
+         catalogFixtureProgram program: ProgramEnrollment? = nil,
+         catalogFixtureProgramExercises programExercises: [Exercise] = [],
+         catalogFixtureProgramSessions programSessions: Int = 0) {
         _active = State(initialValue: active)
         _upcoming = State(initialValue: upcoming)
         _past = State(initialValue: past)
+        _programEnrollment = State(initialValue: program)
+        _programFocusExercises = State(initialValue: programExercises)
+        _programSessionsThisWeek = State(initialValue: programSessions)
         _loading = State(initialValue: false)
         catalogSkipLoad = true
     }

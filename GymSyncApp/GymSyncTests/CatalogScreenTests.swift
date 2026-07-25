@@ -32,6 +32,9 @@ final class CatalogScreenTests: XCTestCase {
             "campaigns-tab",
             "campaign-detail-unjoined",
             "campaign-detail-joined",
+            "program-active",
+            "program-detail",
+            "program-template-detail",
         ]
         for id in ids {
             XCTAssertNotNil(CatalogScreen(rawValue: id), "missing catalog case: \(id)")
