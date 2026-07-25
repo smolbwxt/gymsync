@@ -26,22 +26,32 @@ final class CurationRepositoryTests: XCTestCase {
         XCTAssertEqual(fetched, ["boo", "ding"])
     }
 
-    func testNonCuratorCannotPublish() async throws {
+    /// Open publishing (20260728000008): any owner can publish public now —
+    /// it's the FEATURED spotlight that stays curator-managed. The CI user is
+    /// deliberately not a curator, so this covers both halves: publish
+    /// succeeds, self-feature is rejected by RLS. Swift twin of
+    /// curation_test.sql asserts 7/7b.
+    func testOpenPublishingButFeaturedIsCuratorGated() async throws {
         guard let uid = await SupabaseService.shared.currentUserID() else {
             throw XCTSkip("unconfigured")
         }
-        let sneaky = Routine(
-            id: UUID(), ownerID: uid, name: "Sneaky Publish Test",
+        let published = Routine(
+            id: UUID(), ownerID: uid, name: "Open Publish Test",
             description: nil, visibility: "public",
             createdAt: Date(), updatedAt: Date()
         )
+        try await RoutineRepository.save(published, exercises: [])
+        defer { Task { try? await RoutineRepository.delete(id: published.id) } }
+
         do {
-            try await RoutineRepository.save(sneaky, exercises: [])
-            // If the insert somehow succeeded, clean up and fail loudly.
-            try? await RoutineRepository.delete(id: sneaky.id)
-            XCTFail("non-curator publish must be rejected by RLS")
+            try await RoutineRepository.updatePublishFields(
+                routineID: published.id,
+                defaultSort: nil, scoringMetrics: nil,
+                scoringTopSetExerciseID: nil, isFeatured: true
+            )
+            XCTFail("non-curator self-feature must be rejected by RLS")
         } catch {
-            // expected: RLS violation surfaces as an error
+            // expected: is_featured WITH CHECK violation surfaces as an error
         }
     }
 
