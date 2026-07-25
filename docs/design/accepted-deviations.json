@@ -134,5 +134,17 @@
   {
     "screenId": "program-template-detail",
     "reason": "Training Programs P1: the enrollment flow — About, the full percent-form plan before commitment, Focus picker rows (surface rows -> ExercisePickSheet), Baseline section (auto est-1RM from history, or one-real-set manual entry), Start CTA. Awaiting a designer frame."
+  },
+  {
+    "screenId": "venue-local-tab",
+    "reason": "Venue Hubs H1 (2026-07-25-venue-hubs-design.md): the Social > Local list — nearby venues sorted by client-computed distance, verified-venue seal, 'Add your gym' claim CTA. Phase V was benched before any design frame existed, so this is system-designed in Onyx from GSCard/GSSectionHeader/GSEmptyState with no new chrome. Awaiting a designer frame."
+  },
+  {
+    "screenId": "venue-hub",
+    "reason": "Venue Hubs H1: one venue's hub — header presence count, check-in CTA / 'I'm here' visibility toggle, Who's here (opt-in + 4h recency, block-excluded server-side), and the month leaderboard (venue_month_leaderboard RPC, volume via StatMath.compactNumber). Leaderboard rows mirror GroupRecapView's rank+avatar+name+metric shape with GSInitialsAvatar, the same substitution discover-detail/top-lifters already made. Awaiting a designer frame."
+  },
+  {
+    "screenId": "venue-age-gate",
+    "reason": "Venue Hubs H1: the self-attested 18+ gate (source spec 6.7) shown on first Local entry; Decline returns to Social with the rest of the app unaffected. Also covers the sibling 'meet in a public area' advisory sheet (VenueAdvisoryView), which shares this layout and is shown once after a first successful check-in. NOTE: SMS phone verification, listed as a mandatory safety measure in the source spec, is NOT built — user-benched (Twilio cost + legal review); see the design doc's Scoping decisions table."
   }
 ]

@@ -52,6 +52,9 @@ enum CatalogScreen: String, CaseIterable {
     case programActive = "program-active"
     case programDetail = "program-detail"
     case programTemplateDetail = "program-template-detail"
+    case venueLocalTab = "venue-local-tab"
+    case venueHub = "venue-hub"
+    case venueAgeGate = "venue-age-gate"
 }
 
 struct CatalogHostView: View {
@@ -99,6 +102,9 @@ struct CatalogHostView: View {
             case .programActive:              content_programActive
             case .programDetail:              content_programDetail
             case .programTemplateDetail:      content_programTemplateDetail
+            case .venueLocalTab:              content_venueLocalTab
+            case .venueHub:                   content_venueHub
+            case .venueAgeGate:               content_venueAgeGate
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -984,6 +990,67 @@ struct CatalogHostView: View {
         )
         view.catalogSkipLoad = true
         return NavigationStack { view }
+    }
+
+    // MARK: Venue Hubs H1 fixtures
+
+    private static let venueFixtureID = UUID(uuidString: "50000000-0000-4000-d000-0000000004a1")!
+    private static let venueFixtureMeID = UUID(uuidString: "60000000-0000-4000-d000-0000000004b1")!
+
+    private static let venueFixture = Venue(
+        id: venueFixtureID,
+        name: "Iron Temple",
+        latitude: 34.0195, longitude: -118.4912,
+        radiusMeters: 200,
+        createdBy: venueFixtureMeID,
+        isVerified: true,
+        bannerURL: nil
+    )
+
+    private static let venueFixtureSecond = Venue(
+        id: UUID(), name: "Sunset Barbell Club",
+        latitude: 34.0300, longitude: -118.5000,
+        radiusMeters: 200, createdBy: UUID(), isVerified: false, bannerURL: nil
+    )
+
+    private static let venueFixtureMembers: [VenueMember] = [
+        VenueMember(venueID: venueFixtureID, userID: venueFixtureMeID,
+                    isVisibleOnHub: true, lastSeenAt: Date.now.addingTimeInterval(-600)),
+        VenueMember(venueID: venueFixtureID, userID: UUID(uuidString: "60000000-0000-4000-d000-0000000004b2")!,
+                    isVisibleOnHub: true, lastSeenAt: Date.now.addingTimeInterval(-1800)),
+        VenueMember(venueID: venueFixtureID, userID: UUID(uuidString: "60000000-0000-4000-d000-0000000004b3")!,
+                    isVisibleOnHub: true, lastSeenAt: Date.now.addingTimeInterval(-3600)),
+    ]
+
+    private static let venueFixtureBoard: [VenueLeaderboardRow] = [
+        VenueLeaderboardRow(userID: venueFixtureMembers[1].userID, username: "coach_dana", volume: 128_400),
+        VenueLeaderboardRow(userID: venueFixtureMeID, username: "you", volume: 96_250),
+        VenueLeaderboardRow(userID: venueFixtureMembers[2].userID, username: "sam_t", volume: 71_900),
+    ]
+
+    // No NavigationStack: `LocalHubsView`'s own title is owned by the
+    // Social tab's stack when live (same as content_campaignsTab).
+    private var content_venueLocalTab: some View {
+        NavigationStack {
+            LocalHubsView(catalogFixtureVenues: [Self.venueFixture, Self.venueFixtureSecond])
+        }
+    }
+
+    private var content_venueHub: some View {
+        NavigationStack {
+            VenueHubView(
+                venue: Self.venueFixture,
+                here: nil,
+                catalogFixtureMembers: Self.venueFixtureMembers,
+                catalogFixtureBoard: Self.venueFixtureBoard,
+                catalogFixtureMine: Self.venueFixtureMembers[0],
+                catalogSkipLoad: true
+            )
+        }
+    }
+
+    private var content_venueAgeGate: some View {
+        AgeGateView(onConfirm: {}, onDecline: {})
     }
 }
 

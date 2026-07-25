@@ -149,6 +149,39 @@ struct SocialTabView: View {
                             .padding(.horizontal, 16)
                             .padding(.top, 12)
 
+                            // Local hubs row (Venue Hubs H1) — the spec's
+                            // "Social tab gets a Local section" (:691),
+                            // mirroring the Friends row's card idiom above.
+                            NavigationLink {
+                                LocalHubsView()
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "mappin.and.ellipse")
+                                        .font(.system(size: 18, weight: .regular))
+                                        .foregroundStyle(theme.text)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text("Local")
+                                            .font(GSFont.bold(14, relativeTo: .headline))
+                                            .foregroundStyle(theme.text)
+                                        Text("Who's at your gym")
+                                            .font(GSFont.body(11, relativeTo: .caption))
+                                            .foregroundStyle(theme.neutral500)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(theme.neutral500)
+                                }
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 13)
+                                .background(theme.surface)
+                                .cornerRadius(GSMetrics.radiusSm)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 8)
+
                             // Groups header
                             GSSectionHeader("Your groups")
                                 .padding(.horizontal, 16)
