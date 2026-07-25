@@ -333,6 +333,76 @@ enum PublicWorkoutRepository {
         } catch { throw ErrorMapping.map(error) }
     }
 
+    // MARK: - Stars (20260728000008 — open publishing round)
+    //
+    // GitHub-style popularity signal: one row per (routine, user) in
+    // `routine_stars`. RLS: readable by any authenticated user, star only as
+    // yourself and only PUBLIC routines, unstar your own.
+
+    private struct StarRow: Decodable {
+        let routineID: UUID
+        enum CodingKeys: String, CodingKey { case routineID = "routine_id" }
+    }
+
+    static func starCounts(routineIDs: [UUID]) async throws -> [UUID: Int] {
+        guard !routineIDs.isEmpty else { return [:] }
+        do {
+            let rows: [StarRow] = try await client
+                .from("routine_stars")
+                .select("routine_id")
+                .in("routine_id", values: routineIDs.map(\.uuidString))
+                .execute()
+                .value
+            return Dictionary(grouping: rows.map(\.routineID), by: { $0 }).mapValues(\.count)
+        } catch { throw ErrorMapping.map(error) }
+    }
+
+    /// Which of `routineIDs` the CURRENT user has starred.
+    static func myStarred(routineIDs: [UUID]) async throws -> Set<UUID> {
+        guard !routineIDs.isEmpty,
+              let userID = await SupabaseService.shared.currentUserID() else { return [] }
+        do {
+            let rows: [StarRow] = try await client
+                .from("routine_stars")
+                .select("routine_id")
+                .eq("user_id", value: userID.uuidString)
+                .in("routine_id", values: routineIDs.map(\.uuidString))
+                .execute()
+                .value
+            return Set(rows.map(\.routineID))
+        } catch { throw ErrorMapping.map(error) }
+    }
+
+    static func star(routineID: UUID) async throws {
+        guard let userID = await SupabaseService.shared.currentUserID() else {
+            throw GymSyncError.unauthorized
+        }
+        struct Insert: Encodable {
+            let routineID: UUID, userID: UUID
+            enum CodingKeys: String, CodingKey {
+                case routineID = "routine_id", userID = "user_id"
+            }
+        }
+        do {
+            try await client.from("routine_stars")
+                .insert(Insert(routineID: routineID, userID: userID))
+                .execute()
+        } catch { throw ErrorMapping.map(error) }
+    }
+
+    static func unstar(routineID: UUID) async throws {
+        guard let userID = await SupabaseService.shared.currentUserID() else {
+            throw GymSyncError.unauthorized
+        }
+        do {
+            try await client.from("routine_stars")
+                .delete()
+                .eq("routine_id", value: routineID.uuidString)
+                .eq("user_id", value: userID.uuidString)
+                .execute()
+        } catch { throw ErrorMapping.map(error) }
+    }
+
     /// Bulk lookup by routine id — backs `CampaignDetailView`'s curated
     /// workout list (Phase C Task 3, Flow 8 spec :867, "curated workout
     /// list"; the header comment this task closes lives in

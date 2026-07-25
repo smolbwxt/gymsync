@@ -22,6 +22,9 @@ struct RoutineBuilderView: View {
     // Save honors this (private vs public); UI toggle below (curator-only),
     // bootstrap-seeded from `editing?.visibility` in `load()`.
     @State private var publishAsFeatured = false
+    /// Curator-only spotlight flag (open-publishing round 20260728000008):
+    /// drives `routines.is_featured` via the targeted publish-fields UPDATE.
+    @State private var featureOnSpotlight = false
 
     // Publish fields (Phase L Task 4) — VISIBLE ONLY while publishAsFeatured
     // is on (`publishFieldsSection`), written via a separate targeted UPDATE
@@ -108,59 +111,18 @@ struct RoutineBuilderView: View {
                 }
                 .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
 
-                // Curator-only publish toggle (frame 3's Featured shelf is
-                // fed by this) — visible only to curators; server-enforced
-                // via RLS regardless (migration 20260717000003), this is
-                // just the UI gate. Bordered row, GSToggle idiom reused from
-                // NotificationPreferencesView's toggleRow. Placed above the
-                // Save action (Save itself lives in the nav toolbar).
-                if appState.currentProfile?.isCurator == true {
-                    publishToggleRow
+                // Open-publishing round (20260728000008, user decision
+                // 2026-07-24): the publish toggle is for EVERYONE now — any
+                // owner may publish public (searchable in Discover; RLS
+                // matches). The FEATURED spotlight + scoring/sort pickers
+                // remain curator-only (is_featured is RLS-gated to curators).
+                // This also subsumes the old demoted-curator escape-hatch
+                // branch: the toggle is simply always available.
+                publishToggleRow
 
-                    // Phase L Task 4: default_sort / scoring_metrics /
-                    // top-set-exercise pickers — VISIBLE ONLY when
-                    // publishing, per the brief. Placed directly below the
-                    // toggle it's gated on, same "this row only makes sense
-                    // in that state" placement as the toggle itself relative
-                    // to curator-gating above it.
-                    if publishAsFeatured {
-                        publishFieldsSection
-                    }
-                } else if publishAsFeatured {
-                    // Task 6 item 10 (reliability/debt roll-up —
-                    // .superpowers/sdd/progress.md:346, "demoted curator's
-                    // still-public routine can never save again under the
-                    // RLS WITH CHECK"). `routines`' UPDATE policy WITH CHECK
-                    // ("users can update their own routines",
-                    // 20260717000003_curation.sql:63-69) re-evaluates on
-                    // EVERY update to the row, not just ones that touch
-                    // `visibility` — so once `is_curator` is revoked (server-
-                    // side only; there is no client demotion flow at all
-                    // today), any further save of a routine that's STILL
-                    // `visibility='public'` fails outright, even a plain
-                    // name/description edit, because the toggle section
-                    // above (and the only way to flip `publishAsFeatured`
-                    // back to false) was entirely hidden for a non-curator.
-                    // That left a genuine dead end reachable only by a
-                    // direct DB fix — no client escape hatch existed.
-                    //
-                    // Fix: still show the toggle (NOT the curator-only
-                    // scoring/sort pickers below it — those stay
-                    // curator-gated) whenever the routine being edited is
-                    // CURRENTLY public, regardless of the editor's current
-                    // curator status. This matches what the DB policy
-                    // already permits — `visibility <> 'public'` passes the
-                    // WITH CHECK unconditionally — so unpublishing was
-                    // always allowed server-side, only the UI never offered
-                    // it. A demoted curator can now unpublish their own
-                    // routine (unblocking every other edit) but still
-                    // cannot re-publish or edit the scoring/sort fields
-                    // while it stays public — both correctly require being
-                    // a curator again, which only a service-role/superuser
-                    // action can restore. Intentional residual, not a bug:
-                    // there is still no self-serve republish path, by
-                    // design (curator status is not user-grantable).
-                    publishToggleRow
+                if appState.currentProfile?.isCurator == true, publishAsFeatured {
+                    featuredToggleRow
+                    publishFieldsSection
                 }
 
                 if let errorText {
@@ -225,15 +187,36 @@ struct RoutineBuilderView: View {
     private var publishToggleRow: some View {
         HStack(alignment: .center, spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Publish as Featured")
+                Text("Publish to Discover")
                     .font(GSFont.bodyMedium(14, relativeTo: .subheadline))
                     .foregroundStyle(theme.text)
-                Text("Visible to every Gym Sync user")
+                Text("Anyone can find, star, and attempt this routine")
                     .font(GSFont.body(12, relativeTo: .caption))
                     .foregroundStyle(theme.neutral700)
             }
             Spacer(minLength: 8)
-            GSToggle(isOn: $publishAsFeatured, label: "Publish as Featured")
+            GSToggle(isOn: $publishAsFeatured, label: "Publish to Discover")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 12)
+        .frame(minHeight: 44)
+        .background(theme.surface)
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
+    }
+
+    /// Curator-only: the Library spotlight flag (`is_featured`).
+    private var featuredToggleRow: some View {
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Feature in Library spotlight")
+                    .font(GSFont.bodyMedium(14, relativeTo: .subheadline))
+                    .foregroundStyle(theme.text)
+                Text("Curator-managed — shows on the Featured shelf")
+                    .font(GSFont.body(12, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral700)
+            }
+            Spacer(minLength: 8)
+            GSToggle(isOn: $featureOnSpotlight, label: "Feature in Library spotlight")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 12)
@@ -647,6 +630,7 @@ struct RoutineBuilderView: View {
                 // at their empty/unset @State defaults.
                 if appState.currentProfile?.isCurator == true,
                    let fields = try await RoutineRepository.publishFields(routineID: editing.id) {
+                    featureOnSpotlight = fields.isFeatured ?? false
                     defaultSort = fields.defaultSort.flatMap { DiscoverWorkoutDetailView.SortMetric(rawValue: $0) }
                     scoringMetrics = Set((fields.scoringMetrics ?? [])
                         .compactMap { DiscoverWorkoutDetailView.SortMetric(rawValue: $0) })
@@ -712,7 +696,9 @@ struct RoutineBuilderView: View {
                     routineID: routineID,
                     defaultSort: defaultSort?.rawValue,
                     scoringMetrics: effectiveMetrics.isEmpty ? nil : effectiveMetrics.map(\.rawValue),
-                    scoringTopSetExerciseID: effectiveMetrics.contains(.topSet) ? validTopSetID : nil
+                    scoringTopSetExerciseID: effectiveMetrics.contains(.topSet) ? validTopSetID : nil,
+                    // nil for non-curators: never touch the RLS-gated column.
+                    isFeatured: appState.currentProfile?.isCurator == true ? featureOnSpotlight : nil
                 )
             }
 

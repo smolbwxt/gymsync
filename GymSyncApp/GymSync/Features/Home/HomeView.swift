@@ -262,6 +262,9 @@ struct HomeView: View {
     private var todaysSession: WorkoutSession? {
         upcomingSessions.first { session in
             guard let when = session.scheduledFor else { return false }
+            // Same 30-min missed cutoff as the check-in widget: a missed
+            // session must not keep the "Join …" hero alive all day.
+            guard session.state == "in_progress" || Date.now <= when.addingTimeInterval(30 * 60) else { return false }
             return Calendar.current.isDateInToday(when)
         }
     }
@@ -433,8 +436,19 @@ struct HomeView: View {
         .padding(.bottom, 12)
     }
 
-    /// The soonest upcoming session (repository order is soonest-first).
-    private var nextSession: WorkoutSession? { upcomingSessions.first }
+    /// The soonest ACTIONABLE upcoming session (repository order is
+    /// soonest-first). A session is considered MISSED — and skipped — 30
+    /// minutes after its scheduled start unless it actually went live
+    /// (user feedback 2026-07-24: the gold shimmer ran forever on missed
+    /// events). The widget then falls through to the next session, or the
+    /// empty state.
+    private func nextActionableSession(now: Date) -> WorkoutSession? {
+        upcomingSessions.first { session in
+            if session.state == "in_progress" { return true }
+            guard let when = session.scheduledFor else { return true }
+            return now <= when.addingTimeInterval(30 * 60)
+        }
+    }
 
     /// When check-in opens: 20 minutes before the scheduled start — the SAME
     /// rule LobbyView.canCheckIn enforces (server-enforced too, migration
@@ -465,27 +479,26 @@ struct HomeView: View {
 
     @ViewBuilder
     private var checkInWidget: some View {
-        Group {
-            if let session = nextSession {
-                // TimelineView re-evaluates every 30s so the countdown units
-                // stay fresh and the countdown → gold flip happens while the
-                // screen sits open.
-                TimelineView(.periodic(from: .now, by: 30)) { context in
-                    NavigationLink {
-                        LobbyView(session: session)
-                    } label: {
-                        if checkInAvailable(session, now: context.date) {
-                            goldCheckInCard(session)
-                        } else {
-                            GSCard(bordered: false) {
-                                countdownBody(session, now: context.date)
-                                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                                    .padding(15)
-                            }
+        // TimelineView OUTERMOST (missed-cutoff fix): the candidate itself is
+        // re-selected every 30s, so a session that crosses the 30-min missed
+        // line drops out live — the gold shimmer can no longer run forever on
+        // an event nobody started.
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            if let session = nextActionableSession(now: context.date) {
+                NavigationLink {
+                    LobbyView(session: session)
+                } label: {
+                    if checkInAvailable(session, now: context.date) {
+                        goldCheckInCard(session)
+                    } else {
+                        GSCard(bordered: false) {
+                            countdownBody(session, now: context.date)
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                                .padding(15)
                         }
                     }
-                    .buttonStyle(.plain)
                 }
+                .buttonStyle(.plain)
             } else {
                 GSCard(bordered: false) {
                     checkInEmptyBody

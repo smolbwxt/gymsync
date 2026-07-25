@@ -26,6 +26,8 @@ struct DiscoverView: View {
 
     @State private var workouts: [PublicWorkout] = []
     @State private var attemptCounts: [UUID: Int] = [:]
+    /// Star counts per routine (open-publishing round) — drives the sort + badge.
+    @State private var starCounts: [UUID: Int] = [:]
     @State private var loading = true
     @State private var errorText: String?
 
@@ -169,10 +171,21 @@ struct DiscoverView: View {
                     }
                 }
 
-                if let count = attemptCounts[workout.id], count > 0 {
-                    Text("\(count) attempt\(count == 1 ? "" : "s")")
-                        .font(GSFont.body(10, relativeTo: .caption2))
-                        .foregroundStyle(theme.neutral500)
+                HStack(spacing: 8) {
+                    if let stars = starCounts[workout.id], stars > 0 {
+                        HStack(spacing: 3) {
+                            Image(systemName: "star.fill")
+                                .font(.system(size: 9))
+                            Text("\(stars)")
+                        }
+                        .font(GSFont.bodyMedium(10, relativeTo: .caption2))
+                        .foregroundStyle(theme.accent)
+                    }
+                    if let count = attemptCounts[workout.id], count > 0 {
+                        Text("\(count) attempt\(count == 1 ? "" : "s")")
+                            .font(GSFont.body(10, relativeTo: .caption2))
+                            .foregroundStyle(theme.neutral500)
+                    }
                 }
                 Spacer(minLength: 0)
             }
@@ -209,9 +222,20 @@ struct DiscoverView: View {
         defer { loading = false }
         do {
             let rows = try await PublicWorkoutRepository.publicWorkouts()
-            workouts = rows
             attemptCounts = (try? await PublicWorkoutRepository.attemptCounts(
                 routineIDs: rows.map(\.id))) ?? [:]
+            // Stars (open-publishing round): the popularity signal. Sort:
+            // curator spotlight first, then stars, then attempts, then newest.
+            starCounts = (try? await PublicWorkoutRepository.starCounts(
+                routineIDs: rows.map(\.id))) ?? [:]
+            workouts = rows.sorted { a, b in
+                if a.isFeatured != b.isFeatured { return a.isFeatured }
+                let sa = starCounts[a.id] ?? 0, sb = starCounts[b.id] ?? 0
+                if sa != sb { return sa > sb }
+                let aa = attemptCounts[a.id] ?? 0, ab = attemptCounts[b.id] ?? 0
+                if aa != ab { return aa > ab }
+                return a.routine.createdAt > b.routine.createdAt
+            }
             errorText = nil
         } catch let error as GymSyncError {
             errorText = error.errorDescription

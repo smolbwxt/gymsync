@@ -44,6 +44,10 @@ struct DiscoverWorkoutDetailView: View {
     @State private var allExercises: [Exercise] = []
     /// Redesign (2026-07-23): best PR per exercise → projected working weight.
     @State private var prByExercise: [UUID: PersonalRecord] = [:]
+    // Stars (open-publishing round 2026-07-24).
+    @State private var starCount = 0
+    @State private var isStarred = false
+    @State private var starBusy = false
     @State private var leaderboardEntries: [LeaderboardEntryRow] = []
     @State private var loading = true
     @State private var errorText: String?
@@ -203,6 +207,35 @@ struct DiscoverWorkoutDetailView: View {
             Text("by \(workout.ownerUsername)")
                 .font(GSFont.body(12, relativeTo: .caption))
                 .foregroundStyle(theme.neutral500)
+
+            // Star — the GitHub-style popularity signal.
+            Button {
+                Task { await toggleStar() }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: isStarred ? "star.fill" : "star")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(isStarred ? "Starred" : "Star")
+                        .font(GSFont.bold(13, relativeTo: .subheadline))
+                    Text("\(starCount)")
+                        .font(GSFont.bold(13, relativeTo: .subheadline))
+                        .foregroundStyle(theme.neutral500)
+                        .monospacedDigit()
+                }
+                .foregroundStyle(isStarred ? theme.accent : theme.text)
+                .padding(.horizontal, 13)
+                .padding(.vertical, 8)
+                .background(theme.surface)
+                .cornerRadius(11)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 11)
+                        .strokeBorder(isStarred ? theme.accent : theme.divider, lineWidth: 1)
+                )
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(starBusy)
+            .padding(.top, 2)
 
             if let description = workout.routine.description, !description.isEmpty {
                 Text(description)
@@ -544,6 +577,28 @@ struct DiscoverWorkoutDetailView: View {
         .padding(.vertical, 10)
     }
 
+    /// Optimistic star toggle — reverts on failure.
+    @MainActor
+    private func toggleStar() async {
+        guard !starBusy else { return }
+        starBusy = true
+        defer { starBusy = false }
+        let wasStarred = isStarred
+        isStarred.toggle()
+        starCount += isStarred ? 1 : -1
+        do {
+            if wasStarred {
+                try await PublicWorkoutRepository.unstar(routineID: workout.id)
+            } else {
+                try await PublicWorkoutRepository.star(routineID: workout.id)
+            }
+        } catch {
+            // Revert the optimistic flip.
+            isStarred = wasStarred
+            starCount += wasStarred ? 1 : -1
+        }
+    }
+
     // MARK: - Data
 
     @MainActor
@@ -571,6 +626,9 @@ struct DiscoverWorkoutDetailView: View {
                 routineExercises = exs
             }
             leaderboardEntries = entries
+            // Stars: count + my-star state (best-effort).
+            starCount = (try? await PublicWorkoutRepository.starCounts(routineIDs: [workout.id]))?[workout.id] ?? 0
+            isStarred = ((try? await PublicWorkoutRepository.myStarred(routineIDs: [workout.id])) ?? []).contains(workout.id)
             // Redesign (2026-07-23): best PR per exercise for the projected
             // working-weight row line. Best-effort — no PRs, no estimates.
             if let userID = appState.currentProfile?.id,

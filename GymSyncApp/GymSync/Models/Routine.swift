@@ -99,6 +99,11 @@ enum RoutineRepository {
                 .from("routines")
                 .select("*, profiles!routines_owner_id_fkey(username)")
                 .eq("visibility", value: "public")
+                // Open-publishing round (20260728000008): everyone can publish
+                // public now, so the Library FEATURED shelf filters to the
+                // curator-managed spotlight — is_featured is RLS-gated to
+                // curators. Discover remains the all-public surface.
+                .eq("is_featured", value: true)
                 .order("created_at", ascending: false)
                 .execute()
                 .value
@@ -155,10 +160,14 @@ enum RoutineRepository {
         let defaultSort: String?
         let scoringMetrics: [String]?
         let scoringTopSetExerciseID: UUID?
+        /// Open-publishing round (20260728000008): the curator spotlight flag,
+        /// seeded into the builder's Feature toggle.
+        let isFeatured: Bool?
         enum CodingKeys: String, CodingKey {
             case defaultSort = "default_sort"
             case scoringMetrics = "scoring_metrics"
             case scoringTopSetExerciseID = "scoring_top_set_exercise_id"
+            case isFeatured = "is_featured"
         }
     }
 
@@ -173,7 +182,7 @@ enum RoutineRepository {
         do {
             let row: PublishFields = try await client
                 .from("routines")
-                .select("default_sort, scoring_metrics, scoring_top_set_exercise_id")
+                .select("default_sort, scoring_metrics, scoring_top_set_exercise_id, is_featured")
                 .eq("id", value: routineID)
                 .single()
                 .execute()
@@ -205,16 +214,23 @@ enum RoutineRepository {
         let defaultSort: String?
         let scoringMetrics: [String]?
         let scoringTopSetExerciseID: UUID?
+        /// encodeIfPresent (NOT the explicit-null treatment of the trio
+        /// above): nil means "don't touch is_featured" — a non-curator's
+        /// publish must never write the RLS-gated column at all, or the
+        /// whole UPDATE would 42501.
+        let isFeatured: Bool?
         enum CodingKeys: String, CodingKey {
             case defaultSort = "default_sort"
             case scoringMetrics = "scoring_metrics"
             case scoringTopSetExerciseID = "scoring_top_set_exercise_id"
+            case isFeatured = "is_featured"
         }
         func encode(to encoder: Encoder) throws {
             var c = encoder.container(keyedBy: CodingKeys.self)
             try c.encode(defaultSort, forKey: .defaultSort)
             try c.encode(scoringMetrics, forKey: .scoringMetrics)
             try c.encode(scoringTopSetExerciseID, forKey: .scoringTopSetExerciseID)
+            try c.encodeIfPresent(isFeatured, forKey: .isFeatured)
         }
     }
 
@@ -230,7 +246,8 @@ enum RoutineRepository {
         routineID: UUID,
         defaultSort: String?,
         scoringMetrics: [String]?,
-        scoringTopSetExerciseID: UUID?
+        scoringTopSetExerciseID: UUID?,
+        isFeatured: Bool? = nil
     ) async throws {
         do {
             _ = try await client
@@ -238,7 +255,8 @@ enum RoutineRepository {
                 .update(PublishFieldsUpdate(
                     defaultSort: defaultSort,
                     scoringMetrics: scoringMetrics,
-                    scoringTopSetExerciseID: scoringTopSetExerciseID
+                    scoringTopSetExerciseID: scoringTopSetExerciseID,
+                    isFeatured: isFeatured
                 ))
                 .eq("id", value: routineID)
                 .execute()

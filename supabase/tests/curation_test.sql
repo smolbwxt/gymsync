@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(15);
+SELECT plan(22);
 
 -- Fixture users (pattern from user_settings_test.sql: insert auth.users +
 -- profiles rows inside the rolled-back txn). User 103 gets NO profiles row —
@@ -90,11 +90,22 @@ SELECT lives_ok(
   'normal signup INSERT unaffected by the guard');
 SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-a000-000000000101';
 
--- 7. Non-curator cannot publish
-SELECT throws_ok(
+-- 7. Publishing is OPEN (20260728000008): any owner may publish public —
+--    it's the FEATURED spotlight that's curator-managed now.
+SELECT lives_ok(
   $$INSERT INTO routines (owner_id, name, visibility)
-    VALUES ('00000000-0000-4000-a000-000000000101', 'Sneaky Public', 'public')$$,
-  '42501', NULL, 'non-curator cannot insert public routine');
+    VALUES ('00000000-0000-4000-a000-000000000101', 'Open Public', 'public')$$,
+  'non-curator CAN publish a public routine (open publishing)');
+
+-- 7b. …but a non-curator cannot self-feature, on INSERT or UPDATE.
+SELECT throws_ok(
+  $$INSERT INTO routines (owner_id, name, visibility, is_featured)
+    VALUES ('00000000-0000-4000-a000-000000000101', 'Sneaky Featured', 'public', true)$$,
+  '42501', NULL, 'non-curator cannot insert a featured routine');
+SELECT throws_ok(
+  $$UPDATE routines SET is_featured = true
+    WHERE owner_id = '00000000-0000-4000-a000-000000000101' AND name = 'Open Public'$$,
+  '42501', NULL, 'non-curator cannot update own routine to featured');
 
 -- 8. Non-curator private insert still works (lives_ok per the
 -- user_settings_test.sql convention, plus an existence check so this can
@@ -119,6 +130,33 @@ SELECT is(
   (SELECT count(*) FROM routines
    WHERE name = 'Featured Pack' AND visibility = 'public')::int,
   1, 'other users see the published routine');
+
+-- 11. Curator CAN feature their public routine (the managed spotlight).
+SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-a000-000000000102';
+SELECT lives_ok(
+  $$UPDATE routines SET is_featured = true
+    WHERE owner_id = '00000000-0000-4000-a000-000000000102' AND name = 'Featured Pack'$$,
+  'curator can feature their published routine');
+
+-- 12-15. Stars (20260728000008): star public as self; no impersonation; no
+--         starring private routines (existence leak); unstar own.
+SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-a000-000000000101';
+SELECT lives_ok(
+  $$INSERT INTO routine_stars (routine_id, user_id)
+    SELECT id, '00000000-0000-4000-a000-000000000101' FROM routines WHERE name = 'Featured Pack'$$,
+  'user stars a public routine as themself');
+SELECT throws_ok(
+  $$INSERT INTO routine_stars (routine_id, user_id)
+    SELECT id, '00000000-0000-4000-a000-000000000102' FROM routines WHERE name = 'Featured Pack'$$,
+  '42501', NULL, 'cannot star as another user');
+SELECT throws_ok(
+  $$INSERT INTO routine_stars (routine_id, user_id)
+    SELECT id, '00000000-0000-4000-a000-000000000101' FROM routines WHERE name = 'My Private'$$,
+  '42501', NULL, 'cannot star a private routine');
+SELECT lives_ok(
+  $$DELETE FROM routine_stars
+    WHERE user_id = '00000000-0000-4000-a000-000000000101'$$,
+  'user unstars their own star');
 
 SELECT * FROM finish();
 ROLLBACK;
