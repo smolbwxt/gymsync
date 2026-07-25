@@ -36,11 +36,10 @@ struct ProgramCard: View {
 
     var body: some View {
         GSCard(bordered: false) {
+            // No internal kicker — this card always sits directly under the
+            // tab's "Your program" GSSectionHeader (screenshot review: the
+            // pair read as a stuttered duplicate).
             VStack(alignment: .leading, spacing: 6) {
-                Text("YOUR PROGRAM")
-                    .font(GSFont.bodyMedium(11, relativeTo: .caption2))
-                    .tracking(1.2)
-                    .foregroundStyle(theme.neutral700)
                 Text(template.name)
                     .font(GSFont.heading(16, relativeTo: .headline))
                     .foregroundStyle(theme.text)
@@ -522,7 +521,10 @@ struct ProgramTemplateDetailView: View {
             .padding(.vertical, 16)
         }
         .background(theme.bg)
-        .navigationTitle(template.name)
+        // "Program", not template.name — the in-content header already
+        // carries the name; the doubled title read as a stutter in the
+        // catalog capture.
+        .navigationTitle("Program")
         .navigationBarTitleDisplayMode(.inline)
         .task { await loadExercises() }
         .sheet(item: $pickerTarget) { target in
@@ -574,7 +576,11 @@ struct ProgramTemplateDetailView: View {
                                     .cornerRadius(5)
                             }
                             Spacer(minLength: 0)
-                            Text(ProgramMath.prescriptionText(week: weekSpec, baseline: nil))
+                            // Scheme only — the note renders on its own line
+                            // below (screenshot review: prescriptionText
+                            // embeds the note for nil-percent weeks, which
+                            // doubled Week 8's test-week copy here).
+                            Text(schemeText(weekSpec))
                                 .font(GSFont.body(13, relativeTo: .subheadline))
                                 .foregroundStyle(theme.neutral500)
                         }
@@ -741,6 +747,11 @@ struct ProgramTemplateDetailView: View {
             }
         }
         .padding(.horizontal, 16)
+    }
+
+    private func schemeText(_ week: ProgramWeek) -> String {
+        guard let percent = week.percentOfBaseline else { return "\(week.sets)×\(week.reps)" }
+        return "\(week.sets)×\(week.reps) @ \(ProgramMath.trimmedPercent(percent))%"
     }
 
     // MARK: Picker plumbing
