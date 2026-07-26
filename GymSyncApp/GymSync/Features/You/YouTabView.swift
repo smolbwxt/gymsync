@@ -26,6 +26,7 @@ struct YouTabView: View {
     @State private var qaResetConfirmed = false
     @AppStorage(GuidanceTip.tipsEnabledKey) private var tipsEnabled = true
     @State private var showRestTimerSetting = false
+    @State private var showGymEquipment = false
     @State private var showEditProfile = false
     // Phase M Task 2 (moderation/compliance): You-tab Blocked Users list.
     @State private var showBlockedUsers = false
@@ -143,6 +144,11 @@ struct YouTabView: View {
             }
             .navigationDestination(isPresented: $showRestTimerSetting) {
                 RestTimerSettingView(currentSettings: effectiveUserSettings) { updated in
+                    userSettings = updated
+                }
+            }
+            .navigationDestination(isPresented: $showGymEquipment) {
+                GymEquipmentView(currentSettings: effectiveUserSettings) { updated in
                     userSettings = updated
                 }
             }
@@ -344,6 +350,21 @@ struct YouTabView: View {
         .overlay(alignment: .bottom) { Rectangle().fill(theme.divider).frame(height: 1) }
     }
 
+    /// "45 lbs bar · standard plates" / "20 kg bar · 5 plates" — the
+    /// Settings row's value preview.
+    private var gymEquipmentPreview: String {
+        let settings = effectiveUserSettings
+        let unit = settings.weightUnit
+        var barInUnit = Units.fromPounds(settings.barWeightLbs, to: unit)
+        var rounded = Decimal()
+        NSDecimalRound(&rounded, &barInUnit, 2, .plain)
+        let bar = "\(GSBarLoader.plateLabel(rounded)) \(unit.label) bar"
+        if let custom = settings.plateInventory {
+            return "\(bar) · \(custom.count) plates"
+        }
+        return "\(bar) · standard plates"
+    }
+
     private func setUnitSystem(_ unit: WeightUnit) {
         var updated = effectiveUserSettings
         guard updated.unitSystem != unit.rawValue else { return }
@@ -468,6 +489,10 @@ struct YouTabView: View {
                 showBlockedUsers = true
             }
             unitsRow
+            GSSettingsRow(title: "Gym equipment", icon: "scalemass",
+                          value: gymEquipmentPreview) {
+                showGymEquipment = true
+            }
             showTipsRow
             soloPrivacyRow
             heartRateShareRow

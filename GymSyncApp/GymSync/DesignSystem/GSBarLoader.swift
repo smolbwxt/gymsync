@@ -144,11 +144,16 @@ struct GSBarLoader: View {
     // MARK: Plate rendering rules
 
     /// Taller and wider for heavier plates — a 45 should look like a 45 next
-    /// to a 2.5, the way it does on the rack.
+    /// to a 2.5, the way it does on the rack. sqrt of the weight ratio (a
+    /// plate's diameter doesn't scale linearly with its mass) with a LOW
+    /// floor: the first cut floored at 0.18 linear, which drew the 1.25 kg
+    /// at half the height of the 25 — screenshot review 2026-07-26 flagged
+    /// the smalls as far too large.
     private static func plateHeight(_ plate: Decimal, unit: WeightUnit) -> CGFloat {
         let heaviest = unit.standardPlates.first ?? 45
         let ratio = NSDecimalNumber(decimal: plate / heaviest).doubleValue
-        return 34 + CGFloat(min(1, max(0.18, ratio))) * 58
+        let scaled = ratio.squareRoot()
+        return 18 + CGFloat(min(1, max(0.10, scaled))) * 74
     }
 
     private static func plateWidth(_ plate: Decimal, unit: WeightUnit) -> CGFloat {

@@ -11,6 +11,11 @@ struct Exercise: Codable, Identifiable, Sendable, Hashable {
     let equipment: String
     let defaultUnit: String
     let demoVideoURL: URL?
+    /// YouTube video ID for the form demo (20260730000002) — rendered via
+    /// GSYouTubeEmbed on the detail screen. Trailing-defaulted so every
+    /// existing memberwise construction site (catalog fixtures) compiles
+    /// unchanged; decodes absent as nil.
+    var demoYoutubeID: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -22,6 +27,7 @@ struct Exercise: Codable, Identifiable, Sendable, Hashable {
         case equipment
         case defaultUnit = "default_unit"
         case demoVideoURL = "demo_video_url"
+        case demoYoutubeID = "demo_youtube_id"
     }
 }
 

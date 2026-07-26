@@ -54,14 +54,22 @@ struct ExerciseDetailView: View {
                         .foregroundStyle(theme.text)
                 }
 
-                // Phase E: two-frame animated demo (supersedes the earlier
-                // "no photos yet" placeholder block — GSDemoView shows its
-                // own photo-glyph placeholder while loading or if url is nil).
-                GSDemoView(url: exercise.demoVideoURL)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 220)
-                    .clipped()
-                    .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
+                // Demo media, in preference order: a curated YouTube form
+                // video (Phase M — official iframe embed only; see
+                // GSYouTubeEmbed's compliance header), else the legacy
+                // two-frame GSDemoView (whose url is currently nil on every
+                // seeded row, so it renders its placeholder).
+                if let videoID = exercise.demoYoutubeID {
+                    GSYouTubeEmbed(videoID: videoID)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 220)
+                } else {
+                    GSDemoView(url: exercise.demoVideoURL)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 220)
+                        .clipped()
+                        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
+                }
 
                 // Canvas: Muscles worked section header + accent/neutral tags
                 VStack(alignment: .leading, spacing: 8) {
