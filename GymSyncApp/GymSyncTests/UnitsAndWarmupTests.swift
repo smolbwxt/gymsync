@@ -169,14 +169,33 @@ final class UnitsAndWarmupTests: XCTestCase {
         XCTAssertTrue(WarmupMath.ramp(workingPounds: 30, barPounds: 45, unit: .lbs).isEmpty)
     }
 
-    /// A light working set gets a SHORT ramp — rungs collapse onto the same
-    /// loadable weight and near-duplicates are dropped, so the lifter never
-    /// sees the same load twice.
-    func testLightWorkingWeightCollapsesDuplicateRungs() {
-        let steps = WarmupMath.ramp(workingPounds: 95, barPounds: 45, unit: .lbs)
-        let loads = steps.map { double($0.pounds) }
-        XCTAssertEqual(Set(loads).count, loads.count, "duplicate loads in the ramp")
-        XCTAssertLessThan(steps.count, 5, "a 95 lb working set doesn't need a full ladder")
+    /// The lifter must never see the same load twice, at any weight.
+    func testRampNeverRepeatsALoad() {
+        for working: Decimal in [55, 95, 135, 225, 405] {
+            let steps = WarmupMath.ramp(workingPounds: working, barPounds: 45, unit: .lbs)
+            let loads = steps.map { double($0.pounds) }
+            XCTAssertEqual(Set(loads).count, loads.count,
+                           "duplicate loads in the \(working) lb ramp")
+        }
+    }
+
+    /// A working weight barely above the bar collapses to a SHORT ramp:
+    /// most rungs land at or below the bar and are dropped, because a
+    /// "warm-up" you can't load — or that IS the bar — isn't a step.
+    ///
+    /// (An earlier version of this test asserted a 95 lb set produces fewer
+    /// than 5 rungs. It doesn't, and shouldn't: on a 5 lb grid from a 45 lb
+    /// bar, 50/65/80/90 are four legitimately distinct rungs. That assertion
+    /// was inventing a requirement rather than testing one.)
+    func testVeryLightWorkingWeightYieldsAShortRamp() {
+        let steps = WarmupMath.ramp(workingPounds: 55, barPounds: 45, unit: .lbs)
+        XCTAssertTrue(steps.first?.isBar ?? false)
+        XCTAssertLessThanOrEqual(steps.count, 3,
+                                 "55 lb is one plate-pair above the bar — there is almost nothing to ramp")
+        for step in steps {
+            XCTAssertLessThan(double(step.pounds), 55)
+            XCTAssertGreaterThanOrEqual(double(step.pounds), 45)
+        }
     }
 
     func testKilogramRampIsLoadableInKilograms() {
