@@ -653,7 +653,11 @@ extension VoiceRoomService {
 /// gesture (tap/hold), not per-user data, so a second account signing in
 /// on the same device shouldn't see it again either.
 enum VoiceCoachMarkStore {
-    private static let defaultsKey = "voice.coachMark.shown.v1"
+    /// Internal (not private) so `OneShotFlags` can register this flag under
+    /// its REAL storage key — a registry id that differs from the key it
+    /// clears is exactly the kind of near-miss that makes a QA reset look
+    /// like it worked while leaving state behind.
+    static let defaultsKey = "voice.coachMark.shown.v1"
 
     static var hasBeenShown: Bool {
         UserDefaults.standard.bool(forKey: defaultsKey)
@@ -661,5 +665,12 @@ enum VoiceCoachMarkStore {
 
     static func markShown() {
         UserDefaults.standard.set(true, forKey: defaultsKey)
+    }
+
+    /// QA replay (`OneShotFlags`) — the key stays private, so the reset has
+    /// to live with its owner rather than the registry duplicating the
+    /// string and drifting from it.
+    static func reset() {
+        UserDefaults.standard.removeObject(forKey: defaultsKey)
     }
 }

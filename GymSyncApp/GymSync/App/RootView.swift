@@ -31,7 +31,9 @@ struct RootView: View {
     // First-time walkthrough (redesign 2026-07-23, user-requested): shown once
     // per device, the first time the signed-in main app appears (i.e. after
     // sign-in + profile onboarding). Both Skip and "Get started" set the flag.
-    @AppStorage("hasSeenWalkthroughV1") private var hasSeenWalkthrough = false
+    // Key comes from OneShotFlags so the QA "replay first-run tips" reset
+    // can never drift from what this actually reads.
+    @AppStorage(OneShotFlags.walkthroughKey) private var hasSeenWalkthrough = false
     @State private var showWalkthrough = false
 
     var body: some View {

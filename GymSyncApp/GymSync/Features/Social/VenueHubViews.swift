@@ -263,7 +263,8 @@ struct VenueHubView: View {
     @State private var busy = false
     @State private var errorText: String?
     @State private var showAdvisory = false
-    @AppStorage("hasSeenVenueAdvisory") private var hasSeenAdvisory = false
+    // Key from OneShotFlags — see that file; keeps the QA reset honest.
+    @AppStorage(OneShotFlags.venueAdvisoryKey) private var hasSeenAdvisory = false
 
     #if DEBUG
     var catalogSkipLoad = false

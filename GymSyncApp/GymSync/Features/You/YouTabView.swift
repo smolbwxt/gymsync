@@ -20,6 +20,10 @@ struct YouTabView: View {
     @State private var errorText: String?
     @State private var showNotificationPrefs = false
     @State private var showAppearance = false
+    /// QA tools (curator-gated): how many one-shot flags are currently set,
+    /// and a transient tick on the reset button.
+    @State private var qaSeenCount = 0
+    @State private var qaResetConfirmed = false
     @State private var showRestTimerSetting = false
     @State private var showEditProfile = false
     // Phase M Task 2 (moderation/compliance): You-tab Blocked Users list.
@@ -69,6 +73,22 @@ struct YouTabView: View {
 
                         settingsGroupBox
                             .padding(.horizontal, 16)
+
+                        // QA tools — curator accounts only. NOT `#if DEBUG`:
+                        // QA happens on TestFlight, which ships RELEASE
+                        // builds, so a compile-time gate would make this
+                        // invisible exactly where it's needed. `is_curator`
+                        // is already RLS-protected against self-promotion
+                        // (20260717000003) and revocable server-side without
+                        // shipping a build.
+                        if appState.currentProfile?.isCurator == true {
+                            GSSectionHeader("QA tools")
+                                .padding(.horizontal, 16)
+                                .padding(.top, 24)
+                                .padding(.bottom, 10)
+                            qaToolsGroupBox
+                                .padding(.horizontal, 16)
+                        }
 
                         deleteAccountRow
                             .padding(.horizontal, 16)
@@ -280,6 +300,67 @@ struct YouTabView: View {
     // now sourced from `user_settings` instead of a hardcoded "Midnight").
 
     @ViewBuilder
+    // MARK: - QA tools (curator-gated)
+
+    /// Replays the first-run experience on this device: clears every
+    /// registered one-shot flag (`OneShotFlags`) so the walkthrough, coach
+    /// marks, advisories — and, once they ship, the guidance spotlights —
+    /// all show again. Local-only: nothing about the account changes, so
+    /// this is safe to press repeatedly and affects no other device.
+    private var qaToolsGroupBox: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .center, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Replay first-run tips")
+                        .font(GSFont.bodyMedium(14, relativeTo: .subheadline))
+                        .foregroundColor(theme.text)
+                    Text(qaFlagsSubtitle)
+                        .font(GSFont.body(12, relativeTo: .caption))
+                        .foregroundColor(theme.neutral700)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                Button {
+                    OneShotFlags.resetAll()
+                    // Recompute the subtitle and confirm — without this the
+                    // row would look identical after a successful reset,
+                    // which reads as "the button did nothing".
+                    qaSeenCount = OneShotFlags.seenCount
+                    qaResetConfirmed = true
+                    Task {
+                        try? await Task.sleep(for: .seconds(2))
+                        qaResetConfirmed = false
+                    }
+                } label: {
+                    Text(qaResetConfirmed ? "Reset ✓" : "Reset")
+                        .font(GSFont.bold(12, relativeTo: .caption))
+                        .foregroundStyle(theme.bg)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(theme.accent)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .frame(minHeight: 44)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+            .background(theme.surface)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: GSMetrics.radiusMd))
+        .overlay(
+            RoundedRectangle(cornerRadius: GSMetrics.radiusMd)
+                .strokeBorder(theme.divider, lineWidth: 1)
+        )
+        .onAppear { qaSeenCount = OneShotFlags.seenCount }
+    }
+
+    private var qaFlagsSubtitle: String {
+        let total = OneShotFlags.all.count
+        if qaSeenCount == 0 { return "All \(total) tips are already unseen — restart the app to replay." }
+        return "\(qaSeenCount) of \(total) already seen. Resetting replays them (walkthrough shows on next launch)."
+    }
+
     private var settingsGroupBox: some View {
         VStack(spacing: 0) {
             GSSettingsRow(title: "Appearance", icon: "sun.max", value: paletteDisplayName) {
