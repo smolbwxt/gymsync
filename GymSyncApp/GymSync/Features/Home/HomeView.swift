@@ -27,6 +27,11 @@ struct HomeView: View {
     /// `evaluate_lateness` and NEVER decremented, so the raw total keeps
     /// reporting debt the user already paid off — a permanently wrong
     /// number parked on the home screen.
+    /// Staleness bookkeeping for the retained-tab refresh (see the
+    /// `selectedTab` onChange in `body`).
+    @State private var lastRefreshedAt: Date = .distantPast
+    static let tabRefreshTTL: TimeInterval = 60
+
     @State private var burpeesOwed = 0
     @State private var burpeeDebtGroup: GymGroup?
     @State private var showBurpeeLedger = false
@@ -102,6 +107,17 @@ struct HomeView: View {
             .refreshable { await refresh() }
             .onChange(of: scenePhase) {
                 guard scenePhase == .active else { return }
+                Task { await refresh() }
+            }
+            // Tab retention (RootView) means `.task` no longer re-fires on
+            // every tab switch — without this, a retained Home would sit on
+            // hour-old data indefinitely. TTL'd so re-tapping the tab
+            // repeatedly doesn't hammer the network: instant switching is
+            // the point, and a refetch inside the window would put the
+            // piecewise re-render right back.
+            .onChange(of: appState.selectedTab) {
+                guard appState.selectedTab == .home,
+                      Date.now.timeIntervalSince(lastRefreshedAt) > Self.tabRefreshTTL else { return }
                 Task { await refresh() }
             }
             .onChange(of: appState.pendingRoute) {
@@ -1090,6 +1106,7 @@ struct HomeView: View {
     // MARK: - Actions
 
     private func refresh() async {
+        lastRefreshedAt = .now
         let userID = appState.currentProfile?.id
 
         // Single parallel batch: all 8 fetches are declared up front so they
@@ -1105,31 +1122,48 @@ struct HomeView: View {
         async let campaignsFetch = fetchActiveCampaigns(userID: userID)
         async let streakFetch    = fetchStreak(userID: userID)
 
-        if let sessions = try? await sessionsFetch { upcomingSessions = sessions }
-        if let fetchedGroups = try? await groupsFetch { groups = fetchedGroups }
+        // Perf (user report 2026-07-25: "things load incrementally over a
+        // fraction of a second"): every `await` is a suspension point, so
+        // the OLD interleaving — await, assign, await, assign — produced up
+        // to 8 separate render passes and the screen visibly ASSEMBLED.
+        // The fetches were already parallel; only the assignment order was
+        // wrong. Now ALL awaits resolve first, then all `@State` writes run
+        // back-to-back with no suspension between them, which SwiftUI
+        // coalesces into a single render: the screen arrives whole.
+        let sessions        = try? await sessionsFetch
+        let fetchedGroups   = try? await groupsFetch
+        let history         = await historyFetch
+        let routines        = await routinesFetch
+        let prCount         = await prCountFetch
+        let refreshedProfile = await profileFetch
+        let campaigns       = await campaignsFetch
+        let streak          = await streakFetch
+
+        // ── single commit (no awaits until after this block) ──
+        if let sessions { upcomingSessions = sessions }
+        if let fetchedGroups { groups = fetchedGroups }
+        if let history { historySessions = history }
+        if let routines { ownedRoutines = routines }
+        if let prCount { prsThisMonth = prCount }
+        if let refreshedProfile { profile = refreshedProfile }
+        activeCampaigns = campaigns ?? []
+        if let streak { userStreak = streak }
+        statsLoading = false
+
         // Phase W Task 3 (watch-hr design §2, "Idle state") — see
         // `pushWatchIdleStateIfNoLiveSession()`'s own doc comment for the
-        // "cheap trigger" reasoning. Placed after BOTH fetches above
-        // (not right after `upcomingSessions`) since the idle payload's
-        // session-name derivation needs `groups` too. Gated on `userID !=
-        // nil` — same guard `loadTodaysRoutine()` uses below for the
-        // identical reason: a signed-out pass through this function must
-        // never push a signed-in user's stale `upcomingSessions`/`groups`
-        // state to a paired Watch (the shared-device leak class
-        // `OfflineSetLogQueue`'s own user-scoping fix already exists to
-        // prevent elsewhere in this codebase — same discipline, applied
-        // here at the source instead of after the fact).
+        // "cheap trigger" reasoning. Runs after the commit above since the
+        // idle payload's session-name derivation needs BOTH
+        // `upcomingSessions` and `groups`. Gated on `userID != nil` — a
+        // signed-out pass must never push a signed-in user's stale state to
+        // a paired Watch (the shared-device leak class `OfflineSetLogQueue`'s
+        // own user-scoping fix already exists to prevent elsewhere).
         if userID != nil { pushWatchIdleStateIfNoLiveSession() }
-        let history = await historyFetch
-        if let history { historySessions = history }
-        if let routines = await routinesFetch { ownedRoutines = routines }
-        let prCount = await prCountFetch
-        if let prCount { prsThisMonth = prCount }
-        let refreshedProfile = await profileFetch
-        if let refreshedProfile { profile = refreshedProfile }
-        let campaigns = await campaignsFetch
-        activeCampaigns = campaigns ?? []
-        if let streak = await streakFetch { userStreak = streak }
+
+        // Secondary passes: these paint additive detail (campaign join
+        // buttons, the burpee widget) and are deliberately left OUTSIDE the
+        // commit — blocking the whole screen on them would trade one late
+        // element for a slower first paint of everything.
         await loadCampaignJoinState(for: activeCampaigns)
         await loadBurpeeDebt()
 
@@ -1145,7 +1179,6 @@ struct HomeView: View {
             lifetimeLbs: refreshedProfile?.lifetimeVolumeLifted,
             prsThisMonth: prCount
         )
-        statsLoading = false
 
         // Matches the previous early-return guard: the Task 5 additions (and
         // the routine lookup that depends on them) only ran when signed in.

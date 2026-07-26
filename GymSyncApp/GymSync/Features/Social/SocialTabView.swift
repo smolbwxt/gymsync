@@ -31,6 +31,9 @@ struct SocialTabView: View {
     // link and must keep landing on a plain, unfocused `FriendsView()`) so
     // only this specific entry point focuses the add-friend field.
     @State private var navigateToFriendsFocused = false
+    /// Staleness bookkeeping for the retained-tab refresh (RootView holds
+    /// every visited tab alive, so `.task` fires once per app run).
+    @State private var lastRefreshedAt: Date = .distantPast
 
     var body: some View {
         NavigationStack {
@@ -305,6 +308,17 @@ struct SocialTabView: View {
             .onChange(of: appState.pendingRoute) {
                 Task { await consumePendingRouteIfNeeded() }
             }
+            // Tab retention (RootView): `.task` no longer re-fires per tab
+            // switch, so re-selection refreshes on a TTL instead. Note the
+            // `.onDisappear` below now only fires on real teardown (sign-out
+            // / app exit), NOT on tab switches — which is the better
+            // behavior here: the friend-request subscription stays live
+            // while you're on other tabs instead of churning per switch.
+            .onChange(of: appState.selectedTab) {
+                guard appState.selectedTab == .social,
+                      Date.now.timeIntervalSince(lastRefreshedAt) > 60 else { return }
+                Task { await refresh() }
+            }
             .onDisappear { Task { await friendRealtime.unsubscribe() } }
             .refreshable { await refresh() }
             .navigationDestination(item: $pendingChatGroup) { group in
@@ -442,6 +456,7 @@ struct SocialTabView: View {
     }
 
     private func refresh() async {
+        lastRefreshedAt = .now
         do {
             groups = try await GroupRepository.myGroups()
             friendCount = try await FriendRepository.friends().count

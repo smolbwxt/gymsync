@@ -218,16 +218,41 @@ private struct MainTabView: View {
     // the dock reliably regardless of push depth.
     @State private var isDockHidden = false
 
+    /// Tabs that have been visited at least once. Perf (user report
+    /// 2026-07-25: "everytime you click on a page, things load incrementally
+    /// over a fraction of a second"): the previous `switch` mounted ONLY the
+    /// selected tab, so every switch destroyed the outgoing screen and
+    /// rebuilt the incoming one from zero — `@State` reset to empty, `.task`
+    /// re-ran, and content re-appeared piecewise as each fetch landed. That
+    /// teardown/rebuild, not network latency, was the perceived jank.
+    ///
+    /// Now a tab mounts on FIRST visit and stays alive, so every subsequent
+    /// switch is a pure visibility change with nothing to rebuild.
+    /// Deliberately lazy rather than mounting all five up front: eager
+    /// mounting would trade tab-switch jank for a slower cold start and five
+    /// simultaneous fetch storms on launch.
+    @State private var mountedTabs: Set<AppState.Tab> = []
+
     var body: some View {
         @Bindable var appState = appState
         ZStack {
-            switch appState.selectedTab {
-            case .home:    HomeView()
-            case .library: LibraryTabView()
-            case .social:  SocialTabView()
-            case .stats:   StatsTabView()
-            case .you:     YouTabView()
+            ForEach(AppState.Tab.allCases, id: \.self) { tab in
+                if mountedTabs.contains(tab) {
+                    tabContent(tab)
+                        .opacity(appState.selectedTab == tab ? 1 : 0)
+                        // A retained-but-hidden tab must not absorb touches
+                        // or be reachable by VoiceOver — invisible is not the
+                        // same as inert, and both of these are required for
+                        // it to actually behave as if it weren't there.
+                        .allowsHitTesting(appState.selectedTab == tab)
+                        .accessibilityHidden(appState.selectedTab != tab)
+                        .zIndex(appState.selectedTab == tab ? 1 : 0)
+                }
             }
+        }
+        .onAppear { mountedTabs.insert(appState.selectedTab) }
+        .onChange(of: appState.selectedTab) { _, newTab in
+            mountedTabs.insert(newTab)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .task {
@@ -255,6 +280,14 @@ private struct MainTabView: View {
                 isDockHidden = hides
             }
         }
+        // Retention makes `.gsHidesDock()` ambiguous: a hidden-but-mounted
+        // tab whose pushed descendant sets the preference would keep the
+        // dock hidden on a DIFFERENT tab (the preference reduce is an OR
+        // across the whole subtree, and that subtree now includes tabs
+        // nobody is looking at). Re-deriving on selection change is the
+        // cheap correction — the visible tab's own contributors re-publish
+        // immediately after.
+        .onChange(of: appState.selectedTab) { isDockHidden = false }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             // Dock stays pinned at the physical bottom edge — it must NOT ride
             // up on the keyboard (matches system TabView chrome behavior).
@@ -267,6 +300,17 @@ private struct MainTabView: View {
                     .ignoresSafeArea(.keyboard, edges: .bottom)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
+        }
+    }
+
+    @ViewBuilder
+    private func tabContent(_ tab: AppState.Tab) -> some View {
+        switch tab {
+        case .home:    HomeView()
+        case .library: LibraryTabView()
+        case .social:  SocialTabView()
+        case .stats:   StatsTabView()
+        case .you:     YouTabView()
         }
     }
 }

@@ -12,7 +12,10 @@ final class AppState {
     static let shared = AppState()
     private init() {}
 
-    enum Tab: Hashable { case home, library, social, stats, you }
+    /// `CaseIterable` so `MainTabView` can iterate every tab to decide which
+    /// are mounted (tab retention, RootView.swift) rather than switching on
+    /// the selected one.
+    enum Tab: Hashable, CaseIterable { case home, library, social, stats, you }
     var selectedTab: Tab = .home
 
     // Set to the user's profile once loaded post-sign-in.
