@@ -57,6 +57,7 @@ enum CatalogScreen: String, CaseIterable {
     case venueAgeGate = "venue-age-gate"
     case guidanceSpotlight = "guidance-spotlight"
     case guidanceDiscovery = "guidance-discovery"
+    case barLoader = "bar-loader"
 }
 
 struct CatalogHostView: View {
@@ -109,6 +110,7 @@ struct CatalogHostView: View {
             case .venueAgeGate:               content_venueAgeGate
             case .guidanceSpotlight:          content_guidanceSpotlight
             case .guidanceDiscovery:          content_guidanceDiscovery
+            case .barLoader:                  content_barLoader
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1096,6 +1098,37 @@ struct CatalogHostView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // `bar-loader`: three loads in each unit — an exact lbs stack, a kg
+    // stack, and a target that ISN'T loadable with the given plates, since
+    // the honest "closest loadable" state is the one most worth reviewing.
+    private var content_barLoader: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 26) {
+                catalogLoaderBlock(title: "225 lbs · standard plates",
+                                   target: 225, bar: 45,
+                                   plates: WeightUnit.lbs.standardPlates, unit: .lbs)
+                catalogLoaderBlock(title: "102.5 kg · standard plates",
+                                   target: 102.5, bar: 20,
+                                   plates: WeightUnit.kg.standardPlates, unit: .kg)
+                catalogLoaderBlock(title: "227.5 lbs · gym has no 2.5s",
+                                   target: 227.5, bar: 45,
+                                   plates: [45, 35, 25, 10, 5], unit: .lbs)
+            }
+            .padding(16)
+        }
+    }
+
+    private func catalogLoaderBlock(title: String, target: Decimal, bar: Decimal,
+                                    plates: [Decimal], unit: WeightUnit) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(GSFont.bold(11, relativeTo: .caption2))
+                .tracking(1.1)
+                .foregroundStyle(theme.neutral500)
+            GSBarLoader(target: target, barWeight: bar, plates: plates, unit: unit)
+        }
     }
 
     private func catalogDiscoveryRow(raised: Bool) -> some View {
