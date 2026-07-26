@@ -283,6 +283,14 @@ public final class ThemeStore {
         }
         merged.defaultRestSeconds = incoming.defaultRestSeconds
         merged.shareHeartRate = incoming.shareHeartRate
+        // Units + bar/plate inventory sit on the ADOPTING side alongside
+        // defaultRestSeconds/shareHeartRate: only `.palette` and `.accent`
+        // have an in-flight owner here (select/selectAccent). Omitting these
+        // would silently revert a unit change made on another device the
+        // moment any palette write was in flight.
+        merged.unitSystem = incoming.unitSystem
+        merged.barWeightLbs = incoming.barWeightLbs
+        merged.plateInventory = incoming.plateInventory
         // `.accent` joins `.palette` on the protected side: it is intentionally
         // NOT adopted from `incoming` while a persist is in flight, because
         // `selectAccent(_:)`'s in-flight task owns it until it lands. `merged`

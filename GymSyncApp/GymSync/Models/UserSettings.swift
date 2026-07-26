@@ -33,6 +33,27 @@ struct UserSettings: Codable, Sendable, Equatable {
     /// default. A future 5th field extends this same trailing pattern.
     var accent: String = "sky"
 
+    /// Display/entry unit — 'lbs' or 'kg'
+    /// (`supabase/migrations/20260730000001_units_and_bar_inventory.sql`).
+    /// STORED WEIGHTS REMAIN POUNDS everywhere; this only changes what the
+    /// UI shows and how typed entry is parsed (see Models/Units.swift).
+    /// Trailing default, for the exact memberwise-init reason the two
+    /// properties above document.
+    var unitSystem: String = "lbs"
+
+    /// Bar weight in POUNDS regardless of `unitSystem` — same canonical
+    /// storage rule as every other weight. Trailing default.
+    var barWeightLbs: Decimal = 45
+
+    /// Plate denominations in the USER'S unit; `nil` means "the standard
+    /// set for my unit" (meaningfully different from an empty array, which
+    /// would mean "I own no plates"). Trailing default.
+    var plateInventory: [Decimal]? = nil
+
+    /// Parsed `unitSystem`, falling back to lbs for any unexpected value —
+    /// a bad string must never crash a weight display.
+    var weightUnit: WeightUnit { WeightUnit(rawValue: unitSystem) ?? .lbs }
+
     enum CodingKeys: String, CodingKey {
         case userID = "user_id"
         case defaultRestSeconds = "default_rest_seconds"
@@ -40,6 +61,9 @@ struct UserSettings: Codable, Sendable, Equatable {
         case updatedAt = "updated_at"
         case shareHeartRate = "share_heart_rate"
         case accent
+        case unitSystem = "unit_system"
+        case barWeightLbs = "bar_weight_lbs"
+        case plateInventory = "plate_inventory"
     }
 
     /// Mirrors the table's own column defaults exactly (migrations:
@@ -85,6 +109,13 @@ private struct UserSettingsUpsert: Encodable {
     /// same "any field absent here silently never persists" trap the
     /// `shareHeartRate` comment above documents.
     let accent: String
+    /// Units + bar/plate inventory — same lockstep rule as every field
+    /// above. Omitting any of these would make the You-tab unit toggle and
+    /// the bar-loader settings look like they work (optimistic local flip,
+    /// no error) while never persisting.
+    let unitSystem: String
+    let barWeightLbs: Decimal
+    let plateInventory: [Decimal]?
 
     enum CodingKeys: String, CodingKey {
         case userID = "user_id"
@@ -92,6 +123,9 @@ private struct UserSettingsUpsert: Encodable {
         case palette
         case shareHeartRate = "share_heart_rate"
         case accent
+        case unitSystem = "unit_system"
+        case barWeightLbs = "bar_weight_lbs"
+        case plateInventory = "plate_inventory"
     }
 }
 
@@ -135,7 +169,10 @@ enum UserSettingsRepository {
                     defaultRestSeconds: settings.defaultRestSeconds,
                     palette: settings.palette,
                     shareHeartRate: settings.shareHeartRate,
-                    accent: settings.accent
+                    accent: settings.accent,
+                    unitSystem: settings.unitSystem,
+                    barWeightLbs: settings.barWeightLbs,
+                    plateInventory: settings.plateInventory
                 ))
                 .execute()
         } catch {
