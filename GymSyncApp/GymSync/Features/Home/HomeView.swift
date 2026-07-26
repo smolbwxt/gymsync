@@ -17,6 +17,19 @@ struct HomeView: View {
     // MARK: - Canvas content state (Task 5)
     @State private var historySessions: [WorkoutSession] = []
     @State private var ownedRoutines: [Routine] = []
+    /// Outstanding burpee debt across all the user's groups, and the group
+    /// carrying the most of it (the ledger is group-scoped, so the Home
+    /// widget has to pick one to open).
+    ///
+    /// MUST come from `SessionRepository.burpeeLedger`'s netted
+    /// `CrewDebt.outstanding`, never `youOweSummary.total`:
+    /// `session_participants.burpees_owed` is written once by
+    /// `evaluate_lateness` and NEVER decremented, so the raw total keeps
+    /// reporting debt the user already paid off — a permanently wrong
+    /// number parked on the home screen.
+    @State private var burpeesOwed = 0
+    @State private var burpeeDebtGroup: GymGroup?
+    @State private var showBurpeeLedger = false
     @State private var prsThisMonth: Int = 0
     /// Redesign: feeds the streak-ring widget (proof: ring fills toward the
     /// next milestone). Fetched alongside the other Home data in `refresh()`.
@@ -105,6 +118,13 @@ struct HomeView: View {
             .navigationDestination(isPresented: $navigateToJoined) {
                 if let session = joinedSession {
                     LobbyView(session: session)
+                }
+            }
+            // Burpee widget destination — the ledger is group-scoped, so it
+            // opens the group carrying the most outstanding debt.
+            .navigationDestination(isPresented: $showBurpeeLedger) {
+                if let group = burpeeDebtGroup {
+                    BurpeeLedgerView(group: group)
                 }
             }
         }
@@ -333,25 +353,84 @@ struct HomeView: View {
     // translucent outline pill among solid widgets — now it IS a widget:
     // solid surface fill, widget radius, no border.
     private var soloSecondaryButton: some View {
-        Button {
-            routinePickerPreselected = nil
-            showRoutinePicker = true
-        } label: {
-            HStack(spacing: 7) {
-                Spacer(minLength: 0)
-                Image(systemName: "plus")
-                    .font(.system(size: 14, weight: .bold))
-                Text("Start solo workout")
-                    .font(GSFont.bold(15, relativeTo: .subheadline))
-                Spacer(minLength: 0)
+        // Burpee debt (user direction 2026-07-25): when you owe burpees, the
+        // start button CONCEDES real estate and the counter EMERGES beside
+        // it — Duolingo-style, springy rather than a hard swap. At zero debt
+        // the widget doesn't exist at all, so it never taxes a new user's
+        // home screen (burpee debt is group-scoped: a brand-new user owes
+        // nothing by construction).
+        HStack(spacing: 10) {
+            Button {
+                routinePickerPreselected = nil
+                showRoutinePicker = true
+            } label: {
+                HStack(spacing: 7) {
+                    Spacer(minLength: 0)
+                    Image(systemName: "plus")
+                        .font(.system(size: 14, weight: .bold))
+                    Text(burpeesOwed > 0 ? "Start workout" : "Start solo workout")
+                        .font(GSFont.bold(15, relativeTo: .subheadline))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(theme.text)
+                .padding(.vertical, 18)
+                .contentShape(Rectangle())
             }
-            .foregroundStyle(theme.text)
-            .padding(.vertical, 18)
+            .buttonStyle(.plain)
+            .background(theme.surface)
+            .cornerRadius(GSMetrics.radiusMd)
+
+            if burpeesOwed > 0 {
+                burpeeOwedWidget
+                    // Emerges from the right edge with a slight scale pop —
+                    // the button's width animates in the same transaction,
+                    // so it reads as one element yielding space to another.
+                    .transition(
+                        .asymmetric(
+                            insertion: .scale(scale: 0.6, anchor: .trailing)
+                                .combined(with: .opacity)
+                                .combined(with: .move(edge: .trailing)),
+                            removal: .scale(scale: 0.7, anchor: .trailing)
+                                .combined(with: .opacity)
+                        )
+                    )
+            }
+        }
+        .animation(.spring(response: 0.42, dampingFraction: 0.68), value: burpeesOwed > 0)
+    }
+
+    /// The debt counter. Fixed width so the start button's concession is a
+    /// predictable amount rather than a text-length-dependent jitter.
+    private var burpeeOwedWidget: some View {
+        Button {
+            showBurpeeLedger = true
+        } label: {
+            VStack(spacing: 1) {
+                Text("\(burpeesOwed)")
+                    .font(GSFont.heading(22, relativeTo: .title2))
+                    .foregroundStyle(Self.goldInk)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                Text("burpees")
+                    .font(GSFont.bold(9.5, relativeTo: .caption2))
+                    .tracking(0.6)
+                    .foregroundStyle(Self.goldInk.opacity(0.8))
+            }
+            .frame(width: 96)
+            .padding(.vertical, 14)
+            .background(
+                LinearGradient(colors: [Self.goldTop, Self.goldBottom],
+                               startPoint: .top, endPoint: .bottom)
+            )
+            .cornerRadius(GSMetrics.radiusMd)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .background(theme.surface)
-        .cornerRadius(GSMetrics.radiusMd)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("You owe \(burpeesOwed) burpees. Open the burpee ledger.")
     }
 
     // MARK: - Schedule widget (declutter round: its own widget above the calendar)
@@ -500,14 +579,57 @@ struct HomeView: View {
                 }
                 .buttonStyle(.plain)
             } else {
-                GSCard(bordered: false) {
-                    checkInEmptyBody
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        .padding(15)
+                // Empty state is a POINTER, not a dead card (user feedback
+                // 2026-07-25): with nothing scheduled, this slot offers the
+                // step that's actually missing. Deliberately NOT gold —
+                // gold means "the window is open, act now", and borrowing
+                // that urgency for an invitation would devalue it.
+                Button {
+                    if hasNoCrew { appState.selectedTab = .social }
+                    else { showScheduleSheet = true }
+                } label: {
+                    GSCard(bordered: false) {
+                        checkInEmptyBody
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .padding(15)
+                    }
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
             }
         }
     }
+
+    /// Sums the user's OUTSTANDING debt across every group and remembers the
+    /// group holding the most of it (the tap target). Best-effort per group:
+    /// one group's failure must never blank a real debt in another, and a
+    /// total failure simply leaves the widget absent — never a wrong number.
+    @MainActor
+    private func loadBurpeeDebt() async {
+        guard let userID = profile?.id ?? appState.currentProfile?.id, !groups.isEmpty else {
+            burpeesOwed = 0
+            burpeeDebtGroup = nil
+            return
+        }
+        var total = 0
+        var worst: (group: GymGroup, amount: Int)?
+        for group in groups {
+            guard let debts = try? await SessionRepository.burpeeLedger(groupID: group.id),
+                  let mine = debts.first(where: { $0.userID == userID }),
+                  mine.outstanding > 0 else { continue }
+            total += mine.outstanding
+            if mine.outstanding > (worst?.amount ?? 0) { worst = (group, mine.outstanding) }
+        }
+        burpeesOwed = total
+        burpeeDebtGroup = worst?.group
+    }
+
+    /// Scheduling is offered ahead of finding a crew whenever the user has
+    /// any routine to run: a solo lift is achievable alone in the next hour,
+    /// while joining a crew depends on other people. Someone with neither a
+    /// crew nor a routine gets pointed at people first — a brand-new user
+    /// with nothing to run benefits more from a group than an empty calendar.
+    private var hasNoCrew: Bool { groups.isEmpty && ownedRoutines.isEmpty }
 
     /// The gold shimmering ready-state (user feedback 2026-07-23): when the
     /// 20-minute window opens, the whole widget turns gold with a slow
@@ -622,31 +744,104 @@ struct HomeView: View {
     }
 
     private var checkInEmptyBody: some View {
-        // Null state (spec §6): card-anchored; the calendar header right
-        // below carries the schedule action, so this stays quiet.
-        VStack(alignment: .leading, spacing: 0) {
+        // Redesign (2026-07-25): was a quiet "Nothing scheduled" dead end.
+        // Now it names the next step and is tappable — see checkInWidget.
+        let crewFirst = hasNoCrew
+        return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
-                Image(systemName: "clock")
+                Image(systemName: crewFirst ? "person.2" : "calendar.badge.plus")
                     .font(.system(size: 10, weight: .bold))
-                Text("NEXT SESSION")
+                Text(crewFirst ? "GET STARTED" : "NEXT SESSION")
                     .font(GSFont.bold(10, relativeTo: .caption2))
                     .tracking(1.3)
             }
             .foregroundStyle(theme.neutral500)
-            Text("Nothing scheduled")
+
+            Text(crewFirst ? "Find your crew" : "Schedule a workout")
                 .font(GSFont.bold(14, relativeTo: .subheadline))
                 .foregroundStyle(theme.text)
                 .padding(.top, 9)
-            Text("Plan your next lift from the calendar below.")
+
+            Text(crewFirst
+                 ? "Train with friends — shared sessions and live turns."
+                 : "Pick a day and a routine, then check in when you arrive.")
                 .font(GSFont.body(11, relativeTo: .caption2))
                 .foregroundStyle(theme.neutral500)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 3)
+
+            HStack(spacing: 5) {
+                Text(crewFirst ? "Go to Social" : "Schedule")
+                    .font(GSFont.bold(11, relativeTo: .caption2))
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 9, weight: .bold))
+            }
+            .foregroundStyle(theme.accent)
+            .padding(.top, 8)
         }
     }
 
+    /// No widget renders a bare zero (user feedback 2026-07-25: a new user's
+    /// home shouldn't open by scoring them on a game they haven't started).
+    /// Instead the streak card becomes an invitation — and "never trained"
+    /// and "streak lapsed" are deliberately DIFFERENT invitations: telling
+    /// someone who trained for three weeks to "schedule your first lift"
+    /// would be both wrong and a little insulting.
     private var streakWidget: some View {
         let current = userStreak?.currentStreak ?? 0
+        if current == 0 {
+            return AnyView(streakInviteWidget(hasTrainedBefore: hasEverTrained))
+        }
+        return AnyView(streakCountWidget(current: current))
+    }
+
+    /// True once the user has any completed session in history — the
+    /// never-started vs lapsed discriminator. `historySessions` is already
+    /// loaded for the calendar widget, so this costs no extra fetch.
+    private var hasEverTrained: Bool {
+        historySessions.contains { $0.completedAt != nil }
+    }
+
+    private func streakInviteWidget(hasTrainedBefore: Bool) -> some View {
+        Button {
+            // Never trained -> scheduling is the achievable next step (a solo
+            // lift needs nobody else). Lapsed -> same destination, different
+            // framing.
+            showScheduleSheet = true
+        } label: {
+            GSCard(bordered: false) {
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle().stroke(theme.neutral300, lineWidth: 4)
+                        Image(systemName: "flame")
+                            .font(.system(size: 15))
+                            .foregroundStyle(theme.accent)
+                    }
+                    .frame(width: 52, height: 52)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(hasTrainedBefore ? "Start a new streak" : "Schedule your first lift")
+                            .font(GSFont.bold(14, relativeTo: .subheadline))
+                            .foregroundStyle(theme.text)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(hasTrainedBefore ? "Train this week to get it going again" : "Two sessions a week builds one")
+                            .font(GSFont.body(11, relativeTo: .caption2))
+                            .foregroundStyle(theme.neutral500)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                .padding(15)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(hasTrainedBefore
+                            ? "Start a new streak. Schedule a workout."
+                            : "Schedule your first lift.")
+    }
+
+    private func streakCountWidget(current: Int) -> some View {
         let next = Self.streakMilestones.first(where: { $0 > current }) ?? Self.streakMilestones.last!
         let progress = min(1, Double(current) / Double(next))
         return GSCard(bordered: false) {
@@ -660,7 +855,7 @@ struct HomeView: View {
                         .rotationEffect(.degrees(-90))
                     Image(systemName: "flame.fill")
                         .font(.system(size: 15))
-                        .foregroundStyle(current > 0 ? theme.accent : theme.neutral500)
+                        .foregroundStyle(theme.accent)
                 }
                 .frame(width: 52, height: 52)
                 VStack(alignment: .leading, spacing: 2) {
@@ -670,9 +865,9 @@ struct HomeView: View {
                     Text("day streak")
                         .font(GSFont.body(11, relativeTo: .caption2))
                         .foregroundStyle(theme.neutral500)
-                    Text(current > 0 ? "\(next - current) to badge" : "start one today")
+                    Text("\(next - current) to badge")
                         .font(GSFont.bold(10.5, relativeTo: .caption2))
-                        .foregroundStyle(current > 0 ? theme.accent : theme.neutral500)
+                        .foregroundStyle(theme.accent)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -936,6 +1131,7 @@ struct HomeView: View {
         activeCampaigns = campaigns ?? []
         if let streak = await streakFetch { userStreak = streak }
         await loadCampaignJoinState(for: activeCampaigns)
+        await loadBurpeeDebt()
 
         // Phase U frame 41 (OFFLINE·STALE-CACHE): cache whichever of the 3
         // stat-tile fields succeeded THIS pass — `nil` means that fetch
