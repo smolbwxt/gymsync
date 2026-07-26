@@ -45,19 +45,28 @@ enum WarmupMath {
     ///   sees "95 lb ×3" twice.
     /// - Returns [] when the working weight is at or below the bar — there
     ///   is nothing to ramp toward.
+    /// - Parameter plates: the lifter's actual inventory, in `unit`. Rungs
+    ///   are snapped to what THOSE plates can build — a gym without 2.5s
+    ///   moves in 10 lb steps, and a ramp printing 227.5 lb there is just a
+    ///   lifter standing at the rack trying to make a number.
     static func ramp(workingPounds: Decimal,
                      barPounds: Decimal,
-                     unit: WeightUnit) -> [Step] {
+                     unit: WeightUnit,
+                     plates: [Decimal]? = nil) -> [Step] {
         guard workingPounds > barPounds else { return [] }
+        let inventory = plates ?? unit.standardPlates
 
         var steps: [Step] = [Step(pounds: barPounds, reps: 5, isBar: true)]
+        let barInUnit = Units.fromPounds(barPounds, to: unit)
 
         for rung in rungs {
             let raw = workingPounds * rung.percent
-            // Round in the USER'S unit, then convert back — rounding in
-            // pounds would produce loads a kg lifter can't build.
+            // Snap in the USER'S unit against THEIR plates (PlateMath
+            // confirms rackability), then convert back for storage.
+            // Snapping in pounds would produce rungs a kg lifter can't load.
             let inUnit = Units.fromPounds(raw, to: unit)
-            let snapped = Units.roundToIncrement(inUnit, unit: unit)
+            let snapped = Units.nearestLoadable(inUnit, barWeight: barInUnit,
+                                                plates: inventory, unit: unit)
             let pounds = Units.toPounds(snapped, from: unit)
 
             guard pounds > barPounds, pounds < workingPounds else { continue }

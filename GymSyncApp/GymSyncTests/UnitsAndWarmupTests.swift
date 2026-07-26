@@ -35,13 +35,66 @@ final class UnitsAndWarmupTests: XCTestCase {
 
     // MARK: - Loadable rounding
 
+    /// PLATES GO ON IN PAIRS, so the smallest step is twice the smallest
+    /// plate — 5 lb, not 2.5. Getting this wrong prints 227.5 lb, which
+    /// needs a 1.25 lb pair no gym stocks.
+    func testLoadableIncrementIsTwiceTheSmallestPlate() {
+        XCTAssertEqual(double(Units.loadableIncrement(plates: WeightUnit.lbs.standardPlates, unit: .lbs)),
+                       5, accuracy: 0.001)
+        XCTAssertEqual(double(Units.loadableIncrement(plates: WeightUnit.kg.standardPlates, unit: .kg)),
+                       2.5, accuracy: 0.001)
+        // A gym without 2.5s genuinely moves in 10 lb steps.
+        XCTAssertEqual(double(Units.loadableIncrement(plates: [45, 35, 25, 10, 5], unit: .lbs)),
+                       10, accuracy: 0.001)
+    }
+
     func testRoundsToLoadableIncrement() {
-        // 225 lb is 102.058 kg — nobody can load that. 1.25 kg granularity.
+        // 225 lb is 102.058 kg — nobody can load that; 2.5 kg granularity.
         let kg = Units.fromPounds(225, to: .kg)
         XCTAssertEqual(double(Units.roundToIncrement(kg, unit: .kg)), 102.5, accuracy: 0.001)
-        // lbs snap to 2.5.
         XCTAssertEqual(double(Units.roundToIncrement(226, unit: .lbs)), 225, accuracy: 0.001)
-        XCTAssertEqual(double(Units.roundToIncrement(224, unit: .lbs)), 225, accuracy: 0.001)
+    }
+
+    /// The real contract the user asked for: whatever we print must be
+    /// buildable. Verified against PlateMath itself, not against arithmetic
+    /// — PlateMath is the single source of truth for what can be racked.
+    func testNearestLoadableIsAlwaysActuallyBuildable() {
+        let cases: [(unit: WeightUnit, bar: Decimal, plates: [Decimal])] = [
+            (.lbs, 45, WeightUnit.lbs.standardPlates),
+            (.kg, 20, WeightUnit.kg.standardPlates),
+            (.lbs, 45, [45, 35, 25, 10, 5]),        // no 2.5s
+            (.lbs, 35, [45, 25, 10]),               // sparse gym, light bar
+        ]
+        for c in cases {
+            for target: Decimal in [47, 96.3, 137.9, 225.7, 314.2] {
+                let snapped = Units.nearestLoadable(target, barWeight: c.bar,
+                                                    plates: c.plates, unit: c.unit)
+                let achieved = PlateMath.stack(for: snapped, barWeight: c.bar,
+                                               plates: c.plates).achievedWeight
+                XCTAssertEqual(double(achieved), double(snapped), accuracy: 0.001,
+                               "\(c.unit) target \(target) snapped to \(snapped), which cannot be loaded")
+                XCTAssertGreaterThanOrEqual(double(snapped), double(c.bar))
+            }
+        }
+    }
+
+    /// Switching units must land on a real number: 225 lb -> 102.5 kg,
+    /// which is a 20 kg bar plus 25+15+1.25 per side.
+    func testUnitSwitchLandsOnALoadableWeight() {
+        let text = Units.formatLoadable(pounds: 225, unit: .kg,
+                                        barPounds: Units.toPounds(20, from: .kg),
+                                        plates: WeightUnit.kg.standardPlates)
+        XCTAssertEqual(text, "102.5 kg")
+    }
+
+    /// With no 2.5 lb plates, a converted weight must fall back to a 10 lb
+    /// grid rather than printing something that gym can't build.
+    func testSparseInventoryWidensTheGrid() {
+        let plates: [Decimal] = [45, 35, 25, 10, 5]
+        let snapped = Units.nearestLoadable(227.5, barWeight: 45, plates: plates, unit: .lbs)
+        let achieved = PlateMath.stack(for: snapped, barWeight: 45, plates: plates).achievedWeight
+        XCTAssertEqual(double(achieved), double(snapped), accuracy: 0.001)
+        XCTAssertNotEqual(double(snapped), 227.5, "227.5 needs a 1.25 lb pair this gym lacks")
     }
 
     func testFormatTrimsAndLabels() {
@@ -89,14 +142,24 @@ final class UnitsAndWarmupTests: XCTestCase {
         XCTAssertEqual(loads, loads.sorted(), "ramp must climb")
     }
 
+    /// Every rung must be rackable with the lifter's own plates — checked
+    /// against PlateMath, including a gym missing its 2.5s.
     func testEveryRungIsLoadable() {
-        for unit in WeightUnit.allCases {
-            let steps = WarmupMath.ramp(workingPounds: 225, barPounds: 45, unit: unit)
+        let cases: [(unit: WeightUnit, bar: Decimal, plates: [Decimal])] = [
+            (.lbs, 45, WeightUnit.lbs.standardPlates),
+            (.kg, 20, WeightUnit.kg.standardPlates),
+            (.lbs, 45, [45, 35, 25, 10, 5]),
+        ]
+        for c in cases {
+            let barPounds = Units.toPounds(c.bar, from: c.unit)
+            let steps = WarmupMath.ramp(workingPounds: 225, barPounds: barPounds,
+                                        unit: c.unit, plates: c.plates)
             for step in steps where !step.isBar {
-                let inUnit = Units.fromPounds(step.pounds, to: unit)
-                let snapped = Units.roundToIncrement(inUnit, unit: unit)
-                XCTAssertEqual(double(inUnit), double(snapped), accuracy: 0.001,
-                               "\(unit): \(step.pounds) lb is not loadable in this unit")
+                let inUnit = Units.fromPounds(step.pounds, to: c.unit)
+                let achieved = PlateMath.stack(for: inUnit, barWeight: c.bar,
+                                               plates: c.plates).achievedWeight
+                XCTAssertEqual(double(achieved), double(inUnit), accuracy: 0.001,
+                               "\(c.unit) rung \(inUnit) is not loadable with \(c.plates)")
             }
         }
     }

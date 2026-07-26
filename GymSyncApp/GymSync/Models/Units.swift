@@ -25,16 +25,15 @@ enum WeightUnit: String, CaseIterable, Sendable {
         }
     }
 
-    /// Smallest increment that can actually be LOADED on a bar: a pair of
-    /// the smallest common plate. Displaying 102.0583 kg for a 225 lb
-    /// squat is technically right and practically useless — nobody can
-    /// load it, so nothing should print it.
-    var displayIncrement: Decimal {
-        switch self {
-        case .lbs: return 2.5
-        case .kg:  return 1.25
-        }
-    }
+    /// Smallest increment that can actually be LOADED, for the standard
+    /// plate set: PLATES GO ON IN PAIRS, so the step is twice the smallest
+    /// plate — 5 lb (a pair of 2.5s), 2.5 kg (a pair of 1.25s). Using the
+    /// plate value itself would print 227.5 lb, which needs a 1.25 lb pair
+    /// no gym stocks.
+    ///
+    /// Only a fallback: `Units.loadableIncrement(plates:)` derives this
+    /// from the user's OWN inventory whenever one is configured.
+    var displayIncrement: Decimal { standardPlates.last.map { $0 * 2 } ?? 5 }
 
     /// Plate denominations a typical gym stocks, in THIS unit, descending.
     var standardPlates: [Decimal] {
@@ -69,13 +68,57 @@ enum Units {
 
     // MARK: - Rounding
 
-    /// Rounds to the nearest loadable increment for `unit` (2.5 lb / 1.25
-    /// kg). Used for every displayed WORKING weight.
+    /// Smallest loadable step for a given plate inventory — twice the
+    /// smallest plate, because plates go on in pairs. A gym with no 2.5s
+    /// genuinely moves in 10 lb steps, and pretending otherwise produces
+    /// numbers that user cannot assemble.
+    static func loadableIncrement(plates: [Decimal], unit: WeightUnit) -> Decimal {
+        let usable = plates.filter { $0 > 0 }
+        guard let smallest = usable.min() else { return unit.displayIncrement }
+        return smallest * 2
+    }
+
+    /// Rounds to the nearest loadable increment for `unit` (standard set).
     static func roundToIncrement(_ value: Decimal, unit: WeightUnit) -> Decimal {
-        let step = unit.displayIncrement
+        roundToIncrement(value, step: unit.displayIncrement)
+    }
+
+    static func roundToIncrement(_ value: Decimal, step: Decimal) -> Decimal {
         guard step > 0 else { return value }
         let quotient = NSDecimalNumber(decimal: value / step).doubleValue
         return Decimal(quotient.rounded()) * step
+    }
+
+    /// The nearest weight the user can ACTUALLY BUILD, given their bar and
+    /// plates — the honest answer for a converted number.
+    ///
+    /// Rounding to an increment is necessary but not sufficient: a weird
+    /// inventory (only 45s, say) makes most multiples of the nominal step
+    /// unbuildable. So this proposes a candidate and then asks `PlateMath`
+    /// — the single source of truth for what can be racked — to confirm it,
+    /// checking one step below and one above and keeping whichever is
+    /// closer to the target.
+    ///
+    /// Everything happens in `unit`, not in pounds: 225 lb is 102.058 kg,
+    /// and a ladder computed in pounds yields rungs a kg lifter can't load.
+    static func nearestLoadable(_ target: Decimal,
+                                barWeight: Decimal,
+                                plates: [Decimal],
+                                unit: WeightUnit) -> Decimal {
+        guard target > barWeight else { return barWeight }
+        let step = loadableIncrement(plates: plates, unit: unit)
+
+        // At-or-below is exactly what PlateMath already guarantees.
+        let below = PlateMath.stack(for: target, barWeight: barWeight, plates: plates).achievedWeight
+        if below == target { return target }
+
+        // The next rung up is only a candidate until PlateMath confirms it
+        // is actually rackable with THESE plates.
+        let candidate = below + step
+        let above = PlateMath.stack(for: candidate, barWeight: barWeight, plates: plates).achievedWeight
+        guard above > below else { return below }
+
+        return (target - below) <= (above - target) ? below : above
     }
 
     // MARK: - Display
@@ -88,6 +131,22 @@ enum Units {
         let converted = fromPounds(pounds, to: unit)
         let value = rounded ? roundToIncrement(converted, unit: unit) : converted
         return "\(trimmed(value))\(includeUnit ? " \(unit.label)" : "")"
+    }
+
+    /// Formats a BARBELL weight snapped to what the user can actually
+    /// build. Use this wherever a converted number is shown for a barbell
+    /// lift — an unloadable weight is worse than a rounded one, because the
+    /// lifter stands at the rack trying to make it.
+    static func formatLoadable(pounds: Decimal,
+                               unit: WeightUnit,
+                               barPounds: Decimal,
+                               plates: [Decimal]) -> String {
+        // Snap in the USER'S unit against THEIR plates, then label.
+        let targetInUnit = fromPounds(pounds, to: unit)
+        let barInUnit = fromPounds(barPounds, to: unit)
+        let snapped = nearestLoadable(targetInUnit, barWeight: barInUnit,
+                                      plates: plates, unit: unit)
+        return "\(trimmed(snapped)) \(unit.label)"
     }
 
     /// Body weight keeps one decimal in both units — 1.25 kg granularity is
