@@ -264,7 +264,6 @@ public struct GSTabBar: View {
     }
 
     @ViewBuilder
-    @ViewBuilder
     private func tabButton(_ item: Item) -> some View {
         let isActive = selection == item.tab
         Button {
