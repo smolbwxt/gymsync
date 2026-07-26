@@ -301,6 +301,64 @@ struct YouTabView: View {
     // now sourced from `user_settings` instead of a hardcoded "Midnight").
 
     @ViewBuilder
+    /// Units (kg/lbs). STORED WEIGHTS STAY POUNDS — this changes display
+    /// and entry only (Models/Units.swift), which is why flipping it is
+    /// instant and safe: no data is rewritten. Persists through the full
+    /// UserSettings upsert; ThemeStore.noteExternalSettingsWrite keeps the
+    /// theme cache's copy consistent (its merge adopts unitSystem).
+    private var unitsRow: some View {
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Units")
+                    .font(GSFont.bodyMedium(14, relativeTo: .subheadline))
+                    .foregroundColor(theme.text)
+                Text("Weights show in \(effectiveUserSettings.weightUnit == .kg ? "kilograms" : "pounds") everywhere")
+                    .font(GSFont.body(12, relativeTo: .caption))
+                    .foregroundColor(theme.neutral700)
+            }
+            Spacer(minLength: 8)
+            HStack(spacing: 3) {
+                ForEach(WeightUnit.allCases, id: \.self) { candidate in
+                    Button {
+                        setUnitSystem(candidate)
+                    } label: {
+                        Text(candidate.label)
+                            .font(GSFont.bold(12, relativeTo: .caption))
+                            .foregroundStyle(effectiveUserSettings.weightUnit == candidate ? theme.bg : theme.neutral700)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(effectiveUserSettings.weightUnit == candidate ? theme.accent : Color.clear)
+                            .cornerRadius(8)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(3)
+            .background(theme.bg)
+            .cornerRadius(10)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(theme.surface)
+        .overlay(alignment: .bottom) { Rectangle().fill(theme.divider).frame(height: 1) }
+    }
+
+    private func setUnitSystem(_ unit: WeightUnit) {
+        var updated = effectiveUserSettings
+        guard updated.unitSystem != unit.rawValue else { return }
+        updated.unitSystem = unit.rawValue
+        userSettings = updated   // optimistic — display flips immediately
+        Task {
+            do {
+                try await UserSettingsRepository.upsert(updated)
+                ThemeStore.shared.noteExternalSettingsWrite(updated)
+            } catch {
+                errorText = ErrorMapping.map(error).errorDescription
+            }
+        }
+    }
+
     /// Global off switch for the first-visit spotlights. Device-local
     /// (`@AppStorage`) for the same reason their seen-flags are — this is
     /// per-device UI state, not account data.
@@ -409,6 +467,7 @@ struct YouTabView: View {
             GSSettingsRow(title: "Blocked Users", icon: "person.crop.circle.badge.xmark") {
                 showBlockedUsers = true
             }
+            unitsRow
             showTipsRow
             soloPrivacyRow
             heartRateShareRow

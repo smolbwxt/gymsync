@@ -314,6 +314,14 @@ struct WorkoutSessionView: View {
                         // Canvas: accent-filled exercise header card
                         exerciseHeaderCard(ex: ex, re: re)
 
+                        // "Load the bar" widget (user direction 2026-07-26)
+                        // — barbell lifts only; a plate stack on a dumbbell
+                        // curl is noise. Collapsed card so the logged table
+                        // stays the screen's spine.
+                        if ex.equipment.lowercased() == "barbell" {
+                            barLoaderCard(re: re)
+                        }
+
                         // Canvas: logged sets table
                         loggedSetsTable
 
@@ -373,6 +381,53 @@ struct WorkoutSessionView: View {
                 .background(theme.bg)
             }
         }
+    }
+
+    // MARK: - Bar loader (barbell exercises only)
+
+    @State private var showBarLoader = false
+
+    /// Prefill priority: the exercise's programmed target, else the last
+    /// set logged for THIS exercise — both canonical pounds already.
+    private func barLoaderPrefill(re: RoutineExercise) -> Decimal? {
+        if let target = re.targetWeight, let parsed = Decimal(string: target), parsed > 0 {
+            return parsed
+        }
+        return loggedSets.last { $0.exerciseID == re.exerciseID && !$0.isFailed }?.weight
+    }
+
+    private func barLoaderCard(re: RoutineExercise) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) { showBarLoader.toggle() }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "scalemass")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(theme.accent)
+                    Text("Load the bar")
+                        .font(GSFont.bold(13, relativeTo: .subheadline))
+                        .foregroundStyle(theme.text)
+                    Spacer()
+                    Image(systemName: showBarLoader ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(theme.neutral500)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if showBarLoader {
+                BarLoaderWidget(initialPounds: barLoaderPrefill(re: re))
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 14)
+            }
+        }
+        .background(theme.surface)
+        .cornerRadius(GSMetrics.radiusMd)
+        .padding(.horizontal, 16)
     }
 
     // Canvas: accent-filled card — "EXERCISE N OF M" kicker / "Set N of M" trailing /

@@ -144,6 +144,10 @@ struct GroupSessionLiveView: View {
     /// sheet — see docs/design/accepted-deviations.json's "session-chat"
     /// entry.
     @State private var showChatSheet        = false
+    /// "Load the bar" (user direction 2026-07-26) — reachable from the
+    /// always-present header, whether it's your turn or not: your next
+    /// weight is yours to plan while someone else lifts.
+    @State private var showBarLoaderSheet   = false
     @State private var isEnding             = false
     @State private var errorText: String?
     // Phase O Task 5 item 5 — mirrors LobbyView's identical trio (this
@@ -649,6 +653,9 @@ struct GroupSessionLiveView: View {
         .sheet(isPresented: $showLogSetSheet) { logSetSheetContent }
         // Session chat sheet (Task 3)
         .sheet(isPresented: $showChatSheet) { chatSheet }
+        // No prefill: in a group session your next load is personal and not
+        // on screen — typing it beats guessing from someone else's set.
+        .sheet(isPresented: $showBarLoaderSheet) { BarLoaderSheet(initialPounds: nil) }
         // Voice mixer sheet (Phase O Task 5 item 5)
         .sheet(isPresented: $showVoiceMixerSheet) { voiceMixerSheet }
         .onChange(of: isVoiceConnected) { wasConnected, nowConnected in
@@ -1052,6 +1059,21 @@ struct GroupSessionLiveView: View {
                 }
                 .buttonStyle(.plain)
             }
+
+            // Load the bar — same bordered-square idiom; deliberately NOT
+            // turn-gated (see showBarLoaderSheet's doc comment).
+            Button {
+                showBarLoaderSheet = true
+            } label: {
+                Image(systemName: "scalemass")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(theme.neutral700)
+                    .frame(width: 30, height: 30)
+                    .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
 
             // Session chat (Task 3) — same bordered-square idiom as the X
             // button beside it (30×30 glyph in a 44×44 tap target); no
