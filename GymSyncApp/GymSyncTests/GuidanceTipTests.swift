@@ -74,6 +74,16 @@ final class GuidanceTipTests: XCTestCase {
 
     /// Tips default ON for a fresh install (no stored value) — a first-run
     /// system that defaults off teaches nobody.
+    /// `ScreenshotTests` disables tips with the LITERAL "-guidanceTipsEnabled"
+    /// launch argument (a UI test target links no app code, so it can't use
+    /// the constant). Pin the value here: renaming the key without updating
+    /// that literal would silently re-enable spotlights in CI, and every
+    /// navigation-driven capture would start failing on an unhittable
+    /// control behind the scrim.
+    func testTipsEnabledKeyMatchesTheUITestLaunchArgument() {
+        XCTAssertEqual(GuidanceTip.tipsEnabledKey, "guidanceTipsEnabled")
+    }
+
     func testTipsDefaultOnWhenUnset() {
         UserDefaults.standard.removeObject(forKey: GuidanceTip.tipsEnabledKey)
         XCTAssertTrue(GuidanceTip.tipsEnabled)

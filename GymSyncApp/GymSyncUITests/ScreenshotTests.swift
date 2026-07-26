@@ -47,6 +47,17 @@ final class ScreenshotTests: XCTestCase {
         // first in UserDefaults.standard's search list, so this overrides
         // without touching app code or persisted state.
         app.launchArguments += ["-hasSeenWalkthroughV1", "YES"]
+        // Same class of failure as the walkthrough cover: a first-visit
+        // spotlight is a modal scrim, so every tab/segment tap underneath it
+        // dies in kAXErrorCannotComplete scroll-to-visible. Turning tips off
+        // for the suite keeps captures showing the SCREENS; the overlay
+        // itself is reviewed through the `guidance-spotlight` catalog case,
+        // which builds GSSpotlightOverlay directly and is unaffected.
+        // (Literal, not GuidanceTip.tipsEnabledKey: the UI test target runs
+        // out-of-process and links no app code. GuidanceTipTests, which DOES
+        // `@testable import GymSync`, asserts the key's value so a rename
+        // can't silently orphan this string.)
+        app.launchArguments += ["-guidanceTipsEnabled", "NO"]
         var env = app.launchEnvironment
         // Sourced from the UI test *process's* environment — CI's
         // `xcodebuild test` step sets these via `env:`, which XCTest inherits
