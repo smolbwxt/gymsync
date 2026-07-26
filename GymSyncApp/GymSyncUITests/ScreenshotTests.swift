@@ -258,6 +258,7 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogVenueLocalTab()          { captureCatalog("venue-local-tab") }
     func testCatalogVenueHub()               { captureCatalog("venue-hub") }
     func testCatalogVenueAgeGate()           { captureCatalog("venue-age-gate") }
+    func testCatalogGuidanceSpotlight()      { captureCatalog("guidance-spotlight") }
 
     // MARK: - Seeded deep-screen captures
     //

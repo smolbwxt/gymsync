@@ -100,6 +100,7 @@ struct HomeView: View {
             // empty bar row wasted vertical space. Pushed destinations
             // (LobbyView etc.) re-show their own nav bars.
             .toolbar(.hidden, for: .navigationBar)
+            .gsSpotlight(.home)
             .task {
                 await refresh()
                 await consumePendingRouteIfNeeded()
@@ -397,6 +398,7 @@ struct HomeView: View {
             .buttonStyle(.plain)
             .background(theme.surface)
             .cornerRadius(GSMetrics.radiusMd)
+            .gsSpotlightTarget(.home)
 
             if burpeesOwed > 0 {
                 burpeeOwedWidget

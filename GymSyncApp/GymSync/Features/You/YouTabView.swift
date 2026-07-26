@@ -24,6 +24,7 @@ struct YouTabView: View {
     /// and a transient tick on the reset button.
     @State private var qaSeenCount = 0
     @State private var qaResetConfirmed = false
+    @AppStorage(GuidanceTip.tipsEnabledKey) private var tipsEnabled = true
     @State private var showRestTimerSetting = false
     @State private var showEditProfile = false
     // Phase M Task 2 (moderation/compliance): You-tab Blocked Users list.
@@ -300,6 +301,28 @@ struct YouTabView: View {
     // now sourced from `user_settings` instead of a hardcoded "Midnight").
 
     @ViewBuilder
+    /// Global off switch for the first-visit spotlights. Device-local
+    /// (`@AppStorage`) for the same reason their seen-flags are — this is
+    /// per-device UI state, not account data.
+    private var showTipsRow: some View {
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Show tips")
+                    .font(GSFont.bodyMedium(14, relativeTo: .subheadline))
+                    .foregroundColor(theme.text)
+                Text("Brief pointers the first time you open a screen")
+                    .font(GSFont.body(12, relativeTo: .caption))
+                    .foregroundColor(theme.neutral700)
+            }
+            Spacer(minLength: 8)
+            GSToggle(isOn: $tipsEnabled, label: "Show tips")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(theme.surface)
+        .overlay(alignment: .bottom) { Rectangle().fill(theme.divider).frame(height: 1) }
+    }
+
     // MARK: - QA tools (curator-gated)
 
     /// Replays the first-run experience on this device: clears every
@@ -382,6 +405,7 @@ struct YouTabView: View {
             GSSettingsRow(title: "Blocked Users", icon: "person.crop.circle.badge.xmark") {
                 showBlockedUsers = true
             }
+            showTipsRow
             soloPrivacyRow
             heartRateShareRow
             healthSyncRow

@@ -77,6 +77,10 @@ struct LibraryTabView: View {
             }
             .background(theme.bg)
             .toolbar(.hidden, for: .navigationBar)   // redesign v2: in-content title above
+            // First-visit tip. Only meaningful on the Routines sub-tab (its
+            // target is that list's "+ New"); on any other sub-tab the
+            // anchor is absent and the card centers itself instead.
+            .gsSpotlight(.library)
         }
         .task { await loadFeatured() }
     }

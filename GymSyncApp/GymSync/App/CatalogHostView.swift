@@ -55,6 +55,7 @@ enum CatalogScreen: String, CaseIterable {
     case venueLocalTab = "venue-local-tab"
     case venueHub = "venue-hub"
     case venueAgeGate = "venue-age-gate"
+    case guidanceSpotlight = "guidance-spotlight"
 }
 
 struct CatalogHostView: View {
@@ -105,6 +106,7 @@ struct CatalogHostView: View {
             case .venueLocalTab:              content_venueLocalTab
             case .venueHub:                   content_venueHub
             case .venueAgeGate:               content_venueAgeGate
+            case .guidanceSpotlight:          content_guidanceSpotlight
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1051,6 +1053,31 @@ struct CatalogHostView: View {
 
     private var content_venueAgeGate: some View {
         AgeGateView(onConfirm: {}, onDecline: {})
+    }
+
+    // `guidance-spotlight`: the overlay rendered directly with a fixed
+    // target rect. The live modifier is gated on "unseen + tips on + layout
+    // settled", none of which a capture run can arrange — so the catalog
+    // constructs GSSpotlightOverlay itself, which is the part worth
+    // reviewing (scrim opacity, cutout, card placement).
+    private var content_guidanceSpotlight: some View {
+        ZStack {
+            VStack(spacing: 12) {
+                ForEach(0..<4, id: \.self) { _ in
+                    RoundedRectangle(cornerRadius: GSMetrics.radiusMd)
+                        .fill(theme.surface)
+                        .frame(height: 76)
+                }
+            }
+            .padding(16)
+
+            GSSpotlightOverlay(
+                targetRect: CGRect(x: 16, y: 192, width: 360, height: 76),
+                title: GuidanceTip.home.title,
+                message: GuidanceTip.home.message,
+                onDismiss: {}
+            )
+        }
     }
 }
 

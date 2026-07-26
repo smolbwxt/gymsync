@@ -36,7 +36,16 @@ enum OneShotFlags {
     static let venueAdvisoryKey = "hasSeenVenueAdvisory"
 
     static var all: [Flag] {
-        [
+        // Guidance spotlights register themselves off GuidanceTip.allCases —
+        // adding a case to that enum automatically joins the QA reset, which
+        // is the whole point of the registry (a tip that had to remember to
+        // register here would eventually forget).
+        GuidanceTip.allCases.map { tip in
+            Flag(id: tip.rawValue,
+                 label: tip.label,
+                 isSet: { tip.hasBeenSeen },
+                 reset: { tip.reset() })
+        } + [
             Flag(id: walkthroughKey,
                  label: "First-run walkthrough",
                  isSet: { UserDefaults.standard.bool(forKey: walkthroughKey) },

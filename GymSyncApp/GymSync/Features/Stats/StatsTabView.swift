@@ -48,6 +48,7 @@ struct StatsTabView: View {
                     .padding(.horizontal, 16)
                     .padding(.top, 16)
                     .padding(.bottom, 12)
+                    .gsSpotlightTarget(.stats)
 
                     // ── Weekly Volume Card ──────────────────────────────────────
                     weeklyVolumeCardView
@@ -117,6 +118,7 @@ struct StatsTabView: View {
             .background(theme.bg)
             .contentMargins(.bottom, 88, for: .scrollContent)   // dock clearance (user bug report)
             .toolbar(.hidden, for: .navigationBar)   // redesign v2: in-content title above
+            .gsSpotlight(.stats)
             .task {
                 exercises = (try? await ExerciseRepository.fetchAll()) ?? []
                 if let id = appState.currentProfile?.id {

@@ -38,6 +38,7 @@ final class CatalogScreenTests: XCTestCase {
             "venue-local-tab",
             "venue-hub",
             "venue-age-gate",
+            "guidance-spotlight",
         ]
         for id in ids {
             XCTAssertNotNil(CatalogScreen(rawValue: id), "missing catalog case: \(id)")

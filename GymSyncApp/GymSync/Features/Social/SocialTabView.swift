@@ -249,6 +249,7 @@ struct SocialTabView: View {
                                     Text("+ New Group")
                                 }
                                 .buttonStyle(GSSecondaryButtonStyle())
+                                .gsSpotlightTarget(.social)
                                 .frame(maxWidth: .infinity)
                                 .padding(.horizontal, 16)
                                 .padding(.top, 16)
@@ -280,6 +281,7 @@ struct SocialTabView: View {
             .background(theme.bg)
             .scrollContentBackground(.hidden)
             .toolbar(.hidden, for: .navigationBar)   // redesign v2: in-content title above
+            .gsSpotlight(.social)
             .sheet(isPresented: $showCreateGroup) {
                 CreateGroupView { newGroup in
                     groups.insert(newGroup, at: 0)

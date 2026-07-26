@@ -183,6 +183,8 @@ struct WorkoutSessionView: View {
             }
         }
         .background(theme.bg)
+        // Fires on arrival — before any set is logged, never mid-lift.
+        .gsSpotlight(.workout)
         // Minor finding 2: non-blocking "couldn't join the leaderboard"
         // notice — same transient-pill idiom + placement style as
         // GroupSessionLiveView's incoming-sound overlay (that one docks at
@@ -349,6 +351,7 @@ struct WorkoutSessionView: View {
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(GSPrimaryButtonStyle())
+                    .gsSpotlightTarget(.workout)
                     .padding(.horizontal, 16)
                     .padding(.top, 10)
                     // Freeform advances between exercises by hand — a routine

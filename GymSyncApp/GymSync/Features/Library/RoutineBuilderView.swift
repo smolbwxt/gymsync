@@ -108,6 +108,7 @@ struct RoutineBuilderView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
                         .contentShape(Rectangle())
+                        .gsSpotlightTarget(.builder)
                 }
                 .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
 
@@ -141,6 +142,7 @@ struct RoutineBuilderView: View {
         // boundary) and necessary in the push case — see GSComponents.swift's
         // GSHidesDock.
         .gsHidesDock()
+        .gsSpotlight(.builder)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(theme.surface, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)

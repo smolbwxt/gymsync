@@ -98,6 +98,9 @@ struct RoutinesListView: View {
                     Image(systemName: "plus").font(.system(size: 12, weight: .bold))
                     Text("New").font(GSFont.bold(13, relativeTo: .subheadline))
                 }
+                // First-visit spotlight target — the tip itself is attached
+                // to LibraryTabView's root; preferences travel up the tree.
+                .gsSpotlightTarget(.library)
                 .foregroundStyle(theme.accent)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
