@@ -490,7 +490,14 @@ struct WorkoutSessionView: View {
                 )
                 .padding(.horizontal, 16)
                 .padding(.vertical, 9)
-                .background(theme.accent.opacity(0.1))
+                // Elevation, NOT a color wash (user bug report 2026-07-26:
+                // "rectangle miscolor"). A low-opacity accent over the Onyx
+                // near-black ground doesn't read as a tint — it resolves to
+                // a muddy band whose hue depends on the user's accent (10%
+                // coral over #0A0B0D lands on dark maroon). Onyx expresses
+                // "this row is active" through surface contrast, and the
+                // accent-colored set number already carries the signal.
+                .background(theme.surface)
             }
         }
     }

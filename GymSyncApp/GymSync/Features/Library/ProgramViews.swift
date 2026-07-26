@@ -337,7 +337,12 @@ struct ProgramDetailView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(isCurrent ? theme.accent.opacity(0.08) : Color.clear)
+        // Same fix as WorkoutSessionView's pending-set row: a low-opacity
+        // accent over near-black muddies rather than tints. The week table
+        // already sits on `theme.surface` (#16181D), so the current week
+        // steps UP one elevation — `neutral300` IS Onyx's surface2 (#1E222A,
+        // see GSTheme.onyx's note) — instead of washing color over it.
+        .background(isCurrent ? theme.neutral300 : Color.clear)
     }
 
     private var actionsSection: some View {
