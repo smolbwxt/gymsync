@@ -72,7 +72,20 @@ enum GuidanceTip: String, CaseIterable, Identifiable {
     /// Global off switch, surfaced in You ▸ Settings. Device-local for the
     /// same reason the seen flags are (see OneShotFlags).
     static let tipsEnabledKey = "guidanceTipsEnabled"
+
+    /// Defaults to ON (a first-run system that defaults off teaches nobody),
+    /// so presence has to be checked separately from value.
+    ///
+    /// `object(forKey:) as? Bool` is WRONG here and cost a CI round: a value
+    /// supplied through the launch-argument domain (`-guidanceTipsEnabled
+    /// NO`, how ScreenshotTests suppresses spotlights) arrives as an NSString,
+    /// so the cast fails, the `?? true` default wins, and tips stay enabled —
+    /// silently, with the only symptom being unhittable controls behind a
+    /// scrim in the capture suite. `bool(forKey:)` parses "NO"/"0"/"false"
+    /// as well as a real Bool, so it handles both the argument domain and
+    /// the @AppStorage toggle.
     static var tipsEnabled: Bool {
-        UserDefaults.standard.object(forKey: tipsEnabledKey) as? Bool ?? true
+        guard UserDefaults.standard.object(forKey: tipsEnabledKey) != nil else { return true }
+        return UserDefaults.standard.bool(forKey: tipsEnabledKey)
     }
 }

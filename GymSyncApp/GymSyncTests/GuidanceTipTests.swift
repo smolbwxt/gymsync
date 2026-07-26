@@ -91,4 +91,16 @@ final class GuidanceTipTests: XCTestCase {
         XCTAssertFalse(GuidanceTip.tipsEnabled)
         UserDefaults.standard.removeObject(forKey: GuidanceTip.tipsEnabledKey)
     }
+
+    /// Launch-argument values arrive as STRINGS, not Bools — `-guidanceTipsEnabled
+    /// NO` stores "NO". An `as? Bool` read silently fails that cast and falls
+    /// back to the default, which is how the capture suite ended up running
+    /// with spotlights still enabled. Pin the string form.
+    func testTipsDisabledByStringValueFromLaunchArgumentDomain() {
+        UserDefaults.standard.set("NO", forKey: GuidanceTip.tipsEnabledKey)
+        XCTAssertFalse(GuidanceTip.tipsEnabled, "a string \"NO\" must disable tips — the UI test suite depends on it")
+        UserDefaults.standard.set("YES", forKey: GuidanceTip.tipsEnabledKey)
+        XCTAssertTrue(GuidanceTip.tipsEnabled)
+        UserDefaults.standard.removeObject(forKey: GuidanceTip.tipsEnabledKey)
+    }
 }
