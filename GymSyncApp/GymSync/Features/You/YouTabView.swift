@@ -389,6 +389,10 @@ struct YouTabView: View {
             GSSettingsRow(title: "Appearance", icon: "sun.max", value: paletteDisplayName) {
                 showAppearance = true
             }
+            // Accent/palette customization is genuinely buried — a settings
+            // row inside a group box. cornerRadius 0: this row sits mid-stack
+            // in a clipped container, so a rounded outline would float.
+            .gsDiscovery(.youAppearance, cornerRadius: 0)
             GSSettingsRow(title: "Notifications", icon: "bell", value: notificationsStatusText) {
                 showNotificationPrefs = true
             }

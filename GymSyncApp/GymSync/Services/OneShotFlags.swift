@@ -45,6 +45,18 @@ enum OneShotFlags {
                  label: tip.label,
                  isSet: { tip.hasBeenSeen },
                  reset: { tip.reset() })
+        } + DiscoveryTarget.allCases.map { target in
+            // Discovery highlights join the same replay, off allCases for
+            // the same reason: a target that had to remember to register
+            // would eventually forget.
+            // isSet reads STORAGE (not the store's observable mirror) so the
+            // registry's contract — id is the defaults key — holds under
+            // direct writes; reset goes through the store so the live UI
+            // drops its highlights immediately.
+            Flag(id: target.rawValue,
+                 label: target.label,
+                 isSet: { UserDefaults.standard.bool(forKey: target.rawValue) },
+                 reset: { DiscoveryStore.shared.unmark(target) })
         } + [
             Flag(id: walkthroughKey,
                  label: "First-run walkthrough",

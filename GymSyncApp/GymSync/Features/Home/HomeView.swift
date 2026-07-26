@@ -484,6 +484,7 @@ struct HomeView: View {
             }
             .contentShape(Rectangle())
         }
+        .gsDiscovery(.homeSchedule)
         .buttonStyle(.plain)
         .padding(.horizontal, 16)
         .padding(.bottom, 12)

@@ -182,6 +182,7 @@ struct SocialTabView: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .gsDiscovery(.socialLocal, cornerRadius: GSMetrics.radiusSm)
                             .padding(.horizontal, 16)
                             .padding(.top, 8)
 

@@ -95,8 +95,12 @@ struct LibraryTabView: View {
         HStack(spacing: 3) {
             segmentOption(title: "Routines", tab: .routines)
             segmentOption(title: "Exercises", tab: .exercises)
+            // Discovery depth on the two sub-tabs a new user is least
+            // likely to find on their own. radiusSm matches the pill.
             segmentOption(title: "Discover", tab: .discover)
+                .gsDiscovery(.libraryDiscover, cornerRadius: 9)
             segmentOption(title: "Campaigns", tab: .campaigns)
+                .gsDiscovery(.libraryCampaigns, cornerRadius: 9)
         }
         .padding(4)
         .background(theme.surface)

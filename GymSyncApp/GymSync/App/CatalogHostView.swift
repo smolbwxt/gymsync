@@ -56,6 +56,7 @@ enum CatalogScreen: String, CaseIterable {
     case venueHub = "venue-hub"
     case venueAgeGate = "venue-age-gate"
     case guidanceSpotlight = "guidance-spotlight"
+    case guidanceDiscovery = "guidance-discovery"
 }
 
 struct CatalogHostView: View {
@@ -107,6 +108,7 @@ struct CatalogHostView: View {
             case .venueHub:                   content_venueHub
             case .venueAgeGate:               content_venueAgeGate
             case .guidanceSpotlight:          content_guidanceSpotlight
+            case .guidanceDiscovery:          content_guidanceDiscovery
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1053,6 +1055,84 @@ struct CatalogHostView: View {
 
     private var content_venueAgeGate: some View {
         AgeGateView(onConfirm: {}, onDecline: {})
+    }
+
+    // `guidance-discovery`: the depth treatment side by side with a plain
+    // control, since the whole question under review is whether the
+    // difference is visible WITHOUT being loud. Renders the border directly
+    // rather than through .gsDiscovery — the modifier is state-gated on
+    // "never pressed", which a capture run can't guarantee.
+    private var content_guidanceDiscovery: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("Discovery depth")
+                .font(GSFont.heading(20, relativeTo: .title3))
+                .foregroundStyle(theme.text)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("NEW — never pressed")
+                    .font(GSFont.bold(10, relativeTo: .caption2))
+                    .tracking(1.2)
+                    .foregroundStyle(theme.neutral500)
+                catalogDiscoveryRow(raised: true)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("ALREADY USED")
+                    .font(GSFont.bold(10, relativeTo: .caption2))
+                    .tracking(1.2)
+                    .foregroundStyle(theme.neutral500)
+                catalogDiscoveryRow(raised: false)
+            }
+
+            HStack(spacing: 10) {
+                GSDiscoveryDot()
+                Text("Tab-bar rollup dot — stroked, never accent-filled")
+                    .font(GSFont.body(12, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+            }
+            .padding(.top, 4)
+
+            Spacer()
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func catalogDiscoveryRow(raised: Bool) -> some View {
+        HStack(spacing: 13) {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(theme.neutral300)
+                .frame(width: 42, height: 42)
+                .overlay(
+                    Image(systemName: "calendar.badge.plus")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(theme.accent)
+                )
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Schedule a session")
+                    .font(GSFont.bold(15.5, relativeTo: .headline))
+                    .foregroundStyle(theme.text)
+                Text("Plan your next lift — solo or with a crew")
+                    .font(GSFont.body(12, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+            }
+            Spacer(minLength: 8)
+        }
+        .padding(16)
+        .background(theme.surface)
+        .cornerRadius(GSMetrics.radiusMd)
+        .overlay {
+            if raised {
+                RoundedRectangle(cornerRadius: GSMetrics.radiusMd)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.30), Color.white.opacity(0.04)],
+                            startPoint: .top, endPoint: .bottom
+                        ),
+                        lineWidth: 1
+                    )
+            }
+        }
     }
 
     // `guidance-spotlight`: the overlay rendered directly with a fixed

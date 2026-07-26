@@ -270,6 +270,7 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogVenueHub()               { captureCatalog("venue-hub") }
     func testCatalogVenueAgeGate()           { captureCatalog("venue-age-gate") }
     func testCatalogGuidanceSpotlight()      { captureCatalog("guidance-spotlight") }
+    func testCatalogGuidanceDiscovery()      { captureCatalog("guidance-discovery") }
 
     // MARK: - Seeded deep-screen captures
     //

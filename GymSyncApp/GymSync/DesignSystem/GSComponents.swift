@@ -220,6 +220,11 @@ public struct GSDivider: View {
 public struct GSTabBar: View {
     @Environment(\.gsTheme) private var theme
 
+    /// @Observable singleton so a rollup dot vanishes the instant its
+    /// control is pressed — a plain UserDefaults read would leave the dock
+    /// showing a dot whose reason is already gone.
+    @State private var discovery = DiscoveryStore.shared
+
     @Binding private var selection: AppState.Tab
 
     // Not `public`: AppState.Tab is an internal type (AppState itself is
@@ -259,6 +264,7 @@ public struct GSTabBar: View {
     }
 
     @ViewBuilder
+    @ViewBuilder
     private func tabButton(_ item: Item) -> some View {
         let isActive = selection == item.tab
         Button {
@@ -267,6 +273,15 @@ public struct GSTabBar: View {
             VStack(spacing: 3) {
                 Image(systemName: item.icon)
                     .font(.system(size: 21, weight: .regular))
+                    // Discovery rollup: something under this tab has never
+                    // been opened. A STROKED ring, never an accent fill —
+                    // accent indicators mean "waiting for you" (unread,
+                    // friend requests) and must stay distinct.
+                    .overlay(alignment: .topTrailing) {
+                        if discovery.hasNew(in: item.tab), GuidanceTip.tipsEnabled {
+                            GSDiscoveryDot().offset(x: 6, y: -2)
+                        }
+                    }
                 Text(item.label)
                     .font(GSFont.bold(10, relativeTo: .caption2))
             }
