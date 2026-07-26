@@ -858,8 +858,14 @@ struct HomeView: View {
     }
 
     private func streakCountWidget(current: Int) -> some View {
-        let next = Self.streakMilestones.first(where: { $0 > current }) ?? Self.streakMilestones.last!
-        let progress = min(1, Double(current) / Double(next))
+        // BUG FIX (spotted in the 2026-07-25 CI capture: the test account's
+        // 627-day streak rendered "-262 to badge"): once a streak passes the
+        // LAST milestone there is no next one, and the old
+        // `?? streakMilestones.last!` fallback subtracted a smaller number
+        // from a bigger one. Past every badge the ring is simply full and
+        // the subtitle celebrates instead of counting down to the past.
+        let next = Self.streakMilestones.first(where: { $0 > current })
+        let progress = next.map { min(1, Double(current) / Double($0)) } ?? 1
         return GSCard(bordered: false) {
             HStack(spacing: 12) {
                 ZStack {
@@ -881,7 +887,7 @@ struct HomeView: View {
                     Text("day streak")
                         .font(GSFont.body(11, relativeTo: .caption2))
                         .foregroundStyle(theme.neutral500)
-                    Text("\(next - current) to badge")
+                    Text(next.map { "\($0 - current) to badge" } ?? "every badge earned")
                         .font(GSFont.bold(10.5, relativeTo: .caption2))
                         .foregroundStyle(theme.accent)
                 }
@@ -890,7 +896,8 @@ struct HomeView: View {
             .padding(15)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(current) day streak, \(next - current) days to the next badge")
+        .accessibilityLabel(next.map { "\(current) day streak, \($0 - current) days to the next badge" }
+                            ?? "\(current) day streak, every badge earned")
     }
 
     // MARK: - Training calendar (redesign: replaces the Upcoming list)
