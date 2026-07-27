@@ -50,7 +50,9 @@ final class UnitsAndWarmupTests: XCTestCase {
 
     func testRoundsToLoadableIncrement() {
         // 225 lb is 102.058 kg — nobody can load that; 2.5 kg granularity.
-        let kg = Units.fromPounds(225, to: .kg)
+        // (Decimal spelled out: a bare literal is ambiguous now that
+        // fromPounds has a Double overload for volume aggregates.)
+        let kg = Units.fromPounds(Decimal(225), to: .kg)
         XCTAssertEqual(double(Units.roundToIncrement(kg, unit: .kg)), 102.5, accuracy: 0.001)
         XCTAssertEqual(double(Units.roundToIncrement(226, unit: .lbs)), 225, accuracy: 0.001)
     }
