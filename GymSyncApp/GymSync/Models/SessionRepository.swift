@@ -76,6 +76,45 @@ enum SessionRepository {
         } catch { throw ErrorMapping.map(error) }
     }
 
+    private struct SetUpdate: Encodable {
+        let reps: Int?
+        let weight: Decimal?
+        let rpe: Decimal?
+        let isFailed: Bool
+        let note: String?
+        enum CodingKeys: String, CodingKey {
+            case reps, weight, rpe, note
+            case isFailed = "is_failed"
+        }
+        // Explicit encode (the PublishFieldsUpdate precedent): synthesized
+        // Encodable uses encodeIfPresent, which OMITS nils — so clearing a
+        // note/RPE would silently leave the old value stuck. encode(_:)
+        // writes JSON null and actually clears the column.
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encode(reps, forKey: .reps)
+            try c.encode(weight, forKey: .weight)
+            try c.encode(rpe, forKey: .rpe)
+            try c.encode(isFailed, forKey: .isFailed)
+            try c.encode(note, forKey: .note)
+        }
+    }
+
+    /// Edits one set in place (the owner UPDATE policy has existed all
+    /// along — edit was a client gap, not a backend one). Encodes nils as
+    /// explicit nulls so clearing a note/RPE actually clears it.
+    static func updateSet(_ log: SetLog) async throws {
+        do {
+            _ = try await client
+                .from("set_logs")
+                .update(SetUpdate(reps: log.reps, weight: log.weight,
+                                  rpe: log.rpe, isFailed: log.isFailed,
+                                  note: log.note))
+                .eq("id", value: log.id)
+                .execute()
+        } catch { throw ErrorMapping.map(error) }
+    }
+
     /// Deletes one mistyped set (owner-scoped RLS, 20260730000003). PR rows
     /// born from the deleted set are deliberately NOT touched — see the
     /// migration header.

@@ -106,6 +106,8 @@ struct WorkoutSessionView: View {
     @State private var lastTimeByExercise: [UUID: String] = [:]
     /// The set queued for deletion (confirmation dialog).
     @State private var setPendingDeletion: SetLog?
+    /// The set being edited (sheet(item:) — reuses LogSetSheet prefilled).
+    @State private var editingSet: SetLog?
 
     @State private var freeformExercises: [RoutineExercise] = []
     @State private var showExercisePicker = false
@@ -182,6 +184,7 @@ struct WorkoutSessionView: View {
         }
         .sheet(isPresented: $showExercisePicker) { exercisePickerSheet }
         .sheet(isPresented: $showLogSheet) { logSheet }
+        .sheet(item: $editingSet) { log in editSheet(for: log) }
     }
 
     @ViewBuilder
@@ -323,6 +326,65 @@ struct WorkoutSessionView: View {
                                  isFailed: isFailed, note: note) }
             }
         }
+    }
+
+    /// Edit reuses LogSetSheet with the previous entry seeded — fixing one
+    /// field never costs re-entering the other four. The sheet returns
+    /// values through the same onLog closure shape; commit routes to
+    /// applyEdit instead of log.
+    private func editSheet(for log: SetLog) -> some View {
+        let exercise = exerciseCatalog.first { $0.id == log.exerciseID }
+        return LogSetSheet(
+            exercise: exercise ?? Exercise(
+                id: log.exerciseID, name: "Exercise", slug: "",
+                category: "", primaryMuscle: "", secondaryMuscles: [],
+                equipment: "", defaultUnit: "lbs", demoVideoURL: nil
+            ),
+            setIndex: log.setIndex,
+            defaultReps: log.reps.map(String.init),
+            defaultWeight: log.weight.map { "\($0)" },
+            unit: sessionSettings?.weightUnit ?? .lbs,
+            defaultRPE: log.rpe.map { NSDecimalNumber(decimal: $0).doubleValue },
+            defaultIsFailed: log.isFailed,
+            defaultNote: log.note
+        ) { reps, weight, rpe, isFailed, note in
+            Task {
+                await applyEdit(to: log, reps: reps, weight: weight,
+                                rpe: rpe, isFailed: isFailed, note: note)
+            }
+        }
+    }
+
+    @MainActor
+    private func applyEdit(to original: SetLog, reps: Int?, weight: Decimal?,
+                           rpe: Decimal?, isFailed: Bool, note: String?) async {
+        editingSet = nil
+        var updated = original
+        updated.reps = reps
+        updated.weight = weight
+        updated.rpe = rpe
+        updated.isFailed = isFailed
+        updated.note = note
+
+        if OfflineSetLogQueue.shared.pendingSetLogIDs.contains(original.id) {
+            // Never reached the server: swap the queued copy (discard +
+            // re-enqueue keeps the same id, so the syncing chip and any
+            // later delete still line up).
+            OfflineSetLogQueue.shared.discard(id: original.id)
+            OfflineSetLogQueue.shared.enqueue(updated)
+        } else {
+            do {
+                try await SessionRepository.updateSet(updated)
+            } catch {
+                errorText = ErrorMapping.map(error).errorDescription
+                return
+            }
+        }
+        if let idx = loggedSets.firstIndex(where: { $0.id == original.id }) {
+            loggedSets[idx] = updated
+        }
+        // Same deliberate scope as delete: PR records born from the ORIGINAL
+        // values are not recomputed here (migration 20260730000003 header).
     }
 
     /// Rest-over cue for a LOCKED phone: one observer covers every
@@ -707,6 +769,11 @@ struct WorkoutSessionView: View {
                 // than swipe because these rows live in a ScrollView, not
                 // a List, and hand-rolled swipe gestures fight the scroll.
                 .contextMenu {
+                    Button {
+                        editingSet = log
+                    } label: {
+                        Label("Edit set", systemImage: "pencil")
+                    }
                     Button(role: .destructive) {
                         setPendingDeletion = log
                     } label: {

@@ -19,6 +19,12 @@ struct LogSetSheet: View {
     /// call sites (GroupSessionLiveView's) compile unchanged as lbs until
     /// they're swept.
     var unit: WeightUnit = .lbs
+    /// Edit-mode prefills (2026-07-27, "Only delete? No edit?"): seeding the
+    /// full previous entry so fixing one field doesn't cost re-entering the
+    /// other four. All trailing-defaulted — log-new call sites unchanged.
+    var defaultRPE: Double? = nil
+    var defaultIsFailed: Bool = false
+    var defaultNote: String? = nil
     let onLog: (Int?, Decimal?, Decimal?, Bool, String?) -> Void
     // onLog(reps, weight, rpe, isFailed, note) — UNCHANGED
 
@@ -216,6 +222,9 @@ struct LogSetSheet: View {
             .background(theme.bg)
             .navigationBarHidden(true)
             .onAppear {
+                if let defaultRPE { rpe = defaultRPE }
+                if defaultIsFailed { isFailed = true }
+                if note.isEmpty, let defaultNote { note = defaultNote }
                 if reps.isEmpty { reps = defaultReps ?? "" }
                 if weight.isEmpty {
                     // Prefill is stored POUNDS (routine targets) — present
