@@ -105,14 +105,24 @@ final class UnitsAndWarmupTests: XCTestCase {
         XCTAssertEqual(Units.format(pounds: 45, unit: .lbs, includeUnit: false), "45")
     }
 
-    /// Units sweep: the exact (`rounded: false`) path caps at 2 decimals —
-    /// a historical 100 lb set viewed in kg is 45.359237…, and "45.36" is
-    /// the honest display — while a value TYPED in kg round-trips exactly
-    /// (kg × factor ÷ factor), so entries never grow spurious decimals.
-    func testExactFormatCapsDecimals() {
-        XCTAssertEqual(Units.format(pounds: 100, unit: .kg, rounded: false), "45.36 kg")
+    /// App-wide one-decimal display rule (user directive 2026-07-27): a
+    /// historical 100 lb set viewed in kg is 45.359237… and shows "45.4",
+    /// while a value TYPED in kg round-trips exactly (kg × factor ÷ factor)
+    /// and never grows spurious decimals.
+    func testExactFormatCapsAtOneDecimal() {
+        XCTAssertEqual(Units.format(pounds: 100, unit: .kg, rounded: false), "45.4 kg")
         let storedFromKgEntry = Units.toPounds(100, from: .kg)
         XCTAssertEqual(Units.format(pounds: storedFromKgEntry, unit: .kg, rounded: false), "100 kg")
+    }
+
+    /// The warm-up-rung bug: Decimal pounds↔unit round-trips can leave
+    /// "22.909999999999999999…", and raw interpolation printed every digit.
+    /// displayWeight is the label-side guard.
+    func testDisplayWeightSwallowsConversionNoise() {
+        let noisy = Decimal(string: "22.909999999999999999")!
+        XCTAssertEqual(Units.displayWeight(noisy), "22.9")
+        XCTAssertEqual(Units.displayWeight(102.5), "102.5")
+        XCTAssertEqual(Units.displayWeight(225), "225")
     }
 
     /// The Double overload backing volume aggregates (Σ reps×weight

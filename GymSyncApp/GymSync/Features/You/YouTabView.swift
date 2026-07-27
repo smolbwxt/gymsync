@@ -362,7 +362,7 @@ struct YouTabView: View {
         var barInUnit = Units.fromPounds(settings.barWeightLbs, to: unit)
         var rounded = Decimal()
         NSDecimalRound(&rounded, &barInUnit, 2, .plain)
-        let bar = "\(GSBarLoader.plateLabel(rounded)) \(unit.label) bar"
+        let bar = "\(Units.displayWeight(rounded)) \(unit.label) bar"
         if let custom = settings.plateInventory {
             return "\(bar) · \(custom.count) plates"
         }

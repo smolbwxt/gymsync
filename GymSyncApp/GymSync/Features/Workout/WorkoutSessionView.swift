@@ -614,31 +614,60 @@ struct WorkoutSessionView: View {
         return loggedSets.last { $0.exerciseID == re.exerciseID && !$0.isFailed }?.weight
     }
 
+    /// Collapsed state redesigned 2026-07-27 (user request): a larger card
+    /// with a `GSBarLoaderMini` preview on the right — the loaded bar for
+    /// the prefill weight (target, else last set) readable at a glance
+    /// before ever expanding. Same bar/plate sources as `BarLoaderWidget`
+    /// itself: custom inventory only in the persisted unit, else the unit's
+    /// standard set.
     private func barLoaderCard(re: RoutineExercise) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let unit = sessionSettings?.weightUnit ?? .lbs
+        let plates: [Decimal] = {
+            if let custom = sessionSettings?.plateInventory, !custom.isEmpty {
+                return custom.sorted(by: >)
+            }
+            return unit.standardPlates
+        }()
+        var barConverted = Units.fromPounds(sessionSettings?.barWeightLbs ?? 45, to: unit)
+        var barInUnit = Decimal()
+        NSDecimalRound(&barInUnit, &barConverted, 2, .plain)
+        let prefill = barLoaderPrefill(re: re)
+        let targetInUnit = prefill.map { Units.fromPounds($0, to: unit) } ?? barInUnit
+
+        return VStack(alignment: .leading, spacing: 0) {
             Button {
                 withAnimation(.easeInOut(duration: 0.18)) { showBarLoader.toggle() }
             } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "scalemass")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(theme.accent)
-                    Text("Load the bar")
-                        .font(GSFont.bold(13, relativeTo: .subheadline))
-                        .foregroundStyle(theme.text)
-                    Spacer()
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "scalemass")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(theme.accent)
+                            Text("Load the bar")
+                                .font(GSFont.bold(15, relativeTo: .body))
+                                .foregroundStyle(theme.text)
+                        }
+                        Text(prefill.map { "\(Units.format(pounds: $0, unit: unit, rounded: false)) · plates & warm-up" }
+                             ?? "Plates & warm-up ramp")
+                            .font(GSFont.body(11.5, relativeTo: .caption))
+                            .foregroundStyle(theme.neutral500)
+                    }
+                    Spacer(minLength: 8)
+                    GSBarLoaderMini(target: targetInUnit, barWeight: barInUnit,
+                                    plates: plates, unit: unit)
                     Image(systemName: showBarLoader ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(theme.neutral500)
                 }
                 .padding(.horizontal, 14)
-                .padding(.vertical, 12)
+                .padding(.vertical, 14)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
             if showBarLoader {
-                BarLoaderWidget(initialPounds: barLoaderPrefill(re: re))
+                BarLoaderWidget(initialPounds: prefill)
                     .padding(.horizontal, 14)
                     .padding(.bottom, 14)
             }

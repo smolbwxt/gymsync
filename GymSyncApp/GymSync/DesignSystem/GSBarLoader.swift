@@ -127,14 +127,18 @@ struct GSBarLoader: View {
     /// exact target can't be built with these plates, say so plainly rather
     /// than drawing a stack that silently isn't what was asked for.
     private var mathsLine: some View {
+        // Loads (bar, total, target) follow the app-wide one-decimal rule
+        // via Units.displayWeight; the per-side SUM keeps plateLabel — it's
+        // exact plate arithmetic (3×1.25 = 3.75) and rounding it would make
+        // the spelled-out equation visibly not add up.
         let perSide = loaded.reduce(Decimal(0)) { $0 + $1.plate * Decimal($1.count) }
-        let sum = "\(Self.plateLabel(barWeight)) + 2×\(Self.plateLabel(perSide))"
+        let sum = "\(Units.displayWeight(barWeight)) + 2×\(Self.plateLabel(perSide))"
         return VStack(alignment: .leading, spacing: 2) {
-            Text("\(sum) = \(Self.plateLabel(stack.achievedWeight)) \(unit.label)")
+            Text("\(sum) = \(Units.displayWeight(stack.achievedWeight)) \(unit.label)")
                 .font(GSFont.body(12, relativeTo: .caption))
                 .foregroundStyle(theme.neutral500)
             if !isExact {
-                Text("closest loadable to \(Self.plateLabel(target)) with your plates")
+                Text("closest loadable to \(Units.displayWeight(target)) with your plates")
                     .font(GSFont.body(11, relativeTo: .caption2))
                     .foregroundStyle(theme.neutral700)
             }
@@ -206,11 +210,73 @@ struct GSBarLoader: View {
         return isPale ? Color.gsHex(0x14161A) : .white
     }
 
-    /// "45", "2.5" — trims the trailing zero so plates read like plates.
+    /// "45", "2.5", "1.25" — trims the trailing zero so plates read like
+    /// plates. DENOMINATIONS ONLY: this stays exact (a 1.25 kg chip must
+    /// not become "1.3"). For a LOAD — a rung, a target, a total — use
+    /// `Units.displayWeight`, which enforces the one-decimal rule and
+    /// swallows Decimal conversion noise.
     static func plateLabel(_ value: Decimal) -> String {
         var input = value
         var whole = Decimal()
         NSDecimalRound(&whole, &input, 0, .plain)
         return whole == value ? "\(whole)" : "\(value)"
+    }
+}
+
+// MARK: - GSBarLoaderMini
+
+/// Compact, label-free rendering of a loaded bar — the collapsed "Load the
+/// bar" card's at-a-glance preview (user request 2026-07-27). Same
+/// PlateMath stack and fixed competition colours as the full loader at
+/// roughly one-third scale; no labels, no counts, no maths line — the full
+/// widget one tap away carries all of that.
+struct GSBarLoaderMini: View {
+    @Environment(\.gsTheme) private var theme
+
+    /// Target in the DISPLAY unit (already converted by the caller).
+    let target: Decimal
+    let barWeight: Decimal
+    let plates: [Decimal]
+    let unit: WeightUnit
+
+    private var loaded: [(plate: Decimal, count: Int)] {
+        let stack = PlateMath.stack(for: target, barWeight: barWeight, plates: plates)
+        return zip(plates, stack.platesPerSide).compactMap { plate, count in
+            let n = NSDecimalNumber(decimal: count).intValue
+            return n > 0 ? (plate, n) : nil
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 1.5) {
+            RoundedRectangle(cornerRadius: 1)
+                .fill(theme.neutral500)
+                .frame(width: 4, height: 12)
+            ForEach(Array(loaded.enumerated()), id: \.offset) { _, item in
+                ForEach(0..<item.count, id: \.self) { _ in
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(GSBarLoader.plateColor(item.plate, unit: unit))
+                        .frame(width: Self.miniWidth(item.plate, unit: unit),
+                               height: Self.miniHeight(item.plate, unit: unit))
+                }
+            }
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(theme.neutral500.opacity(0.55))
+                .frame(width: 18, height: 4)
+        }
+        .frame(height: 40)
+    }
+
+    // Same sqrt-of-mass-ratio proportions as the full loader, scaled down.
+    private static func miniHeight(_ plate: Decimal, unit: WeightUnit) -> CGFloat {
+        let heaviest = unit.standardPlates.first ?? 45
+        let ratio = NSDecimalNumber(decimal: plate / heaviest).doubleValue
+        return 8 + CGFloat(min(1, max(0.10, ratio.squareRoot()))) * 28
+    }
+
+    private static func miniWidth(_ plate: Decimal, unit: WeightUnit) -> CGFloat {
+        let heaviest = unit.standardPlates.first ?? 45
+        let ratio = NSDecimalNumber(decimal: plate / heaviest).doubleValue
+        return 5 + CGFloat(min(1, max(0.25, ratio))) * 3
     }
 }

@@ -135,20 +135,20 @@ enum Units {
     static func format(pounds: Decimal, unit: WeightUnit,
                        rounded: Bool = true, includeUnit: Bool = true) -> String {
         let converted = fromPounds(pounds, to: unit)
-        let value: Decimal
-        if rounded {
-            value = roundToIncrement(converted, unit: unit)
-        } else {
-            // Cap the exact path at 2 decimals: a historical 100 lb set
-            // viewed in kg is 45.359237…, and "45.36 kg" is the honest
-            // display. Entries TYPED in this unit convert back exactly
-            // (kg×factor÷factor) and are unaffected.
-            var input = converted
-            var capped = Decimal()
-            NSDecimalRound(&capped, &input, 2, .plain)
-            value = capped
-        }
+        let value = rounded ? roundToIncrement(converted, unit: unit) : converted
+        // Both paths go through `trimmed`, which enforces the app-wide
+        // one-decimal display rule (see its doc comment).
         return "\(trimmed(value))\(includeUnit ? " \(unit.label)" : "")"
+    }
+
+    /// App-wide display rule for a weight ALREADY in the display unit:
+    /// at most ONE decimal place, trailing ".0" trimmed. This is also the
+    /// guard against Decimal conversion noise — a pounds↔kg round-trip can
+    /// leave 22.909999…, which must never reach a label. For plate
+    /// DENOMINATIONS (a 1.25 kg chip) keep the exact label instead — this
+    /// rule is for loads, not plate names.
+    static func displayWeight(_ valueInUnit: Decimal) -> String {
+        trimmed(valueInUnit)
     }
 
     /// Est-1RM and other derived-weight displays: whole numbers in the
@@ -200,10 +200,15 @@ enum Units {
         return toPounds(value, from: unit)
     }
 
+    /// One decimal max (user directive 2026-07-27), then ".0" trimmed —
+    /// every display path in this file funnels through here.
     private static func trimmed(_ value: Decimal) -> String {
-        var input = value
+        var oneDpIn = value
+        var oneDp = Decimal()
+        NSDecimalRound(&oneDp, &oneDpIn, 1, .plain)
+        var wholeIn = oneDp
         var whole = Decimal()
-        NSDecimalRound(&whole, &input, 0, .plain)
-        return whole == value ? "\(whole)" : "\(value)"
+        NSDecimalRound(&whole, &wholeIn, 0, .plain)
+        return whole == oneDp ? "\(whole)" : "\(oneDp)"
     }
 }

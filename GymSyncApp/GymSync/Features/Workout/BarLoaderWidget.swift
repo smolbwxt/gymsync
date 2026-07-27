@@ -192,7 +192,11 @@ struct BarLoaderWidget: View {
             .joined(separator: " ")
 
         return HStack(spacing: 10) {
-            Text(step.isBar ? "Bar" : "\(GSBarLoader.plateLabel(inUnit)) \(unit.label)")
+            // Load label: one-decimal rule via displayWeight — the
+            // pounds↔unit round-trip above can leave "22.909999…" and raw
+            // Decimal interpolation printed every digit (user report
+            // 2026-07-27).
+            Text(step.isBar ? "Bar" : "\(Units.displayWeight(inUnit)) \(unit.label)")
                 .font(GSFont.bold(13, relativeTo: .subheadline))
                 .foregroundStyle(theme.text)
                 .frame(width: 92, alignment: .leading)

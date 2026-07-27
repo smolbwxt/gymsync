@@ -472,7 +472,7 @@ struct PlateStackDisclosure: View {
                 let chips = plateChipLabels(result, plates: plates)
 
                 if chips.isEmpty {
-                    Text("Bar only (\(formattedPlateWeight(result.achievedWeight)) \(unit.label))")
+                    Text("Bar only (\(Units.displayWeight(result.achievedWeight)) \(unit.label))")
                         .font(GSFont.body(12, relativeTo: .caption))
                         .foregroundStyle(theme.neutral500)
                 } else {
@@ -488,7 +488,7 @@ struct PlateStackDisclosure: View {
 
                 if let remainder = result.remainder {
                     let direction = result.achievedWeight < target ? "short" : "over target"
-                    Text("Nearest: \(formattedPlateWeight(result.achievedWeight)) \(unit.label) (\(formattedPlateWeight(remainder)) \(direction))")
+                    Text("Nearest: \(Units.displayWeight(result.achievedWeight)) \(unit.label) (\(Units.displayWeight(remainder)) \(direction))")
                         .font(GSFont.body(11, relativeTo: .caption2))
                         .foregroundStyle(theme.neutral500)
                 }
@@ -507,8 +507,8 @@ func plateChipLabels(_ result: PlateMath.Stack, plates: [Decimal] = PlateMath.st
     }
 }
 
-/// Trims trailing zeros the same way `GroupSessionLiveView.weightText`
-/// (GroupSessionLiveView.swift:1367) already formats logged weights.
+/// DENOMINATIONS AND COUNTS ONLY (a "2×1.25" chip must stay exact) — for
+/// loads use `Units.displayWeight`, which enforces the one-decimal rule.
 func formattedPlateWeight(_ value: Decimal) -> String {
     NSDecimalNumber(decimal: value).stringValue
 }
