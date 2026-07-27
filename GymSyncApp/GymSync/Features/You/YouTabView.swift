@@ -281,7 +281,7 @@ struct YouTabView: View {
         let displayProfile = profile ?? appState.currentProfile
         return HStack(spacing: 8) {
             GSStatTile(
-                value: "\(StatMath.compactNumber(displayProfile?.lifetimeVolumeLifted ?? 0)) lbs",
+                value: "\(StatMath.compactNumber(Units.fromPounds(displayProfile?.lifetimeVolumeLifted ?? 0, to: ThemeStore.shared.weightUnit))) \(ThemeStore.shared.weightUnit.label)",
                 label: "Lifetime volume",
                 valueFontSize: 18
             )

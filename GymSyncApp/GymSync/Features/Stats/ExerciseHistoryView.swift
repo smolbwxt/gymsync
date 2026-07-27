@@ -21,11 +21,13 @@ struct ExerciseHistoryView: View {
     }
 
     private var chartData: [(Date, Double)] {
-        validLogs
+        // Units sweep: points in the user's unit, matching the stat tiles.
+        let unit = ThemeStore.shared.weightUnit
+        return validLogs
             .compactMap { log -> (Date, Double)? in
                 guard let w = log.weight, let reps = log.reps else { return nil }
                 let oneRM = StatMath.estimatedOneRepMax(weight: w, reps: reps)
-                return (log.loggedAt, NSDecimalNumber(decimal: oneRM).doubleValue)
+                return (log.loggedAt, Units.fromPounds(NSDecimalNumber(decimal: oneRM).doubleValue, to: unit))
             }
             .sorted { $0.0 < $1.0 }
     }
@@ -41,7 +43,9 @@ struct ExerciseHistoryView: View {
             return StatMath.estimatedOneRepMax(weight: w, reps: reps)
         }
         guard let maxValue = values.max() else { return nil }
-        return Int(NSDecimalNumber(decimal: maxValue).doubleValue.rounded())
+        // Units sweep: whole number in the user's unit.
+        return Int(Units.fromPounds(NSDecimalNumber(decimal: maxValue).doubleValue,
+                                    to: ThemeStore.shared.weightUnit).rounded())
     }
 
     private var sessionCount: Int {
@@ -157,12 +161,12 @@ struct ExerciseHistoryView: View {
         }
     }
 
+    // Units sweep: stored-lbs → display unit, exact (this is a log of what
+    // was actually lifted).
     private func weightText(_ weight: Decimal?) -> String {
         guard let weight else { return "-" }
-        var value = weight
-        var rounded = Decimal()
-        NSDecimalRound(&rounded, &value, 0, .plain)
-        return rounded == value ? "\(rounded)" : "\(value)"
+        return Units.format(pounds: weight, unit: ThemeStore.shared.weightUnit,
+                            rounded: false, includeUnit: false)
     }
 
     private func metaText(for log: SetLog) -> String {

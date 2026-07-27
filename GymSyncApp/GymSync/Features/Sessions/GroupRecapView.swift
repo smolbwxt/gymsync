@@ -91,6 +91,11 @@ struct GroupRecapView: View {
     /// Crew-wide send targets — every OTHER participant, resolved by the
     /// caller (see kudos-send-model decision in the type doc comment).
     let recipientIDs: [UUID]
+    /// Units sweep: display unit for the hero label and the PR-card weights
+    /// this view formats itself (leaderboard `volumeText`/`totalLbsText`
+    /// arrive pre-converted, per the display-ready convention). Defaulted so
+    /// catalog fixtures and lbs callers compile unchanged.
+    var unit: WeightUnit = .lbs
     let onDone: () -> Void
 
     @Environment(\.gsTheme) private var theme
@@ -118,6 +123,7 @@ struct GroupRecapView: View {
         shareSummary: String,
         sessionID: UUID,
         recipientIDs: [UUID],
+        unit: WeightUnit = .lbs,
         onDone: @escaping () -> Void
     ) {
         self.kicker = kicker
@@ -131,6 +137,7 @@ struct GroupRecapView: View {
         self.shareSummary = shareSummary
         self.sessionID = sessionID
         self.recipientIDs = recipientIDs
+        self.unit = unit
         self.onDone = onDone
         #if DEBUG
         self.catalogFixtureKudosCounts = nil
@@ -272,7 +279,7 @@ struct GroupRecapView: View {
                 .foregroundStyle(theme.bg.opacity(0.9))
 
             HStack(spacing: 0) {
-                heroStatCell(value: totalLbsText, label: "TOTAL LBS")
+                heroStatCell(value: totalLbsText, label: "TOTAL \(unit.label.uppercased())")
                 Rectangle().fill(theme.bg.opacity(0.3)).frame(width: 1, height: 32)
                 heroStatCell(value: "\(setCount)", label: "SETS")
                 Rectangle().fill(theme.bg.opacity(0.3)).frame(width: 1, height: 32)
@@ -378,10 +385,10 @@ struct GroupRecapView: View {
                     .tracking(1.2)
             }
             .foregroundStyle(theme.accent)
-            Text("\(pr.exerciseName) — \(decimalString(pr.weight)) lbs × \(pr.reps)")
+            Text("\(pr.exerciseName) — \(Units.format(pounds: pr.weight, unit: unit, rounded: false, includeUnit: false)) \(unit.label) × \(pr.reps)")
                 .font(GSFont.bold(15, relativeTo: .headline))
                 .foregroundStyle(theme.text)
-            Text("▲ Beat previous best by \(decimalString(pr.weight - pr.previousBest)) lbs")
+            Text("▲ Beat previous best by \(Units.format(pounds: pr.weight - pr.previousBest, unit: unit, rounded: false, includeUnit: false)) \(unit.label)")
                 .font(GSFont.body(11, relativeTo: .caption))
                 .foregroundStyle(theme.accent700)
         }
@@ -457,10 +464,4 @@ struct GroupRecapView: View {
 
     // MARK: - Helpers
 
-    private func decimalString(_ value: Decimal) -> String {
-        var value = value
-        var rounded = Decimal()
-        NSDecimalRound(&rounded, &value, 0, .plain)
-        return rounded == value ? "\(rounded)" : "\(value)"
-    }
 }

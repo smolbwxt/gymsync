@@ -103,6 +103,30 @@ final class UnitsAndWarmupTests: XCTestCase {
         XCTAssertEqual(Units.format(pounds: 45, unit: .lbs, includeUnit: false), "45")
     }
 
+    /// Units sweep: the exact (`rounded: false`) path caps at 2 decimals —
+    /// a historical 100 lb set viewed in kg is 45.359237…, and "45.36" is
+    /// the honest display — while a value TYPED in kg round-trips exactly
+    /// (kg × factor ÷ factor), so entries never grow spurious decimals.
+    func testExactFormatCapsDecimals() {
+        XCTAssertEqual(Units.format(pounds: 100, unit: .kg, rounded: false), "45.36 kg")
+        let storedFromKgEntry = Units.toPounds(100, from: .kg)
+        XCTAssertEqual(Units.format(pounds: storedFromKgEntry, unit: .kg, rounded: false), "100 kg")
+    }
+
+    /// The Double overload backing volume aggregates (Σ reps×weight
+    /// accumulates in Double at the recap/leaderboard call sites).
+    func testDoubleVolumeConversion() {
+        let kg = Units.fromPounds(Double(2204.6226218), to: .kg)
+        XCTAssertEqual(kg, 1000, accuracy: 0.001)
+        XCTAssertEqual(Units.fromPounds(Double(500), to: .lbs), 500, accuracy: 0.0001)
+    }
+
+    /// Est-1RM tiles show whole numbers in the user's unit.
+    func testWholeNumberDisplay() {
+        XCTAssertEqual(Units.wholeNumber(pounds: 231.66, unit: .lbs), "232")
+        XCTAssertEqual(Units.wholeNumber(pounds: Units.toPounds(100, from: .kg), unit: .kg), "100")
+    }
+
     // MARK: - Entry parsing
 
     func testParseStoresPounds() {

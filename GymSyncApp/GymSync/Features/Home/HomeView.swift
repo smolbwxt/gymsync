@@ -1022,7 +1022,7 @@ struct HomeView: View {
                             .foregroundStyle(theme.neutral500)
                     }
                     if let community = campaignCommunityByID[campaign.id] {
-                        Text("Community: \(trimmedDecimal(community.volumeLifted)) lbs")
+                        Text("Community: \(trimmedDecimal(Units.fromPounds(community.volumeLifted, to: ThemeStore.shared.weightUnit))) \(ThemeStore.shared.weightUnit.label)")
                             .font(GSFont.body(12, relativeTo: .caption))
                             .foregroundStyle(theme.neutral500)
                     }

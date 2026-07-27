@@ -207,6 +207,7 @@ struct WorkoutSessionView: View {
                         exerciseSummaries: exerciseSummaries,
                         healthSummary: recapHealthSummary,
                         shareSummary: recapShareSummary,
+                        unit: sessionSettings?.weightUnit ?? .lbs,
                         onDone: { dismiss() }
                     )
                     // The Duolingo-placement slot: fires AFTER the recap
@@ -970,25 +971,33 @@ struct WorkoutSessionView: View {
         return "\(formatRecapDate(date)) · solo"
     }
 
-    private var recapTotalLbsText: String {
-        StatMath.compactNumber(Decimal(HealthKitBridge.totalVolume(from: loggedSets)))
+    /// Units sweep: total volume is accumulated in stored-lbs — converted to
+    /// the user's unit before formatting (both the compact and hero forms).
+    private var recapTotalVolumeInUnit: Double {
+        Units.fromPounds(HealthKitBridge.totalVolume(from: loggedSets),
+                         to: sessionSettings?.weightUnit ?? .lbs)
     }
 
-    /// Comma-grouped ("7,240") variant of the hero's TOTAL LBS figure — mirrors
-    /// StatsTabView's `volumeString` convention. Small stat tiles elsewhere (Home,
-    /// You, Stats weekly) and the ShareLink summary keep the compact ("7.2k") form
-    /// via `recapTotalLbsText`; only the recap hero cell uses this.
+    private var recapTotalLbsText: String {
+        StatMath.compactNumber(Decimal(recapTotalVolumeInUnit))
+    }
+
+    /// Comma-grouped ("7,240") variant of the hero's TOTAL LBS/KG figure —
+    /// mirrors StatsTabView's `volumeString` convention. Small stat tiles
+    /// elsewhere (Home, You, Stats weekly) and the ShareLink summary keep the
+    /// compact ("7.2k") form via `recapTotalLbsText`; only the recap hero
+    /// cell uses this.
     private var recapTotalLbsHeroText: String {
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
         formatter.maximumFractionDigits = 0
-        let raw = HealthKitBridge.totalVolume(from: loggedSets)
-        return formatter.string(from: NSNumber(value: raw)) ?? "0"
+        return formatter.string(from: NSNumber(value: recapTotalVolumeInUnit)) ?? "0"
     }
 
     private var recapShareSummary: String {
         let title = routine?.name ?? "Solo Workout"
-        return "\(title) — \(recapDurationText), \(recapTotalLbsText) lbs, \(recapNonPenaltySets.count) sets"
+        let unitLabel = (sessionSettings?.weightUnit ?? .lbs).label
+        return "\(title) — \(recapDurationText), \(recapTotalLbsText) \(unitLabel), \(recapNonPenaltySets.count) sets"
     }
 
     /// Display-ready fields for `SoloRecapView`'s "Synced to Apple Health"

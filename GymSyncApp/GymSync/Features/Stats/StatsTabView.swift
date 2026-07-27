@@ -145,11 +145,14 @@ struct StatsTabView: View {
     private var volumeString: String {
         let profile = refreshedProfile ?? appState.currentProfile
         let vol = profile?.lifetimeVolumeLifted ?? 0
+        let unit = ThemeStore.shared.weightUnit
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
         formatter.maximumFractionDigits = 0
-        let raw = NSDecimalNumber(decimal: vol).doubleValue
-        return "\(formatter.string(from: NSNumber(value: raw)) ?? "0") lbs"
+        // Units sweep: volume is a mass aggregate (not a loadable target) —
+        // plain conversion, no plate snapping.
+        let raw = Units.fromPounds(NSDecimalNumber(decimal: vol).doubleValue, to: unit)
+        return "\(formatter.string(from: NSNumber(value: raw)) ?? "0") \(unit.label)"
     }
 
     // MARK: - Weekly Volume Card (Task 6; redesign: area chart)
@@ -320,7 +323,7 @@ struct StatsTabView: View {
                                 .foregroundStyle(theme.text)
                                 .lineLimit(1)
                             Spacer(minLength: 8)
-                            Text("\(trimmedDecimal(pr.weight)) lbs")
+                            Text(Units.format(pounds: pr.weight, unit: ThemeStore.shared.weightUnit, rounded: false))
                                 .font(GSFont.bold(14, relativeTo: .subheadline))
                                 .foregroundStyle(theme.text)
                                 .monospacedDigit()
@@ -436,7 +439,11 @@ struct StatsTabView: View {
     }
 
     private var bodyWeightChartData: [(Date, Double)] {
-        StatMath.bodyWeightTrendPoints(logs: bodyWeightLogs)
+        // Units sweep: points are stored-lbs — convert for a kg user so any
+        // value the chart surfaces matches the headline's unit.
+        let unit = ThemeStore.shared.weightUnit
+        return StatMath.bodyWeightTrendPoints(logs: bodyWeightLogs)
+            .map { ($0.0, Units.fromPounds($0.1, to: unit)) }
     }
 
     /// Headline "182.4 lbs" for the most recent log — `nil` (no headline)
@@ -448,19 +455,13 @@ struct StatsTabView: View {
     /// entry without needing to re-sort.
     private var latestBodyWeightText: String? {
         guard let latest = bodyWeightLogs.first else { return nil }
-        return StatMath.formattedBodyWeight(latest.weight, unit: latest.unit)
+        // Units sweep: rows store canonical pounds (BodyWeightLogSheet
+        // converts on entry) — format in the user's display unit, 1dp.
+        return Units.formatBodyWeight(pounds: latest.weight, unit: ThemeStore.shared.weightUnit)
     }
 
     private func exerciseName(for id: UUID) -> String {
         exercises.first(where: { $0.id == id })?.name ?? "Exercise"
-    }
-
-    private func trimmedDecimal(_ value: Decimal) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.minimumFractionDigits = 0
-        formatter.maximumFractionDigits = 2
-        return formatter.string(from: NSDecimalNumber(decimal: value)) ?? "\(value)"
     }
 
     private func shortDate(_ date: Date) -> String {

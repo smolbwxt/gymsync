@@ -279,7 +279,7 @@ struct CompletedSessionView: View {
                         Text("·")
                             .foregroundStyle(theme.neutral500)
                             .font(GSFont.body(11, relativeTo: .caption))
-                        Text("\(formatVolume(stat.volume)) lbs")
+                        Text("\(formatVolume(Units.fromPounds(stat.volume, to: ThemeStore.shared.weightUnit))) \(ThemeStore.shared.weightUnit.label)")
                             .font(GSFont.body(11, relativeTo: .caption))
                             .foregroundStyle(theme.neutral500)
                     }
@@ -342,7 +342,8 @@ struct CompletedSessionView: View {
     }
 
     private var shareText: String {
-        "\(navigationTitleText) — \(durationString), \(formatVolume(totalVolume)) lbs, \(totalSets) sets."
+        let unit = ThemeStore.shared.weightUnit
+        return "\(navigationTitleText) — \(durationString), \(formatVolume(Units.fromPounds(totalVolume, to: unit))) \(unit.label), \(totalSets) sets."
     }
 
     private func durationString(from start: Date, to end: Date) -> String {

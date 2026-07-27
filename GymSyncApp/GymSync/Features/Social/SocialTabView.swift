@@ -97,7 +97,7 @@ struct SocialTabView: View {
                             GSCard(bordered: false) {
                                 VStack(alignment: .leading, spacing: 0) {
                                     GSSectionHeader("Your crews will move")
-                                    Text("— lbs")
+                                    Text("— \(ThemeStore.shared.weightUnit.label)")
                                         .font(GSFont.heading(30, relativeTo: .largeTitle))
                                         .foregroundStyle(theme.neutral500)
                                         .padding(.top, 7)
@@ -377,11 +377,11 @@ struct SocialTabView: View {
             VStack(alignment: .leading, spacing: 0) {
                 GSSectionHeader("Your crews have moved")
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
-                    Text(StatMath.compactNumber(totalVolume))
+                    Text(StatMath.compactNumber(Units.fromPounds(totalVolume, to: ThemeStore.shared.weightUnit)))
                         .font(GSFont.heading(34, relativeTo: .largeTitle))
                         .foregroundStyle(theme.text)
                         .monospacedDigit()
-                    Text("lbs")
+                    Text(ThemeStore.shared.weightUnit.label)
                         .font(GSFont.bold(15, relativeTo: .subheadline))
                         .foregroundStyle(theme.neutral500)
                 }
@@ -434,7 +434,7 @@ struct SocialTabView: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                 } else if let stats = groupStatsByID[group.id] {
-                    Text("\(StatMath.compactNumber(stats.totalVolume)) lbs moved · \(stats.sessionCount) sessions")
+                    Text("\(StatMath.compactNumber(Units.fromPounds(stats.totalVolume, to: ThemeStore.shared.weightUnit))) \(ThemeStore.shared.weightUnit.label) moved · \(stats.sessionCount) sessions")
                         .font(GSFont.body(12.5, relativeTo: .subheadline))
                         .foregroundStyle(theme.neutral500)
                         .lineLimit(1)

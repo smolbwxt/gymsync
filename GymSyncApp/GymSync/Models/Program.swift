@@ -183,17 +183,40 @@ enum ProgramMath {
     /// "3×5 @ 82.5% → 185 lb" / "3×5 @ 82.5%" (no baseline) /
     /// "3×10 · pick a weight leaving ~2 reps in reserve" (volume week).
     /// The transparency doctrine's one-line form: the math is IN the copy.
-    static func prescriptionText(week: ProgramWeek, baseline: Decimal?) -> String {
+    /// Units sweep: `unit` renders the target in the user's unit, rounded in
+    /// THAT unit's grid (defaults lbs so existing call sites/tests compile
+    /// and behave unchanged).
+    static func prescriptionText(week: ProgramWeek, baseline: Decimal?,
+                                 unit: WeightUnit = .lbs) -> String {
         let setsReps = "\(week.sets)×\(week.reps)"
         guard let percent = week.percentOfBaseline else {
             if let note = week.note { return "\(setsReps) · \(note)" }
             return setsReps
         }
         let percentText = trimmedPercent(percent)
-        if let baseline, let target = targetWeight(percentOfBaseline: percent, baseline: baseline) {
-            return "\(setsReps) @ \(percentText)% → \(target) lb"
+        if let baseline, let target = targetText(percentOfBaseline: percent, baseline: baseline, unit: unit) {
+            return "\(setsReps) @ \(percentText)% → \(target)"
         }
         return "\(setsReps) @ \(percentText)%"
+    }
+
+    /// "185 lb" / "85 kg" — the percent-week target rounded in the USER'S
+    /// unit grid (5 lb / 2.5 kg). Rounding the lbs number first and then
+    /// converting would print kg values nobody programs (83.9 kg); the
+    /// doctrine is round-in-the-user's-unit, same as `Units.roundToIncrement`.
+    static func targetText(percentOfBaseline: Double, baseline: Decimal,
+                           unit: WeightUnit) -> String? {
+        guard unit != .lbs else {
+            return targetWeight(percentOfBaseline: percentOfBaseline, baseline: baseline)
+                .map { "\($0) lb" }
+        }
+        let rawLbs = NSDecimalNumber(decimal: baseline).doubleValue * percentOfBaseline / 100
+        let rawInUnit = Units.fromPounds(rawLbs, to: unit)
+        let step = NSDecimalNumber(decimal: unit.displayIncrement).doubleValue
+        let snapped = (rawInUnit / step).rounded() * step
+        guard snapped > 0 else { return nil }
+        let text = snapped == snapped.rounded() ? String(Int(snapped)) : String(snapped)
+        return "\(text) \(unit.label)"
     }
 
     /// "87.5" stays "87.5", "80.0" trims to "80".

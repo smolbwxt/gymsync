@@ -128,6 +128,18 @@ final class ProgramMathTests: XCTestCase {
         XCTAssertEqual(ProgramMath.trimmedPercent(87.5), "87.5")
     }
 
+    /// Units sweep: kg targets round in the KG grid (2.5 kg steps), not a
+    /// converted 5 lb number — 82.5% of a 225 lb baseline is 84.2 kg raw,
+    /// honest prescription 85 kg. (Converting the lbs-rounded 185 would
+    /// print 83.9 kg — a number nobody programs.)
+    func testPrescriptionTextKilograms() {
+        let percentWeek = ProgramWeek(percentOfBaseline: 82.5, sets: 3, reps: 5)
+        XCTAssertEqual(ProgramMath.prescriptionText(week: percentWeek, baseline: 225, unit: .kg),
+                       "3×5 @ 82.5% → 85 kg")
+        XCTAssertEqual(ProgramMath.prescriptionText(week: percentWeek, baseline: nil, unit: .kg),
+                       "3×5 @ 82.5%")
+    }
+
     // MARK: - Bundled template integrity (spec "Testing": every bundled
     // template's declared shape holds — a typo'd percent or a second
     // deload week fails here, not on a user's phone)

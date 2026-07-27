@@ -143,11 +143,13 @@ struct LogSetSheet: View {
                     // this exact field, so a comma-locale device's live
                     // "Plates" preview stays in sync with what actually
                     // submits.
-                    // Disclosure math runs in POUNDS (its bar/plates are the
-                    // lbs standard set) — convert the unit-typed entry.
+                    // Units sweep: the disclosure now runs its plate math
+                    // natively in the entry unit — pass the typed value
+                    // straight through (converting to lbs here would show a
+                    // kg lifter an lbs plate breakdown).
                     if let typed = Decimal.parseUserInput(weight), typed > 0 {
-                        let targetWeight = Units.toPounds(typed, from: unit)
-                        PlateStackDisclosure(target: targetWeight, theme: theme, isExpanded: $showPlateStack)
+                        PlateStackDisclosure(target: typed, theme: theme, unit: unit,
+                                             isExpanded: $showPlateStack)
                             .padding(.horizontal, 16)
                             .padding(.bottom, 16)
                     }
@@ -429,8 +431,11 @@ struct RPESegmentBar: View {
 // approach out explicitly for this fix.
 //
 // `PlateMath` (Models/PlateMath.swift) is the pure helper — this only renders its
-// result. `target` is bar+plates in lbs (this app is lbs-only in v1 — same finding
-// `BodyWeightLogSheet.swift:23-28` recorded before hardcoding its own "lbs" unit).
+// result. Units sweep: `target` is in the caller's DISPLAY unit (what the user
+// typed), and the math runs natively in that unit with its standard bar and
+// plates — converting a kg entry into an lbs plate breakdown would describe a
+// rack the lifter isn't standing at. (`BarLoaderWidget` is the inventory-aware
+// tool; this stays the quick standard-set hint.)
 // Callers own the empty/invalid/non-positive-weight gate — both LogSetSheet
 // (LogSetSheet.swift:~130) and GroupSessionLiveView's `logThisSetCard` only
 // construct this behind `if let targetWeight = Decimal.parseUserInput(...),
@@ -441,6 +446,7 @@ struct RPESegmentBar: View {
 struct PlateStackDisclosure: View {
     let target: Decimal
     let theme: GSTheme
+    var unit: WeightUnit = .lbs
     @Binding var isExpanded: Bool
 
     var body: some View {
@@ -461,11 +467,12 @@ struct PlateStackDisclosure: View {
             .buttonStyle(.plain)
 
             if isExpanded {
-                let result = PlateMath.stack(for: target)
-                let chips = plateChipLabels(result)
+                let plates = unit.standardPlates
+                let result = PlateMath.stack(for: target, barWeight: unit.defaultBar, plates: plates)
+                let chips = plateChipLabels(result, plates: plates)
 
                 if chips.isEmpty {
-                    Text("Bar only (\(formattedPlateWeight(result.achievedWeight)) lbs)")
+                    Text("Bar only (\(formattedPlateWeight(result.achievedWeight)) \(unit.label))")
                         .font(GSFont.body(12, relativeTo: .caption))
                         .foregroundStyle(theme.neutral500)
                 } else {
@@ -481,7 +488,7 @@ struct PlateStackDisclosure: View {
 
                 if let remainder = result.remainder {
                     let direction = result.achievedWeight < target ? "short" : "over target"
-                    Text("Nearest: \(formattedPlateWeight(result.achievedWeight)) lbs (\(formattedPlateWeight(remainder)) \(direction))")
+                    Text("Nearest: \(formattedPlateWeight(result.achievedWeight)) \(unit.label) (\(formattedPlateWeight(remainder)) \(direction))")
                         .font(GSFont.body(11, relativeTo: .caption2))
                         .foregroundStyle(theme.neutral500)
                 }
@@ -490,10 +497,11 @@ struct PlateStackDisclosure: View {
     }
 }
 
-/// "2×45" per non-zero denomination, index-aligned to `PlateMath.standardPlates`
-/// (the same default `PlateStackDisclosure` calls `PlateMath.stack(for:)` with).
-func plateChipLabels(_ result: PlateMath.Stack) -> [String] {
-    zip(PlateMath.standardPlates, result.platesPerSide).compactMap { denomination, count in
+/// "2×45" per non-zero denomination, index-aligned to the `plates` array the
+/// `PlateMath.stack` call actually ran with (units sweep: no longer pinned to
+/// the lbs standard set).
+func plateChipLabels(_ result: PlateMath.Stack, plates: [Decimal] = PlateMath.standardPlates) -> [String] {
+    zip(plates, result.platesPerSide).compactMap { denomination, count in
         guard count > 0 else { return nil }
         return "\(formattedPlateWeight(count))×\(formattedPlateWeight(denomination))"
     }

@@ -82,8 +82,8 @@ struct GroupStatsView: View {
         HStack(spacing: 8) {
             GSStatTile(value: "\(stats?.sessionCount ?? 0)", label: "Sessions")
             GSStatTile(
-                value: "\(StatMath.compactNumber(stats?.totalVolume ?? 0)) lbs",
-                label: "Total lbs"
+                value: "\(StatMath.compactNumber(Units.fromPounds(stats?.totalVolume ?? 0, to: ThemeStore.shared.weightUnit))) \(ThemeStore.shared.weightUnit.label)",
+                label: "Total \(ThemeStore.shared.weightUnit.label)"
             )
             GSStatTile(
                 value: "\(stats?.totalPRs ?? 0)",
@@ -185,7 +185,7 @@ struct GroupStatsView: View {
                     .foregroundStyle(theme.text)
 
                 HStack(spacing: 6) {
-                    Text("\(formatVolumeFull(member.volume)) lbs")
+                    Text("\(formatVolumeFull(Units.fromPounds(member.volume, to: ThemeStore.shared.weightUnit))) \(ThemeStore.shared.weightUnit.label)")
                         .font(GSFont.body(11, relativeTo: .caption))
                         .foregroundStyle(theme.neutral500)
                     if member.prCount > 0 {

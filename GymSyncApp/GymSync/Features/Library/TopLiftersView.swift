@@ -107,11 +107,12 @@ struct TopLiftersView: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 2) {
-                Text("\(StatMath.compactNumber(profile.lifetimeVolumeLifted)) lbs")
+                let unit = ThemeStore.shared.weightUnit
+                Text("\(StatMath.compactNumber(Units.fromPounds(profile.lifetimeVolumeLifted, to: unit))) \(unit.label)")
                     .font(GSFont.bold(13, relativeTo: .caption))
                     .foregroundStyle(theme.text)
                     .monospacedDigit()
-                Text("≈ \(StatMath.compactNumber(avgWeeklyVolume(profile))) lbs/wk")
+                Text("≈ \(StatMath.compactNumber(Units.fromPounds(avgWeeklyVolume(profile), to: unit))) \(unit.label)/wk")
                     .font(GSFont.body(10.5, relativeTo: .caption2))
                     .foregroundStyle(theme.accent)
                     .monospacedDigit()

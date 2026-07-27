@@ -228,14 +228,17 @@ struct CampaignDetailView: View {
     private var communitySection: some View {
         VStack(alignment: .leading, spacing: 8) {
             GSSectionHeader("Community Progress")
+            // Units sweep: totals and the goal convert together — the
+            // completion FRACTION is unit-free, so the bar is untouched.
+            let unit = ThemeStore.shared.weightUnit
             let achieved = community?.volumeLifted ?? 0
             if let target = campaign.globalTarget?.target, target > 0 {
                 CampaignProgressBar(fraction: min(1, max(0, decimalToDouble(achieved) / target)))
-                Text("Together we've moved \(formattedNumber(achieved)) lbs of the \(formattedNumber(Decimal(target))) lb goal.")
+                Text("Together we've moved \(formattedNumber(Units.fromPounds(achieved, to: unit))) \(unit.label) of the \(formattedNumber(Units.fromPounds(Decimal(target), to: unit))) \(unit == .kg ? "kg" : "lb") goal.")
                     .font(GSFont.body(13, relativeTo: .subheadline))
                     .foregroundStyle(theme.neutral500)
             } else {
-                Text("\(formattedNumber(achieved)) lbs lifted so far by the community.")
+                Text("\(formattedNumber(Units.fromPounds(achieved, to: unit))) \(unit.label) lifted so far by the community.")
                     .font(GSFont.body(13, relativeTo: .subheadline))
                     .foregroundStyle(theme.neutral500)
             }
@@ -262,7 +265,7 @@ struct CampaignDetailView: View {
                     }
                 }
             } else {
-                Text("\(formattedNumber(myProgress?.volumeLifted ?? 0)) lbs lifted")
+                Text("\(formattedNumber(Units.fromPounds(myProgress?.volumeLifted ?? 0, to: ThemeStore.shared.weightUnit))) \(ThemeStore.shared.weightUnit.label) lifted")
                     .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
                     .foregroundStyle(theme.text)
             }
@@ -311,7 +314,7 @@ struct CampaignDetailView: View {
                 Text(isMe ? "You" : row.username)
                     .font(GSFont.bold(13, relativeTo: .body))
                     .foregroundStyle(theme.text)
-                Text("\(formattedNumber(row.volumeLifted)) lbs")
+                Text("\(formattedNumber(Units.fromPounds(row.volumeLifted, to: ThemeStore.shared.weightUnit))) \(ThemeStore.shared.weightUnit.label)")
                     .font(GSFont.body(11, relativeTo: .caption))
                     .foregroundStyle(theme.neutral500)
             }

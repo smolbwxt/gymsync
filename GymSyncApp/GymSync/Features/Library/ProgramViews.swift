@@ -62,12 +62,13 @@ struct ProgramCard: View {
 
                     if let weekSpec {
                         if focusExercises.isEmpty {
-                            Text(ProgramMath.prescriptionText(week: weekSpec, baseline: nil))
+                            Text(ProgramMath.prescriptionText(week: weekSpec, baseline: nil,
+                                                              unit: ThemeStore.shared.weightUnit))
                                 .font(GSFont.body(13, relativeTo: .subheadline))
                                 .foregroundStyle(theme.neutral500)
                         } else {
                             ForEach(focusExercises) { exercise in
-                                Text("\(exercise.name) — \(ProgramMath.prescriptionText(week: weekSpec, baseline: enrollment.baselineValue(for: exercise.id)))")
+                                Text("\(exercise.name) — \(ProgramMath.prescriptionText(week: weekSpec, baseline: enrollment.baselineValue(for: exercise.id), unit: ThemeStore.shared.weightUnit))")
                                     .font(GSFont.body(13, relativeTo: .subheadline))
                                     .foregroundStyle(theme.neutral500)
                                     .lineLimit(1)
@@ -270,11 +271,12 @@ struct ProgramDetailView: View {
     }
 
     private func resultText(for exercise: Exercise) -> String {
+        let unit = ThemeStore.shared.weightUnit
         let baseline = enrollment.baselineValue(for: exercise.id)
         let now = currentEst[exercise.id]
-        let baseText = baseline.map { "\(NSDecimalNumber(decimal: $0).intValue)" } ?? "—"
-        let nowText = now.map { "\(NSDecimalNumber(decimal: $0).intValue)" } ?? "—"
-        return "\(baseText) → \(nowText) lb est 1RM"
+        let baseText = baseline.map { Units.wholeNumber(pounds: $0, unit: unit) } ?? "—"
+        let nowText = now.map { Units.wholeNumber(pounds: $0, unit: unit) } ?? "—"
+        return "\(baseText) → \(nowText) \(unit == .kg ? "kg" : "lb") est 1RM"
     }
 
     private func weekTable(_ template: ProgramTemplate) -> some View {
@@ -318,12 +320,13 @@ struct ProgramDetailView: View {
                 Spacer(minLength: 0)
             }
             if focusExercises.isEmpty {
-                Text(ProgramMath.prescriptionText(week: weekSpec, baseline: nil))
+                Text(ProgramMath.prescriptionText(week: weekSpec, baseline: nil,
+                                                  unit: ThemeStore.shared.weightUnit))
                     .font(GSFont.body(13, relativeTo: .subheadline))
                     .foregroundStyle(theme.neutral500)
             } else {
                 ForEach(focusExercises) { exercise in
-                    Text("\(exercise.name) — \(ProgramMath.prescriptionText(week: weekSpec, baseline: enrollment.baselineValue(for: exercise.id)))")
+                    Text("\(exercise.name) — \(ProgramMath.prescriptionText(week: weekSpec, baseline: enrollment.baselineValue(for: exercise.id), unit: ThemeStore.shared.weightUnit))")
                         .font(GSFont.body(13, relativeTo: .subheadline))
                         .foregroundStyle(theme.neutral500)
                 }
@@ -492,9 +495,15 @@ struct ProgramTemplateDetailView: View {
     /// set run through Epley. Never a guess — nil until real numbers exist.
     private func baseline(for exercise: Exercise) -> Decimal? {
         if let derived = derivedBaseline[exercise.id] { return derived }
-        guard let w = Double(manualWeight[exercise.id] ?? ""), w > 0,
+        // Units sweep: the field is typed in the USER'S unit — parse through
+        // Units so a kg entry stores canonical pounds (the old bare
+        // `Double(...)` treated 100 kg as 100 lb, and also rejected the
+        // comma decimals a kg-locale keyboard produces).
+        guard let w = Units.parseToPounds(manualWeight[exercise.id] ?? "",
+                                          unit: ThemeStore.shared.weightUnit),
+              w > 0,
               let r = Int(manualReps[exercise.id] ?? ""), r > 0 else { return nil }
-        return StatMath.estimatedOneRepMax(weight: Decimal(w), reps: r)
+        return StatMath.estimatedOneRepMax(weight: w, reps: r)
     }
 
     private var canStart: Bool {
@@ -664,7 +673,7 @@ struct ProgramTemplateDetailView: View {
             ForEach(selectedExercises) { exercise in
                 baselineRow(for: exercise)
             }
-            Text("Weekly targets are the plan's percent of this number, rounded to 5 lb. It's frozen when you start — re-baseline any time from the program screen.")
+            Text("Weekly targets are the plan's percent of this number, rounded to \(ThemeStore.shared.weightUnit == .kg ? "2.5 kg" : "5 lb"). It's frozen when you start — re-baseline any time from the program screen.")
                 .font(GSFont.body(12, relativeTo: .caption))
                 .foregroundStyle(theme.neutral500)
                 .padding(.horizontal, 16)
@@ -679,7 +688,7 @@ struct ProgramTemplateDetailView: View {
                     .font(GSFont.bodyMedium(14, relativeTo: .body))
                     .foregroundStyle(theme.text)
                 Spacer()
-                Text("est 1RM \(NSDecimalNumber(decimal: derived).intValue) lb · from your history")
+                Text("est 1RM \(Units.wholeNumber(pounds: derived, unit: ThemeStore.shared.weightUnit)) \(ThemeStore.shared.weightUnit == .kg ? "kg" : "lb") · from your history")
                     .font(GSFont.body(13, relativeTo: .subheadline))
                     .foregroundStyle(theme.accent700)
             }
@@ -694,7 +703,7 @@ struct ProgramTemplateDetailView: View {
                     .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
                     .foregroundStyle(theme.text)
                 HStack(spacing: 8) {
-                    TextField("Weight (lb)", text: manualBinding($manualWeight, exercise.id))
+                    TextField("Weight (\(ThemeStore.shared.weightUnit.label))", text: manualBinding($manualWeight, exercise.id))
                         .keyboardType(.decimalPad)
                         .font(GSFont.body(14, relativeTo: .body))
                         .foregroundStyle(theme.text)
@@ -714,7 +723,7 @@ struct ProgramTemplateDetailView: View {
                         .background(theme.bg)
                         .cornerRadius(10)
                     if let est = baseline(for: exercise) {
-                        Text("→ est \(NSDecimalNumber(decimal: est).intValue) lb")
+                        Text("→ est \(Units.wholeNumber(pounds: est, unit: ThemeStore.shared.weightUnit)) \(ThemeStore.shared.weightUnit == .kg ? "kg" : "lb")")
                             .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
                             .foregroundStyle(theme.accent700)
                     }

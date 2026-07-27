@@ -441,7 +441,7 @@ struct VenueHubView: View {
                                 .font(GSFont.bodyMedium(14, relativeTo: .body))
                                 .foregroundStyle(theme.text)
                             Spacer(minLength: 0)
-                            Text("\(StatMath.compactNumber(row.volume)) lb")
+                            Text("\(StatMath.compactNumber(Units.fromPounds(row.volume, to: ThemeStore.shared.weightUnit))) \(ThemeStore.shared.weightUnit == .kg ? "kg" : "lb")")
                                 .font(GSFont.body(13, relativeTo: .subheadline))
                                 .foregroundStyle(theme.accent700)
                                 .monospacedDigit()

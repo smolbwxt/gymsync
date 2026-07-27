@@ -183,7 +183,8 @@ struct ActivityFeedView: View {
 
     private func metaText(for row: ActivityFeedRow) -> String {
         let duration = Self.durationText(from: row.startedAt, to: row.completedAt)
-        let volume = "\(StatMath.compactNumber(row.volume)) lbs"
+        let unit = ThemeStore.shared.weightUnit
+        let volume = "\(StatMath.compactNumber(Units.fromPounds(row.volume, to: unit))) \(unit.label)"
         let sets = "\(row.setCount) set\(row.setCount == 1 ? "" : "s")"
         return "\(duration) · \(volume) · \(sets)"
     }

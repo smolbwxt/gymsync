@@ -34,9 +34,12 @@ struct SoloRecapView: View {
         let topReps: Int?
         let isPR: Bool
 
-        var metaText: String {
+        /// Units sweep: `topWeight` is stored-lbs — the view passes its
+        /// display unit in so "top 102.5 × 5" reads in the lifter's unit.
+        func metaText(unit: WeightUnit) -> String {
             if let topWeight, let topReps {
-                return "\(setCount) sets · top \(topWeight) × \(topReps)"
+                let w = Units.format(pounds: topWeight, unit: unit, rounded: false, includeUnit: false)
+                return "\(setCount) sets · top \(w) × \(topReps)"
             }
             return "\(setCount) sets"
         }
@@ -80,6 +83,12 @@ struct SoloRecapView: View {
     let exerciseSummaries: [ExerciseSummary]
     let healthSummary: HealthSummary?
     let shareSummary: String
+    /// Units sweep: display unit for the hero label and the per-weight lines
+    /// this view formats itself (`totalLbsText` etc. arrive pre-converted —
+    /// the display-ready convention — but the PR card and breakdown format
+    /// raw stored-lbs Decimals here). Defaulted so catalog fixtures and any
+    /// lbs caller compile unchanged.
+    let unit: WeightUnit
     let onDone: () -> Void
 
     @Environment(\.gsTheme) private var theme
@@ -95,6 +104,7 @@ struct SoloRecapView: View {
         exerciseSummaries: [ExerciseSummary],
         healthSummary: HealthSummary? = nil,
         shareSummary: String,
+        unit: WeightUnit = .lbs,
         onDone: @escaping () -> Void = {}
     ) {
         self.kicker = kicker
@@ -107,6 +117,7 @@ struct SoloRecapView: View {
         self.exerciseSummaries = exerciseSummaries
         self.healthSummary = healthSummary
         self.shareSummary = shareSummary
+        self.unit = unit
         self.onDone = onDone
     }
 
@@ -195,7 +206,7 @@ struct SoloRecapView: View {
                 .foregroundStyle(theme.bg.opacity(0.9))
 
             HStack(spacing: 8) {
-                heroStatCell(value: totalLbsText, label: "TOTAL LBS")
+                heroStatCell(value: totalLbsText, label: "TOTAL \(unit.label.uppercased())")
                 heroStatCell(value: "\(setCount)", label: "SETS")
                 heroStatCell(value: "\(prCount)", label: "PR")
             }
@@ -232,10 +243,10 @@ struct SoloRecapView: View {
                         .font(GSFont.bodyMedium(11, relativeTo: .caption))
                 }
                 .foregroundStyle(theme.accent)
-                Text("\(pr.exerciseName) — \(decimalString(pr.weight)) lbs × \(pr.reps)")
+                Text("\(pr.exerciseName) — \(Units.format(pounds: pr.weight, unit: unit, rounded: false, includeUnit: false)) \(unit.label) × \(pr.reps)")
                     .font(GSFont.bold(15, relativeTo: .body))
                     .foregroundStyle(theme.text)
-                Text("▲ Beat previous best by \(decimalString(delta)) lbs")
+                Text("▲ Beat previous best by \(Units.format(pounds: delta, unit: unit, rounded: false, includeUnit: false)) \(unit.label)")
                     .font(GSFont.body(11, relativeTo: .caption))
                     .foregroundStyle(theme.accent700)
             }
@@ -256,7 +267,7 @@ struct SoloRecapView: View {
                         Text(summary.name)
                             .font(GSFont.bold(14, relativeTo: .body))
                             .foregroundStyle(theme.text)
-                        Text(summary.metaText)
+                        Text(summary.metaText(unit: unit))
                             .font(GSFont.body(11, relativeTo: .caption))
                             .foregroundStyle(theme.neutral700)
                     }
@@ -320,11 +331,4 @@ struct SoloRecapView: View {
         .background(theme.bg)
     }
 
-    /// Trims a trailing ".0"/zero fraction so whole-number weights read as "190" not "190.0".
-    private func decimalString(_ value: Decimal) -> String {
-        var value = value
-        var rounded = Decimal()
-        NSDecimalRound(&rounded, &value, 0, .plain)
-        return rounded == value ? "\(rounded)" : "\(value)"
-    }
 }

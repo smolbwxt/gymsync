@@ -20,13 +20,12 @@ struct BodyWeightLogSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.gsTheme) private var theme
 
-    // No unit-preference setting exists anywhere in `profiles`/
-    // `user_settings` today — grepped both before this task, confirmed
-    // absent. "lbs" is the task brief's documented default (not a read of a
-    // per-user setting) and is not user-facing as a picker in v1; if a unit
-    // preference ships later, this constant is the single place to wire it
-    // in behind a real read.
-    private let unit = "lbs"
+    // Units sweep (2026-07-27): the field is typed and labeled in the
+    // user's unit (`user_settings.unit_system` via ThemeStore's cached
+    // row); STORAGE stays canonical pounds with unit "lbs", same doctrine
+    // as every other weight column — one unit in the table keeps the trend
+    // chart and headline math unit-free.
+    private var unit: WeightUnit { ThemeStore.shared.weightUnit }
 
     @State private var weight: String = ""
     @State private var isSubmitting = false
@@ -37,7 +36,7 @@ struct BodyWeightLogSheet: View {
             VStack(alignment: .leading, spacing: 0) {
                 stepperCell(
                     theme: theme,
-                    label: "Weight (\(unit))",
+                    label: "Weight (\(unit.label))",
                     value: $weight,
                     borderColor: theme.accent,
                     valueColor: theme.accent700,
@@ -91,11 +90,14 @@ struct BodyWeightLogSheet: View {
     }
 
     private func submit() async {
-        guard let value = Decimal.parseUserInput(weight), value > 0 else { return }
+        guard let typed = Decimal.parseUserInput(weight), typed > 0 else { return }
+        // Typed in the user's unit → canonical pounds for storage (the row's
+        // `unit` column stays "lbs" — see the doctrine note on `unit` above).
+        let value = Units.toPounds(typed, from: unit)
         isSubmitting = true
         defer { isSubmitting = false }
         do {
-            try await BodyWeightLogRepository.log(weight: value, unit: unit)
+            try await BodyWeightLogRepository.log(weight: value, unit: "lbs")
             errorText = nil
             onLogged?()
             dismiss()

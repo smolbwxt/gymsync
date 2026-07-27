@@ -114,15 +114,15 @@ struct SessionRecapView: View {
         return sessionPRs.first { $0.userID == selfID }
     }
 
-    private func decimalString(_ value: Decimal) -> String {
-        var value = value
-        var rounded = Decimal()
-        NSDecimalRound(&rounded, &value, 0, .plain)
-        return rounded == value ? "\(rounded)" : "\(value)"
+    // Units sweep: stored-lbs → the user's display unit, exact.
+    private var unit: WeightUnit { ThemeStore.shared.weightUnit }
+
+    private func weightText(_ pounds: Decimal) -> String {
+        Units.format(pounds: pounds, unit: unit, rounded: false, includeUnit: false)
     }
 
     private var shareText: String {
-        "\(heroKicker == "SESSION RECAP" ? "GymSync session" : heroKicker) — \(durationString), \(formatVolume(totalVolume)) lbs, \(totalSets) sets."
+        "\(heroKicker == "SESSION RECAP" ? "GymSync session" : heroKicker) — \(durationString), \(formatVolume(Units.fromPounds(totalVolume, to: unit))) \(unit.label), \(totalSets) sets."
     }
 
     private var totalSets: Int { sets.filter { !$0.isPenalty }.count }
@@ -243,10 +243,10 @@ struct SessionRecapView: View {
                     .tracking(1.2)
             }
             .foregroundStyle(theme.accent)
-            Text("\(prExerciseNames[pr.exerciseID] ?? "Exercise") — \(decimalString(pr.weight)) lbs × \(pr.reps)")
+            Text("\(prExerciseNames[pr.exerciseID] ?? "Exercise") — \(weightText(pr.weight)) \(unit.label) × \(pr.reps)")
                 .font(GSFont.bold(15, relativeTo: .headline))
                 .foregroundStyle(theme.text)
-            Text("▲ Beat previous best by \(decimalString(pr.weight - pr.previousBest)) lbs")
+            Text("▲ Beat previous best by \(weightText(pr.weight - pr.previousBest)) \(unit.label)")
                 .font(GSFont.body(11, relativeTo: .caption))
                 .foregroundStyle(theme.accent700)
         }
@@ -278,7 +278,7 @@ struct SessionRecapView: View {
 
             // Aggregate stats row
             HStack(spacing: 0) {
-                statPill(value: formatVolume(totalVolume), label: "TOTAL LBS")
+                statPill(value: formatVolume(Units.fromPounds(totalVolume, to: unit)), label: "TOTAL \(unit.label.uppercased())")
                 Rectangle()
                     .fill(theme.bg.opacity(0.3))
                     .frame(width: 1, height: 32)
@@ -344,7 +344,7 @@ struct SessionRecapView: View {
                         Text("·")
                             .foregroundStyle(theme.neutral500)
                             .font(GSFont.body(11, relativeTo: .caption))
-                        Text("\(formatVolume(stat.volume)) lbs")
+                        Text("\(formatVolume(Units.fromPounds(stat.volume, to: unit))) \(unit.label)")
                             .font(GSFont.body(11, relativeTo: .caption))
                             .foregroundStyle(theme.neutral500)
                     }

@@ -14,20 +14,25 @@ struct ExerciseDetailView: View {
     @State private var bestPR: PersonalRecord?
     @State private var trendLogs: [SetLog] = []
 
-    /// Est. 1RM per set, restricted to the trailing 12-week window, chronological.
+    /// Est. 1RM per set, restricted to the trailing 12-week window,
+    /// chronological. Units sweep: points are converted to the user's unit
+    /// here so the delta badge derived from them is already unit-correct.
     private var trendChartData: [(Date, Double)] {
         guard let cutoff = Calendar.current.date(byAdding: .day, value: -84, to: .now) else { return [] }
+        let unit = ThemeStore.shared.weightUnit
         return trendLogs
             .filter { $0.loggedAt >= cutoff }
             .compactMap { log -> (Date, Double)? in
                 guard let w = log.weight, let reps = log.reps else { return nil }
                 let oneRM = StatMath.estimatedOneRepMax(weight: w, reps: reps)
-                return (log.loggedAt, NSDecimalNumber(decimal: oneRM).doubleValue)
+                return (log.loggedAt, Units.fromPounds(NSDecimalNumber(decimal: oneRM).doubleValue, to: unit))
             }
             .sorted { $0.0 < $1.0 }
     }
 
-    /// "▲ 18 lbs" — first-to-last Est. 1RM delta within the trend window.
+    /// "▲ 18 lbs" / "▲ 8 kg" — first-to-last Est. 1RM delta within the trend
+    /// window (chart points are already in the user's unit, so no second
+    /// conversion here).
     private var trendDeltaText: String? {
         guard trendChartData.count >= 2,
               let first = trendChartData.first?.1,
@@ -35,7 +40,7 @@ struct ExerciseDetailView: View {
         else { return nil }
         let delta = Int((last - first).rounded())
         guard delta != 0 else { return nil }
-        return "\(delta >= 0 ? "▲" : "▼") \(abs(delta)) lbs"
+        return "\(delta >= 0 ? "▲" : "▼") \(abs(delta)) \(ThemeStore.shared.weightUnit.label)"
     }
 
     var body: some View {
@@ -148,12 +153,12 @@ struct ExerciseDetailView: View {
         .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
     }
 
-    // "190 × 5" — weight-first, matches the app-wide PR/set-display convention.
+    // "190 × 5" — weight-first, matches the app-wide PR/set-display
+    // convention. Units sweep: stored-lbs converted to the display unit,
+    // exact (a PR is what was actually lifted — never snapped).
     private func formatBest(_ pr: PersonalRecord) -> String {
-        var weight = pr.weight
-        var rounded = Decimal()
-        NSDecimalRound(&rounded, &weight, 0, .plain)
-        let weightText = rounded == weight ? "\(rounded)" : "\(weight)"
+        let weightText = Units.format(pounds: pr.weight, unit: ThemeStore.shared.weightUnit,
+                                      rounded: false, includeUnit: false)
         return "\(weightText) × \(pr.reps)"
     }
 

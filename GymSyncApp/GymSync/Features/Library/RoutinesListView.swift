@@ -369,7 +369,9 @@ private struct RoutineDetailChoice: View {
                         .foregroundStyle(theme.neutral500)
                 }
                 if let projected {
-                    Text("~\(projected) lbs for you")
+                    // Units sweep: projection is a 5-lb-grid Int in lbs —
+                    // re-snap in the user's unit grid for display.
+                    Text("~\(Units.format(pounds: Decimal(projected), unit: ThemeStore.shared.weightUnit)) for you")
                         .font(GSFont.bold(11.5, relativeTo: .caption2))
                         .foregroundStyle(theme.accent)
                 }

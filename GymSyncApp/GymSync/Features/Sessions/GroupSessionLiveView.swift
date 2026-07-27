@@ -374,9 +374,25 @@ struct GroupSessionLiveView: View {
         max(1, targetSetsPerLifter * max(participants.count, 1))
     }
 
+    // Units sweep: stored weights (and the routine's free-text target, which
+    // carries canonical-lbs digits) render in the user's unit. Exact
+    // conversion, no plate snapping — these echo what was/should be lifted.
+    private func weightText(_ pounds: Decimal) -> String {
+        Units.format(pounds: pounds, unit: ThemeStore.shared.weightUnit,
+                     rounded: false, includeUnit: false)
+    }
+
+    /// "185" → "84.09" for a kg user; non-numeric target strings pass
+    /// through untouched (they were never weights to begin with).
+    private func targetWeightText(_ target: String?) -> String {
+        guard let target else { return "—" }
+        guard let parsed = Decimal(string: target) else { return target }
+        return weightText(parsed)
+    }
+
     private var currentExerciseTargetText: String? {
         guard let re = currentRoutineExercise, re.targetReps != nil || re.targetWeight != nil else { return nil }
-        return "target \(re.targetWeight ?? "—") × \(re.targetReps ?? "—")"
+        return "target \(targetWeightText(re.targetWeight)) × \(re.targetReps ?? "—")"
     }
 
     private func rosterStatus(for userID: UUID) -> RosterStatus {
@@ -560,6 +576,7 @@ struct GroupSessionLiveView: View {
                     reps: prOverlayReps,
                     priorBest: prOverlayPriorBest,
                     monthlyCount: prOverlayMonthlyCount,
+                    unit: ThemeStore.shared.weightUnit,
                     onDismiss: {
                         withAnimation(.easeIn(duration: 0.2)) { isPROverlay = false }
                     }
@@ -708,6 +725,7 @@ struct GroupSessionLiveView: View {
                     shareSummary: payload.shareSummary,
                     sessionID: data.session.id,
                     recipientIDs: payload.recipientIDs,
+                    unit: ThemeStore.shared.weightUnit,
                     onDone: { dismiss() }
                 )
             } else {
@@ -1248,7 +1266,9 @@ struct GroupSessionLiveView: View {
                 )
                 stepperCell(
                     theme: theme,
-                    label: "Weight (\(currentExerciseForSheet?.defaultUnit ?? "lbs"))",
+                    // Units sweep: the USER'S unit, not the exercise's
+                    // default — commitInlineLog parses in this.
+                    label: "Weight (\(ThemeStore.shared.weightUnit.label))",
                     value: $logWeight,
                     borderColor: theme.accent,
                     valueColor: theme.accent700,
@@ -1269,7 +1289,12 @@ struct GroupSessionLiveView: View {
             // holds its weight in `logWeight` rather than LogSetSheet's `weight`
             // (LogSetSheet.swift:22).
             if let targetWeight = Decimal.parseUserInput(logWeight), targetWeight > 0 {
-                PlateStackDisclosure(target: targetWeight, theme: theme, isExpanded: $showPlateStack)
+                // Units sweep: `target` is what the user TYPED, i.e. already
+                // in their unit — the disclosure now runs its plate math
+                // natively in that unit (see PlateStackDisclosure).
+                PlateStackDisclosure(target: targetWeight, theme: theme,
+                                     unit: ThemeStore.shared.weightUnit,
+                                     isExpanded: $showPlateStack)
             }
 
             VStack(alignment: .leading, spacing: 6) {
@@ -1533,7 +1558,7 @@ struct GroupSessionLiveView: View {
         switch status {
         case .lifting:
             if let re = currentRoutineExercise {
-                Text("Set \(setCount(userID: userID, exerciseID: currentExerciseForSheet?.id ?? UUID()) + 1) · target \(re.targetWeight ?? "—") × \(re.targetReps ?? "—")")
+                Text("Set \(setCount(userID: userID, exerciseID: currentExerciseForSheet?.id ?? UUID()) + 1) · target \(targetWeightText(re.targetWeight)) × \(re.targetReps ?? "—")")
                     .font(GSFont.body(11, relativeTo: .caption))
                     .foregroundStyle(theme.bg.opacity(0.9))
             }
@@ -1542,7 +1567,7 @@ struct GroupSessionLiveView: View {
                 Text("Last set")
                     .font(GSFont.body(10, relativeTo: .caption2))
                     .foregroundStyle(theme.neutral500)
-                Text("\(last.weight.map(decimalString) ?? "—") × \(last.reps.map { "\($0)" } ?? "—")")
+                Text("\(last.weight.map(weightText) ?? "—") × \(last.reps.map { "\($0)" } ?? "—")")
                     .font(GSFont.bodyMedium(13, relativeTo: .body))
                     .foregroundStyle(theme.text)
             } else {
@@ -1552,7 +1577,7 @@ struct GroupSessionLiveView: View {
             }
         case .done:
             if let last = lastSetForCurrentExercise(userID) {
-                Text("\(last.weight.map(decimalString) ?? "—") × \(last.reps.map { "\($0)" } ?? "—")")
+                Text("\(last.weight.map(weightText) ?? "—") × \(last.reps.map { "\($0)" } ?? "—")")
                     .font(GSFont.bodyMedium(13, relativeTo: .body))
                     .foregroundStyle(theme.text)
                 if let rpe = last.rpe {
@@ -1563,7 +1588,7 @@ struct GroupSessionLiveView: View {
             }
         case .waiting:
             if let re = currentRoutineExercise, re.targetWeight != nil || re.targetReps != nil {
-                Text("Target \(re.targetWeight ?? "—") × \(re.targetReps ?? "—")")
+                Text("Target \(targetWeightText(re.targetWeight)) × \(re.targetReps ?? "—")")
                     .font(GSFont.body(11, relativeTo: .caption))
                     .foregroundStyle(theme.neutral500)
             } else {
@@ -1750,9 +1775,11 @@ struct GroupSessionLiveView: View {
                 }
 
                 let repsText = log.reps.map { "\($0)" } ?? "—"
-                let weightText = log.weight.map { NSDecimalNumber(decimal: $0).stringValue } ?? "—"
+                // Units sweep: stored-lbs → display unit (renamed from
+                // `weightText` so it can't shadow the helper it calls).
+                let weightStr = log.weight.map { weightText($0) } ?? "—"
                 HStack(spacing: 4) {
-                    Text("\(repsText) × \(weightText)")
+                    Text("\(repsText) × \(weightStr)")
                         .font(GSFont.bodyMedium(13, relativeTo: .body))
                         .foregroundStyle(theme.text)
                     if log.isPenalty {
@@ -1793,7 +1820,8 @@ struct GroupSessionLiveView: View {
                 exercise: ex,
                 setIndex: 1,
                 defaultReps: "\(burpeesRemaining)",
-                defaultWeight: nil
+                defaultWeight: nil,
+                unit: ThemeStore.shared.weightUnit
             ) { reps, weight, rpe, isFailed, note in
                 Task { await logSet(reps: reps, weight: weight, rpe: rpe,
                                     isFailed: isFailed, note: note,
@@ -1901,7 +1929,11 @@ struct GroupSessionLiveView: View {
         // Phase O Task 2: `Decimal.parseUserInput(_:)` — see the "Plates"
         // disclosure gate above for why the bare `Decimal(string:)`
         // initializer was locale-unsafe.
+        // Units sweep: the field is typed in the USER'S unit — convert to
+        // canonical pounds before storage (a kg user typing 100 must store
+        // 220.46, not a silent 100 lb set corrupting volume and PRs).
         let weight = Decimal.parseUserInput(logWeight)
+            .map { Units.toPounds($0, from: ThemeStore.shared.weightUnit) }
         let rpe = Decimal(logRPE)
         let note = logNote.isEmpty ? nil : logNote
         let failed = logIsFailed
@@ -2678,12 +2710,15 @@ struct GroupSessionLiveView: View {
         }
         .sorted { $0.volume > $1.volume }   // descending volume = leaderboard order
 
+        // Units sweep: volumes accumulate in stored-lbs — convert once here,
+        // then every formatted figure below is already in the user's unit.
+        let unit = ThemeStore.shared.weightUnit
         let leaderboard = stats.map { stat in
             GroupRecapView.LeaderboardRow(
                 id: stat.userID,
                 initials: String(stat.profile.username.prefix(2)).uppercased(),
                 name: stat.userID == selfID ? "You" : stat.profile.username,
-                volumeText: "\(formatVolumeFull(stat.volume)) lbs",
+                volumeText: "\(formatVolumeFull(Units.fromPounds(stat.volume, to: unit))) \(unit.label)",
                 prCount: stat.prCount,
                 isYou: stat.userID == selfID
             )
@@ -2722,7 +2757,7 @@ struct GroupSessionLiveView: View {
             )
         }()
 
-        let shareSummary = "\(kicker) — \(formatDuration(durationSeconds)), \(formatVolume(totalVolume)) lbs, \(totalSets) sets."
+        let shareSummary = "\(kicker) — \(formatDuration(durationSeconds)), \(formatVolume(Units.fromPounds(totalVolume, to: unit))) \(unit.label), \(totalSets) sets."
 
         // Crew-wide kudos send model (documented in
         // 20260720000001_session_kudos.sql and SessionKudosRepository.send):
@@ -2735,7 +2770,7 @@ struct GroupSessionLiveView: View {
             kicker: kicker,
             durationText: formatDuration(durationSeconds),
             subline: subline,
-            totalLbsText: formatVolume(totalVolume),
+            totalLbsText: formatVolume(Units.fromPounds(totalVolume, to: unit)),
             setCount: totalSets,
             prCount: prCountByUser.values.reduce(0, +),
             leaderboard: leaderboard,

@@ -299,7 +299,9 @@ struct DiscoverWorkoutDetailView: View {
                         .foregroundStyle(theme.neutral500)
                 }
                 if let projected {
-                    Text("~\(projected) lbs for you")
+                    // Units sweep: projection is a 5-lb-grid Int in lbs —
+                    // re-snap in the user's unit grid for display.
+                    Text("~\(Units.format(pounds: Decimal(projected), unit: ThemeStore.shared.weightUnit)) for you")
                         .font(GSFont.bold(11.5, relativeTo: .caption2))
                         .foregroundStyle(theme.accent)
                 }
@@ -442,11 +444,13 @@ struct DiscoverWorkoutDetailView: View {
             return Self.formatMMSS(seconds)
         case .volume:
             guard let volume = entry.totalVolume else { return "—" }
-            return "\(formatVolume(volume)) lbs"
+            let unit = ThemeStore.shared.weightUnit
+            return "\(formatVolume(Units.fromPounds(volume, to: unit))) \(unit.label)"
         case .topSet:
             guard let exerciseID = workout.scoringTopSetExerciseID,
                   let weight = entry.topSets?[exerciseID.uuidString.lowercased()] else { return "—" }
-            return "\(formatVolume(weight)) lbs"
+            let unit = ThemeStore.shared.weightUnit
+            return "\(formatVolume(Units.fromPounds(weight, to: unit))) \(unit.label)"
         case .recent:
             return relativeDateText(entry.computedAt)
         }

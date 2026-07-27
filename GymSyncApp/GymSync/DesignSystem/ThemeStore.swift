@@ -78,6 +78,15 @@ public final class ThemeStore {
     /// the rest timer back to 120s on every palette change).
     private var lastKnownSettings: UserSettings?
 
+    /// Units sweep (2026-07-27): the user's display/entry unit, derived from
+    /// the same cached row `select(_:)` protects above. Computed off the
+    /// `@Observable`-tracked stored property, so any view that reads this in
+    /// its `body` re-renders the moment the You-tab toggle lands its write
+    /// through `noteExternalSettingsWrite` — no per-view settings fetch.
+    /// Falls back to lbs before `load()` completes (same absence-means-
+    /// default posture as the rest of this class).
+    var weightUnit: WeightUnit { lastKnownSettings?.weightUnit ?? .lbs }
+
     /// The in-flight persist `Task` spawned by the most recent `select(_:)`
     /// call, if any. Tracked so rapid palette taps can't race each other: a
     /// second tap cancels the first tap's still-running upsert instead of

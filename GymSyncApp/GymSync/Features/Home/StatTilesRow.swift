@@ -54,7 +54,8 @@ struct StatTilesRow: View {
     private func loadedRow(workoutsThisWeek: Int, lifetimeLbs: Decimal, prsThisMonth: Int) -> some View {
         HStack(spacing: 8) {
             GSStatTile(value: "\(workoutsThisWeek)", label: "Workouts this week")
-            GSStatTile(value: StatMath.compactNumber(lifetimeLbs), label: "Lifetime lbs")
+            GSStatTile(value: StatMath.compactNumber(Units.fromPounds(lifetimeLbs, to: ThemeStore.shared.weightUnit)),
+                       label: "Lifetime \(ThemeStore.shared.weightUnit.label)")
             GSStatTile(
                 value: "\(prsThisMonth)",
                 label: "PRs this month",
@@ -73,7 +74,7 @@ struct StatTilesRow: View {
     private var skeletonRow: some View {
         HStack(spacing: 8) {
             GSStatTile(value: "0", label: "Workouts this week")
-            GSStatTile(value: "0", label: "Lifetime lbs")
+            GSStatTile(value: "0", label: "Lifetime \(ThemeStore.shared.weightUnit.label)")
             GSStatTile(value: "0", label: "PRs this month")
         }
         .redacted(reason: .placeholder)
@@ -133,8 +134,8 @@ struct StatTilesRow: View {
                     label: "Workouts this week"
                 )
                 GSStatTile(
-                    value: staleValue(snapshot.lifetimeLbs.map { StatMath.compactNumber($0) }),
-                    label: "Lifetime lbs"
+                    value: staleValue(snapshot.lifetimeLbs.map { StatMath.compactNumber(Units.fromPounds($0, to: ThemeStore.shared.weightUnit)) }),
+                    label: "Lifetime \(ThemeStore.shared.weightUnit.label)"
                 )
                 GSStatTile(
                     value: staleValue(snapshot.prsThisMonth.map { "\($0)" }),

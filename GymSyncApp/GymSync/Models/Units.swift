@@ -66,6 +66,12 @@ enum Units {
         unit == .lbs ? value : value * unit.poundsPerUnit
     }
 
+    /// Double variant for volume aggregates — several recap/leaderboard call
+    /// sites accumulate Σ reps×weight in Double before formatting.
+    static func fromPounds(_ pounds: Double, to unit: WeightUnit) -> Double {
+        unit == .lbs ? pounds : pounds / NSDecimalNumber(decimal: unit.poundsPerUnit).doubleValue
+    }
+
     // MARK: - Rounding
 
     /// Smallest loadable step for a given plate inventory — twice the
@@ -129,8 +135,29 @@ enum Units {
     static func format(pounds: Decimal, unit: WeightUnit,
                        rounded: Bool = true, includeUnit: Bool = true) -> String {
         let converted = fromPounds(pounds, to: unit)
-        let value = rounded ? roundToIncrement(converted, unit: unit) : converted
+        let value: Decimal
+        if rounded {
+            value = roundToIncrement(converted, unit: unit)
+        } else {
+            // Cap the exact path at 2 decimals: a historical 100 lb set
+            // viewed in kg is 45.359237…, and "45.36 kg" is the honest
+            // display. Entries TYPED in this unit convert back exactly
+            // (kg×factor÷factor) and are unaffected.
+            var input = converted
+            var capped = Decimal()
+            NSDecimalRound(&capped, &input, 2, .plain)
+            value = capped
+        }
         return "\(trimmed(value))\(includeUnit ? " \(unit.label)" : "")"
+    }
+
+    /// Est-1RM and other derived-weight displays: whole numbers in the
+    /// user's unit ("232" / "105"), matching the existing intValue idiom
+    /// those cards used when they were lbs-only. Derived numbers aren't
+    /// loadable targets, so no plate snapping — just convert and round.
+    static func wholeNumber(pounds: Decimal, unit: WeightUnit) -> String {
+        let converted = NSDecimalNumber(decimal: fromPounds(pounds, to: unit)).doubleValue
+        return "\(Int(converted.rounded()))"
     }
 
     /// Formats a BARBELL weight snapped to what the user can actually
