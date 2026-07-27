@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 
 // Canvas: Solo workout "In Progress" screen
 // - Header bar: routine name + elapsed time + Finish button
@@ -97,6 +98,15 @@ struct WorkoutSessionView: View {
     /// ever stores `exerciseID`) so the ENTIRE existing logging path —
     /// header card, logged table, LogSetSheet, offline queue, PR detection,
     /// rest timer — is reused unchanged instead of a parallel freeform path.
+    /// Full user settings (unit preference) — widened from the old
+    /// rest-seconds-only fetch; nil until the best-effort load resolves.
+    @State private var sessionSettings: UserSettings?
+    /// "Last time: 225×5, 225×5 · Jul 20" per exercise — fetched lazily the
+    /// first time each exercise becomes current, cached for the session.
+    @State private var lastTimeByExercise: [UUID: String] = [:]
+    /// The set queued for deletion (confirmation dialog).
+    @State private var setPendingDeletion: SetLog?
+
     @State private var freeformExercises: [RoutineExercise] = []
     @State private var showExercisePicker = false
     @State private var pickerCatalog: [Exercise] = []
@@ -175,6 +185,7 @@ struct WorkoutSessionView: View {
                     reps: prOverlayReps,
                     priorBest: prOverlayPriorBest,
                     monthlyCount: prOverlayMonthlyCount,
+                    unit: sessionSettings?.weightUnit ?? .lbs,
                     onDismiss: {
                         withAnimation(.easeIn(duration: 0.2)) { isPROverlay = false }
                     }
@@ -251,6 +262,41 @@ struct WorkoutSessionView: View {
         .task { await startIfNeeded() }
         .task { await loadDefaultRestSeconds() }
         .task { await loadPickerCatalogIfFreeform() }
+        .task(id: currentRoutineExercise?.exerciseID) { await loadLastTime() }
+        // Rest-over cue for a LOCKED phone (V1 gap review: the on-screen
+        // countdown was silent the moment the phone locked — lifters lock
+        // their phone between sets constantly). One observer instead of
+        // wiring all five restEndAt assignment sites: any future rest
+        // window schedules, any clear cancels.
+        .onChange(of: restEndAt) {
+            if let restEndAt, restEndAt > .now {
+                RestNotification.schedule(
+                    at: restEndAt,
+                    exerciseName: currentExercise?.name ?? "your next set",
+                    setNumber: currentSetIndex
+                )
+            } else {
+                RestNotification.cancel()
+            }
+        }
+        .onDisappear {
+            // Only when the session is truly over — a mid-rest lock/
+            // background must keep the cue (that IS the feature).
+            if completed { RestNotification.cancel() }
+        }
+        .confirmationDialog(
+            "Delete this set?",
+            isPresented: Binding(get: { setPendingDeletion != nil },
+                                 set: { if !$0 { setPendingDeletion = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Delete set", role: .destructive) {
+                if let log = setPendingDeletion { Task { await deleteSet(log) } }
+            }
+            Button("Keep it", role: .cancel) { setPendingDeletion = nil }
+        } message: {
+            Text("Removes it from your log, volume and history.")
+        }
         .sheet(isPresented: $showExercisePicker) {
             // Reuses the picker built for the programs enrollment flow
             // (Features/Library/ProgramViews.swift) rather than a second
@@ -269,7 +315,8 @@ struct WorkoutSessionView: View {
                     exercise: ex,
                     setIndex: currentSetIndex,
                     defaultReps: re.targetReps,
-                    defaultWeight: re.targetWeight
+                    defaultWeight: re.targetWeight,
+                    unit: sessionSettings?.weightUnit ?? .lbs
                 ) { reps, weight, rpe, isFailed, note in
                     Task { await log(reps: reps, weight: weight, rpe: rpe,
                                      isFailed: isFailed, note: note) }
@@ -383,6 +430,94 @@ struct WorkoutSessionView: View {
         }
     }
 
+    // MARK: - Delete set / last time / rest notification (V1 polish round)
+
+    @MainActor
+    private func deleteSet(_ log: SetLog) async {
+        setPendingDeletion = nil
+        // Queue first: a still-pending set must leave the offline queue or
+        // the next replay would resurrect it server-side after the UI
+        // showed it gone. Then the server delete (no-op if never synced).
+        OfflineSetLogQueue.shared.discard(id: log.id)
+        do {
+            try await SessionRepository.deleteSet(id: log.id)
+        } catch let error as GymSyncError {
+            // Offline: the queue discard already handled the unsynced case;
+            // a synced set deleted while offline stays visible server-side —
+            // surface rather than pretend.
+            if case .network = error {} else {
+                errorText = ErrorMapping.map(error).errorDescription
+                return
+            }
+        } catch {
+            errorText = ErrorMapping.map(error).errorDescription
+            return
+        }
+        loggedSets.removeAll { $0.id == log.id }
+        // Keep the set counter honest: the next set number is derived from
+        // how many sets THIS exercise now has.
+        if log.exerciseID == currentRoutineExercise?.exerciseID {
+            let count = loggedSets.filter { $0.exerciseID == log.exerciseID }.count
+            currentSetIndex = count + 1
+        }
+        // Deliberately NOT touching sessionPRs / personal_records here — a
+        // PR the user already saw celebrated silently vanishing is its own
+        // surprise; recompute is a scoped follow-up (migration header).
+    }
+
+    /// "225×5, 225×5, 220×4 · Jul 20" — the previous SESSION's sets for the
+    /// current exercise. The single most-asked mid-workout question.
+    @MainActor
+    private func loadLastTime() async {
+        guard let re = currentRoutineExercise,
+              lastTimeByExercise[re.exerciseID] == nil,
+              let userID = appState.currentProfile?.id,
+              let sessionID = session?.id else { return }
+        guard let logs = try? await SessionRepository.exerciseHistory(
+            userID: userID, exerciseID: re.exerciseID, limit: 60) else { return }
+        // Most recent PRIOR session (exclude the live one), newest first.
+        let prior = logs.filter { $0.sessionID != sessionID }
+        guard let lastSession = prior.max(by: { $0.loggedAt < $1.loggedAt })?.sessionID else {
+            lastTimeByExercise[re.exerciseID] = ""   // sentinel: looked, none
+            return
+        }
+        let sets = prior.filter { $0.sessionID == lastSession }
+            .sorted { $0.setIndex < $1.setIndex }
+        let unit = sessionSettings?.weightUnit ?? .lbs
+        let parts = sets.prefix(5).map { log -> String in
+            let w = log.weight.map {
+                Units.format(pounds: $0, unit: unit, rounded: false, includeUnit: false)
+            } ?? "—"
+            return "\(w)×\(log.reps ?? 0)"
+        }
+        let when = sets.first?.loggedAt.formatted(.dateTime.month(.abbreviated).day()) ?? ""
+        lastTimeByExercise[re.exerciseID] = parts.isEmpty ? "" : "\(parts.joined(separator: ", ")) · \(when)"
+    }
+
+    /// One pending local notification, replaced on every schedule — fires
+    /// when rest ends so a LOCKED phone still gets the cue (the on-screen
+    /// countdown covers the foreground). Uses the push authorization the
+    /// user already granted; silently does nothing without it.
+    private enum RestNotification {
+        static let id = "rest-timer-done"
+
+        static func schedule(at date: Date, exerciseName: String, setNumber: Int) {
+            let content = UNMutableNotificationContent()
+            content.title = "Rest over"
+            content.body = "Up next: set \(setNumber) — \(exerciseName)"
+            content.sound = .default
+            let seconds = max(1, date.timeIntervalSinceNow)
+            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: seconds, repeats: false)
+            let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
+            UNUserNotificationCenter.current().add(request)
+        }
+
+        static func cancel() {
+            UNUserNotificationCenter.current()
+                .removePendingNotificationRequests(withIdentifiers: [id])
+        }
+    }
+
     // MARK: - Bar loader (barbell exercises only)
 
     @State private var showBarLoader = false
@@ -454,9 +589,13 @@ struct WorkoutSessionView: View {
                 .foregroundStyle(theme.bg)
                 .lineLimit(2)
 
-            // Target line
+            // Target line (units sweep: target weight is stored pounds,
+            // shown in the user's unit)
+            let unit = sessionSettings?.weightUnit ?? .lbs
             let targetParts: [String] = [
-                re.targetWeight.map { "\($0)" },
+                re.targetWeight.flatMap { Decimal(string: $0) }.map {
+                    Units.format(pounds: $0, unit: unit, rounded: false, includeUnit: false)
+                },
                 re.targetReps.map { "× \($0)" },
                 re.restSeconds.map { "· rest \(formatRest($0))" }
             ].compactMap { $0 }
@@ -464,6 +603,18 @@ struct WorkoutSessionView: View {
                 Text("Target " + targetParts.joined(separator: " "))
                     .font(GSFont.body(12, relativeTo: .caption))
                     .foregroundStyle(theme.bg.opacity(0.9))
+            }
+
+            // "Last time" — the most-asked mid-workout question, answered
+            // where the lifter is looking. Empty-string sentinel = looked
+            // and found no prior session; nil = still loading (show nothing
+            // either way, never a spinner on this card).
+            if let lastTime = lastTimeByExercise[re.exerciseID], !lastTime.isEmpty {
+                Text("Last time: \(lastTime)")
+                    .font(GSFont.body(12, relativeTo: .caption))
+                    .foregroundStyle(theme.bg.opacity(0.85))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
         }
         .padding(16)
@@ -519,7 +670,14 @@ struct WorkoutSessionView: View {
                     col1: Text("\(log.reps ?? 0)")
                               .font(GSFont.heading(15, relativeTo: .body))
                               .foregroundStyle(theme.text),
-                    col2: Text(log.weight.map { "\($0)" } ?? "—")
+                    // Units sweep: stored pounds, displayed in the user's
+                    // unit (unrounded — this is what they LOGGED, not a
+                    // suggestion to snap).
+                    col2: Text(log.weight.map {
+                                  Units.format(pounds: $0,
+                                               unit: sessionSettings?.weightUnit ?? .lbs,
+                                               rounded: false, includeUnit: false)
+                              } ?? "—")
                               .font(GSFont.heading(15, relativeTo: .body))
                               .foregroundStyle(theme.text),
                     col3: Text(log.rpe.map { "\($0)" } ?? "—")
@@ -528,6 +686,18 @@ struct WorkoutSessionView: View {
                 )
                 .padding(.horizontal, 16)
                 .padding(.vertical, 9)
+                .contentShape(Rectangle())
+                // Delete-set (V1 gap review: a fat-fingered 2255 was
+                // PERMANENT). Long-press → confirm; context menu rather
+                // than swipe because these rows live in a ScrollView, not
+                // a List, and hand-rolled swipe gestures fight the scroll.
+                .contextMenu {
+                    Button(role: .destructive) {
+                        setPendingDeletion = log
+                    } label: {
+                        Label("Delete set", systemImage: "trash")
+                    }
+                }
 
                 GSDivider().padding(.horizontal, 16)
             }
@@ -827,6 +997,9 @@ struct WorkoutSessionView: View {
     private func loadDefaultRestSeconds() async {
         if let settings = try? await UserSettingsRepository.get() {
             defaultRestSeconds = settings.defaultRestSeconds
+            // Widened (units sweep): keep the whole settings object so the
+            // logged table / header can format in the user's unit.
+            sessionSettings = settings
         }
     }
 

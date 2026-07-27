@@ -19,6 +19,10 @@ struct PRCelebrationOverlay: View {
     let reps: Int
     let priorBest: Decimal
     let monthlyCount: Int?
+    /// Units sweep — display unit; stored weights arrive as pounds.
+    /// Trailing-defaulted so GroupSessionLiveView's call site compiles
+    /// unchanged (lbs) until its own sweep.
+    var unit: WeightUnit = .lbs
     let onDismiss: () -> Void
 
     @Environment(\.gsTheme) private var theme
@@ -63,10 +67,10 @@ struct PRCelebrationOverlay: View {
                     .foregroundStyle(theme.bg.opacity(0.9))
 
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(decimalString(weight))
+                    Text(Units.format(pounds: weight, unit: unit, rounded: false, includeUnit: false))
                         .font(.custom("Archivo-Bold", size: 56))
                         .foregroundStyle(theme.bg)
-                    Text("lbs")
+                    Text(unit.label)
                         .font(GSFont.bold(18, relativeTo: .title3))
                         .foregroundStyle(theme.bg.opacity(0.85))
                 }
@@ -76,7 +80,7 @@ struct PRCelebrationOverlay: View {
                     .foregroundStyle(theme.bg)
                     .multilineTextAlignment(.center)
 
-                Text("▲ Beat your best by \(decimalString(weight - priorBest)) lbs")
+                Text("▲ Beat your best by \(Units.format(pounds: weight - priorBest, unit: unit, rounded: false, includeUnit: false)) \(unit.label)")
                     .font(GSFont.bodyMedium(14, relativeTo: .body))
                     .foregroundStyle(theme.bg.opacity(0.9))
 
@@ -125,7 +129,7 @@ struct PRCelebrationOverlay: View {
     }
 
     private var shareText: String {
-        "New PR! \(exerciseName) — \(decimalString(weight)) lbs × \(reps) on GymSync."
+        "New PR! \(exerciseName) — \(Units.format(pounds: weight, unit: unit, rounded: false, includeUnit: false)) \(unit.label) × \(reps) on GymSync."
     }
 
     // `decimalString`/`ordinal` are copied verbatim from `GroupSessionLiveView` (which

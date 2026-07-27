@@ -12,6 +12,13 @@ struct LogSetSheet: View {
     let setIndex: Int
     let defaultReps: String?
     let defaultWeight: String?
+    /// Entry/display unit (units sweep). TYPED VALUES ARE IN THIS UNIT and
+    /// are converted to canonical pounds at commit — without this, a kg
+    /// user typing 100 stores a 100 lb set, silently corrupting volume,
+    /// est-1RM and program baselines. Trailing-defaulted so pre-existing
+    /// call sites (GroupSessionLiveView's) compile unchanged as lbs until
+    /// they're swept.
+    var unit: WeightUnit = .lbs
     let onLog: (Int?, Decimal?, Decimal?, Bool, String?) -> Void
     // onLog(reps, weight, rpe, isFailed, note) — UNCHANGED
 
@@ -89,7 +96,9 @@ struct LogSetSheet: View {
 
                         stepperCell(
                             theme: theme,
-                            label: "Weight (\(exercise.defaultUnit))",
+                            // Units sweep: the USER'S unit, not the
+                            // exercise's default — entry parses in this.
+                            label: "Weight (\(unit.label))",
                             value: $weight,
                             borderColor: theme.accent,        // Canvas: accent border on weight
                             valueColor: theme.accent700,      // Canvas: accent700 for weight value
@@ -128,7 +137,10 @@ struct LogSetSheet: View {
                     // this exact field, so a comma-locale device's live
                     // "Plates" preview stays in sync with what actually
                     // submits.
-                    if let targetWeight = Decimal.parseUserInput(weight), targetWeight > 0 {
+                    // Disclosure math runs in POUNDS (its bar/plates are the
+                    // lbs standard set) — convert the unit-typed entry.
+                    if let typed = Decimal.parseUserInput(weight), typed > 0 {
+                        let targetWeight = Units.toPounds(typed, from: unit)
                         PlateStackDisclosure(target: targetWeight, theme: theme, isExpanded: $showPlateStack)
                             .padding(.horizontal, 16)
                             .padding(.bottom, 16)
@@ -205,7 +217,16 @@ struct LogSetSheet: View {
             .navigationBarHidden(true)
             .onAppear {
                 if reps.isEmpty { reps = defaultReps ?? "" }
-                if weight.isEmpty { weight = defaultWeight ?? "" }
+                if weight.isEmpty {
+                    // Prefill is stored POUNDS (routine targets) — present
+                    // it in the entry unit so committing it round-trips.
+                    if let stored = defaultWeight.flatMap({ Decimal(string: $0) }) {
+                        weight = Units.format(pounds: stored, unit: unit,
+                                              rounded: false, includeUnit: false)
+                    } else {
+                        weight = defaultWeight ?? ""
+                    }
+                }
             }
         }
         .presentationDetents([.medium, .large])
@@ -220,7 +241,8 @@ struct LogSetSheet: View {
         // initializer was locale-unsafe.
         onLog(
             Int(reps),
-            Decimal.parseUserInput(weight),
+            // THE conversion edge: typed in `unit`, stored in pounds.
+            Decimal.parseUserInput(weight).map { Units.toPounds($0, from: unit) },
             Decimal(rpe),
             isFailed,
             note.isEmpty ? nil : note

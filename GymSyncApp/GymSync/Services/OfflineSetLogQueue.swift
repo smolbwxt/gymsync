@@ -387,6 +387,21 @@ final class OfflineSetLogQueue {
         try? modelContext.save()
     }
 
+    /// Drops one queued set by id (delete-set flow, 2026-07-26): a set the
+    /// user deleted while it was still offline-pending must leave the queue
+    /// too, or the next replay would RESURRECT it on the server after the
+    /// UI showed it gone. No-op when the id isn't queued (already synced —
+    /// the server delete handles it).
+    func discard(id: UUID) {
+        guard let modelContext, pendingSetLogIDs.contains(id) else { return }
+        let descriptor = FetchDescriptor<PendingSetLog>(predicate: #Predicate { $0.id == id })
+        guard let item = try? modelContext.fetch(descriptor).first else {
+            pendingSetLogIDs.remove(id)
+            return
+        }
+        remove(item, modelContext: modelContext)
+    }
+
     // MARK: - Internals
 
     private func remove(_ item: PendingSetLog, modelContext: ModelContext) {

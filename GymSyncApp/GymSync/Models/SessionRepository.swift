@@ -76,6 +76,15 @@ enum SessionRepository {
         } catch { throw ErrorMapping.map(error) }
     }
 
+    /// Deletes one mistyped set (owner-scoped RLS, 20260730000003). PR rows
+    /// born from the deleted set are deliberately NOT touched — see the
+    /// migration header.
+    static func deleteSet(id: UUID) async throws {
+        do {
+            _ = try await client.from("set_logs").delete().eq("id", value: id).execute()
+        } catch { throw ErrorMapping.map(error) }
+    }
+
     static func history(userID: UUID, limit: Int) async throws -> [WorkoutSession] {
         do {
             let rows: [WorkoutSession] = try await client
