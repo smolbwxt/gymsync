@@ -33,6 +33,7 @@ struct PRCelebrationOverlay: View {
         reps: Int,
         priorBest: Decimal,
         monthlyCount: Int?,
+        unit: WeightUnit = .lbs,
         onDismiss: @escaping () -> Void
     ) {
         self.exerciseName = exerciseName
@@ -40,6 +41,7 @@ struct PRCelebrationOverlay: View {
         self.reps = reps
         self.priorBest = priorBest
         self.monthlyCount = monthlyCount
+        self.unit = unit
         self.onDismiss = onDismiss
     }
 
