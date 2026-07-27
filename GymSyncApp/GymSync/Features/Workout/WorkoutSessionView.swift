@@ -140,9 +140,53 @@ struct WorkoutSessionView: View {
         return exerciseCatalog.first { $0.id == re.exerciseID }
     }
 
+    // Body split (compiler type-check timeout, CI 2026-07-27): the single
+    // expression grew past what the type checker will attempt. The
+    // completed/live switch and the PR overlay each get their own named
+    // sub-view; body stays a small ZStack + modifier chain.
     var body: some View {
         ZStack {
-            Group {
+            sessionContent
+            prOverlayLayer
+        }
+        .background(theme.bg)
+        .gsSpotlight(.workout)   // fires on arrival — never mid-lift
+        .overlay(alignment: .top) { attemptOptInNotice }
+        .animation(.easeInOut(duration: 0.25), value: attemptOptInFailedText)
+        .gsHidesDock()
+        .navigationTitle(routine?.name ?? "Freeform Workout")
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(!completed)
+        .toolbarBackground(theme.surface, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbar { sessionToolbar }
+        .task { await startIfNeeded() }
+        .task { await loadDefaultRestSeconds() }
+        .task { await loadPickerCatalogIfFreeform() }
+        .task(id: currentRoutineExercise?.exerciseID) { await loadLastTime() }
+        .onChange(of: restEndAt) { handleRestWindowChange() }
+        .onDisappear {
+            // Only when the session is truly over — a mid-rest lock/
+            // background must keep the cue (that IS the feature).
+            if completed { RestNotification.cancel() }
+        }
+        .confirmationDialog(
+            "Delete this set?",
+            isPresented: Binding(get: { setPendingDeletion != nil },
+                                 set: { if !$0 { setPendingDeletion = nil } }),
+            titleVisibility: .visible
+        ) {
+            deleteDialogButtons
+        } message: {
+            Text("Removes it from your log, volume and history.")
+        }
+        .sheet(isPresented: $showExercisePicker) { exercisePickerSheet }
+        .sheet(isPresented: $showLogSheet) { logSheet }
+    }
+
+    @ViewBuilder
+    private var sessionContent: some View {
+        Group {
                 if completed {
                     // Canvas: "Workout Complete" recap (frame 17) — extracted to
                     // `SoloRecapView` (Phase U Task 4) so the debug catalog can
@@ -165,163 +209,134 @@ struct WorkoutSessionView: View {
                 } else {
                     liveSessionBody
                 }
-            }
+        }
+    }
 
-            // ── PR CELEBRATION (full-screen, user-dismissed — p29) ─────────
-            // Sibling of the completed/live `Group` above — NOT a child of
-            // `liveSessionBody`'s own ZStack — so it survives the `completed`
-            // transition. When the session's LAST set is also a PR, `log()` sets
-            // `isPROverlay = true` and then `endSession()` flips `completed = true`,
-            // which structurally unmounts `liveSessionBody`; an overlay nested
-            // inside it would vanish before the user could dismiss it (bug found
-            // in Phase U Task 4 review — pre-refactor this was a flat ZStack
-            // sibling too, which is why it survived back then). Same "direct
-            // ZStack child gated on its own bool" idiom as GroupSessionLiveView;
-            // user-dismissed only, no auto-timeout.
-            if isPROverlay {
-                PRCelebrationOverlay(
-                    exerciseName: prOverlayExerciseName,
-                    weight: prOverlayWeight,
-                    reps: prOverlayReps,
-                    priorBest: prOverlayPriorBest,
-                    monthlyCount: prOverlayMonthlyCount,
-                    unit: sessionSettings?.weightUnit ?? .lbs,
-                    onDismiss: {
-                        withAnimation(.easeIn(duration: 0.2)) { isPROverlay = false }
-                    }
-                )
-                .transition(.opacity)
-            }
-        }
-        .background(theme.bg)
-        // Fires on arrival — before any set is logged, never mid-lift.
-        .gsSpotlight(.workout)
-        // Minor finding 2: non-blocking "couldn't join the leaderboard"
-        // notice — same transient-pill idiom + placement style as
-        // GroupSessionLiveView's incoming-sound overlay (that one docks at
-        // `.bottom`, above its dock area; `.top` here since this view's
-        // bottom is already occupied by the sticky "Log Set N" button).
-        .overlay(alignment: .top) {
-            if let txt = attemptOptInFailedText {
-                Text(txt)
-                    .font(GSFont.bold(11, relativeTo: .caption2))
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(theme.neutral700)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 5)
-                    .background(theme.surface)
-                    .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
-                    .padding(.top, 8)
-                    .transition(.opacity)
-                    .id(txt)
-            }
-        }
-        .animation(.easeInOut(duration: 0.25), value: attemptOptInFailedText)
-        // Pushed from Home's "Start Solo Workout" / a routine's "Start Workout";
-        // the sticky "Log Set N" / "Done" CTA is a bottom-pinned ZStack overlay,
-        // not a safeAreaInset — see GSComponents.swift's GSHidesDock.
-        .gsHidesDock()
-        .navigationTitle(routine?.name ?? "Freeform Workout")
-        .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(!completed)
-        .toolbarBackground(theme.surface, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .toolbar {
-            if !completed {
-                // Canvas "In Progress" elapsed timer — state-driven from `startedAt`,
-                // ZERO Swift Timers (same `Text(_:style:.timer)` pattern as the 3b
-                // chess clock in GroupSessionLiveView).
-                ToolbarItem(placement: .navigationBarLeading) {
-                    if let startedAt = session?.startedAt {
-                        Text(startedAt, style: .timer)
-                            .font(GSFont.bold(14, relativeTo: .caption))
-                            .foregroundStyle(theme.text)
-                            .monospacedDigit()
-                    }
-                }
-                // Canvas: solid neutral "Finish" button (not the accent-outlined
-                // "End" bordered treatment previously used here).
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        Task { await endSession() }
-                    } label: {
-                        Text("Finish")
-                            .font(GSFont.bold(13, relativeTo: .caption))
-                            .foregroundStyle(theme.text)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(theme.neutral400)
-                            .frame(minHeight: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-        .task { await startIfNeeded() }
-        .task { await loadDefaultRestSeconds() }
-        .task { await loadPickerCatalogIfFreeform() }
-        .task(id: currentRoutineExercise?.exerciseID) { await loadLastTime() }
-        // Rest-over cue for a LOCKED phone (V1 gap review: the on-screen
-        // countdown was silent the moment the phone locked — lifters lock
-        // their phone between sets constantly). One observer instead of
-        // wiring all five restEndAt assignment sites: any future rest
-        // window schedules, any clear cancels.
-        .onChange(of: restEndAt) {
-            if let restEndAt, restEndAt > .now {
-                RestNotification.schedule(
-                    at: restEndAt,
-                    exerciseName: currentExercise?.name ?? "your next set",
-                    setNumber: currentSetIndex
-                )
-            } else {
-                RestNotification.cancel()
-            }
-        }
-        .onDisappear {
-            // Only when the session is truly over — a mid-rest lock/
-            // background must keep the cue (that IS the feature).
-            if completed { RestNotification.cancel() }
-        }
-        .confirmationDialog(
-            "Delete this set?",
-            isPresented: Binding(get: { setPendingDeletion != nil },
-                                 set: { if !$0 { setPendingDeletion = nil } }),
-            titleVisibility: .visible
-        ) {
-            Button("Delete set", role: .destructive) {
-                if let log = setPendingDeletion { Task { await deleteSet(log) } }
-            }
-            Button("Keep it", role: .cancel) { setPendingDeletion = nil }
-        } message: {
-            Text("Removes it from your log, volume and history.")
-        }
-        .sheet(isPresented: $showExercisePicker) {
-            // Reuses the picker built for the programs enrollment flow
-            // (Features/Library/ProgramViews.swift) rather than a second
-            // search-list implementation.
-            ExercisePickSheet(
-                exercises: pickerCatalog.isEmpty ? allExercises : pickerCatalog,
-                onPick: { exercise in
-                    addFreeformExercise(exercise)
-                    showExercisePicker = false
+    // ── PR CELEBRATION (full-screen, user-dismissed — p29) ─────────
+    // Sibling of the completed/live content — NOT a child of
+    // `liveSessionBody`'s own ZStack — so it survives the `completed`
+    // transition. When the session's LAST set is also a PR, `log()` sets
+    // `isPROverlay = true` and then `endSession()` flips `completed = true`,
+    // which structurally unmounts `liveSessionBody`; an overlay nested
+    // inside it would vanish before the user could dismiss it (bug found
+    // in Phase U Task 4 review). User-dismissed only, no auto-timeout.
+    @ViewBuilder
+    private var prOverlayLayer: some View {
+        if isPROverlay {
+            PRCelebrationOverlay(
+                exerciseName: prOverlayExerciseName,
+                weight: prOverlayWeight,
+                reps: prOverlayReps,
+                priorBest: prOverlayPriorBest,
+                monthlyCount: prOverlayMonthlyCount,
+                unit: sessionSettings?.weightUnit ?? .lbs,
+                onDismiss: {
+                    withAnimation(.easeIn(duration: 0.2)) { isPROverlay = false }
                 }
             )
+            .transition(.opacity)
         }
-        .sheet(isPresented: $showLogSheet) {
-            if let ex = currentExercise, let re = currentRoutineExercise {
-                LogSetSheet(
-                    exercise: ex,
-                    setIndex: currentSetIndex,
-                    defaultReps: re.targetReps,
-                    defaultWeight: re.targetWeight,
-                    unit: sessionSettings?.weightUnit ?? .lbs
-                ) { reps, weight, rpe, isFailed, note in
-                    Task { await log(reps: reps, weight: weight, rpe: rpe,
-                                     isFailed: isFailed, note: note) }
+    }
+
+    // Minor finding 2: non-blocking "couldn't join the leaderboard" notice —
+    // transient pill at `.top` (bottom is the sticky "Log Set N" button).
+    @ViewBuilder
+    private var attemptOptInNotice: some View {
+        if let txt = attemptOptInFailedText {
+            Text(txt)
+                .font(GSFont.bold(11, relativeTo: .caption2))
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .foregroundStyle(theme.neutral700)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 5)
+                .background(theme.surface)
+                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
+                .padding(.top, 8)
+                .transition(.opacity)
+                .id(txt)
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var sessionToolbar: some ToolbarContent {
+        if !completed {
+            // Canvas "In Progress" elapsed timer — state-driven from
+            // `startedAt`, ZERO Swift Timers.
+            ToolbarItem(placement: .navigationBarLeading) {
+                if let startedAt = session?.startedAt {
+                    Text(startedAt, style: .timer)
+                        .font(GSFont.bold(14, relativeTo: .caption))
+                        .foregroundStyle(theme.text)
+                        .monospacedDigit()
                 }
             }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    Task { await endSession() }
+                } label: {
+                    Text("Finish")
+                        .font(GSFont.bold(13, relativeTo: .caption))
+                        .foregroundStyle(theme.text)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(theme.neutral400)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var deleteDialogButtons: some View {
+        Button("Delete set", role: .destructive) {
+            if let log = setPendingDeletion { Task { await deleteSet(log) } }
+        }
+        Button("Keep it", role: .cancel) { setPendingDeletion = nil }
+    }
+
+    private var exercisePickerSheet: some View {
+        // Reuses the programs enrollment picker rather than a second
+        // search-list implementation.
+        ExercisePickSheet(
+            exercises: pickerCatalog.isEmpty ? allExercises : pickerCatalog,
+            onPick: { exercise in
+                addFreeformExercise(exercise)
+                showExercisePicker = false
+            }
+        )
+    }
+
+    @ViewBuilder
+    private var logSheet: some View {
+        if let ex = currentExercise, let re = currentRoutineExercise {
+            LogSetSheet(
+                exercise: ex,
+                setIndex: currentSetIndex,
+                defaultReps: re.targetReps,
+                defaultWeight: re.targetWeight,
+                unit: sessionSettings?.weightUnit ?? .lbs
+            ) { reps, weight, rpe, isFailed, note in
+                Task { await log(reps: reps, weight: weight, rpe: rpe,
+                                 isFailed: isFailed, note: note) }
+            }
+        }
+    }
+
+    /// Rest-over cue for a LOCKED phone: one observer covers every
+    /// restEndAt assignment site — any future window schedules, any clear
+    /// cancels.
+    private func handleRestWindowChange() {
+        if let restEndAt, restEndAt > .now {
+            RestNotification.schedule(
+                at: restEndAt,
+                exerciseName: currentExercise?.name ?? "your next set",
+                setNumber: currentSetIndex
+            )
+        } else {
+            RestNotification.cancel()
         }
     }
 
