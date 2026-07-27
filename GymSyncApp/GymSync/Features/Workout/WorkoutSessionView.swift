@@ -209,6 +209,11 @@ struct WorkoutSessionView: View {
                         shareSummary: recapShareSummary,
                         onDone: { dismiss() }
                     )
+                    // The Duolingo-placement slot: fires AFTER the recap
+                    // lands, never over the celebration. Dormant today;
+                    // becomes the Pro upsell when the paywall flips (and is
+                    // where ads would go if ever revisited).
+                    .completionInterstitial(profile: appState.currentProfile)
                 } else {
                     liveSessionBody
                 }

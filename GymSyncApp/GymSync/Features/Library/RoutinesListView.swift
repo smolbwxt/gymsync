@@ -19,6 +19,8 @@ struct RoutinesListView: View {
     @State private var errorText: String?
     @State private var showingBuilder = false
     @State private var editing: Routine?
+    /// Pro gate (dormant until Monetization.paywallEnabled).
+    @State private var showPaywall = false
 
     var body: some View {
         // One List for the whole tab: Featured header (if any) scrolls with
@@ -70,6 +72,7 @@ struct RoutinesListView: View {
         // Dock clearance — on the List directly, not LibraryTabView's Group
         // (the Group cascade inflated Exercises' chips row; see that view).
         .contentMargins(.bottom, 88, for: .scrollContent)
+        .sheet(isPresented: $showPaywall) { PaywallView(highlight: .unlimitedRoutines) }
         .sheet(isPresented: $showingBuilder) {
             NavigationStack {
                 RoutineBuilderView(editing: nil) { _ in
@@ -92,6 +95,12 @@ struct RoutinesListView: View {
                 .textCase(nil)
             Spacer()
             Button {
+                // Pro gate (dormant): free tier caps owned routines.
+                guard routines.count < Monetization.freeRoutineLimit
+                        || Monetization.allows(.unlimitedRoutines, profile: appState.currentProfile) else {
+                    showPaywall = true
+                    return
+                }
                 showingBuilder = true
             } label: {
                 HStack(spacing: 4) {

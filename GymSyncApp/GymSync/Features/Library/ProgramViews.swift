@@ -532,6 +532,7 @@ struct ProgramTemplateDetailView: View {
         .navigationTitle("Program")
         .navigationBarTitleDisplayMode(.inline)
         .task { await loadExercises() }
+        .sheet(isPresented: $showPaywall) { PaywallView(highlight: .programs) }
         .sheet(item: $pickerTarget) { target in
             ExercisePickSheet(
                 exercises: pickerCandidates(for: target),
@@ -733,9 +734,18 @@ struct ProgramTemplateDetailView: View {
         )
     }
 
+    /// Pro gate (dormant until Monetization.paywallEnabled): programs are
+    /// the personal-depth tier's anchor feature.
+    @State private var showPaywall = false
+    @Environment(AppState.self) private var appState
+
     private var startSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Button {
+                guard Monetization.allows(.programs, profile: appState.currentProfile) else {
+                    showPaywall = true
+                    return
+                }
                 Task { await start() }
             } label: {
                 Text("Start program")

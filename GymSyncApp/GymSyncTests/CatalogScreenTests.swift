@@ -41,6 +41,7 @@ final class CatalogScreenTests: XCTestCase {
             "guidance-spotlight",
             "guidance-discovery",
             "bar-loader",
+            "paywall",
         ]
         for id in ids {
             XCTAssertNotNil(CatalogScreen(rawValue: id), "missing catalog case: \(id)")

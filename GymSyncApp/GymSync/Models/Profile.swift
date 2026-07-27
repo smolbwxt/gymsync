@@ -10,6 +10,11 @@ struct Profile: Codable, Identifiable, Sendable, Equatable {
     let lifetimeVolumeLifted: Decimal
     let isCurator: Bool
     let showSoloWorkouts: Bool
+    /// Pro entitlement expiry (20260730000004) — SERVER-written only (guard
+    /// trigger, same posture as is_curator); nil = never entitled. Read
+    /// through `Monetization.isPro(_:)`, never directly, so the dormant-
+    /// paywall flag and grandfathering live in one place.
+    let proUntil: Date?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -20,6 +25,7 @@ struct Profile: Codable, Identifiable, Sendable, Equatable {
         case lifetimeVolumeLifted = "lifetime_volume_lifted"
         case isCurator = "is_curator"
         case showSoloWorkouts = "show_solo_workouts"
+        case proUntil = "pro_until"
     }
 
     // Custom decode so any pre-migration cached JSON (no is_curator/
@@ -38,6 +44,7 @@ struct Profile: Codable, Identifiable, Sendable, Equatable {
         lifetimeVolumeLifted = try c.decode(Decimal.self, forKey: .lifetimeVolumeLifted)
         isCurator = try c.decodeIfPresent(Bool.self, forKey: .isCurator) ?? false
         showSoloWorkouts = try c.decodeIfPresent(Bool.self, forKey: .showSoloWorkouts) ?? false
+        proUntil = try c.decodeIfPresent(Date.self, forKey: .proUntil)
     }
 }
 

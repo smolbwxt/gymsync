@@ -272,6 +272,7 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogGuidanceSpotlight()      { captureCatalog("guidance-spotlight") }
     func testCatalogGuidanceDiscovery()      { captureCatalog("guidance-discovery") }
     func testCatalogBarLoader()              { captureCatalog("bar-loader") }
+    func testCatalogPaywall()                { captureCatalog("paywall") }
 
     // MARK: - Seeded deep-screen captures
     //

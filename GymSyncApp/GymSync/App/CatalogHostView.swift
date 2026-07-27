@@ -58,6 +58,7 @@ enum CatalogScreen: String, CaseIterable {
     case guidanceSpotlight = "guidance-spotlight"
     case guidanceDiscovery = "guidance-discovery"
     case barLoader = "bar-loader"
+    case paywall = "paywall"
 }
 
 struct CatalogHostView: View {
@@ -111,6 +112,7 @@ struct CatalogHostView: View {
             case .guidanceSpotlight:          content_guidanceSpotlight
             case .guidanceDiscovery:          content_guidanceDiscovery
             case .barLoader:                  content_barLoader
+            case .paywall:                    PaywallView(highlight: .programs)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1214,6 +1216,7 @@ extension Profile {
         // — showSoloWorkouts defaults false, matching isCurator's fixture
         // default above and the column's own server-side default.
         self.showSoloWorkouts = false
+        self.proUntil = nil
     }
 }
 
