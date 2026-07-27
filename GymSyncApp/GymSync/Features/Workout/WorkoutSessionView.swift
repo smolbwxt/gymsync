@@ -281,16 +281,20 @@ struct WorkoutSessionView: View {
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
+                // Plain label ONLY (user screenshot 2026-07-27): the system
+                // wraps toolbar items in its own capsule chrome, and this
+                // button also painted a square neutral400 box inside it —
+                // double chrome, with the system oval overflowing the header.
+                // The leading timer is a bare label and renders correctly;
+                // this now matches it (the only toolbar item app-wide that
+                // drew its own background).
                 Button {
                     Task { await endSession() }
                 } label: {
                     Text("Finish")
-                        .font(GSFont.bold(13, relativeTo: .caption))
+                        .font(GSFont.bold(14, relativeTo: .caption))
                         .foregroundStyle(theme.text)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(theme.neutral400)
-                        .frame(minHeight: 44)
+                        .frame(minWidth: 44, minHeight: 44)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
