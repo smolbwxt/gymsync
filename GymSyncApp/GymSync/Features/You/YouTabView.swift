@@ -27,6 +27,7 @@ struct YouTabView: View {
     @AppStorage(GuidanceTip.tipsEnabledKey) private var tipsEnabled = true
     @State private var showRestTimerSetting = false
     @State private var showGymEquipment = false
+    @State private var showHeartRateMonitor = false
     @State private var showEditProfile = false
     // Phase M Task 2 (moderation/compliance): You-tab Blocked Users list.
     @State private var showBlockedUsers = false
@@ -151,6 +152,9 @@ struct YouTabView: View {
                 GymEquipmentView(currentSettings: effectiveUserSettings) { updated in
                     userSettings = updated
                 }
+            }
+            .navigationDestination(isPresented: $showHeartRateMonitor) {
+                HeartRateMonitorView()
             }
             .navigationDestination(isPresented: $showEditProfile) {
                 EditProfileView(profile: profile ?? appState.currentProfile) { updated in
@@ -492,6 +496,10 @@ struct YouTabView: View {
             GSSettingsRow(title: "Gym equipment", icon: "scalemass",
                           value: gymEquipmentPreview) {
                 showGymEquipment = true
+            }
+            GSSettingsRow(title: "Heart rate monitor", icon: "heart",
+                          value: BLEHeartRateService.shared.hasRememberedDevice ? "Paired" : "Not set") {
+                showHeartRateMonitor = true
             }
             showTipsRow
             soloPrivacyRow

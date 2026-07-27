@@ -64,6 +64,10 @@ struct SoloRecapView: View {
     struct HealthSummary {
         let minutesText: String   // e.g. "42 min"
         let caloriesText: String  // e.g. "318 kcal"
+        /// "avg 132 · max 164 bpm" — from HealthKit backfill (any watch
+        /// brand whose companion app syncs to Health). Trailing-defaulted;
+        /// nil hides the segment entirely.
+        var hrText: String? = nil
     }
 
     let kicker: String
@@ -288,7 +292,9 @@ struct SoloRecapView: View {
                     Text("Synced to Apple Health")
                         .font(GSFont.bold(13, relativeTo: .subheadline))
                         .foregroundStyle(theme.text)
-                    Text("\(summary.minutesText) · \(summary.caloriesText)")
+                    Text([summary.minutesText, summary.caloriesText, summary.hrText]
+                            .compactMap { $0 }
+                            .joined(separator: " · "))
                         .font(GSFont.body(11, relativeTo: .caption))
                         .foregroundStyle(theme.neutral700)
                 }

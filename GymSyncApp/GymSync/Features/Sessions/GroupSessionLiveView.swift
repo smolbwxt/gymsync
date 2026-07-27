@@ -852,6 +852,10 @@ struct GroupSessionLiveView: View {
             // today since it reads live state, but a dangling reference to
             // a view that's gone is still the wrong thing to leave live).
             ThemeStore.shared.onShareHeartRateChange = nil
+            // BLE relay teardown — the strap stays connected (it's a device
+            // pairing, not a session resource) but stops feeding a session
+            // that no longer exists.
+            BLEHeartRateService.shared.onSample = nil
             Task {
                 await liveService.unsubscribe()
                 await broadcastService.unsubscribe()
@@ -2147,6 +2151,24 @@ struct GroupSessionLiveView: View {
                 receiveHeartRate(userID: userID, bpm: bpm, zone: zone)
             }
         )
+
+        // BLE monitor relay (2026-07-27: "everyone has the option to have
+        // live HR"): a paired chest strap / broadcasting watch feeds the
+        // EXACT gate + publish path the Apple Watch uses — same share
+        // toggle, same zone derivation, same throttle inside publish, and
+        // the self-echo lights your own pill identically. Publishes through
+        // this view's HELD channel (the debt-sprint channel rule).
+        BLEHeartRateService.shared.connectRememberedIfAny()
+        BLEHeartRateService.shared.onSample = { bpm in
+            guard ThemeStore.shared.shareHeartRate, let selfID else { return }
+            let zone = HeartRateZone.zone(bpm: bpm)
+            Task {
+                await heartRateService.publish(
+                    sessionID: liveSession.id, userID: selfID,
+                    bpm: bpm, zone: zone.rawValue
+                )
+            }
+        }
     }
 
     // MARK: - Heart rate roster state (Phase W Task 5, watch-hr design §4)

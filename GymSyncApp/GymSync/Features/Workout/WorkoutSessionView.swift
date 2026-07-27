@@ -996,13 +996,18 @@ struct WorkoutSessionView: View {
     /// (`healthSynced`'s doc comment); minutes/calories are independently
     /// derived from `recapDurationInterval` via `HealthKitBridge`'s pure
     /// helpers, same source the hero's own `recapDurationText` reads.
+    /// Avg/max HR over the session window from Apple Health (any source
+    /// device) — set best-effort in endSession.
+    @State private var recapHRStats: (avg: Int, max: Int)?
+
     private var recapHealthSummary: SoloRecapView.HealthSummary? {
         guard healthSynced else { return nil }
         let minutes = recapDurationInterval / 60.0
         let calories = HealthKitBridge.estimatedCalories(minutes: minutes)
         return SoloRecapView.HealthSummary(
             minutesText: "\(Int(minutes.rounded())) min",
-            caloriesText: "\(calories) kcal"
+            caloriesText: "\(calories) kcal",
+            hrText: recapHRStats.map { "avg \($0.avg) · max \($0.max) bpm" }
         )
     }
 
@@ -1296,6 +1301,14 @@ struct WorkoutSessionView: View {
                 healthSynced = true
             } catch {
                 healthSynced = false
+            }
+
+            // HR backfill (2026-07-27): any watch brand whose companion app
+            // syncs to Apple Health lights up recap heart rate — the
+            // non-live half of "everyone gets HR". Best-effort; a strap
+            // that synced late simply shows nothing this time.
+            if let start = completedResult.startedAt, let end = completedResult.completedAt {
+                recapHRStats = await HealthKitBridge.heartRateStats(start: start, end: end)
             }
 
             self.completed = true

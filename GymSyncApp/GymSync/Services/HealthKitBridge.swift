@@ -7,7 +7,15 @@ enum HealthKitBridge {
     static func requestPermission() async throws {
         guard HKHealthStore.isHealthDataAvailable() else { return }
         let workoutType = HKObjectType.workoutType()
-        try await store.requestAuthorization(toShare: [workoutType], read: [])
+        // Read scope added for the HR backfill (2026-07-27): heart-rate
+        // samples written by ANY device's companion app (Garmin, Polar,
+        // Fitbit, Whoop all sync into Health) become recap data for every
+        // watch brand — the non-live half of "everyone has the option to
+        // have live HR".
+        try await store.requestAuthorization(
+            toShare: [workoutType],
+            read: [HKQuantityType(.heartRate)]
+        )
     }
 
     static func duration(from start: Date, to end: Date) -> TimeInterval {
@@ -57,6 +65,34 @@ enum HealthKitBridge {
             withMetadataKey: HKMetadataKeyExternalUUID,
             allowedValues: [sessionID.uuidString]
         )
+    }
+
+    /// Average + max heart rate over a window, from ANY source in Apple
+    /// Health — this is what makes recap HR work for Garmin/Polar/Fitbit/
+    /// Whoop users whose companion apps sync after the workout. Best-effort:
+    /// nil on no data, no permission, or any error (a recap must never
+    /// block on Health).
+    static func heartRateStats(start: Date, end: Date) async -> (avg: Int, max: Int)? {
+        guard HKHealthStore.isHealthDataAvailable() else { return nil }
+        let type = HKQuantityType(.heartRate)
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end)
+        return await withCheckedContinuation { continuation in
+            let query = HKStatisticsQuery(
+                quantityType: type,
+                quantitySamplePredicate: predicate,
+                options: [.discreteAverage, .discreteMax]
+            ) { _, stats, _ in
+                let unit = HKUnit.count().unitDivided(by: .minute())
+                guard let stats,
+                      let avg = stats.averageQuantity()?.doubleValue(for: unit),
+                      let max = stats.maximumQuantity()?.doubleValue(for: unit) else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+                continuation.resume(returning: (Int(avg.rounded()), Int(max.rounded())))
+            }
+            store.execute(query)
+        }
     }
 
     static func exportWorkout(session: WorkoutSession, setLogs: [SetLog]) async throws {

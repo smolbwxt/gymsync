@@ -142,6 +142,7 @@ targets:
         NSCalendarsFullAccessUsageDescription: "Gym Sync adds your scheduled sessions to your calendar when you turn on calendar sync in the You tab."
         NSCameraUsageDescription: "Gym Sync never uses the camera. This notice exists only because the live-voice framework references camera APIs."
         NSMicrophoneUsageDescription: "Gym Sync uses your microphone for voice messages and push-to-talk during live sessions with your crew."
+        NSBluetoothAlwaysUsageDescription: "Gym Sync connects to your heart rate monitor (chest strap or broadcasting watch) to show live heart rate during workouts."
         UIAppFonts:
           - Archivo-Regular.ttf
           - Archivo-Medium.ttf
