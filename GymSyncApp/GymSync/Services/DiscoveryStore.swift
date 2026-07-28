@@ -28,6 +28,7 @@ enum DiscoveryTarget: String, CaseIterable, Identifiable {
     case libraryDiscover  = "disc.library.discover.v1"
     case libraryCampaigns = "disc.library.campaigns.v1"
     case socialLocal      = "disc.social.local.v1"
+    case socialFeed       = "disc.social.feed.v1"
     case youAppearance    = "disc.you.appearance.v1"
 
     var id: String { rawValue }
@@ -37,7 +38,7 @@ enum DiscoveryTarget: String, CaseIterable, Identifiable {
         switch self {
         case .homeSchedule:                       return .home
         case .libraryDiscover, .libraryCampaigns: return .library
-        case .socialLocal:                        return .social
+        case .socialLocal, .socialFeed:           return .social
         case .youAppearance:                      return .you
         }
     }
@@ -49,6 +50,7 @@ enum DiscoveryTarget: String, CaseIterable, Identifiable {
         case .libraryDiscover:  return "Discover tab (new)"
         case .libraryCampaigns: return "Campaigns tab (new)"
         case .socialLocal:      return "Local hubs (new)"
+        case .socialFeed:       return "Pump check feed (new)"
         case .youAppearance:    return "Appearance (new)"
         }
     }

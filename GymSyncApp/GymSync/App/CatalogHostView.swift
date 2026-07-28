@@ -59,6 +59,8 @@ enum CatalogScreen: String, CaseIterable {
     case guidanceDiscovery = "guidance-discovery"
     case barLoader = "bar-loader"
     case paywall = "paywall"
+    case pumpComposer = "pump-composer"
+    case pumpFeedPost = "pump-feed-post"
 }
 
 struct CatalogHostView: View {
@@ -113,6 +115,8 @@ struct CatalogHostView: View {
             case .guidanceDiscovery:          content_guidanceDiscovery
             case .barLoader:                  content_barLoader
             case .paywall:                    PaywallView(highlight: .programs)
+            case .pumpComposer:               content_pumpComposer
+            case .pumpFeedPost:               content_pumpFeedPost
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1132,6 +1136,73 @@ struct CatalogHostView: View {
             GSBarLoader(target: target, barWeight: bar, plates: plates, unit: unit)
         }
     }
+
+    // MARK: - Pump Check (spec 2026-07-27, P4)
+
+    /// `pump-composer`: the recap composer in its idle state — CTA, live
+    /// countdown (window anchored at render; the ticking value varies per
+    /// capture like the session's elapsed clock), Snap/Skip. The camera
+    /// itself can't be driven headless — capture/review QA is on-device.
+    private var content_pumpComposer: some View {
+        ScrollView {
+            PumpCheckComposerCard(context: PumpCheckContext(
+                sessionID: UUID(),
+                summary: Self.pumpFixtureSummary,
+                avgBpm: 142, maxBpm: 171,
+                includeHRDefault: true,
+                windowStart: Date()))
+                .padding(16)
+        }
+    }
+
+    /// `pump-feed-post`: two feed cards — a friend's photo post (signed-URL
+    /// fetch fails in the harness, so the photo block shows its honest
+    /// placeholder) with reactions, and a summary-only late post of your
+    /// own. Exercises cover the barbell mini-bar and a bodyweight entry.
+    private var content_pumpFeedPost: some View {
+        ScrollView {
+            VStack(spacing: 14) {
+                PumpPostCard(
+                    post: WorkoutPost(
+                        id: UUID(), authorID: UUID(), sessionID: UUID(),
+                        photoPath: "posts/fixture/fixture.jpg",
+                        summary: Self.pumpFixtureSummary,
+                        includesHR: true, avgBpm: 142, maxBpm: 171,
+                        isLate: false,
+                        createdAt: Date().addingTimeInterval(-3600)),
+                    author: nil, isMine: false,
+                    myReactions: ["🔥"],
+                    reactionCounts: ["🔥": 3, "💪": 1],
+                    onReact: { _ in }, onDelete: {}, onReport: {})
+                PumpPostCard(
+                    post: WorkoutPost(
+                        id: UUID(), authorID: UUID(), sessionID: UUID(),
+                        photoPath: nil,
+                        summary: Self.pumpFixtureSummary,
+                        includesHR: false, avgBpm: nil, maxBpm: nil,
+                        isLate: true,
+                        createdAt: Date().addingTimeInterval(-7200)),
+                    author: nil, isMine: true,
+                    myReactions: [],
+                    reactionCounts: [:],
+                    onReact: { _ in }, onDelete: {}, onReport: {})
+            }
+            .padding(16)
+        }
+    }
+
+    private static let pumpFixtureSummary = PostSummary(
+        durationSeconds: 2520,
+        totalVolumeLbs: 7240,
+        exercises: [
+            .init(name: "Back Squat", equipment: "barbell", sets: [
+                .init(weightLbs: 225, reps: 5, isPR: false, isFailed: false),
+                .init(weightLbs: 235, reps: 3, isPR: true, isFailed: false),
+            ]),
+            .init(name: "Walking Lunge", equipment: "bodyweight", sets: [
+                .init(weightLbs: nil, reps: 20, isPR: false, isFailed: false),
+            ]),
+        ])
 
     private func catalogDiscoveryRow(raised: Bool) -> some View {
         HStack(spacing: 13) {

@@ -737,6 +737,7 @@ struct GroupSessionLiveView: View {
                     sessionID: data.session.id,
                     recipientIDs: payload.recipientIDs,
                     unit: ThemeStore.shared.weightUnit,
+                    pumpCheck: data.pumpCheck,
                     onDone: { dismiss() }
                 )
             } else {
@@ -744,7 +745,8 @@ struct GroupSessionLiveView: View {
                     session: data.session,
                     sets: data.sets,
                     participants: participants,
-                    onDone: { dismiss() }
+                    onDone: { dismiss() },
+                    pumpCheck: data.pumpCheck
                 )
             }
         }
@@ -2626,7 +2628,9 @@ struct GroupSessionLiveView: View {
             try? await HealthKitBridge.exportWorkout(session: completed, setLogs: allSets)
             await liveService.unsubscribe()
             let groupPayload = await buildGroupRecapPayload(session: completed, sets: allSets)
-            recapData = RecapData(session: completed, sets: allSets, groupPayload: groupPayload)
+            let pumpCheck = await buildPumpCheckContext(session: completed, sets: allSets)
+            recapData = RecapData(session: completed, sets: allSets,
+                                  groupPayload: groupPayload, pumpCheck: pumpCheck)
         } catch let error as GymSyncError {
             errorText = error.errorDescription
         } catch {
@@ -2791,6 +2795,69 @@ struct GroupSessionLiveView: View {
         )
     }
 
+    // MARK: - Pump Check context (spec 2026-07-27, P4)
+
+    /// The composer's post-ready payload for THIS lifter: my non-penalty
+    /// sets only (a pump check is personal — never the crew's data), frozen
+    /// in first-logged order with per-set PR flags from my session PRs.
+    /// HR comes from the same HealthKit backfill the solo recap uses — any
+    /// watch brand whose companion app synced. Window anchor = now (this
+    /// runs at the moment the recap sheet is presented).
+    private func buildPumpCheckContext(session: WorkoutSession,
+                                       sets: [SetLog]) async -> PumpCheckContext? {
+        guard let selfID else { return nil }
+        let mySets = sets.filter { $0.userID == selfID && !$0.isPenalty }
+        guard !mySets.isEmpty else { return nil }
+
+        var order: [UUID] = []
+        var byExercise: [UUID: [SetLog]] = [:]
+        for log in mySets {
+            if byExercise[log.exerciseID] == nil { order.append(log.exerciseID) }
+            byExercise[log.exerciseID, default: []].append(log)
+        }
+        let prWeight = Dictionary(
+            sessionPRs.filter { $0.userID == selfID }.map { ($0.exerciseID, $0.weight) },
+            uniquingKeysWith: max)
+        let exercises = order.map { id -> PostSummary.ExerciseEntry in
+            let ex = allExercises.first { $0.id == id }
+            let setEntries = (byExercise[id] ?? [])
+                .sorted { $0.setIndex < $1.setIndex }
+                .map { log in
+                    PostSummary.ExerciseEntry.SetEntry(
+                        weightLbs: log.weight,
+                        reps: log.reps,
+                        isPR: !log.isFailed && log.weight != nil && log.weight == prWeight[id],
+                        isFailed: log.isFailed)
+                }
+            return PostSummary.ExerciseEntry(
+                name: ex?.name ?? "Exercise",
+                equipment: ex?.equipment ?? "",
+                sets: setEntries)
+        }
+
+        let duration: Int = {
+            guard let start = session.startedAt, let end = session.completedAt else { return 0 }
+            return Int(max(0, end.timeIntervalSince(start)))
+        }()
+        let myVolume = HealthKitBridge.totalVolume(from: mySets)
+
+        var hrStats: (avg: Int, max: Int)?
+        if let start = session.startedAt, let end = session.completedAt {
+            hrStats = await HealthKitBridge.heartRateStats(start: start, end: end)
+        }
+
+        return PumpCheckContext(
+            sessionID: session.id,
+            summary: PostSummary(
+                durationSeconds: duration,
+                totalVolumeLbs: Decimal(myVolume),
+                exercises: exercises),
+            avgBpm: hrStats?.avg,
+            maxBpm: hrStats?.max,
+            includeHRDefault: ThemeStore.shared.shareHeartRate && hrStats != nil,
+            windowStart: Date())
+    }
+
     /// Hero total only — abbreviated ("24.6k"), matches SessionRecapView/
     /// CompletedSessionView's existing `formatVolume` verbatim.
     private func formatVolume(_ v: Double) -> String {
@@ -2831,6 +2898,10 @@ private struct RecapData: Identifiable {
     /// `GroupRecapView` (frame 8) instead of `SessionRecapView`. See
     /// `buildGroupRecapPayload`'s doc comment.
     let groupPayload: GroupRecapPayload?
+    /// Pump Check (spec 2026-07-27, P4): built ONCE here so the composer's
+    /// 1:00 window anchor survives sheet-content re-evaluation. Personal:
+    /// the snapshot is MY sets only, never the crew's.
+    let pumpCheck: PumpCheckContext?
 }
 
 /// Display-ready values for `GroupRecapView` — computed once in

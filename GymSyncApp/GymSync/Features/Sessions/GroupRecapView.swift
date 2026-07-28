@@ -96,6 +96,9 @@ struct GroupRecapView: View {
     /// arrive pre-converted, per the display-ready convention). Defaulted so
     /// catalog fixtures and lbs callers compile unchanged.
     var unit: WeightUnit = .lbs
+    /// Pump Check (spec 2026-07-27): non-nil mounts the composer at the top
+    /// — nil (catalog fixtures) renders none.
+    var pumpCheck: PumpCheckContext? = nil
     let onDone: () -> Void
 
     @Environment(\.gsTheme) private var theme
@@ -124,8 +127,10 @@ struct GroupRecapView: View {
         sessionID: UUID,
         recipientIDs: [UUID],
         unit: WeightUnit = .lbs,
+        pumpCheck: PumpCheckContext? = nil,
         onDone: @escaping () -> Void
     ) {
+        self.pumpCheck = pumpCheck
         self.kicker = kicker
         self.durationText = durationText
         self.subline = subline
@@ -190,6 +195,12 @@ struct GroupRecapView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     header
+                    // Pump Check composer FIRST — the 1:00 window is live
+                    // while the crew reads the leaderboard.
+                    if let pumpCheck {
+                        PumpCheckComposerCard(context: pumpCheck)
+                            .padding(.horizontal, 16)
+                    }
                     hero
                     leaderboardSection
                     if let heaviestPR {

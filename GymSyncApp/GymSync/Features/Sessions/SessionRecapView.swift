@@ -12,6 +12,9 @@ struct SessionRecapView: View {
     let sets: [SetLog]
     let participants: [(participant: SessionParticipant, profile: Profile)]
     let onDone: () -> Void
+    /// Pump Check (spec 2026-07-27): non-nil mounts the composer at the
+    /// top. Trailing-defaulted — pre-existing call sites compile unchanged.
+    var pumpCheck: PumpCheckContext? = nil
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.gsTheme) private var theme
@@ -140,6 +143,15 @@ struct SessionRecapView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
+
+                    // Pump Check composer FIRST (spec 2026-07-27, P4) —
+                    // this recap serves solo/ad-hoc completions through the
+                    // live view; the 1:00 window applies here too.
+                    if let pumpCheck {
+                        PumpCheckComposerCard(context: pumpCheck)
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 14)
+                    }
 
                     // ── HERO BANNER ──────────────────────────────────────
                     heroBanner

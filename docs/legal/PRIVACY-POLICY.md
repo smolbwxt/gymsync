@@ -36,6 +36,14 @@ location history. On a hub, other members can only see that you're present
 if you explicitly toggle yourself visible, and you can turn that off at
 any time.
 
+**Workout photos ("pump checks", optional).** After a workout you can
+choose to post a photo of yourself with a summary of that workout
+(exercises, sets, and — only if you switch it on for that post — your
+average and maximum heart rate). Posts are visible **only to friends you
+have accepted**; there is no public feed. Location metadata is removed
+from photos before upload. You can delete any of your posts at any time,
+which removes the photo and summary for everyone.
+
 **Social content.** Group chat messages, soundboard plays, and — if you
 opt in — your workouts and leaderboard entries as visible to friends or
 group members. Voice in live sessions is real-time only and is not
