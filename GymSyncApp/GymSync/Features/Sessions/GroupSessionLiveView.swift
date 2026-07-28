@@ -672,7 +672,18 @@ struct GroupSessionLiveView: View {
         .sheet(isPresented: $showChatSheet) { chatSheet }
         // No prefill: in a group session your next load is personal and not
         // on screen — typing it beats guessing from someone else's set.
-        .sheet(isPresented: $showBarLoaderSheet) { BarLoaderSheet(initialPounds: nil) }
+        // Loader→log handoff (user request 2026-07-27): whatever the lifter
+        // dials in lands in the inline LOG THIS SET card's weight field,
+        // formatted in their display unit — load the bar while you wait and
+        // the number is ready when your turn comes. A cleared loader field
+        // leaves the card's own entry alone.
+        .sheet(isPresented: $showBarLoaderSheet) {
+            BarLoaderSheet(initialPounds: nil, onEnteredPoundsChange: { pounds in
+                guard let pounds else { return }
+                logWeight = Units.format(pounds: pounds, unit: ThemeStore.shared.weightUnit,
+                                         rounded: false, includeUnit: false)
+            })
+        }
         // Voice mixer sheet (Phase O Task 5 item 5)
         .sheet(isPresented: $showVoiceMixerSheet) { voiceMixerSheet }
         .onChange(of: isVoiceConnected) { wasConnected, nowConnected in

@@ -165,7 +165,10 @@ struct WorkoutSessionView: View {
         .task { await startIfNeeded() }
         .task { await loadDefaultRestSeconds() }
         .task { await loadPickerCatalogIfFreeform() }
-        .task(id: currentRoutineExercise?.exerciseID) { await loadLastTime() }
+        .task(id: currentRoutineExercise?.exerciseID) {
+            barLoaderPounds = nil   // stale loaded weight must not prefill the next exercise
+            await loadLastTime()
+        }
         .onChange(of: restEndAt) { handleRestWindowChange() }
         .onDisappear {
             // Only when the session is truly over — a mid-rest lock/
@@ -329,7 +332,11 @@ struct WorkoutSessionView: View {
                 exercise: ex,
                 setIndex: currentSetIndex,
                 defaultReps: re.targetReps,
-                defaultWeight: re.targetWeight,
+                // Loaded bar wins over the routine target: if the lifter
+                // dialed a weight into Load-the-bar, THAT is what's on the
+                // bar (both strings are canonical pounds — LogSetSheet's
+                // prefill converts to the display unit on appear).
+                defaultWeight: barLoaderPounds.map { "\($0)" } ?? re.targetWeight,
                 unit: sessionSettings?.weightUnit ?? .lbs
             ) { reps, weight, rpe, isFailed, note in
                 Task { await log(reps: reps, weight: weight, rpe: rpe,
@@ -609,6 +616,13 @@ struct WorkoutSessionView: View {
 
     @State private var showBarLoader = false
 
+    /// The weight currently dialed into the bar-loader widget, canonical
+    /// pounds (user request 2026-07-27: loading the bar populates the log
+    /// sheet). Cleared on exercise change — the bar you loaded was for THAT
+    /// exercise, and `loadLastTime`'s `.task(id:)` already fires exactly
+    /// there.
+    @State private var barLoaderPounds: Decimal?
+
     /// Prefill priority: the exercise's programmed target, else the last
     /// set logged for THIS exercise — both canonical pounds already.
     private func barLoaderPrefill(re: RoutineExercise) -> Decimal? {
@@ -671,7 +685,8 @@ struct WorkoutSessionView: View {
             .buttonStyle(.plain)
 
             if showBarLoader {
-                BarLoaderWidget(initialPounds: prefill)
+                BarLoaderWidget(initialPounds: prefill,
+                                onEnteredPoundsChange: { barLoaderPounds = $0 })
                     .padding(.horizontal, 14)
                     .padding(.bottom, 14)
             }

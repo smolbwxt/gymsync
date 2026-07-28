@@ -26,6 +26,13 @@ struct BarLoaderWidget: View {
     /// nil starts the field empty.
     let initialPounds: Decimal?
 
+    /// Loader→log handoff (user request 2026-07-27): fires with the current
+    /// entry as CANONICAL POUNDS whenever it changes (nil for empty/invalid)
+    /// — session views use it to prefill the log-set weight with what's
+    /// actually on the bar. Trailing-defaulted so display-only call sites
+    /// compile unchanged.
+    var onEnteredPoundsChange: ((Decimal?) -> Void)? = nil
+
     @State private var unit: WeightUnit = .lbs
     @State private var weightText: String = ""
     @State private var settings: UserSettings?
@@ -86,6 +93,9 @@ struct BarLoaderWidget: View {
             }
         }
         .task { await seedIfNeeded() }
+        .onChange(of: enteredPounds) { _, newValue in
+            onEnteredPoundsChange?(newValue)
+        }
     }
 
     // MARK: Entry + toggle
@@ -243,11 +253,15 @@ struct BarLoaderSheet: View {
     @Environment(\.gsTheme) private var theme
     @Environment(\.dismiss) private var dismiss
     let initialPounds: Decimal?
+    /// Pass-through to `BarLoaderWidget.onEnteredPoundsChange` — the group
+    /// session uses it to carry the loaded weight into the inline log card.
+    var onEnteredPoundsChange: ((Decimal?) -> Void)? = nil
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                BarLoaderWidget(initialPounds: initialPounds)
+                BarLoaderWidget(initialPounds: initialPounds,
+                                onEnteredPoundsChange: onEnteredPoundsChange)
                     .padding(16)
                     .background(theme.surface)
                     .cornerRadius(GSMetrics.radiusMd)
