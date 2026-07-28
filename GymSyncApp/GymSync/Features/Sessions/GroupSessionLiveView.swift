@@ -2815,8 +2815,13 @@ struct GroupSessionLiveView: View {
             if byExercise[log.exerciseID] == nil { order.append(log.exerciseID) }
             byExercise[log.exerciseID, default: []].append(log)
         }
-        let prWeight = Dictionary(
-            sessionPRs.filter { $0.userID == selfID }.map { ($0.exerciseID, $0.weight) },
+        // `bySession` is SELF-ONLY by personal_records' RLS (see
+        // buildGroupRecapPayload's PR-fetch doc) — exactly right here: a
+        // pump check flags MY PRs. Fetched locally; there is no stored
+        // sessionPRs property on this view.
+        let myPRs = (try? await PersonalRecordRepository.bySession(sessionID: session.id)) ?? []
+        let prWeight: [UUID: Decimal] = Dictionary(
+            myPRs.filter { $0.userID == selfID }.map { ($0.exerciseID, $0.weight) },
             uniquingKeysWith: max)
         let exercises = order.map { id -> PostSummary.ExerciseEntry in
             let ex = allExercises.first { $0.id == id }
