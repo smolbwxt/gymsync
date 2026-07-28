@@ -73,6 +73,10 @@ enum ReportedContentType: String {
     case profile
     case chatMessage = "chat_message"
     case routine
+    /// Pump Check post (photos are UGC — App Store 1.2 requires a report
+    /// path on every surface that shows them). `reported_content_type` has
+    /// no DB CHECK; the string is the contract.
+    case post
 }
 
 enum ModerationRepository {

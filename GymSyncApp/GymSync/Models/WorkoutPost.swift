@@ -164,4 +164,88 @@ enum WorkoutPostRepository {
             }
         } catch { throw ErrorMapping.map(error) }
     }
+
+    // MARK: - Feed (P3)
+
+    /// Postgres accepts this full-precision form as a timestamptz literal —
+    /// keyset cursor for the feed's "load more".
+    private static let cursorFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+
+    /// Newest-first page. RLS does ALL the audience filtering (author +
+    /// unblocked accepted friends) — the client sends no friend list.
+    static func feed(before: Date? = nil, limit: Int = 20) async throws -> [WorkoutPost] {
+        do {
+            if let before {
+                return try await client.from("workout_posts").select()
+                    .lt("created_at", value: cursorFormatter.string(from: before))
+                    .order("created_at", ascending: false)
+                    .limit(limit)
+                    .execute().value
+            }
+            return try await client.from("workout_posts").select()
+                .order("created_at", ascending: false)
+                .limit(limit)
+                .execute().value
+        } catch { throw ErrorMapping.map(error) }
+    }
+
+    static func reactions(postIDs: [UUID]) async throws -> [PostReaction] {
+        guard !postIDs.isEmpty else { return [] }
+        do {
+            return try await client.from("post_reactions").select()
+                .in("post_id", values: postIDs.map(\.uuidString))
+                .execute().value
+        } catch { throw ErrorMapping.map(error) }
+    }
+
+    private struct ReactionInsert: Encodable {
+        let postID: UUID
+        let userID: UUID
+        let emoji: String
+        enum CodingKeys: String, CodingKey {
+            case postID = "post_id"
+            case userID = "user_id"
+            case emoji
+        }
+    }
+
+    static func react(postID: UUID, emoji: String) async throws {
+        guard let userID = await SupabaseService.shared.currentUserID() else {
+            throw GymSyncError.unauthorized
+        }
+        do {
+            try await client.from("post_reactions")
+                .insert(ReactionInsert(postID: postID, userID: userID, emoji: emoji))
+                .execute()
+        } catch { throw ErrorMapping.map(error) }
+    }
+
+    static func unreact(postID: UUID, emoji: String) async throws {
+        guard let userID = await SupabaseService.shared.currentUserID() else {
+            throw GymSyncError.unauthorized
+        }
+        do {
+            try await client.from("post_reactions").delete()
+                .eq("post_id", value: postID.uuidString)
+                .eq("user_id", value: userID.uuidString)
+                .eq("emoji", value: emoji)
+                .execute()
+        } catch { throw ErrorMapping.map(error) }
+    }
+}
+
+struct PostReaction: Codable, Sendable {
+    let postID: UUID
+    let userID: UUID
+    let emoji: String
+
+    enum CodingKeys: String, CodingKey {
+        case postID = "post_id"
+        case userID = "user_id"
+        case emoji
+    }
 }

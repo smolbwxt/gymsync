@@ -152,6 +152,39 @@ struct SocialTabView: View {
                             .padding(.horizontal, 16)
                             .padding(.top, 12)
 
+                            // Pump Check feed row (spec 2026-07-27, P3) —
+                            // same card idiom as Friends/Local. Pushes the
+                            // full feed; posts are friends-only by RLS.
+                            NavigationLink {
+                                PumpFeedView()
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "camera")
+                                        .font(.system(size: 18, weight: .regular))
+                                        .foregroundStyle(theme.text)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text("Feed")
+                                            .font(GSFont.bold(14, relativeTo: .headline))
+                                            .foregroundStyle(theme.text)
+                                        Text("Pump checks from your friends")
+                                            .font(GSFont.body(11, relativeTo: .caption))
+                                            .foregroundStyle(theme.neutral500)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(theme.neutral500)
+                                }
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 13)
+                                .background(theme.surface)
+                                .cornerRadius(GSMetrics.radiusSm)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 8)
+
                             // Local hubs row (Venue Hubs H1) — the spec's
                             // "Social tab gets a Local section" (:691),
                             // mirroring the Friends row's card idiom above.
