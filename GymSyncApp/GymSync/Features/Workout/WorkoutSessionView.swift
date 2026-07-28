@@ -706,13 +706,16 @@ struct WorkoutSessionView: View {
                 .lineLimit(2)
 
             // Target line (units sweep: target weight is stored pounds,
-            // shown in the user's unit)
+            // shown in the user's unit). A reps-only target reads
+            // "Target 5 reps", not the dangling "Target × 5" (user
+            // screenshot 2026-07-27, weight-less QA routine).
             let unit = sessionSettings?.weightUnit ?? .lbs
+            let weightPart = re.targetWeight.flatMap { Decimal(string: $0) }.map {
+                Units.format(pounds: $0, unit: unit, rounded: false, includeUnit: false)
+            }
             let targetParts: [String] = [
-                re.targetWeight.flatMap { Decimal(string: $0) }.map {
-                    Units.format(pounds: $0, unit: unit, rounded: false, includeUnit: false)
-                },
-                re.targetReps.map { "× \($0)" },
+                weightPart,
+                re.targetReps.map { weightPart == nil ? "\($0) reps" : "× \($0)" },
                 re.restSeconds.map { "· rest \(formatRest($0))" }
             ].compactMap { $0 }
             if !targetParts.isEmpty {

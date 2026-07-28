@@ -73,6 +73,13 @@ struct BarLoaderWidget: View {
                 )
                 rampSection(workingPounds: pounds)
             } else {
+                // Empty state still DRAWS the empty bar (user request
+                // 2026-07-27) — the drawing is the widget's identity, and
+                // the bar weight is real information before any target is
+                // typed. GSBarLoader with target == bar renders collar +
+                // sleeve, "PER SIDE empty bar", and "Empty bar — 45 lbs".
+                GSBarLoader(target: barInUnit, barWeight: barInUnit,
+                            plates: plates, unit: unit)
                 Text("Enter a weight to see the plates.")
                     .font(GSFont.body(12, relativeTo: .caption))
                     .foregroundStyle(theme.neutral500)

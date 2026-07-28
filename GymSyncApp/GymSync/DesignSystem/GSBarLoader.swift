@@ -134,9 +134,17 @@ struct GSBarLoader: View {
         let perSide = loaded.reduce(Decimal(0)) { $0 + $1.plate * Decimal($1.count) }
         let sum = "\(Units.displayWeight(barWeight)) + 2×\(Self.plateLabel(perSide))"
         return VStack(alignment: .leading, spacing: 2) {
-            Text("\(sum) = \(Units.displayWeight(stack.achievedWeight)) \(unit.label)")
-                .font(GSFont.body(12, relativeTo: .caption))
-                .foregroundStyle(theme.neutral500)
+            if loaded.isEmpty {
+                // No plates at all — "45 + 2×0 = 45" is technically true but
+                // reads like a bug; say what it is.
+                Text("Empty bar — \(Units.displayWeight(stack.achievedWeight)) \(unit.label)")
+                    .font(GSFont.body(12, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+            } else {
+                Text("\(sum) = \(Units.displayWeight(stack.achievedWeight)) \(unit.label)")
+                    .font(GSFont.body(12, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+            }
             if !isExact {
                 Text("closest loadable to \(Units.displayWeight(target)) with your plates")
                     .font(GSFont.body(11, relativeTo: .caption2))
