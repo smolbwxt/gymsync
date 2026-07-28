@@ -140,7 +140,8 @@ targets:
         NSHealthUpdateUsageDescription: "Gym Sync writes your completed workouts to Apple Health so they appear in your Activity ring."
         NSLocationWhenInUseUsageDescription: "Gym Sync uses your location to confirm you're at your home gym during check-in."
         NSCalendarsFullAccessUsageDescription: "Gym Sync adds your scheduled sessions to your calendar when you turn on calendar sync in the You tab."
-        NSCameraUsageDescription: "Gym Sync never uses the camera. This notice exists only because the live-voice framework references camera APIs."
+        NSCameraUsageDescription: "Gym Sync uses the camera for your post-workout pump check photo, shared only with your friends."
+        NSPhotoLibraryUsageDescription: "Gym Sync lets you pick a photo for your pump check where the camera isn't available."
         NSMicrophoneUsageDescription: "Gym Sync uses your microphone for voice messages and push-to-talk during live sessions with your crew."
         NSBluetoothAlwaysUsageDescription: "Gym Sync connects to your heart rate monitor (chest strap or broadcasting watch) to show live heart rate during workouts."
         UIAppFonts:

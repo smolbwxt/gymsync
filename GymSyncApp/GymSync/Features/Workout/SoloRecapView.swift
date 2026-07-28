@@ -89,6 +89,10 @@ struct SoloRecapView: View {
     /// raw stored-lbs Decimals here). Defaulted so catalog fixtures and any
     /// lbs caller compile unchanged.
     let unit: WeightUnit
+    /// Pump Check (spec 2026-07-27): non-nil mounts the composer card at
+    /// the top of the recap — the 1-minute photo window. Nil (catalog
+    /// fixtures, callers that predate the feature) renders no composer.
+    let pumpCheck: PumpCheckContext?
     let onDone: () -> Void
 
     @Environment(\.gsTheme) private var theme
@@ -105,6 +109,7 @@ struct SoloRecapView: View {
         healthSummary: HealthSummary? = nil,
         shareSummary: String,
         unit: WeightUnit = .lbs,
+        pumpCheck: PumpCheckContext? = nil,
         onDone: @escaping () -> Void = {}
     ) {
         self.kicker = kicker
@@ -118,6 +123,7 @@ struct SoloRecapView: View {
         self.healthSummary = healthSummary
         self.shareSummary = shareSummary
         self.unit = unit
+        self.pumpCheck = pumpCheck
         self.onDone = onDone
     }
 
@@ -170,6 +176,12 @@ struct SoloRecapView: View {
     // Apple Health card (Phase H — see type doc comment above).
     private var content: some View {
         VStack(alignment: .leading, spacing: 14) {
+            // Pump Check composer FIRST — the 1:00 window is live while the
+            // lifter reads their numbers.
+            if let pumpCheck {
+                PumpCheckComposerCard(context: pumpCheck)
+            }
+
             hero
 
             if let heaviestPR {

@@ -211,6 +211,7 @@ struct WorkoutSessionView: View {
                         healthSummary: recapHealthSummary,
                         shareSummary: recapShareSummary,
                         unit: sessionSettings?.weightUnit ?? .lbs,
+                        pumpCheck: pumpCheckContext,
                         onDone: { dismiss() }
                     )
                     // The Duolingo-placement slot: fires AFTER the recap
@@ -1060,6 +1061,10 @@ struct WorkoutSessionView: View {
     /// device) — set best-effort in endSession.
     @State private var recapHRStats: (avg: Int, max: Int)?
 
+    /// Pump Check window anchor — set in `endSession` right before
+    /// `completed` flips, i.e. the instant the recap mounts.
+    @State private var recapAppearedAt: Date?
+
     private var recapHealthSummary: SoloRecapView.HealthSummary? {
         guard healthSynced else { return nil }
         let minutes = recapDurationInterval / 60.0
@@ -1371,7 +1376,61 @@ struct WorkoutSessionView: View {
                 recapHRStats = await HealthKitBridge.heartRateStats(start: start, end: end)
             }
 
+            // Pump Check window anchor: the 1:00 countdown starts the
+            // moment the recap becomes visible.
+            recapAppearedAt = Date()
             self.completed = true
         } catch { errorText = ErrorMapping.map(error).errorDescription }
+    }
+
+    // MARK: - Pump Check (spec 2026-07-27, P2)
+
+    /// Post-ready payload for the recap's composer card — nil until the
+    /// session is actually complete.
+    private var pumpCheckContext: PumpCheckContext? {
+        guard let session = completedSession, let windowStart = recapAppearedAt else { return nil }
+        return PumpCheckContext(
+            sessionID: session.id,
+            summary: buildPostSummary(),
+            avgBpm: recapHRStats?.avg,
+            maxBpm: recapHRStats?.max,
+            includeHRDefault: ThemeStore.shared.shareHeartRate && recapHRStats != nil,
+            windowStart: windowStart)
+    }
+
+    /// The immutable snapshot frozen into the post: non-penalty sets
+    /// grouped by exercise in first-logged order, canonical-lbs weights
+    /// (the FEED converts to each viewer's unit). A set is marked PR when
+    /// it carries the exercise's session-PR weight.
+    private func buildPostSummary() -> PostSummary {
+        var order: [UUID] = []
+        var byExercise: [UUID: [SetLog]] = [:]
+        for log in loggedSets where !log.isPenalty {
+            if byExercise[log.exerciseID] == nil { order.append(log.exerciseID) }
+            byExercise[log.exerciseID, default: []].append(log)
+        }
+        // Multiple PRs for one exercise across a session are possible
+        // (each new max) — the heaviest is THE session PR for that lift.
+        let prWeight = Dictionary(sessionPRs.map { ($0.exerciseID, $0.weight) },
+                                  uniquingKeysWith: max)
+        let exercises = order.map { id -> PostSummary.ExerciseEntry in
+            let sets = (byExercise[id] ?? [])
+                .sorted { $0.setIndex < $1.setIndex }
+                .map { log in
+                    PostSummary.ExerciseEntry.SetEntry(
+                        weightLbs: log.weight,
+                        reps: log.reps,
+                        isPR: !log.isFailed && log.weight != nil && log.weight == prWeight[id],
+                        isFailed: log.isFailed)
+                }
+            return PostSummary.ExerciseEntry(
+                name: exerciseName(for: id),
+                equipment: exerciseCatalog.first { $0.id == id }?.equipment ?? "",
+                sets: sets)
+        }
+        return PostSummary(
+            durationSeconds: Int(recapDurationInterval),
+            totalVolumeLbs: Decimal(HealthKitBridge.totalVolume(from: loggedSets)),
+            exercises: exercises)
     }
 }
