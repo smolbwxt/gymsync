@@ -21,6 +21,22 @@ import SwiftUI
 // design predicted this ("Discover may be undesigned -> system-designed +
 // deviations", `discover-leaderboards-design.md:28`). See
 // `docs/design/accepted-deviations.json`'s "discover" entry.
+/// Discover grid sort orders (user request 2026-07-28).
+enum DiscoverSort: String, CaseIterable, Identifiable {
+    case popular, attempts, newest, name
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .popular:  return "Popular"
+        case .attempts: return "Most attempted"
+        case .newest:   return "Newest"
+        case .name:     return "A–Z"
+        }
+    }
+}
+
 struct DiscoverView: View {
     @Environment(\.gsTheme) private var theme
 
@@ -44,6 +60,56 @@ struct DiscoverView: View {
 
     private let columns = [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
 
+    // MARK: - Filter + sort (user request 2026-07-28)
+
+    /// Sort order for the grid. `.popular` is the composite the repository
+    /// already shipped with (curator spotlight → stars → attempts → newest),
+    /// kept as the default so the unfiltered screen is unchanged.
+    @State private var sort: DiscoverSort = .popular
+    @State private var featuredOnly = false
+    /// A `scoring_metrics` value ("time" / "volume" / "top_set"), or nil for
+    /// no metric filter.
+    @State private var metricFilter: String?
+
+    private var hasActiveFilter: Bool { featuredOnly || metricFilter != nil }
+
+    /// Metric chips are derived from what is ACTUALLY published — offering a
+    /// "Time" filter that matches nothing is the same sin as a fake tag.
+    private var metricOptions: [String] {
+        Array(Set(workouts.flatMap { $0.scoringMetrics ?? [] })).sorted()
+    }
+
+    private var visibleWorkouts: [PublicWorkout] {
+        var rows = workouts
+        if featuredOnly { rows = rows.filter(\.isFeatured) }
+        if let metricFilter {
+            rows = rows.filter { ($0.scoringMetrics ?? []).contains(metricFilter) }
+        }
+        switch sort {
+        case .popular:
+            rows.sort { a, b in
+                if a.isFeatured != b.isFeatured { return a.isFeatured }
+                let sa = starCounts[a.id] ?? 0, sb = starCounts[b.id] ?? 0
+                if sa != sb { return sa > sb }
+                let aa = attemptCounts[a.id] ?? 0, ab = attemptCounts[b.id] ?? 0
+                if aa != ab { return aa > ab }
+                return a.routine.createdAt > b.routine.createdAt
+            }
+        case .attempts:
+            rows.sort {
+                (attemptCounts[$0.id] ?? 0, $0.routine.createdAt)
+                    > (attemptCounts[$1.id] ?? 0, $1.routine.createdAt)
+            }
+        case .newest:
+            rows.sort { $0.routine.createdAt > $1.routine.createdAt }
+        case .name:
+            rows.sort {
+                $0.routine.name.localizedCaseInsensitiveCompare($1.routine.name) == .orderedAscending
+            }
+        }
+        return rows
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
@@ -63,17 +129,33 @@ struct DiscoverView: View {
                     )
                     .padding(.top, 40)
                 } else {
-                    LazyVGrid(columns: columns, spacing: 10) {
-                        ForEach(workouts) { workout in
-                            NavigationLink {
-                                DiscoverWorkoutDetailView(workout: workout)
-                            } label: {
-                                workoutCard(workout)
+                    filterSortRow
+                        .padding(.top, 16)
+
+                    let rows = visibleWorkouts
+                    if rows.isEmpty {
+                        GSEmptyState(
+                            icon: "line.3.horizontal.decrease.circle",
+                            title: "No workouts match",
+                            message: "Nothing published fits these filters yet.",
+                            ctaTitle: "Clear filters",
+                            action: { featuredOnly = false; metricFilter = nil }
+                        )
+                        .padding(.horizontal, 16)
+                        .padding(.top, 24)
+                    } else {
+                        LazyVGrid(columns: columns, spacing: 10) {
+                            ForEach(rows) { workout in
+                                NavigationLink {
+                                    DiscoverWorkoutDetailView(workout: workout)
+                                } label: {
+                                    workoutCard(workout)
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
                         }
+                        .padding(16)
                     }
-                    .padding(16)
                 }
             }
         }
@@ -82,6 +164,62 @@ struct DiscoverView: View {
         // Group (the Group cascade inflated Exercises' chips row).
         .contentMargins(.bottom, 88, for: .scrollContent)
         .task { await load() }
+    }
+
+    /// Sort menu + filter chips, horizontally scrollable so the row never
+    /// wraps or truncates as metric options vary. Chip idiom matches the
+    /// Exercises sub-tab's filter chips (accent fill when active).
+    private var filterSortRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                Menu {
+                    Picker("Sort", selection: $sort) {
+                        ForEach(DiscoverSort.allCases) { option in
+                            Text(option.label).tag(option)
+                        }
+                    }
+                } label: {
+                    chip(text: sort.label, icon: "arrow.up.arrow.down", active: false)
+                }
+
+                chip(text: "Featured", icon: nil, active: featuredOnly)
+                    .onTapGesture { featuredOnly.toggle() }
+
+                ForEach(metricOptions, id: \.self) { metric in
+                    chip(text: Self.metricLabel(metric), icon: nil,
+                         active: metricFilter == metric)
+                        .onTapGesture {
+                            metricFilter = (metricFilter == metric) ? nil : metric
+                        }
+                }
+
+                if hasActiveFilter {
+                    chip(text: "Clear", icon: "xmark", active: false)
+                        .onTapGesture { featuredOnly = false; metricFilter = nil }
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+        // The row is its own scroll view — keep the parent's dock margin off
+        // it (the Group-cascade bug this file's own comment below records).
+        .contentMargins(.horizontal, 0, for: .scrollContent)
+    }
+
+    private func chip(text: String, icon: String?, active: Bool) -> some View {
+        HStack(spacing: 5) {
+            if let icon {
+                Image(systemName: icon).font(.system(size: 10, weight: .semibold))
+            }
+            Text(text).font(GSFont.bodyMedium(12.5, relativeTo: .caption))
+        }
+        .foregroundStyle(active ? theme.bg : theme.neutral700)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(minHeight: 36)
+        .background(active ? theme.accent : theme.surface)
+        .clipShape(Capsule())
+        .overlay(Capsule().strokeBorder(active ? Color.clear : theme.divider, lineWidth: 1))
+        .contentShape(Capsule())
     }
 
     // MARK: - Top Lifters entry point (Phase L Task 4)

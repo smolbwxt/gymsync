@@ -193,6 +193,9 @@ struct ProgramDetailView: View {
             .padding(.vertical, 16)
         }
         .background(theme.bg)
+        // Dock clearance (user report 2026-07-28) — this screen is pushed
+        // inside the Library tab, so the dock still overlaps its last row.
+        .contentMargins(.bottom, 88, for: .scrollContent)
         .navigationTitle("Program")
         .navigationBarTitleDisplayMode(.inline)
         .task { await loadCurrentEstIfComplete() }
@@ -535,6 +538,11 @@ struct ProgramTemplateDetailView: View {
             .padding(.vertical, 16)
         }
         .background(theme.bg)
+        // Dock clearance (user report 2026-07-28: the program SELECTION
+        // screen's Start button sat under the dock) — pushed inside the
+        // Library tab, so the 88pt buffer every other tab scroll view uses
+        // applies here too.
+        .contentMargins(.bottom, 88, for: .scrollContent)
         // "Program", not template.name — the in-content header already
         // carries the name; the doubled title read as a stutter in the
         // catalog capture.

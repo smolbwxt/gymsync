@@ -87,6 +87,14 @@ public final class ThemeStore {
     /// default posture as the rest of this class).
     var weightUnit: WeightUnit { lastKnownSettings?.weightUnit ?? .lbs }
 
+    /// Bar + plate inventory off the same cached row, so a view that already
+    /// reads `weightUnit` from here can draw a correct bar-loader preview
+    /// without its own `user_settings` fetch (GroupSessionLiveView's inline
+    /// loader card). Canonical POUNDS for the bar; inventory is denominated
+    /// in the user's own unit, `nil` meaning "the standard set".
+    var barWeightLbs: Decimal { lastKnownSettings?.barWeightLbs ?? 45 }
+    var plateInventory: [Decimal]? { lastKnownSettings?.plateInventory }
+
     /// The in-flight persist `Task` spawned by the most recent `select(_:)`
     /// call, if any. Tracked so rapid palette taps can't race each other: a
     /// second tap cancels the first tap's still-running upsert instead of

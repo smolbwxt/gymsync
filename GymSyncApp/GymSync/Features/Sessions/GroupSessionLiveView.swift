@@ -144,10 +144,11 @@ struct GroupSessionLiveView: View {
     /// sheet — see docs/design/accepted-deviations.json's "session-chat"
     /// entry.
     @State private var showChatSheet        = false
-    /// "Load the bar" (user direction 2026-07-26) — reachable from the
-    /// always-present header, whether it's your turn or not: your next
-    /// weight is yours to plan while someone else lifts.
-    @State private var showBarLoaderSheet   = false
+    /// "Load the bar" expand/collapse for the inline `barLoaderCard` (user
+    /// direction 2026-07-28: a widget like the solo session's, not a header
+    /// button). The card renders in BOTH the my-turn and spectating branches
+    /// — your next weight is yours to plan while someone else lifts.
+    @State private var showBarLoader        = false
     @State private var isEnding             = false
     @State private var errorText: String?
     // Phase O Task 5 item 5 — mirrors LobbyView's identical trio (this
@@ -505,6 +506,7 @@ struct GroupSessionLiveView: View {
                         VStack(alignment: .leading, spacing: 12) {
                             spotlightHeaderCard
                             statTimerRow
+                            barLoaderCard
                             logThisSetCard
                             if let logSetErrorText {
                                 GSInlineErrorBanner(
@@ -531,6 +533,7 @@ struct GroupSessionLiveView: View {
                     } else {
                         VStack(alignment: .leading, spacing: 12) {
                             spectatingHeaderCard
+                            barLoaderCard
                             if !rotationOrder.isEmpty {
                                 rosterGrid
                             }
@@ -670,20 +673,6 @@ struct GroupSessionLiveView: View {
         .sheet(isPresented: $showLogSetSheet) { logSetSheetContent }
         // Session chat sheet (Task 3)
         .sheet(isPresented: $showChatSheet) { chatSheet }
-        // No prefill: in a group session your next load is personal and not
-        // on screen — typing it beats guessing from someone else's set.
-        // Loader→log handoff (user request 2026-07-27): whatever the lifter
-        // dials in lands in the inline LOG THIS SET card's weight field,
-        // formatted in their display unit — load the bar while you wait and
-        // the number is ready when your turn comes. A cleared loader field
-        // leaves the card's own entry alone.
-        .sheet(isPresented: $showBarLoaderSheet) {
-            BarLoaderSheet(initialPounds: nil, onEnteredPoundsChange: { pounds in
-                guard let pounds else { return }
-                logWeight = Units.format(pounds: pounds, unit: ThemeStore.shared.weightUnit,
-                                         rounded: false, includeUnit: false)
-            })
-        }
         // Voice mixer sheet (Phase O Task 5 item 5)
         .sheet(isPresented: $showVoiceMixerSheet) { voiceMixerSheet }
         .onChange(of: isVoiceConnected) { wasConnected, nowConnected in
@@ -1095,20 +1084,9 @@ struct GroupSessionLiveView: View {
                 .buttonStyle(.plain)
             }
 
-            // Load the bar — same bordered-square idiom; deliberately NOT
-            // turn-gated (see showBarLoaderSheet's doc comment).
-            Button {
-                showBarLoaderSheet = true
-            } label: {
-                Image(systemName: "scalemass")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(theme.neutral700)
-                    .frame(width: 30, height: 30)
-                    .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
+            // ("Load the bar" was a bordered-square header button here until
+            // 2026-07-28 — it is now the inline `barLoaderCard` widget in the
+            // content column, matching the solo session. See that property.)
 
             // Session chat (Task 3) — same bordered-square idiom as the X
             // button beside it (30×30 glyph in a 44×44 tap target); no
@@ -1250,6 +1228,94 @@ struct GroupSessionLiveView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.surface)
         .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
+    }
+
+    // MARK: - Load the bar (inline widget — parity with the solo session)
+    //
+    // User direction 2026-07-28: "Group session load the bar should be the
+    // same as the solo workout. Not a small button, but a widget." This is
+    // `WorkoutSessionView.barLoaderCard`'s design verbatim — collapsed card
+    // with a `GSBarLoaderMini` preview, expanding to the full
+    // `BarLoaderWidget` — and it renders in BOTH the my-turn and spectating
+    // branches, preserving the original "reachable whether or not it's your
+    // turn" property (plan your bar while someone else lifts).
+    //
+    // Bar/plate settings come from `ThemeStore`'s already-cached
+    // `user_settings` row rather than a fetch of this view's own, matching
+    // how this file already reads `weightUnit`.
+    @ViewBuilder
+    private var barLoaderCard: some View {
+        if let ex = currentExerciseForSheet, ex.equipment.lowercased() == "barbell" {
+            let unit = ThemeStore.shared.weightUnit
+            let plates: [Decimal] = {
+                if let custom = ThemeStore.shared.plateInventory, !custom.isEmpty {
+                    return custom.sorted(by: >)
+                }
+                return unit.standardPlates
+            }()
+            let barInUnit: Decimal = {
+                var value = Units.fromPounds(ThemeStore.shared.barWeightLbs, to: unit)
+                var rounded = Decimal()
+                NSDecimalRound(&rounded, &value, 2, .plain)
+                return rounded
+            }()
+            // Prefill priority mirrors solo: the programmed target, else the
+            // last set I logged for THIS exercise.
+            let prefill: Decimal? = {
+                if let target = currentRoutineExercise?.targetWeight,
+                   let parsed = Decimal(string: target), parsed > 0 { return parsed }
+                return feedSets.first { $0.userID == selfID && $0.exerciseID == ex.id && !$0.isFailed }?.weight
+            }()
+            let targetInUnit = prefill.map { Units.fromPounds($0, to: unit) } ?? barInUnit
+
+            VStack(alignment: .leading, spacing: 0) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) { showBarLoader.toggle() }
+                } label: {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "scalemass")
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(theme.accent)
+                                Text("Load the bar")
+                                    .font(GSFont.bold(15, relativeTo: .body))
+                                    .foregroundStyle(theme.text)
+                            }
+                            Text(prefill.map { "\(Units.format(pounds: $0, unit: unit, rounded: false)) · plates & warm-up" }
+                                 ?? "Plates & warm-up ramp")
+                                .font(GSFont.body(11.5, relativeTo: .caption))
+                                .foregroundStyle(theme.neutral500)
+                        }
+                        Spacer(minLength: 8)
+                        GSBarLoaderMini(target: targetInUnit, barWeight: barInUnit,
+                                        plates: plates, unit: unit)
+                        Image(systemName: showBarLoader ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(theme.neutral500)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 14)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                if showBarLoader {
+                    // Whatever gets dialled in lands in the inline LOG THIS
+                    // SET card's weight field, in the display unit.
+                    BarLoaderWidget(initialPounds: prefill,
+                                    onEnteredPoundsChange: { pounds in
+                                        guard let pounds else { return }
+                                        logWeight = Units.format(pounds: pounds, unit: unit,
+                                                                 rounded: false, includeUnit: false)
+                                    })
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, 14)
+                }
+            }
+            .background(theme.surface)
+            .cornerRadius(GSMetrics.radiusMd)
+        }
     }
 
     // MARK: - Inline "LOG THIS SET" card — p06

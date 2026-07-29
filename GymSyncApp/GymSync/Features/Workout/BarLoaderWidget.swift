@@ -246,35 +246,7 @@ struct BarLoaderWidget: View {
     }
 }
 
-// MARK: - Sheet wrapper (group sessions — reachable whether it's your turn
-// or not, from the always-present header bar)
-
-struct BarLoaderSheet: View {
-    @Environment(\.gsTheme) private var theme
-    @Environment(\.dismiss) private var dismiss
-    let initialPounds: Decimal?
-    /// Pass-through to `BarLoaderWidget.onEnteredPoundsChange` — the group
-    /// session uses it to carry the loaded weight into the inline log card.
-    var onEnteredPoundsChange: ((Decimal?) -> Void)? = nil
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                BarLoaderWidget(initialPounds: initialPounds,
-                                onEnteredPoundsChange: onEnteredPoundsChange)
-                    .padding(16)
-                    .background(theme.surface)
-                    .cornerRadius(GSMetrics.radiusMd)
-                    .padding(16)
-            }
-            .background(theme.bg)
-            .navigationTitle("Load the bar")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-        }
-    }
-}
+// (A `BarLoaderSheet` wrapper lived here until 2026-07-28, when the group
+// session's header button was replaced by the same inline card the solo
+// session uses — `GroupSessionLiveView.barLoaderCard`. Nothing presented the
+// sheet after that, so it was removed rather than left as dead code.)

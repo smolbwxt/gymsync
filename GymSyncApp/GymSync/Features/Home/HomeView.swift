@@ -1411,6 +1411,11 @@ private struct RoutinePickerSheet: View {
     let initialRoutine: Routine?
 
     @Environment(\.gsTheme) private var theme
+    /// This view IS the sheet's root, so this dismisses the SHEET (a
+    /// `dismiss()` captured inside the pushed session would only pop the
+    /// push). Handed to `WorkoutSessionView.onFinished` so completing a
+    /// workout exits all the way out instead of landing back on this picker.
+    @Environment(\.dismiss) private var dismissPicker
 
     /// Seeded from the caller's fetched list, then locally owned so a routine
     /// built in-sheet (Build Routine push below) appears immediately.
@@ -1508,7 +1513,14 @@ private struct RoutinePickerSheet: View {
             .navigationDestination(isPresented: $startNavigation) {
                 WorkoutSessionView(routine: chosenRoutine,
                                    routineExercises: routineExercises,
-                                   allExercises: allExercises)
+                                   allExercises: allExercises,
+                                   // Finishing must close this whole SHEET,
+                                   // not just pop back to the picker the
+                                   // lifter chose from (user report
+                                   // 2026-07-28). `dismiss()` inside the
+                                   // pushed session only pops the push, so
+                                   // the sheet's own dismiss is handed down.
+                                   onFinished: { dismissPicker() })
             }
         }
     }

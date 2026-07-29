@@ -48,6 +48,12 @@ struct LogSetSheet: View {
     // have been the memberwise-init trap.
     @State private var showPlateStack = false
 
+    /// One-shot latch for the prefill (see `.onAppear` below) — @State can
+    /// survive a `.sheet(isPresented:)` re-presentation, so "have I already
+    /// seeded this presentation?" must be explicit rather than inferred from
+    /// whether the fields look empty.
+    @State private var didPrefill = false
+
     // Canvas RPE labels — "Very easy" .. "Max effort"
     private static let rpeLabels: [Double: String] = [
         1: "Very easy", 2: "Easy", 3: "Moderate", 4: "Somewhat hard",
@@ -224,19 +230,33 @@ struct LogSetSheet: View {
             .background(theme.bg)
             .navigationBarHidden(true)
             .onAppear {
+                // Prefill exactly ONCE per presentation, unconditionally.
+                //
+                // The old guards (`if weight.isEmpty`, `if reps.isEmpty`)
+                // conflated "fresh sheet" with "field happens to be blank":
+                // when SwiftUI reuses this view's @State across two
+                // presentations of the same `.sheet(isPresented:)` — which it
+                // does — the second presentation arrived with the FIRST set's
+                // values still in `weight`, so the guard skipped the prefill
+                // entirely. That is exactly how a weight dialled into the bar
+                // loader stopped reaching the log sheet (user report
+                // 2026-07-28). The presenter additionally re-`.id()`s this
+                // sheet per presentation; this guard is the belt to that
+                // brace.
+                guard !didPrefill else { return }
+                didPrefill = true
                 if let defaultRPE { rpe = defaultRPE }
                 if defaultIsFailed { isFailed = true }
-                if note.isEmpty, let defaultNote { note = defaultNote }
-                if reps.isEmpty { reps = defaultReps ?? "" }
-                if weight.isEmpty {
-                    // Prefill is stored POUNDS (routine targets) — present
-                    // it in the entry unit so committing it round-trips.
-                    if let stored = defaultWeight.flatMap({ Decimal(string: $0) }) {
-                        weight = Units.format(pounds: stored, unit: unit,
-                                              rounded: false, includeUnit: false)
-                    } else {
-                        weight = defaultWeight ?? ""
-                    }
+                if let defaultNote { note = defaultNote }
+                reps = defaultReps ?? ""
+                // Prefill is stored POUNDS (routine target, or the weight
+                // loaded on the bar) — present it in the entry unit so
+                // committing it round-trips.
+                if let stored = defaultWeight.flatMap({ Decimal(string: $0) }) {
+                    weight = Units.format(pounds: stored, unit: unit,
+                                          rounded: false, includeUnit: false)
+                } else {
+                    weight = defaultWeight ?? ""
                 }
             }
         }

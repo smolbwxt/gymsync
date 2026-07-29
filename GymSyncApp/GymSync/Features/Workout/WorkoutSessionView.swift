@@ -25,11 +25,21 @@ struct WorkoutSessionView: View {
     /// `RoutinesListView.swift`) is source-compatible unchanged.
     let attemptOptIn: Bool?
 
-    init(routine: Routine?, routineExercises: [RoutineExercise], allExercises: [Exercise], attemptOptIn: Bool? = nil) {
+    /// Called instead of `dismiss()` when the lifter taps Done on the recap
+    /// (user report 2026-07-28: finishing a workout dropped them back on the
+    /// routine picker they started from). A presenter that lives inside a
+    /// SHEET passes its own sheet-dismiss here, because `dismiss()` from a
+    /// pushed child only pops the push — it cannot close the sheet around it.
+    /// Either way the session ends by selecting Home (see `finishSession`).
+    var onFinished: (() -> Void)?
+
+    init(routine: Routine?, routineExercises: [RoutineExercise], allExercises: [Exercise],
+         attemptOptIn: Bool? = nil, onFinished: (() -> Void)? = nil) {
         self.routine = routine
         self.routineExercises = routineExercises
         self.allExercises = allExercises
         self.attemptOptIn = attemptOptIn
+        self.onFinished = onFinished
     }
 
     @Environment(\.dismiss) private var dismiss
@@ -212,7 +222,7 @@ struct WorkoutSessionView: View {
                         shareSummary: recapShareSummary,
                         unit: sessionSettings?.weightUnit ?? .lbs,
                         pumpCheck: pumpCheckContext,
-                        onDone: { dismiss() }
+                        onDone: { finishSession() }
                     )
                     // The Duolingo-placement slot: fires AFTER the recap
                     // lands, never over the celebration. Dormant today;
@@ -343,6 +353,12 @@ struct WorkoutSessionView: View {
                 Task { await log(reps: reps, weight: weight, rpe: rpe,
                                  isFailed: isFailed, note: note) }
             }
+            // Fresh identity per presentation (exercise / set / loaded
+            // weight). Without this SwiftUI reuses the sheet's @State
+            // between presentations and the prefill silently keeps the
+            // PREVIOUS set's values — the bar-loader→log-weight bug
+            // (user report 2026-07-28).
+            .id("\(re.exerciseID)-\(currentSetIndex)-\(barLoaderPounds.map { "\($0)" } ?? "t")")
         }
     }
 
@@ -1381,6 +1397,25 @@ struct WorkoutSessionView: View {
             recapAppearedAt = Date()
             self.completed = true
         } catch { errorText = ErrorMapping.map(error).errorDescription }
+    }
+
+    /// Leaving a finished workout lands on HOME, not on whatever menu the
+    /// lifter happened to start from (user report 2026-07-28: finishing a
+    /// solo workout returned them to the routine picker). Home is the screen
+    /// that makes sense after training — it's where the streak, the stats
+    /// tiles and the next scheduled session live.
+    ///
+    /// `onFinished` (when a sheet-based presenter supplied one) tears the
+    /// presentation down; otherwise this pops the push. The tab switch runs
+    /// either way, so every entry point — Home's picker sheet, a routine
+    /// detail push, a Discover attempt — ends in the same place.
+    private func finishSession() {
+        if let onFinished {
+            onFinished()
+        } else {
+            dismiss()
+        }
+        appState.selectedTab = .home
     }
 
     // MARK: - Pump Check (spec 2026-07-27, P2)
