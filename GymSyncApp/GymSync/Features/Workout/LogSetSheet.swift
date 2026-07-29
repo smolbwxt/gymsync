@@ -345,13 +345,17 @@ func stepperCell(
 
         // Canvas: bordered row — minus button | value | plus button, height 48
         HStack(spacing: 0) {
+            // 56pt wide, not 40: this is the most-repeated in-workout
+            // gesture on BOTH logging paths and the body-weight sheet, and
+            // 40 is under Apple's own 44pt floor. Height was already 48.
             Button(action: onDecrement) {
                 Text("−")
                     .font(.system(size: 22, weight: .light))
                     .foregroundStyle(theme.neutral700)
-                    .frame(width: 40, height: 48)
+                    .frame(width: 56, height: 48)
                     .contentShape(Rectangle())
             }
+            .accessibilityLabel("Decrease \(label)")
             .overlay(alignment: .trailing) {
                 Rectangle().fill(borderColor.opacity(0.6)).frame(width: 1)
             }
@@ -362,14 +366,16 @@ func stepperCell(
                 .font(GSFont.heading(22, relativeTo: .title2))
                 .foregroundStyle(valueColor)
                 .frame(maxWidth: .infinity, minHeight: 48)
+                .accessibilityLabel(label)
 
             Button(action: onIncrement) {
                 Text("+")
                     .font(.system(size: 22, weight: .light))
                     .foregroundStyle(theme.accent)
-                    .frame(width: 40, height: 48)
+                    .frame(width: 56, height: 48)
                     .contentShape(Rectangle())
             }
+            .accessibilityLabel("Increase \(label)")
             .overlay(alignment: .leading) {
                 Rectangle().fill(borderColor.opacity(0.6)).frame(width: 1)
             }
@@ -429,13 +435,46 @@ struct RPESegmentBar: View {
     private let steps: [Double] = Array(stride(from: 1.0, through: 10.0, by: 1.0))
 
     var body: some View {
-        HStack(spacing: 3) {
-            ForEach(steps, id: \.self) { step in
+        // UI audit 2026-07-29 measured this control as the worst object in
+        // the app, failing four ways at once:
+        //   1. 28.8-38.1pt x 30pt — under the 44pt floor on BOTH axes on
+        //      EVERY shipping iPhone (ten segments can never fit a row).
+        //   2. Invisible to VoiceOver — bare ZStacks with .onTapGesture, and
+        //      nine of ten segments rendered no text to announce.
+        //   3. Unselected segments were theme.surface ON a theme.surface
+        //      card — no visible control at all at arm's length.
+        //   4. A hard .frame(height: 30) clipped its own Dynamic-Type label
+        //      from AX1 upward.
+        //
+        // Two rows of five is the shape that fixes (1) without abandoning the
+        // tap-to-set grammar: five segments clear ~61pt wide at 393pt, and
+        // 48pt tall clears the floor vertically with room for large type.
+        VStack(spacing: 4) {
+            row(steps.prefix(5))
+            row(steps.suffix(5))
+        }
+        // ONE adjustable element rather than ten unlabelled ones: VoiceOver
+        // reads "RPE, 7, Very hard" and swipe-up/down changes it, which is
+        // both correct and faster than hunting a 1-of-10 target.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("RPE")
+        .accessibilityValue("\(Int(value)), \(Self.label(for: value))")
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: value = min(10, value + 1)
+            case .decrement: value = max(1, value - 1)
+            @unknown default: break
+            }
+        }
+    }
+
+    private func row(_ group: ArraySlice<Double>) -> some View {
+        HStack(spacing: 4) {
+            ForEach(Array(group), id: \.self) { step in
                 segment(for: step)
                     .onTapGesture { value = step }
             }
         }
-        .frame(height: 30)
     }
 
     @ViewBuilder
@@ -449,18 +488,35 @@ struct RPESegmentBar: View {
             } else if isFilled {
                 theme.accent200
             } else {
-                theme.surface
+                // neutral300, not surface: an unselected segment has to be
+                // visible against the card it sits on.
+                theme.neutral300
                     .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
             }
 
-            if isSelected {
-                Text("\(Int(step))")
-                    .font(GSFont.heading(13, relativeTo: .caption))
-                    .foregroundStyle(theme.bg)
-            }
+            // Every segment carries its numeral now — the scale is only
+            // readable if you can see the whole scale.
+            Text("\(Int(step))")
+                .font(GSFont.heading(13, relativeTo: .caption))
+                .foregroundStyle(isSelected ? theme.bg : (isFilled ? theme.accent700 : theme.neutral700))
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, minHeight: 48)
         .contentShape(Rectangle())
+    }
+
+    /// Mirrors the rpeLabel copy both logging paths already show beside the
+    /// bar, so the spoken value matches the visible one.
+    static func label(for value: Double) -> String {
+        switch Int(value) {
+        case ...1: return "Very easy"
+        case 2:    return "Easy"
+        case 3:    return "Moderate"
+        case 4:    return "Somewhat hard"
+        case 5, 6: return "Hard"
+        case 7, 8: return "Very hard"
+        case 9:    return "Very hard"
+        default:   return "Max effort"
+        }
     }
 }
 

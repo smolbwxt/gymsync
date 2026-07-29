@@ -263,6 +263,10 @@ struct FriendsView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(theme.bg)
+        // Dock clearance (UI audit 2026-07-29): pushed inside a tab with
+        // neither .gsHidesDock() nor a bottom inset, so the 86pt dock drew
+        // over the last friend row — which also carries a swipe action.
+        .contentMargins(.bottom, 88, for: .scrollContent)
         .navigationTitle("Friends")
         .task { await refresh() }
         .refreshable { await refresh() }

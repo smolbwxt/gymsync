@@ -1761,9 +1761,16 @@ struct GroupSessionLiveView: View {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 13, weight: .semibold))
                 }
-                .foregroundStyle(theme.accent)
+                // theme.bg, NOT theme.accent (UI audit 2026-07-29 measured
+                // ~1.78:1). `GSTheme.withAccent` collapses accent600/700/800
+                // onto accent.base, so this label and the accent-filled
+                // banner behind it resolved to the SAME colour — accent text
+                // on accent fill. The kicker and count two lines above
+                // already use theme.bg; this now matches them.
+                .foregroundStyle(theme.bg)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
+                .frame(minHeight: 44)
                 .background(theme.bg.opacity(0.15))
                 .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.bg.opacity(0.4), lineWidth: 1))
             }

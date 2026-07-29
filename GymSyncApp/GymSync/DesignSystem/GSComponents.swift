@@ -10,6 +10,8 @@ import UIKit
 
 public struct GSPrimaryButtonStyle: ButtonStyle {
     @Environment(\.gsTheme) private var theme
+    /// Drives the inert rendering of a `.disabled` CTA — see `makeBody`.
+    @Environment(\.isEnabled) private var isEnabled
 
     private let fontSize: CGFloat
     private let verticalPadding: CGFloat
@@ -31,7 +33,18 @@ public struct GSPrimaryButtonStyle: ButtonStyle {
         .foregroundColor(configuration.isPressed ? theme.neutral100 : theme.bg)
         .padding(.horizontal, 16)
         .padding(.vertical, verticalPadding)
+        // UI audit 2026-07-29: padding alone rendered ~41.4pt at default
+        // Dynamic Type — under Apple's 44pt floor for EVERY primary CTA in
+        // the app, including Save Set on the logging path. A floor here
+        // repairs every call site at once; in-workout CTAs that want the
+        // research's larger target still opt up with their own minHeight.
+        .frame(minHeight: 44)
         .background(configuration.isPressed ? theme.accent600 : theme.accent)
+        // A disabled primary CTA used to render at FULL accent fill — it
+        // looked completely live and silently swallowed taps, which is worse
+        // than an obviously-inert control. Reading isEnabled here means no
+        // call site can ship an invisible dead button.
+        .opacity(isEnabled ? 1 : 0.4)
         .cornerRadius(GSMetrics.radiusSm)
         .contentShape(Rectangle())
         .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
@@ -73,6 +86,8 @@ public struct GSSecondaryButtonStyle: ButtonStyle {
         .foregroundColor(theme.text)
         .padding(.horizontal, horizontalPadding)
         .padding(.vertical, verticalPadding)
+        // Same 44pt floor as the primary style (UI audit 2026-07-29).
+        .frame(minHeight: 44)
         .background(configuration.isPressed ? theme.text.opacity(0.08) : Color.clear)
         .cornerRadius(GSMetrics.radiusSm)
         .overlay(

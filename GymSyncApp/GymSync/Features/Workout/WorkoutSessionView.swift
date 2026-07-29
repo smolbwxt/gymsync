@@ -514,7 +514,12 @@ struct WorkoutSessionView: View {
                         showLogSheet = true
                     } label: {
                         Text("Log Set \(currentSetIndex)")
-                            .frame(maxWidth: .infinity)
+                            // The primary in-workout control, pressed once
+                            // per set with chalked or sweaty hands — the
+                            // research argues >=64pt here, well above the
+                            // 44pt floor the button style now guarantees.
+                            // 40 + the style's 24pt vertical padding = 64.
+                            .frame(maxWidth: .infinity, minHeight: 40)
                     }
                     .buttonStyle(GSPrimaryButtonStyle())
                     .gsSpotlightTarget(.workout)
