@@ -34,6 +34,9 @@ struct LobbyView: View {
     @State private var showStartDialog = false
     @State private var navigateToInProgress = false
     @State private var showProposalComposer = false
+    /// "Choose routine" picker (user report 2026-07-29 — the lobby had no
+    /// path to a routine you'd already built).
+    @State private var showRoutinePicker = false
     @State private var allExercises: [Exercise] = []
     @State private var currentSession: WorkoutSession?
     @State private var groupName: String?
@@ -362,6 +365,25 @@ struct LobbyView: View {
         // Proposal composer sheet
         .sheet(isPresented: $showProposalComposer) {
             proposalComposerSheet
+        }
+        // Routine picker (user report 2026-07-29)
+        .sheet(isPresented: $showRoutinePicker) {
+            LobbyRoutinePickerSheet(
+                currentRoutineID: currentSession?.routineID ?? session.routineID,
+                onPick: { routineID in
+                    Task {
+                        do {
+                            try await SessionRepository.setRoutine(sessionID: session.id,
+                                                                   routineID: routineID)
+                            await reload()
+                        } catch let error as GymSyncError {
+                            errorText = error.errorDescription
+                        } catch {
+                            errorText = error.localizedDescription
+                        }
+                    }
+                }
+            )
         }
         // Session chat sheet (Task 3)
         .sheet(isPresented: $showChatSheet) {
@@ -894,20 +916,48 @@ struct LobbyView: View {
             routineContent
                 .padding(.horizontal, 16)
 
-            Button {
-                showProposalComposer = true
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "pencil.and.list.clipboard")
-                        .font(.system(size: 14))
-                    Text("Edit Routine")
-                        .font(GSFont.bodyMedium(14, relativeTo: .body))
+            // User report 2026-07-29: "the routine selection here is non
+            // intuitive. You also can't select one of the routines you have
+            // built." Both were true. The only affordance was a button
+            // labelled "Edit Routine" that actually opened a "Propose
+            // Exercise" composer — a DIFFERENT thing (one exercise at a
+            // time, put to a group vote) — and nothing anywhere let you say
+            // "we're doing Push Day A". Now the primary action is choosing
+            // one of your routines, and proposing a single exercise is the
+            // clearly-labelled secondary.
+            HStack(spacing: 10) {
+                Button {
+                    showRoutinePicker = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "list.bullet.rectangle")
+                            .font(.system(size: 14))
+                        Text(routineInfo == nil ? "Choose routine" : "Change routine")
+                            .font(GSFont.bodyMedium(14, relativeTo: .body))
+                    }
+                    .foregroundStyle(theme.accent)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
                 }
-                .foregroundStyle(theme.accent)
-                .frame(minHeight: 44)
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+
+                Button {
+                    showProposalComposer = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "pencil.and.list.clipboard")
+                            .font(.system(size: 14))
+                        Text("Propose exercise")
+                            .font(GSFont.bodyMedium(14, relativeTo: .body))
+                    }
+                    .foregroundStyle(theme.neutral700)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                Spacer(minLength: 0)
             }
-            .buttonStyle(.plain)
             .padding(.horizontal, 16)
             .padding(.bottom, 8)
         }
@@ -948,7 +998,11 @@ struct LobbyView: View {
                 }
             }
         } else {
-            Text("No routine — propose one below.")
+            // Copy names the actual affordances now. It used to read
+            // "propose one below" while the only button said "Edit Routine"
+            // and opened a single-exercise proposal composer — three
+            // different names for two different things.
+            Text("No routine yet — choose one of yours, or propose a single exercise for the crew to vote on.")
                 .font(GSFont.body(13, relativeTo: .subheadline))
                 .foregroundStyle(theme.neutral500)
         }
@@ -1472,6 +1526,124 @@ struct LobbyView: View {
 // MARK: - ProposalComposerView
 
 /// Inline sheet for proposing a new exercise to the session's routine.
+// MARK: - Lobby routine picker (user report 2026-07-29)
+//
+// "You can't select one of the routines you have built." This is that
+// path: the caller's own routines, one tap to set the session's routine,
+// plus an explicit Freestyle option so a session can be de-assigned again.
+// Deliberately a flat list rather than HomeView's card picker — the lobby
+// sheet is a quick decision mid-conversation, not a browse.
+private struct LobbyRoutinePickerSheet: View {
+    let currentRoutineID: UUID?
+    let onPick: (UUID?) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.gsTheme) private var theme
+    @Environment(AppState.self) private var appState
+
+    @State private var routines: [Routine] = []
+    @State private var loading = true
+    @State private var errorText: String?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    row(title: "Freestyle",
+                        subtitle: "No routine — log whatever the crew lifts",
+                        selected: currentRoutineID == nil) {
+                        onPick(nil)
+                        dismiss()
+                    }
+                }
+
+                Section {
+                    if loading {
+                        HStack { Spacer(); ProgressView().tint(theme.accent); Spacer() }
+                            .listRowBackground(theme.bg)
+                    } else if let errorText {
+                        Text(errorText)
+                            .font(GSFont.body(12, relativeTo: .footnote))
+                            .foregroundStyle(.red)
+                            .listRowBackground(theme.bg)
+                    } else if routines.isEmpty {
+                        Text("You haven't built any routines yet. Library ▸ Routines ▸ New.")
+                            .font(GSFont.body(13, relativeTo: .subheadline))
+                            .foregroundStyle(theme.neutral500)
+                            .listRowBackground(theme.bg)
+                    } else {
+                        ForEach(routines) { routine in
+                            row(title: routine.name,
+                                subtitle: nil,
+                                selected: routine.id == currentRoutineID) {
+                                onPick(routine.id)
+                                dismiss()
+                            }
+                        }
+                    }
+                } header: {
+                    GSSectionHeader("Your routines")
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(theme.bg)
+            .navigationTitle("Choose routine")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }.foregroundStyle(theme.accent)
+                }
+            }
+            .task { await load() }
+        }
+    }
+
+    private func row(title: String, subtitle: String?, selected: Bool,
+                     action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(GSFont.bold(14, relativeTo: .headline))
+                        .foregroundStyle(theme.text)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(GSFont.body(12, relativeTo: .caption))
+                            .foregroundStyle(theme.neutral500)
+                    }
+                }
+                Spacer(minLength: 8)
+                if selected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(theme.accent)
+                }
+            }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(theme.surface)
+        .listRowSeparatorTint(theme.divider)
+    }
+
+    @MainActor
+    private func load() async {
+        guard let userID = appState.currentProfile?.id else { loading = false; return }
+        loading = true
+        defer { loading = false }
+        do {
+            routines = try await RoutineRepository.fetchAll(ownerID: userID)
+            errorText = nil
+        } catch let error as GymSyncError {
+            errorText = error.errorDescription
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+}
+
 private struct ProposalComposerView: View {
     let session: WorkoutSession
     let allExercises: [Exercise]

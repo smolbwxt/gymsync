@@ -432,6 +432,30 @@ enum SessionRepository {
         } catch { throw ErrorMapping.map(error) }
     }
 
+    /// Set (or clear) the routine a lobby session will run.
+    ///
+    /// User report 2026-07-29: the lobby let you PROPOSE one exercise at a
+    /// time but gave you no way to just pick a routine you had already
+    /// built. No migration was needed — `sessions`' UPDATE policy has always
+    /// been "organizer OR participant" (20260709000006, repointed by
+    /// 20260726000001), so anyone in the lobby can set it, which matches how
+    /// the rest of the lobby works (anyone can propose, anyone can vote).
+    static func setRoutine(sessionID: UUID, routineID: UUID?) async throws {
+        guard await SupabaseService.shared.currentUserID() != nil else {
+            throw GymSyncError.unauthorized
+        }
+        do {
+            // Explicit AnyJSON so clearing the routine sends a real null
+            // rather than omitting the key (a synthesized Encodable would
+            // drop it and silently leave the old routine in place).
+            _ = try await client
+                .from("sessions")
+                .update(["routine_id": routineID.map { AnyJSON.string($0.uuidString) } ?? .null])
+                .eq("id", value: sessionID.uuidString)
+                .execute()
+        } catch { throw ErrorMapping.map(error) }
+    }
+
     /// Advance the turn to the next participant (current-lifter or organizer gated).
     ///
     /// `expectedVersion` makes the call REPLAYABLE (20260801000001): pass the
