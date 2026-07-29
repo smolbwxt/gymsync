@@ -836,7 +836,12 @@ struct WorkoutSessionView: View {
                               } ?? "—")
                               .font(GSFont.heading(15, relativeTo: .body))
                               .foregroundStyle(theme.text),
-                    col3: Text(log.rpe.map { "\($0)" } ?? "—")
+                    // A failed set stores rpe = 10, so printing rpe alone
+                    // renders a miss as "10" — indistinguishable from a
+                    // max-effort success. isFailed is authoritative.
+                    col3: Text(log.isFailed
+                               ? "FAIL"
+                               : (log.rpe.map { "\($0)" } ?? "—"))
                               .font(GSFont.heading(15, relativeTo: .body))
                               .foregroundStyle(theme.text)
                 )

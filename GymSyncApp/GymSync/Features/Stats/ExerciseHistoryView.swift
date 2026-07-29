@@ -171,7 +171,12 @@ struct ExerciseHistoryView: View {
 
     private func metaText(for log: SetLog) -> String {
         var parts = [log.loggedAt.formatted(date: .abbreviated, time: .omitted)]
-        if let rpe = log.rpe {
+        // A failed set stores rpe = 10, so printing rpe alone would show a
+        // miss in your own history as "RPE 10.0" — the signature of a
+        // max-effort success. isFailed is authoritative and wins.
+        if log.isFailed {
+            parts.append("FAIL")
+        } else if let rpe = log.rpe {
             parts.append("RPE \(String(format: "%.1f", NSDecimalNumber(decimal: rpe).doubleValue))")
         }
         if let context = sessionContext[log.sessionID] {

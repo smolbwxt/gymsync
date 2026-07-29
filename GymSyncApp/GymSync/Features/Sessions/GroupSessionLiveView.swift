@@ -1659,7 +1659,18 @@ struct GroupSessionLiveView: View {
                 Text("\(last.weight.map(weightText) ?? "—") × \(last.reps.map { "\($0)" } ?? "—")")
                     .font(GSFont.bodyMedium(13, relativeTo: .body))
                     .foregroundStyle(theme.text)
-                if let rpe = last.rpe {
+                // A failed set stores rpe = 10 (see RPE terminal-position
+                // decision), so rendering rpe alone would show a miss as
+                // "RPE 10.0" — the signature of a max-effort SUCCESS, to the
+                // whole crew. isFailed is the authoritative signal and wins.
+                // neutral700 not neutral500: neutral500 measures 2.96:1 on
+                // surface, and a label this consequential has to be readable.
+                if last.isFailed {
+                    Text("FAIL")
+                        .font(GSFont.bodyMedium(10, relativeTo: .caption2))
+                        .tracking(0.6)
+                        .foregroundStyle(theme.neutral700)
+                } else if let rpe = last.rpe {
                     Text("RPE \(decimalString(rpe))")
                         .font(GSFont.body(10, relativeTo: .caption2))
                         .foregroundStyle(theme.neutral500)
