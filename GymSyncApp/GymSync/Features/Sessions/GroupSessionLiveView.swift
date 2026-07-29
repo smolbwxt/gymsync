@@ -1715,7 +1715,9 @@ struct GroupSessionLiveView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(isLoggingSet || (Int(logReps) == nil && !logIsFailed))
+            // `leadingInt` — a rep range must not dead-end the CTA (see the
+            // helper in LogSetSheet.swift).
+            .disabled(isLoggingSet || (leadingInt(logReps) == nil && !logIsFailed))
             .background(theme.bg)
         } else if let hint = upcomingTurnHint {
             Text(hint)
@@ -1980,8 +1982,25 @@ struct GroupSessionLiveView: View {
     @MainActor
     private func prefillLogInputs() {
         guard let ex = currentExerciseForSheet else { return }
-        logReps = defaultReps(for: ex.id) ?? ""
-        logWeight = ""
+        // Reps: resolve a rep RANGE to its low end so the field holds a
+        // number the steppers and Save can actually use ("8-12" → "8").
+        let target = defaultReps(for: ex.id)
+        logReps = target.flatMap(leadingInt).map(String.init) ?? target ?? ""
+        // Weight was cleared unconditionally here, so it was blank on EVERY
+        // turn — the one field that most wants a prefill. Same priority the
+        // solo sheet uses: the programmed target, else my last non-failed
+        // set for this exercise, rendered in my display unit.
+        let unit = ThemeStore.shared.weightUnit
+        let prefillPounds: Decimal? = {
+            if let t = currentRoutineExercise?.targetWeight,
+               let parsed = Decimal(string: t), parsed > 0 { return parsed }
+            return feedSets.first {
+                $0.userID == selfID && $0.exerciseID == ex.id && !$0.isFailed
+            }?.weight
+        }()
+        logWeight = prefillPounds.map {
+            Units.format(pounds: $0, unit: unit, rounded: false, includeUnit: false)
+        } ?? ""
         logRPE = 7.0
         logIsFailed = false
         logNote = ""
@@ -2004,7 +2023,7 @@ struct GroupSessionLiveView: View {
         guard !isLoggingSet else { return }
         guard let ex = currentExerciseForSheet else { return }
         isLoggingSet = true
-        let reps = Int(logReps)
+        let reps = leadingInt(logReps)
         // Phase O Task 2: `Decimal.parseUserInput(_:)` — see the "Plates"
         // disclosure gate above for why the bare `Decimal(string:)`
         // initializer was locale-unsafe.

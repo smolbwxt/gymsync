@@ -221,7 +221,9 @@ struct LogSetSheet: View {
                             commitLog()
                         }
                         .buttonStyle(GSPrimaryButtonStyle())
-                        .disabled(Int(reps) == nil && !isFailed)
+                        // `leadingInt`, not `Int(_:)` — a rep RANGE typed or
+                        // prefilled ("8-12") must not dead-end Save.
+                        .disabled(leadingInt(reps) == nil && !isFailed)
                     }
                     .padding(.horizontal, 16)
                     .padding(.bottom, 22)
@@ -248,7 +250,11 @@ struct LogSetSheet: View {
                 if let defaultRPE { rpe = defaultRPE }
                 if defaultIsFailed { isFailed = true }
                 if let defaultNote { note = defaultNote }
-                reps = defaultReps ?? ""
+                // Resolve a rep RANGE to its low end so the field holds a
+                // number the steppers and Save can use ("8-12" → "8"). The
+                // full target still reads on the exercise header card.
+                reps = defaultReps.flatMap(leadingInt).map(String.init)
+                    ?? defaultReps ?? ""
                 // Prefill is stored POUNDS (routine target, or the weight
                 // loaded on the bar) — present it in the entry unit so
                 // committing it round-trips.
@@ -271,7 +277,7 @@ struct LogSetSheet: View {
         // disclosure gate above for why the bare `Decimal(string:)`
         // initializer was locale-unsafe.
         onLog(
-            Int(reps),
+            leadingInt(reps),
             // THE conversion edge: typed in `unit`, stored in pounds.
             Decimal.parseUserInput(weight).map { Units.toPounds($0, from: unit) },
             Decimal(rpe),
@@ -380,8 +386,23 @@ func decrementInt(_ s: inout String) {
     let v = max(0, (Int(s) ?? 0) - 1)
     s = "\(v)"
 }
+/// Leading integer of a free-text rep target: "8-12" → 8, "5+" → 5,
+/// "12" → 12, "AMRAP" → nil.
+///
+/// Rep TARGETS are free text (`routine_exercises.target_reps`) and the app's
+/// own routine builder seeds every new item with a RANGE ("8-12"). A bare
+/// `Int("8-12")` is nil, which used to (a) disable Save Set on the default
+/// routine and (b) make `incrementInt` reset the field to 1. Every read of a
+/// rep target for arithmetic goes through here.
+func leadingInt(_ s: String) -> Int? {
+    let digits = s.drop(while: { !$0.isNumber }).prefix(while: { $0.isNumber })
+    return Int(digits)
+}
+
 func incrementInt(_ s: inout String) {
-    let v = (Int(s) ?? 0) + 1
+    // `leadingInt`, not `Int(s) ?? 0`: tapping + on a "8-12" prefill used to
+    // wipe it to "1" rather than stepping from 8.
+    let v = (leadingInt(s) ?? 0) + 1
     s = "\(v)"
 }
 func decrementDecimal(_ s: inout String) {
