@@ -20,6 +20,12 @@ struct WorkoutSession: Codable, Identifiable, Sendable {
     // Phase 3b: duration editing audit fields (columns added in 3a migration)
     var durationWasEdited: Bool
     var editedBy: UUID?
+    /// Monotonic rotation counter (20260801000001). A client that queues a
+    /// set while offline records the version it saw, and passes it back when
+    /// the queued advance replays — if the rotation already moved on, the
+    /// RPC no-ops instead of double-advancing. Defaults to 0 so a row
+    /// decoded before the column existed is still safe to compare.
+    var turnVersion: Int
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -37,6 +43,7 @@ struct WorkoutSession: Codable, Identifiable, Sendable {
         case currentTurnStartedAt = "current_turn_started_at"
         case durationWasEdited = "duration_was_edited"
         case editedBy = "edited_by"
+        case turnVersion = "turn_version"
     }
 
     // Safe decode: duration_was_edited has DB DEFAULT false so older rows always carry it;
@@ -58,6 +65,7 @@ struct WorkoutSession: Codable, Identifiable, Sendable {
         currentTurnStartedAt = try c.decodeIfPresent(Date.self,   forKey: .currentTurnStartedAt)
         durationWasEdited    = (try? c.decodeIfPresent(Bool.self, forKey: .durationWasEdited)) ?? false
         editedBy             = try? c.decodeIfPresent(UUID.self,  forKey: .editedBy)
+        turnVersion          = (try? c.decodeIfPresent(Int.self,  forKey: .turnVersion)) ?? 0
     }
 
     // Memberwise init used by startSolo and other repository callers.
@@ -76,7 +84,8 @@ struct WorkoutSession: Codable, Identifiable, Sendable {
         currentTurnUserID: UUID?,
         currentTurnStartedAt: Date?,
         durationWasEdited: Bool = false,
-        editedBy: UUID? = nil
+        editedBy: UUID? = nil,
+        turnVersion: Int = 0
     ) {
         self.id                   = id
         self.routineID            = routineID
@@ -93,6 +102,7 @@ struct WorkoutSession: Codable, Identifiable, Sendable {
         self.currentTurnStartedAt = currentTurnStartedAt
         self.durationWasEdited    = durationWasEdited
         self.editedBy             = editedBy
+        self.turnVersion          = turnVersion
     }
 }
 

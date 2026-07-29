@@ -433,14 +433,30 @@ enum SessionRepository {
     }
 
     /// Advance the turn to the next participant (current-lifter or organizer gated).
-    static func advanceTurn(sessionID: UUID) async throws {
+    ///
+    /// `expectedVersion` makes the call REPLAYABLE (20260801000001): pass the
+    /// `turnVersion` observed when the set was logged and the RPC becomes a
+    /// no-op if the rotation has since moved on — which is what lets a turn
+    /// advance survive being queued through a dead connection without ever
+    /// double-advancing. Live (online) calls pass nil and behave exactly as
+    /// before.
+    static func advanceTurn(sessionID: UUID, expectedVersion: Int? = nil) async throws {
         guard await SupabaseService.shared.currentUserID() != nil else {
             throw GymSyncError.unauthorized
         }
         do {
-            _ = try await client
-                .rpc("advance_turn", params: ["p_session_id": sessionID.uuidString])
-                .execute()
+            if let expectedVersion {
+                _ = try await client
+                    .rpc("advance_turn", params: [
+                        "p_session_id": AnyJSON.string(sessionID.uuidString),
+                        "p_expected_version": AnyJSON.integer(expectedVersion),
+                    ])
+                    .execute()
+            } else {
+                _ = try await client
+                    .rpc("advance_turn", params: ["p_session_id": sessionID.uuidString])
+                    .execute()
+            }
         } catch { throw ErrorMapping.map(error) }
     }
 

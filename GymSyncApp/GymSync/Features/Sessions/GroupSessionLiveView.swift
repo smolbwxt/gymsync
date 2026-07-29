@@ -2538,20 +2538,26 @@ struct GroupSessionLiveView: View {
                 // row — different UUIDs, so the 23505 dedupe in
                 // OfflineSetLogQueue.replay() can't catch them.
                 //
-                // Accepted consequence (reviewer + spec scope both accept this):
-                // this lifter's turn does NOT auto-advance while offline, and it
-                // never auto-advances for this specific set even once the queued
-                // row replays successfully — `OfflineSetLogQueue.replay()` only
-                // ever resubmits the set_logs INSERT itself (Services/
-                // OfflineSetLogQueue.swift:120-182 → `SupabaseSetLogSubmitter.
-                // submit` → `SessionRepository.logSet`), advanceTurn is not part
-                // of replay. The closest existing session-level fallback is the
-                // idle-ladder's "Still Going"/"Wrap Up" push actions
-                // (PushReceiver.stillGoing/wrapUpSession, App/AppDelegate.swift
-                // ~91-92) — but that's a session-idle heartbeat, not a per-turn
-                // advance, so it won't unstick this turn either. Honestly: the
-                // organizer (or this lifter, once back online, by logging their
-                // next set — `isMyTurn` stays true) advances manually.
+                // FIXED 2026-07-29 (rotation guard, migration
+                // 20260801000001). This used to end here: the turn did not
+                // auto-advance while offline and never auto-advanced even
+                // after the queued row replayed, because
+                // `OfflineSetLogQueue.replay()` only ever resubmits the
+                // set_logs INSERT — advanceTurn was not part of replay. One
+                // lifter's dead signal froze the rotation for everyone until
+                // an organizer unstuck it by hand.
+                //
+                // The advance is now RECORDED with the `turn_version` we can
+                // see right now and replayed on the same triggers as the set
+                // queue (RootView's four hooks). Replaying it is safe because
+                // `advance_turn(p_session_id, p_expected_version)` no-ops once
+                // the rotation has moved on — so if the organizer advances
+                // manually in the meantime, or a no-show is marked, the
+                // queued advance quietly does nothing instead of shoving the
+                // rotation forward a second time.
+                PendingTurnAdvanceStore.shared.record(
+                    sessionID: session.id,
+                    observedVersion: liveSession.turnVersion)
                 didQueueSetOffline = true
             }
 
@@ -2590,6 +2596,11 @@ struct GroupSessionLiveView: View {
             // existing retry banner exactly as before.
             guard !didQueueSetOffline else { return }
             try await SessionRepository.advanceTurn(sessionID: session.id)
+            // A live advance settles any advance this device still owed from
+            // an earlier offline set — the queued one would no-op anyway
+            // (version guard), but dropping it keeps the store honest rather
+            // than accumulating entries that only ever fizzle.
+            PendingTurnAdvanceStore.shared.clear(sessionID: session.id)
         } catch let error as GymSyncError {
             // Upgraded treatment (Canvas Completion Task 4 fix round 1, proof
             // p31-errors) — NOT the shared `errorText` red caption; see

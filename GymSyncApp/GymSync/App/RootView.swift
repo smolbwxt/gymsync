@@ -114,6 +114,10 @@ struct RootView: View {
             OfflineSetLogQueue.shared.configure(modelContext: modelContext)
             guard case .signedIn = auth.state else { return }
             await OfflineSetLogQueue.shared.replay()
+            // Rotation guard (20260801000001): a turn advance owed from an
+            // offline group set drains on the SAME triggers as the set queue.
+            // Safe to repeat — the RPC no-ops once the rotation has moved on.
+            await PendingTurnAdvanceStore.shared.replay()
         }
         // Replay trigger 1/4 — auth-state transition to .signedIn. Phase O
         // Task 3 fix wave 1 (reviewer Finding 2): the `.task` above gates on
@@ -159,7 +163,10 @@ struct RootView: View {
             // own refreshPendingIDs re-scope directly above).
             OfflineSetLogQueue.shared.clearLastPermanentFailure()
             guard case .signedIn = auth.state else { return }
-            Task { await OfflineSetLogQueue.shared.replay() }
+            Task {
+                await OfflineSetLogQueue.shared.replay()
+                await PendingTurnAdvanceStore.shared.replay()
+            }
         }
         // Replay trigger 2/4 — connectivity restored. `.onChange` fires only
         // on a transition, so this is exactly the "path becomes satisfied"
@@ -167,7 +174,10 @@ struct RootView: View {
         .onChange(of: connectivity.isOnline) {
             guard connectivity.isOnline else { return }
             guard case .signedIn = auth.state else { return }
-            Task { await OfflineSetLogQueue.shared.replay() }
+            Task {
+                await OfflineSetLogQueue.shared.replay()
+                await PendingTurnAdvanceStore.shared.replay()
+            }
         }
         // Replay trigger 3/4 — app foreground. A SEPARATE `.onChange(of:
         // scenePhase)` block, deliberately not merged into the calendar
@@ -181,7 +191,10 @@ struct RootView: View {
         .onChange(of: scenePhase) {
             guard scenePhase == .active else { return }
             guard case .signedIn = auth.state else { return }
-            Task { await OfflineSetLogQueue.shared.replay() }
+            Task {
+                await OfflineSetLogQueue.shared.replay()
+                await PendingTurnAdvanceStore.shared.replay()
+            }
         }
         // Phase O Task 4 (Sentry, master spec §6.8.5) — refresh the
         // crash-time context snapshot on every foreground transition. A
