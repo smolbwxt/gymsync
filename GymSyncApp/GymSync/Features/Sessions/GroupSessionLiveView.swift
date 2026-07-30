@@ -496,6 +496,18 @@ struct GroupSessionLiveView: View {
     /// One-shot prime, raised at session start when we have never asked.
     @State private var showHRPrime = false
 
+    /// Solo-in-a-group-session rest (user round 3): when a log-and-pass
+    /// hands the turn straight back to you (nobody else checked in), the
+    /// my-turn screen "did nothing". Now it enters a REST interlude — the
+    /// spectate layout with a START SET CTA — until the rest window ends
+    /// or you cut it short. Nil = not resting.
+    @State private var selfRotationRestUntil: Date?
+
+    private var isInSelfRotationRest: Bool {
+        guard let until = selfRotationRestUntil else { return false }
+        return until > .now
+    }
+
     /// Prior-performance state (2026-07-30). ONE fetch feeds two features:
     /// the LAST TIME card (shown where a non-barbell exercise has no bar to
     /// load) and the prefill ladder's rep-goal rung, which needs the same
@@ -540,7 +552,7 @@ struct GroupSessionLiveView: View {
     }
 
     private var myTurnActive: Bool {
-        isMyTurn && !(participants.isEmpty && rosterLoadFailed)
+        isMyTurn && !(participants.isEmpty && rosterLoadFailed) && !isInSelfRotationRest
     }
 
     /// My non-penalty sets for the current exercise, oldest first.
@@ -594,10 +606,6 @@ struct GroupSessionLiveView: View {
         }
         .padding(.horizontal, 0)
         .background(theme.bg)
-        // Keyboard overlays rather than compresses (user: "uncover it by
-        // lowering the numpad") — the fixed page never squeezes; the
-        // loader's ScrollView keeps its full height while typing.
-        .ignoresSafeArea(.keyboard, edges: .bottom)
     }
 
     // Header rail 44pt: ✕ · session clock · rule · routine name · voice/chat · count
@@ -948,8 +956,17 @@ struct GroupSessionLiveView: View {
                 // (caught on device 2026-07-30: "the bar is missing").
                 // Card-level drawing only; GSBarLoaderMini stays untouched.
                 if cfg.targetInUnit > cfg.barInUnit {
-                    GSBarLoaderMini(target: cfg.targetInUnit, barWeight: cfg.barInUnit,
-                                    plates: cfg.plates, unit: cfg.unit)
+                    // The shaft continues through the card (user: "mimic the
+                    // bar in the expanded view") — plates at the left, bar
+                    // running the full width, exactly like the full loader.
+                    HStack(spacing: 1.5) {
+                        GSBarLoaderMini(target: cfg.targetInUnit, barWeight: cfg.barInUnit,
+                                        plates: cfg.plates, unit: cfg.unit)
+                        RoundedRectangle(cornerRadius: 1.5)
+                            .fill(theme.neutral500.opacity(0.55))
+                            .frame(height: 6)
+                            .frame(maxWidth: .infinity)
+                    }
                 } else {
                     // Collar + shaft only — right collar gone (user,
                     // 2026-07-30: "eliminate the far right collar").
@@ -1408,7 +1425,7 @@ struct GroupSessionLiveView: View {
     // so paging between states never moves the top of the screen.
 
     private var spectateActive: Bool {
-        !isMyTurn
+        (!isMyTurn || isInSelfRotationRest)
             && !(participants.isEmpty && rosterLoadFailed)
             && liveSession.currentTurnUserID != nil
     }
@@ -1539,7 +1556,36 @@ struct GroupSessionLiveView: View {
             Color.clear.frame(height: 6)
             turnSoundRail
             Color.clear.frame(height: 6)
-            if let hint = upcomingTurnHint {
+            if isInSelfRotationRest {
+                // Resting between your own sets — cut it short any time.
+                Button {
+                    selfRotationRestUntil = nil
+                } label: {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 16).fill(theme.accent)
+                        VStack(spacing: 2) {
+                            Text("START SET")
+                                .font(GSFont.bold(17, relativeTo: .body))
+                                .tracking(0.9)
+                            if let until = selfRotationRestUntil {
+                                HStack(spacing: 4) {
+                                    Text("RESTING")
+                                        .font(GSFont.bold(11, relativeTo: .caption2))
+                                    Text(timerInterval: .now...until, countsDown: true)
+                                        .font(GSFont.bold(11, relativeTo: .caption2).monospacedDigit())
+                                }
+                                .opacity(0.8)
+                            }
+                        }
+                        .foregroundStyle(theme.bg)
+                    }
+                    .frame(height: 64)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+                Color.clear.frame(height: 10)
+            } else if let hint = upcomingTurnHint {
                 Text(hint)
                     .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
                     .foregroundStyle(theme.neutral700)
@@ -1701,6 +1747,12 @@ struct GroupSessionLiveView: View {
         // GSHidesDock for why the custom app dock can't reach them via
         // safeAreaInset alone.
         .gsHidesDock()
+        // Keyboard overlays EVERYTHING, chrome included (user round 3: the
+        // CTA was still lifting above the numpad, leaving a stacked buffer).
+        // Applied outside the safeAreaInset so neither the page nor the
+        // pinned chrome moves while typing; the keyboard simply covers the
+        // bottom and everything is exactly where it was on dismiss.
+        .ignoresSafeArea(.keyboard, edges: .bottom)
         .safeAreaInset(edge: .bottom) {
             // Redesign 2026-07-30: my-turn gets the compact 152pt chrome
             // (56pt sound rail + compact PTT mic + 64pt CTA). Spectating
@@ -3155,6 +3207,21 @@ struct GroupSessionLiveView: View {
             defer { isLoggingSet = false }
             await logSetAndAdvance(reps: reps, weight: weight, rpe: rpe,
                                     isFailed: failed, note: note, exerciseID: ex.id)
+            // Solo-in-a-rotation: the pass came straight back. Enter the
+            // rest interlude instead of silently staying on my-turn — the
+            // screen visibly changes, the rest is real, and START SET cuts
+            // it short (user round 3).
+            if liveSession.currentTurnUserID == selfID, participants.count <= 1 || nextTurnUserID == selfID {
+                let seconds = currentRoutineExercise?.restSeconds ?? 120
+                let until = Date().addingTimeInterval(TimeInterval(seconds))
+                selfRotationRestUntil = until
+                Task {
+                    try? await Task.sleep(for: .seconds(max(0, until.timeIntervalSinceNow)))
+                    // Only the still-current window clears itself — a rest
+                    // the user already cut short must not be re-cleared.
+                    if selfRotationRestUntil == until { selfRotationRestUntil = nil }
+                }
+            }
         }
     }
 

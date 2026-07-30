@@ -528,10 +528,11 @@ struct WorkoutSessionView: View {
             Color.clear.frame(height: 8)
         }
         .background(theme.bg)
-        // Keyboard overlays rather than compresses — the loader's field
-        // must not squeeze the fixed page (user: "lower the numpad").
-        .ignoresSafeArea(.keyboard, edges: .bottom)
         .safeAreaInset(edge: .bottom) { soloChrome }
+        // Outside the inset: neither the page nor the chrome moves while
+        // typing — the keyboard covers the bottom, nothing stacks above it
+        // (user round 3: the CTA was lifting and leaving a buffer).
+        .ignoresSafeArea(.keyboard, edges: .bottom)
         .task(id: "\(currentRoutineExercise?.exerciseID.uuidString ?? "")-\(currentSetIndex)") {
             soloPrefill()
         }
@@ -645,8 +646,16 @@ struct WorkoutSessionView: View {
                     .foregroundStyle(soloLoaderOpen ? theme.accent : theme.neutral700)
                 Spacer(minLength: 4)
                 if targetInUnit > barInUnit {
-                    GSBarLoaderMini(target: targetInUnit, barWeight: barInUnit,
-                                    plates: plates, unit: unit)
+                    // Shaft continues through the card — mirrors the full
+                    // loader's silhouette (user round 3).
+                    HStack(spacing: 1.5) {
+                        GSBarLoaderMini(target: targetInUnit, barWeight: barInUnit,
+                                        plates: plates, unit: unit)
+                        RoundedRectangle(cornerRadius: 1.5)
+                            .fill(theme.neutral500.opacity(0.55))
+                            .frame(height: 6)
+                            .frame(maxWidth: .infinity)
+                    }
                 } else {
                     // Collar + shaft only — the right collar is gone (user,
                     // 2026-07-30: "eliminate the far right collar").
