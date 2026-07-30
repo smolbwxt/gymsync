@@ -50,6 +50,16 @@ struct WorkoutSessionView: View {
     @State private var loggedSets: [SetLog] = []
     @State private var currentExerciseIndex: Int = 0
     @State private var currentSetIndex: Int = 1
+
+    // Solo fixed page (2026-07-30) — inline entry state, replacing the
+    // log sheet for routine sessions (the sheet remains for edit mode).
+    @State private var soloWeight = ""
+    @State private var soloReps = ""
+    @State private var soloRPE: Double = 7.0
+    @State private var soloFailed = false
+    @State private var soloWidgetPage = 0
+    @State private var soloLoaderOpen = false
+    @State private var soloShowHRPairing = false
     @State private var showLogSheet = false
     @State private var errorText: String?
     @State private var completed = false
@@ -447,7 +457,592 @@ struct WorkoutSessionView: View {
     // overlay. It now lives one level up, as a sibling of the `completed` ?
     // `SoloRecapView` : `liveSessionBody` switch in `body` — see the comment
     // there.
+    @ViewBuilder
     private var liveSessionBody: some View {
+        // Solo port (2026-07-30, user: "the solo workout should use the, if
+        // not exact, a very similar page"): routine sessions get the same
+        // fixed non-scrolling page as the group my-turn state. Freeform
+        // keeps the scroll body — it has no planned sets to structure a
+        // fixed page around — as does the completed state.
+        if !isFreeform && !completed && currentExercise != nil && currentRoutineExercise != nil {
+            soloFixedPage
+        } else {
+            soloScrollBody
+        }
+    }
+
+    // MARK: - Solo fixed page (2026-07-30, final-proof geometry)
+    // The group my-turn page's four-widget layout, minus rotation and voice:
+    // system nav bar stays (no custom rail), chrome is the CTA alone, the
+    // clock slot shows the REST countdown when one is running. All logging
+    // goes through the existing log() — PR overlay, offline queue, set and
+    // exercise advance, rest timer and auto-end are untouched.
+    //
+    // Recorded v1 deviations: entry prefill = loaded bar ?? routine target
+    // (the WorkingWeight ladder's campaign/rep-goal rungs need a history
+    // fetch this view doesn't hold yet — follow-up); LAST TIME card reuses
+    // the cached one-line summary rather than the structured card.
+
+    private var soloUnit: WeightUnit { sessionSettings?.weightUnit ?? .lbs }
+    private var soloWeightStep: Decimal { soloUnit == .kg ? Decimal(2.5) : 5 }
+
+    private var soloBLEBPM: Int? {
+        if case .connected = BLEHeartRateService.shared.state {
+            return BLEHeartRateService.shared.latestBPM
+        }
+        return nil
+    }
+
+    private var soloFixedPage: some View {
+        VStack(spacing: 0) {
+            Color.clear.frame(height: 10)
+            soloVitalsRow
+            Color.clear.frame(height: 12)
+            if soloLoaderOpen {
+                soloLoaderExpanded
+            } else {
+                soloExerciseCard
+                    .frame(maxHeight: .infinity)
+                Color.clear.frame(height: 12)
+                soloEntryCard
+            }
+            Color.clear.frame(height: 8)
+        }
+        .background(theme.bg)
+        .safeAreaInset(edge: .bottom) { soloChrome }
+        .task(id: "\(currentRoutineExercise?.exerciseID.uuidString ?? "")-\(currentSetIndex)") {
+            soloPrefill()
+        }
+        .sheet(isPresented: $soloShowHRPairing) {
+            NavigationStack { HeartRateMonitorView() }
+        }
+    }
+
+    /// Loaded bar wins over the routine target — identical precedence to the
+    /// old sheet's defaultWeight. Reps from the routine's target string.
+    private func soloPrefill() {
+        if let pounds = barLoaderPounds {
+            soloWeight = Units.format(pounds: pounds, unit: soloUnit,
+                                      rounded: false, includeUnit: false)
+        } else if let target = currentRoutineExercise?.targetWeight,
+                  let parsed = Decimal(string: target), parsed > 0 {
+            soloWeight = Units.format(pounds: parsed, unit: soloUnit,
+                                      rounded: false, includeUnit: false)
+        } else {
+            soloWeight = ""
+        }
+        soloReps = currentRoutineExercise?.targetReps.flatMap { leadingInt($0).map(String.init) } ?? ""
+        soloRPE = 7.0
+        soloFailed = false
+    }
+
+    // Vitals 116pt — HR three-state (shared HeartRatePrimeStore semantics:
+    // dash = never asked, elapsed = asked, bpm = a strap is connected) |
+    // bar strip, or LAST TIME for non-barbell.
+    private var soloVitalsRow: some View {
+        HStack(spacing: 10) {
+            Button { if soloBLEBPM == nil { soloShowHRPairing = true } } label: {
+                VStack(spacing: 4) {
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(soloBLEBPM != nil ? theme.text.opacity(0.78) : theme.neutral700)
+                    if let bpm = soloBLEBPM {
+                        Text("\(bpm)")
+                            .font(GSFont.boldFixed(52).monospacedDigit())
+                            .foregroundStyle(theme.text)
+                    } else if HeartRatePrimeStore.hasBeenAsked, let startedAt = session?.startedAt {
+                        Text(startedAt, style: .timer)
+                            .font(GSFont.boldFixed(36).monospacedDigit())
+                            .foregroundStyle(theme.text.opacity(0.78))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.68)
+                    } else {
+                        Text("—")
+                            .font(GSFont.boldFixed(52))
+                            .foregroundStyle(theme.neutral700)
+                    }
+                }
+                .frame(maxWidth: soloIsBarbell ? 120 : .infinity, maxHeight: .infinity)
+                .background(theme.surface)
+                .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(soloBLEBPM != nil)
+
+            if soloIsBarbell {
+                soloBarCard
+            } else {
+                soloLastTimeCard
+            }
+        }
+        .frame(height: 116)
+        .padding(.horizontal, 16)
+    }
+
+    private var soloIsBarbell: Bool {
+        currentExercise?.equipment.lowercased() == "barbell"
+    }
+
+    private var soloBarCard: some View {
+        let unit = soloUnit
+        let plates: [Decimal] = {
+            if let custom = ThemeStore.shared.plateInventory, !custom.isEmpty {
+                return custom.sorted(by: >)
+            }
+            return unit.standardPlates
+        }()
+        let barInUnit: Decimal = {
+            var value = Units.fromPounds(ThemeStore.shared.barWeightLbs, to: unit)
+            var rounded = Decimal()
+            NSDecimalRound(&rounded, &value, 2, .plain)
+            return rounded
+        }()
+        let targetInUnit: Decimal = Decimal.parseUserInput(soloWeight) ?? barInUnit
+        return Button {
+            withAnimation(.easeInOut(duration: 0.18)) { soloLoaderOpen.toggle() }
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("LOAD THE BAR")
+                    .font(GSFont.bold(19, relativeTo: .body))
+                    .tracking(0.7)
+                    .foregroundStyle(theme.text.opacity(0.78))
+                Text(soloLoaderOpen ? "CLOSE" : "TAP HERE")
+                    .font(GSFont.bold(19, relativeTo: .body))
+                    .tracking(0.7)
+                    .foregroundStyle(soloLoaderOpen ? theme.accent : theme.neutral700)
+                Spacer(minLength: 4)
+                if targetInUnit > barInUnit {
+                    GSBarLoaderMini(target: targetInUnit, barWeight: barInUnit,
+                                    plates: plates, unit: unit)
+                } else {
+                    HStack(spacing: 1.5) {
+                        RoundedRectangle(cornerRadius: 1)
+                            .fill(theme.neutral500).frame(width: 4, height: 16)
+                        RoundedRectangle(cornerRadius: 1.5)
+                            .fill(theme.neutral500.opacity(0.55)).frame(height: 4)
+                        RoundedRectangle(cornerRadius: 1)
+                            .fill(theme.neutral500).frame(width: 4, height: 16)
+                    }
+                    .frame(height: 40)
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(theme.surface)
+            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(
+                soloLoaderOpen ? theme.accent : theme.neutral500.opacity(0.35), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var soloLastTimeCard: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("LAST TIME")
+                .font(GSFont.bold(19, relativeTo: .body))
+                .tracking(0.7)
+                .foregroundStyle(theme.text.opacity(0.78))
+            let summary = currentRoutineExercise.flatMap { lastTimeByExercise[$0.exerciseID] }
+            if let summary, !summary.isEmpty {
+                Spacer(minLength: 2)
+                Text(summary)
+                    .font(GSFont.bold(15, relativeTo: .subheadline).monospacedDigit())
+                    .foregroundStyle(theme.text)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+            } else {
+                Text("FIRST TIME")
+                    .font(GSFont.bold(19, relativeTo: .body))
+                    .tracking(0.7)
+                    .foregroundStyle(theme.neutral700)
+                Spacer(minLength: 2)
+                Text("NO PREVIOUS SETS")
+                    .font(GSFont.bold(11, relativeTo: .caption2))
+                    .tracking(0.5)
+                    .foregroundStyle(theme.neutral700)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(theme.surface)
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var soloLoaderExpanded: some View {
+        ScrollView {
+            BarLoaderWidget(initialPounds: barLoaderPounds,
+                            onEnteredPoundsChange: { pounds in
+                                barLoaderPounds = pounds
+                                guard let pounds else { return }
+                                soloWeight = Units.format(pounds: pounds, unit: soloUnit,
+                                                          rounded: false, includeUnit: false)
+                            })
+                .padding(14)
+        }
+        .frame(maxHeight: .infinity)
+        .background(theme.surface)
+        .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(theme.accent, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .padding(.horizontal, 16)
+    }
+
+    // Exercise widget — SETS | ROUTINE, flexible child.
+    private var soloExerciseCard: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(currentExercise?.name ?? "Exercise")
+                    .font(GSFont.bold(20, relativeTo: .title3))
+                    .foregroundStyle(theme.text)
+                    .lineLimit(1)
+                Spacer()
+            }
+            .padding(.top, 12)
+
+            if soloWidgetPage == 0 { soloSetsPage } else { soloRoutinePage }
+
+            GSDivider().padding(.horizontal, -14)
+            HStack(spacing: 0) {
+                soloPagerTab("SETS", index: 0)
+                soloPagerTab("ROUTINE", index: 1)
+            }
+            .frame(height: 44)
+        }
+        .padding(.horizontal, 14)
+        .background(theme.surface)
+        .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .padding(.horizontal, 16)
+    }
+
+    private func soloPagerTab(_ label: String, index: Int) -> some View {
+        Button { soloWidgetPage = index } label: {
+            Text(label)
+                .font(GSFont.bold(13, relativeTo: .footnote))
+                .tracking(1.0)
+                .foregroundStyle(soloWidgetPage == index ? theme.text : theme.neutral700)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(alignment: .bottom) {
+                    if soloWidgetPage == index {
+                        Capsule().fill(theme.text)
+                            .frame(height: 2)
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 4)
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var soloCurrentExerciseSets: [SetLog] {
+        guard let re = currentRoutineExercise else { return [] }
+        return loggedSets
+            .filter { $0.exerciseID == re.exerciseID }
+            .sorted { $0.loggedAt < $1.loggedAt }
+    }
+
+    private var soloSetsPage: some View {
+        let sets = soloCurrentExerciseSets
+        let target = currentRoutineExercise?.targetSets
+        let remaining = target.map { max(0, $0 - sets.count - 1) }
+        return HStack(spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 0) {
+                    ForEach(Array(sets.enumerated()), id: \.element.id) { pair in
+                        soloSetColumn(pair.element,
+                                      bright: pair.offset == sets.count - 1)
+                        Rectangle().fill(theme.divider)
+                            .frame(width: 1)
+                            .padding(.vertical, 15)
+                    }
+                    soloCurrentColumn
+                }
+            }
+            .frame(maxWidth: .infinity)
+
+            Rectangle().fill(theme.neutral500)
+                .frame(width: 1)
+                .padding(.vertical, 6)
+                .padding(.horizontal, 14)
+
+            VStack(spacing: 8) {
+                Text(remaining.map { "\($0)" } ?? "\(sets.count)")
+                    .font(GSFont.boldFixed(48).monospacedDigit())
+                    .foregroundStyle(theme.text)
+                Text(remaining != nil
+                     ? (remaining == 1 ? "SET LEFT" : "SETS LEFT")
+                     : "LOGGED")
+                    .font(GSFont.bold(10, relativeTo: .caption2))
+                    .tracking(1.4)
+                    .foregroundStyle(theme.neutral700)
+            }
+            .frame(width: 96)
+        }
+        .frame(maxHeight: .infinity)
+        .padding(.vertical, 6)
+    }
+
+    private func soloSetColumn(_ log: SetLog, bright: Bool) -> some View {
+        let color: Color = bright ? theme.text.opacity(0.78) : theme.neutral700
+        return VStack(spacing: 8) {
+            Text(log.weight.map { Units.format(pounds: $0, unit: soloUnit, rounded: false, includeUnit: false) } ?? "—")
+                .font(GSFont.boldFixed(28).monospacedDigit())
+                .foregroundStyle(color)
+            Text("× \(log.reps.map { "\($0)" } ?? "—")")
+                .font(GSFont.boldFixed(16).monospacedDigit())
+                .foregroundStyle(color)
+            if log.isFailed {
+                Text("FAIL")
+                    .font(GSFont.bold(10, relativeTo: .caption2))
+                    .tracking(0.6)
+                    .foregroundStyle(theme.text.opacity(0.78))
+                    .padding(.horizontal, 7).padding(.vertical, 2)
+                    .overlay(Capsule().strokeBorder(theme.text.opacity(0.78), lineWidth: 1))
+            } else if let rpe = log.rpe {
+                Text("RPE \(NSDecimalNumber(decimal: rpe).intValue)")
+                    .font(GSFont.bold(11, relativeTo: .caption2))
+                    .foregroundStyle(theme.neutral500)
+            }
+        }
+        .frame(width: 72)
+    }
+
+    private var soloCurrentColumn: some View {
+        VStack(spacing: 8) {
+            Text(soloWeight.isEmpty ? "—" : soloWeight)
+                .font(GSFont.boldFixed(30).monospacedDigit())
+                .foregroundStyle(theme.text)
+            Text("× \(leadingInt(soloReps).map { "\($0)" } ?? "—")")
+                .font(GSFont.boldFixed(17).monospacedDigit())
+                .foregroundStyle(theme.text)
+            Text(soloFailed ? "FAIL" : "RPE \(Int(soloRPE))")
+                .font(GSFont.bold(11, relativeTo: .caption2))
+                .foregroundStyle(theme.text.opacity(0.78))
+        }
+        .frame(width: 72)
+        .padding(.bottom, 10)
+        .overlay(alignment: .bottom) {
+            Capsule().fill(theme.accent)
+                .frame(width: 44, height: 3)
+                .padding(.bottom, 2)
+        }
+    }
+
+    private var soloRoutinePage: some View {
+        ScrollView {
+            VStack(spacing: 4) {
+                ForEach(Array(activeExercises.enumerated()), id: \.element.id) { index, re in
+                    let isCurrent = re.exerciseID == currentRoutineExercise?.exerciseID
+                    let count = loggedSets.filter { $0.exerciseID == re.exerciseID }.count
+                    HStack(spacing: 10) {
+                        Text("\(index + 1)")
+                            .font(GSFont.bold(12, relativeTo: .caption).monospacedDigit())
+                            .foregroundStyle(isCurrent ? theme.accent : theme.neutral500)
+                            .frame(width: 20, alignment: .leading)
+                        Text(exerciseName(for: re.exerciseID))
+                            .font(isCurrent ? GSFont.bold(17, relativeTo: .body)
+                                            : GSFont.body(15, relativeTo: .subheadline))
+                            .foregroundStyle(isCurrent ? theme.text : theme.neutral700)
+                            .lineLimit(1)
+                        Spacer()
+                        Text(re.targetSets.map { "\(count)/\($0)" } ?? "\(count)")
+                            .font(GSFont.bold(isCurrent ? 17 : 14, relativeTo: .subheadline).monospacedDigit())
+                            .foregroundStyle(isCurrent ? theme.text : theme.neutral700)
+                    }
+                    .frame(minHeight: isCurrent ? 30 : 22)
+                    .overlay(alignment: .bottom) {
+                        if isCurrent {
+                            Capsule().fill(theme.accent)
+                                .frame(height: 3)
+                                .padding(.leading, 30)
+                        }
+                    }
+                }
+            }
+            .padding(.vertical, 8)
+        }
+        .frame(maxHeight: .infinity)
+    }
+
+    // Entry card 220 — the clock slot shows the REST countdown while one
+    // runs (solo's rest is real state, unlike group's turn clock).
+    private var soloEntryCard: some View {
+        let target = currentRoutineExercise?.targetSets
+        let targetReps = currentRoutineExercise?.targetReps
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                Text("\(currentSetIndex)")
+                    .font(GSFont.boldFixed(24).monospacedDigit())
+                    .foregroundStyle(theme.accent)
+                if let target {
+                    Text("OF \(target)")
+                        .font(GSFont.bold(15, relativeTo: .subheadline))
+                        .tracking(1.2)
+                        .foregroundStyle(theme.neutral700)
+                        .padding(.leading, 7)
+                }
+                Spacer()
+                if let restEndAt, restEndAt > .now {
+                    Image(systemName: "timer")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(theme.accent)
+                        .padding(.trailing, 5)
+                    Text(timerInterval: .now...restEndAt, countsDown: true)
+                        .font(GSFont.bold(17, relativeTo: .body).monospacedDigit())
+                        .foregroundStyle(theme.text.opacity(0.78))
+                } else if let startedAt = session?.startedAt {
+                    Image(systemName: "timer")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(theme.neutral700)
+                        .padding(.trailing, 5)
+                    Text(startedAt, style: .timer)
+                        .font(GSFont.bold(17, relativeTo: .body).monospacedDigit())
+                        .foregroundStyle(theme.text.opacity(0.78))
+                }
+            }
+            .frame(height: 26)
+
+            Color.clear.frame(height: 10)
+            HStack(spacing: 0) {
+                Text("WEIGHT · \(soloUnit.label.uppercased())")
+                    .font(GSFont.bold(13, relativeTo: .footnote))
+                    .tracking(0.9)
+                    .foregroundStyle(theme.text.opacity(0.78))
+                    .frame(width: 229, alignment: .leading)
+                Text(targetReps.map { "REPS · \($0)" } ?? "REPS")
+                    .font(GSFont.bold(13, relativeTo: .footnote))
+                    .tracking(0.9)
+                    .foregroundStyle(theme.text.opacity(0.78))
+            }
+            .frame(height: 14)
+
+            Color.clear.frame(height: 4)
+            HStack(spacing: 0) {
+                TurnAutoRepeatButton(glyph: "minus", detail: "\(soloWeightStep)", theme: theme) { soloStepWeight(-1) }
+                    .frame(width: 52)
+                soloStepperRule
+                Text(soloWeight.isEmpty ? "—" : soloWeight)
+                    .font(GSFont.boldFixed(36).monospacedDigit())
+                    .foregroundStyle(theme.text)
+                    .frame(width: 106)
+                soloStepperRule
+                TurnAutoRepeatButton(glyph: "plus", detail: "\(soloWeightStep)", theme: theme) { soloStepWeight(1) }
+                    .frame(width: 52)
+
+                Rectangle().fill(theme.neutral500)
+                    .frame(width: 1, height: 44)
+                    .padding(.horizontal, 8)
+
+                TurnAutoRepeatButton(glyph: "minus", detail: nil, theme: theme) { soloStepReps(-1) }
+                    .frame(width: 34)
+                soloStepperRule
+                Text(leadingInt(soloReps).map { "\($0)" } ?? "—")
+                    .font(GSFont.boldFixed(36).monospacedDigit())
+                    .foregroundStyle(theme.text)
+                    .frame(maxWidth: .infinity)
+                soloStepperRule
+                TurnAutoRepeatButton(glyph: "plus", detail: nil, theme: theme) { soloStepReps(1) }
+                    .frame(width: 34)
+            }
+            .frame(height: 56)
+
+            Color.clear.frame(height: 8)
+            Text("RPE")
+                .font(GSFont.bold(18, relativeTo: .body))
+                .tracking(1.2)
+                .foregroundStyle(soloFailed ? theme.text : theme.text.opacity(0.78))
+                .frame(height: 20)
+
+            Color.clear.frame(height: 6)
+            RPESwipeTrack(value: $soloRPE, isFailed: $soloFailed, theme: theme)
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+        .background(theme.surface)
+        .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(theme.neutral700.opacity(0.55), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .padding(.horizontal, 16)
+    }
+
+    private var soloStepperRule: some View {
+        Rectangle().fill(theme.neutral700.opacity(0.55)).frame(width: 1, height: 30)
+    }
+
+    private func soloStepWeight(_ direction: Int) {
+        let current = Decimal.parseUserInput(soloWeight) ?? 0
+        let next = max(0, current + soloWeightStep * Decimal(direction))
+        var rounded = Decimal()
+        var value = next
+        NSDecimalRound(&rounded, &value, 1, .plain)
+        soloWeight = rounded == 0 ? "" : "\(rounded)"
+    }
+
+    private func soloStepReps(_ direction: Int) {
+        let current = leadingInt(soloReps) ?? 0
+        soloReps = "\(max(0, current + direction))"
+    }
+
+    // Chrome: the CTA alone — solo has no soundboard or PTT.
+    private var soloChrome: some View {
+        VStack(spacing: 0) {
+            GSDivider()
+            Color.clear.frame(height: 8)
+            Button {
+                setStartedAt = .now
+                restEndAt = nil
+                let weightPounds = Decimal.parseUserInput(soloWeight)
+                    .map { Units.toPounds($0, from: soloUnit) }
+                Task {
+                    await log(reps: leadingInt(soloReps),
+                              weight: weightPounds,
+                              rpe: Decimal(Int(soloRPE)),
+                              isFailed: soloFailed,
+                              note: nil)
+                }
+            } label: {
+                ZStack {
+                    if soloFailed {
+                        RoundedRectangle(cornerRadius: 16).fill(theme.surface)
+                        RoundedRectangle(cornerRadius: 16).strokeBorder(theme.text, lineWidth: 1.5)
+                    } else {
+                        RoundedRectangle(cornerRadius: 16).fill(theme.accent)
+                    }
+                    VStack(spacing: 2) {
+                        Text(soloFailed ? "LOG FAILED SET \(currentSetIndex)" : "LOG SET \(currentSetIndex)")
+                            .font(GSFont.bold(17, relativeTo: .body))
+                            .tracking(0.9)
+                        Text(soloCTAReadback)
+                            .font(GSFont.bold(11, relativeTo: .caption2).monospacedDigit())
+                            .opacity(0.8)
+                    }
+                    .foregroundStyle(soloFailed ? theme.text : theme.bg)
+                }
+                .frame(height: 64)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(leadingInt(soloReps) == nil && !soloFailed)
+            .gsSpotlightTarget(.workout)
+            .padding(.horizontal, 16)
+            Color.clear.frame(height: 10)
+        }
+        .background(theme.bg)
+    }
+
+    private var soloCTAReadback: String {
+        if leadingInt(soloReps) == nil && !soloFailed { return "ENTER REPS TO LOG" }
+        let weight = soloWeight.isEmpty ? "—" : soloWeight
+        let reps = leadingInt(soloReps).map { "\($0)" } ?? "—"
+        let rpe = soloFailed ? "RPE 10 · MISS" : "RPE \(Int(soloRPE))"
+        return "\(weight) \(soloUnit.label) × \(reps) · \(rpe)"
+    }
+
+    private var soloScrollBody: some View {
         ZStack(alignment: .bottom) {
             // Main scrollable content
             ScrollView {
