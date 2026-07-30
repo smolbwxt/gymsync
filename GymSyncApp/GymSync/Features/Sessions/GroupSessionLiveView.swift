@@ -496,6 +496,32 @@ struct GroupSessionLiveView: View {
     /// One-shot prime, raised at session start when we have never asked.
     @State private var showHRPrime = false
 
+    /// Prior-performance state (2026-07-30). ONE fetch feeds two features:
+    /// the LAST TIME card (shown where a non-barbell exercise has no bar to
+    /// load) and the prefill ladder's rep-goal rung, which needs the same
+    /// history. Best-effort — absence just means fewer ladder rungs fire.
+    @State private var priorSets: [SetLog] = []
+    @State private var activeEnrollment: ProgramEnrollment?
+
+    /// This user's qualifying history for the current exercise, oldest
+    /// first: prior sessions plus anything already logged in this one.
+    private var turnExerciseHistory: [SetLog] {
+        guard let ex = currentExerciseForSheet else { return [] }
+        return (priorSets + myTurnSets)
+            .filter { $0.exerciseID == ex.id }
+            .sorted { $0.loggedAt < $1.loggedAt }
+    }
+
+    /// The most recent completed set for the current exercise — the LAST
+    /// TIME card's content. Excludes this session's own sets: "last time"
+    /// means a previous outing, not the set you did four minutes ago.
+    private var lastTimeSet: SetLog? {
+        guard let ex = currentExerciseForSheet else { return nil }
+        return priorSets
+            .filter { $0.exerciseID == ex.id && !$0.isPenalty }
+            .max { $0.loggedAt < $1.loggedAt }
+    }
+
     private var selfHeartRate: (bpm: Int, zone: HeartRateZone?)? {
         guard let selfID else { return nil }
         return heartRateFor(selfID)
@@ -702,8 +728,15 @@ struct GroupSessionLiveView: View {
                 }
             }())
 
+            // The slot NEVER goes empty: a barbell exercise gets the loader,
+            // anything else gets LAST TIME. "Load the bar" answers "what do
+            // I put on the bar"; for dumbbell/bodyweight work the same job
+            // is answered by "what did I do last time". A collapsing row
+            // would shift the whole page when the movement changes.
             if isBarbellTurn {
                 turnBarCard
+            } else {
+                turnLastTimeCard
             }
         }
         .frame(height: 116)
@@ -712,6 +745,20 @@ struct GroupSessionLiveView: View {
             NavigationStack { HeartRateMonitorView() }
         }
         .sheet(isPresented: $showHRPrime) { turnHRPrimeSheet }
+        // Prior performance for the CURRENT exercise. Re-runs when the
+        // exercise changes; both consumers (LAST TIME card, prefill ladder)
+        // read the same state so they can never disagree.
+        .task(id: currentExerciseForSheet?.id) {
+            guard let selfID, let ex = currentExerciseForSheet else { return }
+            // exerciseHistory already excludes failed/penalty and orders
+            // newest-first — the same qualifying filter the rep-goal
+            // projection and program baselines use.
+            priorSets = (try? await SessionRepository.exerciseHistory(
+                userID: selfID, exerciseID: ex.id, limit: 30)) ?? []
+            if activeEnrollment == nil {
+                activeEnrollment = try? await ProgramRepository.active()
+            }
+        }
         .task {
             // Ask ONCE, in context — at the moment the feature is about to
             // deliver value, not during onboarding. iOS shows the HealthKit
@@ -779,6 +826,64 @@ struct GroupSessionLiveView: View {
         currentExerciseForSheet?.equipment.lowercased() == "barbell"
     }
 
+    /// LAST TIME — the non-barbell twin of the loader card. Same 116pt slot,
+    /// same "give me my number before I start" job, different source.
+    private var turnLastTimeCard: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("LAST TIME")
+                .font(GSFont.bold(19, relativeTo: .body))
+                .tracking(0.7)
+                .foregroundStyle(theme.text.opacity(0.78))
+            if let last = lastTimeSet {
+                Text("\(last.weight.map { Units.format(pounds: $0, unit: turnUnit, rounded: false, includeUnit: false) } ?? "—") × \(last.reps.map { "\($0)" } ?? "—")")
+                    .font(GSFont.boldFixed(30).monospacedDigit())
+                    .foregroundStyle(theme.text)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Spacer(minLength: 2)
+                Text(turnLastTimeMeta(last))
+                    .font(GSFont.bold(11, relativeTo: .caption2))
+                    .tracking(0.5)
+                    .foregroundStyle(theme.neutral700)
+                    .lineLimit(1)
+            } else {
+                // First outing on this movement — quietly motivating, and
+                // honest: there is nothing to report, not a hidden failure.
+                Text("FIRST TIME")
+                    .font(GSFont.bold(19, relativeTo: .body))
+                    .tracking(0.7)
+                    .foregroundStyle(theme.neutral700)
+                Spacer(minLength: 2)
+                Text("NO PREVIOUS SETS")
+                    .font(GSFont.bold(11, relativeTo: .caption2))
+                    .tracking(0.5)
+                    .foregroundStyle(theme.neutral700)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(theme.surface)
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    /// "RPE 8 · 6 DAYS AGO" — whichever parts are real.
+    private func turnLastTimeMeta(_ log: SetLog) -> String {
+        var parts: [String] = []
+        if let rpe = log.rpe {
+            parts.append("RPE \(NSDecimalNumber(decimal: rpe).intValue)")
+        }
+        let days = Calendar.current.dateComponents(
+            [.day], from: Calendar.current.startOfDay(for: log.loggedAt),
+            to: Calendar.current.startOfDay(for: .now)).day ?? 0
+        switch days {
+        case ..<1: parts.append("TODAY")
+        case 1:    parts.append("YESTERDAY")
+        default:   parts.append("\(days) DAYS AGO")
+        }
+        return parts.joined(separator: " · ")
+    }
+
     /// Bar/plate config shared by the strip and the expanded widget —
     /// identical derivation to the (spectating-only) `barLoaderCard`.
     private var turnBarConfig: (unit: WeightUnit, plates: [Decimal], barInUnit: Decimal, prefill: Decimal?, targetInUnit: Decimal) {
@@ -795,11 +900,23 @@ struct GroupSessionLiveView: View {
             NSDecimalRound(&rounded, &value, 2, .plain)
             return rounded
         }()
+        // Prefill ladder (user, 2026-07-30: "prepopulated with what the
+        // estimated weight should be based on rep goal and campaign
+        // modifier"): campaign % → routine target → inverse-Epley rep goal
+        // → last set → nothing. See WorkingWeight for the full contract;
+        // it never invents a number.
         let prefill: Decimal? = {
-            if let target = currentRoutineExercise?.targetWeight,
-               let parsed = Decimal(string: target), parsed > 0 { return parsed }
-            guard let selfID, let ex = currentExerciseForSheet else { return nil }
-            return allSessionSets.first { $0.userID == selfID && $0.exerciseID == ex.id && !$0.isFailed }?.weight
+            guard let ex = currentExerciseForSheet else { return nil }
+            let history = turnExerciseHistory
+            return WorkingWeight.suggest(
+                exerciseID: ex.id,
+                targetReps: currentRoutineExercise?.targetReps.flatMap { leadingInt($0) },
+                routineTargetPounds: currentRoutineExercise?.targetWeight
+                    .flatMap { Decimal(string: $0) },
+                history: history,
+                lastSetPounds: history.last?.weight,
+                enrollment: activeEnrollment
+            )?.pounds
         }()
         let targetInUnit = prefill.map { Units.fromPounds($0, to: unit) } ?? barInUnit
         return (unit, plates, barInUnit, prefill, targetInUnit)
