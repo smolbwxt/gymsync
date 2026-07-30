@@ -467,10 +467,694 @@ struct GroupSessionLiveView: View {
         _liveSession = State(initialValue: session)
     }
 
+    // MARK: - Redesigned my-turn fixed page (2026-07-30, final-proof.html)
+    //
+    // The my-turn state is a FIXED, non-scrolling page: fixed control heights,
+    // ONE flexible child (the exercise card) absorbing device slack. Four
+    // widgets — heart rate, load-the-bar, exercise (SETS|ROUTINE pager),
+    // entry — over a compact pinned chrome (56pt sound rail with the compact
+    // PTT mic + 64pt CTA). The spectating state keeps the old scroll layout
+    // and old dock untouched (sister-page round).
+    //
+    // Recorded v1 deviations from final-proof (each deliberate, none silent):
+    //   - CTA read-back omits "→ <next lifter>" (no verified next-name source
+    //     in my-turn state yet).
+    //   - Non-barbell exercises: the bar card hides and HR fills the row
+    //     (the LAST TIME card is a follow-up).
+    //   - ROUTINE page rows show logged-set counts without "/target" (per-
+    //     exercise targets aren't wired here yet).
+    //   - Stepper long-press auto-repeat deferred.
+    //   - Transmit grows the chrome momentarily (PTTDockRow's hero is the
+    //     non-compact experience; compact mode shows fill + rings only).
+
+    /// SETS (0) | ROUTINE (1) — the exercise card's footer pager.
+    @State private var turnWidgetPage = 0
+
+    private var myTurnActive: Bool {
+        isMyTurn && !(participants.isEmpty && rosterLoadFailed)
+    }
+
+    /// My non-penalty sets for the current exercise, oldest first.
+    /// `allSessionSets` (uncapped, logged_at ASC) — NEVER `feedSets` (30-row
+    /// cap) and NEVER `log.setIndex` (derived from the capped array).
+    private var myTurnSets: [SetLog] {
+        guard let selfID, let ex = currentExerciseForSheet else { return [] }
+        return allSessionSets.filter {
+            $0.userID == selfID && $0.exerciseID == ex.id && !$0.isPenalty
+        }
+    }
+
+    private var turnUnit: WeightUnit { ThemeStore.shared.weightUnit }
+
+    /// Weight step in the DISPLAY unit: the smallest loadable pair.
+    private var turnWeightStep: Decimal { turnUnit == .kg ? Decimal(2.5) : 5 }
+
+    private func stepTurnWeight(_ direction: Int) {
+        let current = Decimal.parseUserInput(logWeight) ?? 0
+        let next = max(0, current + turnWeightStep * Decimal(direction))
+        var rounded = Decimal()
+        var value = next
+        NSDecimalRound(&rounded, &value, 1, .plain)
+        logWeight = rounded == 0 ? "" : "\(rounded)"
+    }
+
+    private func stepTurnReps(_ direction: Int) {
+        let current = leadingInt(logReps) ?? 0
+        logReps = "\(max(0, current + direction))"
+    }
+
+    private var myTurnFixedPage: some View {
+        VStack(spacing: 0) {
+            turnHeaderRail
+            GSDivider()
+            Color.clear.frame(height: 10)
+            turnVitalsRow
+            Color.clear.frame(height: 12)
+            if showBarLoader {
+                // The full shipped widget takes over the widget region in
+                // place — nothing above or below moves, per the approved
+                // loader-open frame.
+                turnLoaderExpanded
+            } else {
+                turnExerciseCard
+                    .frame(maxHeight: .infinity)
+                Color.clear.frame(height: 12)
+                turnEntryCard
+            }
+            Color.clear.frame(height: 8)
+        }
+        .padding(.horizontal, 0)
+        .background(theme.bg)
+    }
+
+    // Header rail 44pt: ✕ · session clock · rule · routine name · voice/chat · count
+    private var turnHeaderRail: some View {
+        HStack(spacing: 0) {
+            Button { showEndConfirmation = true } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(theme.neutral700)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Leave session")
+
+            if let startedAt = liveSession.startedAt {
+                Text(startedAt, style: .timer)
+                    .font(GSFont.bold(12, relativeTo: .caption).monospacedDigit())
+                    .foregroundStyle(theme.neutral700)
+                    .accessibilityLabel("Session time")
+                Rectangle().fill(theme.divider)
+                    .frame(width: 2, height: 14)
+                    .padding(.horizontal, 8)
+            }
+
+            Text((routineName ?? "Session").uppercased())
+                .font(GSFont.bold(10, relativeTo: .caption2))
+                .tracking(0.9)
+                .foregroundStyle(theme.neutral700)
+                .lineLimit(1)
+
+            Spacer(minLength: 8)
+
+            if case .connecting = VoiceRoomService.shared.state {
+                GSConnectingVoicePill()
+            }
+            if isVoiceConnected {
+                Button { showVoiceMixerSheet = true } label: {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(theme.neutral700)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            Button { showChatSheet = true } label: {
+                Image(systemName: "bubble.left.and.bubble.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(theme.neutral700)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            HStack(spacing: 4) {
+                Text("\(participants.count)")
+                    .font(GSFont.bold(11, relativeTo: .caption2).monospacedDigit())
+                Image(systemName: "person.2.fill")
+                    .font(.system(size: 14, weight: .semibold))
+            }
+            .foregroundStyle(theme.neutral700)
+            .frame(width: 56, height: 44)
+        }
+        .padding(.horizontal, 6)
+        .frame(height: 44)
+    }
+
+    // Vitals 116pt: HR card 120w (52pt numeral, nothing else) | bar strip.
+    private var turnVitalsRow: some View {
+        HStack(spacing: 10) {
+            VStack(spacing: 4) {
+                Image(systemName: "heart.fill")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(theme.text.opacity(0.78))
+                if let selfID, let mine = heartRateFor(selfID) {
+                    Text("\(mine.bpm)")
+                        .font(GSFont.boldFixed(52).monospacedDigit())
+                        .foregroundStyle(theme.text)
+                } else {
+                    Text("—")
+                        .font(GSFont.boldFixed(52))
+                        .foregroundStyle(theme.neutral700)
+                }
+            }
+            .frame(width: isBarbellTurn ? 120 : nil)
+            .frame(maxWidth: isBarbellTurn ? 120 : .infinity, maxHeight: .infinity)
+            .background(theme.surface)
+            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Heart rate")
+            .accessibilityValue({
+                if let selfID, let mine = heartRateFor(selfID) {
+                    return "\(mine.bpm) beats per minute"
+                }
+                return "No signal"
+            }())
+
+            if isBarbellTurn {
+                turnBarCard
+            }
+        }
+        .frame(height: 116)
+        .padding(.horizontal, 16)
+    }
+
+    private var isBarbellTurn: Bool {
+        currentExerciseForSheet?.equipment.lowercased() == "barbell"
+    }
+
+    /// Bar/plate config shared by the strip and the expanded widget —
+    /// identical derivation to the (spectating-only) `barLoaderCard`.
+    private var turnBarConfig: (unit: WeightUnit, plates: [Decimal], barInUnit: Decimal, prefill: Decimal?, targetInUnit: Decimal) {
+        let unit = turnUnit
+        let plates: [Decimal] = {
+            if let custom = ThemeStore.shared.plateInventory, !custom.isEmpty {
+                return custom.sorted(by: >)
+            }
+            return unit.standardPlates
+        }()
+        let barInUnit: Decimal = {
+            var value = Units.fromPounds(ThemeStore.shared.barWeightLbs, to: unit)
+            var rounded = Decimal()
+            NSDecimalRound(&rounded, &value, 2, .plain)
+            return rounded
+        }()
+        let prefill: Decimal? = {
+            if let target = currentRoutineExercise?.targetWeight,
+               let parsed = Decimal(string: target), parsed > 0 { return parsed }
+            guard let selfID, let ex = currentExerciseForSheet else { return nil }
+            return allSessionSets.first { $0.userID == selfID && $0.exerciseID == ex.id && !$0.isFailed }?.weight
+        }()
+        let targetInUnit = prefill.map { Units.fromPounds($0, to: unit) } ?? barInUnit
+        return (unit, plates, barInUnit, prefill, targetInUnit)
+    }
+
+    private var turnBarCard: some View {
+        let cfg = turnBarConfig
+        return Button {
+            withAnimation(.easeInOut(duration: 0.18)) { showBarLoader.toggle() }
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("LOAD THE BAR")
+                    .font(GSFont.bold(19, relativeTo: .body))
+                    .tracking(0.7)
+                    .foregroundStyle(theme.text.opacity(0.78))
+                Text(showBarLoader ? "CLOSE" : "TAP HERE")
+                    .font(GSFont.bold(19, relativeTo: .body))
+                    .tracking(0.7)
+                    .foregroundStyle(showBarLoader ? theme.accent : theme.neutral700)
+                Spacer(minLength: 4)
+                // The shipped illustration, untouched. Suppressed at/below
+                // bar weight — an empty Mini draws bare collar+sleeve that
+                // reads as a rendering bug.
+                if cfg.targetInUnit > cfg.barInUnit {
+                    GSBarLoaderMini(target: cfg.targetInUnit, barWeight: cfg.barInUnit,
+                                    plates: cfg.plates, unit: cfg.unit)
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(theme.surface)
+            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(
+                showBarLoader ? theme.accent : theme.neutral500.opacity(0.35), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Loader open: the full shipped BarLoaderWidget owns the whole widget
+    /// region; dialled weight lands in the entry field in the display unit.
+    private var turnLoaderExpanded: some View {
+        let cfg = turnBarConfig
+        return ScrollView {
+            BarLoaderWidget(initialPounds: cfg.prefill,
+                            onEnteredPoundsChange: { pounds in
+                                guard let pounds else { return }
+                                logWeight = Units.format(pounds: pounds, unit: cfg.unit,
+                                                         rounded: false, includeUnit: false)
+                            })
+                .padding(14)
+        }
+        .frame(maxHeight: .infinity)
+        .background(theme.surface)
+        .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(theme.accent, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .padding(.horizontal, 16)
+    }
+
+    // Exercise card: title, borderless set columns + SET LEFT, SETS|ROUTINE pager.
+    private var turnExerciseCard: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text(currentExerciseForSheet?.name ?? "Exercise")
+                    .font(GSFont.bold(20, relativeTo: .title3))
+                    .foregroundStyle(theme.text)
+                    .lineLimit(1)
+                Spacer()
+            }
+            .padding(.top, 12)
+
+            if turnWidgetPage == 0 { turnSetsPage } else { turnRoutinePage }
+
+            GSDivider().padding(.horizontal, -14)
+            HStack(spacing: 0) {
+                turnPagerTab("SETS", index: 0)
+                turnPagerTab("ROUTINE", index: 1)
+            }
+            .frame(height: 44)
+        }
+        .padding(.horizontal, 14)
+        .background(theme.surface)
+        .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .padding(.horizontal, 16)
+    }
+
+    private func turnPagerTab(_ label: String, index: Int) -> some View {
+        Button { turnWidgetPage = index } label: {
+            Text(label)
+                .font(GSFont.bold(13, relativeTo: .footnote))
+                .tracking(1.0)
+                .foregroundStyle(turnWidgetPage == index ? theme.text : theme.neutral700)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .overlay(alignment: .bottom) {
+                    if turnWidgetPage == index {
+                        Capsule().fill(theme.text)
+                            .frame(height: 2)
+                            .padding(.horizontal, 12)
+                            .padding(.bottom, 4)
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// SETS page: logged columns (horizontal scroll past 4) · rule · N SET LEFT.
+    private var turnSetsPage: some View {
+        let sets = myTurnSets
+        let target = currentRoutineExercise?.targetSets
+        let remaining = target.map { max(0, $0 - sets.count - 1) }
+        return HStack(spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 0) {
+                    ForEach(Array(sets.enumerated()), id: \.element.id) { pair in
+                        turnSetColumn(pair.element,
+                                      brightness: pair.offset == sets.count - 1 ? 0.78 : nil)
+                        Rectangle().fill(theme.divider)
+                            .frame(width: 1)
+                            .padding(.vertical, 15)
+                    }
+                    turnCurrentColumn
+                }
+            }
+            .frame(maxWidth: .infinity)
+
+            Rectangle().fill(theme.neutral500)
+                .frame(width: 1)
+                .padding(.vertical, 6)
+                .padding(.horizontal, 14)
+
+            VStack(spacing: 8) {
+                Text(remaining.map { "\($0)" } ?? "\(sets.count)")
+                    .font(GSFont.boldFixed(48).monospacedDigit())
+                    .foregroundStyle(theme.text)
+                Text(remaining != nil
+                     ? (remaining == 1 ? "SET LEFT" : "SETS LEFT")
+                     : "LOGGED")
+                    .font(GSFont.bold(10, relativeTo: .caption2))
+                    .tracking(1.4)
+                    .foregroundStyle(theme.neutral700)
+            }
+            .frame(width: 96)
+        }
+        .frame(maxHeight: .infinity)
+        .padding(.vertical, 6)
+    }
+
+    private func turnSetColumn(_ log: SetLog, brightness: CGFloat?) -> some View {
+        let color: Color = brightness != nil ? theme.text.opacity(0.78) : theme.neutral700
+        return VStack(spacing: 8) {
+            Text(log.weight.map { Units.format(pounds: $0, unit: turnUnit, rounded: false, includeUnit: false) } ?? "—")
+                .font(GSFont.boldFixed(28).monospacedDigit())
+                .foregroundStyle(color)
+            Text("× \(log.reps.map { "\($0)" } ?? "—")")
+                .font(GSFont.boldFixed(16).monospacedDigit())
+                .foregroundStyle(color)
+            if log.isFailed {
+                Text("FAIL")
+                    .font(GSFont.bold(10, relativeTo: .caption2))
+                    .tracking(0.6)
+                    .foregroundStyle(theme.text.opacity(0.78))
+                    .padding(.horizontal, 7).padding(.vertical, 2)
+                    .overlay(Capsule().strokeBorder(theme.text.opacity(0.78), lineWidth: 1))
+            } else if let rpe = log.rpe {
+                Text("RPE \(NSDecimalNumber(decimal: rpe).intValue)")
+                    .font(GSFont.bold(11, relativeTo: .caption2))
+                    .foregroundStyle(theme.neutral500)
+            }
+        }
+        .frame(width: 72)
+    }
+
+    /// The live column mirrors the entry card and carries the accent underline.
+    private var turnCurrentColumn: some View {
+        VStack(spacing: 8) {
+            Text(logWeight.isEmpty ? "—" : logWeight)
+                .font(GSFont.boldFixed(30).monospacedDigit())
+                .foregroundStyle(theme.text)
+            Text("× \(leadingInt(logReps).map { "\($0)" } ?? "—")")
+                .font(GSFont.boldFixed(17).monospacedDigit())
+                .foregroundStyle(theme.text)
+            Text(logIsFailed ? "FAIL" : "RPE \(Int(logRPE))")
+                .font(GSFont.bold(11, relativeTo: .caption2))
+                .foregroundStyle(theme.text.opacity(0.78))
+        }
+        .frame(width: 72)
+        .padding(.bottom, 10)
+        .overlay(alignment: .bottom) {
+            Capsule().fill(theme.accent)
+                .frame(width: 44, height: 3)
+                .padding(.bottom, 2)
+        }
+    }
+
+    /// ROUTINE page: every session exercise, logged count, underline on current.
+    private var turnRoutinePage: some View {
+        ScrollView {
+            VStack(spacing: 4) {
+                ForEach(Array(allExercises.enumerated()), id: \.element.id) { index, ex in
+                    let isCurrent = ex.id == currentExerciseForSheet?.id
+                    let count = allSessionSets.filter {
+                        $0.userID == selfID && $0.exerciseID == ex.id && !$0.isPenalty
+                    }.count
+                    HStack(spacing: 10) {
+                        Text("\(index + 1)")
+                            .font(GSFont.bold(12, relativeTo: .caption).monospacedDigit())
+                            .foregroundStyle(isCurrent ? theme.accent : theme.neutral500)
+                            .frame(width: 20, alignment: .leading)
+                        Text(ex.name)
+                            .font(isCurrent ? GSFont.bold(17, relativeTo: .body)
+                                            : GSFont.body(15, relativeTo: .subheadline))
+                            .foregroundStyle(isCurrent ? theme.text : theme.neutral700)
+                            .lineLimit(1)
+                        Spacer()
+                        Text("\(count)")
+                            .font(GSFont.bold(isCurrent ? 17 : 14, relativeTo: .subheadline).monospacedDigit())
+                            .foregroundStyle(isCurrent ? theme.text : theme.neutral700)
+                    }
+                    .frame(minHeight: isCurrent ? 30 : 22)
+                    .overlay(alignment: .bottom) {
+                        if isCurrent {
+                            Capsule().fill(theme.accent)
+                                .frame(height: 3)
+                                .padding(.leading, 30)
+                        }
+                    }
+                }
+            }
+            .padding(.vertical, 8)
+        }
+        .frame(maxHeight: .infinity)
+    }
+
+    // Entry card 220pt: SET N OF M + turn clock · labels · steppers · RPE track.
+    private var turnEntryCard: some View {
+        let setNumber = myTurnSets.count + 1
+        let target = currentRoutineExercise?.targetSets
+        let targetReps = currentRoutineExercise?.targetReps
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                Text("\(setNumber)")
+                    .font(GSFont.boldFixed(24).monospacedDigit())
+                    .foregroundStyle(theme.accent)
+                if let target {
+                    Text("OF \(target)")
+                        .font(GSFont.bold(15, relativeTo: .subheadline))
+                        .tracking(1.2)
+                        .foregroundStyle(theme.neutral700)
+                        .padding(.leading, 7)
+                }
+                Spacer()
+                Image(systemName: "timer")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(theme.neutral700)
+                    .padding(.trailing, 5)
+                if let ts = liveSession.currentTurnStartedAt {
+                    Text(ts, style: .timer)
+                        .font(GSFont.bold(17, relativeTo: .body).monospacedDigit())
+                        .foregroundStyle(theme.text.opacity(0.78))
+                } else {
+                    Text("—")
+                        .font(GSFont.bold(17, relativeTo: .body))
+                        .foregroundStyle(theme.neutral700)
+                }
+            }
+            .frame(height: 26)
+
+            Color.clear.frame(height: 10)
+            HStack(spacing: 0) {
+                Text("WEIGHT · \(turnUnit.label.uppercased())")
+                    .font(GSFont.bold(13, relativeTo: .footnote))
+                    .tracking(0.9)
+                    .foregroundStyle(theme.text.opacity(0.78))
+                    .frame(width: 229, alignment: .leading)
+                Text(targetReps.map { "REPS · \($0)" } ?? "REPS")
+                    .font(GSFont.bold(13, relativeTo: .footnote))
+                    .tracking(0.9)
+                    .foregroundStyle(theme.text.opacity(0.78))
+            }
+            .frame(height: 14)
+
+            Color.clear.frame(height: 4)
+            HStack(spacing: 0) {
+                turnStepButton("minus", detail: "\(turnWeightStep)") { stepTurnWeight(-1) }
+                    .frame(width: 52)
+                stepperRule
+                Text(logWeight.isEmpty ? "—" : logWeight)
+                    .font(GSFont.boldFixed(36).monospacedDigit())
+                    .foregroundStyle(theme.text)
+                    .frame(width: 106)
+                stepperRule
+                turnStepButton("plus", detail: "\(turnWeightStep)") { stepTurnWeight(1) }
+                    .frame(width: 52)
+
+                Rectangle().fill(theme.neutral500)
+                    .frame(width: 1, height: 44)
+                    .padding(.horizontal, 8)
+
+                turnStepButton("minus", detail: nil) { stepTurnReps(-1) }
+                    .frame(width: 34)
+                stepperRule
+                Text(leadingInt(logReps).map { "\($0)" } ?? "—")
+                    .font(GSFont.boldFixed(36).monospacedDigit())
+                    .foregroundStyle(theme.text)
+                    .frame(maxWidth: .infinity)
+                stepperRule
+                turnStepButton("plus", detail: nil) { stepTurnReps(1) }
+                    .frame(width: 34)
+            }
+            .frame(height: 56)
+
+            Color.clear.frame(height: 8)
+            Text("RPE")
+                .font(GSFont.bold(18, relativeTo: .body))
+                .tracking(1.2)
+                .foregroundStyle(logIsFailed ? theme.text : theme.text.opacity(0.78))
+                .frame(height: 20)
+
+            Color.clear.frame(height: 6)
+            RPESwipeTrack(value: $logRPE, isFailed: $logIsFailed, theme: theme)
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+        .background(theme.surface)
+        .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(theme.neutral700.opacity(0.55), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .padding(.horizontal, 16)
+    }
+
+    private var stepperRule: some View {
+        Rectangle().fill(theme.neutral700.opacity(0.55)).frame(width: 1, height: 30)
+    }
+
+    private func turnStepButton(_ glyph: String, detail: String?, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 3) {
+                Image(systemName: glyph)
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundStyle(theme.text.opacity(0.78))
+                if let detail {
+                    Text(detail)
+                        .font(GSFont.bold(15, relativeTo: .subheadline).monospacedDigit())
+                        .foregroundStyle(theme.neutral700)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 56)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // Pinned chrome 152pt: sound rail (favourites + ALL + compact mic) + CTA.
+    private var turnChrome: some View {
+        VStack(spacing: 0) {
+            GSDivider()
+            Color.clear.frame(height: 6)
+            HStack(spacing: 6) {
+                ForEach(dockSounds.prefix(4)) { sound in
+                    Button { Task { await tapSound(slug: sound.slug) } } label: {
+                        VStack(spacing: 2) {
+                            Text(sound.icon ?? "🔊").font(.system(size: 20))
+                            Text(sound.label)
+                                .font(GSFont.bold(9, relativeTo: .caption2))
+                                .foregroundStyle(theme.neutral700)
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 56)
+                        .background(theme.surface)
+                        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(theme.neutral700.opacity(0.45), lineWidth: 1))
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                Button { showSoundLibrary = true } label: {
+                    VStack(spacing: 2) {
+                        Image(systemName: "square.grid.2x2")
+                            .font(.system(size: 15, weight: .semibold))
+                        Text("ALL")
+                            .font(GSFont.bold(9, relativeTo: .caption2))
+                    }
+                    .foregroundStyle(theme.neutral700)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 56)
+                    .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(
+                        theme.neutral700, style: StrokeStyle(lineWidth: 1, dash: [3, 3])))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open sound library")
+
+                Rectangle().fill(theme.neutral500)
+                    .frame(width: 2, height: 24)
+                    .padding(.horizontal, 6)
+
+                if isVoiceEligible {
+                    PTTDockRow(otherParticipantNames: otherParticipantNames, compact: true)
+                }
+            }
+            .padding(.horizontal, 16)
+            Color.clear.frame(height: 6)
+
+            Button { commitInlineLog() } label: {
+                ZStack {
+                    if logIsFailed {
+                        RoundedRectangle(cornerRadius: 16).fill(theme.surface)
+                        RoundedRectangle(cornerRadius: 16).strokeBorder(theme.text, lineWidth: 1.5)
+                    } else {
+                        RoundedRectangle(cornerRadius: 16).fill(theme.accent)
+                    }
+                    VStack(spacing: 2) {
+                        if isLoggingSet {
+                            Text("LOGGING…")
+                                .font(GSFont.bold(17, relativeTo: .body))
+                                .tracking(0.9)
+                        } else {
+                            Text(logIsFailed ? "LOG FAIL & PASS" : "LOG SET & PASS")
+                                .font(GSFont.bold(17, relativeTo: .body))
+                                .tracking(0.9)
+                            Text(turnCTAReadback)
+                                .font(GSFont.bold(11, relativeTo: .caption2).monospacedDigit())
+                                .opacity(0.8)
+                        }
+                    }
+                    .foregroundStyle(logIsFailed ? theme.text : theme.bg)
+                    HStack {
+                        Spacer()
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(logIsFailed ? theme.text : theme.bg)
+                            .padding(.trailing, 16)
+                    }
+                }
+                .frame(height: 64)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(isLoggingSet || (leadingInt(logReps) == nil && !logIsFailed))
+            .padding(.horizontal, 16)
+            Color.clear.frame(height: 10)
+        }
+        .background(theme.bg)
+        .sheet(isPresented: $showSoundLibrary) {
+            SoundLibrarySheet(
+                catalog: soundCatalog,
+                favorites: soundFavorites,
+                onFavoritesChanged: { updated in
+                    soundFavorites = updated
+                    Task { try? await SoundboardFavoritesRepository.set(updated) }
+                },
+                onSend: { slug in Task { await tapSound(slug: slug) } }
+            )
+        }
+    }
+
+    private var turnCTAReadback: String {
+        if leadingInt(logReps) == nil && !logIsFailed { return "ENTER REPS TO LOG" }
+        let weight = logWeight.isEmpty ? "—" : logWeight
+        let reps = leadingInt(logReps).map { "\($0)" } ?? "—"
+        let rpe = logIsFailed ? "RPE 10 · MISS" : "RPE \(Int(logRPE))"
+        return "\(weight) \(turnUnit.label) × \(reps) · \(rpe)"
+    }
+
     // MARK: - Body
 
     var body: some View {
         ZStack(alignment: .bottom) {
+            // Redesign 2026-07-30: my-turn is the FIXED page (no scroll);
+            // spectating (and the roster-failure state) keep the original
+            // scroll layout untouched until the sister-page round.
+            if myTurnActive {
+                myTurnFixedPage
+            } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
 
@@ -567,6 +1251,7 @@ struct GroupSessionLiveView: View {
                 }
             }
             .background(theme.bg)
+            }
 
             // ── PR CELEBRATION (full-screen, user-dismissed — p29) ─────────
             if isPROverlay {
@@ -607,6 +1292,12 @@ struct GroupSessionLiveView: View {
         // safeAreaInset alone.
         .gsHidesDock()
         .safeAreaInset(edge: .bottom) {
+            // Redesign 2026-07-30: my-turn gets the compact 152pt chrome
+            // (56pt sound rail + compact PTT mic + 64pt CTA). Spectating
+            // keeps the original dock composition below, untouched.
+            if myTurnActive {
+                turnChrome
+            } else {
             VStack(spacing: 0) {
                 // ── VOICE DEGRADED BANNER ────────────────────────────────
                 // "Inserted above the dock" per Dossier §A.2's live-session
@@ -643,6 +1334,7 @@ struct GroupSessionLiveView: View {
                 // same confirmation; the proof's live screens never show a second
                 // "End Session" affordance alongside the primary action.)
                 bottomActionBar
+            }
             }
         }
         // Incoming-sound transient overlay (inline, above dock area)

@@ -1290,8 +1290,20 @@ struct PTTDockRow: View {
     /// listening-names line, it never blocks the hero itself from showing.
     let otherParticipantNames: [String]
 
-    init(otherParticipantNames: [String] = []) {
+    /// Live-redesign (2026-07-30): compact mode renders ONLY the mic circle —
+    /// no divider, no status bar, no transmit hero — so the mic can sit as
+    /// the last tile of the my-turn page's 56pt sound rail. LAYOUT ONLY: the
+    /// press state machine (pressGeneration guards, hold/tap arbitration,
+    /// stranded-mic recovery) is untouched, and `compact` is fixed per call
+    /// site so the gesture-bearing view's structural identity never changes
+    /// at runtime (see `interactiveRow`'s identity doc comment). While
+    /// transmitting, compact feedback is the mic's own accent fill + rings;
+    /// the full hero remains the non-compact experience.
+    let compact: Bool
+
+    init(otherParticipantNames: [String] = [], compact: Bool = false) {
         self.otherParticipantNames = otherParticipantNames
+        self.compact = compact
     }
 
     /// Monotonic per-press identity. Bumped on every press-down; captured by
@@ -1354,6 +1366,14 @@ struct PTTDockRow: View {
     private var voice: VoiceRoomService { .shared }
 
     var body: some View {
+        if compact {
+            compactMic
+        } else {
+            fullDock
+        }
+    }
+
+    private var fullDock: some View {
         VStack(spacing: 0) {
             GSDivider()
             // Transmit hero (Phase O Task 5 item 5) — shown above the dock
@@ -1379,6 +1399,33 @@ struct PTTDockRow: View {
             .padding(.vertical, 9)
         }
         .background(theme.bg)
+    }
+
+    /// Compact mode's whole body: the mic circle alone. Non-interactive
+    /// voice states render an inert dimmed mic rather than reusing the full
+    /// dock's bar variants — the rail has no room for status copy, and the
+    /// mic being dim IS the status at this size.
+    @ViewBuilder
+    private var compactMic: some View {
+        switch voice.state {
+        case .micDenied, .unavailable:
+            ZStack {
+                Circle().fill(theme.bg)
+                Circle().strokeBorder(theme.divider, lineWidth: 1)
+                micGlyph(color: theme.neutral500, size: 18)
+            }
+            .frame(width: 44, height: 44)
+        case .connecting:
+            ZStack {
+                Circle().fill(theme.bg)
+                Circle().strokeBorder(theme.divider, lineWidth: 1)
+                micGlyph(color: theme.neutral500, size: 18)
+            }
+            .frame(width: 44, height: 44)
+            .opacity(0.75)
+        case .idle, .connected:
+            interactiveMicCore
+        }
     }
 
     // MARK: Transmit hero (Phase O Task 5 item 5)
@@ -1471,29 +1518,38 @@ struct PTTDockRow: View {
     // expanding gsRings while transmitting (1 ring = toggled open, 2 with
     // the frames' 0.7s stagger = held).
 
+    /// The gesture-bearing mic ZStack, shared verbatim by `interactiveRow`
+    /// and compact mode. Pure extraction (2026-07-30) — content is
+    /// byte-identical to what `interactiveRow`'s mic closure inlined before;
+    /// each call site uses it under a fixed `compact` value, so the
+    /// structural-identity law in `interactiveRow`'s doc comment holds.
+    private var interactiveMicCore: some View {
+        ZStack {
+            if isTransmitting {
+                GSExpandingRing(color: theme.accent)
+                if isHeldTransmitOwnedByThisPress {
+                    GSExpandingRing(color: theme.accent, delay: 0.7)
+                }
+            }
+            Circle().fill(isTransmitting ? theme.accent : theme.bg)
+            if !isTransmitting {
+                Circle().strokeBorder(theme.accent, lineWidth: 1)
+            }
+            micGlyph(color: isTransmitting ? theme.bg : theme.accent, size: isTransmitting ? 26 : 18)
+        }
+        // 80pt dock variant (Phase O Task 5 item 5): the mic grows from
+        // the blessed 44pt (2026-07-14 review round, still used for
+        // every non-transmitting state) to 80pt — matching the
+        // designer follow-up frames' held/open dock circle — while
+        // actively transmitting.
+        .frame(width: isTransmitting ? 80 : 44, height: isTransmitting ? 80 : 44)
+        .contentShape(Circle())
+        .modifier(pressGesture)
+    }
+
     private var interactiveRow: some View {
         micAndBar(mic: {
-            ZStack {
-                if isTransmitting {
-                    GSExpandingRing(color: theme.accent)
-                    if isHeldTransmitOwnedByThisPress {
-                        GSExpandingRing(color: theme.accent, delay: 0.7)
-                    }
-                }
-                Circle().fill(isTransmitting ? theme.accent : theme.bg)
-                if !isTransmitting {
-                    Circle().strokeBorder(theme.accent, lineWidth: 1)
-                }
-                micGlyph(color: isTransmitting ? theme.bg : theme.accent, size: isTransmitting ? 26 : 18)
-            }
-            // 80pt dock variant (Phase O Task 5 item 5): the mic grows from
-            // the blessed 44pt (2026-07-14 review round, still used for
-            // every non-transmitting state) to 80pt — matching the
-            // designer follow-up frames' held/open dock circle — while
-            // actively transmitting.
-            .frame(width: isTransmitting ? 80 : 44, height: isTransmitting ? 80 : 44)
-            .contentShape(Circle())
-            .modifier(pressGesture)
+            interactiveMicCore
         }, bar: {
             if isTransmitting {
                 if isHeldTransmitOwnedByThisPress {

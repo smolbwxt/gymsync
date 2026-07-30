@@ -114,7 +114,12 @@ struct RPESwipeTrack: View {
             }
             .scrollIndicators(.hidden)
             .contentMargins(.horizontal, inset, for: .scrollContent)
-            .scrollTargetBehavior(.viewAligned)
+            // limitBehavior .never — on-device feedback (2026-07-30, "25%
+            // less friction"): the default clamps each flick to roughly one
+            // cell, which reads as drag. .never lets momentum carry across
+            // several numbers and still snap to one. FAIL stays unreachable
+            // by momentum regardless — it has no snap target to land on.
+            .scrollTargetBehavior(.viewAligned(limitBehavior: .never))
             .scrollPosition(id: $centred)
             // Edge fade: a clean clip reads as a complete short list; the
             // fade says more numbers exist off-screen.
