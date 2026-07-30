@@ -528,6 +528,9 @@ struct WorkoutSessionView: View {
             Color.clear.frame(height: 8)
         }
         .background(theme.bg)
+        // Keyboard overlays rather than compresses — the loader's field
+        // must not squeeze the fixed page (user: "lower the numpad").
+        .ignoresSafeArea(.keyboard, edges: .bottom)
         .safeAreaInset(edge: .bottom) { soloChrome }
         .task(id: "\(currentRoutineExercise?.exerciseID.uuidString ?? "")-\(currentSetIndex)") {
             soloPrefill()
@@ -645,13 +648,13 @@ struct WorkoutSessionView: View {
                     GSBarLoaderMini(target: targetInUnit, barWeight: barInUnit,
                                     plates: plates, unit: unit)
                 } else {
+                    // Collar + shaft only — the right collar is gone (user,
+                    // 2026-07-30: "eliminate the far right collar").
                     HStack(spacing: 1.5) {
                         RoundedRectangle(cornerRadius: 1)
                             .fill(theme.neutral500).frame(width: 4, height: 16)
                         RoundedRectangle(cornerRadius: 1.5)
                             .fill(theme.neutral500.opacity(0.55)).frame(height: 4)
-                        RoundedRectangle(cornerRadius: 1)
-                            .fill(theme.neutral500).frame(width: 4, height: 16)
                     }
                     .frame(height: 40)
                 }
@@ -941,9 +944,9 @@ struct WorkoutSessionView: View {
                         .foregroundStyle(theme.text.opacity(0.78))
                 }
             }
-            .frame(height: 26)
+            .frame(height: 30)
 
-            Color.clear.frame(height: 10)
+            Color.clear.frame(height: 12)
             HStack(spacing: 0) {
                 Text("WEIGHT · \(soloUnit.label.uppercased())")
                     .font(GSFont.bold(13, relativeTo: .footnote))
@@ -957,44 +960,47 @@ struct WorkoutSessionView: View {
             }
             .frame(height: 14)
 
-            Color.clear.frame(height: 4)
+            Color.clear.frame(height: 6)
+            // No step labels, no inner hairlines (user, 2026-07-30) — see
+            // the group entry card's identical note. Row grows 56 → 64:
+            // the exercise widget cedes the pixels ("the set and routine
+            // widget can give some pixels to the weight logging widget").
             HStack(spacing: 0) {
-                TurnAutoRepeatButton(glyph: "minus", detail: "\(soloWeightStep)", theme: theme) { soloStepWeight(-1) }
-                    .frame(width: 52)
-                soloStepperRule
+                TurnAutoRepeatButton(glyph: "minus", detail: nil, theme: theme) { soloStepWeight(-1) }
+                    .frame(width: 44)
                 Text(soloWeight.isEmpty ? "—" : soloWeight)
-                    .font(GSFont.boldFixed(36).monospacedDigit())
+                    .font(GSFont.boldFixed(38).monospacedDigit())
                     .foregroundStyle(theme.text)
-                    .frame(width: 106)
-                soloStepperRule
-                TurnAutoRepeatButton(glyph: "plus", detail: "\(soloWeightStep)", theme: theme) { soloStepWeight(1) }
-                    .frame(width: 52)
+                    .frame(width: 96)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                TurnAutoRepeatButton(glyph: "plus", detail: nil, theme: theme) { soloStepWeight(1) }
+                    .frame(width: 44)
 
                 Rectangle().fill(theme.neutral500)
                     .frame(width: 1, height: 44)
                     .padding(.horizontal, 8)
 
                 TurnAutoRepeatButton(glyph: "minus", detail: nil, theme: theme) { soloStepReps(-1) }
-                    .frame(width: 34)
-                soloStepperRule
+                    .frame(width: 44)
                 Text(leadingInt(soloReps).map { "\($0)" } ?? "—")
-                    .font(GSFont.boldFixed(36).monospacedDigit())
+                    .font(GSFont.boldFixed(38).monospacedDigit())
                     .foregroundStyle(theme.text)
                     .frame(maxWidth: .infinity)
-                soloStepperRule
+                    .lineLimit(1)
                 TurnAutoRepeatButton(glyph: "plus", detail: nil, theme: theme) { soloStepReps(1) }
-                    .frame(width: 34)
+                    .frame(width: 44)
             }
-            .frame(height: 56)
+            .frame(height: 64)
 
-            Color.clear.frame(height: 8)
+            Color.clear.frame(height: 12)
             Text("RPE")
                 .font(GSFont.bold(18, relativeTo: .body))
                 .tracking(1.2)
                 .foregroundStyle(soloFailed ? theme.text : theme.text.opacity(0.78))
                 .frame(height: 20)
 
-            Color.clear.frame(height: 6)
+            Color.clear.frame(height: 8)
             RPESwipeTrack(value: $soloRPE, isFailed: $soloFailed, theme: theme)
         }
         .padding(.horizontal, 14)

@@ -594,6 +594,10 @@ struct GroupSessionLiveView: View {
         }
         .padding(.horizontal, 0)
         .background(theme.bg)
+        // Keyboard overlays rather than compresses (user: "uncover it by
+        // lowering the numpad") — the fixed page never squeezes; the
+        // loader's ScrollView keeps its full height while typing.
+        .ignoresSafeArea(.keyboard, edges: .bottom)
     }
 
     // Header rail 44pt: ✕ · session clock · rule · routine name · voice/chat · count
@@ -947,6 +951,8 @@ struct GroupSessionLiveView: View {
                     GSBarLoaderMini(target: cfg.targetInUnit, barWeight: cfg.barInUnit,
                                     plates: cfg.plates, unit: cfg.unit)
                 } else {
+                    // Collar + shaft only — right collar gone (user,
+                    // 2026-07-30: "eliminate the far right collar").
                     HStack(spacing: 1.5) {
                         RoundedRectangle(cornerRadius: 1)
                             .fill(theme.neutral500)
@@ -954,9 +960,6 @@ struct GroupSessionLiveView: View {
                         RoundedRectangle(cornerRadius: 1.5)
                             .fill(theme.neutral500.opacity(0.55))
                             .frame(height: 4)
-                        RoundedRectangle(cornerRadius: 1)
-                            .fill(theme.neutral500)
-                            .frame(width: 4, height: 16)
                     }
                     .frame(height: 40)
                 }
@@ -1217,32 +1220,35 @@ struct GroupSessionLiveView: View {
             .frame(height: 14)
 
             Color.clear.frame(height: 4)
+            // No step labels, no inner hairlines (user, 2026-07-30): the
+            // "5" details and four rules were spending the exact pixels a
+            // two-digit rep count needs at fixed 36pt — it truncated to "…".
+            // Signs and numbers only; one divider between the two fields.
             HStack(spacing: 0) {
-                turnStepButton("minus", detail: "\(turnWeightStep)") { stepTurnWeight(-1) }
-                    .frame(width: 52)
-                stepperRule
+                turnStepButton("minus", detail: nil) { stepTurnWeight(-1) }
+                    .frame(width: 44)
                 Text(logWeight.isEmpty ? "—" : logWeight)
                     .font(GSFont.boldFixed(36).monospacedDigit())
                     .foregroundStyle(theme.text)
-                    .frame(width: 106)
-                stepperRule
-                turnStepButton("plus", detail: "\(turnWeightStep)") { stepTurnWeight(1) }
-                    .frame(width: 52)
+                    .frame(width: 96)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                turnStepButton("plus", detail: nil) { stepTurnWeight(1) }
+                    .frame(width: 44)
 
                 Rectangle().fill(theme.neutral500)
                     .frame(width: 1, height: 44)
                     .padding(.horizontal, 8)
 
                 turnStepButton("minus", detail: nil) { stepTurnReps(-1) }
-                    .frame(width: 34)
-                stepperRule
+                    .frame(width: 44)
                 Text(leadingInt(logReps).map { "\($0)" } ?? "—")
                     .font(GSFont.boldFixed(36).monospacedDigit())
                     .foregroundStyle(theme.text)
                     .frame(maxWidth: .infinity)
-                stepperRule
+                    .lineLimit(1)
                 turnStepButton("plus", detail: nil) { stepTurnReps(1) }
-                    .frame(width: 34)
+                    .frame(width: 44)
             }
             .frame(height: 56)
 

@@ -268,9 +268,9 @@ struct GSBarLoaderMini: View {
                                height: Self.miniHeight(item.plate, unit: unit))
                 }
             }
-            RoundedRectangle(cornerRadius: 1.5)
-                .fill(theme.neutral500.opacity(0.55))
-                .frame(width: 18, height: 4)
+            // The trailing sleeve stub is gone (user, 2026-07-30: "eliminate
+            // the far right collar") — detached from the plates by the
+            // invisible shaft, it read as floating debris rather than bar.
         }
         .frame(height: 40)
     }
