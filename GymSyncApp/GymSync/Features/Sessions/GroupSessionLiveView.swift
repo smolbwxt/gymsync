@@ -490,6 +490,15 @@ struct GroupSessionLiveView: View {
     /// SETS (0) | ROUTINE (1) — the exercise card's footer pager.
     @State private var turnWidgetPage = 0
 
+    /// Vitals polish (user, 2026-07-30): tapping the no-signal ♥ card opens
+    /// the existing pairing surface — the affordance the old screen lacked.
+    @State private var showHRPairing = false
+
+    private var selfHeartRate: (bpm: Int, zone: HeartRateZone?)? {
+        guard let selfID else { return nil }
+        return heartRateFor(selfID)
+    }
+
     private var myTurnActive: Bool {
         isMyTurn && !(participants.isEmpty && rosterLoadFailed)
     }
@@ -560,7 +569,10 @@ struct GroupSessionLiveView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Leave session")
 
-            if let startedAt = liveSession.startedAt {
+            // One-clock rule: while the ♥ card carries session-elapsed (no
+            // HR signal), the rail cedes its copy — the same value must
+            // never render twice on one screen.
+            if selfHeartRate != nil, let startedAt = liveSession.startedAt {
                 Text(startedAt, style: .timer)
                     .font(GSFont.bold(12, relativeTo: .caption).monospacedDigit())
                     .foregroundStyle(theme.neutral700)
@@ -613,35 +625,50 @@ struct GroupSessionLiveView: View {
         .frame(height: 44)
     }
 
-    // Vitals 116pt: HR card 120w (52pt numeral, nothing else) | bar strip.
+    // Vitals 116pt: HR card 120w | bar strip. With no HR signal the card
+    // shows the SESSION ELAPSED clock instead of a dash (user, 2026-07-30 —
+    // "something useful there"), keeps the dim ♥ glyph as the "HR lives
+    // here" marker, and taps through to pairing. One-clock rule: the header
+    // rail drops its elapsed copy while the card carries it.
     private var turnVitalsRow: some View {
         HStack(spacing: 10) {
-            VStack(spacing: 4) {
-                Image(systemName: "heart.fill")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(theme.text.opacity(0.78))
-                if let selfID, let mine = heartRateFor(selfID) {
-                    Text("\(mine.bpm)")
-                        .font(GSFont.boldFixed(52).monospacedDigit())
-                        .foregroundStyle(theme.text)
-                } else {
-                    Text("—")
-                        .font(GSFont.boldFixed(52))
-                        .foregroundStyle(theme.neutral700)
+            Button { if selfHeartRate == nil { showHRPairing = true } } label: {
+                VStack(spacing: 4) {
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(selfHeartRate != nil ? theme.text.opacity(0.78) : theme.neutral700)
+                    if let mine = selfHeartRate {
+                        Text("\(mine.bpm)")
+                            .font(GSFont.boldFixed(52).monospacedDigit())
+                            .foregroundStyle(theme.text)
+                    } else if let startedAt = liveSession.startedAt {
+                        // "24:18" fits at 36pt; past the hour the scale
+                        // factor absorbs "1:24:18" rather than clipping.
+                        Text(startedAt, style: .timer)
+                            .font(GSFont.boldFixed(36).monospacedDigit())
+                            .foregroundStyle(theme.text.opacity(0.78))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.68)
+                    } else {
+                        Text("—")
+                            .font(GSFont.boldFixed(52))
+                            .foregroundStyle(theme.neutral700)
+                    }
                 }
+                .frame(width: isBarbellTurn ? 120 : nil)
+                .frame(maxWidth: isBarbellTurn ? 120 : .infinity, maxHeight: .infinity)
+                .background(theme.surface)
+                .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: 16))
+                .contentShape(Rectangle())
             }
-            .frame(width: isBarbellTurn ? 120 : nil)
-            .frame(maxWidth: isBarbellTurn ? 120 : .infinity, maxHeight: .infinity)
-            .background(theme.surface)
-            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .buttonStyle(.plain)
+            .disabled(selfHeartRate != nil)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Heart rate")
+            .accessibilityLabel(selfHeartRate != nil ? "Heart rate" : "Heart rate, no signal — session time")
             .accessibilityValue({
-                if let selfID, let mine = heartRateFor(selfID) {
-                    return "\(mine.bpm) beats per minute"
-                }
-                return "No signal"
+                if let mine = selfHeartRate { return "\(mine.bpm) beats per minute" }
+                return "Tap to set up a heart rate device"
             }())
 
             if isBarbellTurn {
@@ -650,6 +677,9 @@ struct GroupSessionLiveView: View {
         }
         .frame(height: 116)
         .padding(.horizontal, 16)
+        .sheet(isPresented: $showHRPairing) {
+            NavigationStack { HeartRateMonitorView() }
+        }
     }
 
     private var isBarbellTurn: Bool {
