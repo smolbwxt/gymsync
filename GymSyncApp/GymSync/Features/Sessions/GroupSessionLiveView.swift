@@ -1278,51 +1278,7 @@ struct GroupSessionLiveView: View {
         VStack(spacing: 0) {
             GSDivider()
             Color.clear.frame(height: 6)
-            HStack(spacing: 6) {
-                ForEach(dockSounds.prefix(4)) { sound in
-                    Button { Task { await tapSound(slug: sound.slug) } } label: {
-                        VStack(spacing: 2) {
-                            Text(sound.icon ?? "🔊").font(.system(size: 20))
-                            Text(sound.label)
-                                .font(GSFont.bold(9, relativeTo: .caption2))
-                                .foregroundStyle(theme.neutral700)
-                                .lineLimit(1)
-                        }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 56)
-                        .background(theme.surface)
-                        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(theme.neutral700.opacity(0.45), lineWidth: 1))
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-                Button { showSoundLibrary = true } label: {
-                    VStack(spacing: 2) {
-                        Image(systemName: "square.grid.2x2")
-                            .font(.system(size: 15, weight: .semibold))
-                        Text("ALL")
-                            .font(GSFont.bold(9, relativeTo: .caption2))
-                    }
-                    .foregroundStyle(theme.neutral700)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 56)
-                    .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(
-                        theme.neutral700, style: StrokeStyle(lineWidth: 1, dash: [3, 3])))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Open sound library")
-
-                Rectangle().fill(theme.neutral500)
-                    .frame(width: 2, height: 24)
-                    .padding(.horizontal, 6)
-
-                if isVoiceEligible {
-                    PTTDockRow(otherParticipantNames: otherParticipantNames, compact: true)
-                }
-            }
-            .padding(.horizontal, 16)
+            turnSoundRail
             Color.clear.frame(height: 6)
 
             Button { commitInlineLog() } label: {
@@ -1386,7 +1342,212 @@ struct GroupSessionLiveView: View {
         return "\(weight) \(turnUnit.label) × \(reps) · \(rpe)"
     }
 
-    // MARK: - Body
+    /// The sound rail, shared verbatim by turnChrome and spectateChrome.
+    private var turnSoundRail: some View {
+        Group {
+            HStack(spacing: 6) {
+                ForEach(dockSounds.prefix(4)) { sound in
+                    Button { Task { await tapSound(slug: sound.slug) } } label: {
+                        VStack(spacing: 2) {
+                            Text(sound.icon ?? "🔊").font(.system(size: 20))
+                            Text(sound.label)
+                                .font(GSFont.bold(9, relativeTo: .caption2))
+                                .foregroundStyle(theme.neutral700)
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 56)
+                        .background(theme.surface)
+                        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(theme.neutral700.opacity(0.45), lineWidth: 1))
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                Button { showSoundLibrary = true } label: {
+                    VStack(spacing: 2) {
+                        Image(systemName: "square.grid.2x2")
+                            .font(.system(size: 15, weight: .semibold))
+                        Text("ALL")
+                            .font(GSFont.bold(9, relativeTo: .caption2))
+                    }
+                    .foregroundStyle(theme.neutral700)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 56)
+                    .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(
+                        theme.neutral700, style: StrokeStyle(lineWidth: 1, dash: [3, 3])))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open sound library")
+
+                Rectangle().fill(theme.neutral500)
+                    .frame(width: 2, height: 24)
+                    .padding(.horizontal, 6)
+
+                if isVoiceEligible {
+                    PTTDockRow(otherParticipantNames: otherParticipantNames, compact: true)
+                }
+            }
+            .padding(.horizontal, 16)
+        }
+    }
+
+    // MARK: - Sister page: spectating (2026-07-30)
+    // The my-turn page's fixed geometry with the my-turn organs swapped:
+    // the entry card and CTA give way to the CURRENT LIFTER card and the
+    // CREW grid — this is where everyone's heart rates live, per the user
+    // ruling ("we can view the crew heart rates when it's not our turn").
+    // Header rail and vitals row are the my-turn builders, reused verbatim,
+    // so paging between states never moves the top of the screen.
+
+    private var spectateActive: Bool {
+        !isMyTurn
+            && !(participants.isEmpty && rosterLoadFailed)
+            && liveSession.currentTurnUserID != nil
+    }
+
+    private var spectateFixedPage: some View {
+        VStack(spacing: 0) {
+            turnHeaderRail
+            GSDivider()
+            Color.clear.frame(height: 10)
+            turnVitalsRow
+            Color.clear.frame(height: 12)
+            if showBarLoader {
+                turnLoaderExpanded
+            } else {
+                spectateLifterCard
+                Color.clear.frame(height: 12)
+                spectateCrewGrid
+                    .frame(maxHeight: .infinity)
+            }
+            Color.clear.frame(height: 8)
+        }
+        .background(theme.bg)
+    }
+
+    /// Who has the bar right now — name, their live heart rate, and where
+    /// they are in their sets. The one card a spectator actually watches.
+    private var spectateLifterCard: some View {
+        let lifter = rotationOrder.first { $0.participant.userID == liveSession.currentTurnUserID }
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(lifter?.profile.username ?? "—")
+                    .font(GSFont.bold(22, relativeTo: .title3))
+                    .foregroundStyle(theme.text)
+                    .lineLimit(1)
+                Spacer()
+                if let id = lifter?.participant.userID, let hr = heartRateFor(id) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "heart.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(theme.text.opacity(0.78))
+                        Text("\(hr.bpm)")
+                            .font(GSFont.boldFixed(26).monospacedDigit())
+                            .foregroundStyle(theme.text)
+                    }
+                }
+            }
+            Color.clear.frame(height: 6)
+            HStack {
+                Text("\(currentExerciseForSheet?.name ?? "") · SET \(currentTurnSetNumber)")
+                    .font(GSFont.bold(13, relativeTo: .footnote))
+                    .tracking(0.5)
+                    .foregroundStyle(theme.neutral700)
+                    .lineLimit(1)
+                Spacer()
+                if let ts = liveSession.currentTurnStartedAt {
+                    Image(systemName: "timer")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(theme.neutral700)
+                    Text(ts, style: .timer)
+                        .font(GSFont.bold(14, relativeTo: .subheadline).monospacedDigit())
+                        .foregroundStyle(theme.text.opacity(0.78))
+                }
+            }
+        }
+        .padding(14)
+        .background(theme.surface)
+        .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .overlay(alignment: .bottomLeading) {
+            Capsule().fill(theme.accent)
+                .frame(width: 44, height: 3)
+                .padding(.leading, 14)
+        }
+        .padding(.horizontal, 16)
+    }
+
+    /// Everyone in the rotation, with live bpm where it exists. The HR slot
+    /// is held (an em-dash, never a collapse) so tiles don't reflow as
+    /// signals come and go. The current lifter carries the accent underline
+    /// — the same "live" mark as everywhere else.
+    private var spectateCrewGrid: some View {
+        ScrollView {
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 10),
+                                GridItem(.flexible(), spacing: 10)],
+                      spacing: 10) {
+                ForEach(rotationOrder, id: \.participant.userID) { entry in
+                    let isLifting = entry.participant.userID == liveSession.currentTurnUserID
+                    let isMe = entry.participant.userID == selfID
+                    let hr = heartRateFor(entry.participant.userID)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(isMe ? "You" : entry.profile.username)
+                            .font(GSFont.bold(15, relativeTo: .subheadline))
+                            .foregroundStyle(isLifting ? theme.text : theme.text.opacity(0.78))
+                            .lineLimit(1)
+                        HStack(spacing: 4) {
+                            Image(systemName: "heart.fill")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(hr != nil ? theme.text.opacity(0.78) : theme.neutral500)
+                            Text(hr.map { "\($0.bpm)" } ?? "—")
+                                .font(GSFont.boldFixed(22).monospacedDigit())
+                                .foregroundStyle(hr != nil ? theme.text : theme.neutral700)
+                        }
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(theme.surface)
+                    .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .overlay(alignment: .bottomLeading) {
+                        if isLifting {
+                            Capsule().fill(theme.accent)
+                                .frame(width: 36, height: 3)
+                                .padding(.leading, 12)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 4)
+        }
+    }
+
+    /// Spectating chrome: the shared sound rail over the rotation hint —
+    /// no CTA, because there is nothing to commit while you wait.
+    private var spectateChrome: some View {
+        VStack(spacing: 0) {
+            GSDivider()
+            Color.clear.frame(height: 6)
+            turnSoundRail
+            Color.clear.frame(height: 6)
+            if let hint = upcomingTurnHint {
+                Text(hint)
+                    .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
+                    .foregroundStyle(theme.neutral700)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
+                        .strokeBorder(theme.divider, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+                    .padding(.horizontal, 16)
+                Color.clear.frame(height: 10)
+            }
+        }
+        .background(theme.bg)
+    }
+
+        // MARK: - Body
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -1395,6 +1556,8 @@ struct GroupSessionLiveView: View {
             // scroll layout untouched until the sister-page round.
             if myTurnActive {
                 myTurnFixedPage
+            } else if spectateActive {
+                spectateFixedPage
             } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -1538,6 +1701,8 @@ struct GroupSessionLiveView: View {
             // keeps the original dock composition below, untouched.
             if myTurnActive {
                 turnChrome
+            } else if spectateActive {
+                spectateChrome
             } else {
             VStack(spacing: 0) {
                 // ── VOICE DEGRADED BANNER ────────────────────────────────

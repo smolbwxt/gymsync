@@ -60,6 +60,13 @@ struct WorkoutSessionView: View {
     @State private var soloWidgetPage = 0
     @State private var soloLoaderOpen = false
     @State private var soloShowHRPairing = false
+
+    // Solo ladder wiring (queue item, 2026-07-30): prior-performance
+    // history + active enrollment feed WorkingWeight.suggest and the
+    // structured LAST TIME card. One fetch, both consumers — mirrors the
+    // group screen's identical pair.
+    @State private var soloPriorSets: [SetLog] = []
+    @State private var soloEnrollment: ProgramEnrollment?
     @State private var showLogSheet = false
     @State private var errorText: String?
     @State private var completed = false
@@ -188,6 +195,18 @@ struct WorkoutSessionView: View {
         .task(id: currentRoutineExercise?.exerciseID) {
             barLoaderPounds = nil   // stale loaded weight must not prefill the next exercise
             await loadLastTime()
+            // Ladder inputs (best-effort; absence just means fewer rungs).
+            if let re = currentRoutineExercise,
+               let userID = appState.currentProfile?.id {
+                soloPriorSets = (try? await SessionRepository.exerciseHistory(
+                    userID: userID, exerciseID: re.exerciseID, limit: 30)) ?? []
+            } else {
+                soloPriorSets = []
+            }
+            if soloEnrollment == nil {
+                soloEnrollment = try? await ProgramRepository.active()
+            }
+            soloPrefill()
         }
         .onChange(of: restEndAt) { handleRestWindowChange() }
         .onDisappear {
@@ -521,12 +540,21 @@ struct WorkoutSessionView: View {
     /// Loaded bar wins over the routine target — identical precedence to the
     /// old sheet's defaultWeight. Reps from the routine's target string.
     private func soloPrefill() {
+        // Loaded bar wins (the user dialled it); then the full ladder —
+        // campaign % -> routine target -> rep-goal projection -> last set.
         if let pounds = barLoaderPounds {
             soloWeight = Units.format(pounds: pounds, unit: soloUnit,
                                       rounded: false, includeUnit: false)
-        } else if let target = currentRoutineExercise?.targetWeight,
-                  let parsed = Decimal(string: target), parsed > 0 {
-            soloWeight = Units.format(pounds: parsed, unit: soloUnit,
+        } else if let re = currentRoutineExercise,
+                  let suggestion = WorkingWeight.suggest(
+                      exerciseID: re.exerciseID,
+                      targetReps: re.targetReps.flatMap { leadingInt($0) },
+                      routineTargetPounds: re.targetWeight.flatMap { Decimal(string: $0) },
+                      history: soloPriorSets + soloCurrentExerciseSets,
+                      lastSetPounds: (soloPriorSets + soloCurrentExerciseSets)
+                          .max(by: { $0.loggedAt < $1.loggedAt })?.weight,
+                      enrollment: soloEnrollment) {
+            soloWeight = Units.format(pounds: suggestion.pounds, unit: soloUnit,
                                       rounded: false, includeUnit: false)
         } else {
             soloWeight = ""
@@ -645,14 +673,23 @@ struct WorkoutSessionView: View {
                 .font(GSFont.bold(19, relativeTo: .body))
                 .tracking(0.7)
                 .foregroundStyle(theme.text.opacity(0.78))
-            let summary = currentRoutineExercise.flatMap { lastTimeByExercise[$0.exerciseID] }
-            if let summary, !summary.isEmpty {
-                Spacer(minLength: 2)
-                Text(summary)
-                    .font(GSFont.bold(15, relativeTo: .subheadline).monospacedDigit())
+            // Structured (queue item): weight × reps at 30pt with RPE + age
+            // beneath — the group card's exact grammar, from the same fetch
+            // that feeds the prefill ladder.
+            if let last = soloPriorSets
+                .filter({ !$0.isPenalty && $0.sessionID != session?.id })
+                .max(by: { $0.loggedAt < $1.loggedAt }) {
+                Text("\(last.weight.map { Units.format(pounds: $0, unit: soloUnit, rounded: false, includeUnit: false) } ?? "—") × \(last.reps.map { "\($0)" } ?? "—")")
+                    .font(GSFont.boldFixed(30).monospacedDigit())
                     .foregroundStyle(theme.text)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Spacer(minLength: 2)
+                Text(soloLastTimeMeta(last))
+                    .font(GSFont.bold(11, relativeTo: .caption2))
+                    .tracking(0.5)
+                    .foregroundStyle(theme.neutral700)
+                    .lineLimit(1)
             } else {
                 Text("FIRST TIME")
                     .font(GSFont.bold(19, relativeTo: .body))
@@ -985,6 +1022,25 @@ struct WorkoutSessionView: View {
     private func soloStepReps(_ direction: Int) {
         let current = leadingInt(soloReps) ?? 0
         soloReps = "\(max(0, current + direction))"
+    }
+
+    /// "RPE 8 · 6 DAYS AGO" — whichever parts are real.
+    private func soloLastTimeMeta(_ log: SetLog) -> String {
+        var parts: [String] = []
+        if log.isFailed {
+            parts.append("FAIL")
+        } else if let rpe = log.rpe {
+            parts.append("RPE \(NSDecimalNumber(decimal: rpe).intValue)")
+        }
+        let days = Calendar.current.dateComponents(
+            [.day], from: Calendar.current.startOfDay(for: log.loggedAt),
+            to: Calendar.current.startOfDay(for: .now)).day ?? 0
+        switch days {
+        case ..<1: parts.append("TODAY")
+        case 1:    parts.append("YESTERDAY")
+        default:   parts.append("\(days) DAYS AGO")
+        }
+        return parts.joined(separator: " · ")
     }
 
     // Chrome: the CTA alone — solo has no soundboard or PTT.
