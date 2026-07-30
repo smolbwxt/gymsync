@@ -226,13 +226,10 @@ struct GroupSessionLiveView: View {
     /// Reaction emojis per canvas reaction strip.
     private let reactionEmojis = ["🔥", "💪", "😂", "👏"]
 
-    // Canvas RPE labels — "Very easy" .. "Max effort" (mirrors LogSetSheet's scale so the
-    // inline card and the (still-used, penalty-only) sheet read identically).
-    private static let rpeLabels: [Double: String] = [
-        1: "Very easy", 2: "Easy", 3: "Moderate", 4: "Somewhat hard",
-        5: "Hard", 6: "Hard+", 7: "Very hard", 8: "Very hard+",
-        9: "Very hard", 10: "Max effort"
-    ]
+    // Redesign 2026-07-30: the local label dictionary is gone —
+    // RPESwipeTrack.label is the ONE monotonic table app-wide (this copy and
+    // LogSetSheet's previously disagreed with each other AND themselves:
+    // 7 and 9 both read "Very hard").
 
     // MARK: - Helpers
 
@@ -459,7 +456,7 @@ struct GroupSessionLiveView: View {
     }
 
     private func rpeLabel(_ rpe: Double) -> String {
-        Self.rpeLabels[rpe] ?? ""
+        RPESwipeTrack.label(for: rpe)
     }
 
     // MARK: - Init
@@ -1376,29 +1373,22 @@ struct GroupSessionLiveView: View {
                                      isExpanded: $showPlateStack)
             }
 
+            // Redesign 2026-07-30: RPESwipeTrack replaces the segment bar AND
+            // the separate "Failed set" Toggle — FAIL is the terminal position
+            // of the same scale, and arming it snaps the value to 10 (a fail
+            // IS an RPE 10; storage writes isFailed = true AND rpe = 10).
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline) {
                     Text("RPE · effort")
                         .font(GSFont.body(11, relativeTo: .caption))
                         .foregroundStyle(theme.neutral500)
                     Spacer()
-                    Text("\(Int(logRPE)) · \(rpeLabel(logRPE))")
+                    Text(logIsFailed ? "10 · Miss" : "\(Int(logRPE)) · \(rpeLabel(logRPE))")
                         .font(GSFont.heading(12, relativeTo: .caption))
                         .foregroundStyle(theme.accent700)
                 }
-                RPESegmentBar(value: $logRPE, theme: theme)
+                RPESwipeTrack(value: $logRPE, isFailed: $logIsFailed, theme: theme)
             }
-
-            HStack {
-                Toggle(isOn: $logIsFailed) {
-                    Text("Failed set")
-                        .font(GSFont.body(12, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral500)
-                }
-                .toggleStyle(.switch)
-                .tint(theme.accent)
-            }
-            .frame(minHeight: 44)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("NOTE")
@@ -1920,7 +1910,11 @@ struct GroupSessionLiveView: View {
                 setIndex: 1,
                 defaultReps: "\(burpeesRemaining)",
                 defaultWeight: nil,
-                unit: ThemeStore.shared.weightUnit
+                unit: ThemeStore.shared.weightUnit,
+                // Penalty path: FAIL stays a toggle here, never the terminal
+                // cap — failed burpees don't clear debt (see logSet's
+                // penaltyLogged guard), which "effort 10" must not imply.
+                allowsFail: false
             ) { reps, weight, rpe, isFailed, note in
                 Task { await logSet(reps: reps, weight: weight, rpe: rpe,
                                     isFailed: isFailed, note: note,

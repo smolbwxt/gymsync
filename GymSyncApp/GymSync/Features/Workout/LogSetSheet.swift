@@ -25,6 +25,12 @@ struct LogSetSheet: View {
     var defaultRPE: Double? = nil
     var defaultIsFailed: Bool = false
     var defaultNote: String? = nil
+    /// Redesign 2026-07-30: false ONLY on the penalty-burpee path. There a
+    /// failed set has load-bearing debt semantics (failed burpees don't clear
+    /// burpee debt) that must not be conflated with "the effort was a 10" —
+    /// so the terminal FAIL cap is hidden and a plain Failed toggle renders
+    /// instead. Trailing-defaulted: every normal call site compiles unchanged.
+    var allowsFail: Bool = true
     let onLog: (Int?, Decimal?, Decimal?, Bool, String?) -> Void
     // onLog(reps, weight, rpe, isFailed, note) — UNCHANGED
 
@@ -54,15 +60,11 @@ struct LogSetSheet: View {
     /// whether the fields look empty.
     @State private var didPrefill = false
 
-    // Canvas RPE labels — "Very easy" .. "Max effort"
-    private static let rpeLabels: [Double: String] = [
-        1: "Very easy", 2: "Easy", 3: "Moderate", 4: "Somewhat hard",
-        5: "Hard", 6: "Hard+", 7: "Very hard", 8: "Very hard+",
-        9: "Very hard", 10: "Max effort"
-    ]
-
+    // Redesign 2026-07-30: the per-sheet label dictionary is gone.
+    // RPESwipeTrack.label is now the ONE monotonic table for the whole app —
+    // three copies previously disagreed (7 and 9 both read "Very hard" here).
     private var rpeLabel: String {
-        Self.rpeLabels[rpe] ?? ""
+        RPESwipeTrack.label(for: rpe)
     }
 
     var body: some View {
@@ -160,37 +162,44 @@ struct LogSetSheet: View {
                             .padding(.bottom, 16)
                     }
 
-                    // Canvas: RPE row — "RPE · how hard" label  /  "9 · Very hard" value
+                    // Redesign 2026-07-30 (final-proof): the RPE swipe track.
+                    // FAIL is the terminal position of the same scale — the
+                    // separate "Failed set" Toggle below it is deleted, and
+                    // arming FAIL snaps the value to 10 (a fail IS an RPE 10;
+                    // storage writes isFailed = true AND rpe = 10).
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(alignment: .firstTextBaseline) {
                             Text("RPE · how hard")
                                 .font(GSFont.body(11, relativeTo: .caption))
                                 .foregroundStyle(theme.neutral500)
                             Spacer()
-                            Text("\(Int(rpe)) · \(rpeLabel)")
+                            Text(isFailed ? "10 · Miss" : "\(Int(rpe)) · \(rpeLabel)")
                                 .font(GSFont.heading(12, relativeTo: .caption))
                                 .foregroundStyle(theme.accent700)
                         }
 
-                        // Canvas: 10-segment bar — filled in accent200 up to selection,
-                        // selected segment in accent with white label, empty in surface+divider border
-                        RPESegmentBar(value: $rpe, theme: theme)
+                        RPESwipeTrack(value: $rpe, isFailed: $isFailed,
+                                      theme: theme, allowsFail: allowsFail)
                     }
                     .padding(.horizontal, 16)
                     .padding(.bottom, 16)
 
-                    // Canvas: Failed set toggle row
-                    HStack {
-                        Text("Failed set")
-                            .font(GSFont.body(14, relativeTo: .body))
-                            .foregroundStyle(theme.text)
-                        Spacer()
-                        Toggle("", isOn: $isFailed)
-                            .labelsHidden()
-                            .tint(theme.accent)
+                    // Penalty path only: FAIL isn't on the scale there (a
+                    // failed burpee set is a debt event, not an effort 10),
+                    // so the plain toggle survives for that one caller.
+                    if !allowsFail {
+                        HStack {
+                            Text("Failed set")
+                                .font(GSFont.body(14, relativeTo: .body))
+                                .foregroundStyle(theme.text)
+                            Spacer()
+                            Toggle("", isOn: $isFailed)
+                                .labelsHidden()
+                                .tint(theme.accent)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 16)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
 
                     GSDivider().padding(.horizontal, 16).padding(.bottom, 10)
 
@@ -208,23 +217,18 @@ struct LogSetSheet: View {
                     .padding(.horizontal, 16)
                     .padding(.bottom, 16)
 
-                    // Canvas: Fail + Save Set action row
-                    HStack(spacing: 8) {
-                        Button("Fail") {
-                            isFailed = true
-                            commitLog()
-                        }
-                        .buttonStyle(GSSecondaryButtonStyle())
-                        .frame(width: 80)
-
-                        Button("Save Set") {
-                            commitLog()
-                        }
-                        .buttonStyle(GSPrimaryButtonStyle())
-                        // `leadingInt`, not `Int(_:)` — a rep RANGE typed or
-                        // prefilled ("8-12") must not dead-end Save.
-                        .disabled(leadingInt(reps) == nil && !isFailed)
+                    // Redesign 2026-07-30: the 80pt quick-Fail button is gone —
+                    // FAIL now lives at the end of the RPE track above (a
+                    // deliberate reversal of the earlier keep, with the user's
+                    // consent). Arm FAIL, then Save: two taps where it was
+                    // one, in exchange for one grammar for failure everywhere.
+                    Button(isFailed ? "Save Failed Set" : "Save Set") {
+                        commitLog()
                     }
+                    .buttonStyle(GSPrimaryButtonStyle())
+                    // `leadingInt`, not `Int(_:)` — a rep RANGE typed or
+                    // prefilled ("8-12") must not dead-end Save.
+                    .disabled(leadingInt(reps) == nil && !isFailed)
                     .padding(.horizontal, 16)
                     .padding(.bottom, 22)
                 }
@@ -422,103 +426,12 @@ func incrementDecimal(_ s: inout String) {
            ? "\(Int(v))" : String(format: "%.1f", v)
 }
 
-// MARK: - RPE Segment Bar
-// Canvas: 10 horizontal equal segments — accent200 fill up to (not including) selected,
-// accent fill on selected cell with bg-colored number label, surface+divider for unvisited.
-// Shared (internal, not file-private) so GroupSessionLiveView's inline "LOG THIS SET" card
-// reuses this instead of a copy-pasted InlineRPEBar.
-
-struct RPESegmentBar: View {
-    @Binding var value: Double
-    let theme: GSTheme
-
-    private let steps: [Double] = Array(stride(from: 1.0, through: 10.0, by: 1.0))
-
-    var body: some View {
-        // UI audit 2026-07-29 measured this control as the worst object in
-        // the app, failing four ways at once:
-        //   1. 28.8-38.1pt x 30pt — under the 44pt floor on BOTH axes on
-        //      EVERY shipping iPhone (ten segments can never fit a row).
-        //   2. Invisible to VoiceOver — bare ZStacks with .onTapGesture, and
-        //      nine of ten segments rendered no text to announce.
-        //   3. Unselected segments were theme.surface ON a theme.surface
-        //      card — no visible control at all at arm's length.
-        //   4. A hard .frame(height: 30) clipped its own Dynamic-Type label
-        //      from AX1 upward.
-        //
-        // Two rows of five is the shape that fixes (1) without abandoning the
-        // tap-to-set grammar: five segments clear ~61pt wide at 393pt, and
-        // 48pt tall clears the floor vertically with room for large type.
-        VStack(spacing: 4) {
-            row(steps.prefix(5))
-            row(steps.suffix(5))
-        }
-        // ONE adjustable element rather than ten unlabelled ones: VoiceOver
-        // reads "RPE, 7, Very hard" and swipe-up/down changes it, which is
-        // both correct and faster than hunting a 1-of-10 target.
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("RPE")
-        .accessibilityValue("\(Int(value)), \(Self.label(for: value))")
-        .accessibilityAdjustableAction { direction in
-            switch direction {
-            case .increment: value = min(10, value + 1)
-            case .decrement: value = max(1, value - 1)
-            @unknown default: break
-            }
-        }
-    }
-
-    private func row(_ group: ArraySlice<Double>) -> some View {
-        HStack(spacing: 4) {
-            ForEach(Array(group), id: \.self) { step in
-                segment(for: step)
-                    .onTapGesture { value = step }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func segment(for step: Double) -> some View {
-        let isSelected = Int(step) == Int(value)
-        let isFilled   = step < value
-
-        ZStack {
-            if isSelected {
-                theme.accent
-            } else if isFilled {
-                theme.accent200
-            } else {
-                // neutral300, not surface: an unselected segment has to be
-                // visible against the card it sits on.
-                theme.neutral300
-                    .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
-            }
-
-            // Every segment carries its numeral now — the scale is only
-            // readable if you can see the whole scale.
-            Text("\(Int(step))")
-                .font(GSFont.heading(13, relativeTo: .caption))
-                .foregroundStyle(isSelected ? theme.bg : (isFilled ? theme.accent700 : theme.neutral700))
-        }
-        .frame(maxWidth: .infinity, minHeight: 48)
-        .contentShape(Rectangle())
-    }
-
-    /// Mirrors the rpeLabel copy both logging paths already show beside the
-    /// bar, so the spoken value matches the visible one.
-    static func label(for value: Double) -> String {
-        switch Int(value) {
-        case ...1: return "Very easy"
-        case 2:    return "Easy"
-        case 3:    return "Moderate"
-        case 4:    return "Somewhat hard"
-        case 5, 6: return "Hard"
-        case 7, 8: return "Very hard"
-        case 9:    return "Very hard"
-        default:   return "Max effort"
-        }
-    }
-}
+// MARK: - RPE control
+// Redesign 2026-07-30: RPESegmentBar (the two-rows-of-five tap grid that
+// replaced the condemned single-row segments) is itself replaced by
+// RPESwipeTrack (DesignSystem/RPESwipeTrack.swift) — a horizontal snap
+// scroller with FAIL as the terminal end-cap. One shared component, both
+// call sites, per the same no-fork rule that governed its predecessors.
 
 // MARK: - Shared plate stack disclosure (Phase H Task 4, Fix wave 1)
 // Promoted out of `LogSetSheet` the same way `stepperCell` (line 317 above) and
