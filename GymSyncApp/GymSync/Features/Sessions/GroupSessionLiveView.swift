@@ -3132,14 +3132,25 @@ struct GroupSessionLiveView: View {
 
     /// Best-guess current exercise for the turn (first routine exercise, or first from allExercises).
     private var currentExerciseForSheet: Exercise? {
-        if let firstRE = routineExercises.first {
-            return allExercises.first(where: { $0.id == firstRE.exerciseID })
+        // Exercise progression (2026-07-30, closing the in-code-documented
+        // gap): the first routine exercise THIS lifter hasn't finished,
+        // replacing the hardcoded `.first` that pinned every set of a
+        // multi-exercise routine to exercise 1 ("Set 13/3" on device).
+        // Counts come from the UNCAPPED session array — the 30-row feed
+        // undercounts long sessions. See RoutineProgression's doc.
+        if let re = RoutineProgression.currentExercise(
+            routine: routineExercises,
+            completedSets: { exerciseID in mySetCount(for: exerciseID) }
+        ) {
+            return allExercises.first(where: { $0.id == re.exerciseID })
         }
         return allExercises.first
     }
 
     private func mySetCount(for exerciseID: UUID) -> Int {
-        feedSets.filter { $0.userID == selfID && $0.exerciseID == exerciseID && !$0.isPenalty }.count
+        // allSessionSets, never feedSets: the feed caps at 30 rows across
+        // ALL participants, so it undercounts any real session's history.
+        allSessionSets.filter { $0.userID == selfID && $0.exerciseID == exerciseID && !$0.isPenalty }.count
     }
 
     private func defaultReps(for exerciseID: UUID) -> String? {
