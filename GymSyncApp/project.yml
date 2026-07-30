@@ -135,6 +135,16 @@ targets:
       properties:
         UILaunchScreen: {}
         CFBundleDisplayName: "Gym Sync"
+        # Live-session redesign (2026-07-30): the group session's my-turn page
+        # is a FIXED, non-scrolling layout — fixed control heights, one
+        # flexible child. In landscape on an iPhone 17 the drawable height is
+        # 381pt against 282pt of pinned chrome + a 242pt minimum widget: the
+        # page arithmetically cannot exist. No screen in the app benefits
+        # from landscape (verified: no rotation-dependent view anywhere), so
+        # the app locks portrait rather than shipping one unspecifiable
+        # orientation. iPad is not targeted (TARGETED_DEVICE_FAMILY "1").
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
         ITSAppUsesNonExemptEncryption: false
         NSHealthShareUsageDescription: "Gym Sync writes your completed workouts to Apple Health so they appear in your Activity ring."
         NSHealthUpdateUsageDescription: "Gym Sync writes your completed workouts to Apple Health so they appear in your Activity ring."
