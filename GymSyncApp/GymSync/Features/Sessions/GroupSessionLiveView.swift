@@ -490,13 +490,27 @@ struct GroupSessionLiveView: View {
     /// SETS (0) | ROUTINE (1) — the exercise card's footer pager.
     @State private var turnWidgetPage = 0
 
-    /// Vitals polish (user, 2026-07-30): tapping the no-signal ♥ card opens
-    /// the existing pairing surface — the affordance the old screen lacked.
+    /// Vitals polish (user, 2026-07-30): tapping the ♥ card opens the
+    /// existing pairing surface — the affordance the old screen lacked.
     @State private var showHRPairing = false
+    /// One-shot prime, raised at session start when we have never asked.
+    @State private var showHRPrime = false
 
     private var selfHeartRate: (bpm: Int, zone: HeartRateZone?)? {
         guard let selfID else { return nil }
         return heartRateFor(selfID)
+    }
+
+    /// Three-state vitals content (user ruling 2026-07-30):
+    ///   .live(bpm)  — a signal is arriving
+    ///   .undecided  — we have never asked; show "—", nothing is decided
+    ///   .elapsed    — asked and answered (either way): show session time
+    /// A dash means UNDECIDED, never "off" — see `HeartRatePrimeStore`.
+    private enum TurnVitals { case live(Int), undecided, elapsed }
+
+    private var turnVitalsState: TurnVitals {
+        if let mine = selfHeartRate { return .live(mine.bpm) }
+        return HeartRatePrimeStore.hasBeenAsked ? .elapsed : .undecided
     }
 
     private var myTurnActive: Bool {
@@ -637,19 +651,28 @@ struct GroupSessionLiveView: View {
                     Image(systemName: "heart.fill")
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(selfHeartRate != nil ? theme.text.opacity(0.78) : theme.neutral700)
-                    if let mine = selfHeartRate {
-                        Text("\(mine.bpm)")
+                    switch turnVitalsState {
+                    case .live(let bpm):
+                        Text("\(bpm)")
                             .font(GSFont.boldFixed(52).monospacedDigit())
                             .foregroundStyle(theme.text)
-                    } else if let startedAt = liveSession.startedAt {
+                    case .elapsed:
                         // "24:18" fits at 36pt; past the hour the scale
                         // factor absorbs "1:24:18" rather than clipping.
-                        Text(startedAt, style: .timer)
-                            .font(GSFont.boldFixed(36).monospacedDigit())
-                            .foregroundStyle(theme.text.opacity(0.78))
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.68)
-                    } else {
+                        if let startedAt = liveSession.startedAt {
+                            Text(startedAt, style: .timer)
+                                .font(GSFont.boldFixed(36).monospacedDigit())
+                                .foregroundStyle(theme.text.opacity(0.78))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.68)
+                        } else {
+                            Text("—")
+                                .font(GSFont.boldFixed(52))
+                                .foregroundStyle(theme.neutral700)
+                        }
+                    case .undecided:
+                        // Nothing decided yet — the dash is the honest state
+                        // until the prime has been answered.
                         Text("—")
                             .font(GSFont.boldFixed(52))
                             .foregroundStyle(theme.neutral700)
@@ -665,10 +688,18 @@ struct GroupSessionLiveView: View {
             .buttonStyle(.plain)
             .disabled(selfHeartRate != nil)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(selfHeartRate != nil ? "Heart rate" : "Heart rate, no signal — session time")
+            .accessibilityLabel({
+                switch turnVitalsState {
+                case .live: return "Heart rate"
+                case .elapsed: return "Session time. Heart rate unavailable"
+                case .undecided: return "Heart rate not set up"
+                }
+            }())
             .accessibilityValue({
-                if let mine = selfHeartRate { return "\(mine.bpm) beats per minute" }
-                return "Tap to set up a heart rate device"
+                switch turnVitalsState {
+                case .live(let bpm): return "\(bpm) beats per minute"
+                case .elapsed, .undecided: return "Tap to set up a heart rate device"
+                }
             }())
 
             if isBarbellTurn {
@@ -680,6 +711,68 @@ struct GroupSessionLiveView: View {
         .sheet(isPresented: $showHRPairing) {
             NavigationStack { HeartRateMonitorView() }
         }
+        .sheet(isPresented: $showHRPrime) { turnHRPrimeSheet }
+        .task {
+            // Ask ONCE, in context — at the moment the feature is about to
+            // deliver value, not during onboarding. iOS shows the HealthKit
+            // dialog exactly once ever; asking before the user has seen a
+            // live session is how that single chance gets spent on a "no"
+            // they can only reverse in Settings.
+            guard !HeartRatePrimeStore.hasBeenAsked,
+                  selfHeartRate == nil,
+                  !ThemeStore.shared.shareHeartRate else { return }
+            // A beat after the screen settles, so it reads as an offer
+            // about THIS session rather than a launch interruption.
+            try? await Task.sleep(for: .seconds(1.2))
+            guard !Task.isCancelled, !HeartRatePrimeStore.hasBeenAsked else { return }
+            showHRPrime = true
+        }
+    }
+
+    /// The one-shot prime. Deliberately NOT a system prompt: this is the
+    /// pre-permission explanation, and only "Show my heart rate" goes on to
+    /// raise the real HealthKit/Bluetooth dialogs. Either button marks the
+    /// question answered — "Not now" is a decision, and the ♥ card remains
+    /// the manual route back for anyone who changes their mind.
+    private var turnHRPrimeSheet: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Image(systemName: "heart.fill")
+                .font(.system(size: 34, weight: .semibold))
+                .foregroundStyle(theme.accent)
+                .padding(.top, 8)
+
+            Text("Show your heart rate?")
+                .font(GSFont.bold(24, relativeTo: .title2))
+                .foregroundStyle(theme.text)
+
+            Text("Your Apple Watch or a chest strap can show your live heart rate here, and share it with the crew you're training with. You can turn it off any time in the You tab.")
+                .font(GSFont.body(15, relativeTo: .body))
+                .foregroundStyle(theme.neutral700)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 8)
+
+            Button("Show my heart rate") {
+                HeartRatePrimeStore.markAsked()
+                showHRPrime = false
+                // Turning sharing ON is what makes an already-paired Apple
+                // Watch start sampling (ThemeStore.onShareHeartRateChange
+                // pushes session state to the Watch). Strap users continue
+                // into pairing from the ♥ card.
+                Task { await ThemeStore.shared.enableHeartRateSharing() }
+            }
+            .buttonStyle(GSPrimaryButtonStyle())
+
+            Button("Not now") {
+                HeartRatePrimeStore.markAsked()
+                showHRPrime = false
+            }
+            .buttonStyle(GSSecondaryButtonStyle())
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.bg)
+        .presentationDetents([.height(400)])
     }
 
     private var isBarbellTurn: Bool {

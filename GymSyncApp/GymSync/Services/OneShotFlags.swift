@@ -72,6 +72,10 @@ enum OneShotFlags {
                  label: "Push-to-talk coach mark",
                  isSet: { VoiceCoachMarkStore.hasBeenShown },
                  reset: { VoiceCoachMarkStore.reset() }),
+            Flag(id: HeartRatePrimeStore.defaultsKey,
+                 label: "Heart rate first-session prompt",
+                 isSet: { HeartRatePrimeStore.hasBeenAsked },
+                 reset: { HeartRatePrimeStore.reset() }),
         ]
     }
 

@@ -252,6 +252,36 @@ public final class ThemeStore {
         onShareHeartRateChange?()
     }
 
+    /// Turn sharing on from OUTSIDE the You tab — the live session's
+    /// first-run heart-rate prime (2026-07-30). `YouTabView.setShareHeartRate`
+    /// remains the toggle row's owner; this is the same write, hoisted here
+    /// because the prime has no access to that view's `effectiveUserSettings`.
+    ///
+    /// Follows the established `user_settings` discipline verbatim (the one
+    /// `RestTimerSettingView.select(_:)` and the You-tab toggle both use):
+    /// full-row upsert built from the CACHED row so unrelated columns aren't
+    /// reset, then `noteExternalSettingsWrite` so this cache doesn't go stale
+    /// and clobber the value back on the next palette write. Optimistic —
+    /// the UI flips immediately and reverts if the write fails, matching the
+    /// toggle row's own shape.
+    @discardableResult
+    func enableHeartRateSharing() async -> Bool {
+        guard !shareHeartRate else { return true }
+        setShareHeartRate(true)
+        guard let userID = await SupabaseService.shared.currentUserID() else {
+            setShareHeartRate(false)
+            return false
+        }
+        var updated = lastKnownSettings ?? UserSettings.defaults(userID: userID)
+        updated.shareHeartRate = true
+        guard (try? await UserSettingsRepository.upsert(updated)) != nil else {
+            setShareHeartRate(false)
+            return false
+        }
+        noteExternalSettingsWrite(updated)
+        return true
+    }
+
     /// Pure merge rule behind `noteExternalSettingsWrite` — extracted (and
     /// kept `nonisolated`, since it only touches its value-type parameters)
     /// so it's unit-testable without a `ThemeStore` instance, `@MainActor`,
