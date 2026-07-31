@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import UserNotifications
 
 // Canvas: Solo workout "In Progress" screen
@@ -59,6 +60,9 @@ struct WorkoutSessionView: View {
     @State private var soloFailed = false
     @State private var soloWidgetPage = 0
     @State private var soloLoaderOpen = false
+    /// Success-haptic trigger for `.sensoryFeedback` — a count (not a Bool)
+    /// so every logged set fires, including two in a row.
+    @State private var logHapticTick = 0
     @State private var soloShowHRPairing = false
 
     // Solo ladder wiring (queue item, 2026-07-30): prior-performance
@@ -179,6 +183,7 @@ struct WorkoutSessionView: View {
             prOverlayLayer
         }
         .background(theme.bg)
+        .sensoryFeedback(.success, trigger: logHapticTick)
         .gsSpotlight(.workout)   // fires on arrival — never mid-lift
         .overlay(alignment: .top) { attemptOptInNotice }
         .animation(.easeInOut(duration: 0.25), value: attemptOptInFailedText)
@@ -312,6 +317,15 @@ struct WorkoutSessionView: View {
 
     @ToolbarContentBuilder
     private var sessionToolbar: some ToolbarContent {
+        // The nav title was the ONE nav-bar text still drawn in the system
+        // font while the rest of the page is Archivo (user report
+        // 2026-07-30) — same principal-slot idiom as RoutineBuilderView.
+        ToolbarItem(placement: .principal) {
+            Text(routine?.name ?? "Freeform Workout")
+                .font(GSFont.heading(16, relativeTo: .headline))
+                .foregroundStyle(theme.text)
+                .lineLimit(1)
+        }
         if !completed {
             // Canvas "In Progress" elapsed timer — state-driven from
             // `startedAt`, ZERO Swift Timers.
@@ -1069,11 +1083,19 @@ struct WorkoutSessionView: View {
                 let weightPounds = Decimal.parseUserInput(soloWeight)
                     .map { Units.toPounds($0, from: soloUnit) }
                 Task {
-                    await log(reps: leadingInt(soloReps),
-                              weight: weightPounds,
-                              rpe: Decimal(Int(soloRPE)),
-                              isFailed: soloFailed,
-                              note: nil)
+                    guard await log(reps: leadingInt(soloReps),
+                                    weight: weightPounds,
+                                    rpe: Decimal(Int(soloRPE)),
+                                    isFailed: soloFailed,
+                                    note: nil) else { return }
+                    // A logged set visibly resets the page (user report
+                    // 2026-07-30: logging over the open loader looked like
+                    // nothing happened) — close the loader and keyboard so
+                    // the set/rest layout is back on screen. Failure keeps
+                    // everything up for a retry.
+                    withAnimation(.easeInOut(duration: 0.18)) { soloLoaderOpen = false }
+                    UIApplication.shared.sendAction(
+                        #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                 }
             } label: {
                 ZStack {
@@ -1853,9 +1875,13 @@ struct WorkoutSessionView: View {
     }
 
     @MainActor
-    private func log(reps: Int?, weight: Decimal?, rpe: Decimal?, isFailed: Bool, note: String?) async {
+    /// Returns `true` once the set is durably recorded (server insert OR the
+    /// offline queue) — `false` only when the attempt failed outright and the
+    /// entry UI should stay up for a retry.
+    @discardableResult
+    private func log(reps: Int?, weight: Decimal?, rpe: Decimal?, isFailed: Bool, note: String?) async -> Bool {
         guard let session, let re = currentRoutineExercise,
-              let userID = appState.currentProfile?.id else { return }
+              let userID = appState.currentProfile?.id else { return false }
 
         let log = SetLog(
             id: UUID(),
@@ -1912,6 +1938,9 @@ struct WorkoutSessionView: View {
                 OfflineSetLogQueue.shared.enqueue(log)
             }
             loggedSets.append(log)
+            // The set is durably recorded either way (server insert or offline
+            // queue) — this is the moment the success haptic fires.
+            logHapticTick += 1
 
             if isPR, let weight {
                 let repsForOverlay = reps ?? 0
@@ -1956,7 +1985,7 @@ struct WorkoutSessionView: View {
                 if restSeconds > 0 {
                     restEndAt = Date().addingTimeInterval(TimeInterval(restSeconds))
                 }
-                return
+                return true
             }
 
             let targetSets = re.targetSets ?? 1
@@ -1978,7 +2007,11 @@ struct WorkoutSessionView: View {
                     restEndAt = Date().addingTimeInterval(TimeInterval(restSeconds))
                 }
             }
-        } catch { errorText = ErrorMapping.map(error).errorDescription }
+            return true
+        } catch {
+            errorText = ErrorMapping.map(error).errorDescription
+            return false
+        }
     }
 
     // MARK: - Freeform exercise picking

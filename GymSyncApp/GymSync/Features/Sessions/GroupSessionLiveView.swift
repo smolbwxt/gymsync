@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - GroupSessionLiveView
 //
@@ -149,6 +150,9 @@ struct GroupSessionLiveView: View {
     /// button). The card renders in BOTH the my-turn and spectating branches
     /// — your next weight is yours to plan while someone else lifts.
     @State private var showBarLoader        = false
+    /// Success-haptic trigger for `.sensoryFeedback` — a count (not a Bool)
+    /// so every logged set fires, including two in a row.
+    @State private var logHapticTick        = 0
     @State private var isEnding             = false
     @State private var errorText: String?
     // Phase O Task 5 item 5 — mirrors LobbyView's identical trio (this
@@ -1742,6 +1746,7 @@ struct GroupSessionLiveView: View {
         }
         .navigationBarBackButtonHidden(true)
         .navigationTitle("")
+        .sensoryFeedback(.success, trigger: logHapticTick)
         // Pushed via LobbyView → SessionInProgressView; the soundboard dock +
         // bottom action bar below are bottom-pinned — see GSComponents.swift's
         // GSHidesDock for why the custom app dock can't reach them via
@@ -3216,8 +3221,17 @@ struct GroupSessionLiveView: View {
         let failed = logIsFailed
         Task {
             defer { isLoggingSet = false }
-            await logSetAndAdvance(reps: reps, weight: weight, rpe: rpe,
-                                    isFailed: failed, note: note, exerciseID: ex.id)
+            guard await logSetAndAdvance(reps: reps, weight: weight, rpe: rpe,
+                                          isFailed: failed, note: note, exerciseID: ex.id) else { return }
+            // A logged set visibly leaves this layout (user report 2026-07-30:
+            // logging over the open loader looked like nothing happened) —
+            // close the loader and keyboard so the my-turn page is reset when
+            // the rotation returns, and let the turn advance flip the body to
+            // the spectate layout. Failure keeps everything up for a retry —
+            // it also must NOT enter the rest interlude below.
+            withAnimation(.easeInOut(duration: 0.18)) { showBarLoader = false }
+            UIApplication.shared.sendAction(
+                #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
             // Solo-in-a-rotation: the pass came straight back. Enter the
             // rest interlude instead of silently staying on my-turn — the
             // screen visibly changes, the rest is real, and START SET cuts
@@ -3655,11 +3669,14 @@ struct GroupSessionLiveView: View {
     // MARK: - Actions
 
     @MainActor
+    /// Returns `true` once the set is durably recorded (server insert OR the
+    /// offline queue) — `false` only when the attempt failed outright and the
+    /// entry UI should stay up for a retry.
     private func logSetAndAdvance(
         reps: Int?, weight: Decimal?, rpe: Decimal?,
         isFailed: Bool, note: String?, exerciseID: UUID
-    ) async {
-        guard let userID = selfID else { return }
+    ) async -> Bool {
+        guard let userID = selfID else { return false }
         // Canvas Completion Task 4 fix round 1: clear optimistically at the
         // start of every attempt (mirrors `endSession()`'s `errorText = nil`
         // convention) so a retry that succeeds drops the banner immediately,
@@ -3754,6 +3771,9 @@ struct GroupSessionLiveView: View {
                     observedVersion: liveSession.turnVersion)
                 didQueueSetOffline = true
             }
+            // The set is durably recorded either way (server insert or offline
+            // queue) — this is the moment the success haptic fires.
+            logHapticTick += 1
 
             if isPR, let weight {
                 let name = await ExerciseNameCache.name(for: exerciseID)
@@ -3788,21 +3808,24 @@ struct GroupSessionLiveView: View {
             // permanent error, or connectivity dropping between logSet and
             // advanceTurn) still falls into the catch below and shows the
             // existing retry banner exactly as before.
-            guard !didQueueSetOffline else { return }
+            guard !didQueueSetOffline else { return true }
             try await SessionRepository.advanceTurn(sessionID: session.id)
             // A live advance settles any advance this device still owed from
             // an earlier offline set — the queued one would no-op anyway
             // (version guard), but dropping it keeps the store honest rather
             // than accumulating entries that only ever fizzle.
             PendingTurnAdvanceStore.shared.clear(sessionID: session.id)
+            return true
         } catch let error as GymSyncError {
             // Upgraded treatment (Canvas Completion Task 4 fix round 1, proof
             // p31-errors) — NOT the shared `errorText` red caption; see
             // `logSetErrorText`'s declaration + the `GSInlineErrorBanner`
             // wiring in `body`.
             logSetErrorText = error.errorDescription
+            return false
         } catch {
             logSetErrorText = error.localizedDescription
+            return false
         }
     }
 
