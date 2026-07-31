@@ -401,7 +401,7 @@ struct HomeView: View {
                     Spacer(minLength: 0)
                 }
                 .foregroundStyle(theme.text)
-                .padding(.vertical, 18)
+                .frame(maxHeight: .infinity)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -425,6 +425,10 @@ struct HomeView: View {
                     )
             }
         }
+        // One fixed row height so the start pill and the debt badge stand
+        // shoulder-to-shoulder (user 2026-07-31: the pill sat visibly
+        // shorter than the badge beside it).
+        .frame(height: 62)
         .animation(.spring(response: 0.42, dampingFraction: 0.68), value: burpeesOwed > 0)
     }
 
@@ -447,7 +451,7 @@ struct HomeView: View {
                     .foregroundStyle(theme.bg.opacity(0.8))
             }
             .frame(width: 96)
-            .padding(.vertical, 14)
+            .frame(maxHeight: .infinity)
             // Accent, not gold (user 2026-07-31): gold is the CHECK-IN
             // signal color and nothing else gets to wear it. Accent =
             // "yours to act on" — a debt is exactly that.

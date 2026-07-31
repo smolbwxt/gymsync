@@ -83,12 +83,32 @@ struct BurpeeLedgerView: View {
     @State private var liveSessionForCTA: WorkoutSession?
     @State private var isLoading = true
     @State private var errorText: String?
+    // Payoff sheet (user 2026-07-31: "there's no way to actually pay off
+    // your burpee debt" from this screen). Penalty reps attach to the most
+    // recent session that contributed debt — the ledger RPC nets `paid`
+    // across ALL the group's sessions, so any owed session settles the
+    // aggregate; the completed-session insert is deliberately allowed by
+    // the pre-live trigger (20260803000002).
+    @State private var showPayoffSheet = false
+    @State private var payoffReps = 0
+    @State private var isSubmittingPayoff = false
 
     private var selfID: UUID? { appState.currentProfile?.id }
 
     private var youOwe: BurpeeLedgerMath.YouOweSummary? {
         guard let selfID else { return nil }
         return BurpeeLedgerMath.youOweSummary(rows: myRows, userID: selfID)
+    }
+
+    /// What I actually still owe TODAY — the server-netted aggregate (owed
+    /// minus paid), never the raw lifetime total. The raw `youOwe.total`
+    /// would keep showing settled debt forever once payoff exists.
+    private var myOutstanding: Int {
+        guard let selfID else { return 0 }
+        if let mine = crewDebts.first(where: { $0.userID == selfID }) {
+            return mine.outstanding
+        }
+        return youOwe?.total ?? 0
     }
 
     /// The rate that actually applied most recently across the group's
@@ -114,7 +134,7 @@ struct BurpeeLedgerView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
-                if let youOwe, youOwe.total > 0 {
+                if let youOwe, myOutstanding > 0 {
                     youOweBanner(youOwe)
                 } else if !isLoading {
                     allClearBanner
@@ -139,6 +159,7 @@ struct BurpeeLedgerView: View {
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await load() }
         .task { await load() }
+        .sheet(isPresented: $showPayoffSheet) { payoffSheet }
     }
 
     // MARK: - You-owe banner
@@ -151,7 +172,7 @@ struct BurpeeLedgerView: View {
                 .foregroundStyle(theme.bg.opacity(0.85))
 
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("\(summary.total)")
+                Text("\(myOutstanding)")
                     .font(GSFont.bold(56, relativeTo: .largeTitle))
                     .foregroundStyle(theme.bg)
                     .lineLimit(1)
@@ -166,19 +187,10 @@ struct BurpeeLedgerView: View {
                     .foregroundStyle(theme.bg.opacity(0.9))
             }
 
-            // Only actionable when the contributing session is still live —
-            // burpee logging has no standalone flow outside a live session's
-            // LogSetSheet (see GroupSessionLiveView.logSetSheetContent).
-            //
-            // Fix wave 1 (reviewer Finding F4, see `pushedFromLiveSessionID`'s
-            // doc comment above for the full reachability trace): if `live`
-            // is the SAME session this view was pushed FROM, pop back to
-            // that already-live instance instead of pushing a second one —
-            // avoids ever creating the duplicate `GroupSessionLiveView`
-            // whose later pop used to tear down voice under the original.
-            // Any other case (opened from GroupView's Sessions tab with no
-            // live session below, or `live` genuinely is a different
-            // session) is unaffected — still a normal push.
+            // Live session available → go log them there (Finding F4's
+            // pop-back-vs-push split unchanged). Otherwise the ledger's own
+            // payoff sheet (user 2026-07-31) — debt no longer needs a live
+            // session to settle.
             if let live = liveSessionForCTA {
                 if live.id == pushedFromLiveSessionID {
                     Button {
@@ -195,11 +207,21 @@ struct BurpeeLedgerView: View {
                     }
                     .buttonStyle(.plain)
                 }
+            } else {
+                Button {
+                    payoffReps = myOutstanding
+                    showPayoffSheet = true
+                } label: {
+                    logBurpeesNowLabel
+                }
+                .buttonStyle(.plain)
             }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.accent)
+        // Onyx alignment (2026-07-31): the banner is a floating widget now.
+        .clipShape(RoundedRectangle(cornerRadius: 20))
     }
 
     /// Shared visual content for the "Log burpees now" CTA — identical
@@ -219,6 +241,7 @@ struct BurpeeLedgerView: View {
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, minHeight: 44)
         .background(theme.bg)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
     private func detailLine(_ summary: BurpeeLedgerMath.YouOweSummary) -> String? {
@@ -246,7 +269,8 @@ struct BurpeeLedgerView: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.surface)
-        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 20))
     }
 
     // MARK: - Crew debts
@@ -262,6 +286,13 @@ struct BurpeeLedgerView: View {
                     }
                 }
             }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(theme.surface)
+            // Onyx alignment (2026-07-31): the row list rides in one
+            // floating card, like every list on the live pages.
+            .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 20))
         }
     }
 
@@ -277,17 +308,11 @@ struct BurpeeLedgerView: View {
         // row's avatar as "AJ", the user's real initials, not "Y".
         let identityName = profile?.displayName ?? profile?.username ?? "Unknown"
         let displayName = isMe ? "You" : identityName
-        let initials = Self.initials(from: identityName)
 
         return HStack(spacing: 10) {
-            ZStack {
-                Rectangle()
-                    .fill(theme.neutral700)
-                    .frame(width: 32, height: 32)
-                Text(initials)
-                    .font(GSFont.bold(11, relativeTo: .caption2))
-                    .foregroundStyle(theme.bg)
-            }
+            // Onyx alignment (2026-07-31): circle avatar, real photo when
+            // one exists — matches the rotation widget and board rows.
+            GSInitialsAvatar(name: identityName, avatarURL: profile?.avatarURL, size: 32)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(displayName)
@@ -354,10 +379,122 @@ struct BurpeeLedgerView: View {
                 .padding(.vertical, 6)
                 .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.neutral400, lineWidth: 1))
         }
-        .padding(12)
+        .padding(14)
         .frame(maxWidth: .infinity, minHeight: 44)
         .background(theme.surface)
-        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    // MARK: - Payoff sheet (2026-07-31)
+    //
+    // "How many did you do?" — a stepper prefilled with the full
+    // outstanding amount, capped there (overpaying would bank phantom
+    // credit against future lateness). Writes ONE penalty SetLog against
+    // the most recent debt-contributing session; the ledger RPC nets
+    // `paid` group-wide, so the aggregate settles regardless of which
+    // owed session carries the reps.
+
+    private var payoffSheet: some View {
+        VStack(spacing: 0) {
+            Text("PAY OFF BURPEES")
+                .font(GSFont.bold(10, relativeTo: .caption2))
+                .tracking(1.4)
+                .foregroundStyle(theme.neutral700)
+                .padding(.top, 26)
+            Spacer(minLength: 12)
+            HStack(spacing: 26) {
+                Button {
+                    payoffReps = max(1, payoffReps - 1)
+                } label: {
+                    Image(systemName: "minus")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(theme.text)
+                        .frame(width: 52, height: 52)
+                        .background(theme.surface)
+                        .clipShape(Circle())
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+
+                Text("\(payoffReps)")
+                    .font(GSFont.boldFixed(64).monospacedDigit())
+                    .foregroundStyle(theme.text)
+                    .frame(minWidth: 120)
+
+                Button {
+                    payoffReps = min(myOutstanding, payoffReps + 1)
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(theme.text)
+                        .frame(width: 52, height: 52)
+                        .background(theme.surface)
+                        .clipShape(Circle())
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+            }
+            Text("OF \(myOutstanding) OUTSTANDING")
+                .font(GSFont.bold(10, relativeTo: .caption2).monospacedDigit())
+                .tracking(1.1)
+                .foregroundStyle(theme.neutral700)
+                .padding(.top, 12)
+            Spacer(minLength: 16)
+            Button {
+                Task { await submitPayoff() }
+            } label: {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16).fill(theme.accent)
+                    Text(isSubmittingPayoff ? "LOGGING…" : "LOG \(payoffReps) BURPEES")
+                        .font(GSFont.bold(17, relativeTo: .body).monospacedDigit())
+                        .tracking(0.9)
+                        .foregroundStyle(theme.bg)
+                }
+                .frame(height: 64)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(isSubmittingPayoff || payoffReps < 1)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 20)
+        }
+        .presentationDetents([.height(340)])
+        .presentationBackground(theme.bg)
+    }
+
+    @MainActor
+    private func submitPayoff() async {
+        guard !isSubmittingPayoff, payoffReps > 0,
+              let userID = selfID,
+              let target = youOwe?.mostRecentSessionID else { return }
+        isSubmittingPayoff = true
+        defer { isSubmittingPayoff = false }
+        do {
+            // Same burpee-exercise resolution the live session's penalty
+            // sheet uses: name-contains, catalog-wide.
+            let catalog = try await ExerciseRepository.fetchAll()
+            guard let burpee = catalog.first(where: {
+                $0.name.localizedCaseInsensitiveContains("burpee")
+            }) else {
+                errorText = "No burpee exercise in the catalog."
+                return
+            }
+            let log = SetLog(
+                id: UUID(), userID: userID, sessionID: target,
+                exerciseID: burpee.id, setIndex: 1,
+                reps: payoffReps, weight: nil, rpe: nil,
+                isFailed: false, isPenalty: true,
+                note: nil, loggedAt: Date()
+            )
+            try await SessionRepository.logSet(log)
+            showPayoffSheet = false
+            await load()
+        } catch let error as GymSyncError {
+            errorText = error.errorDescription
+        } catch {
+            errorText = error.localizedDescription
+        }
     }
 
     // MARK: - Data loading
@@ -396,18 +533,4 @@ struct BurpeeLedgerView: View {
         }
     }
 
-    // MARK: - Initials
-
-    /// Same split-on-spaces algorithm as `GSInitialsAvatar` (SocialTabView.swift)
-    /// — replicated rather than reused because that view computes initials
-    /// from its own `name` property (not trivially accessible as a static
-    /// helper) and this row's avatar deliberately diverges from
-    /// `GSInitialsAvatar` in color (`theme.neutral700`/`theme.bg` here vs.
-    /// its `theme.accent`/`theme.bg` — matches the canvas markup's
-    /// `--color-neutral-700` literally, a documented judgment call from the
-    /// original task-3 build, not something this fix touches).
-    private static func initials(from name: String) -> String {
-        let parts = name.split(separator: " ").prefix(2)
-        return parts.map { String($0.prefix(1)).uppercased() }.joined()
-    }
 }

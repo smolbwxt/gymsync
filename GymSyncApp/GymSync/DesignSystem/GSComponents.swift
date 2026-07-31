@@ -1184,15 +1184,14 @@ struct GSVoiceUnavailableBanner: View {
             Button("Retry", action: retry)
                 .buttonStyle(GSSecondaryButtonStyle(fontSize: 13, horizontalPadding: 12, verticalPadding: 8))
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
         .background(theme.surface)
-        .overlay(alignment: .leading) {
-            Rectangle()
-                .fill(theme.accent)
-                .frame(width: 3)
-        }
-        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
+        // Onyx alignment (2026-07-31): the pre-redesign accent-left-stripe
+        // card becomes a floating widget — rounded, neutral-stroked, no
+        // stripe (the accent lives on the icon).
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 }
 

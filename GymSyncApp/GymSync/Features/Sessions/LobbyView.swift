@@ -735,30 +735,13 @@ struct LobbyView: View {
                     .foregroundStyle(theme.accent700)
             }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
         .background(theme.surface)
-        .overlay(
-            HStack(spacing: 0) {
-                Rectangle()
-                    .fill(theme.accent)
-                    .frame(width: 3)
-                Rectangle()
-                    .fill(theme.divider)
-                    .frame(width: 1)
-                    .padding(.leading, 2)
-                Spacer()
-                Rectangle()
-                    .fill(theme.divider)
-                    .frame(width: 1)
-                Rectangle()
-                    .fill(theme.divider)
-                    .frame(height: 1)
-                    .rotationEffect(.degrees(90))
-                    .hidden() // top/bottom via alignment
-            }, alignment: .leading
-        )
-        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
+        // Onyx alignment (2026-07-31): stripe-and-hairline chrome out,
+        // floating-widget card in — matches the live pages' language.
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
     // MARK: - Proposals Section
@@ -848,8 +831,11 @@ struct LobbyView: View {
             // Presence dot + initials avatar
             ZStack(alignment: .bottomTrailing) {
                 let initials = String(item.profile.username.prefix(2)).uppercased()
+                // Onyx alignment (2026-07-31): circles, like every avatar
+                // on the live pages — the square zero-radius avatars were
+                // the pre-redesign canvas literal.
                 ZStack {
-                    Rectangle()
+                    Circle()
                         .fill(item.participant.checkInState == "ready" ? theme.accent : theme.neutral400)
                         .frame(width: 32, height: 32)
                     Text(initials)
@@ -857,12 +843,10 @@ struct LobbyView: View {
                         .foregroundStyle(theme.bg)
                 }
                 // Avatar glow while talking — the blessed frames' solid 3px
-                // accent-30% spread (`box-shadow:0 0 0 3px`, live-voice
-                // frame 2's audible-now rows), drawn as an oversized
-                // background rect since the avatars are square/zero-radius.
+                // accent-30% spread, now a circular halo to match.
                 .background {
                     if isSpeaking {
-                        Rectangle()
+                        Circle()
                             .fill(theme.accent.opacity(0.3))
                             .frame(width: 38, height: 38)
                     }
