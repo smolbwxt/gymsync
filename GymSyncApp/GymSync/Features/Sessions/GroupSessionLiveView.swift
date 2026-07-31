@@ -2033,130 +2033,15 @@ struct GroupSessionLiveView: View {
         }
     }
 
-    // Body split (type-check timeout, master CI run 30602065007,
-    // 2026-07-31 — the IDENTICAL sha passed the branch run minutes
-    // earlier: the checker's budget is machine-dependent, so a borderline
-    // body is a broken body): the legacy scroll layout and both overlays
-    // are named sub-views; body stays a small ZStack + modifier chain.
-    // Mirrors WorkoutSessionView's 2026-07-27 split.
+    // Body split, round 2 (type-check timeouts: master run 30602065007 at
+    // the pre-split body, then branch run 30602390405 at the content-split
+    // body — extracting the ZStack content wasn't enough because the COST
+    // is the ~25-modifier chain's nested generic depth, not the content):
+    // the chain itself is now layered — arenaBase (page + chrome +
+    // transient overlay) → arenaWithThrow (throw arena) → body (sheets,
+    // dialogs, lifecycle). Each layer is a separately-checked expression.
     var body: some View {
-        ZStack(alignment: .bottom) {
-            // Redesign 2026-07-30: my-turn is the FIXED page (no scroll);
-            // spectating (and the roster-failure state) keep the original
-            // scroll layout untouched until the sister-page round.
-            if myTurnActive {
-                myTurnFixedPage
-            } else if spectateActive {
-                spectateFixedPage
-            } else {
-                legacyScrollLayout
-            }
-            prOverlayLayer
-            reactionOverlayLayer
-        }
-        .navigationBarBackButtonHidden(true)
-        .navigationTitle("")
-        .sensoryFeedback(.success, trigger: logHapticTick)
-        .onChange(of: selfHeartRate?.bpm) { _, newValue in
-            guard let newValue else { return }
-            recoveryBuffer.append(bpm: newValue, at: Date().timeIntervalSinceReferenceDate)
-        }
-        // Pushed via LobbyView → SessionInProgressView; the soundboard dock +
-        // bottom action bar below are bottom-pinned — see GSComponents.swift's
-        // GSHidesDock for why the custom app dock can't reach them via
-        // safeAreaInset alone.
-        .gsHidesDock()
-        // Keyboard overlays EVERYTHING, chrome included (user round 3: the
-        // CTA was still lifting above the numpad, leaving a stacked buffer).
-        // Applied outside the safeAreaInset so neither the page nor the
-        // pinned chrome moves while typing; the keyboard simply covers the
-        // bottom and everything is exactly where it was on dismiss.
-        .ignoresSafeArea(.keyboard, edges: .bottom)
-        .safeAreaInset(edge: .bottom) {
-            // Redesign 2026-07-30: my-turn gets the compact 152pt chrome
-            // (56pt sound rail + compact PTT mic + 64pt CTA). Spectating
-            // keeps the original dock composition below, untouched.
-            if myTurnActive {
-                turnChrome
-            } else if spectateActive {
-                spectateChrome
-            } else {
-            VStack(spacing: 0) {
-                // ── VOICE DEGRADED BANNER ────────────────────────────────
-                // "Inserted above the dock" per Dossier §A.2's live-session
-                // unavailable frame — above the whole sticky composition
-                // (soundboard + PTT + action bar), matching that frame's
-                // literal ordering.
-                if isVoiceEligible, case .unavailable = VoiceRoomService.shared.state {
-                    GSVoiceUnavailableBanner(retry: {
-                        Task { await VoiceRoomService.shared.retry() }
-                    })
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(theme.bg)
-                }
-                // ── SOUNDBOARD DOCK ──────────────────────────────────────
-                soundboardDock
-                // First-run coach mark (Phase O Task 5 item 5) — mirrors
-                // LobbyView's identical placement directly above the dock.
-                if showVoiceCoachMark {
-                    GSVoiceCoachMark(onDismiss: { showVoiceCoachMark = false })
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 6)
-                }
-                // ── PUSH-TO-TALK DOCK ────────────────────────────────────
-                // Dossier §A.2 confirms the exact insertion point: between
-                // the HYPE strip and the bottom action bar.
-                if isVoiceEligible {
-                    PTTDockRow(otherParticipantNames: otherParticipantNames)
-                }
-                // ── BOTTOM ACTION BAR ────────────────────────────────────
-                // My turn → pinned "Log Set & Pass" CTA (per proof, lives OUTSIDE the
-                // spotlight card). Spectating → dashed rotation hint, no CTA.
-                // (End Session moved off this bar — the header X already triggers the
-                // same confirmation; the proof's live screens never show a second
-                // "End Session" affordance alongside the primary action.)
-                bottomActionBar
-            }
-            }
-        }
-        // Incoming-sound transient overlay (inline, above dock area)
-        .overlay(alignment: .bottom) {
-            if let txt = soundOverlayText {
-                HStack(spacing: 6) {
-                    Image(systemName: "speaker.wave.2")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text(txt)
-                        .font(GSFont.bold(11, relativeTo: .caption2))
-                        .lineLimit(1)
-                }
-                .foregroundStyle(theme.neutral700)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 5)
-                .background(theme.surface)
-                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
-                .padding(.bottom, 130)  // float above dock
-                .transition(.opacity)
-                .id(txt)
-            }
-        }
-        .animation(.easeInOut(duration: 0.25), value: soundOverlayText)
-        // Phase-3 throw arena: one coordinate space covering page + chrome,
-        // the lifter-card target frame, and the dragged/flying plate drawn
-        // above everything. The pick-up haptic fires when a grab begins.
-        .coordinateSpace(name: "liveArena")
-        .onPreferenceChange(LifterCardFrameKey.self) { lifterCardFrame = $0 }
-        .overlay {
-            if let drag = plateDrag { flyingPlateOverlay(drag) }
-        }
-        .sensoryFeedback(trigger: plateDrag?.grabID) { old, new in
-            new != nil && old == nil ? .impact(weight: .medium) : nil
-        }
-        // BOARD baselines load when the board opens (composite v5 phase 4).
-        .onChange(of: spectateShowsBoard) { _, shows in
-            guard shows else { return }
-            Task { await loadScoreBaselines() }
-        }
+        arenaWithThrow
         // Log Set sheet — penalty (burpee) logging only now; normal sets log inline.
         .sheet(isPresented: $showLogSetSheet) { logSetSheetContent }
         // Session chat sheet (Task 3)
@@ -2399,6 +2284,144 @@ struct GroupSessionLiveView: View {
                     await VoiceRoomService.shared.leave()
                 }
             }
+        }
+    }
+
+    // MARK: - Body layers (the 2026-07-31 chain split)
+
+    /// Layer 1: the page switch + pinned chrome + transient sound overlay.
+    private var arenaBase: some View {
+        ZStack(alignment: .bottom) {
+            // Redesign 2026-07-30: my-turn is the FIXED page (no scroll);
+            // spectating (and the roster-failure state) keep the original
+            // scroll layout untouched until the sister-page round.
+            if myTurnActive {
+                myTurnFixedPage
+            } else if spectateActive {
+                spectateFixedPage
+            } else {
+                legacyScrollLayout
+            }
+            prOverlayLayer
+            reactionOverlayLayer
+        }
+        .navigationBarBackButtonHidden(true)
+        .navigationTitle("")
+        .sensoryFeedback(.success, trigger: logHapticTick)
+        .onChange(of: selfHeartRate?.bpm) { _, newValue in
+            guard let newValue else { return }
+            recoveryBuffer.append(bpm: newValue, at: Date().timeIntervalSinceReferenceDate)
+        }
+        // Pushed via LobbyView → SessionInProgressView; the soundboard dock +
+        // bottom action bar below are bottom-pinned — see GSComponents.swift's
+        // GSHidesDock for why the custom app dock can't reach them via
+        // safeAreaInset alone.
+        .gsHidesDock()
+        // Keyboard overlays EVERYTHING, chrome included (user round 3: the
+        // CTA was still lifting above the numpad, leaving a stacked buffer).
+        // Applied outside the safeAreaInset so neither the page nor the
+        // pinned chrome moves while typing; the keyboard simply covers the
+        // bottom and everything is exactly where it was on dismiss.
+        .ignoresSafeArea(.keyboard, edges: .bottom)
+        .safeAreaInset(edge: .bottom) { bottomChrome }
+        // Incoming-sound transient overlay (inline, above dock area)
+        .overlay(alignment: .bottom) { soundOverlayPill }
+        .animation(.easeInOut(duration: 0.25), value: soundOverlayText)
+    }
+
+    /// Layer 2: the phase-3 throw arena — one coordinate space covering
+    /// page + chrome, the lifter-card target frame, and the dragged/flying
+    /// plate drawn above everything. The pick-up haptic fires on grab.
+    private var arenaWithThrow: some View {
+        arenaBase
+            .coordinateSpace(name: "liveArena")
+            .onPreferenceChange(LifterCardFrameKey.self) { lifterCardFrame = $0 }
+            .overlay {
+                if let drag = plateDrag { flyingPlateOverlay(drag) }
+            }
+            .sensoryFeedback(trigger: plateDrag?.grabID) { old, new in
+                new != nil && old == nil ? .impact(weight: .medium) : nil
+            }
+            // BOARD baselines load when the board opens (composite v5 phase 4).
+            .onChange(of: spectateShowsBoard) { _, shows in
+                guard shows else { return }
+                Task { await loadScoreBaselines() }
+            }
+    }
+
+    /// The pinned bottom chrome (extracted from the safeAreaInset closure).
+    /// Redesign 2026-07-30: my-turn gets the compact 152pt chrome; the
+    /// legacy dock composition survives for the roster-failure state.
+    @ViewBuilder
+    private var bottomChrome: some View {
+        if myTurnActive {
+            turnChrome
+        } else if spectateActive {
+            spectateChrome
+        } else {
+            legacyBottomChrome
+        }
+    }
+
+    private var legacyBottomChrome: some View {
+        VStack(spacing: 0) {
+            // ── VOICE DEGRADED BANNER ────────────────────────────────
+            // "Inserted above the dock" per Dossier §A.2's live-session
+            // unavailable frame — above the whole sticky composition
+            // (soundboard + PTT + action bar), matching that frame's
+            // literal ordering.
+            if isVoiceEligible, case .unavailable = VoiceRoomService.shared.state {
+                GSVoiceUnavailableBanner(retry: {
+                    Task { await VoiceRoomService.shared.retry() }
+                })
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(theme.bg)
+            }
+            // ── SOUNDBOARD DOCK ──────────────────────────────────────
+            soundboardDock
+            // First-run coach mark (Phase O Task 5 item 5) — mirrors
+            // LobbyView's identical placement directly above the dock.
+            if showVoiceCoachMark {
+                GSVoiceCoachMark(onDismiss: { showVoiceCoachMark = false })
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 6)
+            }
+            // ── PUSH-TO-TALK DOCK ────────────────────────────────────
+            // Dossier §A.2 confirms the exact insertion point: between
+            // the HYPE strip and the bottom action bar.
+            if isVoiceEligible {
+                PTTDockRow(otherParticipantNames: otherParticipantNames)
+            }
+            // ── BOTTOM ACTION BAR ────────────────────────────────────
+            // My turn → pinned "Log Set & Pass" CTA (per proof, lives OUTSIDE the
+            // spotlight card). Spectating → dashed rotation hint, no CTA.
+            // (End Session moved off this bar — the header X already triggers the
+            // same confirmation; the proof's live screens never show a second
+            // "End Session" affordance alongside the primary action.)
+            bottomActionBar
+        }
+    }
+
+    /// "{username} 🔊 {name}" — floats above the dock while a sound plays.
+    @ViewBuilder
+    private var soundOverlayPill: some View {
+        if let txt = soundOverlayText {
+            HStack(spacing: 6) {
+                Image(systemName: "speaker.wave.2")
+                    .font(.system(size: 11, weight: .semibold))
+                Text(txt)
+                    .font(GSFont.bold(11, relativeTo: .caption2))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(theme.neutral700)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 5)
+            .background(theme.surface)
+            .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
+            .padding(.bottom, 130)  // float above dock
+            .transition(.opacity)
+            .id(txt)
         }
     }
 
