@@ -105,6 +105,50 @@ struct GroupSessionLiveView: View {
     /// Transient floating reaction pill — cleared after 2s.
     @State private var reactionOverlay: String? = nil
     @State private var reactionOverlayVisible = false
+    /// Re-rack timers per slug (plate dock, composite v5): slug → when the
+    /// plate is throwable again. Entries are cleared by tapSound's expiry
+    /// task, which also restores the token's full opacity.
+    @State private var soundCooldowns: [String: Date] = [:]
+    /// Plates currently landed on the lifter card — capped at 5; each is
+    /// removed when its own sound's duration ends (the 5s cap bounds it).
+    @State private var landedPlates: [LandedPlate] = []
+
+    /// One plate on the lifter card: which sound, who threw it.
+    private struct LandedPlate: Identifiable, Equatable {
+        let id = UUID()
+        let slug: String
+        let sender: String
+        let durationMs: Int?
+    }
+
+    /// The plate mid-drag / mid-flight (phase-3 throw). Positions live in
+    /// the "liveArena" coordinate space, which covers page AND chrome so a
+    /// plate picked up from the dock can land on the lifter card.
+    private struct PlateDragState: Equatable {
+        let grabID = UUID()
+        let sound: SoundboardSound
+        var location: CGPoint
+        var startLocation: CGPoint
+        var isFlying = false
+    }
+    @State private var plateDrag: PlateDragState?
+    /// The lifter card's frame in "liveArena" — the throw's landing target,
+    /// reported via LifterCardFrameKey.
+    @State private var lifterCardFrame: CGRect = .zero
+
+    private struct LifterCardFrameKey: PreferenceKey {
+        static var defaultValue: CGRect = .zero
+        static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+            value = nextValue()
+        }
+    }
+
+    /// Pre-session est-1RM ceilings per (lifter, exercise) — fetched lazily
+    /// when BOARD first opens, then cached for the session (the past doesn't
+    /// change mid-workout; reopening the board picks up exercises that
+    /// appeared since it last loaded).
+    @State private var scoreBaselines: [UUID: [UUID: Decimal]] = [:]
+    @State private var isLoadingBoard = false
     /// Task 5 (watch-hr design §4) — REMOVED (was: `@State private var
     /// shareHeartRate = false`, populated once from `UserSettingsRepository
     /// .get()` in `openAndSubscribe()`). That one-shot cache was the exact
@@ -1377,48 +1421,51 @@ struct GroupSessionLiveView: View {
         return "\(weight) \(turnUnit.label) × \(reps) · \(rpe)"
     }
 
-    /// The sound rail, shared verbatim by turnChrome and spectateChrome.
+    /// The plate dock (composite v5), shared verbatim by turnChrome and
+    /// spectateChrome: up to four racked plates + ALL + compact mic.
     private var turnSoundRail: some View {
         Group {
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 ForEach(dockSounds.prefix(4)) { sound in
-                    Button { Task { await tapSound(slug: sound.slug) } } label: {
-                        VStack(spacing: 2) {
-                            Text(sound.icon ?? "🔊").font(.system(size: 20))
-                            Text(sound.label)
-                                .font(GSFont.bold(9, relativeTo: .caption2))
-                                .foregroundStyle(theme.neutral700)
-                                .lineLimit(1)
+                    let token = GSPlateToken(
+                        name: sound.plateName,
+                        envelope: sound.envelope,
+                        durationMs: sound.durationMs,
+                        isClipped: sound.isClipped,
+                        cooldownUntil: soundCooldowns[sound.slug]
+                    )
+                    .opacity(plateDrag?.sound.slug == sound.slug ? 0.25 : 1)
+                    .contentShape(Circle())
+                    // Tap = quick send; drag = the throw (spectate only,
+                    // and never over the open loader). The flick is the
+                    // fun path, never the toll.
+                    Group {
+                        if spectateActive && !showBarLoader {
+                            token.gesture(plateThrowGesture(sound))
+                        } else {
+                            token
                         }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 56)
-                        .background(theme.surface)
-                        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(theme.neutral700.opacity(0.45), lineWidth: 1))
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .onTapGesture { Task { await tapSound(slug: sound.slug) } }
+                    .accessibilityLabel("Send \(sound.label)")
+                    .accessibilityAddTraits(.isButton)
                 }
                 Button { showSoundLibrary = true } label: {
-                    VStack(spacing: 2) {
-                        Image(systemName: "square.grid.2x2")
-                            .font(.system(size: 15, weight: .semibold))
-                        Text("ALL")
-                            .font(GSFont.bold(9, relativeTo: .caption2))
-                    }
-                    .foregroundStyle(theme.neutral700)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 56)
-                    .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(
-                        theme.neutral700, style: StrokeStyle(lineWidth: 1, dash: [3, 3])))
-                    .contentShape(Rectangle())
+                    Circle()
+                        .strokeBorder(theme.neutral700, style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
+                        .frame(width: 44, height: 44)
+                        .overlay {
+                            Text("ALL")
+                                .font(GSFont.bold(9, relativeTo: .caption2))
+                                .tracking(0.8)
+                                .foregroundStyle(theme.neutral700)
+                        }
+                        .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Open sound library")
 
-                Rectangle().fill(theme.neutral500)
-                    .frame(width: 2, height: 24)
-                    .padding(.horizontal, 6)
+                Spacer(minLength: 4)
 
                 if isVoiceEligible {
                     PTTDockRow(otherParticipantNames: otherParticipantNames, compact: true)
@@ -1459,7 +1506,7 @@ struct GroupSessionLiveView: View {
                 spectateLifterCard
                 Color.clear.frame(height: 12)
                 if spectateShowsBoard {
-                    spectateCrewGrid
+                    spectateBoardCard
                         .frame(maxHeight: .infinity)
                 } else {
                     spectateRecoveryCard
@@ -1547,12 +1594,51 @@ struct GroupSessionLiveView: View {
         .background(theme.surface)
         .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: 20))
+        .overlay(alignment: .bottomTrailing) {
+            // Thrown weight lands here (composite v5) — deliberately ON
+            // TOP of the card's bottom row: plates are transient (≤5s,
+            // the sound cap) and the pile IS the point.
+            if !landedPlates.isEmpty {
+                HStack(spacing: 6) {
+                    ForEach(landedPlates) { plate in
+                        landedPlateChip(plate)
+                    }
+                }
+                .padding(.trailing, 12)
+                .padding(.bottom, 8)
+            }
+        }
         .overlay(alignment: .bottomLeading) {
             Capsule().fill(theme.accent)
                 .frame(width: 44, height: 3)
                 .padding(.leading, 14)
         }
         .padding(.horizontal, 16)
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(key: LifterCardFrameKey.self,
+                                       value: geo.frame(in: .named("liveArena")))
+            }
+        )
+    }
+
+    /// One landed plate: mini class-colored disc + sender tag.
+    private func landedPlateChip(_ plate: LandedPlate) -> some View {
+        let cls = PlateClass.forDuration(ms: plate.durationMs)
+        return HStack(spacing: 4) {
+            Circle()
+                .strokeBorder(GSBarLoader.plateColor(cls.denomination, unit: .lbs), lineWidth: 3)
+                .background(Circle().fill(theme.bg))
+                .frame(width: 20, height: 20)
+            Text(plate.sender)
+                .font(GSFont.bold(9, relativeTo: .caption2))
+                .foregroundStyle(theme.neutral700)
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .background(Capsule().fill(theme.surface))
+        .overlay(Capsule().strokeBorder(theme.neutral500.opacity(0.5), lineWidth: 1))
+        .transition(.scale(scale: 0.3).combined(with: .opacity))
     }
 
     /// The current lifter's most recent logged set for the exercise in
@@ -2055,6 +2141,22 @@ struct GroupSessionLiveView: View {
             }
         }
         .animation(.easeInOut(duration: 0.25), value: soundOverlayText)
+        // Phase-3 throw arena: one coordinate space covering page + chrome,
+        // the lifter-card target frame, and the dragged/flying plate drawn
+        // above everything. The pick-up haptic fires when a grab begins.
+        .coordinateSpace(name: "liveArena")
+        .onPreferenceChange(LifterCardFrameKey.self) { lifterCardFrame = $0 }
+        .overlay {
+            if let drag = plateDrag { flyingPlateOverlay(drag) }
+        }
+        .sensoryFeedback(trigger: plateDrag?.grabID) { old, new in
+            new != nil && old == nil ? .impact(weight: .medium) : nil
+        }
+        // BOARD baselines load when the board opens (composite v5 phase 4).
+        .onChange(of: spectateShowsBoard) { _, shows in
+            guard shows else { return }
+            Task { await loadScoreBaselines() }
+        }
         // Log Set sheet — penalty (burpee) logging only now; normal sets log inline.
         .sheet(isPresented: $showLogSetSheet) { logSetSheetContent }
         // Session chat sheet (Task 3)
@@ -3708,8 +3810,10 @@ struct GroupSessionLiveView: View {
             onSoundboard: { userID, slug in
                 // Skip own soundboard echo — sender already played locally on tap.
                 guard userID != selfID else { return }
-                // Incoming remote sound: play locally + show transient overlay.
+                // Incoming remote sound: play locally, land the plate on the
+                // lifter card, show the transient overlay.
                 // Closures are @MainActor, so @State mutations are safe here.
+                landPlate(slug: slug, senderID: userID)
                 Task { @MainActor in
                     await SoundboardPlayer.shared.play(slug: slug)
                     let name = await SoundboardPlayer.shared.displayName(for: slug)
@@ -3899,7 +4003,23 @@ struct GroupSessionLiveView: View {
     private func tapSound(slug: String) async {
         let now = Date()
         guard now.timeIntervalSince(lastSoundTapAt) >= 1.0 else { return }
+        // Plate re-rack (composite v5): a cooling plate can't be thrown.
+        if let until = soundCooldowns[slug], until > now { return }
         lastSoundTapAt = now
+        let cls = PlateClass.forDuration(
+            ms: soundCatalog.first { $0.slug == slug }?.durationMs)
+        soundCooldowns[slug] = now.addingTimeInterval(cls.cooldown)
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(cls.cooldown))
+            // Only clear an unchanged entry — a re-throw after expiry has
+            // already written a NEWER date this stale task must not erase.
+            if let until = soundCooldowns[slug], until.timeIntervalSinceNow <= 0 {
+                soundCooldowns[slug] = nil
+            }
+        }
+        // My own plate lands too — the broadcast self-echo is suppressed,
+        // so the tap is the one place it can come from.
+        landPlate(slug: slug, senderID: selfID)
         // Local play (immediately) + remote send (fire-and-forget).
         async let playTask: Void = SoundboardPlayer.shared.play(slug: slug)
         async let sendTask: Void = broadcastService.sendSound(
@@ -3908,6 +4028,272 @@ struct GroupSessionLiveView: View {
             slug: slug
         )
         _ = await (playTask, sendTask)
+    }
+
+    /// Drop a plate on the lifter card. Slides off when the sound's own
+    /// duration ends — the 5-second cap guarantees it never outlives half
+    /// a rest.
+    @MainActor
+    private func landPlate(slug: String, senderID: UUID?) {
+        let sender: String = {
+            guard let senderID else { return "?" }
+            if senderID == selfID { return "YOU" }
+            let username = participants
+                .first(where: { $0.participant.userID == senderID })?.profile.username ?? "?"
+            return String(username.prefix(2)).uppercased()
+        }()
+        let sound = soundCatalog.first { $0.slug == slug }
+        let plate = LandedPlate(slug: slug, sender: sender, durationMs: sound?.durationMs)
+        withAnimation(.spring(duration: 0.35)) {
+            landedPlates.append(plate)
+            if landedPlates.count > 5 {
+                landedPlates.removeFirst(landedPlates.count - 5)
+            }
+        }
+        let lifetime = Double(sound?.durationMs ?? 2000) / 1000
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(lifetime))
+            withAnimation(.easeOut(duration: 0.3)) {
+                landedPlates.removeAll { $0.id == plate.id }
+            }
+        }
+    }
+
+    // MARK: - The throw (composite v5 phase 3 — Hearthstone rules)
+
+    private func plateThrowGesture(_ sound: SoundboardSound) -> some Gesture {
+        DragGesture(minimumDistance: 8, coordinateSpace: .named("liveArena"))
+            .onChanged { value in
+                guard soundCooldowns[sound.slug] == nil else { return }
+                if plateDrag == nil {
+                    plateDrag = PlateDragState(sound: sound,
+                                               location: value.location,
+                                               startLocation: value.startLocation)
+                } else if plateDrag?.sound.slug == sound.slug,
+                          plateDrag?.isFlying == false {
+                    plateDrag?.location = value.location
+                }
+            }
+            .onEnded { value in
+                guard plateDrag?.sound.slug == sound.slug,
+                      plateDrag?.isFlying == false else { return }
+                releasePlate(at: value.location, predicted: value.predictedEndLocation)
+            }
+    }
+
+    /// Release over the platform → the throw completes ballistically and
+    /// the sound fires ON LANDING (tapSound IS the landing: pile, play,
+    /// broadcast, cooldown). Release anywhere else → the plate springs
+    /// home — no sound, no send, a free cancel. Reduce Motion sends
+    /// without the flight.
+    @MainActor
+    private func releasePlate(at location: CGPoint, predicted: CGPoint) {
+        guard let drag = plateDrag else { return }
+        let target = lifterCardFrame.insetBy(dx: -24, dy: -24)
+        let hit = !lifterCardFrame.isEmpty
+            && (target.contains(location) || target.contains(predicted))
+        let slug = drag.sound.slug
+        if hit {
+            if UIAccessibility.isReduceMotionEnabled {
+                plateDrag = nil
+                Task { await tapSound(slug: slug) }
+                return
+            }
+            plateDrag?.isFlying = true
+            plateDrag?.location = CGPoint(x: lifterCardFrame.midX,
+                                          y: lifterCardFrame.maxY - 30)
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(200))
+                plateDrag = nil
+                await tapSound(slug: slug)
+            }
+        } else {
+            let grabID = drag.grabID
+            plateDrag?.location = drag.startLocation
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(320))
+                // Only clear THIS grab — a re-grab mid-return owns the state.
+                if plateDrag?.grabID == grabID, plateDrag?.isFlying == false {
+                    plateDrag = nil
+                }
+            }
+        }
+    }
+
+    /// The plate under the finger / in flight, drawn above page + chrome.
+    /// Depth is scale + shadow + tilt (how Hearthstone fakes its table);
+    /// the carry spring's stiffness is the class's heft — the 45 drags a
+    /// beat behind the finger, the 5 snaps to it.
+    private func flyingPlateOverlay(_ drag: PlateDragState) -> some View {
+        GSPlateToken(
+            name: drag.sound.plateName,
+            envelope: drag.sound.envelope,
+            durationMs: drag.sound.durationMs,
+            isClipped: drag.sound.isClipped,
+            cooldownUntil: nil
+        )
+        .scaleEffect(drag.isFlying ? 1.0 : 1.3)
+        .shadow(color: .black.opacity(0.45),
+                radius: drag.isFlying ? 4 : 14,
+                y: drag.isFlying ? 4 : 12)
+        .rotationEffect(.degrees(plateTilt(drag)))
+        .position(drag.location)
+        .allowsHitTesting(false)
+        .animation(drag.isFlying ? .easeIn(duration: 0.18) : plateCarrySpring(drag.sound),
+                   value: drag.location)
+        .animation(.easeOut(duration: 0.15), value: drag.isFlying)
+    }
+
+    private func plateCarrySpring(_ sound: SoundboardSound) -> Animation {
+        switch PlateClass.forDuration(ms: sound.durationMs) {
+        case .five: return .interpolatingSpring(stiffness: 420, damping: 28)
+        case .ten: return .interpolatingSpring(stiffness: 300, damping: 24)
+        case .twentyFive: return .interpolatingSpring(stiffness: 200, damping: 20)
+        case .fortyFive: return .interpolatingSpring(stiffness: 120, damping: 16)
+        }
+    }
+
+    private func plateTilt(_ drag: PlateDragState) -> Double {
+        guard !drag.isFlying else { return 4 }
+        let dx = drag.location.x - drag.startLocation.x
+        return max(-14, min(14, dx / 9))
+    }
+
+    // MARK: - ROUND SCOREBOARD (composite v5 phase 4)
+
+    /// Sets · % SELF · LOAD, self-referenced only. Rows carry a small live
+    /// bpm so crew heart rates stay visible here (the 2026-07-27 ruling)
+    /// now that the board replaced the crew grid.
+    private var spectateBoardCard: some View {
+        let rows = SessionScoreboard.rows(
+            participants: rotationOrder.map(\.participant.userID),
+            sessionSets: allSessionSets,
+            baselines: scoreBaselines
+        )
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("ROUND SCOREBOARD")
+                    .font(GSFont.bold(10, relativeTo: .caption2)).tracking(1.3)
+                    .foregroundStyle(theme.neutral700)
+                Spacer()
+                if isLoadingBoard {
+                    ProgressView().controlSize(.mini).tint(theme.neutral500)
+                } else {
+                    Text("VS YOURSELF")
+                        .font(GSFont.bold(10, relativeTo: .caption2)).tracking(1.1)
+                        .foregroundStyle(theme.neutral700)
+                }
+            }
+            Color.clear.frame(height: 12)
+            HStack(spacing: 8) {
+                Text("CREW")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text("SETS").frame(width: 34, alignment: .trailing)
+                Text("% SELF").frame(width: 56, alignment: .trailing)
+                Text("LOAD").frame(width: 44, alignment: .trailing)
+            }
+            .font(GSFont.bold(9, relativeTo: .caption2))
+            .foregroundStyle(theme.neutral700)
+            Rectangle().fill(theme.divider).frame(height: 1)
+                .padding(.top, 8)
+            ScrollView {
+                VStack(spacing: 4) {
+                    ForEach(rows) { row in
+                        boardRow(row)
+                    }
+                }
+                .padding(.top, 6)
+            }
+            Text("% SELF = TODAY VS YOUR OWN BEST-EVER EST-1RM · LOAD = Σ REPS × RPE")
+                .font(GSFont.bold(8, relativeTo: .caption2)).tracking(0.6)
+                .foregroundStyle(theme.neutral500)
+                .padding(.top, 8)
+        }
+        .padding(14)
+        .background(theme.surface)
+        .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .padding(.horizontal, 16)
+    }
+
+    private func boardRow(_ row: SessionScoreboard.Row) -> some View {
+        let entry = rotationOrder.first { $0.participant.userID == row.userID }
+        let isMe = row.userID == selfID
+        let hr = heartRateFor(row.userID)
+        return HStack(spacing: 8) {
+            GSInitialsAvatar(name: entry?.profile.username ?? "?",
+                             avatarURL: entry?.profile.avatarURL, size: 28)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(isMe ? "You" : (entry?.profile.username ?? "—"))
+                    .font(GSFont.bold(15, relativeTo: .subheadline))
+                    .foregroundStyle(row.ceilingBroken || isMe ? theme.text : theme.text.opacity(0.78))
+                    .lineLimit(1)
+                if row.ceilingBroken {
+                    Text("CEILING BROKEN")
+                        .font(GSFont.bold(8, relativeTo: .caption2)).tracking(1.0)
+                        .foregroundStyle(theme.accent)
+                } else if let hr {
+                    Text("♥ \(hr.bpm)")
+                        .font(GSFont.bold(9, relativeTo: .caption2).monospacedDigit())
+                        .foregroundStyle(theme.neutral700)
+                } else if row.pctSelf == nil {
+                    Text("NO BASELINE · SETS ONLY")
+                        .font(GSFont.bold(8, relativeTo: .caption2)).tracking(0.8)
+                        .foregroundStyle(theme.neutral500)
+                }
+            }
+            Spacer(minLength: 4)
+            Text("\(row.sets)")
+                .font(GSFont.bold(16, relativeTo: .subheadline).monospacedDigit())
+                .foregroundStyle(theme.text.opacity(0.78))
+                .frame(width: 34, alignment: .trailing)
+            Text(row.pctSelf.map { "\($0)%" } ?? "—")
+                .font(GSFont.bold(17, relativeTo: .subheadline).monospacedDigit())
+                .foregroundStyle(row.ceilingBroken ? theme.accent
+                                 : (row.pctSelf != nil ? theme.text.opacity(0.78) : theme.neutral500))
+                .frame(width: 56, alignment: .trailing)
+            Text(row.load > 0 ? "\(row.load)" : "—")
+                .font(GSFont.bold(15, relativeTo: .subheadline).monospacedDigit())
+                .foregroundStyle(row.load > 0 ? theme.text.opacity(0.78) : theme.neutral500)
+                .frame(width: 44, alignment: .trailing)
+        }
+        .padding(.vertical, 9)
+        .padding(.horizontal, row.ceilingBroken ? 8 : 0)
+        .background {
+            if row.ceilingBroken {
+                RoundedRectangle(cornerRadius: 12).fill(theme.accent.opacity(0.16))
+            }
+        }
+        .overlay {
+            if row.ceilingBroken {
+                RoundedRectangle(cornerRadius: 12).strokeBorder(theme.accent, lineWidth: 1.5)
+            }
+        }
+    }
+
+    /// Fetch each participant's pre-session ceilings, once per BOARD
+    /// opening. Best-effort per (lifter, exercise): a blocked or empty
+    /// history just leaves that lifter's honest dash — never a fake
+    /// number. Reopening the board picks up newly-lifted exercises.
+    @MainActor
+    private func loadScoreBaselines() async {
+        guard !isLoadingBoard else { return }
+        isLoadingBoard = true
+        defer { isLoadingBoard = false }
+        let exercisesByUser = Dictionary(
+            grouping: allSessionSets.filter { !$0.isPenalty }, by: \.userID)
+            .mapValues { Set($0.map(\.exerciseID)) }
+        for (userID, exercises) in exercisesByUser {
+            for exerciseID in exercises where scoreBaselines[userID]?[exerciseID] == nil {
+                guard let history = try? await SessionRepository.exerciseHistory(
+                    userID: userID, exerciseID: exerciseID, limit: 200) else { continue }
+                let base = SessionScoreboard.baseline(history: history,
+                                                     excludingSessionID: session.id)
+                if let ceiling = base[exerciseID] {
+                    scoreBaselines[userID, default: [:]][exerciseID] = ceiling
+                }
+            }
+        }
     }
 
     /// Tap a reaction emoji — sends broadcast; own pill shows via onReaction callback.

@@ -9,11 +9,30 @@ struct SoundboardSound: Codable, Identifiable, Sendable, Equatable {
     let storagePath: String
     let durationMs: Int?
     let isCurated: Bool
-    let icon: String?      // emoji, per designer frames
+    let icon: String?      // emoji, per designer frames (legacy tiles)
     let category: String?  // hype | funny | fx
+    /// 22 RMS buckets (1…8) extracted from the CLIPPED audio at import
+    /// time (scripts/import_soundboard_pilot.js) — the plate token's
+    /// waveform fingerprint. Nil for legacy sounds imported before the
+    /// composite-v5 pipeline.
+    let envelope: [Int]?
+    /// Pre-clip length; greater than `durationMs` means the 5-second cap's
+    /// scissors ran (the token shows ✂).
+    let originalDurationMs: Int?
 
     var id: String { slug }
     var label: String { displayName ?? slug }
+
+    /// Dock strap name — christening comes later; until then the display
+    /// name's first 9 characters, uppercased.
+    var plateName: String {
+        String(label.uppercased().prefix(9)).trimmingCharacters(in: .whitespaces)
+    }
+
+    var isClipped: Bool {
+        guard let originalDurationMs, let durationMs else { return false }
+        return originalDurationMs > durationMs + 100
+    }
 
     enum CodingKeys: String, CodingKey {
         case slug
@@ -23,6 +42,8 @@ struct SoundboardSound: Codable, Identifiable, Sendable, Equatable {
         case isCurated = "is_curated"
         case icon
         case category
+        case envelope
+        case originalDurationMs = "original_duration_ms"
     }
 }
 
