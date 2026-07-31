@@ -76,27 +76,42 @@ final class SessionScoreboardTests: XCTestCase {
     }
 
     func testPctSelfIsBestSetVersusCeiling() {
+        // Absolute expectations, hand-computed (never through the pipeline
+        // under test — that shape hid the intValue-overflow bug):
+        // ceiling = 225 × 1.1 = 247.5; best today = 215 × (1 + 4/30) =
+        // 243.66…; ratio = 98.45% → floor 98.
         let ceiling = StatMath.estimatedOneRepMax(weight: 225, reps: 3)
+        XCTAssertEqual(ceiling, Decimal(string: "247.5")!)
         let sets = [
             set(userA, squat, session: sessionID, weight: 185, reps: 5),
             set(userA, squat, session: sessionID, weight: 215, reps: 4),
         ]
         let rows = SessionScoreboard.rows(participants: [userA], sessionSets: sets,
                                           baselines: [userA: [squat: ceiling]])
-        let bestToday = max(StatMath.estimatedOneRepMax(weight: 185, reps: 5),
-                            StatMath.estimatedOneRepMax(weight: 215, reps: 4))
-        let expected = NSDecimalNumber(decimal: bestToday / ceiling * 100).intValue
-        XCTAssertEqual(rows[0].pctSelf, expected)
-        XCTAssertLessThanOrEqual(expected, 100)
+        XCTAssertEqual(rows[0].pctSelf, 98)
+        XCTAssertFalse(rows[0].ceilingBroken)
     }
 
     func testCeilingBrokenAbove100() {
+        // 250 × 1.1 = 275 over 247.5 = 111.11% → floor 111. The division's
+        // repeating decimal is exactly the shape that overflowed
+        // NSDecimalNumber.intValue to 0 (CI run 30603130193).
         let ceiling = StatMath.estimatedOneRepMax(weight: 225, reps: 3)
         let sets = [set(userA, squat, session: sessionID, weight: 250, reps: 3)]
         let rows = SessionScoreboard.rows(participants: [userA], sessionSets: sets,
                                           baselines: [userA: [squat: ceiling]])
-        XCTAssertGreaterThan(rows[0].pctSelf ?? 0, 100)
+        XCTAssertEqual(rows[0].pctSelf, 111)
         XCTAssertTrue(rows[0].ceilingBroken)
+    }
+
+    func testExactCeilingMatchIsExactlyOneHundred() {
+        // Same set as the ceiling → 100, and NOT "broken" (100 = matched).
+        let ceiling = StatMath.estimatedOneRepMax(weight: 225, reps: 3)
+        let sets = [set(userA, squat, session: sessionID, weight: 225, reps: 3)]
+        let rows = SessionScoreboard.rows(participants: [userA], sessionSets: sets,
+                                          baselines: [userA: [squat: ceiling]])
+        XCTAssertEqual(rows[0].pctSelf, 100)
+        XCTAssertFalse(rows[0].ceilingBroken)
     }
 
     func testFailedSetsCountForSetsButNotPct() {

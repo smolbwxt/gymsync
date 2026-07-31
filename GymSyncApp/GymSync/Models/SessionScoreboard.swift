@@ -62,7 +62,7 @@ enum SessionScoreboard {
                     guard let w = log.weight, w > 0, let reps = log.reps, reps > 0,
                           let ceiling = ceilings[log.exerciseID], ceiling > 0 else { continue }
                     let e = StatMath.estimatedOneRepMax(weight: w, reps: reps)
-                    let pct = NSDecimalNumber(decimal: e / ceiling * 100).intValue
+                    let pct = wholePercent(e, of: ceiling)
                     if pct > (bestPct ?? Int.min) { bestPct = pct }
                 }
             }
@@ -78,5 +78,22 @@ enum SessionScoreboard {
                 return a.load > b.load
             }
         }
+    }
+
+    /// `numerator / denominator` as a whole percent, rounded DOWN (the
+    /// board never overstates an achievement: 100 means the ceiling was
+    /// genuinely matched, 101 genuinely beaten).
+    ///
+    /// The Decimal must be rounded to an integral value BEFORE the
+    /// NSDecimalNumber conversion: division like 275/247.5 yields a
+    /// repeating decimal whose 38-digit mantissa overflows
+    /// `NSDecimalNumber.intValue` and returns 0 (caught by
+    /// testCeilingBrokenAbove100 on CI run 30603130193 — every
+    /// pipeline-vs-pipeline assertion sailed right past it).
+    private static func wholePercent(_ numerator: Decimal, of denominator: Decimal) -> Int {
+        var raw = numerator / denominator * 100
+        var rounded = Decimal()
+        NSDecimalRound(&rounded, &raw, 0, .down)
+        return NSDecimalNumber(decimal: rounded).intValue
     }
 }
