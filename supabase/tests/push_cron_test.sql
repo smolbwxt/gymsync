@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(32);
+SELECT plan(33);
 
 -- ── Fixtures ──────────────────────────────────────────────────────────────────
 -- pd1 alice = organizer of every fixture session
@@ -274,10 +274,17 @@ SELECT throws_ok(
 -- ============================================================
 SET LOCAL role postgres;
 
+-- d2 was 'scheduled' until 20260803000002 made pre-live sessions refuse
+-- set inserts entirely (the 2026-07-31 wrong-session field bug's
+-- backstop) — 'completed' still exercises this test's actual claim (the
+-- heartbeat trigger ignores non-in_progress sessions) with a state that
+-- legitimately accepts sets (offline replay lands after completion).
 INSERT INTO sessions (id, organizer_id, group_id, state, started_at) VALUES
   ('d0000000-0000-0000-0000-0000000000d1', '00000000-0000-0000-0000-0000000d0001',
    '00000000-0000-0000-0000-0000000d1001', 'in_progress', now() - interval '10 minutes'),
   ('d0000000-0000-0000-0000-0000000000d2', '00000000-0000-0000-0000-0000000d0001',
+   '00000000-0000-0000-0000-0000000d1001', 'completed', now() - interval '2 hours'),
+  ('d0000000-0000-0000-0000-0000000000d3', '00000000-0000-0000-0000-0000000d0001',
    '00000000-0000-0000-0000-0000000d1001', 'scheduled', NULL);
 
 INSERT INTO set_logs (id, user_id, session_id, exercise_id, set_index, reps, weight)
@@ -299,6 +306,17 @@ FROM (SELECT id FROM exercises WHERE slug = 'bench-press' LIMIT 1) e;
 SELECT ok(
   (SELECT last_activity_at IS NULL FROM sessions WHERE id = 'd0000000-0000-0000-0000-0000000000d2'),
   'set_logs INSERT does not touch last_activity_at for a non-in_progress session'
+);
+
+-- 20260803000002: a pre-live session refuses set inserts at the database,
+-- whatever client surface regresses next.
+SELECT throws_ok(
+  $$INSERT INTO set_logs (id, user_id, session_id, exercise_id, set_index, reps, weight)
+    SELECT gen_random_uuid(), '00000000-0000-0000-0000-0000000d0002',
+           'd0000000-0000-0000-0000-0000000000d3', e.id, 1, 5, 135.00
+    FROM (SELECT id FROM exercises WHERE slug = 'bench-press' LIMIT 1) e$$,
+  'P0001', 'session has not started',
+  'set_logs INSERT into a pre-live (scheduled) session is rejected (20260803000002)'
 );
 
 
