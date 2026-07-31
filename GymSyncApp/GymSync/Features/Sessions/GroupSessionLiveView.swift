@@ -2139,18 +2139,29 @@ struct GroupSessionLiveView: View {
                 )
             }
         }
-        // End confirmation
+        // Leave / end (user 2026-07-31: leaving must never end the session
+        // for everyone — the old dialog offered ONLY "end", and for
+        // non-organizers the RPC refused, stranding them in the session).
+        // Leave = drop out of the rotation; End = the last present lifter
+        // (or the organizer) closing it out for the crew's records.
         .confirmationDialog(
-            "End session for everyone?",
+            "Leave the session?",
             isPresented: $showEndConfirmation,
             titleVisibility: .visible
         ) {
-            Button("End Session", role: .destructive) {
-                Task { await endSession() }
+            Button("Leave session") {
+                Task { await leaveSession() }
+            }
+            if isOrganizer || presentRotation.count <= 1 {
+                Button("End for everyone", role: .destructive) {
+                    Task { await endSession() }
+                }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This will complete the session for all participants.")
+            Text(presentRotation.count <= 1
+                 ? "You're the last one lifting — leaving completes the session."
+                 : "Leaving removes you from the rotation; the crew keeps lifting.")
         }
         // Realtime lifecycle — SessionLiveService + SessionBroadcastService
         .task { await openAndSubscribe() }
@@ -2160,6 +2171,14 @@ struct GroupSessionLiveView: View {
             // Watch's "whose turn" state goes stale; re-push immediately
             // rather than waiting for the next scenePhase/reload cycle.
             pushWatchSessionState()
+        }
+        // The routine changing under a live session (organizer picked one
+        // after some members already entered) re-runs the routine fetch —
+        // reload() reads liveSession.routineID (field 2026-07-31: members
+        // sat in exercise-less sessions; the root fix is the routines RLS
+        // policy in 20260803000003, this covers the mid-session swap).
+        .onChange(of: liveSession.routineID) { _, _ in
+            Task { await reload() }
         }
         .onChange(of: liveSession.state) { _, _ in
             // Phase W Task 3 fix wave 1 (reviewer finding, CRITICAL) —
@@ -4609,6 +4628,30 @@ struct GroupSessionLiveView: View {
         } catch {
             logSetErrorText = error.localizedDescription
             return false
+        }
+    }
+
+    /// Leave ≠ end (user 2026-07-31): flip my check-in to 'left' (outside
+    /// the presence trio), hand the turn on first if it's mine, and only
+    /// when I'm the last present lifter does leaving complete the session
+    /// — "if everyone force quits, end the session."
+    @MainActor
+    private func leaveSession() async {
+        if presentRotation.count <= 1 {
+            await endSession()
+            return
+        }
+        do {
+            if isMyTurn {
+                // While still present and authorized as the current lifter.
+                try await SessionRepository.advanceTurn(sessionID: session.id)
+            }
+            try await SessionRepository.leave(sessionID: session.id)
+            dismiss()
+        } catch let error as GymSyncError {
+            errorText = error.errorDescription
+        } catch {
+            errorText = error.localizedDescription
         }
     }
 

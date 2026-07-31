@@ -771,6 +771,9 @@ struct ChatView: View {
             .padding(.vertical, 9)
             .padding(.horizontal, 12)
             .background(mine ? theme.accent : theme.surface)
+            // Onyx alignment (2026-07-31): bubbles are rounded — the
+            // zero-radius rectangles were pre-redesign canvas literals.
+            .clipShape(RoundedRectangle(cornerRadius: 14))
             .frame(maxWidth: 180, alignment: mine ? .trailing : .leading)
         } else {
             // Text bubble per canvas:
@@ -782,6 +785,8 @@ struct ChatView: View {
                 .padding(.vertical, 9)
                 .padding(.horizontal, 12)
                 .background(mine ? theme.accent : theme.surface)
+                // Onyx alignment (2026-07-31) — see the voice bubble above.
+                .clipShape(RoundedRectangle(cornerRadius: 14))
                 .frame(maxWidth: 260, alignment: mine ? .trailing : .leading)
         }
     }

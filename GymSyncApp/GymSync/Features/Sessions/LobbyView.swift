@@ -379,7 +379,15 @@ struct LobbyView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(5))
                 if let fresh = try? await SessionRepository.session(id: session.id) {
-                    currentSession = fresh
+                    // Routine drift needs the FULL reload (routineInfo is
+                    // loaded there) — a member polling on a dead socket
+                    // must see the organizer's routine pick, not just the
+                    // state flip.
+                    if fresh.routineID != currentSession?.routineID {
+                        await reload()
+                    } else {
+                        currentSession = fresh
+                    }
                 }
             }
         }
@@ -491,8 +499,13 @@ struct LobbyView: View {
             // session while writing sets into the new one (a scheduled
             // future occurrence). Identity-pinning makes prop and state
             // inseparable.
-            SessionInProgressView(session: session, participants: participants)
-                .id(session.id)
+            //
+            // effectiveSession, not the prop (field 2026-07-31): members'
+            // `session` predates the organizer's routine pick, so the live
+            // view opened with routineID nil. currentSession carries the
+            // freshest row the realtime/poll path fetched.
+            SessionInProgressView(session: effectiveSession, participants: participants)
+                .id(effectiveSession.id)
         }
     }
 

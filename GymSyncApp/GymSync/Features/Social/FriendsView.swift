@@ -101,7 +101,10 @@ struct FriendsView: View {
                                 }
                             }
                             .buttonStyle(GSPrimaryButtonStyle())
-                            .frame(width: 72)
+                            // fixedSize, not a fixed width (user screenshot
+                            // 2026-07-31: "Accept" wrapped to "Acce/pt" in
+                            // the old 72pt box).
+                            .fixedSize()
 
                             Button {
                                 Task {
@@ -260,7 +263,11 @@ struct FriendsView: View {
                 GSSectionHeader("Friends · \(friends.count)")
             }
         }
-        .listStyle(.plain)
+        // insetGrouped, not plain (Onyx alignment 2026-07-31): plain
+        // rendered every section as a full-bleed zero-radius band —
+        // insetGrouped gives the rounded floating-card read while keeping
+        // the List (and its swipeActions contract) intact.
+        .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
         .background(theme.bg)
         // Dock clearance (UI audit 2026-07-29): pushed inside a tab with

@@ -313,6 +313,24 @@ enum SessionRepository {
     }
 
     /// Self check-in: updates own participant row with ready state, timestamp, and method.
+    /// Leave a live session without ending it (2026-07-31): own-row flip
+    /// to 'left' — outside the presence trio, so advance_turn skips you;
+    /// walking back in (left → online) rides the late-joiner trigger to
+    /// the rotation's end like any other re-arrival.
+    static func leave(sessionID: UUID) async throws {
+        guard let userID = await SupabaseService.shared.currentUserID() else {
+            throw GymSyncError.unauthorized
+        }
+        do {
+            _ = try await client
+                .from("session_participants")
+                .update(["check_in_state": "left"])
+                .eq("session_id", value: sessionID.uuidString)
+                .eq("user_id", value: userID.uuidString)
+                .execute()
+        } catch { throw ErrorMapping.map(error) }
+    }
+
     static func checkIn(sessionID: UUID, method: String) async throws {
         guard let userID = await SupabaseService.shared.currentUserID() else {
             throw GymSyncError.unauthorized

@@ -394,7 +394,10 @@ struct HomeView: View {
                     Spacer(minLength: 0)
                     Image(systemName: "plus")
                         .font(.system(size: 14, weight: .bold))
-                    Text(burpeesOwed > 0 ? "Start workout" : "Start solo workout")
+                    // Always "solo" (user 2026-07-31: dropping the word when
+                    // the debt badge appeared made the widget ambiguous —
+                    // it fits fine beside the 96pt badge).
+                    Text("Start solo workout")
                         .font(GSFont.bold(15, relativeTo: .subheadline))
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
