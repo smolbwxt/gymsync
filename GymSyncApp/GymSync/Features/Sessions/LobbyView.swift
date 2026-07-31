@@ -366,6 +366,23 @@ struct LobbyView: View {
                 navigateToInProgress = true
             }
         }
+        // The waiting spinner POLLS what it promises (field 2026-07-31: a
+        // member sat in the lobby with a dead realtime socket — "Voice
+        // unavailable" on the same phone — so the organizer's start UPDATE
+        // never arrived and "Waiting for organizer to start…" waited
+        // forever). Every 5s while pre-live and on screen; a state flip
+        // lands in `currentSession` and the onChange above completes the
+        // handoff. The realtime echo remains the fast path.
+        .task(id: currentSession?.state ?? session.state) {
+            let preLive: Set<String> = ["scheduled", "lobby_open", "editing", "voting", "locked"]
+            guard preLive.contains(currentSession?.state ?? session.state) else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(5))
+                if let fresh = try? await SessionRepository.session(id: session.id) {
+                    currentSession = fresh
+                }
+            }
+        }
         .onDisappear {
             Task { await realtime.unsubscribe() }
             // Voice room persists across the Lobby -> live-session

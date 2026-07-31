@@ -1375,6 +1375,10 @@ struct GroupSessionLiveView: View {
         VStack(spacing: 0) {
             GSDivider()
             Color.clear.frame(height: 6)
+            if burpeesRemaining > 0 {
+                burpeeDebtStrip
+                Color.clear.frame(height: 6)
+            }
             turnSoundRail
             Color.clear.frame(height: 6)
 
@@ -1866,6 +1870,10 @@ struct GroupSessionLiveView: View {
         VStack(spacing: 0) {
             GSDivider()
             Color.clear.frame(height: 6)
+            if burpeesRemaining > 0 {
+                burpeeDebtStrip
+                Color.clear.frame(height: 6)
+            }
             turnSoundRail
             Color.clear.frame(height: 6)
             if isInSelfRotationRest {
@@ -2372,6 +2380,22 @@ struct GroupSessionLiveView: View {
             // rotation's turn never changes (self → self).
             .onChange(of: currentExerciseForSheet?.id) { _, _ in
                 if isMyTurn { prefillLogInputs() }
+            }
+            // Realtime fallback: the turn state POLLS every 10s while live
+            // (field 2026-07-31: one phone's dead websocket — "Voice
+            // unavailable" — made turn passes invisible to it; push-only
+            // signals strand whoever's socket died). Cheap single-row read;
+            // only a genuinely newer turn/state is applied, so the realtime
+            // echo remains the fast path.
+            .task(id: liveSession.state) {
+                guard liveSession.state == "in_progress" else { return }
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(10))
+                    guard let fresh = try? await SessionRepository.session(id: session.id) else { continue }
+                    if fresh.turnVersion > liveSession.turnVersion || fresh.state != liveSession.state {
+                        liveSession = fresh
+                    }
+                }
             }
     }
 
@@ -3298,6 +3322,36 @@ struct GroupSessionLiveView: View {
 
     // MARK: - Penalty banner
     // Canvas: accent fill "YOU OWE N BURPEES" kicker, large count, Log burpees button
+
+    /// Compact debt strip for the fixed pages (user 2026-07-31: "the
+    /// burpee counter doesn't persist" — the redesigned pages dropped the
+    /// legacy penalty banner, leaving mid-session debt invisible). Same
+    /// destination as the banner: penalty logging via LogSetSheet.
+    private var burpeeDebtStrip: some View {
+        Button {
+            showLogSetSheet = true
+        } label: {
+            HStack(spacing: 8) {
+                Text("YOU OWE \(burpeesRemaining) BURPEES")
+                    .font(GSFont.bold(12, relativeTo: .caption).monospacedDigit())
+                    .tracking(0.9)
+                Spacer()
+                Text("LOG THEM")
+                    .font(GSFont.bold(11, relativeTo: .caption2))
+                    .tracking(0.8)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .bold))
+            }
+            .foregroundStyle(theme.bg)
+            .padding(.horizontal, 14)
+            .frame(height: 40)
+            .frame(maxWidth: .infinity)
+            .background(RoundedRectangle(cornerRadius: 12).fill(theme.accent))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 16)
+    }
 
     private var penaltyBanner: some View {
         VStack(alignment: .leading, spacing: 8) {
