@@ -109,6 +109,18 @@ struct YouTabView: View {
 
                         signOutButton
                             .padding(.horizontal, 16)
+                            .padding(.bottom, 12)
+
+                        // Visible build number (user 2026-07-31: a two-phone
+                        // field test ran on mismatched TestFlight builds and
+                        // nothing on either screen could say so). CI stamps
+                        // CFBundleVersion with the run number at archive
+                        // time — the same tag Sentry releases use.
+                        Text("Build \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—")")
+                            .font(GSFont.bold(10, relativeTo: .caption2).monospacedDigit())
+                            .tracking(1.0)
+                            .foregroundStyle(theme.neutral500)
+                            .frame(maxWidth: .infinity)
                             .padding(.bottom, 24)
                     }
                     // Top-pinned: a bare .frame(minHeight:) centers short
