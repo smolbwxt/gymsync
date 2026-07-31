@@ -1427,28 +1427,7 @@ struct GroupSessionLiveView: View {
         Group {
             HStack(spacing: 8) {
                 ForEach(dockSounds.prefix(4)) { sound in
-                    let token = GSPlateToken(
-                        name: sound.plateName,
-                        envelope: sound.envelope,
-                        durationMs: sound.durationMs,
-                        isClipped: sound.isClipped,
-                        cooldownUntil: soundCooldowns[sound.slug]
-                    )
-                    .opacity(plateDrag?.sound.slug == sound.slug ? 0.25 : 1)
-                    .contentShape(Circle())
-                    // Tap = quick send; drag = the throw (spectate only,
-                    // and never over the open loader). The flick is the
-                    // fun path, never the toll.
-                    Group {
-                        if spectateActive && !showBarLoader {
-                            token.gesture(plateThrowGesture(sound))
-                        } else {
-                            token
-                        }
-                    }
-                    .onTapGesture { Task { await tapSound(slug: sound.slug) } }
-                    .accessibilityLabel("Send \(sound.label)")
-                    .accessibilityAddTraits(.isButton)
+                    dockPlate(for: sound)
                 }
                 Button { showSoundLibrary = true } label: {
                     Circle()
@@ -1915,6 +1894,151 @@ struct GroupSessionLiveView: View {
 
         // MARK: - Body
 
+    /// The pre-redesign scroll layout — reached only in the roster-failure
+    /// state now that my-turn and spectate both have fixed pages. Moved
+    /// verbatim out of `body` in the 2026-07-31 split.
+    private var legacyScrollLayout: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+
+                // ── HEADER ──────────────────────────────────────────────
+                headerBar
+
+                GSDivider()
+
+                // ── SPOTLIGHT (my turn) / ROSTER (spectating) ───────────
+                // Canvas Completion Task 4 fix round 1 (proof p31-errors,
+                // "Couldn't load the roster"): when the participants fetch
+                // has actually failed AND left the list blank, show the
+                // error card in place of both the spotlight and spectating
+                // blocks — both derive rotation/roster state from
+                // `participants`, so a blank list means neither block has
+                // anything real to show anyway (stale/placeholder text at
+                // best). A transient refresh failure that leaves an
+                // already-populated `participants` list intact never
+                // triggers this (matches the same best-effort contract as
+                // `GSErrorCard`'s other call sites).
+                if participants.isEmpty && rosterLoadFailed {
+                    GSErrorCard(
+                        title: "Couldn't load the roster",
+                        message: "Check your connection. Your workout keeps logging locally.",
+                        retry: { Task { await reload() } }
+                    )
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
+                } else if isMyTurn {
+                    VStack(alignment: .leading, spacing: 12) {
+                        spotlightHeaderCard
+                        statTimerRow
+                        barLoaderCard
+                        logThisSetCard
+                        if let logSetErrorText {
+                            GSInlineErrorBanner(
+                                title: "Set didn't save.",
+                                message: "Check your connection, then try again — your reps are still filled in above.",
+                                retry: { commitInlineLog() }
+                            )
+                        } else if didQueueSetOffline {
+                            // Phase O Task 3 fix wave 1 (reviewer Finding 1) — see
+                            // `logSetAndAdvance`'s offline-queue branch for the full
+                            // rationale. No retry CTA: the set already saved locally,
+                            // so a retry here would only mint a duplicate queue entry.
+                            GSInlineNoticeBanner(
+                                title: "Saved on this phone.",
+                                message: "Your turn will pass once you're back online."
+                            )
+                        }
+                        if !rotationTiles.isEmpty {
+                            rotationStrip
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
+                } else {
+                    VStack(alignment: .leading, spacing: 12) {
+                        spectatingHeaderCard
+                        barLoaderCard
+                        if !rotationOrder.isEmpty {
+                            rosterGrid
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
+                }
+
+                // ── PENALTY BANNER ───────────────────────────────────────
+                if burpeesRemaining > 0 {
+                    penaltyBanner
+                        .padding(.top, 12)
+                }
+
+                // ── SET FEED ─────────────────────────────────────────────
+                if !feedSets.isEmpty {
+                    GSDivider()
+                        .padding(.horizontal, 16)
+                        .padding(.top, 14)
+
+                    feedSection
+                }
+
+                // ── ERROR ────────────────────────────────────────────────
+                if let errorText {
+                    Text(errorText)
+                        .font(GSFont.body(12, relativeTo: .footnote))
+                        .foregroundStyle(.red)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 10)
+                }
+
+                Spacer(minLength: 88)
+            }
+        }
+        .background(theme.bg)
+    }
+
+    /// PR celebration (full-screen, user-dismissed — p29).
+    @ViewBuilder
+    private var prOverlayLayer: some View {
+        if isPROverlay {
+            PRCelebrationOverlay(
+                exerciseName: prOverlayExerciseName,
+                weight: prOverlayWeight,
+                reps: prOverlayReps,
+                priorBest: prOverlayPriorBest,
+                monthlyCount: prOverlayMonthlyCount,
+                unit: ThemeStore.shared.weightUnit,
+                onDismiss: {
+                    withAnimation(.easeIn(duration: 0.2)) { isPROverlay = false }
+                }
+            )
+            .transition(.opacity)
+        }
+    }
+
+    /// Floating reaction emoji pill.
+    @ViewBuilder
+    private var reactionOverlayLayer: some View {
+        if let emoji = reactionOverlay {
+            Text(emoji)
+                .font(.system(size: 40))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(theme.surface)
+                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
+                .opacity(reactionOverlayVisible ? 1 : 0)
+                .offset(y: reactionOverlayVisible ? -120 : -80)
+                .animation(.easeOut(duration: 0.3), value: reactionOverlayVisible)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .allowsHitTesting(false)
+        }
+    }
+
+    // Body split (type-check timeout, master CI run 30602065007,
+    // 2026-07-31 — the IDENTICAL sha passed the branch run minutes
+    // earlier: the checker's budget is machine-dependent, so a borderline
+    // body is a broken body): the legacy scroll layout and both overlays
+    // are named sub-views; body stays a small ZStack + modifier chain.
+    // Mirrors WorkoutSessionView's 2026-07-27 split.
     var body: some View {
         ZStack(alignment: .bottom) {
             // Redesign 2026-07-30: my-turn is the FIXED page (no scroll);
@@ -1925,134 +2049,10 @@ struct GroupSessionLiveView: View {
             } else if spectateActive {
                 spectateFixedPage
             } else {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-
-                    // ── HEADER ──────────────────────────────────────────────
-                    headerBar
-
-                    GSDivider()
-
-                    // ── SPOTLIGHT (my turn) / ROSTER (spectating) ───────────
-                    // Canvas Completion Task 4 fix round 1 (proof p31-errors,
-                    // "Couldn't load the roster"): when the participants fetch
-                    // has actually failed AND left the list blank, show the
-                    // error card in place of both the spotlight and spectating
-                    // blocks — both derive rotation/roster state from
-                    // `participants`, so a blank list means neither block has
-                    // anything real to show anyway (stale/placeholder text at
-                    // best). A transient refresh failure that leaves an
-                    // already-populated `participants` list intact never
-                    // triggers this (matches the same best-effort contract as
-                    // `GSErrorCard`'s other call sites).
-                    if participants.isEmpty && rosterLoadFailed {
-                        GSErrorCard(
-                            title: "Couldn't load the roster",
-                            message: "Check your connection. Your workout keeps logging locally.",
-                            retry: { Task { await reload() } }
-                        )
-                        .padding(.horizontal, 16)
-                        .padding(.top, 14)
-                    } else if isMyTurn {
-                        VStack(alignment: .leading, spacing: 12) {
-                            spotlightHeaderCard
-                            statTimerRow
-                            barLoaderCard
-                            logThisSetCard
-                            if let logSetErrorText {
-                                GSInlineErrorBanner(
-                                    title: "Set didn't save.",
-                                    message: "Check your connection, then try again — your reps are still filled in above.",
-                                    retry: { commitInlineLog() }
-                                )
-                            } else if didQueueSetOffline {
-                                // Phase O Task 3 fix wave 1 (reviewer Finding 1) — see
-                                // `logSetAndAdvance`'s offline-queue branch for the full
-                                // rationale. No retry CTA: the set already saved locally,
-                                // so a retry here would only mint a duplicate queue entry.
-                                GSInlineNoticeBanner(
-                                    title: "Saved on this phone.",
-                                    message: "Your turn will pass once you're back online."
-                                )
-                            }
-                            if !rotationTiles.isEmpty {
-                                rotationStrip
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.top, 14)
-                    } else {
-                        VStack(alignment: .leading, spacing: 12) {
-                            spectatingHeaderCard
-                            barLoaderCard
-                            if !rotationOrder.isEmpty {
-                                rosterGrid
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.top, 14)
-                    }
-
-                    // ── PENALTY BANNER ───────────────────────────────────────
-                    if burpeesRemaining > 0 {
-                        penaltyBanner
-                            .padding(.top, 12)
-                    }
-
-                    // ── SET FEED ─────────────────────────────────────────────
-                    if !feedSets.isEmpty {
-                        GSDivider()
-                            .padding(.horizontal, 16)
-                            .padding(.top, 14)
-
-                        feedSection
-                    }
-
-                    // ── ERROR ────────────────────────────────────────────────
-                    if let errorText {
-                        Text(errorText)
-                            .font(GSFont.body(12, relativeTo: .footnote))
-                            .foregroundStyle(.red)
-                            .padding(.horizontal, 16)
-                            .padding(.top, 10)
-                    }
-
-                    Spacer(minLength: 88)
-                }
+                legacyScrollLayout
             }
-            .background(theme.bg)
-            }
-
-            // ── PR CELEBRATION (full-screen, user-dismissed — p29) ─────────
-            if isPROverlay {
-                PRCelebrationOverlay(
-                    exerciseName: prOverlayExerciseName,
-                    weight: prOverlayWeight,
-                    reps: prOverlayReps,
-                    priorBest: prOverlayPriorBest,
-                    monthlyCount: prOverlayMonthlyCount,
-                    unit: ThemeStore.shared.weightUnit,
-                    onDismiss: {
-                        withAnimation(.easeIn(duration: 0.2)) { isPROverlay = false }
-                    }
-                )
-                .transition(.opacity)
-            }
-
-            // ── REACTION OVERLAY (floating emoji pill) ───────────────────
-            if let emoji = reactionOverlay {
-                Text(emoji)
-                    .font(.system(size: 40))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(theme.surface)
-                    .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
-                    .opacity(reactionOverlayVisible ? 1 : 0)
-                    .offset(y: reactionOverlayVisible ? -120 : -80)
-                    .animation(.easeOut(duration: 0.3), value: reactionOverlayVisible)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .allowsHitTesting(false)
-            }
+            prOverlayLayer
+            reactionOverlayLayer
         }
         .navigationBarBackButtonHidden(true)
         .navigationTitle("")
@@ -4057,6 +4057,38 @@ struct GroupSessionLiveView: View {
                 landedPlates.removeAll { $0.id == plate.id }
             }
         }
+    }
+
+    /// The bare token + its visual states — kept as its own small
+    /// function so each piece stays inside the type-checker budget
+    /// (the inline let + Group form was part of the 2026-07-31 timeout).
+    private func dockPlateToken(_ sound: SoundboardSound) -> some View {
+        GSPlateToken(
+            name: sound.plateName,
+            envelope: sound.envelope,
+            durationMs: sound.durationMs,
+            isClipped: sound.isClipped,
+            cooldownUntil: soundCooldowns[sound.slug]
+        )
+        .opacity(plateDrag?.sound.slug == sound.slug ? 0.25 : 1)
+        .contentShape(Circle())
+    }
+
+    /// One dock plate. Tap = quick send; drag = the throw (spectate only,
+    /// never over the open loader). The flick is the fun path, never the
+    /// toll.
+    @ViewBuilder
+    private func dockPlate(for sound: SoundboardSound) -> some View {
+        Group {
+            if spectateActive && !showBarLoader {
+                dockPlateToken(sound).gesture(plateThrowGesture(sound))
+            } else {
+                dockPlateToken(sound)
+            }
+        }
+        .onTapGesture { Task { await tapSound(slug: sound.slug) } }
+        .accessibilityLabel("Send \(sound.label)")
+        .accessibilityAddTraits(.isButton)
     }
 
     // MARK: - The throw (composite v5 phase 3 — Hearthstone rules)
