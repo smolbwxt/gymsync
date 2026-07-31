@@ -134,7 +134,13 @@ struct HomeView: View {
             }
             .navigationDestination(isPresented: $navigateToJoined) {
                 if let session = joinedSession {
+                    // .id pins the lobby's SwiftUI identity to the session
+                    // (field bug 2026-07-30/31: a pushed lobby whose computed
+                    // session re-resolved kept its @State — including
+                    // navigateToInProgress and the live view's session —
+                    // and wrote sets into the NEXT SCHEDULED occurrence).
                     LobbyView(session: session)
+                        .id(session.id)
                 }
             }
             // Burpee widget destination — the ledger is group-scoped, so it
@@ -311,7 +317,11 @@ struct HomeView: View {
         VStack(spacing: 9) {
             if let session = todaysSession {
                 NavigationLink {
+                    // .id — see navigateToJoined's destination comment: the
+                    // computed session re-resolving must rebuild the lobby,
+                    // never mutate a pushed one in place.
                     LobbyView(session: session)
+                        .id(session.id)
                 } label: {
                     ctaCard(
                         title: "Join \(routineLabel(for: session))",
@@ -584,7 +594,12 @@ struct HomeView: View {
         TimelineView(.periodic(from: .now, by: 30)) { context in
             if let session = nextActionableSession(now: context.date) {
                 NavigationLink {
+                    // .id — the TimelineView re-resolves this session every
+                    // 30s; a pushed lobby must be rebuilt, not re-propped
+                    // (the exact route that wrote 14 sets into a scheduled
+                    // future occurrence, field bug 2026-07-30/31).
                     LobbyView(session: session)
+                        .id(session.id)
                 } label: {
                     if checkInAvailable(session, now: context.date) {
                         goldCheckInCard(session)

@@ -370,25 +370,43 @@ struct GroupSessionLiveView: View {
         }
     }
 
+    /// The presence trio — the SERVER's definition of "in the rotation"
+    /// (advance_turn's next-picker, migration 20260802000001). Every
+    /// rotation derivation below filters through this so the phone never
+    /// disagrees with the database about who's next. Field bug 2026-07-31:
+    /// a no-show read as NEXT here while the server handed the turn
+    /// straight back to the lone present lifter, so the solo rest
+    /// interlude never fired.
+    private static let presentStates: Set<String> = ["online", "ready", "late"]
+
+    /// `rotationOrder` filtered to participants the server would actually
+    /// hand the turn to. The full `rotationOrder` remains for surfaces
+    /// that deliberately show EVERYONE (crew grid, scoreboard).
+    private var presentRotation: [(participant: SessionParticipant, profile: Profile)] {
+        rotationOrder.filter {
+            Self.presentStates.contains($0.participant.checkInState ?? "")
+        }
+    }
+
     private var currentTurnIndex: Int? {
         guard let turnID = liveSession.currentTurnUserID else { return nil }
-        return rotationOrder.firstIndex(where: { $0.participant.userID == turnID })
+        return presentRotation.firstIndex(where: { $0.participant.userID == turnID })
     }
 
     private var nextTurnUserID: UUID? {
         guard let idx = currentTurnIndex else { return nil }
-        let n = rotationOrder.count
+        let n = presentRotation.count
         guard n > 1 else { return nil }
-        return rotationOrder[(idx + 1) % n].participant.userID
+        return presentRotation[(idx + 1) % n].participant.userID
     }
 
     /// Ordered rotation tiles starting at the current lifter, wrapping circularly.
     private var rotationTiles: [(profile: Profile, userID: UUID, label: String)] {
         guard let idx = currentTurnIndex else { return [] }
-        let n = rotationOrder.count
+        let n = presentRotation.count
         guard n > 0 else { return [] }
         return (0..<n).map { offset in
-            let item = rotationOrder[(idx + offset) % n]
+            let item = presentRotation[(idx + offset) % n]
             return (profile: item.profile, userID: item.participant.userID, label: rotationLabel(offset))
         }
     }
@@ -481,8 +499,8 @@ struct GroupSessionLiveView: View {
         guard let selfID, liveSession.currentTurnUserID != nil else { return nil }
         if nextTurnUserID == selfID { return "You're up next" }
         guard let idx = currentTurnIndex,
-              let myIdx = rotationOrder.firstIndex(where: { $0.participant.userID == selfID }) else { return nil }
-        let n = rotationOrder.count
+              let myIdx = presentRotation.firstIndex(where: { $0.participant.userID == selfID }) else { return nil }
+        let n = presentRotation.count
         guard n > 0 else { return nil }
         let aheadCount = ((myIdx - idx) + n) % n
         guard aheadCount > 0 else { return nil }
@@ -1717,7 +1735,7 @@ struct GroupSessionLiveView: View {
                     .foregroundStyle(theme.neutral700)
                 Spacer(minLength: 4)
                 HStack(spacing: 0) {
-                    ForEach(Array(rotationOrder.enumerated()), id: \.element.participant.userID) { index, entry in
+                    ForEach(Array(presentRotation.enumerated()), id: \.element.participant.userID) { index, entry in
                         let isLifting = entry.participant.userID == liveSession.currentTurnUserID
                         let isMe = entry.participant.userID == selfID
                         VStack(spacing: 5) {
@@ -1780,13 +1798,14 @@ struct GroupSessionLiveView: View {
         .buttonStyle(.plain)
     }
 
-    /// NOW / NEXT / YOU / ordinals, relative to whoever holds the bar.
+    /// NOW / NEXT / YOU / ordinals, relative to whoever holds the bar —
+    /// over the PRESENT rotation, matching the server's next-picker.
     private func spectateSlotLabel(index: Int) -> String {
-        let entry = rotationOrder[index]
-        let lifterIdx = rotationOrder.firstIndex {
+        let entry = presentRotation[index]
+        let lifterIdx = presentRotation.firstIndex {
             $0.participant.userID == liveSession.currentTurnUserID
         } ?? 0
-        let n = rotationOrder.count
+        let n = presentRotation.count
         let rel = n == 0 ? 0 : (index - lifterIdx + n) % n
         if rel == 0 { return "NOW" }
         if entry.participant.userID == selfID { return "YOU" }
@@ -2346,6 +2365,13 @@ struct GroupSessionLiveView: View {
             .onChange(of: spectateShowsBoard) { _, shows in
                 guard shows else { return }
                 Task { await loadScoreBaselines() }
+            }
+            // The exercise advancing (RoutineProgression) re-prefills the
+            // entry. Field bug 2026-07-31: the squat weight rode into the
+            // curls because prefill only fired on turn CHANGES — and a solo
+            // rotation's turn never changes (self → self).
+            .onChange(of: currentExerciseForSheet?.id) { _, _ in
+                if isMyTurn { prefillLogInputs() }
             }
     }
 
@@ -3582,6 +3608,11 @@ struct GroupSessionLiveView: View {
     /// catches its own errors internally and never rethrows.
     private func commitInlineLog() {
         guard !isLoggingSet else { return }
+        // A set can only ever belong to a LIVE session (field bug
+        // 2026-07-31: a set landed in a scheduled future occurrence —
+        // whatever surface allowed it, the write itself must refuse).
+        // The DB trigger in 20260803000002 is the backstop.
+        guard liveSession.state == "in_progress" else { return }
         guard let ex = currentExerciseForSheet else { return }
         isLoggingSet = true
         let reps = leadingInt(logReps)
@@ -3613,7 +3644,12 @@ struct GroupSessionLiveView: View {
             // rest interlude instead of silently staying on my-turn — the
             // screen visibly changes, the rest is real, and START SET cuts
             // it short (user round 3).
-            if liveSession.currentTurnUserID == selfID, participants.count <= 1 || nextTurnUserID == selfID {
+            // PRESENT-rotation gate (field bug 2026-07-31): the old
+            // `participants.count <= 1` counted a no-show friend, so the
+            // pass-came-straight-back case looked like a real rotation and
+            // the interlude never fired. presentRotation mirrors the
+            // server's advance_turn exactly.
+            if liveSession.currentTurnUserID == selfID, presentRotation.count <= 1 || nextTurnUserID == selfID {
                 let seconds = currentRoutineExercise?.restSeconds ?? 120
                 let until = Date().addingTimeInterval(TimeInterval(seconds))
                 selfRotationRestUntil = until

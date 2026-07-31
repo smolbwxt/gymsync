@@ -468,7 +468,14 @@ struct LobbyView: View {
             Text("All \(upcomingOccurrenceCount) upcoming sessions in this series will be deleted.")
         }
         .navigationDestination(isPresented: $navigateToInProgress) {
+            // .id — the live view's @State (liveSession, my-turn UI) must
+            // die with its session: on 2026-07-30/31 a live view whose
+            // session prop was swapped underneath kept showing the OLD
+            // session while writing sets into the new one (a scheduled
+            // future occurrence). Identity-pinning makes prop and state
+            // inseparable.
             SessionInProgressView(session: session, participants: participants)
+                .id(session.id)
         }
     }
 

@@ -373,7 +373,11 @@ struct GroupView: View {
                     Section {
                         ForEach(upcomingSessions) { session in
                             NavigationLink {
+                                // .id — session-identity pin (HomeView's
+                                // navigateToJoined destination comment has
+                                // the full field-bug story).
                                 LobbyView(session: session)
+                                    .id(session.id)
                             } label: {
                                 sessionRow(session)
                             }

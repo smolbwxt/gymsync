@@ -218,7 +218,10 @@ struct TrainingCalendarWidget: View {
             // removed stat tiles.
             ForEach(Array(upcomingSessions.prefix(4).enumerated()), id: \.element.id) { index, session in
                 NavigationLink {
+                    // .id — session-identity pin (HomeView's navigateToJoined
+                    // destination comment has the full field-bug story).
                     LobbyView(session: session)
+                        .id(session.id)
                 } label: {
                     upcomingRow(session)
                 }
