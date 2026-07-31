@@ -92,6 +92,15 @@ struct WorkoutSessionView: View {
     /// logging the next set — same "no polling Timer" pattern as the elapsed
     /// header clock: `Text(timerInterval:countsDown:)` renders itself live.
     @State private var restEndAt: Date?
+    /// Session-local HR history behind the rest screen's YOUR RECOVERY
+    /// card — fed by `.onChange(of: soloBLEBPM)`; the math lives in
+    /// RecoveryBuffer (unit-tested, shared with the group spectate page).
+    @State private var soloRecoveryBuffer = RecoveryBuffer()
+    /// Pre-session est-1RM ceilings per exercise for the rest screen's
+    /// LOAD · % SELF line — fetched lazily after each log, cached for the
+    /// session (the past doesn't change mid-workout).
+    @State private var soloCeilings: [UUID: Decimal] = [:]
+    @State private var isLoadingSoloStats = false
     /// PRs achieved this session — consumed by the recap view (Task 9).
     @State private var sessionPRs: [PersonalRecord] = []
     /// The completed session record (has `completedAt`) — captured by `endSession()`
@@ -214,6 +223,15 @@ struct WorkoutSessionView: View {
             soloPrefill()
         }
         .onChange(of: restEndAt) { handleRestWindowChange() }
+        .onChange(of: soloBLEBPM) { _, newValue in
+            guard let newValue else { return }
+            soloRecoveryBuffer.append(bpm: newValue, at: Date().timeIntervalSinceReferenceDate)
+        }
+        // LOAD · % SELF ceilings refresh after every log — covers entering
+        // the rest screen with fresh numbers.
+        .onChange(of: loggedSets.count) { _, _ in
+            Task { await loadSoloCeilings() }
+        }
         .onDisappear {
             // Only when the session is truly over — a mid-rest lock/
             // background must keep the cue (that IS the feature).
@@ -474,6 +492,15 @@ struct WorkoutSessionView: View {
                 exerciseName: currentExercise?.name ?? "your next set",
                 setNumber: currentSetIndex
             )
+            // Auto-return from the rest screen once the window lapses —
+            // only the still-current window clears itself (the guarded-sleep
+            // shape the group interlude uses). +1s grace so this clear can
+            // never race the rest cue's own delivery at exactly restEndAt.
+            let until = restEndAt
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(max(0, until.timeIntervalSinceNow) + 1))
+                if self.restEndAt == until { self.restEndAt = nil }
+            }
         } else {
             RestNotification.cancel()
         }
@@ -529,15 +556,24 @@ struct WorkoutSessionView: View {
     private var soloFixedPage: some View {
         VStack(spacing: 0) {
             Color.clear.frame(height: 10)
-            soloVitalsRow
-            Color.clear.frame(height: 12)
-            if soloLoaderOpen {
-                soloLoaderExpanded
+            // The REST screen (user 2026-07-31: "after you log any set, you
+            // go to the rest screen — watch your recovery, understand
+            // what's coming up next, watch your rest timer tick down").
+            // The loader keeps priority so tuning the next weight works
+            // mid-rest, exactly like the group page.
+            if soloRestActive && !soloLoaderOpen {
+                soloRestPage
             } else {
-                soloExerciseCard
-                    .frame(maxHeight: .infinity)
+                soloVitalsRow
                 Color.clear.frame(height: 12)
-                soloEntryCard
+                if soloLoaderOpen {
+                    soloLoaderExpanded
+                } else {
+                    soloExerciseCard
+                        .frame(maxHeight: .infinity)
+                    Color.clear.frame(height: 12)
+                    soloEntryCard
+                }
             }
             Color.clear.frame(height: 8)
         }
@@ -580,6 +616,231 @@ struct WorkoutSessionView: View {
         soloReps = currentRoutineExercise?.targetReps.flatMap { leadingInt($0).map(String.init) } ?? ""
         soloRPE = 7.0
         soloFailed = false
+    }
+
+    // MARK: - The REST screen (2026-07-31)
+    //
+    // The group spectate page's REST band, minus the crew: recovery, the
+    // countdown hero with UP NEXT, the bar/last-time prep card, and a
+    // single LOAD · % SELF line where the group has its rotation widget
+    // and REST|BOARD switch — solo has nobody to toggle to.
+
+    private var soloRestActive: Bool {
+        guard let restEndAt else { return false }
+        return restEndAt > .now
+    }
+
+    @ViewBuilder
+    private var soloRestPage: some View {
+        soloRecoveryCard
+        Color.clear.frame(height: 12)
+        soloRestHero
+            .frame(maxHeight: .infinity)
+        Color.clear.frame(height: 12)
+        Group {
+            if soloIsBarbell {
+                soloBarCard
+            } else {
+                soloLastTimeCard
+            }
+        }
+        .frame(height: 100)
+        .padding(.horizontal, 16)
+        Color.clear.frame(height: 12)
+        soloSelfStatsLine
+    }
+
+    /// YOUR RECOVERY — live HR falling while you rest, with the windowed
+    /// peak-to-now drop and sparkline. Three-state like the vitals card:
+    /// dash (never asked) / session-elapsed (asked, no strap) / live.
+    private var soloRecoveryCard: some View {
+        Button { if soloBLEBPM == nil { soloShowHRPairing = true } } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Text("YOUR RECOVERY")
+                        .font(GSFont.bold(10, relativeTo: .caption2))
+                        .tracking(1.1)
+                        .foregroundStyle(theme.neutral700)
+                    Spacer()
+                    if soloBLEBPM != nil, let drop = soloRecoveryBuffer.drop, drop > 0 {
+                        Text("−\(drop)")
+                            .font(GSFont.bold(14, relativeTo: .subheadline).monospacedDigit())
+                            .foregroundStyle(theme.text.opacity(0.78))
+                    }
+                }
+                Spacer(minLength: 6)
+                HStack(alignment: .bottom, spacing: 10) {
+                    if let bpm = soloBLEBPM {
+                        HStack(spacing: 6) {
+                            Image(systemName: "heart.fill")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(theme.text.opacity(0.78))
+                            Text("\(bpm)")
+                                .font(GSFont.boldFixed(36).monospacedDigit())
+                                .foregroundStyle(theme.text)
+                        }
+                        Spacer()
+                        soloRecoverySparkline
+                    } else if HeartRatePrimeStore.hasBeenAsked, let startedAt = session?.startedAt {
+                        Text(startedAt, style: .timer)
+                            .font(GSFont.boldFixed(30).monospacedDigit())
+                            .foregroundStyle(theme.text.opacity(0.78))
+                        Spacer()
+                    } else {
+                        Text("—")
+                            .font(GSFont.boldFixed(36))
+                            .foregroundStyle(theme.neutral700)
+                        Spacer()
+                    }
+                }
+            }
+            .padding(14)
+            .frame(height: 104)
+            .frame(maxWidth: .infinity)
+            .background(theme.surface)
+            .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 20))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(soloBLEBPM != nil)
+        .padding(.horizontal, 16)
+    }
+
+    /// 22-bar bpm history — the same bar language as the group page.
+    @ViewBuilder
+    private var soloRecoverySparkline: some View {
+        let bars = soloRecoveryBuffer.sparkline(barCount: 22)
+        if !bars.isEmpty {
+            HStack(alignment: .bottom, spacing: 2) {
+                ForEach(Array(bars.enumerated()), id: \.offset) { pair in
+                    Capsule().fill(theme.text.opacity(0.45))
+                        .frame(width: 3, height: max(3, CGFloat(pair.element) * 40))
+                }
+            }
+            .frame(height: 42, alignment: .bottom)
+            .accessibilityHidden(true)
+        }
+    }
+
+    /// The countdown, big, over UP NEXT — the entry page is already
+    /// prefilled for exactly this set, so the readback echoes it.
+    private var soloRestHero: some View {
+        VStack(spacing: 0) {
+            Text("REST")
+                .font(GSFont.bold(10, relativeTo: .caption2))
+                .tracking(1.3)
+                .foregroundStyle(theme.neutral700)
+            Color.clear.frame(height: 12)
+            if let restEndAt {
+                Text(timerInterval: .now...restEndAt, countsDown: true)
+                    .font(GSFont.boldFixed(64).monospacedDigit())
+                    .foregroundStyle(theme.text)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+            }
+            Spacer(minLength: 12)
+            VStack(spacing: 7) {
+                Text("UP NEXT")
+                    .font(GSFont.bold(9, relativeTo: .caption2))
+                    .tracking(1.2)
+                    .foregroundStyle(theme.neutral700)
+                Text(currentExercise?.name ?? "—")
+                    .font(GSFont.bold(20, relativeTo: .title3))
+                    .foregroundStyle(theme.text)
+                    .lineLimit(1)
+                Text(soloUpNextReadback)
+                    .font(GSFont.bold(13, relativeTo: .footnote).monospacedDigit())
+                    .tracking(0.5)
+                    .foregroundStyle(theme.text.opacity(0.78))
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(theme.surface)
+        .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .padding(.horizontal, 16)
+    }
+
+    private var soloUpNextReadback: String {
+        let sets = currentRoutineExercise?.targetSets.map { " OF \($0)" } ?? ""
+        var parts = ["SET \(currentSetIndex)\(sets)"]
+        if !soloWeight.isEmpty && !soloReps.isEmpty {
+            parts.append("\(soloWeight) \(soloUnit.label.uppercased()) × \(soloReps)")
+        } else if !soloWeight.isEmpty {
+            parts.append("\(soloWeight) \(soloUnit.label.uppercased())")
+        } else if !soloReps.isEmpty {
+            parts.append("\(soloReps) REPS")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    /// The single-line session stats widget (user 2026-07-31: no
+    /// REST|BOARD toggle solo — "just a single line widget that shows your
+    /// load and percent rigor"). Same SessionScoreboard math as the group
+    /// board: LOAD = Σ reps × RPE, % SELF = best set today vs your own
+    /// pre-session est-1RM ceiling; dashes until there's real data.
+    private var soloSelfStatsLine: some View {
+        let row = appState.currentProfile.map { profile in
+            SessionScoreboard.rows(
+                participants: [profile.id],
+                sessionSets: loggedSets,
+                baselines: [profile.id: soloCeilings]
+            ).first
+        } ?? nil
+        return HStack(spacing: 10) {
+            Text("SESSION")
+                .font(GSFont.bold(10, relativeTo: .caption2))
+                .tracking(1.1)
+                .foregroundStyle(theme.neutral700)
+            Spacer()
+            Text("LOAD")
+                .font(GSFont.bold(9, relativeTo: .caption2))
+                .tracking(0.8)
+                .foregroundStyle(theme.neutral700)
+            Text(row.map { $0.load > 0 ? "\($0.load)" : "—" } ?? "—")
+                .font(GSFont.bold(17, relativeTo: .body).monospacedDigit())
+                .foregroundStyle(theme.text.opacity(0.78))
+            Rectangle().fill(theme.divider)
+                .frame(width: 2, height: 14)
+                .padding(.horizontal, 2)
+            Text("% SELF")
+                .font(GSFont.bold(9, relativeTo: .caption2))
+                .tracking(0.8)
+                .foregroundStyle(theme.neutral700)
+            Text(row?.pctSelf.map { "\($0)%" } ?? "—")
+                .font(GSFont.bold(17, relativeTo: .body).monospacedDigit())
+                .foregroundStyle((row?.ceilingBroken ?? false) ? theme.accent : theme.text.opacity(0.78))
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 52)
+        .frame(maxWidth: .infinity)
+        .background(theme.surface)
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .padding(.horizontal, 16)
+    }
+
+    /// Best-effort ceiling fetch per exercise lifted this session —
+    /// a blocked or empty history just leaves the honest dash.
+    @MainActor
+    private func loadSoloCeilings() async {
+        guard let userID = appState.currentProfile?.id,
+              let sessionID = session?.id,
+              !isLoadingSoloStats else { return }
+        isLoadingSoloStats = true
+        defer { isLoadingSoloStats = false }
+        let exercises = Set(loggedSets.filter { !$0.isPenalty }.map(\.exerciseID))
+        for exerciseID in exercises where soloCeilings[exerciseID] == nil {
+            guard let history = try? await SessionRepository.exerciseHistory(
+                userID: userID, exerciseID: exerciseID, limit: 200) else { continue }
+            let base = SessionScoreboard.baseline(history: history,
+                                                 excludingSessionID: sessionID)
+            if let ceiling = base[exerciseID] {
+                soloCeilings[exerciseID] = ceiling
+            }
+        }
     }
 
     // Vitals 116pt — HR three-state (shared HeartRatePrimeStore semantics:
@@ -1072,11 +1333,41 @@ struct WorkoutSessionView: View {
         return parts.joined(separator: " · ")
     }
 
-    // Chrome: the CTA alone — solo has no soundboard or PTT.
+    // Chrome: the CTA alone — solo has no soundboard or PTT. During rest
+    // the CTA becomes START SET (cut the rest short), mirroring the group
+    // interlude's chrome.
     private var soloChrome: some View {
         VStack(spacing: 0) {
             GSDivider()
             Color.clear.frame(height: 8)
+            if soloRestActive && !soloLoaderOpen {
+                Button {
+                    restEndAt = nil
+                } label: {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 16).fill(theme.accent)
+                        VStack(spacing: 2) {
+                            Text("START SET")
+                                .font(GSFont.bold(17, relativeTo: .body))
+                                .tracking(0.9)
+                            if let restEndAt {
+                                HStack(spacing: 4) {
+                                    Text("RESTING")
+                                        .font(GSFont.bold(11, relativeTo: .caption2))
+                                    Text(timerInterval: .now...restEndAt, countsDown: true)
+                                        .font(GSFont.bold(11, relativeTo: .caption2).monospacedDigit())
+                                }
+                                .opacity(0.8)
+                            }
+                        }
+                        .foregroundStyle(theme.bg)
+                    }
+                    .frame(height: 64)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 16)
+            } else {
             Button {
                 setStartedAt = .now
                 restEndAt = nil
@@ -1122,6 +1413,7 @@ struct WorkoutSessionView: View {
             .disabled(leadingInt(soloReps) == nil && !soloFailed)
             .gsSpotlightTarget(.workout)
             .padding(.horizontal, 16)
+            }
             Color.clear.frame(height: 10)
         }
         .background(theme.bg)
