@@ -145,6 +145,20 @@ targets:
         # orientation. iPad is not targeted (TARGETED_DEVICE_FAMILY "1").
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
+        # Background Modes -> Audio (user field test 2026-07-30: "let the
+        # session and voice chat continue when the app is minimized"). With
+        # this key, an ACTIVE .playAndRecord/.voiceChat audio session —
+        # exactly what AudioSessionManager.enterVoiceMode() holds while a
+        # LiveKit voice room is connected — keeps the process running in the
+        # background: voice keeps flowing, and because the process lives,
+        # Supabase realtime (turn passes, sets, sounds) keeps working too.
+        # Deliberately scoped: with NO voice room connected the baseline
+        # .ambient session does NOT sustain background execution (Apple
+        # rejects silent-audio keepalives), so the app suspends as before
+        # and the existing scenePhase reload paths recover on return.
+        # Joining voice is what buys an in-pocket session.
+        UIBackgroundModes:
+          - audio
         ITSAppUsesNonExemptEncryption: false
         NSHealthShareUsageDescription: "Gym Sync writes your completed workouts to Apple Health so they appear in your Activity ring."
         NSHealthUpdateUsageDescription: "Gym Sync writes your completed workouts to Apple Health so they appear in your Activity ring."

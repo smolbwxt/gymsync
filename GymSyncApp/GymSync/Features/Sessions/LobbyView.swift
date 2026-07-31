@@ -348,6 +348,24 @@ struct LobbyView: View {
             guard scenePhase == .active else { return }
             Task { await reload() }
         }
+        // Members' start signal (user field test 2026-07-30: only the
+        // organizer navigated — everyone else sat on "Waiting for organizer
+        // to start…" forever). The organizer's start reaches this client as
+        // a sessions-row UPDATE → realtime onChange → reload() refreshes
+        // `currentSession`; this observer completes the handoff by pushing
+        // the live screen. Fires for late lobby arrivals too (nil →
+        // "in_progress" on first reload is a change). `navigateToInProgress`
+        // doubles as the voice-persistence signal in onDisappear, so voice
+        // carries into the session exactly like the organizer's own push.
+        .onChange(of: currentSession?.state) { _, newState in
+            guard newState == "in_progress", !navigateToInProgress else { return }
+            Task { @MainActor in
+                // Same ordering as startSession(): drop the lobby channel
+                // before the live screen claims its own.
+                await realtime.unsubscribe()
+                navigateToInProgress = true
+            }
+        }
         .onDisappear {
             Task { await realtime.unsubscribe() }
             // Voice room persists across the Lobby -> live-session
