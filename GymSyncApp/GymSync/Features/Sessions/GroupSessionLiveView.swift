@@ -153,6 +153,14 @@ struct GroupSessionLiveView: View {
     /// Success-haptic trigger for `.sensoryFeedback` — a count (not a Bool)
     /// so every logged set fires, including two in a row.
     @State private var logHapticTick        = 0
+    /// REST | BOARD switch on the spectate page (composite v5): false =
+    /// my recovery + prep, true = the crew board (crew HR grid until the
+    /// phase-4 scoreboard lands).
+    @State private var spectateShowsBoard   = false
+    /// Session-local HR history behind YOUR RECOVERY — fed by the
+    /// `.onChange(of: selfHeartRate?.bpm)` in `body`; pure math lives in
+    /// RecoveryBuffer so the HRR numbers are unit-tested.
+    @State private var recoveryBuffer       = RecoveryBuffer()
     @State private var isEnding             = false
     @State private var errorText: String?
     // Phase O Task 5 item 5 — mirrors LobbyView's identical trio (this
@@ -1434,51 +1442,92 @@ struct GroupSessionLiveView: View {
             && liveSession.currentTurnUserID != nil
     }
 
+    // Composite v5 (2026-07-30): the lifter card is the platform up top;
+    // the middle band is REST (my recovery + prep) or BOARD (the crew
+    // grid, until the phase-4 scoreboard); the widget row (rotation +
+    // REST|BOARD switch) sits above the chrome. The my-turn vitals row is
+    // gone from this page — the recovery card carries my HR three-state
+    // and the prep card carries my bar.
     private var spectateFixedPage: some View {
         VStack(spacing: 0) {
             turnHeaderRail
             GSDivider()
             Color.clear.frame(height: 10)
-            turnVitalsRow
-            Color.clear.frame(height: 12)
             if showBarLoader {
                 turnLoaderExpanded
             } else {
                 spectateLifterCard
                 Color.clear.frame(height: 12)
-                spectateCrewGrid
-                    .frame(maxHeight: .infinity)
+                if spectateShowsBoard {
+                    spectateCrewGrid
+                        .frame(maxHeight: .infinity)
+                } else {
+                    spectateRecoveryCard
+                    Color.clear.frame(height: 12)
+                    barLoaderCard
+                        .padding(.horizontal, 16)
+                    Spacer(minLength: 0)
+                }
+                Color.clear.frame(height: 12)
+                spectateWidgetRow
             }
             Color.clear.frame(height: 8)
         }
         .background(theme.bg)
     }
 
-    /// Who has the bar right now — name, their live heart rate, and where
-    /// they are in their sets. The one card a spectator actually watches.
+    /// Who has the bar right now — the platform (composite v5). Name at
+    /// display size, their live HR big, set number, turn clock, and their
+    /// last logged set as the honest "what's on the bar" (a set mid-lift
+    /// is unknowable until they log it). Reaction plates land on this card
+    /// in the next phase.
     private var spectateLifterCard: some View {
         let lifter = rotationOrder.first { $0.participant.userID == liveSession.currentTurnUserID }
+        let lastSet = currentLifterLastSet
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
                 Text(lifter?.profile.username ?? "—")
-                    .font(GSFont.bold(22, relativeTo: .title3))
+                    .font(GSFont.bold(26, relativeTo: .title2))
                     .foregroundStyle(theme.text)
                     .lineLimit(1)
                 Spacer()
+                Text("SET \(currentTurnSetNumber)")
+                    .font(GSFont.bold(12, relativeTo: .caption))
+                    .tracking(0.8)
+                    .foregroundStyle(theme.neutral700)
+            }
+            Color.clear.frame(height: 12)
+            HStack(alignment: .center) {
                 if let id = lifter?.participant.userID, let hr = heartRateFor(id) {
-                    HStack(spacing: 4) {
+                    HStack(spacing: 6) {
                         Image(systemName: "heart.fill")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(theme.text.opacity(0.78))
                         Text("\(hr.bpm)")
-                            .font(GSFont.boldFixed(26).monospacedDigit())
+                            .font(GSFont.boldFixed(44).monospacedDigit())
                             .foregroundStyle(theme.text)
+                    }
+                } else {
+                    Text("—")
+                        .font(GSFont.boldFixed(44))
+                        .foregroundStyle(theme.neutral700)
+                }
+                Spacer()
+                if let s = lastSet, let w = s.weight {
+                    VStack(alignment: .trailing, spacing: 4) {
+                        Text("\(Units.format(pounds: w, unit: turnUnit, rounded: false, includeUnit: false)) × \(s.reps ?? 0)")
+                            .font(GSFont.bold(22, relativeTo: .title3).monospacedDigit())
+                            .foregroundStyle(theme.text)
+                        Text("LAST SET · \(turnUnit.label.uppercased())")
+                            .font(GSFont.bold(9, relativeTo: .caption2))
+                            .tracking(1.0)
+                            .foregroundStyle(theme.neutral700)
                     }
                 }
             }
-            Color.clear.frame(height: 6)
+            Color.clear.frame(height: 10)
             HStack {
-                Text("\(currentExerciseForSheet?.name ?? "") · SET \(currentTurnSetNumber)")
+                Text(currentExerciseForSheet?.name ?? "")
                     .font(GSFont.bold(13, relativeTo: .footnote))
                     .tracking(0.5)
                     .foregroundStyle(theme.neutral700)
@@ -1504,6 +1553,181 @@ struct GroupSessionLiveView: View {
                 .padding(.leading, 14)
         }
         .padding(.horizontal, 16)
+    }
+
+    /// The current lifter's most recent logged set for the exercise in
+    /// play — the honest "what's on the bar". Reads the UNCAPPED session
+    /// array, never the 30-row feed (the mySetCount lesson).
+    private var currentLifterLastSet: SetLog? {
+        guard let lifterID = liveSession.currentTurnUserID,
+              let ex = currentExerciseForSheet else { return nil }
+        return allSessionSets
+            .filter { $0.userID == lifterID && $0.exerciseID == ex.id && !$0.isPenalty }
+            .max(by: { $0.loggedAt < $1.loggedAt })
+    }
+
+    /// YOUR RECOVERY — live HR falling in real time while you rest, with
+    /// the peak-to-now drop and a session-local sparkline. Three-state
+    /// like the my-turn vitals card: dash (never asked) / session-elapsed
+    /// (asked, no strap) / live. The rest countdown deliberately does NOT
+    /// render here — the chrome's START SET CTA already carries it (the
+    /// one-clock rule).
+    private var spectateRecoveryCard: some View {
+        Button { if selfHeartRate == nil { showHRPairing = true } } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Text("YOUR RECOVERY")
+                        .font(GSFont.bold(10, relativeTo: .caption2))
+                        .tracking(1.1)
+                        .foregroundStyle(theme.neutral700)
+                    Spacer()
+                    if selfHeartRate != nil, let drop = recoveryBuffer.drop, drop > 0 {
+                        Text("−\(drop)")
+                            .font(GSFont.bold(14, relativeTo: .subheadline).monospacedDigit())
+                            .foregroundStyle(theme.text.opacity(0.78))
+                    }
+                }
+                Spacer(minLength: 6)
+                HStack(alignment: .bottom, spacing: 10) {
+                    if let hr = selfHeartRate {
+                        HStack(spacing: 6) {
+                            Image(systemName: "heart.fill")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(theme.text.opacity(0.78))
+                            Text("\(hr.bpm)")
+                                .font(GSFont.boldFixed(36).monospacedDigit())
+                                .foregroundStyle(theme.text)
+                        }
+                        Spacer()
+                        recoverySparkline
+                    } else if HeartRatePrimeStore.hasBeenAsked, let startedAt = liveSession.startedAt {
+                        Text(startedAt, style: .timer)
+                            .font(GSFont.boldFixed(30).monospacedDigit())
+                            .foregroundStyle(theme.text.opacity(0.78))
+                        Spacer()
+                    } else {
+                        Text("—")
+                            .font(GSFont.boldFixed(36))
+                            .foregroundStyle(theme.neutral700)
+                        Spacer()
+                    }
+                }
+            }
+            .padding(14)
+            .frame(height: 104)
+            .frame(maxWidth: .infinity)
+            .background(theme.surface)
+            .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 20))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(selfHeartRate != nil)
+        .padding(.horizontal, 16)
+    }
+
+    /// 22-bar bpm history — the same bar language as the sound waveforms.
+    @ViewBuilder
+    private var recoverySparkline: some View {
+        let bars = recoveryBuffer.sparkline(barCount: 22)
+        if !bars.isEmpty {
+            HStack(alignment: .bottom, spacing: 2) {
+                ForEach(Array(bars.enumerated()), id: \.offset) { pair in
+                    Capsule().fill(theme.text.opacity(0.45))
+                        .frame(width: 3, height: max(3, CGFloat(pair.element) * 40))
+                }
+            }
+            .frame(height: 42, alignment: .bottom)
+            .accessibilityHidden(true)
+        }
+    }
+
+    /// ROTATION card + REST|BOARD switch — the widget row above the chrome.
+    private var spectateWidgetRow: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("ROTATION")
+                    .font(GSFont.bold(10, relativeTo: .caption2))
+                    .tracking(1.1)
+                    .foregroundStyle(theme.neutral700)
+                Spacer(minLength: 4)
+                HStack(spacing: 0) {
+                    ForEach(Array(rotationOrder.enumerated()), id: \.element.participant.userID) { index, entry in
+                        let isLifting = entry.participant.userID == liveSession.currentTurnUserID
+                        let isMe = entry.participant.userID == selfID
+                        VStack(spacing: 5) {
+                            GSInitialsAvatar(name: entry.profile.username,
+                                             avatarURL: entry.profile.avatarURL, size: 30)
+                                .overlay {
+                                    if isLifting {
+                                        Circle().strokeBorder(theme.accent, lineWidth: 2)
+                                    } else if isMe {
+                                        Circle().strokeBorder(theme.neutral500,
+                                            style: StrokeStyle(lineWidth: 2, dash: [3, 3]))
+                                    }
+                                }
+                            Text(spectateSlotLabel(index: index))
+                                .font(GSFont.bold(9, relativeTo: .caption2))
+                                .tracking(0.8)
+                                .foregroundStyle(isLifting || isMe ? theme.text.opacity(0.78) : theme.neutral700)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+                Spacer(minLength: 2)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(theme.surface)
+            .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 20))
+
+            VStack(spacing: 8) {
+                spectateModeSeg("REST", active: !spectateShowsBoard) { spectateShowsBoard = false }
+                spectateModeSeg("BOARD", active: spectateShowsBoard) { spectateShowsBoard = true }
+            }
+            .padding(8)
+            .frame(width: 96)
+            .frame(maxHeight: .infinity)
+            .background(theme.surface)
+            .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 20))
+        }
+        .frame(height: 100)
+        .padding(.horizontal, 16)
+    }
+
+    /// One stacked pill of the REST|BOARD switch — the lbs|kg segmented
+    /// idiom turned vertical.
+    private func spectateModeSeg(_ label: String, active: Bool, action: @escaping () -> Void) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.15)) { action() }
+        } label: {
+            Text(label)
+                .font(GSFont.bold(11, relativeTo: .caption2))
+                .tracking(0.9)
+                .foregroundStyle(active ? theme.bg : theme.neutral700)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(active ? theme.accent : Color.clear)
+                .cornerRadius(11)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// NOW / NEXT / YOU / ordinals, relative to whoever holds the bar.
+    private func spectateSlotLabel(index: Int) -> String {
+        let entry = rotationOrder[index]
+        let lifterIdx = rotationOrder.firstIndex {
+            $0.participant.userID == liveSession.currentTurnUserID
+        } ?? 0
+        let n = rotationOrder.count
+        let rel = n == 0 ? 0 : (index - lifterIdx + n) % n
+        if rel == 0 { return "NOW" }
+        if entry.participant.userID == selfID { return "YOU" }
+        if rel == 1 { return "NEXT" }
+        let ordinals = ["3RD", "4TH", "5TH", "6TH", "7TH", "8TH"]
+        return rel - 2 < ordinals.count ? ordinals[rel - 2] : "\(rel + 1)TH"
     }
 
     /// Everyone in the rotation, with live bpm where it exists. The HR slot
@@ -1747,6 +1971,10 @@ struct GroupSessionLiveView: View {
         .navigationBarBackButtonHidden(true)
         .navigationTitle("")
         .sensoryFeedback(.success, trigger: logHapticTick)
+        .onChange(of: selfHeartRate?.bpm) { _, newValue in
+            guard let newValue else { return }
+            recoveryBuffer.append(bpm: newValue, at: Date().timeIntervalSinceReferenceDate)
+        }
         // Pushed via LobbyView → SessionInProgressView; the soundboard dock +
         // bottom action bar below are bottom-pinned — see GSComponents.swift's
         // GSHidesDock for why the custom app dock can't reach them via
@@ -2425,6 +2653,19 @@ struct GroupSessionLiveView: View {
                 return feedSets.first { $0.userID == selfID && $0.exerciseID == ex.id && !$0.isFailed }?.weight
             }()
             let targetInUnit = prefill.map { Units.fromPounds($0, to: unit) } ?? barInUnit
+            // Spectate prep face (composite v5): lead with the per-side
+            // plate delta from what's on the bar now (the lifter's last
+            // logged set) to my next weight. My-turn keeps the original
+            // face; so does spectate when either weight is unknown.
+            let prepHeadline: String? = {
+                guard spectateActive, let mine = prefill, mine > 0,
+                      let lifterPounds = currentLifterLastSet?.weight else { return nil }
+                let fromInUnit = Units.fromPounds(lifterPounds, to: unit)
+                let d = PlateDelta.delta(fromWeight: fromInUnit, toWeight: targetInUnit,
+                                         barWeight: barInUnit, plates: plates)
+                return d.isNoChange ? PlateDelta.headline(d)
+                                    : "\(PlateDelta.headline(d)) · PER SIDE"
+            }()
 
             VStack(alignment: .leading, spacing: 0) {
                 Button {
@@ -2436,14 +2677,25 @@ struct GroupSessionLiveView: View {
                                 Image(systemName: "scalemass")
                                     .font(.system(size: 15, weight: .semibold))
                                     .foregroundStyle(theme.accent)
-                                Text("Load the bar")
+                                Text(prepHeadline != nil ? "Your next" : "Load the bar")
                                     .font(GSFont.bold(15, relativeTo: .body))
                                     .foregroundStyle(theme.text)
+                                if prepHeadline != nil, let prefill {
+                                    Text(Units.format(pounds: prefill, unit: unit, rounded: false))
+                                        .font(GSFont.bold(13, relativeTo: .subheadline).monospacedDigit())
+                                        .foregroundStyle(theme.neutral500)
+                                }
                             }
-                            Text(prefill.map { "\(Units.format(pounds: $0, unit: unit, rounded: false)) · plates & warm-up" }
-                                 ?? "Plates & warm-up ramp")
-                                .font(GSFont.body(11.5, relativeTo: .caption))
-                                .foregroundStyle(theme.neutral500)
+                            if let prepHeadline {
+                                Text(prepHeadline)
+                                    .font(GSFont.bold(14, relativeTo: .subheadline).monospacedDigit())
+                                    .foregroundStyle(theme.text.opacity(0.78))
+                            } else {
+                                Text(prefill.map { "\(Units.format(pounds: $0, unit: unit, rounded: false)) · plates & warm-up" }
+                                     ?? "Plates & warm-up ramp")
+                                    .font(GSFont.body(11.5, relativeTo: .caption))
+                                    .foregroundStyle(theme.neutral500)
+                            }
                         }
                         Spacer(minLength: 8)
                         GSBarLoaderMini(target: targetInUnit, barWeight: barInUnit,
