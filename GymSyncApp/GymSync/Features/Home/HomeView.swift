@@ -329,16 +329,15 @@ struct HomeView: View {
                     )
                 }
                 .buttonStyle(.plain)
-                soloSecondaryButton
-            } else {
-                Button {
-                    routinePickerPreselected = todaysRoutine
-                    showRoutinePicker = true
-                } label: {
-                    ctaCard(title: "Start Solo Workout", subtitle: soloSubtitle)
-                }
-                .buttonStyle(.plain)
             }
+            // ONE architecture in every state (user 2026-07-31: "I don't
+            // think we should change the widget architecture at all from
+            // pre-check-in to post"): the solo start is ALWAYS this pill
+            // row, the burpee debt always emerges beside it when owed, and
+            // only the Join hero comes and goes with an actual session.
+            // (Replaces the old no-session branch's big Start Solo Workout
+            // hero — the morph between the two shapes was the complaint.)
+            soloSecondaryButton
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 12)
@@ -438,21 +437,21 @@ struct HomeView: View {
             VStack(spacing: 1) {
                 Text("\(burpeesOwed)")
                     .font(GSFont.heading(22, relativeTo: .title2))
-                    .foregroundStyle(Self.goldInk)
+                    .foregroundStyle(theme.bg)
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
                 Text("burpees")
                     .font(GSFont.bold(9.5, relativeTo: .caption2))
                     .tracking(0.6)
-                    .foregroundStyle(Self.goldInk.opacity(0.8))
+                    .foregroundStyle(theme.bg.opacity(0.8))
             }
             .frame(width: 96)
             .padding(.vertical, 14)
-            .background(
-                LinearGradient(colors: [Self.goldTop, Self.goldBottom],
-                               startPoint: .top, endPoint: .bottom)
-            )
+            // Accent, not gold (user 2026-07-31): gold is the CHECK-IN
+            // signal color and nothing else gets to wear it. Accent =
+            // "yours to act on" — a debt is exactly that.
+            .background(theme.accent)
             .cornerRadius(GSMetrics.radiusMd)
             .contentShape(Rectangle())
         }
