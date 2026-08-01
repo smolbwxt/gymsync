@@ -4760,7 +4760,6 @@ struct GroupSessionLiveView: View {
         }
     }
 
-    @MainActor
     /// Everything after the session is completed server-side — shared by
     /// the local End action and the member-side path where completion
     /// arrives as a realtime/poll echo (field 2026-08-01: the organizer's
@@ -4786,6 +4785,7 @@ struct GroupSessionLiveView: View {
         }
     }
 
+    @MainActor
     private func endSession() async {
         isEnding = true
         defer { isEnding = false }
