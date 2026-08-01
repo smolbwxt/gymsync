@@ -5,6 +5,7 @@ struct StatsTabView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.gsTheme) private var theme
     @State private var exercises: [Exercise] = []
+    @State private var exerciseSearchText = ""
     @State private var refreshedProfile: Profile?
     @State private var weeklyVolumes: [Decimal] = Array(repeating: 0, count: 6)
     @State private var recentPRs: [PersonalRecord] = []
@@ -100,8 +101,26 @@ struct StatsTabView: View {
                         .padding(.horizontal, 16)
                         .padding(.bottom, 24)
                     } else {
+                        // Shared in-content search field shape (ExercisesListView
+                        // idiom) — the history list is the full catalog.
+                        HStack(spacing: 8) {
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(theme.neutral500)
+                            TextField("Search exercises", text: $exerciseSearchText)
+                                .font(GSFont.body(14, relativeTo: .body))
+                                .foregroundStyle(theme.text)
+                                .autocorrectionDisabled()
+                        }
+                        .padding(.horizontal, 13)
+                        .padding(.vertical, 10)
+                        .background(theme.surface)
+                        .cornerRadius(GSMetrics.radiusSm)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 10)
+
                         VStack(spacing: 8) {
-                            ForEach(exercises) { ex in
+                            ForEach(filteredExercises) { ex in
                                 NavigationLink { ExerciseHistoryView(exercise: ex) } label: {
                                     navRow(title: ex.name, tint: theme.text)
                                 }
@@ -140,6 +159,11 @@ struct StatsTabView: View {
                 BodyWeightLogSheet(onLogged: { Task { await loadBodyWeight() } })
             }
         }
+    }
+
+    private var filteredExercises: [Exercise] {
+        exerciseSearchText.isEmpty ? exercises
+            : exercises.filter { $0.name.localizedCaseInsensitiveContains(exerciseSearchText) }
     }
 
     private var volumeString: String {

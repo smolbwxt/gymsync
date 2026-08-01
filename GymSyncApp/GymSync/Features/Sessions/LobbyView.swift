@@ -1708,6 +1708,7 @@ private struct ProposalComposerView: View {
     @State private var targetReps: String = "8-12"
     @State private var targetWeight: String = ""
     @State private var showExercisePicker = false
+    @State private var pickerSearchText = ""
     @State private var isProposing = false
     @State private var errorText: String?
 
@@ -1728,6 +1729,7 @@ private struct ProposalComposerView: View {
                         .listRowBackground(theme.surface)
                     }
                     Button {
+                        pickerSearchText = ""
                         showExercisePicker = true
                     } label: {
                         Label(
@@ -1808,27 +1810,51 @@ private struct ProposalComposerView: View {
         }
     }
 
+    private var filteredPickerExercises: [Exercise] {
+        pickerSearchText.isEmpty ? allExercises
+            : allExercises.filter { $0.name.localizedCaseInsensitiveContains(pickerSearchText) }
+    }
+
     private var exercisePickerSheet: some View {
         NavigationStack {
-            List(allExercises, id: \.id) { ex in
-                Button {
-                    selectedExercise = ex
-                    showExercisePicker = false
-                } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(ex.name)
-                            .font(GSFont.bodyMedium(14, relativeTo: .body))
-                            .foregroundStyle(theme.text)
-                        Text(ex.primaryMuscle.capitalized)
-                            .font(GSFont.body(12, relativeTo: .caption))
-                            .foregroundStyle(theme.neutral500)
-                    }
+            VStack(spacing: 0) {
+                // Shared in-content search field shape (ExercisesListView /
+                // ExercisePickSheet idiom).
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(theme.neutral500)
+                    TextField("Search exercises", text: $pickerSearchText)
+                        .font(GSFont.body(14, relativeTo: .body))
+                        .foregroundStyle(theme.text)
+                        .autocorrectionDisabled()
                 }
-                .listRowBackground(theme.surface)
-                .listRowSeparatorTint(theme.divider)
+                .padding(.horizontal, 13)
+                .padding(.vertical, 10)
+                .background(theme.surface)
+                .cornerRadius(GSMetrics.radiusSm)
+                .padding(16)
+
+                List(filteredPickerExercises, id: \.id) { ex in
+                    Button {
+                        selectedExercise = ex
+                        showExercisePicker = false
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(ex.name)
+                                .font(GSFont.bodyMedium(14, relativeTo: .body))
+                                .foregroundStyle(theme.text)
+                            Text(ex.primaryMuscle.capitalized)
+                                .font(GSFont.body(12, relativeTo: .caption))
+                                .foregroundStyle(theme.neutral500)
+                        }
+                    }
+                    .listRowBackground(theme.surface)
+                    .listRowSeparatorTint(theme.divider)
+                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
             .background(theme.bg)
             .navigationTitle("Add exercise")
             .navigationBarTitleDisplayMode(.inline)

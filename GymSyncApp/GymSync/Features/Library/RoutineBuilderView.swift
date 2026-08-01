@@ -17,6 +17,7 @@ struct RoutineBuilderView: View {
     @State private var items: [RoutineExercise] = []
     @State private var loading = false
     @State private var showExercisePicker = false
+    @State private var pickerSearchText = ""
     @State private var errorText: String?
     @State private var allExercises: [Exercise] = []
     // Save honors this (private vs public); UI toggle below (curator-only),
@@ -100,6 +101,7 @@ struct RoutineBuilderView: View {
 
                 // Canvas: full-width bordered "+ Add Exercise" CTA
                 Button {
+                    pickerSearchText = ""
                     showExercisePicker = true
                 } label: {
                     Text("+ Add Exercise")
@@ -413,9 +415,47 @@ struct RoutineBuilderView: View {
         }
     }
 
-    // Canvas: exercise picker rows — name + muscle kicker
+    private var pickerFilteredExercises: [Exercise] {
+        pickerSearchText.isEmpty ? allExercises
+            : allExercises.filter { $0.name.localizedCaseInsensitiveContains(pickerSearchText) }
+    }
+
+    // Canvas: exercise picker rows — name + muscle kicker, with the shared
+    // in-content search field shape above the list (same idiom as
+    // ExercisesListView / ExercisePickSheet).
     private var exercisePicker: some View {
-        List(allExercises) { ex in
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(theme.neutral500)
+                TextField("Search exercises", text: $pickerSearchText)
+                    .font(GSFont.body(14, relativeTo: .body))
+                    .foregroundStyle(theme.text)
+                    .autocorrectionDisabled()
+            }
+            .padding(.horizontal, 13)
+            .padding(.vertical, 10)
+            .background(theme.surface)
+            .cornerRadius(GSMetrics.radiusSm)
+            .padding(16)
+
+            exercisePickerList
+        }
+        .background(theme.bg)
+        .navigationTitle("Add exercise")
+        .toolbarBackground(theme.surface, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button("Cancel") { showExercisePicker = false }
+                    .tint(theme.accent)
+            }
+        }
+    }
+
+    private var exercisePickerList: some View {
+        List(pickerFilteredExercises) { ex in
             Button {
                 items.append(RoutineExercise(
                     id: UUID(),
@@ -444,16 +484,6 @@ struct RoutineBuilderView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        .background(theme.bg)
-        .navigationTitle("Add exercise")
-        .toolbarBackground(theme.surface, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button("Cancel") { showExercisePicker = false }
-                    .tint(theme.accent)
-            }
-        }
     }
 
     // Canvas: exercise card — drag handle + name + "Muscle · Equipment" kicker +
