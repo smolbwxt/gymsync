@@ -45,85 +45,118 @@ struct PRCelebrationOverlay: View {
         self.onDismiss = onDismiss
     }
 
+    // Onyx redesign (user 2026-08-01: "make the screen congruent with the
+    // current theme from the main lobby and my turn/spectator screen"):
+    // the accent flood becomes the Onyx floor — near-black bg, accent
+    // reserved for the record itself and the primary CTA, big fixed-size
+    // numerals with the 3pt accent underline (the "yours" mark), floating
+    // rounded cards for the chip and CTAs.
     var body: some View {
         ZStack {
-            theme.accent.ignoresSafeArea()
+            theme.bg.ignoresSafeArea()
 
-            // Concentric target-ring background (canvas chrome, approximated with two
-            // static strokes — no animation/particle system exists in this app).
+            // Concentric rings, now in the accent at low opacity — the
+            // target chrome survives the palette flip.
             ZStack {
-                Circle().stroke(theme.bg.opacity(0.22), lineWidth: 1).frame(width: 340, height: 340)
-                Circle().stroke(theme.bg.opacity(0.32), lineWidth: 1).frame(width: 230, height: 230)
+                Circle().stroke(theme.accent.opacity(0.14), lineWidth: 1.5).frame(width: 360, height: 360)
+                Circle().stroke(theme.accent.opacity(0.24), lineWidth: 1.5).frame(width: 240, height: 240)
             }
 
-            VStack(spacing: 16) {
+            VStack(spacing: 0) {
                 Spacer()
 
                 Image(systemName: "flame.fill")
-                    .font(.system(size: 44))
-                    .foregroundStyle(theme.bg)
+                    .font(.system(size: 40))
+                    .foregroundStyle(theme.accent)
+
+                Color.clear.frame(height: 16)
 
                 Text("NEW PERSONAL RECORD")
-                    .font(GSFont.bold(13, relativeTo: .caption))
+                    .font(GSFont.bold(12, relativeTo: .caption))
                     .tracking(3.0)
-                    .foregroundStyle(theme.bg.opacity(0.9))
+                    .foregroundStyle(theme.neutral700)
 
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Color.clear.frame(height: 14)
+
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(Units.format(pounds: weight, unit: unit, rounded: false, includeUnit: false))
-                        .font(.custom("Archivo-Bold", size: 56))
-                        .foregroundStyle(theme.bg)
-                    Text(unit.label)
-                        .font(GSFont.bold(18, relativeTo: .title3))
-                        .foregroundStyle(theme.bg.opacity(0.85))
+                        .font(GSFont.boldFixed(72).monospacedDigit())
+                        .foregroundStyle(theme.text)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                    Text(unit.label.uppercased())
+                        .font(GSFont.bold(16, relativeTo: .title3))
+                        .tracking(1.0)
+                        .foregroundStyle(theme.neutral700)
                 }
+                Capsule().fill(theme.accent)
+                    .frame(width: 56, height: 3)
+                    .padding(.top, 8)
+
+                Color.clear.frame(height: 16)
 
                 Text("\(exerciseName) × \(reps)")
-                    .font(GSFont.heading(20, relativeTo: .title3))
-                    .foregroundStyle(theme.bg)
+                    .font(GSFont.bold(20, relativeTo: .title3))
+                    .foregroundStyle(theme.text)
                     .multilineTextAlignment(.center)
 
-                Text("▲ Beat your best by \(Units.format(pounds: weight - priorBest, unit: unit, rounded: false, includeUnit: false)) \(unit.label)")
-                    .font(GSFont.bodyMedium(14, relativeTo: .body))
-                    .foregroundStyle(theme.bg.opacity(0.9))
+                Color.clear.frame(height: 10)
+
+                Text("▲ \(Units.format(pounds: weight - priorBest, unit: unit, rounded: false, includeUnit: false)) \(unit.label.uppercased()) OVER YOUR BEST")
+                    .font(GSFont.bold(12, relativeTo: .caption).monospacedDigit())
+                    .tracking(0.8)
+                    .foregroundStyle(theme.accent)
 
                 if let count = monthlyCount, count > 0 {
-                    HStack(spacing: 5) {
+                    Color.clear.frame(height: 16)
+                    HStack(spacing: 6) {
                         Image(systemName: "trophy.fill")
                             .font(.system(size: 11, weight: .bold))
-                        Text("\(ordinal(count)) PR this month")
-                            .font(GSFont.bold(12, relativeTo: .caption))
+                            .foregroundStyle(theme.accent)
+                        Text("\(ordinal(count).uppercased()) PR THIS MONTH")
+                            .font(GSFont.bold(10, relativeTo: .caption2))
+                            .tracking(1.0)
+                            .foregroundStyle(theme.text.opacity(0.78))
                     }
-                    .foregroundStyle(theme.bg)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(theme.bg.opacity(0.18))
-                    .cornerRadius(10)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 9)
+                    .background(theme.surface)
+                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
 
                 Spacer()
 
-                HStack(spacing: 10) {
-                    ShareLink(item: shareText) {
-                        Text("Share")
-                            .font(GSFont.bold(15, relativeTo: .body))
-                            .foregroundStyle(theme.bg)
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                    }
-                    .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.bg.opacity(0.6), lineWidth: 1))
-
+                VStack(spacing: 10) {
                     Button {
                         onDismiss()
                     } label: {
-                        Text("Keep Lifting")
-                            .font(GSFont.bold(15, relativeTo: .body))
-                            .foregroundStyle(theme.accent)
-                            .frame(maxWidth: .infinity, minHeight: 44)
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 16).fill(theme.accent)
+                            Text("KEEP LIFTING")
+                                .font(GSFont.bold(17, relativeTo: .body))
+                                .tracking(0.9)
+                                .foregroundStyle(theme.bg)
+                        }
+                        .frame(height: 64)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .background(theme.bg)
+
+                    ShareLink(item: shareText) {
+                        Text("SHARE")
+                            .font(GSFont.bold(13, relativeTo: .subheadline))
+                            .tracking(0.9)
+                            .foregroundStyle(theme.text.opacity(0.78))
+                            .frame(maxWidth: .infinity, minHeight: 48)
+                            .background(theme.surface)
+                            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
+                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                            .contentShape(Rectangle())
+                    }
                 }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 24)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 20)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

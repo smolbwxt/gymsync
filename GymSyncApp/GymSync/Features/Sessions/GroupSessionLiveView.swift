@@ -2127,14 +2127,14 @@ struct GroupSessionLiveView: View {
                     recipientIDs: payload.recipientIDs,
                     unit: ThemeStore.shared.weightUnit,
                     pumpCheck: data.pumpCheck,
-                    onDone: { dismiss() }
+                    onDone: { exitToHome() }
                 )
             } else {
                 SessionRecapView(
                     session: data.session,
                     sets: data.sets,
                     participants: participants,
-                    onDone: { dismiss() },
+                    onDone: { exitToHome() },
                     pumpCheck: data.pumpCheck
                 )
             }
@@ -2199,6 +2199,15 @@ struct GroupSessionLiveView: View {
             // that function's own doc comment) — this handler only needs to
             // trigger the re-push, no argument to pass.
             pushWatchSessionState()
+            // Member-side completion (field 2026-08-01: the organizer's
+            // "End for everyone" only ended the session on the organizer's
+            // phone — everyone else's screen just sat there). When the
+            // completion arrives as a realtime/poll echo, present the same
+            // recap the ender sees; isEnding/recapData guard the local-End
+            // path from double-presenting.
+            if liveSession.state == "completed", !isEnding, recapData == nil {
+                Task { await presentCompletion(liveSession) }
+            }
         }
         .onChange(of: scenePhase) {
             guard scenePhase == .active else { return }
@@ -3652,6 +3661,14 @@ struct GroupSessionLiveView: View {
         // set for this exercise, rendered in my display unit.
         let unit = ThemeStore.shared.weightUnit
         let prefillPounds: Decimal? = {
+            // This session's own work outranks the routine's static target
+            // (user 2026-08-01: 355×5 @7 logged, next set prefilled the
+            // 225 default). RPE-aware: ≤7 steps up one plate pair, 8+
+            // holds — SetProgression, unit-tested.
+            if let last = myTurnSets.last(where: { !$0.isFailed && $0.weight != nil }),
+               let w = last.weight {
+                return SetProgression.nextWeight(afterPounds: w, rpe: last.rpe, isFailed: last.isFailed)
+            }
             if let t = currentRoutineExercise?.targetWeight,
                let parsed = Decimal(string: t), parsed > 0 { return parsed }
             return feedSets.first {
@@ -4647,12 +4664,21 @@ struct GroupSessionLiveView: View {
                 try await SessionRepository.advanceTurn(sessionID: session.id)
             }
             try await SessionRepository.leave(sessionID: session.id)
-            dismiss()
+            exitToHome()
         } catch let error as GymSyncError {
             errorText = error.errorDescription
         } catch {
             errorText = error.localizedDescription
         }
+    }
+
+    /// Every exit from a live session lands on HOME, not the lobby
+    /// underneath (user 2026-08-01): flag the session for the lobby's
+    /// unwind observer, then pop this view.
+    @MainActor
+    private func exitToHome() {
+        appState.sessionExitToHomeID = session.id
+        dismiss()
     }
 
     /// Fetch the prior weight maximum for a given exercise (excluding failed/penalty sets).
@@ -4679,7 +4705,9 @@ struct GroupSessionLiveView: View {
         prOverlayPriorBest = priorBest
         prOverlayMonthlyCount = nil
         withAnimation(.easeOut(duration: 0.25)) { isPROverlay = true }
-        Task { await SoundboardPlayer.shared.play(slug: "ding") }
+        // Ronnie for the PR moment (user 2026-08-01) — catalog slug
+        // lightweight-baby, imported through the 5s-cap pipeline.
+        Task { await SoundboardPlayer.shared.play(slug: "lightweight-baby") }
     }
 
     @MainActor
@@ -4733,35 +4761,16 @@ struct GroupSessionLiveView: View {
     }
 
     @MainActor
-    private func endSession() async {
-        isEnding = true
-        defer { isEnding = false }
-        errorText = nil
+    /// Everything after the session is completed server-side — shared by
+    /// the local End action and the member-side path where completion
+    /// arrives as a realtime/poll echo (field 2026-08-01: the organizer's
+    /// End only ended the session on the organizer's phone; members'
+    /// screens just sat there).
+    @MainActor
+    private func presentCompletion(_ completed: WorkoutSession) async {
+        liveSession = completed
+        pushWatchSessionState()
         do {
-            let completed = try await SessionRepository.complete(sessionID: session.id)
-            // Phase W Task 3 — CARRIED-IN REQUIREMENT from T2's review: push
-            // the "session ended" state to the Watch immediately, right here
-            // at the one moment the session has unambiguously ended
-            // server-side (see `pushWatchSessionState`'s doc comment for why
-            // THIS call site, not `.onDisappear`). Fired before the
-            // HealthKit export / recap-payload work below since none of
-            // that affects what the Watch needs to know, and this view
-            // stays mounted (presenting the recap sheet) for a while after
-            // this point — no reason to delay it.
-            //
-            // Fix wave 1 (reviewer finding, CRITICAL): `pushWatchSessionState()`
-            // no longer takes an `isActive` override argument — it derives
-            // `isActive` from `liveSession.state` itself (see that
-            // function's own doc comment). This assignment is what makes
-            // THIS call site still lead the realtime echo the way the old
-            // `isActive: false` argument used to: without it, `liveSession.state`
-            // would still read its stale pre-completion value (this `@State`
-            // var is otherwise only ever updated by `reload()` or the
-            // realtime `onSessionChange` echo, neither of which has run yet
-            // at this exact point) and the push below would incorrectly
-            // report the session as still live.
-            liveSession = completed
-            pushWatchSessionState()
             let allSets = try await SessionRepository.sessionSets(sessionID: session.id)
             try? await HealthKitBridge.requestPermission()
             try? await HealthKitBridge.exportWorkout(session: completed, setLogs: allSets)
@@ -4770,6 +4779,23 @@ struct GroupSessionLiveView: View {
             let pumpCheck = await buildPumpCheckContext(session: completed, sets: allSets)
             recapData = RecapData(session: completed, sets: allSets,
                                   groupPayload: groupPayload, pumpCheck: pumpCheck)
+        } catch let error as GymSyncError {
+            errorText = error.errorDescription
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    private func endSession() async {
+        isEnding = true
+        defer { isEnding = false }
+        errorText = nil
+        do {
+            let completed = try await SessionRepository.complete(sessionID: session.id)
+            // presentCompletion carries the Watch-push-before-echo ordering
+            // requirement (Phase W Task 3) — it assigns liveSession FIRST,
+            // then pushes, then builds the recap.
+            await presentCompletion(completed)
         } catch let error as GymSyncError {
             errorText = error.errorDescription
         } catch {

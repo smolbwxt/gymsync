@@ -599,6 +599,13 @@ struct WorkoutSessionView: View {
         if let pounds = barLoaderPounds {
             soloWeight = Units.format(pounds: pounds, unit: soloUnit,
                                       rounded: false, includeUnit: false)
+        } else if let last = soloCurrentExerciseSets.last(where: { !$0.isFailed && $0.weight != nil }),
+                  let w = last.weight {
+            // This session's own work outranks the ladder's static rungs
+            // (user 2026-08-01) — RPE-aware step via SetProgression.
+            let next = SetProgression.nextWeight(afterPounds: w, rpe: last.rpe, isFailed: last.isFailed)
+            soloWeight = Units.format(pounds: next, unit: soloUnit,
+                                      rounded: false, includeUnit: false)
         } else if let re = currentRoutineExercise,
                   let suggestion = WorkingWeight.suggest(
                       exerciseID: re.exerciseID,
@@ -2352,6 +2359,9 @@ struct WorkoutSessionView: View {
         prOverlayPriorBest = priorBest
         prOverlayMonthlyCount = nil
         withAnimation(.easeOut(duration: 0.25)) { isPROverlay = true }
+        // Ronnie for the PR moment (user 2026-08-01) — the solo path had
+        // no celebration sound at all.
+        Task { await SoundboardPlayer.shared.play(slug: "lightweight-baby") }
     }
 
     private func priorMax(exerciseID: UUID, weight: Decimal, userID: UUID) async throws -> Decimal {

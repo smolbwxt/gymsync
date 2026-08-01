@@ -366,6 +366,18 @@ struct LobbyView: View {
                 navigateToInProgress = true
             }
         }
+        // Session-exit unwind (user 2026-08-01: "leaving a session should
+        // take you back to the Home Screen, not back to the lobby"): the
+        // live view flags the session right before it pops (leave, recap
+        // Done, member-side completion); when the pop clears this binding,
+        // the lobby consumes the flag and pops itself — landing on
+        // whatever pushed it (Home, or the group page).
+        .onChange(of: navigateToInProgress) { _, showing in
+            guard !showing,
+                  appState.sessionExitToHomeID == session.id else { return }
+            appState.sessionExitToHomeID = nil
+            dismiss()
+        }
         // The waiting spinner POLLS what it promises (field 2026-07-31: a
         // member sat in the lobby with a dead realtime socket — "Voice
         // unavailable" on the same phone — so the organizer's start UPDATE

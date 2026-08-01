@@ -54,6 +54,12 @@ final class AppState {
     var activeSessionID: UUID?
     var activeChatGroupID: UUID?
 
+    /// Set by GroupSessionLiveView right before it pops after ANY exit
+    /// (leave, recap Done, member-side completion) — the lobby underneath
+    /// consumes it to pop itself too, so every session exit lands on Home
+    /// instead of a stale lobby (user 2026-08-01).
+    var sessionExitToHomeID: UUID?
+
     // MARK: - Tab-switch transient-state (Task 6 item 2, reliability/debt
     // roll-up — .superpowers/sdd/progress.md:158-163)
     //
