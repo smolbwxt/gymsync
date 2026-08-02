@@ -2272,6 +2272,23 @@
       ],
       "youtubeId": "MJPGkNqAXzg",
       "videoTitle": "How to Do a Kettlebell Deadlift | Proper Form & Technique"
+    },
+    {
+      "name": "Cable Fly",
+      "slug": "cable-fly",
+      "category": "isolation",
+      "primary_muscle": "chest",
+      "secondary_muscles": [
+        "shoulders"
+      ],
+      "equipment": "cable",
+      "aliases": [
+        "Standing Cable Fly",
+        "Mid Cable Fly",
+        "Cable Chest Fly"
+      ],
+      "youtubeId": "ovFc-5YdcXw",
+      "videoTitle": "How to Perform Cable Flys | Proper Form and Tips for Chest Workouts"
     }
   ],
   "backfill": [
