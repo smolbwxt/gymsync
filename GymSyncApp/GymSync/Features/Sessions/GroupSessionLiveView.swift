@@ -1427,9 +1427,10 @@ struct GroupSessionLiveView: View {
             Color.clear.frame(height: 6)
 
             // 3D pass (2026-08): the gs3D style owns the fill (accent face,
-            // or surface face for a failed set) + the 5pt lip; the failed
-            // look keeps its outline as a label overlay, which lands exactly
-            // on the face rect. 59pt face + lip = the prior 64pt footprint.
+            // or the theme's raised face for a failed set) + the 7pt lip;
+            // the failed look keeps its outline as a label overlay, landing
+            // exactly on the face rect. 57pt face + lip = the prior 64pt
+            // footprint.
             Button { commitInlineLog() } label: {
                 ZStack {
                     if logIsFailed {
@@ -1459,9 +1460,11 @@ struct GroupSessionLiveView: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: 59)
+                .frame(height: 57)
             }
-            .buttonStyle(.gs3D(face: logIsFailed ? theme.surface : theme.accent, cornerRadius: 16, lipHeight: 5))
+            .buttonStyle(.gs3D(face: logIsFailed ? theme.raised3DFace : theme.accent,
+                               lip: logIsFailed ? theme.raised3DLip : nil,
+                               cornerRadius: 16))
             .disabled(isLoggingSet || (leadingInt(logReps) == nil && !logIsFailed))
             .padding(.horizontal, 16)
             Color.clear.frame(height: 10)
@@ -1923,7 +1926,7 @@ struct GroupSessionLiveView: View {
             Color.clear.frame(height: 6)
             if isInSelfRotationRest {
                 // Resting between your own sets — cut it short any time.
-                // 3D pass (2026-08): accent gs3D face, 59pt + 5pt lip =
+                // 3D pass (2026-08): accent gs3D face, 57pt + 7pt lip =
                 // the prior 64pt CTA footprint.
                 Button {
                     selfRotationRestUntil = nil
@@ -1947,9 +1950,9 @@ struct GroupSessionLiveView: View {
                     }
                     .foregroundStyle(theme.bg)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 59)
+                    .frame(height: 57)
                 }
-                .buttonStyle(.gs3D(face: theme.accent, cornerRadius: 16, lipHeight: 5))
+                .buttonStyle(.gs3D(face: theme.accent, cornerRadius: 16))
                 .padding(.horizontal, 16)
                 Color.clear.frame(height: 10)
             } else if let hint = upcomingTurnHint {
@@ -3470,12 +3473,12 @@ struct GroupSessionLiveView: View {
                 }
                 .foregroundStyle(theme.bg)
                 .padding(.horizontal, 16)
-                // 13.5pt vertical (was 16): content + 27 + the gs3D style's
-                // 5pt lip keeps the CTA's exact prior footprint.
-                .padding(.vertical, 13.5)
+                // 12.5pt vertical (was 16): content + 25 + the gs3D style's
+                // 7pt lip keeps the CTA's exact prior footprint.
+                .padding(.vertical, 12.5)
                 .frame(maxWidth: .infinity)
             }
-            .buttonStyle(.gs3D(face: theme.accent, cornerRadius: GSMetrics.radiusSm, lipHeight: 5))
+            .buttonStyle(.gs3D(face: theme.accent, cornerRadius: GSMetrics.radiusSm))
             // `leadingInt` — a rep range must not dead-end the CTA (see the
             // helper in LogSetSheet.swift).
             .disabled(isLoggingSet || (leadingInt(logReps) == nil && !logIsFailed))

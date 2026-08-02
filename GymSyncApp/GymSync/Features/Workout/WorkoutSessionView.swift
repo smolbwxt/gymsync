@@ -1424,7 +1424,7 @@ struct WorkoutSessionView: View {
                 // no pinned chrome beyond the divider.
                 Color.clear.frame(height: 0)
             } else if soloRestActive && !soloLoaderOpen {
-                // 3D pass (2026-08): accent gs3D face, 59pt + 5pt lip =
+                // 3D pass (2026-08): accent gs3D face, 57pt + 7pt lip =
                 // the prior 64pt CTA footprint (the group interlude's idiom).
                 Button {
                     restEndAt = nil
@@ -1447,9 +1447,9 @@ struct WorkoutSessionView: View {
                     }
                     .foregroundStyle(theme.bg)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 59)
+                    .frame(height: 57)
                 }
-                .buttonStyle(.gs3D(face: theme.accent, cornerRadius: 16, lipHeight: 5))
+                .buttonStyle(.gs3D(face: theme.accent, cornerRadius: 16))
                 .padding(.horizontal, 16)
             } else {
             Button {
@@ -1474,9 +1474,10 @@ struct WorkoutSessionView: View {
                 }
             } label: {
                 // 3D pass (2026-08): the gs3D style owns the fill (accent
-                // face, surface face for a failed set) + the 5pt lip; the
-                // failed outline rides the label, landing exactly on the
-                // face rect. 59pt face + lip = the prior 64pt footprint.
+                // face, the theme's raised face for a failed set — surface
+                // was invisible as 3D) + the 7pt lip; the failed outline
+                // rides the label, landing exactly on the face rect. 57pt
+                // face + lip = the prior 64pt footprint.
                 ZStack {
                     if soloFailed {
                         RoundedRectangle(cornerRadius: 16).strokeBorder(theme.text, lineWidth: 1.5)
@@ -1492,9 +1493,11 @@ struct WorkoutSessionView: View {
                     .foregroundStyle(soloFailed ? theme.text : theme.bg)
                 }
                 .frame(maxWidth: .infinity)
-                .frame(height: 59)
+                .frame(height: 57)
             }
-            .buttonStyle(.gs3D(face: soloFailed ? theme.surface : theme.accent, cornerRadius: 16, lipHeight: 5))
+            .buttonStyle(.gs3D(face: soloFailed ? theme.raised3DFace : theme.accent,
+                               lip: soloFailed ? theme.raised3DLip : nil,
+                               cornerRadius: 16))
             .disabled(leadingInt(soloReps) == nil && !soloFailed)
             .gsSpotlightTarget(.workout)
             .padding(.horizontal, 16)
@@ -1582,8 +1585,8 @@ struct WorkoutSessionView: View {
                         // set with chalked or sweaty hands — the research
                         // argues >=64pt here. 3D pass (2026-08): the label
                         // reproduces GSPrimaryButtonStyle's left-aligned
-                        // bold-16 anatomy; 59pt face + the gs3D style's
-                        // 5pt lip keeps the exact 64pt footprint.
+                        // bold-16 anatomy; 57pt face + the gs3D style's
+                        // 7pt lip keeps the exact 64pt footprint.
                         HStack(spacing: 0) {
                             Text("Log Set \(currentSetIndex)")
                             Spacer(minLength: 0)
@@ -1591,9 +1594,9 @@ struct WorkoutSessionView: View {
                         .font(GSFont.bold(16, relativeTo: .body))
                         .foregroundStyle(theme.bg)
                         .padding(.horizontal, 16)
-                        .frame(minHeight: 59)
+                        .frame(minHeight: 57)
                     }
-                    .buttonStyle(.gs3D(face: theme.accent, cornerRadius: GSMetrics.radiusSm, lipHeight: 5))
+                    .buttonStyle(.gs3D(face: theme.accent, cornerRadius: GSMetrics.radiusSm))
                     .gsSpotlightTarget(.workout)
                     .padding(.horizontal, 16)
                     .padding(.top, 10)

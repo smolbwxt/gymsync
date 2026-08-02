@@ -226,9 +226,9 @@ struct WarmUpPhaseView: View {
     // MARK: - CTAs
 
     /// The primary action — the START SET CTA idiom (full-width, 64pt
-    /// total, radius 16), now wearing the extruded 3D style: 59pt face +
-    /// 5pt lip. The group vote rides the accent face; the solo skip is a
-    /// QUIET surface face (skipping is permission, not a push). After my
+    /// total, radius 16), now wearing the extruded 3D style: 57pt face +
+    /// 7pt lip. The group vote rides the accent face; the solo skip is a
+    /// QUIET raised face (skipping is permission, not a push). After my
     /// group vote it becomes an INERT surface card: the decision is made,
     /// the crew is what's pending.
     @ViewBuilder
@@ -257,13 +257,14 @@ struct WarmUpPhaseView: View {
                 .tracking(0.9)
                 .foregroundStyle(theme.bg)
                 .frame(maxWidth: .infinity)
-                .frame(height: 59)   // + 5pt lip = the 64pt CTA rhythm
+                .frame(height: 57)   // + 7pt lip = the 64pt CTA rhythm
         }
-        .buttonStyle(.gs3D(face: theme.accent, cornerRadius: 16, lipHeight: 5))
+        .buttonStyle(.gs3D(face: theme.accent, cornerRadius: 16))
     }
 
-    /// Surface-faced 3D variant (solo skip) — same 64pt footprint, quiet
-    /// hue; the lip derives from the surface (black 0.35 overlay).
+    /// Raised-faced 3D variant (solo skip) — same 64pt footprint, quiet
+    /// hue on the theme's raised pair (theme.surface could not read as 3D
+    /// against the page ground — owner field report).
     private func surfaceCTAButton(title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
@@ -271,22 +272,24 @@ struct WarmUpPhaseView: View {
                 .tracking(0.9)
                 .foregroundStyle(theme.text)
                 .frame(maxWidth: .infinity)
-                .frame(height: 59)   // + 5pt lip = the 64pt CTA rhythm
+                .frame(height: 57)   // + 7pt lip = the 64pt CTA rhythm
         }
-        .buttonStyle(.gs3D(face: theme.surface, cornerRadius: 16, lipHeight: 5))
+        .buttonStyle(.gs3D(face: theme.raised3DFace, lip: theme.raised3DLip, cornerRadius: 16))
     }
 
-    /// The organizer's AFK escape hatch — deliberately QUIET (surface
+    /// The organizer's AFK escape hatch — deliberately QUIET (raised
     /// face, never accent): the unanimous vote is the intended path.
+    /// Label bumped neutral700 → text.opacity(0.78): the lighter raised
+    /// face needs the stronger ink to stay legible at 12pt.
     private var forceStartRow: some View {
         Button { onForceStart?() } label: {
             Text("START LIFTING NOW")
                 .font(GSFont.bold(12, relativeTo: .caption))
                 .tracking(0.9)
-                .foregroundStyle(theme.neutral700)
+                .foregroundStyle(theme.text.opacity(0.78))
                 .frame(maxWidth: .infinity)
-                .frame(height: 39)   // + 5pt lip = the row's 44pt footprint
+                .frame(height: 37)   // + 7pt lip = the row's 44pt footprint
         }
-        .buttonStyle(.gs3D(face: theme.surface, cornerRadius: 12, lipHeight: 5))
+        .buttonStyle(.gs3D(face: theme.raised3DFace, lip: theme.raised3DLip, cornerRadius: 12))
     }
 }

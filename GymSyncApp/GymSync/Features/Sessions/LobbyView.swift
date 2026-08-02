@@ -1202,12 +1202,12 @@ struct LobbyView: View {
                         }
                         .foregroundStyle(Self.checkInGoldInk)
                         .padding(.horizontal, 16)
-                        // 9.5pt vertical (was 12): content + 19 + the 5pt
+                        // 8.5pt vertical (was 12): content + 17 + the 7pt
                         // lip keeps the button's exact prior footprint.
-                        .padding(.vertical, 9.5)
+                        .padding(.vertical, 8.5)
                         .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.gs3D(face: Self.checkInGold, cornerRadius: GSMetrics.radiusSm, lipHeight: 5))
+                    .buttonStyle(.gs3D(face: Self.checkInGold, cornerRadius: GSMetrics.radiusSm))
                     .disabled(isCheckingIn || !canCheckIn)
                 }
 
@@ -1234,13 +1234,13 @@ struct LobbyView: View {
                         }
                         .foregroundStyle(theme.bg)
                         .padding(.horizontal, 16)
-                        // 11.5pt vertical (was 14): content + 23 + the 5pt
+                        // 10.5pt vertical (was 14): content + 21 + the 7pt
                         // lip keeps the button's exact prior footprint.
-                        .padding(.vertical, 11.5)
+                        .padding(.vertical, 10.5)
                         .frame(maxWidth: .infinity, alignment: .center)
                     }
                     .buttonStyle(.gs3D(face: isStarting ? theme.accent600 : theme.accent,
-                                       cornerRadius: GSMetrics.radiusSm, lipHeight: 5))
+                                       cornerRadius: GSMetrics.radiusSm))
                     .disabled(isStarting)
                 } else if isCheckedIn {
                     HStack(spacing: 8) {

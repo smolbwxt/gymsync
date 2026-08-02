@@ -328,7 +328,7 @@ struct HomeView: View {
                         subtitle: ctaSubtitle(for: session)
                     )
                 }
-                .buttonStyle(.gs3D(face: theme.surface, cornerRadius: GSMetrics.radiusMd, lipHeight: 5))
+                .buttonStyle(.gs3D(face: theme.raised3DFace, lip: theme.raised3DLip, cornerRadius: GSMetrics.radiusMd))
             }
             // ONE architecture in every state (user 2026-07-31: "I don't
             // think we should change the widget architecture at all from
@@ -348,9 +348,11 @@ struct HomeView: View {
     // weightier secondary button.
     //
     // 2026-08 visual-language pass: the hero is a BUTTON, so it wears the
-    // extruded 3D style — the gs3D style now supplies the surface face
-    // (replacing the GSCard wrapper); vertical padding drops 22 → 19.5 so
-    // content + 39 + the 5pt lip keeps the card's exact prior footprint.
+    // extruded 3D style on the theme's raised face (theme.surface was
+    // invisible as 3D against the page ground — owner field report);
+    // vertical padding drops 22 → 18.5 so content + 37 + the 7pt lip keeps
+    // the card's exact prior footprint. Subtitle rides neutral700 — the
+    // lighter raised face washed out neutral500.
     private func ctaCard(title: String, subtitle: String) -> some View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
@@ -360,7 +362,7 @@ struct HomeView: View {
                     .lineLimit(1)
                 Text(subtitle)
                     .font(GSFont.body(13, relativeTo: .caption))
-                    .foregroundStyle(theme.neutral500)
+                    .foregroundStyle(theme.neutral700)
                     .lineLimit(1)
             }
             Spacer(minLength: 8)
@@ -375,7 +377,7 @@ struct HomeView: View {
                 )
         }
         .padding(.horizontal, 22)
-        .padding(.vertical, 19.5)
+        .padding(.vertical, 18.5)
     }
 
     // Redesign fix (2026-07-23 screenshot): the solo button read as a
@@ -407,14 +409,14 @@ struct HomeView: View {
                     Spacer(minLength: 0)
                 }
                 .foregroundStyle(theme.text)
-                // 57pt face + the style's 5pt lip = exactly the row's fixed
+                // 55pt face + the style's 7pt lip = exactly the row's fixed
                 // 62pt — the pill and the burpee badge stay shoulder-to-
                 // shoulder (the badge still fills the row flat: it's a
                 // status widget, not a CTA).
-                .frame(height: 57)
+                .frame(height: 55)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.gs3D(face: theme.surface, cornerRadius: GSMetrics.radiusMd, lipHeight: 5))
+            .buttonStyle(.gs3D(face: theme.raised3DFace, lip: theme.raised3DLip, cornerRadius: GSMetrics.radiusMd))
             .gsSpotlightTarget(.home)
 
             if burpeesOwed > 0 {

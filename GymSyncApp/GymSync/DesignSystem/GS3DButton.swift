@@ -10,10 +10,17 @@ import SwiftUI
 // the call site — the face hugs the label).
 //
 // Lip color: pass `lip:` explicitly, or leave nil to derive it by
-// overlaying black at 0.35 over the face. NOTE: `theme.accent700` is a
+// overlaying black at 0.45 over the face. NOTE: `theme.accent700` is a
 // LIGHTER tint in every palette ramp (see GSTheme.swift — #7dd3fc on
 // midnight/onyx), so it is NOT a valid lip; the derived darker overlay is
 // the default path for accent faces.
+//
+// Face color: NEVER `theme.surface` or `theme.bg` — on the dark palettes
+// they sit so close to the page ground that the derived lip cannot read
+// (owner field report 2026-08: "not seeing the 3D buttons"). Neutral
+// (non-accent) buttons use the theme-tuned raised pair instead:
+// `face: theme.raised3DFace, lip: theme.raised3DLip` (GSTheme.swift) —
+// face clearly lighter than the ground, lip clearly darker, per palette.
 public struct GS3DButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
@@ -25,7 +32,7 @@ public struct GS3DButtonStyle: ButtonStyle {
     public init(face: Color,
                 lip: Color? = nil,
                 cornerRadius: CGFloat = 16,
-                lipHeight: CGFloat = 5) {
+                lipHeight: CGFloat = 7) {
         self.face = face
         self.lip = lip
         self.cornerRadius = cornerRadius
@@ -49,7 +56,7 @@ public struct GS3DButtonStyle: ButtonStyle {
 
     /// The full-frame bottom layer the face lands on. When no explicit lip
     /// color is given, derive one by darkening the face: face fill + a
-    /// black 0.35 overlay in the same rounded shape.
+    /// black 0.45 overlay in the same rounded shape.
     @ViewBuilder
     private var lipLayer: some View {
         if let lip {
@@ -57,7 +64,7 @@ public struct GS3DButtonStyle: ButtonStyle {
         } else {
             ZStack {
                 RoundedRectangle(cornerRadius: cornerRadius).fill(face)
-                RoundedRectangle(cornerRadius: cornerRadius).fill(Color.black.opacity(0.35))
+                RoundedRectangle(cornerRadius: cornerRadius).fill(Color.black.opacity(0.45))
             }
         }
     }
@@ -70,7 +77,7 @@ public extension ButtonStyle where Self == GS3DButtonStyle {
     static func gs3D(face: Color,
                      lip: Color? = nil,
                      cornerRadius: CGFloat = 16,
-                     lipHeight: CGFloat = 5) -> GS3DButtonStyle {
+                     lipHeight: CGFloat = 7) -> GS3DButtonStyle {
         GS3DButtonStyle(face: face, lip: lip, cornerRadius: cornerRadius, lipHeight: lipHeight)
     }
 }

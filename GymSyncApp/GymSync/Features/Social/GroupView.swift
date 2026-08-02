@@ -182,7 +182,10 @@ struct GroupView: View {
                         .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
 
                         Button("Add") { Task { await addMember() } }
-                            .buttonStyle(GSPrimaryButtonStyle())
+                            // verticalPadding 8 (3D pass 2026-08): 37pt face
+                            // floor + 7pt lip = exactly the 44pt field beside
+                            // it — same footprint pin as FriendsView's Send.
+                            .buttonStyle(GSPrimaryButtonStyle(verticalPadding: 8))
                             .frame(width: 64)
                             .disabled(addUsername.trimmingCharacters(in: .whitespaces).isEmpty)
                     }

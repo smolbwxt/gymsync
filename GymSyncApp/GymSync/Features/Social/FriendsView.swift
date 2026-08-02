@@ -68,7 +68,11 @@ struct FriendsView: View {
                         Button("Send") {
                             Task { await sendRequest() }
                         }
-                        .buttonStyle(GSPrimaryButtonStyle())
+                        // verticalPadding 8 (3D pass 2026-08): the style's
+                        // 37pt face floor + 7pt lip = exactly the field's
+                        // 44pt beside it — default padding would push the
+                        // extruded button ~6pt taller than the field.
+                        .buttonStyle(GSPrimaryButtonStyle(verticalPadding: 8))
                         .frame(width: 72)
                         .disabled(addUsername.trimmingCharacters(in: .whitespaces).isEmpty)
                     }

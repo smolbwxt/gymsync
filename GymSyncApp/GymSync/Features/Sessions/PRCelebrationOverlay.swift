@@ -128,10 +128,10 @@ struct PRCelebrationOverlay: View {
                 Spacer()
 
                 // 3D pass (2026-08): both CTAs wear the extruded style —
-                // accent face for the primary, quiet surface face for SHARE
+                // accent face for the primary, quiet raised face for SHARE
                 // (ShareLink takes a ButtonStyle like any Button — same
                 // idiom as SessionRecapView's styled Share Recap link).
-                // Faces are 5pt shorter so face + lip keeps each button's
+                // Faces are 7pt shorter so face + lip keeps each button's
                 // exact prior footprint (64 and 48).
                 VStack(spacing: 10) {
                     Button {
@@ -142,18 +142,18 @@ struct PRCelebrationOverlay: View {
                             .tracking(0.9)
                             .foregroundStyle(theme.bg)
                             .frame(maxWidth: .infinity)
-                            .frame(height: 59)   // + 5pt lip = the 64pt CTA rhythm
+                            .frame(height: 57)   // + 7pt lip = the 64pt CTA rhythm
                     }
-                    .buttonStyle(.gs3D(face: theme.accent, cornerRadius: 16, lipHeight: 5))
+                    .buttonStyle(.gs3D(face: theme.accent, cornerRadius: 16))
 
                     ShareLink(item: shareText) {
                         Text("SHARE")
                             .font(GSFont.bold(13, relativeTo: .subheadline))
                             .tracking(0.9)
                             .foregroundStyle(theme.text.opacity(0.78))
-                            .frame(maxWidth: .infinity, minHeight: 43)   // + 5pt lip = the prior 48pt
+                            .frame(maxWidth: .infinity, minHeight: 41)   // + 7pt lip = the prior 48pt
                     }
-                    .buttonStyle(.gs3D(face: theme.surface, cornerRadius: 16, lipHeight: 5))
+                    .buttonStyle(.gs3D(face: theme.raised3DFace, lip: theme.raised3DLip, cornerRadius: 16))
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 20)

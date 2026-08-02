@@ -21,6 +21,19 @@ public struct GSTheme {
     public let text: Color
     public let divider: Color
 
+    // MARK: Raised 3D chrome (2026-08 visual-language pass)
+    //
+    // The neutral face/lip pair for `GS3DButtonStyle`'s SECONDARY buttons.
+    // `surface` proved invalid as a 3D face: on the dark palettes it sits so
+    // close to `bg` that the derived darker lip has nothing to read against
+    // (owner field report: "not seeing the 3D buttons"). The physics that
+    // works (Duolingo reference): the face is clearly LIGHTER than the
+    // ground, the lip clearly DARKER than the ground — so the lip has
+    // contrast on both sides. Each palette tunes its own pair; accent-faced
+    // buttons keep the style's derived black-overlay lip and don't use these.
+    public let raised3DFace: Color
+    public let raised3DLip: Color
+
     // MARK: Accent ramp
     public let accent: Color      // #38bdf8
     public let accent100: Color   // #0e2c3a
@@ -57,6 +70,9 @@ public struct GSTheme {
         text:       Color(hex: 0xeef2f7),
         divider:    Color.white.opacity(0.15),
 
+        raised3DFace: Color(hex: 0x333b49),   // clearly lighter than surface #1e232c
+        raised3DLip:  Color(hex: 0x181c24),   // between bg #13161c and surface
+
         accent:     Color(hex: 0x38bdf8),
         accent100:  Color(hex: 0x0e2c3a),
         accent200:  Color(hex: 0x123a4d),
@@ -91,6 +107,9 @@ public struct GSTheme {
         text:       Color(hex: 0xF3F5F8),
         divider:    Color.white.opacity(0.07),
 
+        raised3DFace: Color(hex: 0x2A303A),   // Duolingo-grey adapted to Onyx: clearly lighter than surface #16181D, clearly darker than text
+        raised3DLip:  Color(hex: 0x14171C),   // between bg #0A0B0D and surface
+
         accent:     Color(hex: 0x38BDF8),   // placeholder; UI reads \.gsAccent
         accent100:  Color(hex: 0x0E2C3A),
         accent200:  Color(hex: 0x123A4D),
@@ -118,6 +137,9 @@ public struct GSTheme {
         surface:    Color(hex: 0x1b1f19),
         text:       Color(hex: 0xeef3e8),
         divider:    Color.white.opacity(0.14),
+
+        raised3DFace: Color(hex: 0x2e352b),   // green-cast mid grey, clearly lighter than surface #1b1f19
+        raised3DLip:  Color(hex: 0x161a14),   // between bg #101310 and surface
 
         accent:     Color(hex: 0xb6f236),
         accent100:  Color(hex: 0x1e2a0e),
@@ -149,6 +171,9 @@ public struct GSTheme {
         text:       Color(hex: 0x1b2540),
         divider:    Color(hex: 0x1b2540).opacity(0.26),
 
+        raised3DFace: Color(hex: 0xfbf8f1),   // light theme inverts the physics: near-white warm face, LIGHTER than bg #f3efe6
+        raised3DLip:  Color(hex: 0xcec6b4),   // warm grey lip, clearly darker than bg (between neutral300 #d3ccbd and neutral400 #b4ab98)
+
         accent:     Color(hex: 0x22345c),
         accent100:  Color(hex: 0xe3e6ee),
         accent200:  Color(hex: 0xc8cfdf),
@@ -176,6 +201,9 @@ public struct GSTheme {
         surface:    Color(hex: 0xeae9e9),
         text:       Color(hex: 0x201e1d),
         divider:    Color(hex: 0x201e1d).opacity(0.4),
+
+        raised3DFace: Color(hex: 0xfdfcfc),   // near-white face, lighter than bg #f3f2f2
+        raised3DLip:  Color(hex: 0xccc8c8),   // cool grey lip, clearly darker than bg (between neutral300 #d7d3d3 and neutral400 #bab6b6)
 
         accent:     Color(hex: 0xec3013),
         accent100:  Color(hex: 0xfff2ef),
@@ -211,6 +239,7 @@ public struct GSTheme {
     public func withAccent(_ accent: GSAccent) -> GSTheme {
         GSTheme(
             bg: bg, surface: surface, text: text, divider: divider,
+            raised3DFace: raised3DFace, raised3DLip: raised3DLip,
             accent: accent.base,
             accent100: accent.soft,
             accent200: accent.soft,

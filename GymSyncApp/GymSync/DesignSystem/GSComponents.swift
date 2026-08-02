@@ -4,8 +4,10 @@ import UIKit
 
 // MARK: - GSPrimaryButtonStyle
 //
-// Solid accent fill, zero corner radius, flush-left label.
-// Pressed state shifts to accent600 (darker tint).
+// Solid accent face, flush-left label — now wearing the extruded 3D anatomy
+// (2026-08 visual-language pass, `GS3DButtonStyle`'s press-down idiom):
+// accent face on a 7pt derived darker lip; pressing sinks the face onto the
+// lip (vertical travel replaces the old accent600 tint shift).
 // Use `.frame(maxWidth: .infinity)` on the button to make it full-width.
 
 public struct GSPrimaryButtonStyle: ButtonStyle {
@@ -16,38 +18,53 @@ public struct GSPrimaryButtonStyle: ButtonStyle {
     private let fontSize: CGFloat
     private let verticalPadding: CGFloat
 
+    /// The extruded bottom lip — matches `GS3DButtonStyle`'s amped default.
+    private static let lipHeight: CGFloat = 7
+
     /// `fontSize`/`verticalPadding` default to the canonical 16pt/12pt treatment;
     /// callers matching a canvas spec with a different scale (e.g. Home's
     /// "Start Solo Workout" CTA at 15pt/14pt) can override per-instance.
+    /// Sites pinned to an exact prior footprint (a 3D button beside a fixed
+    /// 44pt field) pass a smaller `verticalPadding` so face + lip lands on
+    /// the old total — see FriendsView's Send / GroupView's Add.
     public init(fontSize: CGFloat = 16, verticalPadding: CGFloat = 12) {
         self.fontSize = fontSize
         self.verticalPadding = verticalPadding
     }
 
     public func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 0) {
+        let pressed = configuration.isPressed && isEnabled
+        return HStack(spacing: 0) {
             configuration.label
             Spacer(minLength: 0)
         }
         .font(GSFont.bold(fontSize, relativeTo: .body))
-        .foregroundColor(configuration.isPressed ? theme.neutral100 : theme.bg)
+        .foregroundColor(theme.bg)
         .padding(.horizontal, 16)
         .padding(.vertical, verticalPadding)
-        // UI audit 2026-07-29: padding alone rendered ~41.4pt at default
-        // Dynamic Type — under Apple's 44pt floor for EVERY primary CTA in
-        // the app, including Save Set on the logging path. A floor here
-        // repairs every call site at once; in-workout CTAs that want the
-        // research's larger target still opt up with their own minHeight.
-        .frame(minHeight: 44)
-        .background(configuration.isPressed ? theme.accent600 : theme.accent)
+        // UI audit 2026-07-29 kept: Apple's 44pt floor for EVERY primary CTA.
+        // The floor now spans face + lip (contentShape covers both), so the
+        // face's own floor is 44 minus the lip.
+        .frame(minHeight: 44 - Self.lipHeight)
+        .background(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).fill(theme.accent))
+        .offset(y: pressed ? Self.lipHeight : 0)
+        .padding(.bottom, Self.lipHeight)
+        .background(
+            // Derived lip — the gs3D accent-face path: face fill + black
+            // 0.45, in the same rounded shape.
+            ZStack {
+                RoundedRectangle(cornerRadius: GSMetrics.radiusSm).fill(theme.accent)
+                RoundedRectangle(cornerRadius: GSMetrics.radiusSm).fill(Color.black.opacity(0.45))
+            }
+        )
         // A disabled primary CTA used to render at FULL accent fill — it
         // looked completely live and silently swallowed taps, which is worse
         // than an obviously-inert control. Reading isEnabled here means no
-        // call site can ship an invisible dead button.
+        // call site can ship an invisible dead button. The whole extrusion
+        // (face + lip) dims, and travel is suppressed above.
         .opacity(isEnabled ? 1 : 0.4)
-        .cornerRadius(GSMetrics.radiusSm)
         .contentShape(Rectangle())
-        .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+        .animation(.easeOut(duration: 0.08), value: pressed)
     }
 }
 

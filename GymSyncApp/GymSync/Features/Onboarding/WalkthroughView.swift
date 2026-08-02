@@ -82,11 +82,11 @@ struct WalkthroughView: View {
                     .font(GSFont.bold(16, relativeTo: .body))
                     .foregroundStyle(theme.bg)
                     .frame(maxWidth: .infinity)
-                    // 13.5pt vertical (was 16): content + 27 + the gs3D
-                    // style's 5pt lip keeps the CTA's exact prior footprint.
-                    .padding(.vertical, 13.5)
+                    // 12.5pt vertical (was 16): content + 25 + the gs3D
+                    // style's 7pt lip keeps the CTA's exact prior footprint.
+                    .padding(.vertical, 12.5)
             }
-            .buttonStyle(.gs3D(face: theme.accent, cornerRadius: GSMetrics.radiusSm, lipHeight: 5))
+            .buttonStyle(.gs3D(face: theme.accent, cornerRadius: GSMetrics.radiusSm))
             .padding(.horizontal, 20)
             .padding(.bottom, 28)
         }

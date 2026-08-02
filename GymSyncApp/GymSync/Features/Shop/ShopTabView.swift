@@ -252,13 +252,17 @@ struct ShopTabView: View {
 
     /// Loaner header chip — small, one line, accent (the accent = "yours
     /// to act on"; the loaner is the one tile with an action this week).
+    /// Owner field report (2026-08): "FREE THIS WE…" truncated beside the
+    /// 44pt plate token at 390pt width — the chip now scales down (to 0.7)
+    /// instead of truncating, with tighter tracking/padding for headroom.
     private var freeChip: some View {
         Text("FREE THIS WEEK")
             .font(GSFont.bold(9, relativeTo: .caption2))
-            .tracking(1.1)
+            .tracking(0.8)
             .foregroundStyle(theme.accent)
             .lineLimit(1)
-            .padding(.horizontal, 7)
+            .minimumScaleFactor(0.7)
+            .padding(.horizontal, 6)
             .padding(.vertical, 3)
             .background(theme.accent.opacity(0.12))
             .clipShape(Capsule())
@@ -321,7 +325,10 @@ struct ShopTabView: View {
     /// dock full (4-cap — mirrors `SoundLibrarySheet`'s client-side cap,
     /// but deliberately does NOT drop-oldest here; managing a full dock
     /// belongs to My Rack), or room to rack. RACK IT wears the extruded
-    /// 3D style — 29pt face + 5pt lip = 34pt compact control.
+    /// 3D style — 29pt face + a PINNED 5pt lip = 34pt compact control
+    /// (the style's default lip grew to 7pt for full-size CTAs; pinned
+    /// here so the fixed 172pt tile keeps its footer breathing room and
+    /// the compact control keeps its proportions).
     @ViewBuilder
     private func loanerRackControl(for slug: String) -> some View {
         if favorites.contains(slug) {
