@@ -1,0 +1,2320 @@
+{
+  "newExercises": [
+    {
+      "name": "Chest Dip",
+      "slug": "chest-dip",
+      "category": "compound",
+      "primary_muscle": "chest",
+      "secondary_muscles": [
+        "triceps",
+        "shoulders"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Dip",
+        "Parallel Bar Dip",
+        "Dips"
+      ],
+      "youtubeId": "2c1l6dleAS0",
+      "videoTitle": "How to Perfect The Dip — Target the Chest!"
+    },
+    {
+      "name": "Weighted Dip",
+      "slug": "weighted-dip",
+      "category": "compound",
+      "primary_muscle": "chest",
+      "secondary_muscles": [
+        "triceps",
+        "shoulders"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Weighted Dips",
+        "Weighted Chest Dip"
+      ],
+      "youtubeId": "JannOlicL4w",
+      "videoTitle": "Weighted Dip | Proper Form Tutorial for Strength & Muscle"
+    },
+    {
+      "name": "Smith Machine Bench Press",
+      "slug": "smith-machine-bench-press",
+      "category": "compound",
+      "primary_muscle": "chest",
+      "secondary_muscles": [
+        "triceps",
+        "shoulders"
+      ],
+      "equipment": "machine",
+      "aliases": [
+        "Smith Machine Flat Bench Press"
+      ],
+      "youtubeId": "CqSa88orYIc",
+      "videoTitle": "SMITH MACHINE BENCH PRESS TUTORIAL 💪🏼 / Build your chest using a smith machine at Planet Fitness!"
+    },
+    {
+      "name": "Smith Machine Incline Bench Press",
+      "slug": "smith-machine-incline-bench-press",
+      "category": "compound",
+      "primary_muscle": "chest",
+      "secondary_muscles": [
+        "shoulders",
+        "triceps"
+      ],
+      "equipment": "machine",
+      "aliases": [
+        "Smith Machine Incline Press"
+      ],
+      "youtubeId": "_SQoFGYBrb4",
+      "videoTitle": "How To INCLINE Bench Press On Smith Machine (BEGINNER )"
+    },
+    {
+      "name": "Incline Dumbbell Fly",
+      "slug": "incline-dumbbell-fly",
+      "category": "isolation",
+      "primary_muscle": "chest",
+      "secondary_muscles": [
+        "shoulders"
+      ],
+      "equipment": "dumbbell",
+      "aliases": [
+        "Incline Dumbbell Flyes"
+      ],
+      "youtubeId": "ozAhti8BK6s",
+      "videoTitle": "HOW TO: Incline Dumbbell Fly || #shorts"
+    },
+    {
+      "name": "Decline Dumbbell Fly",
+      "slug": "decline-dumbbell-fly",
+      "category": "isolation",
+      "primary_muscle": "chest",
+      "secondary_muscles": [
+        "shoulders"
+      ],
+      "equipment": "dumbbell",
+      "aliases": [
+        "Decline Dumbbell Flyes"
+      ],
+      "youtubeId": "2MtKdUQEFoc",
+      "videoTitle": "How to do Decline Dumbbell Chest Flys"
+    },
+    {
+      "name": "High Cable Crossover",
+      "slug": "high-cable-crossover",
+      "category": "isolation",
+      "primary_muscle": "chest",
+      "secondary_muscles": [
+        "shoulders"
+      ],
+      "equipment": "cable",
+      "aliases": [
+        "Cable Crossover High To Low",
+        "Downward Cable Fly",
+        "High-to-Low Cable Fly"
+      ],
+      "youtubeId": "GfXObZv7D5c",
+      "videoTitle": "High-Cable Low Crossover"
+    },
+    {
+      "name": "Single-Arm Cable Chest Press",
+      "slug": "single-arm-cable-chest-press",
+      "category": "compound",
+      "primary_muscle": "chest",
+      "secondary_muscles": [
+        "triceps",
+        "shoulders",
+        "core"
+      ],
+      "equipment": "cable",
+      "aliases": [
+        "Single Arm Cable Press",
+        "Unilateral Cable Chest Press"
+      ],
+      "youtubeId": "w6Ar00OUUkg",
+      "videoTitle": "Single Arm Cable Chest Press"
+    },
+    {
+      "name": "Landmine Press",
+      "slug": "landmine-press",
+      "category": "compound",
+      "primary_muscle": "chest",
+      "secondary_muscles": [
+        "shoulders",
+        "triceps"
+      ],
+      "equipment": "barbell",
+      "aliases": [
+        "Landmine Chest Press",
+        "Single Arm Landmine Press"
+      ],
+      "youtubeId": "3gYz0bLG-wY",
+      "videoTitle": "Proper Technique for The Landmine Press"
+    },
+    {
+      "name": "Barbell Floor Press",
+      "slug": "barbell-floor-press",
+      "category": "compound",
+      "primary_muscle": "chest",
+      "secondary_muscles": [
+        "triceps",
+        "shoulders"
+      ],
+      "equipment": "barbell",
+      "aliases": [
+        "Floor Press"
+      ],
+      "youtubeId": "kRi50o4YANk",
+      "videoTitle": "Barbell Floor Press"
+    },
+    {
+      "name": "Svend Press",
+      "slug": "svend-press",
+      "category": "isolation",
+      "primary_muscle": "chest",
+      "secondary_muscles": [
+        "shoulders"
+      ],
+      "equipment": "dumbbell",
+      "aliases": [
+        "Plate Press",
+        "Plate Squeeze Press"
+      ],
+      "youtubeId": "f7giJJwluIc",
+      "videoTitle": "How to Do the Svend Press"
+    },
+    {
+      "name": "Deficit Push-Up",
+      "slug": "deficit-push-up",
+      "category": "compound",
+      "primary_muscle": "chest",
+      "secondary_muscles": [
+        "triceps",
+        "shoulders",
+        "core"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Push-Up Deficit",
+        "Elevated Hands Push-Up"
+      ],
+      "youtubeId": "2ByPhgZfVqw",
+      "videoTitle": "How to: Deficit Push Up"
+    },
+    {
+      "name": "Incline Push-Up",
+      "slug": "incline-push-up",
+      "category": "compound",
+      "primary_muscle": "chest",
+      "secondary_muscles": [
+        "triceps",
+        "shoulders"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Hands-Elevated Push-Up"
+      ],
+      "youtubeId": "0JUrOH--Kdk",
+      "videoTitle": "How to do an Incline Push-Up | Proper Form & Technique | NASM"
+    },
+    {
+      "name": "Weighted Push-Up",
+      "slug": "weighted-push-up",
+      "category": "compound",
+      "primary_muscle": "chest",
+      "secondary_muscles": [
+        "triceps",
+        "shoulders",
+        "core"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Loaded Push-Up"
+      ],
+      "youtubeId": "Vq1O0aDZODI",
+      "videoTitle": "How To Do Weighted Push-Up"
+    },
+    {
+      "name": "Dumbbell Pullover",
+      "slug": "dumbbell-pullover",
+      "category": "isolation",
+      "primary_muscle": "chest",
+      "secondary_muscles": [
+        "lats",
+        "triceps"
+      ],
+      "equipment": "dumbbell",
+      "aliases": [],
+      "youtubeId": "YjWryJ8FZfs",
+      "videoTitle": "How To Do Supine Dumbbell Pullover | Exercise Demo"
+    },
+    {
+      "name": "Hex Press",
+      "slug": "hex-press",
+      "category": "isolation",
+      "primary_muscle": "chest",
+      "secondary_muscles": [
+        "triceps"
+      ],
+      "equipment": "dumbbell",
+      "aliases": [
+        "Squeeze Press",
+        "Dumbbell Squeeze Press"
+      ],
+      "youtubeId": "FIfOHr46_LE",
+      "videoTitle": "Hex Press (\"Sqeeze Press\") Tutorial"
+    },
+    {
+      "name": "Assisted Pull-Up Machine",
+      "slug": "assisted-pull-up-machine",
+      "category": "compound",
+      "primary_muscle": "lats",
+      "secondary_muscles": [
+        "back",
+        "biceps",
+        "forearms"
+      ],
+      "equipment": "machine",
+      "aliases": [
+        "Assisted Pull-Up",
+        "Assisted Chin-Up Machine",
+        "Gravitron"
+      ],
+      "youtubeId": "dc-MFszIdaA",
+      "videoTitle": "FORM EXPLAINED - Assisted Pull-up Machine"
+    },
+    {
+      "name": "Seal Row",
+      "slug": "seal-row",
+      "category": "compound",
+      "primary_muscle": "back",
+      "secondary_muscles": [
+        "lats",
+        "biceps",
+        "rear_delts"
+      ],
+      "equipment": "barbell",
+      "aliases": [
+        "Prone Bench Row"
+      ],
+      "youtubeId": "qpiZHy0TdlY",
+      "videoTitle": "How to do the Seal Row"
+    },
+    {
+      "name": "Meadows Row",
+      "slug": "meadows-row",
+      "category": "compound",
+      "primary_muscle": "lats",
+      "secondary_muscles": [
+        "back",
+        "biceps",
+        "rear_delts"
+      ],
+      "equipment": "barbell",
+      "aliases": [
+        "Landmine Single-Arm Row"
+      ],
+      "youtubeId": "WyzVl-G3zWU",
+      "videoTitle": "How to Do the Meadows Row - The Proper Form & Routine"
+    },
+    {
+      "name": "Pendlay Row",
+      "slug": "pendlay-row",
+      "category": "compound",
+      "primary_muscle": "back",
+      "secondary_muscles": [
+        "lats",
+        "biceps",
+        "rear_delts"
+      ],
+      "equipment": "barbell",
+      "aliases": [
+        "Dead-Stop Barbell Row"
+      ],
+      "youtubeId": "Rgbs-VPm20E",
+      "videoTitle": "How to perform a Pendlay row"
+    },
+    {
+      "name": "Kroc Row",
+      "slug": "kroc-row",
+      "category": "compound",
+      "primary_muscle": "lats",
+      "secondary_muscles": [
+        "back",
+        "biceps",
+        "forearms",
+        "traps"
+      ],
+      "equipment": "dumbbell",
+      "aliases": [
+        "Heavy One-Arm Dumbbell Row"
+      ],
+      "youtubeId": "icbhx-AhKpw",
+      "videoTitle": "Kroc Row Demo"
+    },
+    {
+      "name": "Rack Pull",
+      "slug": "rack-pull",
+      "category": "compound",
+      "primary_muscle": "back",
+      "secondary_muscles": [
+        "traps",
+        "hamstrings",
+        "glutes",
+        "forearms"
+      ],
+      "equipment": "barbell",
+      "aliases": [
+        "Partial Deadlift",
+        "Block Pull"
+      ],
+      "youtubeId": "0th_qUk8l84",
+      "videoTitle": "Rack Pull Basics"
+    },
+    {
+      "name": "Trap Bar Deadlift",
+      "slug": "trap-bar-deadlift",
+      "category": "compound",
+      "primary_muscle": "back",
+      "secondary_muscles": [
+        "quads",
+        "hamstrings",
+        "glutes",
+        "traps"
+      ],
+      "equipment": "barbell",
+      "aliases": [
+        "Hex Bar Deadlift"
+      ],
+      "youtubeId": "y5yEmMKdW6I",
+      "videoTitle": "Trap Bar Deadlift Form Guide: Setup & Technique Tips"
+    },
+    {
+      "name": "Weighted Pull-Up",
+      "slug": "weighted-pull-up",
+      "category": "compound",
+      "primary_muscle": "lats",
+      "secondary_muscles": [
+        "back",
+        "biceps",
+        "forearms"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Weighted Pull Up"
+      ],
+      "youtubeId": "1yys2zXHZ48",
+      "videoTitle": "Weighted Pull-Up Tips"
+    },
+    {
+      "name": "Wide-Grip Pull-Up",
+      "slug": "wide-grip-pull-up",
+      "category": "compound",
+      "primary_muscle": "lats",
+      "secondary_muscles": [
+        "back",
+        "biceps",
+        "rear_delts"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [],
+      "youtubeId": "9A6NPVPzkqQ",
+      "videoTitle": "How to Do Wide Grip Pullups | Perfect Form in 30 Seconds"
+    },
+    {
+      "name": "Back Extension",
+      "slug": "back-extension",
+      "category": "isolation",
+      "primary_muscle": "lower_back",
+      "secondary_muscles": [
+        "glutes",
+        "hamstrings"
+      ],
+      "equipment": "machine",
+      "aliases": [
+        "Hyperextension",
+        "45-Degree Back Extension",
+        "Roman Chair Back Extension"
+      ],
+      "youtubeId": "P489_62b8JU",
+      "videoTitle": "How to use the Back Extension Machine"
+    },
+    {
+      "name": "Machine Pullover",
+      "slug": "machine-pullover",
+      "category": "isolation",
+      "primary_muscle": "lats",
+      "secondary_muscles": [
+        "chest",
+        "triceps"
+      ],
+      "equipment": "machine",
+      "aliases": [
+        "Nautilus Pullover"
+      ],
+      "youtubeId": "asQ5e9Bd1Gc",
+      "videoTitle": "How To: Machine Pullover"
+    },
+    {
+      "name": "Renegade Row",
+      "slug": "renegade-row",
+      "category": "compound",
+      "primary_muscle": "lats",
+      "secondary_muscles": [
+        "back",
+        "core",
+        "obliques",
+        "shoulders"
+      ],
+      "equipment": "dumbbell",
+      "aliases": [
+        "Plank Row"
+      ],
+      "youtubeId": "IuXWhgTUDUY",
+      "videoTitle": "How to do a Renegade Row"
+    },
+    {
+      "name": "Barbell Shrug",
+      "slug": "barbell-shrug",
+      "category": "isolation",
+      "primary_muscle": "traps",
+      "secondary_muscles": [
+        "forearms"
+      ],
+      "equipment": "barbell",
+      "aliases": [
+        "Barbell Shoulder Shrug",
+        "Trap Shrug"
+      ],
+      "youtubeId": "D-coy6tq_-I",
+      "videoTitle": "How To Do Barbell Shrugs #fitness"
+    },
+    {
+      "name": "Dumbbell Shrug",
+      "slug": "dumbbell-shrug",
+      "category": "isolation",
+      "primary_muscle": "traps",
+      "secondary_muscles": [
+        "forearms"
+      ],
+      "equipment": "dumbbell",
+      "aliases": [
+        "Dumbbell Shoulder Shrug"
+      ],
+      "youtubeId": "C8EbvP_l6fg",
+      "videoTitle": "Beginner's Guide to Dumbbell Shrugs"
+    },
+    {
+      "name": "Cable Shrug",
+      "slug": "cable-shrug",
+      "category": "isolation",
+      "primary_muscle": "traps",
+      "secondary_muscles": [
+        "forearms"
+      ],
+      "equipment": "cable",
+      "aliases": [
+        "Cable Shoulder Shrug"
+      ],
+      "youtubeId": "fH3h4oxUCSM",
+      "videoTitle": "CABLE SHRUGS - Best Exercise for BIGGER Traps!"
+    },
+    {
+      "name": "Smith Machine Shrug",
+      "slug": "smith-machine-shrug",
+      "category": "isolation",
+      "primary_muscle": "traps",
+      "secondary_muscles": [],
+      "equipment": "machine",
+      "aliases": [
+        "Smith Machine Shoulder Shrug"
+      ],
+      "youtubeId": "_beyMmxuNwk",
+      "videoTitle": "SMITH MACHINE SHRUG (How To Do & Muscles Worked)"
+    },
+    {
+      "name": "Viking Press",
+      "slug": "viking-press",
+      "category": "compound",
+      "primary_muscle": "shoulders",
+      "secondary_muscles": [
+        "triceps",
+        "traps"
+      ],
+      "equipment": "machine",
+      "aliases": [
+        "Viking Press Machine"
+      ],
+      "youtubeId": "FOkCJvUgJE4",
+      "videoTitle": "Viking Shoulder Press"
+    },
+    {
+      "name": "Y-Raise",
+      "slug": "y-raise",
+      "category": "isolation",
+      "primary_muscle": "rear_delts",
+      "secondary_muscles": [
+        "traps",
+        "shoulders"
+      ],
+      "equipment": "dumbbell",
+      "aliases": [
+        "Incline Y-Raise",
+        "Prone Y Raise"
+      ],
+      "youtubeId": "XAmYaDf-EHI",
+      "videoTitle": "Dumbbell Y Raise | Shoulder | Strength and Conditioning Exercises"
+    },
+    {
+      "name": "Bent-Over Dumbbell Rear Delt Fly",
+      "slug": "bent-over-dumbbell-rear-delt-fly",
+      "category": "isolation",
+      "primary_muscle": "rear_delts",
+      "secondary_muscles": [
+        "traps",
+        "shoulders"
+      ],
+      "equipment": "dumbbell",
+      "aliases": [
+        "Standing Bent-Over Rear Delt Raise",
+        "Bent-Over Lateral Raise"
+      ],
+      "youtubeId": "KoRDmXocJII",
+      "videoTitle": "How to Properly Seated Bent Over DB Rear Delt Fly With Good Form (Exercise Demonstration)"
+    },
+    {
+      "name": "Cable Lateral Raise",
+      "slug": "cable-lateral-raise",
+      "category": "isolation",
+      "primary_muscle": "shoulders",
+      "secondary_muscles": [],
+      "equipment": "cable",
+      "aliases": [
+        "Behind-the-Back Cable Lateral Raise",
+        "Single-Arm Cable Lateral Raise",
+        "Cross-Body Cable Lateral Raise"
+      ],
+      "youtubeId": "HCfU6LGpgMk",
+      "videoTitle": "Cable Lateral Raise Tutorial (The Key To Building Shoulders)"
+    },
+    {
+      "name": "Machine Lateral Raise",
+      "slug": "machine-lateral-raise",
+      "category": "isolation",
+      "primary_muscle": "shoulders",
+      "secondary_muscles": [],
+      "equipment": "machine",
+      "aliases": [
+        "Lateral Raise Machine"
+      ],
+      "youtubeId": "AydmHFgOn6U",
+      "videoTitle": "Lateral Raise Machine Tutorial"
+    },
+    {
+      "name": "Plate Front Raise",
+      "slug": "plate-front-raise",
+      "category": "isolation",
+      "primary_muscle": "shoulders",
+      "secondary_muscles": [
+        "core"
+      ],
+      "equipment": "dumbbell",
+      "aliases": [
+        "Weight Plate Front Raise"
+      ],
+      "youtubeId": "-TlT6aXNok4",
+      "videoTitle": "Plate Front Raise | Shoulder | Strength and Conditioning Exercises"
+    },
+    {
+      "name": "Seated Barbell Shoulder Press",
+      "slug": "seated-barbell-shoulder-press",
+      "category": "compound",
+      "primary_muscle": "shoulders",
+      "secondary_muscles": [
+        "triceps"
+      ],
+      "equipment": "barbell",
+      "aliases": [
+        "Seated Barbell Military Press",
+        "Seated Barbell Overhead Press"
+      ],
+      "youtubeId": "5tp6hM_IMqY",
+      "videoTitle": "How To Do A SEATED BARBELL OVERHEAD PRESS | Exercise Demonstration Video and Guide"
+    },
+    {
+      "name": "Kettlebell Shoulder Press",
+      "slug": "kettlebell-shoulder-press",
+      "category": "compound",
+      "primary_muscle": "shoulders",
+      "secondary_muscles": [
+        "triceps",
+        "core"
+      ],
+      "equipment": "kettlebell",
+      "aliases": [
+        "Kettlebell Overhead Press",
+        "Single-Arm Kettlebell Press"
+      ],
+      "youtubeId": "MXsbSznOofk",
+      "videoTitle": "Shoulder Press - Kettlebell (DEMO)"
+    },
+    {
+      "name": "Dumbbell Upright Row",
+      "slug": "dumbbell-upright-row",
+      "category": "compound",
+      "primary_muscle": "shoulders",
+      "secondary_muscles": [
+        "traps",
+        "biceps"
+      ],
+      "equipment": "dumbbell",
+      "aliases": [],
+      "youtubeId": "CgAdfBs9JfA",
+      "videoTitle": "FORM TIP Tuesday - How to do an Upright Row with Dumbbells"
+    },
+    {
+      "name": "Cable Upright Row",
+      "slug": "cable-upright-row",
+      "category": "compound",
+      "primary_muscle": "shoulders",
+      "secondary_muscles": [
+        "traps",
+        "biceps"
+      ],
+      "equipment": "cable",
+      "aliases": [],
+      "youtubeId": "ueU1cra8lA0",
+      "videoTitle": "Cable Rope Upright Row Form Demo For Shoulders And Traps"
+    },
+    {
+      "name": "Barbell Front Raise",
+      "slug": "barbell-front-raise",
+      "category": "isolation",
+      "primary_muscle": "shoulders",
+      "secondary_muscles": [],
+      "equipment": "barbell",
+      "aliases": [],
+      "youtubeId": "_od0CCC6DEM",
+      "videoTitle": "How To Do A Barbell Front Raise"
+    },
+    {
+      "name": "EZ-Bar Curl",
+      "slug": "ez-bar-curl",
+      "category": "isolation",
+      "primary_muscle": "biceps",
+      "secondary_muscles": [
+        "forearms"
+      ],
+      "equipment": "barbell",
+      "aliases": [
+        "EZ Curl Bar Curl",
+        "EZ-Bar Bicep Curl"
+      ],
+      "youtubeId": "vxj3gE1o75I",
+      "videoTitle": "How to do Ez Bar curl"
+    },
+    {
+      "name": "EZ-Bar Preacher Curl",
+      "slug": "ez-bar-preacher-curl",
+      "category": "isolation",
+      "primary_muscle": "biceps",
+      "secondary_muscles": [
+        "forearms"
+      ],
+      "equipment": "barbell",
+      "aliases": [
+        "EZ Bar Preacher Curl"
+      ],
+      "youtubeId": "dFJUWGdStV0",
+      "videoTitle": "EZ-Bar Preacher Curl - Proper Setup & Technique"
+    },
+    {
+      "name": "Wide-Grip Barbell Curl",
+      "slug": "wide-grip-barbell-curl",
+      "category": "isolation",
+      "primary_muscle": "biceps",
+      "secondary_muscles": [
+        "forearms"
+      ],
+      "equipment": "barbell",
+      "aliases": [
+        "Wide Grip Curl"
+      ],
+      "youtubeId": "sXxPqFOxeew",
+      "videoTitle": "How To Do Wide Grip Standing Barbell Curl | Exercise Demo"
+    },
+    {
+      "name": "Cable Bayesian Curl",
+      "slug": "cable-bayesian-curl",
+      "category": "isolation",
+      "primary_muscle": "biceps",
+      "secondary_muscles": [
+        "forearms"
+      ],
+      "equipment": "cable",
+      "aliases": [
+        "Bayesian Curl"
+      ],
+      "youtubeId": "lhV7kgeihNk",
+      "videoTitle": "How to do The Bayesian Cable Curl!"
+    },
+    {
+      "name": "Drag Curl",
+      "slug": "drag-curl",
+      "category": "isolation",
+      "primary_muscle": "biceps",
+      "secondary_muscles": [
+        "forearms"
+      ],
+      "equipment": "barbell",
+      "aliases": [
+        "Barbell Drag Curl"
+      ],
+      "youtubeId": "EeY0-aw-pRE",
+      "videoTitle": "FORM CHECK - BARBELL DRAG CURL"
+    },
+    {
+      "name": "21s",
+      "slug": "bicep-curl-21s",
+      "category": "isolation",
+      "primary_muscle": "biceps",
+      "secondary_muscles": [
+        "forearms"
+      ],
+      "equipment": "barbell",
+      "aliases": [
+        "Bicep 21s",
+        "21's"
+      ],
+      "youtubeId": "2JOXXpD4HcY",
+      "videoTitle": "Bicep Curl 21s"
+    },
+    {
+      "name": "Reverse Curl",
+      "slug": "reverse-curl",
+      "category": "isolation",
+      "primary_muscle": "forearms",
+      "secondary_muscles": [
+        "biceps"
+      ],
+      "equipment": "barbell",
+      "aliases": [
+        "Barbell Reverse Curl",
+        "Reverse Grip Curl"
+      ],
+      "youtubeId": "KakQSkPr1YQ",
+      "videoTitle": "Reverse Curl - Proper Grip for Maximum Bicep Gains! #shorts"
+    },
+    {
+      "name": "Wrist Curl",
+      "slug": "wrist-curl",
+      "category": "isolation",
+      "primary_muscle": "forearms",
+      "secondary_muscles": [],
+      "equipment": "barbell",
+      "aliases": [
+        "Barbell Wrist Curl",
+        "Palms-Up Wrist Curl"
+      ],
+      "youtubeId": "SqwIBiru46w",
+      "videoTitle": "Wrist Curl | Proper Form Tutorial for Forearm Strength"
+    },
+    {
+      "name": "Reverse Wrist Curl",
+      "slug": "reverse-wrist-curl",
+      "category": "isolation",
+      "primary_muscle": "forearms",
+      "secondary_muscles": [],
+      "equipment": "barbell",
+      "aliases": [
+        "Barbell Reverse Wrist Curl",
+        "Palms-Down Wrist Curl"
+      ],
+      "youtubeId": "SfENsl5klVA",
+      "videoTitle": "Reverse Wrist Curl | Proper Form Tutorial for Forearm Balance"
+    },
+    {
+      "name": "Behind-the-Back Wrist Curl",
+      "slug": "behind-the-back-wrist-curl",
+      "category": "isolation",
+      "primary_muscle": "forearms",
+      "secondary_muscles": [],
+      "equipment": "barbell",
+      "aliases": [
+        "Behind Back Barbell Wrist Curl"
+      ],
+      "youtubeId": "vktDyscIDrs",
+      "videoTitle": "Dumbbell Wrist Curls (Behind the Back) | SFS Exercise Library"
+    },
+    {
+      "name": "Farmer's Carry",
+      "slug": "farmers-carry",
+      "category": "compound",
+      "primary_muscle": "forearms",
+      "secondary_muscles": [
+        "traps",
+        "core"
+      ],
+      "equipment": "dumbbell",
+      "aliases": [
+        "Farmers Walk",
+        "Farmer's Walk"
+      ],
+      "youtubeId": "8RXTKE06mKc",
+      "videoTitle": "Farmer's Carry Tutorial"
+    },
+    {
+      "name": "Dead Hang",
+      "slug": "dead-hang",
+      "category": "isolation",
+      "primary_muscle": "forearms",
+      "secondary_muscles": [
+        "lats",
+        "shoulders"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Bar Hang",
+        "Passive Hang"
+      ],
+      "youtubeId": "dOCQjaasbGs",
+      "videoTitle": "How To Dead Hang Correctly"
+    },
+    {
+      "name": "Plate Pinch",
+      "slug": "plate-pinch",
+      "category": "isolation",
+      "primary_muscle": "forearms",
+      "secondary_muscles": [],
+      "equipment": "dumbbell",
+      "aliases": [
+        "Plate Pinch Hold",
+        "Pinch Grip"
+      ],
+      "youtubeId": "LARw21BBiDk",
+      "videoTitle": "Plate Pinch | Proper Form Tutorial for Grip Strength"
+    },
+    {
+      "name": "Wrist Roller",
+      "slug": "wrist-roller",
+      "category": "isolation",
+      "primary_muscle": "forearms",
+      "secondary_muscles": [],
+      "equipment": "dumbbell",
+      "aliases": [
+        "Wrist Roller Exercise",
+        "Forearm Roller"
+      ],
+      "youtubeId": "C4urEGe0zsQ",
+      "videoTitle": "How To Do Wrist Roller | Exercise Demo"
+    },
+    {
+      "name": "Cable Overhead Triceps Extension - Bar Attachment",
+      "slug": "cable-overhead-triceps-extension-bar",
+      "category": "isolation",
+      "primary_muscle": "triceps",
+      "secondary_muscles": [],
+      "equipment": "cable",
+      "aliases": [
+        "Overhead Cable Extension - Straight Bar",
+        "Bar Overhead Triceps Extension"
+      ],
+      "youtubeId": "NTk0Igxqcsk",
+      "videoTitle": "The PERFECT High Cable Overhead Triceps Extension"
+    },
+    {
+      "name": "Crossbody Cable Triceps Extension",
+      "slug": "crossbody-cable-triceps-extension",
+      "category": "isolation",
+      "primary_muscle": "triceps",
+      "secondary_muscles": [],
+      "equipment": "cable",
+      "aliases": [
+        "Cross-Body Cable Extension",
+        "Cable Crossbody Extension"
+      ],
+      "youtubeId": "cwDI3x-aT6M",
+      "videoTitle": "Cable Cross-Body Tricep Extension (Setup & Technique)"
+    },
+    {
+      "name": "Single-Arm Reverse-Grip Pushdown",
+      "slug": "single-arm-reverse-grip-pushdown",
+      "category": "isolation",
+      "primary_muscle": "triceps",
+      "secondary_muscles": [
+        "forearms"
+      ],
+      "equipment": "cable",
+      "aliases": [
+        "One-Arm Underhand Pushdown",
+        "Reverse Grip One-Arm Pushdown"
+      ],
+      "youtubeId": "jzzdlEDAWoY",
+      "videoTitle": "One arm reverse grip push down"
+    },
+    {
+      "name": "Diamond Push-Up",
+      "slug": "diamond-push-up",
+      "category": "compound",
+      "primary_muscle": "triceps",
+      "secondary_muscles": [
+        "chest",
+        "shoulders",
+        "core"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Close-Grip Push-Up",
+        "Triangle Push-Up"
+      ],
+      "youtubeId": "PPTj-MW2tcs",
+      "videoTitle": "How to Do the Perfect Diamond Push-Up #shorts"
+    },
+    {
+      "name": "Cable Triceps Kickback",
+      "slug": "cable-triceps-kickback",
+      "category": "isolation",
+      "primary_muscle": "triceps",
+      "secondary_muscles": [],
+      "equipment": "cable",
+      "aliases": [
+        "Standing Cable Kickback",
+        "Cable Kickback"
+      ],
+      "youtubeId": "wUtxCy-2K7M",
+      "videoTitle": "Triceps Cable Kickback | Correct Form & Technique | Tricep Workout #shorts"
+    },
+    {
+      "name": "Tricep Pushdown - V-Bar Attachment",
+      "slug": "tricep-pushdown-v-bar-attachment",
+      "category": "isolation",
+      "primary_muscle": "triceps",
+      "secondary_muscles": [],
+      "equipment": "cable",
+      "aliases": [
+        "V-Bar Pushdown",
+        "Angled Bar Pushdown"
+      ],
+      "youtubeId": "8xT4OwwiACQ",
+      "videoTitle": "Heavy triceps - V bar triceps pushdown technique cues"
+    },
+    {
+      "name": "Pendulum Squat",
+      "slug": "pendulum-squat",
+      "category": "compound",
+      "primary_muscle": "quads",
+      "secondary_muscles": [
+        "glutes"
+      ],
+      "equipment": "machine",
+      "aliases": [
+        "Pendulum Hack Squat"
+      ],
+      "youtubeId": "89pJBhEAizI",
+      "videoTitle": "Pendulum squat machine tutorial"
+    },
+    {
+      "name": "Belt Squat",
+      "slug": "belt-squat",
+      "category": "compound",
+      "primary_muscle": "quads",
+      "secondary_muscles": [
+        "glutes",
+        "hamstrings"
+      ],
+      "equipment": "machine",
+      "aliases": [
+        "Hip Belt Squat"
+      ],
+      "youtubeId": "oLhEYlTjXyQ",
+      "videoTitle": "HOW TO: BELT SQUAT"
+    },
+    {
+      "name": "Sissy Squat",
+      "slug": "sissy-squat",
+      "category": "isolation",
+      "primary_muscle": "quads",
+      "secondary_muscles": [],
+      "equipment": "bodyweight",
+      "aliases": [],
+      "youtubeId": "lrPPo3PkUYI",
+      "videoTitle": "How To Do Sissy Squats"
+    },
+    {
+      "name": "Spanish Squat",
+      "slug": "spanish-squat",
+      "category": "isolation",
+      "primary_muscle": "quads",
+      "secondary_muscles": [],
+      "equipment": "cable",
+      "aliases": [
+        "Spanish Squat Hold"
+      ],
+      "youtubeId": "qrBEigyHW4k",
+      "videoTitle": "How To Perform The Spanish Squat"
+    },
+    {
+      "name": "Cyclist Squat",
+      "slug": "cyclist-squat",
+      "category": "compound",
+      "primary_muscle": "quads",
+      "secondary_muscles": [
+        "glutes"
+      ],
+      "equipment": "barbell",
+      "aliases": [
+        "Heels-Elevated Narrow Stance Squat"
+      ],
+      "youtubeId": "AXCABVu4f6k",
+      "videoTitle": "How to perform a CYCLIST SQUAT"
+    },
+    {
+      "name": "Heel-Elevated Goblet Squat",
+      "slug": "heel-elevated-goblet-squat",
+      "category": "compound",
+      "primary_muscle": "quads",
+      "secondary_muscles": [
+        "glutes"
+      ],
+      "equipment": "dumbbell",
+      "aliases": [
+        "Goblet Squat with Heel Raise"
+      ],
+      "youtubeId": "KQEUTMIM-CY",
+      "videoTitle": "How to do a heel elevated goblet squat"
+    },
+    {
+      "name": "Bulgarian Split Squat",
+      "slug": "bulgarian-split-squat",
+      "category": "compound",
+      "primary_muscle": "quads",
+      "secondary_muscles": [
+        "glutes",
+        "hamstrings"
+      ],
+      "equipment": "dumbbell",
+      "aliases": [
+        "Rear Foot Elevated Split Squat",
+        "Dumbbell Bulgarian Split Squat"
+      ],
+      "youtubeId": "SkNsa3eBwLA",
+      "videoTitle": "How to do the BULGARIAN SPLIT SQUAT! | 2 Minute Tutorial"
+    },
+    {
+      "name": "Barbell Bulgarian Split Squat",
+      "slug": "barbell-bulgarian-split-squat",
+      "category": "compound",
+      "primary_muscle": "quads",
+      "secondary_muscles": [
+        "glutes",
+        "hamstrings"
+      ],
+      "equipment": "barbell",
+      "aliases": [
+        "Barbell Rear Foot Elevated Split Squat"
+      ],
+      "youtubeId": "obUobGzBRUY",
+      "videoTitle": "Barbell Bulgarian Split Squat"
+    },
+    {
+      "name": "Reverse Lunge",
+      "slug": "reverse-lunge",
+      "category": "compound",
+      "primary_muscle": "quads",
+      "secondary_muscles": [
+        "glutes",
+        "hamstrings"
+      ],
+      "equipment": "dumbbell",
+      "aliases": [
+        "Dumbbell Reverse Lunge",
+        "Backward Lunge"
+      ],
+      "youtubeId": "94AXT7D3bKY",
+      "videoTitle": "How to Perform the Perfect Reverse Lunge"
+    },
+    {
+      "name": "Curtsy Lunge",
+      "slug": "curtsy-lunge",
+      "category": "compound",
+      "primary_muscle": "quads",
+      "secondary_muscles": [
+        "glutes",
+        "obliques"
+      ],
+      "equipment": "dumbbell",
+      "aliases": [
+        "Cross-Behind Lunge"
+      ],
+      "youtubeId": "1MgFup8A_0c",
+      "videoTitle": "How To Do Curtsy Lunges The RIGHT Way"
+    },
+    {
+      "name": "Wall Sit",
+      "slug": "wall-sit",
+      "category": "compound",
+      "primary_muscle": "quads",
+      "secondary_muscles": [
+        "glutes"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Wall Squat"
+      ],
+      "youtubeId": "JaZNYM3zAP0",
+      "videoTitle": "How To Do a Wall Sit | The Right Way | Well+Good"
+    },
+    {
+      "name": "Pistol Squat",
+      "slug": "pistol-squat",
+      "category": "compound",
+      "primary_muscle": "quads",
+      "secondary_muscles": [
+        "glutes",
+        "core"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Single-Leg Squat"
+      ],
+      "youtubeId": "Ei1nwSCQx-0",
+      "videoTitle": "How to Pistol Squat for Beginners + Follow Along Workout"
+    },
+    {
+      "name": "Smith Machine Front Squat",
+      "slug": "smith-machine-front-squat",
+      "category": "compound",
+      "primary_muscle": "quads",
+      "secondary_muscles": [
+        "glutes",
+        "core"
+      ],
+      "equipment": "machine",
+      "aliases": [],
+      "youtubeId": "84ZWHQZrrKE",
+      "videoTitle": "How To: Smith Machine Front Squat"
+    },
+    {
+      "name": "Landmine Squat",
+      "slug": "landmine-squat",
+      "category": "compound",
+      "primary_muscle": "quads",
+      "secondary_muscles": [
+        "glutes"
+      ],
+      "equipment": "barbell",
+      "aliases": [
+        "Landmine Goblet Squat"
+      ],
+      "youtubeId": "_C40j_jijgo",
+      "videoTitle": "Landmine Squat Tutorial"
+    },
+    {
+      "name": "Single-Leg Press",
+      "slug": "single-leg-leg-press",
+      "category": "compound",
+      "primary_muscle": "quads",
+      "secondary_muscles": [
+        "glutes",
+        "hamstrings"
+      ],
+      "equipment": "machine",
+      "aliases": [
+        "One-Leg Leg Press"
+      ],
+      "youtubeId": "FU7FqGTtCMk",
+      "videoTitle": "Single Leg Leg Press | Proper Form Tutorial for Unilateral Leg Strength"
+    },
+    {
+      "name": "Nordic Hamstring Curl",
+      "slug": "nordic-hamstring-curl",
+      "category": "isolation",
+      "primary_muscle": "hamstrings",
+      "secondary_muscles": [
+        "glutes",
+        "core"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Nordic Curl",
+        "Russian Hamstring Curl",
+        "Nordic Ham Curl"
+      ],
+      "youtubeId": "6NCN6kOagfY",
+      "videoTitle": "How to Do a Nordic Hamstring Curl"
+    },
+    {
+      "name": "Hip Abduction Machine",
+      "slug": "hip-abduction-machine",
+      "category": "isolation",
+      "primary_muscle": "glutes",
+      "secondary_muscles": [],
+      "equipment": "machine",
+      "aliases": [
+        "Seated Hip Abduction",
+        "Machine Hip Abduction",
+        "Outer Thigh Machine"
+      ],
+      "youtubeId": "MqfJUlS5BiI",
+      "videoTitle": "Demo | Hip Abduction Machine"
+    },
+    {
+      "name": "Hip Adduction Machine",
+      "slug": "hip-adduction-machine",
+      "category": "isolation",
+      "primary_muscle": "glutes",
+      "secondary_muscles": [
+        "hamstrings"
+      ],
+      "equipment": "machine",
+      "aliases": [
+        "Seated Hip Adduction",
+        "Inner Thigh Machine"
+      ],
+      "youtubeId": "Rzj3BffTARY",
+      "videoTitle": "HOW TO USE THE HIP ADDUCTION MACHINE #beginnergymtips #beginnerfitness #howtousegymequipment"
+    },
+    {
+      "name": "Glute Kickback Machine",
+      "slug": "glute-kickback-machine",
+      "category": "isolation",
+      "primary_muscle": "glutes",
+      "secondary_muscles": [
+        "hamstrings"
+      ],
+      "equipment": "machine",
+      "aliases": [
+        "Hip Kickback Machine",
+        "Glute Drive"
+      ],
+      "youtubeId": "Zt6kfolzSsI",
+      "videoTitle": "Glute kickback machine form that actually works #gymtutorial #glutes"
+    },
+    {
+      "name": "Cable Hip Abduction",
+      "slug": "cable-hip-abduction",
+      "category": "isolation",
+      "primary_muscle": "glutes",
+      "secondary_muscles": [],
+      "equipment": "cable",
+      "aliases": [
+        "Standing Cable Hip Abduction",
+        "Cable Glute Abduction",
+        "Cable Fire Hydrant"
+      ],
+      "youtubeId": "bGlm-qTnfTI",
+      "videoTitle": "How To Do A STANDING CABLE HIP ABDUCTION | Exercise Demonstration Video and Guide"
+    },
+    {
+      "name": "Single-Leg Romanian Deadlift",
+      "slug": "single-leg-romanian-deadlift",
+      "category": "compound",
+      "primary_muscle": "hamstrings",
+      "secondary_muscles": [
+        "glutes",
+        "core",
+        "lower_back"
+      ],
+      "equipment": "dumbbell",
+      "aliases": [
+        "Single-Leg RDL",
+        "One-Leg Romanian Deadlift",
+        "Single-Leg Deadlift"
+      ],
+      "youtubeId": "8fvoRbInHg4",
+      "videoTitle": "Single Leg Romanian Deadlift (SL RDL) Tutorial"
+    },
+    {
+      "name": "B-Stance RDL",
+      "slug": "b-stance-rdl",
+      "category": "compound",
+      "primary_muscle": "hamstrings",
+      "secondary_muscles": [
+        "glutes",
+        "core"
+      ],
+      "equipment": "dumbbell",
+      "aliases": [
+        "B-Stance Romanian Deadlift",
+        "Kickstand RDL",
+        "Staggered Stance RDL"
+      ],
+      "youtubeId": "BOH6Jl_Z8Hg",
+      "videoTitle": "Her B-Stance RDL Tutorial Is GOLD!"
+    },
+    {
+      "name": "Frog Pump",
+      "slug": "frog-pump",
+      "category": "isolation",
+      "primary_muscle": "glutes",
+      "secondary_muscles": [],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Frog Pumps",
+        "Butterfly Hip Thrust"
+      ],
+      "youtubeId": "UEkhW_fPcJ4",
+      "videoTitle": "Unlock Your Glutes: Mastering the Frog Pump Exercise #shorts"
+    },
+    {
+      "name": "Machine Hip Thrust",
+      "slug": "machine-hip-thrust",
+      "category": "compound",
+      "primary_muscle": "glutes",
+      "secondary_muscles": [
+        "hamstrings"
+      ],
+      "equipment": "machine",
+      "aliases": [
+        "Hip Thrust Machine",
+        "Glute Drive Hip Thrust"
+      ],
+      "youtubeId": "XVR6FcmVfko",
+      "videoTitle": "How to do a Hip Thrust (Machine)"
+    },
+    {
+      "name": "Kettlebell Swing",
+      "slug": "kettlebell-swing",
+      "category": "compound",
+      "primary_muscle": "glutes",
+      "secondary_muscles": [
+        "hamstrings",
+        "core",
+        "lower_back"
+      ],
+      "equipment": "kettlebell",
+      "aliases": [
+        "KB Swing",
+        "Two-Arm Kettlebell Swing",
+        "Russian Kettlebell Swing"
+      ],
+      "youtubeId": "PdxsmiCqcr0",
+      "videoTitle": "The ULTIMATE Kettlebell Swing Tutorial!😳"
+    },
+    {
+      "name": "Single-Leg Calf Raise",
+      "slug": "single-leg-calf-raise",
+      "category": "isolation",
+      "primary_muscle": "calves",
+      "secondary_muscles": [],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Single Leg Standing Calf Raise",
+        "Unilateral Calf Raise",
+        "One-Leg Calf Raise"
+      ],
+      "youtubeId": "ElcvJ0kjt6c",
+      "videoTitle": "Single Leg Calf Raise Tutorial - Proper Form and Technique"
+    },
+    {
+      "name": "Single-Leg Dumbbell Calf Raise",
+      "slug": "single-leg-dumbbell-calf-raise",
+      "category": "isolation",
+      "primary_muscle": "calves",
+      "secondary_muscles": [],
+      "equipment": "dumbbell",
+      "aliases": [
+        "Weighted Single-Leg Calf Raise"
+      ],
+      "youtubeId": "1D7s-VyLq0Y",
+      "videoTitle": "How To Do a Single Leg Dumbbell Calf Raise"
+    },
+    {
+      "name": "Seated Dumbbell Calf Raise",
+      "slug": "seated-dumbbell-calf-raise",
+      "category": "isolation",
+      "primary_muscle": "calves",
+      "secondary_muscles": [],
+      "equipment": "dumbbell",
+      "aliases": [
+        "Dumbbell Seated Calf Raise"
+      ],
+      "youtubeId": "fFWpWJy8ybU",
+      "videoTitle": "How To: Dumbbell Seated Calf Raise"
+    },
+    {
+      "name": "Single-Leg Seated Calf Raise",
+      "slug": "single-leg-seated-calf-raise",
+      "category": "isolation",
+      "primary_muscle": "calves",
+      "secondary_muscles": [],
+      "equipment": "dumbbell",
+      "aliases": [
+        "Unilateral Seated Calf Raise"
+      ],
+      "youtubeId": "dE_l7aK2jpM",
+      "videoTitle": "Single Leg Seated Calf Raise"
+    },
+    {
+      "name": "Tibialis Raise",
+      "slug": "tibialis-raise",
+      "category": "isolation",
+      "primary_muscle": "calves",
+      "secondary_muscles": [],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Tib Raise",
+        "Wall Tibialis Raise",
+        "Reverse Calf Raise",
+        "Dorsiflexion Raise"
+      ],
+      "youtubeId": "RXC7tE6IQcc",
+      "videoTitle": "Tibialis Raise | How to do it and why it is important"
+    },
+    {
+      "name": "Tibialis Raise Machine",
+      "slug": "tibialis-raise-machine",
+      "category": "isolation",
+      "primary_muscle": "calves",
+      "secondary_muscles": [],
+      "equipment": "machine",
+      "aliases": [
+        "Tib Bar Raise",
+        "Tib Machine"
+      ],
+      "youtubeId": "O4DJc4fBUwQ",
+      "videoTitle": "Tibialis Anterior Machine Raises"
+    },
+    {
+      "name": "Single-Leg Calf Raise Machine",
+      "slug": "single-leg-calf-raise-machine",
+      "category": "isolation",
+      "primary_muscle": "calves",
+      "secondary_muscles": [],
+      "equipment": "machine",
+      "aliases": [
+        "Single-Leg Standing Calf Raise Machine",
+        "Unilateral Calf Raise Machine"
+      ],
+      "youtubeId": "4NUJeFJ14F4",
+      "videoTitle": "Single Leg Seated Calf Raise Machine"
+    },
+    {
+      "name": "Donkey Calf Raise",
+      "slug": "donkey-calf-raise",
+      "category": "isolation",
+      "primary_muscle": "calves",
+      "secondary_muscles": [
+        "hamstrings"
+      ],
+      "equipment": "machine",
+      "aliases": [
+        "Bent-Over Calf Raise"
+      ],
+      "youtubeId": "Onpk4GON1wU",
+      "videoTitle": "How To Do Donkey Calf Raises | Exercise Demo"
+    },
+    {
+      "name": "Ab Wheel Rollout",
+      "slug": "ab-wheel-rollout",
+      "category": "compound",
+      "primary_muscle": "core",
+      "secondary_muscles": [
+        "lats",
+        "shoulders",
+        "lower_back"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Ab Roller",
+        "Wheel Rollout",
+        "Kneeling Ab Rollout"
+      ],
+      "youtubeId": "C_j2Ux1Se5c",
+      "videoTitle": "How To Use the Ab Wheel with Perfect Form #Shorts"
+    },
+    {
+      "name": "Weighted Plank",
+      "slug": "weighted-plank",
+      "category": "compound",
+      "primary_muscle": "core",
+      "secondary_muscles": [
+        "shoulders",
+        "glutes"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Loaded Plank",
+        "Plank with Weight Plate"
+      ],
+      "youtubeId": "3IG7wyMDFqQ",
+      "videoTitle": "How to do a weighted plank"
+    },
+    {
+      "name": "Copenhagen Plank",
+      "slug": "copenhagen-plank",
+      "category": "compound",
+      "primary_muscle": "obliques",
+      "secondary_muscles": [
+        "core"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Copenhagen Side Plank",
+        "Copenhagen Adductor Plank"
+      ],
+      "youtubeId": "5paDavNMjGM",
+      "videoTitle": "How To Perform Copenhagen Planks"
+    },
+    {
+      "name": "Hanging Knee Raise",
+      "slug": "hanging-knee-raise",
+      "category": "compound",
+      "primary_muscle": "core",
+      "secondary_muscles": [
+        "forearms",
+        "lats"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Hanging Knee Tuck",
+        "Knee Raise"
+      ],
+      "youtubeId": "jTak29W-uoY",
+      "videoTitle": "Hanging knee raises form"
+    },
+    {
+      "name": "Captain's Chair Leg Raise",
+      "slug": "captains-chair-leg-raise",
+      "category": "compound",
+      "primary_muscle": "core",
+      "secondary_muscles": [
+        "quads"
+      ],
+      "equipment": "machine",
+      "aliases": [
+        "Captain's Chair Knee Raise",
+        "Vertical Leg Raise",
+        "Roman Chair Leg Raise"
+      ],
+      "youtubeId": "nBsP27-x7LU",
+      "videoTitle": "How To Do A CAPTAIN'S CHAIR LEG RAISE | Exercise Demonstration Video and Guide"
+    },
+    {
+      "name": "Suitcase Carry",
+      "slug": "suitcase-carry",
+      "category": "compound",
+      "primary_muscle": "obliques",
+      "secondary_muscles": [
+        "core",
+        "traps",
+        "forearms"
+      ],
+      "equipment": "dumbbell",
+      "aliases": [
+        "Single-Arm Farmer's Carry"
+      ],
+      "youtubeId": "iq5D5SU2Oq4",
+      "videoTitle": "How To Do Kettlebell Suitcase Carry | Exercise Demo"
+    },
+    {
+      "name": "Bird Dog",
+      "slug": "bird-dog",
+      "category": "compound",
+      "primary_muscle": "core",
+      "secondary_muscles": [
+        "lower_back",
+        "glutes"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Quadruped Contralateral Raise"
+      ],
+      "youtubeId": "MCkb_SwmSh0",
+      "videoTitle": "How to: Properly Perform a Bird Dog with Perfect Form (Exercise Demonstration)"
+    },
+    {
+      "name": "Hollow Body Hold",
+      "slug": "hollow-body-hold",
+      "category": "compound",
+      "primary_muscle": "core",
+      "secondary_muscles": [],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Hollow Hold"
+      ],
+      "youtubeId": "0yPin8hSc8o",
+      "videoTitle": "Hollow Body Hold | Proper Form Tutorial for Core Stability"
+    },
+    {
+      "name": "Dragon Flag",
+      "slug": "dragon-flag",
+      "category": "compound",
+      "primary_muscle": "core",
+      "secondary_muscles": [
+        "lats",
+        "glutes"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [],
+      "youtubeId": "RLbRLWB38iE",
+      "videoTitle": "How to Dragon Flag (On the Floor) - 5 AMAZING Tips | Calisthenics"
+    },
+    {
+      "name": "L-Sit",
+      "slug": "l-sit",
+      "category": "compound",
+      "primary_muscle": "core",
+      "secondary_muscles": [
+        "triceps",
+        "shoulders"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [
+        "L-Sit Hold"
+      ],
+      "youtubeId": "4XGlmKk96Jg",
+      "videoTitle": "How To L-Sit In 60 Seconds (Beginner Tutorial)"
+    },
+    {
+      "name": "Decline Sit-Up",
+      "slug": "decline-sit-up",
+      "category": "isolation",
+      "primary_muscle": "core",
+      "secondary_muscles": [],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Decline Bench Sit-Up"
+      ],
+      "youtubeId": "M04i4qZgtPU",
+      "videoTitle": "How to Decline Sit up | Exercise Tutorial"
+    },
+    {
+      "name": "Weighted Sit-Up",
+      "slug": "weighted-sit-up",
+      "category": "isolation",
+      "primary_muscle": "core",
+      "secondary_muscles": [],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Sit-Up with Weight",
+        "Loaded Sit-Up"
+      ],
+      "youtubeId": "Oo5OEwV5LCw",
+      "videoTitle": "Weighted Sit Ups #howtoexercise #exercisedemo #coreexercises"
+    },
+    {
+      "name": "V-Up",
+      "slug": "v-up",
+      "category": "compound",
+      "primary_muscle": "core",
+      "secondary_muscles": [],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Jackknife Sit-Up",
+        "V-Sit"
+      ],
+      "youtubeId": "HK7ogMEFdfc",
+      "videoTitle": "V Up Exercise Demo"
+    },
+    {
+      "name": "Windshield Wipers",
+      "slug": "windshield-wipers",
+      "category": "compound",
+      "primary_muscle": "obliques",
+      "secondary_muscles": [
+        "core"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Hanging Windshield Wipers"
+      ],
+      "youtubeId": "X59_4RrU_aA",
+      "videoTitle": "How to Do a Windshield Wiper | Ab Workout"
+    },
+    {
+      "name": "Toes to Bar",
+      "slug": "toes-to-bar",
+      "category": "compound",
+      "primary_muscle": "core",
+      "secondary_muscles": [
+        "lats",
+        "forearms"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [
+        "T2B"
+      ],
+      "youtubeId": "3DVdbXaOUCw",
+      "videoTitle": "How To Properly Do Toes To Bar - Movement Standards"
+    },
+    {
+      "name": "Mountain Climbers",
+      "slug": "mountain-climbers",
+      "category": "compound",
+      "primary_muscle": "core",
+      "secondary_muscles": [
+        "shoulders",
+        "quads"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Running Plank"
+      ],
+      "youtubeId": "fpmWW6iXfes",
+      "videoTitle": "Proper Mountain Climber Form (Fix Your Form!)"
+    },
+    {
+      "name": "Dumbbell Side Bend",
+      "slug": "dumbbell-side-bend",
+      "category": "isolation",
+      "primary_muscle": "obliques",
+      "secondary_muscles": [],
+      "equipment": "dumbbell",
+      "aliases": [
+        "Side Bend",
+        "Standing Side Bend"
+      ],
+      "youtubeId": "mjRUPpMh988",
+      "videoTitle": "Dumbbell Side Bend"
+    },
+    {
+      "name": "Torso Rotation Machine",
+      "slug": "torso-rotation-machine",
+      "category": "isolation",
+      "primary_muscle": "obliques",
+      "secondary_muscles": [
+        "core"
+      ],
+      "equipment": "machine",
+      "aliases": [
+        "Rotary Torso Machine",
+        "Seated Torso Rotation"
+      ],
+      "youtubeId": "L_n7rSjWzv8",
+      "videoTitle": "How to use Torso Rotation machine"
+    },
+    {
+      "name": "Horizontal Leg Press",
+      "slug": "horizontal-leg-press",
+      "category": "compound",
+      "primary_muscle": "quads",
+      "secondary_muscles": [
+        "glutes",
+        "hamstrings"
+      ],
+      "equipment": "machine",
+      "aliases": [
+        "Horizontal Leg Press Machine"
+      ],
+      "youtubeId": "QlR7vBYkni4",
+      "videoTitle": "Horizontal Leg Press Machine - Quick Demo"
+    },
+    {
+      "name": "Smith Machine Lunge",
+      "slug": "smith-machine-lunge",
+      "category": "compound",
+      "primary_muscle": "quads",
+      "secondary_muscles": [
+        "glutes",
+        "hamstrings"
+      ],
+      "equipment": "machine",
+      "aliases": [
+        "Smith Machine Walking Lunge"
+      ],
+      "youtubeId": "73CD40T-III",
+      "videoTitle": "Smith Machine Lunges"
+    },
+    {
+      "name": "Assisted Dip Machine",
+      "slug": "assisted-dip-machine",
+      "category": "compound",
+      "primary_muscle": "triceps",
+      "secondary_muscles": [
+        "chest",
+        "shoulders"
+      ],
+      "equipment": "machine",
+      "aliases": [
+        "Assisted Dip",
+        "Gravitron Dip"
+      ],
+      "youtubeId": "D8RIzFsK8gA",
+      "videoTitle": "TUTORIAL: How To Use The Assisted Dip Machine (PLANET FITNESS)"
+    },
+    {
+      "name": "Iso-Lateral Chest Press",
+      "slug": "iso-lateral-chest-press",
+      "category": "compound",
+      "primary_muscle": "chest",
+      "secondary_muscles": [
+        "triceps",
+        "shoulders"
+      ],
+      "equipment": "machine",
+      "aliases": [
+        "Hammer Strength Chest Press",
+        "Leverage Chest Press",
+        "Plate-Loaded Chest Press"
+      ],
+      "youtubeId": "olNQWjEVpNQ",
+      "videoTitle": "How-To Use the \"Iso-Lateral Wide Chest\" Machine"
+    },
+    {
+      "name": "Shrug Machine",
+      "slug": "shrug-machine",
+      "category": "isolation",
+      "primary_muscle": "traps",
+      "secondary_muscles": [],
+      "equipment": "machine",
+      "aliases": [
+        "Machine Shrug"
+      ],
+      "youtubeId": "vgIrFzeIcEE",
+      "videoTitle": "How To Do A MACHINE SEATED SHRUG | Exercise Demonstration Video and Guide"
+    },
+    {
+      "name": "Ring Dip",
+      "slug": "ring-dip",
+      "category": "compound",
+      "primary_muscle": "chest",
+      "secondary_muscles": [
+        "triceps",
+        "shoulders"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Gymnastic Ring Dip"
+      ],
+      "youtubeId": "8OffxhTbAq0",
+      "videoTitle": "How To Ring Dip"
+    },
+    {
+      "name": "Muscle-Up",
+      "slug": "muscle-up",
+      "category": "compound",
+      "primary_muscle": "lats",
+      "secondary_muscles": [
+        "biceps",
+        "chest",
+        "triceps"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Bar Muscle-Up",
+        "Ring Muscle-Up"
+      ],
+      "youtubeId": "p7q0UhxPdLY",
+      "videoTitle": "HOW TO MUSCLE UP IN 5 MINUTES WITH 3 EASY STEPS!!! | THENX"
+    },
+    {
+      "name": "Archer Push-Up",
+      "slug": "archer-push-up",
+      "category": "compound",
+      "primary_muscle": "chest",
+      "secondary_muscles": [
+        "triceps",
+        "shoulders"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [],
+      "youtubeId": "HXiwGFWx1mU",
+      "videoTitle": "How to do ARCHER PUSH-UPS! (The right way!)"
+    },
+    {
+      "name": "Pike Push-Up",
+      "slug": "pike-push-up",
+      "category": "compound",
+      "primary_muscle": "shoulders",
+      "secondary_muscles": [
+        "triceps"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Pike Press"
+      ],
+      "youtubeId": "8URA3YSur2M",
+      "videoTitle": "PIKE PUSH UP FEET ELEVATED | Technique Demo"
+    },
+    {
+      "name": "Plyo Push-Up",
+      "slug": "plyo-push-up",
+      "category": "compound",
+      "primary_muscle": "chest",
+      "secondary_muscles": [
+        "triceps",
+        "shoulders"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Clapping Push-Up",
+        "Explosive Push-Up"
+      ],
+      "youtubeId": "MH4gcTKQiEc",
+      "videoTitle": "How to do a Plyometric Push-Up | Proper Form & Technique | NASM"
+    },
+    {
+      "name": "Broad Jump",
+      "slug": "broad-jump",
+      "category": "compound",
+      "primary_muscle": "quads",
+      "secondary_muscles": [
+        "glutes",
+        "hamstrings"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Standing Broad Jump",
+        "Long Jump"
+      ],
+      "youtubeId": "XajNZlDzxXE",
+      "videoTitle": "Broad Jump | Exercise Demo"
+    },
+    {
+      "name": "Box Jump",
+      "slug": "box-jump",
+      "category": "compound",
+      "primary_muscle": "quads",
+      "secondary_muscles": [
+        "glutes",
+        "calves"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [],
+      "youtubeId": "Bc_ycZFCEvQ",
+      "videoTitle": "How To Do The Plyometric Box Jump (TECHNIQUE BREAKDOWN 101)"
+    },
+    {
+      "name": "Step-Down",
+      "slug": "step-down",
+      "category": "compound",
+      "primary_muscle": "quads",
+      "secondary_muscles": [
+        "glutes"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Box Step Down"
+      ],
+      "youtubeId": "UfVYtlQ-5-Q",
+      "videoTitle": "How To Do Eccentric Step Down | Exercise Demo"
+    },
+    {
+      "name": "Burpee",
+      "slug": "burpee",
+      "category": "compound",
+      "primary_muscle": "quads",
+      "secondary_muscles": [
+        "chest",
+        "shoulders",
+        "core"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [],
+      "youtubeId": "DNHWxCUp8MY",
+      "videoTitle": "How to Perform the Perfect Burpee"
+    },
+    {
+      "name": "Mountain Climber",
+      "slug": "mountain-climber",
+      "category": "compound",
+      "primary_muscle": "core",
+      "secondary_muscles": [
+        "quads",
+        "shoulders"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [],
+      "youtubeId": "fpmWW6iXfes",
+      "videoTitle": "Proper Mountain Climber Form (Fix Your Form!)"
+    },
+    {
+      "name": "Bear Crawl",
+      "slug": "bear-crawl",
+      "category": "compound",
+      "primary_muscle": "core",
+      "secondary_muscles": [
+        "shoulders",
+        "quads"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [],
+      "youtubeId": "-9L3rTrYo4Q",
+      "videoTitle": "How-To: Bear Crawl"
+    },
+    {
+      "name": "Superman",
+      "slug": "superman",
+      "category": "isolation",
+      "primary_muscle": "lower_back",
+      "secondary_muscles": [
+        "glutes"
+      ],
+      "equipment": "bodyweight",
+      "aliases": [
+        "Superman Hold",
+        "Superman Raise"
+      ],
+      "youtubeId": "uexOGyxLr7E",
+      "videoTitle": "How to do the Superman exercise."
+    },
+    {
+      "name": "Turkish Get-Up",
+      "slug": "turkish-get-up",
+      "category": "compound",
+      "primary_muscle": "core",
+      "secondary_muscles": [
+        "shoulders",
+        "glutes",
+        "quads"
+      ],
+      "equipment": "kettlebell",
+      "aliases": [
+        "TGU",
+        "Kettlebell Turkish Get-Up"
+      ],
+      "youtubeId": "JFrItinMcyQ",
+      "videoTitle": "Turkish Get-Up: 2-Minute Complete Tutorial"
+    },
+    {
+      "name": "Kettlebell Clean",
+      "slug": "kettlebell-clean",
+      "category": "compound",
+      "primary_muscle": "hamstrings",
+      "secondary_muscles": [
+        "glutes",
+        "traps",
+        "forearms"
+      ],
+      "equipment": "kettlebell",
+      "aliases": [
+        "KB Clean",
+        "Single Kettlebell Clean"
+      ],
+      "youtubeId": "xQb9Tc3iQpI",
+      "videoTitle": "Kettlebell CLEAN ✅ #kettlebell"
+    },
+    {
+      "name": "Kettlebell Snatch",
+      "slug": "kettlebell-snatch",
+      "category": "compound",
+      "primary_muscle": "shoulders",
+      "secondary_muscles": [
+        "glutes",
+        "hamstrings",
+        "traps"
+      ],
+      "equipment": "kettlebell",
+      "aliases": [
+        "KB Snatch",
+        "One-Arm Kettlebell Snatch"
+      ],
+      "youtubeId": "elvacc5YLL0",
+      "videoTitle": "Kettlebell Snatch - Learn in 1 Minute. Simple Coaching Cues"
+    },
+    {
+      "name": "Kettlebell Windmill",
+      "slug": "kettlebell-windmill",
+      "category": "compound",
+      "primary_muscle": "obliques",
+      "secondary_muscles": [
+        "shoulders",
+        "hamstrings"
+      ],
+      "equipment": "kettlebell",
+      "aliases": [
+        "KB Windmill"
+      ],
+      "youtubeId": "1N1Qs9FO4GU",
+      "videoTitle": "Kettlebell Windmill Tutorial (Shoulder ➡️ Core Strength)"
+    },
+    {
+      "name": "Kettlebell Front Rack Carry",
+      "slug": "kettlebell-front-rack-carry",
+      "category": "compound",
+      "primary_muscle": "core",
+      "secondary_muscles": [
+        "shoulders",
+        "traps",
+        "forearms"
+      ],
+      "equipment": "kettlebell",
+      "aliases": [
+        "KB Front Rack Carry",
+        "Double Kettlebell Front Carry"
+      ],
+      "youtubeId": "E5lUnuKrHro",
+      "videoTitle": "Single Arm Kettlebell Front Rack Carry"
+    },
+    {
+      "name": "Sled Push",
+      "slug": "sled-push",
+      "category": "compound",
+      "primary_muscle": "quads",
+      "secondary_muscles": [
+        "glutes",
+        "calves"
+      ],
+      "equipment": "machine",
+      "aliases": [
+        "Prowler Push",
+        "Sled Sprint Push"
+      ],
+      "youtubeId": "YJbKlXj4WhI",
+      "videoTitle": "Sled Push | Proper Form Tutorial for Power & Conditioning"
+    },
+    {
+      "name": "Sled Drag",
+      "slug": "sled-drag",
+      "category": "compound",
+      "primary_muscle": "hamstrings",
+      "secondary_muscles": [
+        "glutes",
+        "quads",
+        "calves"
+      ],
+      "equipment": "machine",
+      "aliases": [
+        "Sled Pull",
+        "Prowler Drag",
+        "Backward Sled Drag"
+      ],
+      "youtubeId": "itWeLTDSBuw",
+      "videoTitle": "The PROPER Way To Do Sled Drags"
+    },
+    {
+      "name": "Battle Ropes",
+      "slug": "battle-ropes",
+      "category": "compound",
+      "primary_muscle": "shoulders",
+      "secondary_muscles": [
+        "core",
+        "forearms",
+        "traps"
+      ],
+      "equipment": "machine",
+      "aliases": [
+        "Battle Rope Waves",
+        "Heavy Rope Slams"
+      ],
+      "youtubeId": "HQZyPZ6qhJw",
+      "videoTitle": "How to perform battle ropes correctly"
+    },
+    {
+      "name": "Medicine Ball Slam",
+      "slug": "medicine-ball-slam",
+      "category": "compound",
+      "primary_muscle": "core",
+      "secondary_muscles": [
+        "shoulders",
+        "lats",
+        "obliques"
+      ],
+      "equipment": "machine",
+      "aliases": [
+        "Med Ball Slam",
+        "Slam Ball Throw"
+      ],
+      "youtubeId": "f8wbXUucWeA",
+      "videoTitle": "Medicine ball SLAM (common mistake!)"
+    },
+    {
+      "name": "Kettlebell Halo",
+      "slug": "kettlebell-halo",
+      "category": "isolation",
+      "primary_muscle": "shoulders",
+      "secondary_muscles": [
+        "core"
+      ],
+      "equipment": "kettlebell",
+      "aliases": [
+        "KB Halo"
+      ],
+      "youtubeId": "lKANnpyd6VY",
+      "videoTitle": "How to Perform the Kettlebell Halo | Great Shoulder Warm Up Exercise"
+    },
+    {
+      "name": "Kettlebell Thruster",
+      "slug": "kettlebell-thruster",
+      "category": "compound",
+      "primary_muscle": "quads",
+      "secondary_muscles": [
+        "shoulders",
+        "glutes",
+        "triceps"
+      ],
+      "equipment": "kettlebell",
+      "aliases": [
+        "KB Thruster"
+      ],
+      "youtubeId": "0-6iaZ-4-Cg",
+      "videoTitle": "How To Do Kettlebell Thrusters | Exercise Demo"
+    },
+    {
+      "name": "Single-Arm Kettlebell Row",
+      "slug": "single-arm-kettlebell-row",
+      "category": "compound",
+      "primary_muscle": "back",
+      "secondary_muscles": [
+        "lats",
+        "biceps"
+      ],
+      "equipment": "kettlebell",
+      "aliases": [
+        "One-Arm Kettlebell Row"
+      ],
+      "youtubeId": "1fSk8shAVPE",
+      "videoTitle": "Upper Body Kettlebell Exercise For Beginners | Single Arm Kettlebell Row"
+    },
+    {
+      "name": "Kettlebell Deadlift",
+      "slug": "kettlebell-deadlift",
+      "category": "compound",
+      "primary_muscle": "hamstrings",
+      "secondary_muscles": [
+        "glutes",
+        "lower_back",
+        "forearms"
+      ],
+      "equipment": "kettlebell",
+      "aliases": [
+        "Kettlebell Sumo Deadlift",
+        "Double Kettlebell Deadlift"
+      ],
+      "youtubeId": "MJPGkNqAXzg",
+      "videoTitle": "How to Do a Kettlebell Deadlift | Proper Form & Technique"
+    }
+  ],
+  "backfill": [
+    {
+      "slug": "good-morning-off-pins",
+      "youtubeId": "v6t5YX6WKDY"
+    },
+    {
+      "slug": "machine-high-row",
+      "youtubeId": "TpN5JkNVKxA"
+    },
+    {
+      "slug": "narrow-stance-hack-squat",
+      "youtubeId": "ZV7sNFEky5k"
+    },
+    {
+      "slug": "narrow-stance-leg-press",
+      "youtubeId": "uPkUXtLBOq4"
+    },
+    {
+      "slug": "rocking-calf-raise",
+      "youtubeId": "Gu4I8EaTy1I"
+    },
+    {
+      "slug": "cable-row",
+      "youtubeId": "EU7bOadUsNI"
+    },
+    {
+      "slug": "smith-machine-pistol-squat",
+      "youtubeId": "pd7DeNPJ5Kk"
+    },
+    {
+      "slug": "v-bar-pull-up",
+      "youtubeId": "nYXp42TPh_w"
+    },
+    {
+      "slug": "wide-stance-stiff-leg-deadlift",
+      "youtubeId": "6Gxc1XL9p0I"
+    }
+  ],
+  "stats": {
+    "proposed": 144,
+    "added": 144,
+    "withVideo": 144
+  }
+}
