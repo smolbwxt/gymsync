@@ -225,13 +225,16 @@ struct WarmUpPhaseView: View {
 
     // MARK: - CTAs
 
-    /// The primary action — the START SET CTA idiom (full-width accent
-    /// card, 64pt, radius 16). After my group vote it becomes an INERT
-    /// surface card: the decision is made, the crew is what's pending.
+    /// The primary action — the START SET CTA idiom (full-width, 64pt
+    /// total, radius 16), now wearing the extruded 3D style: 59pt face +
+    /// 5pt lip. The group vote rides the accent face; the solo skip is a
+    /// QUIET surface face (skipping is permission, not a push). After my
+    /// group vote it becomes an INERT surface card: the decision is made,
+    /// the crew is what's pending.
     @ViewBuilder
     private var primaryCTA: some View {
         if isSolo {
-            ctaButton(title: "SKIP WARM-UP", action: onReady)
+            surfaceCTAButton(title: "SKIP WARM-UP", action: onReady)
         } else if myReady {
             Text("WARMED UP · WAITING ON THE CREW")
                 .font(GSFont.bold(13, relativeTo: .footnote))
@@ -249,21 +252,32 @@ struct WarmUpPhaseView: View {
 
     private func ctaButton(title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 16).fill(theme.accent)
-                Text(title)
-                    .font(GSFont.bold(17, relativeTo: .body))
-                    .tracking(0.9)
-                    .foregroundStyle(theme.bg)
-            }
-            .frame(height: 64)
-            .contentShape(Rectangle())
+            Text(title)
+                .font(GSFont.bold(17, relativeTo: .body))
+                .tracking(0.9)
+                .foregroundStyle(theme.bg)
+                .frame(maxWidth: .infinity)
+                .frame(height: 59)   // + 5pt lip = the 64pt CTA rhythm
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.gs3D(face: theme.accent, cornerRadius: 16, lipHeight: 5))
     }
 
-    /// The organizer's AFK escape hatch — deliberately QUIET (surface +
-    /// stroke, never accent): the unanimous vote is the intended path.
+    /// Surface-faced 3D variant (solo skip) — same 64pt footprint, quiet
+    /// hue; the lip derives from the surface (black 0.35 overlay).
+    private func surfaceCTAButton(title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(GSFont.bold(17, relativeTo: .body))
+                .tracking(0.9)
+                .foregroundStyle(theme.text)
+                .frame(maxWidth: .infinity)
+                .frame(height: 59)   // + 5pt lip = the 64pt CTA rhythm
+        }
+        .buttonStyle(.gs3D(face: theme.surface, cornerRadius: 16, lipHeight: 5))
+    }
+
+    /// The organizer's AFK escape hatch — deliberately QUIET (surface
+    /// face, never accent): the unanimous vote is the intended path.
     private var forceStartRow: some View {
         Button { onForceStart?() } label: {
             Text("START LIFTING NOW")
@@ -271,10 +285,8 @@ struct WarmUpPhaseView: View {
                 .tracking(0.9)
                 .foregroundStyle(theme.neutral700)
                 .frame(maxWidth: .infinity)
-                .frame(height: 44)
-                .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
-                .contentShape(Rectangle())
+                .frame(height: 39)   // + 5pt lip = the row's 44pt footprint
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.gs3D(face: theme.surface, cornerRadius: 12, lipHeight: 5))
     }
 }

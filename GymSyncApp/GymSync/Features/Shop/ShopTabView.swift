@@ -12,9 +12,10 @@ import SwiftUI
 ///
 /// Below the rack, the permanent shelves: CAMPAIGNS (the ONE live
 /// destination — pushes the SAME `CampaignsTabView` Library presented,
-/// unchanged, discovery marker intact) plus two inert SOON rows. NO
-/// prices, balances, or purchase affordances anywhere — the economy
-/// doesn't exist yet and the UI must not pretend it does.
+/// unchanged, discovery marker intact) plus two inert SOON rows. Tiles
+/// wear a DISPLAY-ONLY chalk price (client-side, derived from the plate
+/// class — no purchase behavior, no balances; the 2026-08 congruity pass
+/// added the price glyph but the economy still doesn't transact here).
 ///
 /// Chrome follows the tab-root idiom every other tab root uses (in-content
 /// title + hidden system bar, 88pt dock clearance) and the Onyx card recipe
@@ -166,40 +167,62 @@ struct ShopTabView: View {
 
     // MARK: - Rack tiles
 
+    /// One fixed tile height for ALL FOUR tiles so grid rows always align
+    /// (2026-08 congruity pass — the previous free-height tiles doubled the
+    /// waveform/duration info and left ragged rows).
+    private static let tileHeight: CGFloat = 172
+
+    /// Tile anatomy, top to bottom (approved mockup): header row (compact
+    /// plate token + FREE chip or chalk price) · title · waveform strip ·
+    /// footer row (duration k-label + RACK IT / preview affordance).
     private func rackTile(_ sound: SoundboardSound, isLoaner: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // The plate token already renders the waveform envelope,
-            // duration, and clip scissors — no duplicate waveform strip.
-            GSPlateToken(
-                name: sound.plateName,
-                envelope: sound.envelope,
-                durationMs: sound.durationMs,
-                isClipped: sound.isClipped,
-                cooldownUntil: nil,
-                size: 44
-            )
-            Text(sound.label)
-                .font(GSFont.bodyMedium(14, relativeTo: .subheadline))
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top) {
+                GSPlateToken(
+                    name: sound.plateName,
+                    envelope: sound.envelope,
+                    durationMs: sound.durationMs,
+                    isClipped: sound.isClipped,
+                    cooldownUntil: nil,
+                    size: 44,
+                    compact: true
+                )
+                Spacer(minLength: 8)
+                if isLoaner {
+                    freeChip
+                } else {
+                    chalkPrice(for: sound)
+                }
+            }
+            Spacer(minLength: 8)
+            Text(displayLabel(for: sound))
+                .font(GSFont.bold(15, relativeTo: .subheadline))
                 .foregroundStyle(theme.text)
                 .lineLimit(1)
-            Text(durationFooter(sound))
-                .font(GSFont.bold(10, relativeTo: .caption2))
-                .tracking(1.1)
-                .foregroundStyle(theme.neutral700)
-            if isLoaner {
-                Text("FREE THIS WEEK · LOANER")
-                    .font(GSFont.bold(9, relativeTo: .caption2))
+                .minimumScaleFactor(0.75)
+            Spacer(minLength: 6)
+            waveformStrip(for: sound)
+            Spacer(minLength: 6)
+            HStack(alignment: .center) {
+                Text(durationFooter(sound))
+                    .font(GSFont.bold(10, relativeTo: .caption2))
                     .tracking(1.1)
-                    .foregroundStyle(theme.accent)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(theme.accent.opacity(0.12))
-                    .clipShape(Capsule())
-                loanerRackControl(for: sound.slug)
+                    .foregroundStyle(theme.neutral700)
+                Spacer(minLength: 8)
+                if isLoaner {
+                    loanerRackControl(for: sound.slug)
+                } else {
+                    // Preview affordance — display-only; the whole tile's
+                    // tap gesture below is what actually previews.
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(theme.neutral700)
+                }
             }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(height: Self.tileHeight)
         .background(theme.surface)
         .clipShape(RoundedRectangle(cornerRadius: GSMetrics.radiusSm))
         .overlay(
@@ -218,19 +241,87 @@ struct ShopTabView: View {
         .accessibilityLabel("\(sound.label), tap to preview")
     }
 
-    /// Footer k-label: "3.2S", with the clip scissors when the 5-second
-    /// cap ran ("✂ 3.2S"). Mirrors `GSPlateToken.durationText`'s rounding.
+    /// Footer k-label: "3.2S" — plain duration (the clip scissors were
+    /// retired in the 2026-08 visual-language pass). Mirrors
+    /// `GSPlateToken.durationText`'s rounding.
     private func durationFooter(_ sound: SoundboardSound) -> String {
         guard let ms = sound.durationMs else { return "—" }
         let s = (Double(ms) / 100).rounded() / 10
-        let str = s == s.rounded() ? "\(Int(s))S" : "\(s)S"
-        return sound.isClipped ? "✂ \(str)" : str
+        return s == s.rounded() ? "\(Int(s))S" : "\(s)S"
+    }
+
+    /// Loaner header chip — small, one line, accent (the accent = "yours
+    /// to act on"; the loaner is the one tile with an action this week).
+    private var freeChip: some View {
+        Text("FREE THIS WEEK")
+            .font(GSFont.bold(9, relativeTo: .caption2))
+            .tracking(1.1)
+            .foregroundStyle(theme.accent)
+            .lineLimit(1)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(theme.accent.opacity(0.12))
+            .clipShape(Capsule())
+    }
+
+    /// Chalk price — a white "chalk cube" glyph + bold number. DISPLAY
+    /// ONLY: derived client-side from the plate class, no purchase
+    /// behavior anywhere.
+    private func chalkPrice(for sound: SoundboardSound) -> some View {
+        HStack(spacing: 4) {
+            RoundedRectangle(cornerRadius: 2.5)
+                .fill(Color.white)
+                .frame(width: 10, height: 10)
+            Text("\(chalkPriceValue(for: sound))")
+                .font(GSFont.bold(13, relativeTo: .footnote).monospacedDigit())
+                .foregroundStyle(theme.text)
+        }
+        .accessibilityLabel("\(chalkPriceValue(for: sound)) chalk")
+    }
+
+    /// Price by plate class (duration bands — `PlateClass.forDuration`):
+    /// the steel 5 / white 10 = 5 chalk, green 25 = 6, blue 45 = 8.
+    private func chalkPriceValue(for sound: SoundboardSound) -> Int {
+        switch PlateClass.forDuration(ms: sound.durationMs) {
+        case .five, .ten: return 5
+        case .twentyFive: return 6
+        case .fortyFive: return 8
+        }
+    }
+
+    /// Title casing: an entirely-lowercase stored label displays
+    /// `.capitalized`; anything else shows as stored (protects acronym and
+    /// shout labels like "HELL NAW").
+    private func displayLabel(for sound: SoundboardSound) -> String {
+        let label = sound.label
+        return label == label.lowercased() ? label.capitalized : label
+    }
+
+    /// The tile's waveform strip — same stride/height math as
+    /// `GSPlateToken`'s internal waveform (every other envelope bucket,
+    /// bucket/8 of the strip height, 2pt floor) so the strip and the token
+    /// can never disagree; nil envelopes draw the same flat placeholder.
+    private func waveformStrip(for sound: SoundboardSound) -> some View {
+        let bars: [Int]
+        if let envelope = sound.envelope, !envelope.isEmpty {
+            bars = stride(from: 0, to: envelope.count, by: 2).map { envelope[$0] }
+        } else {
+            bars = Array(repeating: 4, count: 11)
+        }
+        return HStack(alignment: .bottom, spacing: 3) {
+            ForEach(Array(bars.enumerated()), id: \.offset) { pair in
+                Capsule().fill(theme.neutral700)
+                    .frame(width: 3, height: max(2, CGFloat(pair.element) / 8 * 14))
+            }
+        }
+        .frame(height: 14, alignment: .bottom)
     }
 
     /// The loaner's add-to-dock affordance. Three states: already racked,
     /// dock full (4-cap — mirrors `SoundLibrarySheet`'s client-side cap,
     /// but deliberately does NOT drop-oldest here; managing a full dock
-    /// belongs to My Rack), or room to rack.
+    /// belongs to My Rack), or room to rack. RACK IT wears the extruded
+    /// 3D style — 29pt face + 5pt lip = 34pt compact control.
     @ViewBuilder
     private func loanerRackControl(for slug: String) -> some View {
         if favorites.contains(slug) {
@@ -238,13 +329,13 @@ struct ShopTabView: View {
                 .font(GSFont.bold(10, relativeTo: .caption2))
                 .tracking(1.1)
                 .foregroundStyle(theme.neutral700)
-                .padding(.vertical, 6)
         } else if favorites.count >= 4 {
             Text("DOCK FULL — MANAGE IN MY RACK")
                 .font(GSFont.bold(9, relativeTo: .caption2))
                 .tracking(1.1)
                 .foregroundStyle(theme.neutral700)
-                .padding(.vertical, 6)
+                .lineLimit(2)
+                .multilineTextAlignment(.trailing)
                 .fixedSize(horizontal: false, vertical: true)
         } else {
             Button {
@@ -253,11 +344,11 @@ struct ShopTabView: View {
                 Text("RACK IT")
                     .font(GSFont.bold(11, relativeTo: .caption))
                     .tracking(1.1)
-                    .foregroundStyle(theme.accent)
-                    .padding(.vertical, 6)
-                    .contentShape(Rectangle())
+                    .foregroundStyle(theme.bg)
+                    .padding(.horizontal, 12)
+                    .frame(height: 29)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.gs3D(face: theme.accent, cornerRadius: 10, lipHeight: 5))
             .accessibilityLabel("Rack it, add to your dock")
         }
     }
@@ -278,6 +369,7 @@ struct ShopTabView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .topLeading)
+        .frame(height: Self.tileHeight)
         .background(theme.surface)
         .clipShape(RoundedRectangle(cornerRadius: GSMetrics.radiusSm))
         .overlay(

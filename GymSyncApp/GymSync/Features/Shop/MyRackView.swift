@@ -303,14 +303,14 @@ struct MyRackView: View {
         )
     }
 
-    /// "1.8s · HYPE", "✂ 5s · FX" — same duration formula as GSPlateToken's
-    /// bottom arc, so the row and the plate never disagree.
+    /// "1.8s · HYPE", "5s · FX" — same duration formula as GSPlateToken's
+    /// bottom arc, so the row and the plate never disagree (plain duration;
+    /// the clip scissors were retired in the 2026-08 visual-language pass).
     private func rowKLine(_ sound: SoundboardSound) -> String {
         var parts: [String] = []
         if let durationMs = sound.durationMs {
             let s = (Double(durationMs) / 100).rounded() / 10
-            let str = s == s.rounded() ? "\(Int(s))s" : "\(s)s"
-            parts.append(sound.isClipped ? "✂ \(str)" : str)
+            parts.append(s == s.rounded() ? "\(Int(s))s" : "\(s)s")
         }
         if let category = sound.category {
             parts.append(category.uppercased())

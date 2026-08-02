@@ -15,11 +15,17 @@ struct GSPlateToken: View {
     /// sounds imported before the envelope pipeline).
     let envelope: [Int]?
     let durationMs: Int?
+    /// Kept for call-site stability; clip status no longer renders (the
+    /// scissors glyph was retired in the 2026-08 visual-language pass).
     let isClipped: Bool
     /// Non-nil while re-racking — the parent clears the entry when the
     /// cooldown lapses, which also restores full opacity.
     let cooldownUntil: Date?
     var size: CGFloat = 56
+    /// Compact face: class ring + strap + name only — no waveform, no
+    /// duration. For shop tiles and small previews. Trailing-defaulted so
+    /// every existing call site compiles unchanged.
+    var compact: Bool = false
 
     private var plateClass: PlateClass { PlateClass.forDuration(ms: durationMs) }
 
@@ -30,8 +36,7 @@ struct GSPlateToken: View {
     private var durationText: String {
         guard let durationMs else { return "" }
         let s = (Double(durationMs) / 100).rounded() / 10
-        let str = s == s.rounded() ? "\(Int(s))s" : "\(s)s"
-        return isClipped ? "✂ \(str)" : str
+        return s == s.rounded() ? "\(Int(s))s" : "\(s)s"
     }
 
     /// 11 bars — every other envelope bucket, matching the mockups.
@@ -57,24 +62,26 @@ struct GSPlateToken: View {
                 .minimumScaleFactor(0.7)
                 .frame(width: size * 0.72)
                 .offset(y: -size * 0.10)
-            HStack(alignment: .bottom, spacing: 1) {
-                ForEach(Array(waveformBars.enumerated()), id: \.offset) { pair in
-                    Capsule().fill(theme.neutral700)
-                        .frame(width: 2, height: max(2, CGFloat(pair.element) / 8 * size * 0.16))
+            if !compact {
+                HStack(alignment: .bottom, spacing: 1) {
+                    ForEach(Array(waveformBars.enumerated()), id: \.offset) { pair in
+                        Capsule().fill(theme.neutral700)
+                            .frame(width: 2, height: max(2, CGFloat(pair.element) / 8 * size * 0.16))
+                    }
                 }
+                .frame(height: size * 0.16, alignment: .bottom)
+                .offset(y: size * 0.12)
+                Text(durationText)
+                    .font(GSFont.boldFixed(size * 0.11))
+                    .foregroundStyle(theme.neutral700)
+                    .offset(y: size * 0.31)
             }
-            .frame(height: size * 0.16, alignment: .bottom)
-            .offset(y: size * 0.12)
-            Text(durationText)
-                .font(GSFont.boldFixed(size * 0.11))
-                .foregroundStyle(theme.neutral700)
-                .offset(y: size * 0.31)
             cooldownRim
         }
         .frame(width: size, height: size)
         .opacity(cooldownUntil != nil ? 0.55 : 1)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(name), \(durationText) sound")
+        .accessibilityLabel(compact ? "\(name) sound" : "\(name), \(durationText) sound")
     }
 
     /// The rim refills clockwise as the plate re-racks (composite v5) —

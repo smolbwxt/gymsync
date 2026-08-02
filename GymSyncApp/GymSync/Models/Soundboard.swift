@@ -17,7 +17,8 @@ struct SoundboardSound: Codable, Identifiable, Sendable, Equatable {
     /// composite-v5 pipeline.
     let envelope: [Int]?
     /// Pre-clip length; greater than `durationMs` means the 5-second cap's
-    /// scissors ran (the token shows ✂).
+    /// scissors ran (`isClipped` — no longer rendered anywhere since the
+    /// 2026-08 visual-language pass).
     let originalDurationMs: Int?
 
     var id: String { slug }

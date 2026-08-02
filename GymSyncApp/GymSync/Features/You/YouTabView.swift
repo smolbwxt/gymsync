@@ -10,8 +10,9 @@ import SwiftUI
 ///
 /// Widget card recipe (Onyx): `theme.surface`, radius 16 (`GSMetrics.
 /// radiusSm`), 1pt `theme.neutral500.opacity(0.35)` stroke, k-label title
-/// (10pt bold, tracking 1.1, `theme.neutral700`, uppercase), a middle
-/// content line, and a quieter footer k-label.
+/// (11pt bold, tracking 1.1, `theme.neutral700`, uppercase — bumped from
+/// 10 in the 2026-08 bigger-widgets pass), a middle content line, and a
+/// quieter footer k-label.
 struct YouTabView: View {
     @Environment(\.gsTheme) private var theme
     @Environment(AppState.self) private var appState
@@ -30,8 +31,8 @@ struct YouTabView: View {
     @State private var rackSounds: [SoundboardSound] = []
 
     private let columns = [
-        GridItem(.flexible(), spacing: 10),
-        GridItem(.flexible(), spacing: 10),
+        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12),
     ]
 
     var body: some View {
@@ -43,7 +44,7 @@ struct YouTabView: View {
                             .padding(.horizontal, 16)
                             .padding(.top, 14)
 
-                        LazyVGrid(columns: columns, spacing: 10) {
+                        LazyVGrid(columns: columns, spacing: 12) {
                             myRackWidget
                             statsWidget
                             routinesWidget
@@ -177,16 +178,28 @@ struct YouTabView: View {
         .accessibilityLabel("My Rack")
     }
 
-    /// Up to four plate tokens (the session dock's own component, at widget
-    /// scale); neutral placeholder rings until the catalog resolves.
+    /// Up to four compact plate tokens (the session dock's own component,
+    /// at widget scale); neutral placeholder rings until the catalog
+    /// resolves. 38pt preferred (2026-08 bigger-widgets pass) —
+    /// ViewThatFits steps down on narrow devices so four plates never
+    /// overflow the card.
     @ViewBuilder
     private var rackFace: some View {
+        ViewThatFits(in: .horizontal) {
+            plateRow(size: 38)
+            plateRow(size: 34)
+            plateRow(size: 30)
+        }
+    }
+
+    @ViewBuilder
+    private func plateRow(size: CGFloat) -> some View {
         HStack(spacing: 4) {
             if rackSounds.isEmpty {
                 ForEach(0..<4, id: \.self) { _ in
                     Circle()
                         .strokeBorder(theme.neutral300, lineWidth: 2)
-                        .frame(width: 30, height: 30)
+                        .frame(width: size, height: size)
                 }
             } else {
                 ForEach(rackSounds.prefix(4)) { sound in
@@ -196,7 +209,8 @@ struct YouTabView: View {
                         durationMs: sound.durationMs,
                         isClipped: sound.isClipped,
                         cooldownUntil: nil,
-                        size: 32
+                        size: size,
+                        compact: true
                     )
                 }
             }
@@ -209,7 +223,7 @@ struct YouTabView: View {
         } label: {
             widgetCard(title: "STATS", footer: "TRENDS") {
                 Text("Volume · PRs · history")
-                    .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
+                    .font(GSFont.bodyMedium(17, relativeTo: .body))
                     .foregroundStyle(theme.text)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
@@ -226,7 +240,7 @@ struct YouTabView: View {
         } label: {
             widgetCard(title: "ROUTINES", footer: "LIBRARY") {
                 Text("Build & run your plans")
-                    .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
+                    .font(GSFont.bodyMedium(17, relativeTo: .body))
                     .foregroundStyle(theme.text)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
@@ -247,10 +261,10 @@ struct YouTabView: View {
                 // live search field), so the widget face wears one.
                 HStack(spacing: 6) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(theme.neutral500)
                     Text("Search exercises")
-                        .font(GSFont.body(12, relativeTo: .caption))
+                        .font(GSFont.body(14, relativeTo: .subheadline))
                         .foregroundStyle(theme.neutral500)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
@@ -275,7 +289,7 @@ struct YouTabView: View {
     private var lockerWidget: some View {
         widgetCard(title: "LOCKER", footer: "SOON") {
             Text("Avatar · backdrops · effects")
-                .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
+                .font(GSFont.bodyMedium(17, relativeTo: .body))
                 .foregroundStyle(theme.neutral700)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
@@ -291,7 +305,7 @@ struct YouTabView: View {
         } label: {
             widgetCard(title: "SETTINGS", footer: "APP") {
                 Text("Account · preferences")
-                    .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
+                    .font(GSFont.bodyMedium(17, relativeTo: .body))
                     .foregroundStyle(theme.text)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
@@ -317,7 +331,7 @@ struct YouTabView: View {
             kLabel(footer, color: theme.neutral500)
         }
         .padding(12)
-        .frame(maxWidth: .infinity, minHeight: 104, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 150, alignment: .leading)
         .background(theme.surface)
         .clipShape(RoundedRectangle(cornerRadius: GSMetrics.radiusSm))
         .overlay(
@@ -329,7 +343,7 @@ struct YouTabView: View {
 
     private func kLabel(_ text: String, color: Color) -> some View {
         Text(text)
-            .font(GSFont.bold(10, relativeTo: .caption2))
+            .font(GSFont.bold(11, relativeTo: .caption2))
             .tracking(1.1)
             .foregroundStyle(color)
     }
