@@ -37,14 +37,27 @@ struct ExerciseHistoryView: View {
         validLogs.max { ($0.weight ?? 0) < ($1.weight ?? 0) }
     }
 
-    private var estimatedOneRepMax: Int? {
-        let values = validLogs.compactMap { log -> Decimal? in
-            guard let w = log.weight, let reps = log.reps else { return nil }
-            return StatMath.estimatedOneRepMax(weight: w, reps: reps)
+    /// Weight/reps pairs for the record math — the shared basis both this
+    /// screen and the live views judge against.
+    private var basis: [(weight: Decimal, reps: Int)] {
+        validLogs.compactMap { log in
+            guard let w = log.weight, let r = log.reps, w > 0, r > 0 else { return nil }
+            return (w, r)
         }
-        guard let maxValue = values.max() else { return nil }
+    }
+
+    /// The lifter's one-rep max: MEASURED when they've actually done a single,
+    /// otherwise estimated from their best work (owner 2026-08-02: "a one rep
+    /// max should be estimated if you've never logged a max"). The tile's
+    /// label changes with it, so an estimate is never presented as a fact.
+    private var oneRepMax: PersonalRecordMath.OneRepMax? {
+        PersonalRecordMath.oneRepMax(from: basis)
+    }
+
+    private var oneRepMaxValue: Int? {
+        guard let oneRepMax else { return nil }
         // Units sweep: whole number in the user's unit.
-        return Int(Units.fromPounds(NSDecimalNumber(decimal: maxValue).doubleValue,
+        return Int(Units.fromPounds(NSDecimalNumber(decimal: oneRepMax.pounds).doubleValue,
                                     to: ThemeStore.shared.weightUnit).rounded())
     }
 
@@ -52,18 +65,23 @@ struct ExerciseHistoryView: View {
         Set(validLogs.map(\.sessionID)).count
     }
 
-    /// Chronological running-max PR check: a set is tagged "PR" when it's a
-    /// new all-time-high weight at the moment it was logged (matches the
-    /// same "weight > priorMax" rule `WorkoutSessionView.log()` uses live).
+    /// Chronological PR replay: a set is tagged "PR" when, at the moment it
+    /// was logged, it beat everything done for AT LEAST that many reps.
+    ///
+    /// Must stay the same rule the live views celebrate with — hence the
+    /// shared `PersonalRecordMath` — or history would quietly contradict the
+    /// overlay a lifter saw in the gym. Replayed forward rather than compared
+    /// against the full set, so a later heavier session can't retroactively
+    /// strip the badge off a set that genuinely was a record that day.
     private var prSetIDs: Set<UUID> {
-        var runningMax = Decimal(0)
+        var seen: [(weight: Decimal, reps: Int)] = []
         var ids: Set<UUID> = []
         for log in validLogs.sorted(by: { $0.loggedAt < $1.loggedAt }) {
-            guard let weight = log.weight, weight > 0 else { continue }
-            if weight > runningMax {
-                runningMax = weight
+            guard let weight = log.weight, let reps = log.reps, weight > 0, reps > 0 else { continue }
+            if PersonalRecordMath.isPR(weight: weight, reps: reps, basis: seen) {
                 ids.insert(log.id)
             }
+            seen.append((weight, reps))
         }
         return ids
     }
@@ -145,8 +163,11 @@ struct ExerciseHistoryView: View {
                 uppercaseLabel: true
             )
             GSStatTile(
-                value: estimatedOneRepMax.map { "\($0)" } ?? "—",
-                label: "Est 1RM",
+                value: oneRepMaxValue.map { "\($0)" } ?? "—",
+                // "1RM" when they've actually lifted a single, "Est 1RM" when
+                // the number is inferred — the tile must never claim a max
+                // nobody has stood up with.
+                label: (oneRepMax?.isMeasured == true) ? "1RM" : "Est 1RM",
                 valueFontSize: 18,
                 labelColor: theme.accent700,
                 uppercaseLabel: true

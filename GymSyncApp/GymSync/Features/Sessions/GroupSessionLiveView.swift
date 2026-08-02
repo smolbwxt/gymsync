@@ -4706,10 +4706,13 @@ struct GroupSessionLiveView: View {
                 // (before the set-log write below), so a group-session lifter could
                 // never queue a set while offline either. Only `.network` is tolerant.
                 do {
+                    // Rep-aware (owner 2026-08-02): compared against the best
+                    // weight already done for AT LEAST these reps, so a heavy
+                    // single and a hard set of ten are separate achievements.
                     let prior = try await priorMax(exerciseID: exerciseID,
-                                                   weight: weight, userID: userID)
+                                                   reps: reps, userID: userID)
                     priorBest = prior
-                    isPR = weight > prior
+                    isPR = (reps ?? 0) > 0 && weight > prior
                 } catch let error as GymSyncError {
                     guard case .network = error else { throw error }
                     // Offline — PR check skipped (best-effort, never blocks logging).
@@ -4861,14 +4864,21 @@ struct GroupSessionLiveView: View {
         dismiss()
     }
 
-    /// Fetch the prior weight maximum for a given exercise (excluding failed/penalty sets).
-    /// Mirrors the identical helper in WorkoutSessionView.
-    private func priorMax(exerciseID: UUID, weight: Decimal, userID: UUID) async throws -> Decimal {
-        // One indexed row instead of a 200-row download in front of every set
-        // write (2026-08-02 latency fix; `SessionRepository.bestWeight` carries
-        // the full rationale). Same filters, same answer — this call sits on
-        // the critical path of the turn CTA, and the whole rotation waits on it.
-        try await SessionRepository.bestWeight(userID: userID, exerciseID: exerciseID)
+    /// The rep-aware PR baseline: the heaviest weight already done for AT
+    /// LEAST `reps` reps (excluding failed/penalty sets). Mirrors the identical
+    /// helper in WorkoutSessionView; both defer to `PersonalRecordMath` so the
+    /// two live views can never disagree about what a record is.
+    ///
+    /// Two light columns rather than the 200 full rows this used to download
+    /// in front of every write (2026-08-02 latency fix) — this call sits on the
+    /// critical path of the turn CTA, and the whole rotation waits on it.
+    private func priorMax(exerciseID: UUID, reps: Int?, userID: UUID) async throws -> Decimal {
+        let rows = try await SessionRepository.prBasis(userID: userID, exerciseID: exerciseID)
+        let basis: [(weight: Decimal, reps: Int)] = rows.compactMap { row in
+            guard let w = row.weight, let r = row.reps, w > 0, r > 0 else { return nil }
+            return (w, r)
+        }
+        return PersonalRecordMath.bestWeight(atLeastReps: reps ?? 0, in: basis)
     }
 
     /// Show the full-screen, USER-DISMISSED PR celebration (p29) — no auto-timeout.

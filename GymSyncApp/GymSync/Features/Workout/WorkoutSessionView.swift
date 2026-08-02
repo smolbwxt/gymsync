@@ -80,12 +80,16 @@ struct WorkoutSessionView: View {
     // group screen's identical pair.
     @State private var soloPriorSets: [SetLog] = []
 
-    /// PR baseline per exercise, prefetched off the critical path (see
-    /// `priorMax`). Kept current locally after each log — the only new data
-    /// that can move this number mid-session is a set we just wrote
-    /// ourselves, so a fresh read to learn our own weight would be wasteful
-    /// and would put a network round trip right back in front of the CTA.
-    @State private var priorBestByExercise: [UUID: Decimal] = [:]
+    /// Per-exercise (weight, reps) history, prefetched off the critical path —
+    /// the basis for rep-aware PR judgement (`PersonalRecordMath`).
+    ///
+    /// Held as pairs rather than a single "best weight" because a PR is now
+    /// judged against the rep count it happened at, so the answer depends on
+    /// the set being logged. Two columns for a whole exercise history is a few
+    /// KB, which buys exact local answers for ANY rep count with no network on
+    /// the log path. Appended to after each set — the only new data that can
+    /// move these numbers mid-session is work we just did ourselves.
+    @State private var prBasisByExercise: [UUID: [(weight: Decimal, reps: Int)]] = [:]
     @State private var soloEnrollment: ProgramEnrollment?
     @State private var showLogSheet = false
     @State private var errorText: String?
@@ -245,14 +249,14 @@ struct WorkoutSessionView: View {
                let userID = appState.currentProfile?.id {
                 soloPriorSets = (try? await SessionRepository.exerciseHistory(
                     userID: userID, exerciseID: re.exerciseID, limit: 30)) ?? []
-                // PR baseline, fetched HERE rather than at log time — this is
-                // the latency fix: by the time the CTA is pressed the answer
-                // is already in memory, so logging is one write and nothing
-                // else. Best-effort; `priorMax` still has a live fallback.
-                if priorBestByExercise[re.exerciseID] == nil,
-                   let best = try? await SessionRepository.bestWeight(
+                // PR basis, fetched HERE rather than at log time — this is the
+                // latency fix: by the time the CTA is pressed the answer is
+                // already in memory, so logging is one write and nothing else.
+                // Best-effort; `prBasis` still has a live fallback.
+                if prBasisByExercise[re.exerciseID] == nil,
+                   let rows = try? await SessionRepository.prBasis(
                     userID: userID, exerciseID: re.exerciseID) {
-                    priorBestByExercise[re.exerciseID] = best
+                    prBasisByExercise[re.exerciseID] = Self.pairs(from: rows)
                 }
             } else {
                 soloPriorSets = []
@@ -2376,9 +2380,13 @@ struct WorkoutSessionView: View {
                 // this tolerant treatment; every other error (validation,
                 // unauthorized, …) still aborts exactly as before.
                 do {
-                    priorBest = try await priorMax(exerciseID: re.exerciseID,
-                                                   weight: weight, userID: userID)
-                    isPR = weight > priorBest
+                    // Rep-aware (owner 2026-08-02: "PRs should just be what
+                    // you've accomplished"): judged against the best weight
+                    // already done for AT LEAST this many reps, so a heavy
+                    // single and a hard set of ten are separate achievements.
+                    let basis = try await prBasis(exerciseID: re.exerciseID, userID: userID)
+                    priorBest = PersonalRecordMath.bestWeight(atLeastReps: reps ?? 0, in: basis)
+                    isPR = PersonalRecordMath.isPR(weight: weight, reps: reps, basis: basis)
                 } catch let error as GymSyncError {
                     guard case .network = error else { throw error }
                     // Offline — PR check skipped (best-effort, never blocks logging;
@@ -2408,13 +2416,13 @@ struct WorkoutSessionView: View {
             // queue) — this is the moment the success haptic fires.
             logHapticTick += 1
 
-            // Keep the prefetched PR baseline exact without a refetch: the set
-            // we just wrote is the only thing that can raise it mid-session.
+            // Keep the prefetched basis exact without a refetch: the set we
+            // just wrote is the only thing that can change it mid-session.
             // Without this, a second PR in the same session would report the
             // pre-session best as "your previous best" instead of the PR set
             // just before it.
-            if !isFailed, let weight, weight > (priorBestByExercise[re.exerciseID] ?? 0) {
-                priorBestByExercise[re.exerciseID] = weight
+            if !isFailed, let weight, let reps, weight > 0, reps > 0 {
+                prBasisByExercise[re.exerciseID, default: []].append((weight, reps))
             }
 
             if isPR, let weight {
@@ -2552,18 +2560,27 @@ struct WorkoutSessionView: View {
         Task { await SoundboardPlayer.shared.play(slug: "lightweight-baby") }
     }
 
-    /// PR baseline for `exerciseID`, served from the prefetch when it landed.
+    /// The PR basis for `exerciseID`, served from the prefetch when it landed.
     ///
     /// The prefetch (`.task(id: exerciseID)`) runs while the lifter is setting
-    /// up, so the common path costs zero network at log time — the whole point
-    /// of the 2026-08-02 latency fix. The live call is the cold fallback (the
-    /// exercise just changed and the prefetch hasn't answered yet) and is now
-    /// a one-row query rather than a 200-row download.
-    private func priorMax(exerciseID: UUID, weight: Decimal, userID: UUID) async throws -> Decimal {
-        if let cached = priorBestByExercise[exerciseID] { return cached }
-        let best = try await SessionRepository.bestWeight(userID: userID, exerciseID: exerciseID)
-        priorBestByExercise[exerciseID] = best
-        return best
+    /// up, so the common path costs zero network at log time — the point of
+    /// the 2026-08-02 latency fix. The live call is the cold fallback for when
+    /// the exercise just changed and the prefetch hasn't answered yet.
+    private func prBasis(exerciseID: UUID, userID: UUID) async throws -> [(weight: Decimal, reps: Int)] {
+        if let cached = prBasisByExercise[exerciseID] { return cached }
+        let rows = try await SessionRepository.prBasis(userID: userID, exerciseID: exerciseID)
+        let basis = Self.pairs(from: rows)
+        prBasisByExercise[exerciseID] = basis
+        return basis
+    }
+
+    /// Drop rows missing either half — a set without both numbers can neither
+    /// set a record nor be compared against one.
+    private static func pairs(from rows: [SessionRepository.SetBasis]) -> [(weight: Decimal, reps: Int)] {
+        rows.compactMap { row in
+            guard let weight = row.weight, let reps = row.reps, weight > 0, reps > 0 else { return nil }
+            return (weight, reps)
+        }
     }
 
     @MainActor

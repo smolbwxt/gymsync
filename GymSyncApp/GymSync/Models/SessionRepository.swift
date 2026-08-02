@@ -166,6 +166,40 @@ enum SessionRepository {
         } catch { throw ErrorMapping.map(error) }
     }
 
+    /// A weight/reps pair from history — the raw material for rep-aware PR
+    /// comparisons and 1RM estimation.
+    struct SetBasis: Decodable, Sendable {
+        let weight: Decimal?
+        let reps: Int?
+    }
+
+    /// Every qualifying (weight, reps) pair for one exercise, heaviest first —
+    /// the basis for "have I ever lifted this much for this many reps?".
+    ///
+    /// Two columns, not whole rows: a lifter with a long history costs a few KB
+    /// here, which is what lets the caller prefetch this ONCE per exercise and
+    /// answer PR questions for any rep count locally, with no network on the
+    /// log path (the 2026-08-02 latency work).
+    ///
+    /// Ordered by weight descending so that if a history ever exceeds the
+    /// limit, what survives is the heaviest work — the part every PR
+    /// comparison is measured against.
+    static func prBasis(userID: UUID, exerciseID: UUID, limit: Int = 500) async throws -> [SetBasis] {
+        do {
+            let rows: [SetBasis] = try await client
+                .from("set_logs")
+                .select("weight,reps")
+                .eq("user_id", value: userID)
+                .eq("exercise_id", value: exerciseID)
+                .eq("is_failed", value: "false")
+                .eq("is_penalty", value: "false")
+                .order("weight", ascending: false, nullsFirst: false)
+                .limit(limit)
+                .execute().value
+            return rows
+        } catch { throw ErrorMapping.map(error) }
+    }
+
     /// The heaviest non-failed, non-penalty set a user has ever recorded for
     /// one exercise — the PR comparison baseline.
     ///
