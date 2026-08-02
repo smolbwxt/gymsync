@@ -332,6 +332,11 @@ struct MyRackView: View {
         .accessibilityLabel(isPreviewing ? "Stop preview" : "Preview \(sound.label)")
     }
 
+    /// RACK / RACKED wear the extruded 3D style (2026-08 visual-language
+    /// pass), compact scale: 26pt face + 5pt lip — the shop tile's RACK IT
+    /// anatomy, one step smaller for the denser catalog rows. RACK is the
+    /// accent action; RACKED is a quiet surface face (tapping it unracks).
+    /// DOCK FULL stays flat — it's a status, not an action.
     @ViewBuilder
     private func rackControl(_ sound: SoundboardSound) -> some View {
         if favorites.contains(sound.slug) {
@@ -342,9 +347,10 @@ struct MyRackView: View {
                     .font(GSFont.bold(10, relativeTo: .caption2))
                     .tracking(1.1)
                     .foregroundStyle(theme.neutral700)
-                    .frame(minWidth: 64, minHeight: 44, alignment: .trailing)
+                    .padding(.horizontal, 12)
+                    .frame(height: 26)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.gs3D(face: theme.surface, cornerRadius: 10, lipHeight: 5))
             .accessibilityLabel("Unrack \(sound.label)")
         } else if favorites.count >= 4 {
             Text("DOCK FULL")
@@ -360,10 +366,11 @@ struct MyRackView: View {
                 Text("RACK")
                     .font(GSFont.bold(10, relativeTo: .caption2))
                     .tracking(1.1)
-                    .foregroundStyle(theme.accent)
-                    .frame(minWidth: 64, minHeight: 44, alignment: .trailing)
+                    .foregroundStyle(theme.bg)
+                    .padding(.horizontal, 12)
+                    .frame(height: 26)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.gs3D(face: theme.accent, cornerRadius: 10, lipHeight: 5))
             .accessibilityLabel("Rack \(sound.label)")
         }
     }

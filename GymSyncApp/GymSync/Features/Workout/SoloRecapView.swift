@@ -328,14 +328,22 @@ struct SoloRecapView: View {
     }
 
     // Canvas: recap sticky footer — single centered "Done" CTA (Dossier §A.4).
+    // 3D pass (2026-08): the label reproduces the primary style's bold-15
+    // bg-on-accent look at this footer's scale; 11.5pt vertical padding
+    // (was 14) means face + the gs3D style's 5pt lip keeps the exact
+    // prior footprint.
     private var doneFooter: some View {
         VStack(spacing: 0) {
             GSDivider()
             Button(action: onDone) {
                 Text("Done")
+                    .font(GSFont.bold(15, relativeTo: .body))
+                    .foregroundStyle(theme.bg)
                     .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11.5)
+                    .frame(minHeight: 39)
             }
-            .buttonStyle(GSPrimaryButtonStyle(fontSize: 15, verticalPadding: 14))
+            .buttonStyle(.gs3D(face: theme.accent, cornerRadius: GSMetrics.radiusSm, lipHeight: 5))
             .padding(.horizontal, 12)
             .padding(.top, 10)
             .padding(.bottom, 22)

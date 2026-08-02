@@ -82,12 +82,11 @@ struct WalkthroughView: View {
                     .font(GSFont.bold(16, relativeTo: .body))
                     .foregroundStyle(theme.bg)
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .background(theme.accent)
-                    .cornerRadius(GSMetrics.radiusSm)
-                    .contentShape(Rectangle())
+                    // 13.5pt vertical (was 16): content + 27 + the gs3D
+                    // style's 5pt lip keeps the CTA's exact prior footprint.
+                    .padding(.vertical, 13.5)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.gs3D(face: theme.accent, cornerRadius: GSMetrics.radiusSm, lipHeight: 5))
             .padding(.horizontal, 20)
             .padding(.bottom, 28)
         }

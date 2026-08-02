@@ -1162,6 +1162,14 @@ struct LobbyView: View {
     // MARK: - Action bar (pinned bottom)
     // Canvas: "Lock in & Start" primary button; check-in ghost button above if not checked in
 
+    /// Check-in gold — HomeView's ready-state palette (`goldTop`/`goldInk`),
+    /// the fixed STATUS color that means "check-in, act now" and nothing
+    /// else. The lobby's Check In button is the check-in action itself, so
+    /// it wears the gold face (3D pass 2026-08); the lip derives from the
+    /// face — never a lighter tint.
+    private static let checkInGold = Color.gsHex(0xF6C945)
+    private static let checkInGoldInk = Color.gsHex(0x261A02)
+
     private var actionBar: some View {
         VStack(spacing: 0) {
             GSDivider()
@@ -1176,7 +1184,7 @@ struct LobbyView: View {
                             if isCheckingIn {
                                 ProgressView()
                                     .controlSize(.small)
-                                    .tint(theme.accent)
+                                    .tint(Self.checkInGoldInk)
                                 Text("Checking in…")
                                     .font(GSFont.bold(15, relativeTo: .body))
                             } else if !canCheckIn {
@@ -1192,15 +1200,14 @@ struct LobbyView: View {
                             }
                             Spacer()
                         }
-                        .foregroundStyle(theme.accent)
+                        .foregroundStyle(Self.checkInGoldInk)
                         .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
+                        // 9.5pt vertical (was 12): content + 19 + the 5pt
+                        // lip keeps the button's exact prior footprint.
+                        .padding(.vertical, 9.5)
                         .frame(maxWidth: .infinity)
-                        .background(theme.accent100)
-                        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.accent, lineWidth: 1))
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.gs3D(face: Self.checkInGold, cornerRadius: GSMetrics.radiusSm, lipHeight: 5))
                     .disabled(isCheckingIn || !canCheckIn)
                 }
 
@@ -1227,12 +1234,13 @@ struct LobbyView: View {
                         }
                         .foregroundStyle(theme.bg)
                         .padding(.horizontal, 16)
-                        .padding(.vertical, 14)
+                        // 11.5pt vertical (was 14): content + 23 + the 5pt
+                        // lip keeps the button's exact prior footprint.
+                        .padding(.vertical, 11.5)
                         .frame(maxWidth: .infinity, alignment: .center)
-                        .background(isStarting ? theme.accent600 : theme.accent)
-                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.gs3D(face: isStarting ? theme.accent600 : theme.accent,
+                                       cornerRadius: GSMetrics.radiusSm, lipHeight: 5))
                     .disabled(isStarting)
                 } else if isCheckedIn {
                     HStack(spacing: 8) {

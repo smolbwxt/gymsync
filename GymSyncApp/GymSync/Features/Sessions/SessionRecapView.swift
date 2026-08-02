@@ -191,11 +191,26 @@ struct SessionRecapView: View {
                         .buttonStyle(GSSecondaryButtonStyle())
                         .frame(maxWidth: .infinity)
 
-                        Button("Done") {
+                        // 3D pass (2026-08): the label reproduces
+                        // GSPrimaryButtonStyle's left-aligned bold-16
+                        // anatomy; 39pt face + the gs3D style's 5pt lip
+                        // keeps the prior 44pt footprint beside the flat
+                        // Share Recap secondary.
+                        Button {
                             onDone()
                             dismiss()
+                        } label: {
+                            HStack(spacing: 0) {
+                                Text("Done")
+                                Spacer(minLength: 0)
+                            }
+                            .font(GSFont.bold(16, relativeTo: .body))
+                            .foregroundStyle(theme.bg)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 9.5)
+                            .frame(minHeight: 39)
                         }
-                        .buttonStyle(GSPrimaryButtonStyle())
+                        .buttonStyle(.gs3D(face: theme.accent, cornerRadius: GSMetrics.radiusSm, lipHeight: 5))
                         .frame(maxWidth: .infinity)
                     }
                     .padding(.horizontal, 16)

@@ -1424,33 +1424,32 @@ struct WorkoutSessionView: View {
                 // no pinned chrome beyond the divider.
                 Color.clear.frame(height: 0)
             } else if soloRestActive && !soloLoaderOpen {
+                // 3D pass (2026-08): accent gs3D face, 59pt + 5pt lip =
+                // the prior 64pt CTA footprint (the group interlude's idiom).
                 Button {
                     restEndAt = nil
                 } label: {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 16).fill(theme.accent)
-                        VStack(spacing: 2) {
-                            Text("START SET")
-                                .font(GSFont.bold(17, relativeTo: .body))
-                                .tracking(0.9)
-                            if let restEndAt {
-                                HStack(spacing: 4) {
-                                    // Short form here — the rest hero above
-                                    // carries the full TRANSIT k-label.
-                                    Text(soloRestIsTransit ? "TRANSIT" : "RESTING")
-                                        .font(GSFont.bold(11, relativeTo: .caption2))
-                                    Text(timerInterval: .now...restEndAt, countsDown: true)
-                                        .font(GSFont.bold(11, relativeTo: .caption2).monospacedDigit())
-                                }
-                                .opacity(0.8)
+                    VStack(spacing: 2) {
+                        Text("START SET")
+                            .font(GSFont.bold(17, relativeTo: .body))
+                            .tracking(0.9)
+                        if let restEndAt {
+                            HStack(spacing: 4) {
+                                // Short form here — the rest hero above
+                                // carries the full TRANSIT k-label.
+                                Text(soloRestIsTransit ? "TRANSIT" : "RESTING")
+                                    .font(GSFont.bold(11, relativeTo: .caption2))
+                                Text(timerInterval: .now...restEndAt, countsDown: true)
+                                    .font(GSFont.bold(11, relativeTo: .caption2).monospacedDigit())
                             }
+                            .opacity(0.8)
                         }
-                        .foregroundStyle(theme.bg)
                     }
-                    .frame(height: 64)
-                    .contentShape(Rectangle())
+                    .foregroundStyle(theme.bg)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 59)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.gs3D(face: theme.accent, cornerRadius: 16, lipHeight: 5))
                 .padding(.horizontal, 16)
             } else {
             Button {
@@ -1474,12 +1473,13 @@ struct WorkoutSessionView: View {
                         #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                 }
             } label: {
+                // 3D pass (2026-08): the gs3D style owns the fill (accent
+                // face, surface face for a failed set) + the 5pt lip; the
+                // failed outline rides the label, landing exactly on the
+                // face rect. 59pt face + lip = the prior 64pt footprint.
                 ZStack {
                     if soloFailed {
-                        RoundedRectangle(cornerRadius: 16).fill(theme.surface)
                         RoundedRectangle(cornerRadius: 16).strokeBorder(theme.text, lineWidth: 1.5)
-                    } else {
-                        RoundedRectangle(cornerRadius: 16).fill(theme.accent)
                     }
                     VStack(spacing: 2) {
                         Text(soloFailed ? "LOG FAILED SET \(currentSetIndex)" : "LOG SET \(currentSetIndex)")
@@ -1491,10 +1491,10 @@ struct WorkoutSessionView: View {
                     }
                     .foregroundStyle(soloFailed ? theme.text : theme.bg)
                 }
-                .frame(height: 64)
-                .contentShape(Rectangle())
+                .frame(maxWidth: .infinity)
+                .frame(height: 59)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.gs3D(face: soloFailed ? theme.surface : theme.accent, cornerRadius: 16, lipHeight: 5))
             .disabled(leadingInt(soloReps) == nil && !soloFailed)
             .gsSpotlightTarget(.workout)
             .padding(.horizontal, 16)
@@ -1578,15 +1578,22 @@ struct WorkoutSessionView: View {
                         restEndAt = nil
                         showLogSheet = true
                     } label: {
-                        Text("Log Set \(currentSetIndex)")
-                            // The primary in-workout control, pressed once
-                            // per set with chalked or sweaty hands — the
-                            // research argues >=64pt here, well above the
-                            // 44pt floor the button style now guarantees.
-                            // 40 + the style's 24pt vertical padding = 64.
-                            .frame(maxWidth: .infinity, minHeight: 40)
+                        // The primary in-workout control, pressed once per
+                        // set with chalked or sweaty hands — the research
+                        // argues >=64pt here. 3D pass (2026-08): the label
+                        // reproduces GSPrimaryButtonStyle's left-aligned
+                        // bold-16 anatomy; 59pt face + the gs3D style's
+                        // 5pt lip keeps the exact 64pt footprint.
+                        HStack(spacing: 0) {
+                            Text("Log Set \(currentSetIndex)")
+                            Spacer(minLength: 0)
+                        }
+                        .font(GSFont.bold(16, relativeTo: .body))
+                        .foregroundStyle(theme.bg)
+                        .padding(.horizontal, 16)
+                        .frame(minHeight: 59)
                     }
-                    .buttonStyle(GSPrimaryButtonStyle())
+                    .buttonStyle(.gs3D(face: theme.accent, cornerRadius: GSMetrics.radiusSm, lipHeight: 5))
                     .gsSpotlightTarget(.workout)
                     .padding(.horizontal, 16)
                     .padding(.top, 10)

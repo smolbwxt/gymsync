@@ -458,13 +458,20 @@ struct GroupRecapView: View {
                 }
                 .buttonStyle(GSSecondaryButtonStyle())
 
+                // 3D pass (2026-08): the label reproduces the primary
+                // style's bold-16 bg-on-accent look; 39pt face + the gs3D
+                // style's 5pt lip keeps the prior 44pt footprint beside
+                // the flat Share Recap secondary.
                 Button {
                     onDone()
                 } label: {
                     Text("Done")
+                        .font(GSFont.bold(16, relativeTo: .body))
+                        .foregroundStyle(theme.bg)
                         .frame(maxWidth: .infinity)
+                        .frame(minHeight: 39)
                 }
-                .buttonStyle(GSPrimaryButtonStyle())
+                .buttonStyle(.gs3D(face: theme.accent, cornerRadius: GSMetrics.radiusSm, lipHeight: 5))
             }
             .padding(.horizontal, 12)
             .padding(.top, 10)

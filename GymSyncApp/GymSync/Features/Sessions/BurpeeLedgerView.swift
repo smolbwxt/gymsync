@@ -198,14 +198,14 @@ struct BurpeeLedgerView: View {
                     } label: {
                         logBurpeesNowLabel
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.gs3D(face: theme.bg, cornerRadius: 12, lipHeight: 5))
                 } else {
                     NavigationLink {
                         GroupSessionLiveView(session: live)
                     } label: {
                         logBurpeesNowLabel
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.gs3D(face: theme.bg, cornerRadius: 12, lipHeight: 5))
                 }
             } else {
                 Button {
@@ -214,7 +214,7 @@ struct BurpeeLedgerView: View {
                 } label: {
                     logBurpeesNowLabel
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.gs3D(face: theme.bg, cornerRadius: 12, lipHeight: 5))
             }
         }
         .padding(16)
@@ -225,9 +225,12 @@ struct BurpeeLedgerView: View {
     }
 
     /// Shared visual content for the "Log burpees now" CTA — identical
-    /// whichever of the two navigation actions above wraps it (push vs.
-    /// pop-back), so the fix's dismiss-instead-of-push branch (Finding F4)
-    /// reads as a pure behavior change, not a redesign.
+    /// whichever of the navigation actions above wraps it (push vs.
+    /// pop-back vs. payoff sheet), so the fix's dismiss-instead-of-push
+    /// branch (Finding F4) reads as a pure behavior change, not a redesign.
+    /// 3D pass (2026-08): every wrapper applies the same `.gs3D` bg-face
+    /// style; this label is face content only — 39pt + 5pt lip keeps the
+    /// prior 44pt footprint on the accent banner.
     private var logBurpeesNowLabel: some View {
         HStack {
             Text("Log burpees now")
@@ -238,10 +241,8 @@ struct BurpeeLedgerView: View {
         }
         .foregroundStyle(theme.text)
         .padding(.horizontal, 12)
-        .padding(.vertical, 12)
-        .frame(maxWidth: .infinity, minHeight: 44)
-        .background(theme.bg)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(.vertical, 9.5)
+        .frame(maxWidth: .infinity, minHeight: 39)
     }
 
     private func detailLine(_ summary: BurpeeLedgerMath.YouOweSummary) -> String? {
@@ -441,20 +442,19 @@ struct BurpeeLedgerView: View {
                 .foregroundStyle(theme.neutral700)
                 .padding(.top, 12)
             Spacer(minLength: 16)
+            // 3D pass (2026-08): accent gs3D face, 59pt + 5pt lip = the
+            // prior 64pt CTA footprint.
             Button {
                 Task { await submitPayoff() }
             } label: {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 16).fill(theme.accent)
-                    Text(isSubmittingPayoff ? "LOGGING…" : "LOG \(payoffReps) BURPEES")
-                        .font(GSFont.bold(17, relativeTo: .body).monospacedDigit())
-                        .tracking(0.9)
-                        .foregroundStyle(theme.bg)
-                }
-                .frame(height: 64)
-                .contentShape(Rectangle())
+                Text(isSubmittingPayoff ? "LOGGING…" : "LOG \(payoffReps) BURPEES")
+                    .font(GSFont.bold(17, relativeTo: .body).monospacedDigit())
+                    .tracking(0.9)
+                    .foregroundStyle(theme.bg)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 59)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.gs3D(face: theme.accent, cornerRadius: 16, lipHeight: 5))
             .disabled(isSubmittingPayoff || payoffReps < 1)
             .padding(.horizontal, 16)
             .padding(.bottom, 20)

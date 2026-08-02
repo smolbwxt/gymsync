@@ -1426,13 +1426,14 @@ struct GroupSessionLiveView: View {
             turnSoundRail
             Color.clear.frame(height: 6)
 
+            // 3D pass (2026-08): the gs3D style owns the fill (accent face,
+            // or surface face for a failed set) + the 5pt lip; the failed
+            // look keeps its outline as a label overlay, which lands exactly
+            // on the face rect. 59pt face + lip = the prior 64pt footprint.
             Button { commitInlineLog() } label: {
                 ZStack {
                     if logIsFailed {
-                        RoundedRectangle(cornerRadius: 16).fill(theme.surface)
                         RoundedRectangle(cornerRadius: 16).strokeBorder(theme.text, lineWidth: 1.5)
-                    } else {
-                        RoundedRectangle(cornerRadius: 16).fill(theme.accent)
                     }
                     VStack(spacing: 2) {
                         if isLoggingSet {
@@ -1457,10 +1458,10 @@ struct GroupSessionLiveView: View {
                             .padding(.trailing, 16)
                     }
                 }
-                .frame(height: 64)
-                .contentShape(Rectangle())
+                .frame(maxWidth: .infinity)
+                .frame(height: 59)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.gs3D(face: logIsFailed ? theme.surface : theme.accent, cornerRadius: 16, lipHeight: 5))
             .disabled(isLoggingSet || (leadingInt(logReps) == nil && !logIsFailed))
             .padding(.horizontal, 16)
             Color.clear.frame(height: 10)
@@ -1922,34 +1923,33 @@ struct GroupSessionLiveView: View {
             Color.clear.frame(height: 6)
             if isInSelfRotationRest {
                 // Resting between your own sets — cut it short any time.
+                // 3D pass (2026-08): accent gs3D face, 59pt + 5pt lip =
+                // the prior 64pt CTA footprint.
                 Button {
                     selfRotationRestUntil = nil
                 } label: {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 16).fill(theme.accent)
-                        VStack(spacing: 2) {
-                            Text("START SET")
-                                .font(GSFont.bold(17, relativeTo: .body))
-                                .tracking(0.9)
-                            if let until = selfRotationRestUntil {
-                                HStack(spacing: 4) {
-                                    // TRANSIT (2026-08): an exercise-change
-                                    // window announces the station move.
-                                    Text(selfRotationRestIsTransit
-                                         ? "TRANSIT · SET UP YOUR STATION" : "RESTING")
-                                        .font(GSFont.bold(11, relativeTo: .caption2))
-                                    Text(timerInterval: .now...until, countsDown: true)
-                                        .font(GSFont.bold(11, relativeTo: .caption2).monospacedDigit())
-                                }
-                                .opacity(0.8)
+                    VStack(spacing: 2) {
+                        Text("START SET")
+                            .font(GSFont.bold(17, relativeTo: .body))
+                            .tracking(0.9)
+                        if let until = selfRotationRestUntil {
+                            HStack(spacing: 4) {
+                                // TRANSIT (2026-08): an exercise-change
+                                // window announces the station move.
+                                Text(selfRotationRestIsTransit
+                                     ? "TRANSIT · SET UP YOUR STATION" : "RESTING")
+                                    .font(GSFont.bold(11, relativeTo: .caption2))
+                                Text(timerInterval: .now...until, countsDown: true)
+                                    .font(GSFont.bold(11, relativeTo: .caption2).monospacedDigit())
                             }
+                            .opacity(0.8)
                         }
-                        .foregroundStyle(theme.bg)
                     }
-                    .frame(height: 64)
-                    .contentShape(Rectangle())
+                    .foregroundStyle(theme.bg)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 59)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.gs3D(face: theme.accent, cornerRadius: 16, lipHeight: 5))
                 .padding(.horizontal, 16)
                 Color.clear.frame(height: 10)
             } else if let hint = upcomingTurnHint {
@@ -3470,13 +3470,12 @@ struct GroupSessionLiveView: View {
                 }
                 .foregroundStyle(theme.bg)
                 .padding(.horizontal, 16)
-                .padding(.vertical, 16)
+                // 13.5pt vertical (was 16): content + 27 + the gs3D style's
+                // 5pt lip keeps the CTA's exact prior footprint.
+                .padding(.vertical, 13.5)
                 .frame(maxWidth: .infinity)
-                .background(theme.accent)
-                .cornerRadius(GSMetrics.radiusSm)   // redesign: rounded accent surface
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.gs3D(face: theme.accent, cornerRadius: GSMetrics.radiusSm, lipHeight: 5))
             // `leadingInt` — a rep range must not dead-end the CTA (see the
             // helper in LogSetSheet.swift).
             .disabled(isLoggingSet || (leadingInt(logReps) == nil && !logIsFailed))

@@ -127,33 +127,33 @@ struct PRCelebrationOverlay: View {
 
                 Spacer()
 
+                // 3D pass (2026-08): both CTAs wear the extruded style —
+                // accent face for the primary, quiet surface face for SHARE
+                // (ShareLink takes a ButtonStyle like any Button — same
+                // idiom as SessionRecapView's styled Share Recap link).
+                // Faces are 5pt shorter so face + lip keeps each button's
+                // exact prior footprint (64 and 48).
                 VStack(spacing: 10) {
                     Button {
                         onDismiss()
                     } label: {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 16).fill(theme.accent)
-                            Text("KEEP LIFTING")
-                                .font(GSFont.bold(17, relativeTo: .body))
-                                .tracking(0.9)
-                                .foregroundStyle(theme.bg)
-                        }
-                        .frame(height: 64)
-                        .contentShape(Rectangle())
+                        Text("KEEP LIFTING")
+                            .font(GSFont.bold(17, relativeTo: .body))
+                            .tracking(0.9)
+                            .foregroundStyle(theme.bg)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 59)   // + 5pt lip = the 64pt CTA rhythm
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.gs3D(face: theme.accent, cornerRadius: 16, lipHeight: 5))
 
                     ShareLink(item: shareText) {
                         Text("SHARE")
                             .font(GSFont.bold(13, relativeTo: .subheadline))
                             .tracking(0.9)
                             .foregroundStyle(theme.text.opacity(0.78))
-                            .frame(maxWidth: .infinity, minHeight: 48)
-                            .background(theme.surface)
-                            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
-                            .contentShape(Rectangle())
+                            .frame(maxWidth: .infinity, minHeight: 43)   // + 5pt lip = the prior 48pt
                     }
+                    .buttonStyle(.gs3D(face: theme.surface, cornerRadius: 16, lipHeight: 5))
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 20)
