@@ -131,29 +131,33 @@ final class WorkingWeightTests: XCTestCase {
         XCTAssertEqual(result?.source, .lastSet)
     }
 
-    // MARK: - Rung 4 is rep-aware (user 2026-08-02)
+    // MARK: - Suggestions answer to the rep target (user 2026-08-02)
+    //
+    // "If your one rep max is 405, and you're doing a set of 5, 405 should not
+    // be suggested." These pin the ladder's end-to-end behavior for that
+    // hazard rather than any one rung's internals — the weight a lifter is
+    // handed is the contract; which rung produced it is an implementation
+    // detail free to move. Expectations are hand-computed from Epley, not
+    // re-derived from the implementation's own arithmetic.
 
-    /// The headline hazard: a near-max single must not be handed back as the
-    /// working weight for a set of five. 405 × 1 is a 418.5 est-1RM; scaled to
-    /// 5 reps that's 418.5 / (1 + 5/30) ≈ 358.7 → 360 at the 5 lb rounding.
-    /// Absolute expectation, hand-computed — not a re-derivation of the
-    /// implementation's own arithmetic.
-    func testLastSetRungScalesAHeavySingleDownForAFiveRepTarget() {
+    /// 405 × 1 is a 418.5 est-1RM; for 5 reps that's 418.5 / (1 + 5/30)
+    /// ≈ 358.7 → 360 at the 5 lb rounding. Rung 3 (rep goal) answers.
+    func testAHeavySingleIsNeverSuggestedForAFiveRepTarget() {
         let result = WorkingWeight.suggest(
             exerciseID: exerciseID, targetReps: 5,
             routineTargetPounds: nil,
             history: [log(reps: 1, weight: 405)],
             lastSetPounds: 405, enrollment: nil
         )
-        XCTAssertEqual(result?.source, .lastSet)
         XCTAssertEqual(result?.pounds, 360)
         XCTAssertNotEqual(result?.pounds, 405, "a 1RM must never be suggested for a set of 5")
+        XCTAssertEqual(result?.source, .repGoal(targetReps: 5))
     }
 
-    /// The mirror case: coming off a high-rep set into a heavy target should
-    /// scale UP, not carry the light weight forward. 200 × 10 is a 266.67
+    /// The mirror case: coming off a high-rep set into a heavy target must
+    /// scale UP, not leave the light weight on the bar. 200 × 10 is a 266.67
     /// est-1RM; at 1 rep that's 266.67 / (1 + 1/30) ≈ 258.1 → 260.
-    func testLastSetRungScalesUpWhenTheTargetRepsDrop() {
+    func testALightHighRepSetScalesUpForASingle() {
         let result = WorkingWeight.suggest(
             exerciseID: exerciseID, targetReps: 1,
             routineTargetPounds: nil,
@@ -163,9 +167,9 @@ final class WorkingWeightTests: XCTestCase {
         XCTAssertEqual(result?.pounds, 260)
     }
 
-    /// Matching rep counts must pass the weight through untouched — no
-    /// rounding drift on the ordinary "same again" case.
-    func testLastSetRungLeavesMatchingRepsAlone() {
+    /// Matching rep counts pass through untouched — no rounding drift on the
+    /// ordinary "same again" case.
+    func testMatchingRepTargetLeavesTheWeightAlone() {
         let result = WorkingWeight.suggest(
             exerciseID: exerciseID, targetReps: 8,
             routineTargetPounds: nil,
@@ -175,9 +179,10 @@ final class WorkingWeightTests: XCTestCase {
         XCTAssertEqual(result?.pounds, 185)
     }
 
-    /// A failed set is not evidence of what you can lift, so it must not
-    /// become the scaling basis — the raw carry-forward stands instead.
-    func testLastSetRungIgnoresFailedSetsAsScalingBasis() {
+    /// A set you missed is not evidence of what you can lift: a failed 405
+    /// single must not become the scaling basis, so the ladder falls to the
+    /// raw carry-forward instead of projecting off a lift that didn't happen.
+    func testAFailedSetIsNeverTheScalingBasis() {
         let result = WorkingWeight.suggest(
             exerciseID: exerciseID, targetReps: 5,
             routineTargetPounds: nil,
@@ -185,6 +190,7 @@ final class WorkingWeightTests: XCTestCase {
             lastSetPounds: 225, enrollment: nil
         )
         XCTAssertEqual(result?.pounds, 225)
+        XCTAssertEqual(result?.source, .lastSet)
     }
 
     // MARK: - The floor: never invent a number

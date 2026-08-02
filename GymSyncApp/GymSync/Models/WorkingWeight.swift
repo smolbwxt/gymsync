@@ -100,43 +100,21 @@ enum WorkingWeight {
                               source: .repGoal(targetReps: targetReps))
         }
 
-        // 4 — LAST SET. What they actually did last time — but re-scaled to
-        // today's rep target whenever we know both rep counts.
+        // 4 — LAST SET. What they actually did last time.
         //
-        // Raw carry-forward is only honest when the rep target matches. A
-        // 405 × 1 handed back as the suggestion for a set of 5 is not a
-        // suggestion, it's a hazard (user 2026-08-02: "if your one rep max is
-        // 405, and you're doing a set of 5, 405 should not be suggested").
-        // Inverse Epley via the same helper rung 3 uses, so the two rungs can
-        // never disagree about what a rep count is worth.
+        // Deliberately NOT rep-scaled (considered and rejected 2026-08-02):
+        // scaling needs a rep count to scale FROM, and any history entry that
+        // could supply one already satisfies rung 3's identical precondition —
+        // so rung 3 returns first and a rep-aware rung 4 would be unreachable.
+        // This rung fires only when we know a weight and nothing about the
+        // reps behind it, where passing the number through unchanged is the
+        // honest answer.
         if let lastSetPounds, lastSetPounds > 0 {
-            if let targetReps, targetReps > 0,
-               let last = mostRecentQualifyingSet(in: history),
-               last.reps != targetReps,
-               let scaled = StatMath.projectedWeight(prWeight: last.weight,
-                                                     prReps: last.reps,
-                                                     targetReps: targetReps) {
-                return Suggestion(pounds: Decimal(scaled), source: .lastSet)
-            }
             return Suggestion(pounds: lastSetPounds, source: .lastSet)
         }
 
         // 5 — nothing honest to say.
         return nil
-    }
-
-    /// The most recently logged set that carries both a weight and a rep
-    /// count — the rep-scaling basis for rung 4. Same exclusions as
-    /// `bestQualifyingSet` (no failed, no penalty) so "what you did last
-    /// time" never means a set you missed.
-    static func mostRecentQualifyingSet(in logs: [SetLog]) -> (weight: Decimal, reps: Int)? {
-        logs
-            .filter { !$0.isFailed && !$0.isPenalty && ($0.reps ?? 0) > 0 && ($0.weight ?? 0) > 0 }
-            .max(by: { $0.loggedAt < $1.loggedAt })
-            .flatMap { log in
-                guard let weight = log.weight, let reps = log.reps else { return nil }
-                return (weight, reps)
-            }
     }
 
     /// Best (weight, reps) pair by Epley est-1RM — the same qualifying
