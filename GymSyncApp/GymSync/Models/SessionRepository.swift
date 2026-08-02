@@ -474,6 +474,57 @@ enum SessionRepository {
         } catch { throw ErrorMapping.map(error) }
     }
 
+    /// Set the warm-up window (minutes) for a session — the organizer's
+    /// lobby control (20260803000004). Same direct-UPDATE path as
+    /// `setRoutine` above: `sessions`' UPDATE policy already covers the
+    /// organizer, and the column's own CHECK (0–60) is the backstop.
+    static func setWarmupMinutes(sessionID: UUID, minutes: Int) async throws {
+        guard await SupabaseService.shared.currentUserID() != nil else {
+            throw GymSyncError.unauthorized
+        }
+        do {
+            _ = try await client
+                .from("sessions")
+                .update(["warmup_minutes": minutes])
+                .eq("id", value: sessionID.uuidString)
+                .execute()
+        } catch { throw ErrorMapping.map(error) }
+    }
+
+    /// Record the caller's "I'm warm" vote (20260803000004). Returns `true`
+    /// when lifting has (now or already) started — this vote completed the
+    /// unanimous PRESENT-participant set, or lifting had already begun —
+    /// and `false` while the room is still waiting on someone. Raises
+    /// P0001 for non-participants (server-side membership probe).
+    static func markWarmupReady(sessionID: UUID) async throws -> Bool {
+        guard await SupabaseService.shared.currentUserID() != nil else {
+            throw GymSyncError.unauthorized
+        }
+        do {
+            let started: Bool = try await client
+                .rpc("mark_warmup_ready", params: ["p_session_id": sessionID.uuidString])
+                .execute().value
+            return started
+        } catch { throw ErrorMapping.map(error) }
+    }
+
+    /// Organizer force-start of lifting — the AFK escape hatch
+    /// (20260803000004). Returns `true` when THIS call started lifting,
+    /// `false` when the session isn't in progress or lifting had already
+    /// begun. Non-organizers are rejected with P0001, the engine's
+    /// authorization idiom (start_session, advance_turn).
+    static func startLifting(sessionID: UUID) async throws -> Bool {
+        guard await SupabaseService.shared.currentUserID() != nil else {
+            throw GymSyncError.unauthorized
+        }
+        do {
+            let started: Bool = try await client
+                .rpc("start_lifting", params: ["p_session_id": sessionID.uuidString])
+                .execute().value
+            return started
+        } catch { throw ErrorMapping.map(error) }
+    }
+
     /// Advance the turn to the next participant (current-lifter or organizer gated).
     ///
     /// `expectedVersion` makes the call REPLAYABLE (20260801000001): pass the

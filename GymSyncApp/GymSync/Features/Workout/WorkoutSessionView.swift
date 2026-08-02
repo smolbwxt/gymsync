@@ -92,6 +92,21 @@ struct WorkoutSessionView: View {
     /// logging the next set — same "no polling Timer" pattern as the elapsed
     /// header clock: `Text(timerInterval:countsDown:)` renders itself live.
     @State private var restEndAt: Date?
+    /// TRANSIT flag for the current rest window (2026-08): true when the
+    /// set just logged closed out its exercise, so the window was extended
+    /// by `TransitWindow.seconds` and the rest page labels it "TRANSIT ·
+    /// SET UP YOUR STATION". Set alongside every routine-path `restEndAt`
+    /// assignment; only read while a window is active.
+    @State private var soloRestIsTransit = false
+    /// Solo warm-up (2026-08): end of the warm-up window shown before the
+    /// first set — `started_at + soloWarmupMinutes`. Nil when no duration
+    /// is configured (the default), once skipped, or once lapsed. Routine
+    /// sessions only (freeform has no fixed-page slot to host it).
+    @State private var soloWarmupEndsAt: Date?
+    /// UserDefaults-backed duration (`SoloWarmupStore`) — DEFAULT 0, so
+    /// solo behavior is unchanged until the lifter opts in via the − / +
+    /// control on the warm-up page itself.
+    @State private var soloWarmupMinutes: Int = SoloWarmupStore.minutes
     /// Session-local HR history behind the rest screen's YOUR RECOVERY
     /// card — fed by `.onChange(of: soloBLEBPM)`; the math lives in
     /// RecoveryBuffer (unit-tested, shared with the group spectate page).
@@ -223,6 +238,16 @@ struct WorkoutSessionView: View {
             soloPrefill()
         }
         .onChange(of: restEndAt) { handleRestWindowChange() }
+        // Solo warm-up auto-end (2026-08): the guarded-sleep shape
+        // `handleRestWindowChange` uses — only the still-current window
+        // clears itself, so a skip (or a − adjustment that already ended
+        // it) is never re-cleared.
+        .task(id: soloWarmupEndsAt) {
+            guard let until = soloWarmupEndsAt, until > .now else { return }
+            try? await Task.sleep(for: .seconds(max(0, until.timeIntervalSinceNow) + 0.1))
+            guard !Task.isCancelled else { return }
+            if soloWarmupEndsAt == until { soloWarmupEndsAt = nil }
+        }
         .onChange(of: soloBLEBPM) { _, newValue in
             guard let newValue else { return }
             soloRecoveryBuffer.append(bpm: newValue, at: Date().timeIntervalSinceReferenceDate)
@@ -560,8 +585,11 @@ struct WorkoutSessionView: View {
             // go to the rest screen — watch your recovery, understand
             // what's coming up next, watch your rest timer tick down").
             // The loader keeps priority so tuning the next weight works
-            // mid-rest, exactly like the group page.
-            if soloRestActive && !soloLoaderOpen {
+            // mid-rest, exactly like the group page. The warm-up page
+            // (2026-08) occupies this same slot before the first set.
+            if soloWarmupActive && !soloLoaderOpen {
+                soloWarmupPage
+            } else if soloRestActive && !soloLoaderOpen {
                 soloRestPage
             } else {
                 soloVitalsRow
@@ -635,6 +663,48 @@ struct WorkoutSessionView: View {
     private var soloRestActive: Bool {
         guard let restEndAt else { return false }
         return restEndAt > .now
+    }
+
+    // MARK: - Solo warm-up page (2026-08 warm-up phase)
+
+    private var soloWarmupActive: Bool {
+        guard let until = soloWarmupEndsAt else { return false }
+        return until > .now
+    }
+
+    /// The shared warm-up phase page in solo dress: just me, no vote
+    /// semantics (the CTA is SKIP WARM-UP), and the − / + control adjusts
+    /// the persisted duration in place.
+    private var soloWarmupPage: some View {
+        WarmUpPhaseView(
+            mode: .solo(minutes: soloWarmupMinutes),
+            countdownEndsAt: soloWarmupEndsAt ?? Date(),
+            members: [WarmUpPhaseView.Member(
+                id: appState.currentProfile?.id ?? UUID(),
+                name: appState.currentProfile?.username ?? "You",
+                avatarURL: appState.currentProfile?.avatarURL,
+                isReady: false
+            )],
+            isOrganizer: false,
+            myReady: false,
+            onReady: { soloWarmupEndsAt = nil },
+            onAdjustMinutes: { delta in adjustSoloWarmup(delta) }
+        )
+    }
+
+    /// ± the persisted duration from the page itself (step 5, clamp 0–30,
+    /// mirroring the lobby control). Re-anchors the window at `started_at
+    /// + minutes`, so an increase extends the running window and a
+    /// decrease past the elapsed time ends it immediately.
+    private func adjustSoloWarmup(_ delta: Int) {
+        let next = min(30, max(0, soloWarmupMinutes + delta))
+        guard next != soloWarmupMinutes else { return }
+        soloWarmupMinutes = next
+        SoloWarmupStore.set(next)
+        guard soloWarmupEndsAt != nil else { return }
+        let anchor = session?.startedAt ?? Date()
+        let ends = anchor.addingTimeInterval(TimeInterval(next * 60))
+        soloWarmupEndsAt = ends > .now ? ends : nil
     }
 
     @ViewBuilder
@@ -734,7 +804,9 @@ struct WorkoutSessionView: View {
     /// prefilled for exactly this set, so the readback echoes it.
     private var soloRestHero: some View {
         VStack(spacing: 0) {
-            Text("REST")
+            // TRANSIT (2026-08): an exercise-change window announces the
+            // station move for its whole duration.
+            Text(soloRestIsTransit ? "TRANSIT · SET UP YOUR STATION" : "REST")
                 .font(GSFont.bold(10, relativeTo: .caption2))
                 .tracking(1.3)
                 .foregroundStyle(theme.neutral700)
@@ -1347,7 +1419,11 @@ struct WorkoutSessionView: View {
         VStack(spacing: 0) {
             GSDivider()
             Color.clear.frame(height: 8)
-            if soloRestActive && !soloLoaderOpen {
+            if soloWarmupActive && !soloLoaderOpen {
+                // Warm-up (2026-08): the page carries its own SKIP CTA —
+                // no pinned chrome beyond the divider.
+                Color.clear.frame(height: 0)
+            } else if soloRestActive && !soloLoaderOpen {
                 Button {
                     restEndAt = nil
                 } label: {
@@ -1359,7 +1435,9 @@ struct WorkoutSessionView: View {
                                 .tracking(0.9)
                             if let restEndAt {
                                 HStack(spacing: 4) {
-                                    Text("RESTING")
+                                    // Short form here — the rest hero above
+                                    // carries the full TRANSIT k-label.
+                                    Text(soloRestIsTransit ? "TRANSIT" : "RESTING")
                                         .font(GSFont.bold(11, relativeTo: .caption2))
                                     Text(timerInterval: .now...restEndAt, countsDown: true)
                                         .font(GSFont.bold(11, relativeTo: .caption2).monospacedDigit())
@@ -2126,6 +2204,15 @@ struct WorkoutSessionView: View {
         do {
             let newSession = try await SessionRepository.startSolo(routineID: routine?.id)
             session = newSession
+            // Solo warm-up (2026-08): a configured duration opens the
+            // warm-up page before the first set — the persisted DEFAULT of
+            // 0 keeps existing solo behavior untouched. Routine sessions
+            // only: freeform uses the scroll body, which has no fixed-page
+            // slot for the phase.
+            if !isFreeform, soloWarmupMinutes > 0 {
+                soloWarmupEndsAt = (newSession.startedAt ?? Date())
+                    .addingTimeInterval(TimeInterval(soloWarmupMinutes * 60))
+            }
             // Discover "Attempt Solo" only: start the leaderboard attempt
             // AFTER the session exists (backend contract — see
             // `attemptOptIn`'s doc comment). Best-effort: a failed
@@ -2281,6 +2368,9 @@ struct WorkoutSessionView: View {
             if isFreeform {
                 currentSetIndex += 1
                 let restSeconds = defaultRestSeconds
+                // Freeform never auto-advances exercises, so its windows
+                // are always same-exercise rest — never TRANSIT.
+                soloRestIsTransit = false
                 if restSeconds > 0 {
                     restEndAt = Date().addingTimeInterval(TimeInterval(restSeconds))
                 }
@@ -2288,11 +2378,14 @@ struct WorkoutSessionView: View {
             }
 
             let targetSets = re.targetSets ?? 1
+            let exerciseChanged: Bool
             if currentSetIndex >= targetSets {
                 currentSetIndex = 1
                 currentExerciseIndex += 1
+                exerciseChanged = true
             } else {
                 currentSetIndex += 1
+                exerciseChanged = false
             }
             if currentExerciseIndex >= activeExercises.count {
                 restEndAt = nil
@@ -2301,7 +2394,13 @@ struct WorkoutSessionView: View {
                 // Per-exercise rest wins when configured; otherwise fall back
                 // to the user's default_rest_seconds (Canvas Completion Task 2)
                 // rather than showing no rest timer at all.
-                let restSeconds = re.restSeconds ?? defaultRestSeconds
+                // TRANSIT (2026-08): an exercise boundary extends the window
+                // by TransitWindow.seconds and labels the WHOLE window
+                // TRANSIT — time to set up the next station. Same-exercise
+                // sets are unchanged.
+                let restSeconds = (re.restSeconds ?? defaultRestSeconds)
+                    + (exerciseChanged ? TransitWindow.seconds : 0)
+                soloRestIsTransit = exerciseChanged
                 if restSeconds > 0 {
                     restEndAt = Date().addingTimeInterval(TimeInterval(restSeconds))
                 }

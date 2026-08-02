@@ -582,6 +582,50 @@ struct GroupSessionLiveView: View {
         return until > .now
     }
 
+    /// TRANSIT flag for the current self-rotation rest window (2026-08):
+    /// true when the set just logged completed its exercise, so the next
+    /// set is a DIFFERENT station — the window was extended by
+    /// `TransitWindow.seconds` and the chrome labels it TRANSIT instead of
+    /// RESTING. Set alongside every `selfRotationRestUntil` assignment;
+    /// only read while the interlude is active.
+    @State private var selfRotationRestIsTransit = false
+
+    // MARK: - Warm-up phase (2026-08, 20260803000004)
+
+    /// One-shot re-render tick at the warm-up deadline. `isInWarmUp` reads
+    /// live `Date()` per body evaluation (the `isInSelfRotationRest`
+    /// idiom), so this only needs to force ONE re-render at the moment the
+    /// clock alone would end the phase — vote and force-start end it
+    /// through `liveSession` writes instead. Toggled by the
+    /// `.task(id: warmupEndsAt)` wake-up below (LobbyView's
+    /// `checkInWindowRefreshTick` precedent — never a polling Timer).
+    @State private var warmupRefreshTick = false
+
+    /// The effective lifting start the CLOCK enforces: `started_at +
+    /// warmup_minutes`. Nil when no warm-up window exists.
+    private var warmupEndsAt: Date? {
+        guard liveSession.warmupMinutes > 0,
+              let startedAt = liveSession.startedAt else { return nil }
+        return startedAt.addingTimeInterval(TimeInterval(liveSession.warmupMinutes * 60))
+    }
+
+    /// The warm-up page renders INSTEAD of the turn arena while this
+    /// holds: live session, a warm-up window configured, lifting not yet
+    /// voted/forced open, and the window's clock still running.
+    /// `warmup_minutes == 0` — every pre-feature session — can never
+    /// enter here.
+    private var isInWarmUp: Bool {
+        // Read (but don't branch on) `warmupRefreshTick` so SwiftUI's
+        // dependency tracking knows this property — and the page/chrome
+        // switches on it — depends on the one-shot deadline toggle; the
+        // real truth always comes from the fresh `Date()` comparison
+        // (LobbyView's `canCheckIn` idiom, verbatim).
+        let _ = warmupRefreshTick
+        return liveSession.state == "in_progress"
+            && liveSession.liftingStartedAt == nil
+            && (warmupEndsAt.map { Date() < $0 } ?? false)
+    }
+
     /// Prior-performance state (2026-07-30). ONE fetch feeds two features:
     /// the LAST TIME card (shown where a non-barbell exercise has no bar to
     /// load) and the prefill ladder's rep-goal rung, which needs the same
@@ -1889,7 +1933,10 @@ struct GroupSessionLiveView: View {
                                 .tracking(0.9)
                             if let until = selfRotationRestUntil {
                                 HStack(spacing: 4) {
-                                    Text("RESTING")
+                                    // TRANSIT (2026-08): an exercise-change
+                                    // window announces the station move.
+                                    Text(selfRotationRestIsTransit
+                                         ? "TRANSIT · SET UP YOUR STATION" : "RESTING")
                                         .font(GSFont.bold(11, relativeTo: .caption2))
                                     Text(timerInterval: .now...until, countsDown: true)
                                         .font(GSFont.bold(11, relativeTo: .caption2).monospacedDigit())
@@ -1917,6 +1964,75 @@ struct GroupSessionLiveView: View {
             }
         }
         .background(theme.bg)
+    }
+
+    // MARK: - Warm-up page (2026-08 warm-up phase)
+
+    /// The fixed-page shell (header rail + divider, the same top chrome as
+    /// the my-turn/spectate pages so entering lifting never moves the top
+    /// of the screen) around the shared `WarmUpPhaseView`. All session
+    /// plumbing stays HERE — the phase view takes plain values + closures
+    /// by design (see its own header).
+    private var warmUpPage: some View {
+        VStack(spacing: 0) {
+            turnHeaderRail
+            GSDivider()
+            WarmUpPhaseView(
+                mode: .group,
+                countdownEndsAt: warmupEndsAt ?? Date(),
+                members: presentRotation.map { entry in
+                    WarmUpPhaseView.Member(
+                        id: entry.participant.userID,
+                        name: entry.profile.username,
+                        avatarURL: entry.profile.avatarURL,
+                        isReady: entry.participant.warmupReady
+                    )
+                },
+                isOrganizer: isOrganizer,
+                myReady: myParticipant?.warmupReady ?? false,
+                onReady: { Task { await voteWarmupReady() } },
+                // Passed unconditionally — the phase view itself gates the
+                // row on `isOrganizer` (and the RPC rejects anyone else).
+                onForceStart: { Task { await forceStartLifting() } }
+            )
+        }
+        .background(theme.bg)
+    }
+
+    /// "I'm warm" — on TRUE (lifting started: this vote completed
+    /// unanimity, or it had already begun) the session row is refreshed
+    /// immediately so the arena appears without waiting for the realtime
+    /// echo; either way the participants refetch flips my own ready pip.
+    @MainActor
+    private func voteWarmupReady() async {
+        do {
+            let started = try await SessionRepository.markWarmupReady(sessionID: session.id)
+            if started, let fresh = try? await SessionRepository.session(id: session.id) {
+                liveSession = fresh
+            }
+            await reloadParticipants()
+        } catch let error as GymSyncError {
+            errorText = error.errorDescription
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    /// Organizer force-start (the AFK escape hatch). Refreshes the session
+    /// row either way — a FALSE return means lifting had already begun,
+    /// which the fresh row also reflects.
+    @MainActor
+    private func forceStartLifting() async {
+        do {
+            _ = try await SessionRepository.startLifting(sessionID: session.id)
+            if let fresh = try? await SessionRepository.session(id: session.id) {
+                liveSession = fresh
+            }
+        } catch let error as GymSyncError {
+            errorText = error.errorDescription
+        } catch {
+            errorText = error.localizedDescription
+        }
     }
 
         // MARK: - Body
@@ -2350,7 +2466,13 @@ struct GroupSessionLiveView: View {
             // Redesign 2026-07-30: my-turn is the FIXED page (no scroll);
             // spectating (and the roster-failure state) keep the original
             // scroll layout untouched until the sister-page round.
-            if myTurnActive {
+            // Warm-up (2026-08): while the warm-up window is open the
+            // phase page replaces the turn arena entirely — when it ends
+            // (vote, force, or clock) the normal switch below resumes and
+            // the session's first turn is simply active.
+            if isInWarmUp {
+                warmUpPage
+            } else if myTurnActive {
                 myTurnFixedPage
             } else if spectateActive {
                 spectateFixedPage
@@ -2420,10 +2542,30 @@ struct GroupSessionLiveView: View {
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(10))
                     guard let fresh = try? await SessionRepository.session(id: session.id) else { continue }
-                    if fresh.turnVersion > liveSession.turnVersion || fresh.state != liveSession.state {
+                    // Warm-up columns ride this same poll (2026-08): a dead
+                    // websocket during warm-up must not strand anyone — a
+                    // vote-completed / forced `lifting_started_at` (or the
+                    // organizer changing `warmup_minutes`) applies here too.
+                    if fresh.turnVersion > liveSession.turnVersion || fresh.state != liveSession.state
+                        || fresh.liftingStartedAt != liveSession.liftingStartedAt
+                        || fresh.warmupMinutes != liveSession.warmupMinutes {
                         liveSession = fresh
                     }
+                    // While warming up, the crew's warmup_ready pips are
+                    // participant-row state — refetch on the same cadence
+                    // (the realtime participants echo remains the fast path).
+                    if isInWarmUp { await reloadParticipants() }
                 }
+            }
+            // Clock-expiry wake-up (2026-08): ONE re-render at `started_at
+            // + warmup_minutes` so the arena appears the moment the window
+            // lapses with no vote — LobbyView's check-in wake-up idiom,
+            // never a polling Timer. `isInWarmUp` itself reads live Date().
+            .task(id: warmupEndsAt) {
+                guard let endsAt = warmupEndsAt, endsAt > Date() else { return }
+                try? await Task.sleep(for: .seconds(endsAt.timeIntervalSinceNow + 0.1))
+                guard !Task.isCancelled else { return }
+                warmupRefreshTick.toggle()
             }
     }
 
@@ -2432,7 +2574,10 @@ struct GroupSessionLiveView: View {
     /// legacy dock composition survives for the roster-failure state.
     @ViewBuilder
     private var bottomChrome: some View {
-        if myTurnActive {
+        if isInWarmUp {
+            // The warm-up page carries its own CTA — no pinned chrome.
+            EmptyView()
+        } else if myTurnActive {
             turnChrome
         } else if spectateActive {
             spectateChrome
@@ -3717,6 +3862,12 @@ struct GroupSessionLiveView: View {
         let rpe = Decimal(logRPE)
         let note = logNote.isEmpty ? nil : logNote
         let failed = logIsFailed
+        // Pre-log set count for the TRANSIT derivation below — captured
+        // BEFORE the async round-trip, because the realtime echo (or the
+        // offline optimistic append) may or may not have landed the new
+        // set in `allSessionSets` by the time the interlude math runs, and
+        // the answer must not depend on that race.
+        let preLogSetCount = mySetCount(for: ex.id)
         Task {
             defer { isLoggingSet = false }
             guard await logSetAndAdvance(reps: reps, weight: weight, rpe: rpe,
@@ -3740,7 +3891,20 @@ struct GroupSessionLiveView: View {
             // the interlude never fired. presentRotation mirrors the
             // server's advance_turn exactly.
             if liveSession.currentTurnUserID == selfID, presentRotation.count <= 1 || nextTurnUserID == selfID {
-                let seconds = currentRoutineExercise?.restSeconds ?? 120
+                // TRANSIT (2026-08): when the set just logged completed its
+                // exercise, the next set is a DIFFERENT station — extend
+                // the window by TransitWindow.seconds and label the WHOLE
+                // window TRANSIT. Same-exercise passes are unchanged.
+                // Derived through RoutineProgression with the pre-log count
+                // + 1 (the just-logged set), never from live
+                // `currentExerciseForSheet` — the echo-timing race above.
+                let nextRE = RoutineProgression.currentExercise(
+                    routine: routineExercises,
+                    completedSets: { id in id == ex.id ? preLogSetCount + 1 : mySetCount(for: id) })
+                let isTransit = nextRE != nil && nextRE?.exerciseID != ex.id
+                let seconds = (currentRoutineExercise?.restSeconds ?? 120)
+                    + (isTransit ? TransitWindow.seconds : 0)
+                selfRotationRestIsTransit = isTransit
                 let until = Date().addingTimeInterval(TimeInterval(seconds))
                 selfRotationRestUntil = until
                 Task {

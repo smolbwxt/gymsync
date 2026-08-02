@@ -242,6 +242,17 @@ struct LobbyView: View {
                 routineSection
                     .padding(.top, 8)
 
+                // Warm-up window (2026-08 warm-up phase): organizer control,
+                // or a read-only line for the crew once a window is set.
+                if isOrganizer || effectiveSession.warmupMinutes > 0 {
+                    GSDivider()
+                        .padding(.horizontal, 16)
+                        .padding(.top, 14)
+
+                    warmupSection
+                        .padding(.top, 8)
+                }
+
                 // Error
                 if let errorText {
                     Text(errorText)
@@ -1065,6 +1076,87 @@ struct LobbyView: View {
 
     private func exerciseEquipment(for ex: RoutineExercise) -> String? {
         allExercises.first(where: { $0.id == ex.exerciseID })?.equipment.capitalized
+    }
+
+    // MARK: - Warm-up Section (2026-08 warm-up phase, 20260803000004)
+    //
+    // Organizer: − / value / + control (0–30 min, step 5) writing
+    // `warmup_minutes` through the same sessions-UPDATE path the routine
+    // picker uses (`SessionRepository.setWarmupMinutes`, sibling of
+    // `setRoutine`). Non-organizers: a read-only "WARM-UP · N MIN" line
+    // whenever a window is set. Another device's change reaches this one
+    // via the lobby realtime echo / 5s pre-live poll into `currentSession`,
+    // so both render live values.
+
+    @ViewBuilder
+    private var warmupSection: some View {
+        if isOrganizer {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("WARM-UP")
+                    .font(GSFont.bold(10, relativeTo: .caption2))
+                    .tracking(1.2)
+                    .foregroundStyle(theme.neutral700)
+
+                HStack(spacing: 14) {
+                    warmupStepButton(systemName: "minus", delta: -5)
+                    Text(effectiveSession.warmupMinutes == 0 ? "OFF" : "\(effectiveSession.warmupMinutes) MIN")
+                        .font(GSFont.bold(16, relativeTo: .title3).monospacedDigit())
+                        .foregroundStyle(theme.text)
+                        .frame(minWidth: 64)
+                    warmupStepButton(systemName: "plus", delta: 5)
+                    Spacer()
+                }
+
+                Text("Warm up together after start — everyone votes \u{201C}I'm warm\u{201D}, the last vote begins lifting.")
+                    .font(GSFont.body(11, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+            }
+            .padding(.horizontal, 16)
+        } else if effectiveSession.warmupMinutes > 0 {
+            Text("WARM-UP · \(effectiveSession.warmupMinutes) MIN")
+                .font(GSFont.bold(10, relativeTo: .caption2))
+                .tracking(1.2)
+                .foregroundStyle(theme.neutral700)
+                .padding(.horizontal, 16)
+        }
+    }
+
+    private func warmupStepButton(systemName: String, delta: Int) -> some View {
+        Button { adjustWarmup(delta) } label: {
+            Image(systemName: systemName)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(theme.neutral700)
+                .frame(width: 36, height: 36)
+                .background(theme.surface)
+                .overlay(Circle().strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
+                .clipShape(Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .disabled(delta > 0 ? effectiveSession.warmupMinutes >= 30 : effectiveSession.warmupMinutes <= 0)
+        .accessibilityLabel(delta > 0 ? "Longer warm-up" : "Shorter warm-up")
+    }
+
+    /// Optimistic local update + the write; a failed write reverts via
+    /// reload() (the same failure shape as the routine picker's onPick).
+    private func adjustWarmup(_ delta: Int) {
+        let current = effectiveSession.warmupMinutes
+        let next = min(30, max(0, current + delta))
+        guard next != current else { return }
+        var updated = effectiveSession
+        updated.warmupMinutes = next
+        currentSession = updated
+        Task {
+            do {
+                try await SessionRepository.setWarmupMinutes(sessionID: session.id, minutes: next)
+            } catch let error as GymSyncError {
+                errorText = error.errorDescription
+                await reload()
+            } catch {
+                errorText = error.localizedDescription
+                await reload()
+            }
+        }
     }
 
     // MARK: - Action bar (pinned bottom)

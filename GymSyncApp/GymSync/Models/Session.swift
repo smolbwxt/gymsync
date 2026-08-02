@@ -26,6 +26,16 @@ struct WorkoutSession: Codable, Identifiable, Sendable {
     /// RPC no-ops instead of double-advancing. Defaults to 0 so a row
     /// decoded before the column existed is still safe to compare.
     var turnVersion: Int
+    /// Warm-up phase (20260803000004): organizer-set minutes between
+    /// session start and lifting. 0 = no warm-up window — pre-feature
+    /// sessions (and rows decoded before the column existed) behave
+    /// exactly as before, so the warm-up page can never appear for them.
+    var warmupMinutes: Int
+    /// When lifting actually began: the last present participant's
+    /// unanimous warm-up vote, or the organizer's force-start. NULL while
+    /// warming up. Effective lifting start = `liftingStartedAt` if set,
+    /// else `startedAt + warmupMinutes`.
+    var liftingStartedAt: Date?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -44,6 +54,8 @@ struct WorkoutSession: Codable, Identifiable, Sendable {
         case durationWasEdited = "duration_was_edited"
         case editedBy = "edited_by"
         case turnVersion = "turn_version"
+        case warmupMinutes = "warmup_minutes"
+        case liftingStartedAt = "lifting_started_at"
     }
 
     // Safe decode: duration_was_edited has DB DEFAULT false so older rows always carry it;
@@ -66,6 +78,8 @@ struct WorkoutSession: Codable, Identifiable, Sendable {
         durationWasEdited    = (try? c.decodeIfPresent(Bool.self, forKey: .durationWasEdited)) ?? false
         editedBy             = try? c.decodeIfPresent(UUID.self,  forKey: .editedBy)
         turnVersion          = (try? c.decodeIfPresent(Int.self,  forKey: .turnVersion)) ?? 0
+        warmupMinutes        = (try? c.decodeIfPresent(Int.self,  forKey: .warmupMinutes)) ?? 0
+        liftingStartedAt     = try? c.decodeIfPresent(Date.self,  forKey: .liftingStartedAt)
     }
 
     // Memberwise init used by startSolo and other repository callers.
@@ -85,7 +99,9 @@ struct WorkoutSession: Codable, Identifiable, Sendable {
         currentTurnStartedAt: Date?,
         durationWasEdited: Bool = false,
         editedBy: UUID? = nil,
-        turnVersion: Int = 0
+        turnVersion: Int = 0,
+        warmupMinutes: Int = 0,
+        liftingStartedAt: Date? = nil
     ) {
         self.id                   = id
         self.routineID            = routineID
@@ -103,6 +119,8 @@ struct WorkoutSession: Codable, Identifiable, Sendable {
         self.durationWasEdited    = durationWasEdited
         self.editedBy             = editedBy
         self.turnVersion          = turnVersion
+        self.warmupMinutes        = warmupMinutes
+        self.liftingStartedAt     = liftingStartedAt
     }
 }
 
@@ -115,6 +133,9 @@ struct SessionParticipant: Codable, Sendable {
     let checkInMethod: String?
     let lateMinutes: Int
     let burpeesOwed: Int
+    /// "I'm warm" vote (20260803000004). When every PRESENT participant
+    /// (advance_turn's online/ready/late trio) has voted, lifting begins.
+    let warmupReady: Bool
 
     enum CodingKeys: String, CodingKey {
         case sessionID = "session_id"
@@ -125,6 +146,25 @@ struct SessionParticipant: Codable, Sendable {
         case checkInMethod = "check_in_method"
         case lateMinutes = "late_minutes"
         case burpeesOwed = "burpees_owed"
+        case warmupReady = "warmup_ready"
+    }
+
+    // Safe decode: warmup_ready has DB DEFAULT false so full-row selects
+    // always carry it; the guard covers schema-lag / projected selects,
+    // mirroring WorkoutSession's own custom-decode idiom above. (No
+    // memberwise construction sites exist for this type — rows are only
+    // ever decoded — so replacing the synthesized init is safe.)
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        sessionID     = try c.decode(UUID.self,   forKey: .sessionID)
+        userID        = try c.decode(UUID.self,   forKey: .userID)
+        turnOrder     = try c.decodeIfPresent(Int.self,    forKey: .turnOrder)
+        checkInState  = try c.decodeIfPresent(String.self, forKey: .checkInState)
+        checkInAt     = try c.decodeIfPresent(Date.self,   forKey: .checkInAt)
+        checkInMethod = try c.decodeIfPresent(String.self, forKey: .checkInMethod)
+        lateMinutes   = try c.decode(Int.self,    forKey: .lateMinutes)
+        burpeesOwed   = try c.decode(Int.self,    forKey: .burpeesOwed)
+        warmupReady   = (try? c.decodeIfPresent(Bool.self, forKey: .warmupReady)) ?? false
     }
 }
 
