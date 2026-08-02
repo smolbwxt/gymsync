@@ -740,7 +740,13 @@ public struct GSEmptyState: View {
     private let action: (() -> Void)?
     private let secondaryTitle: String?
     private let secondaryAction: (() -> Void)?
+    private let extruded: Bool
 
+    /// `extruded` (2026-08 3D pass, default `false`): opt-in swap of the
+    /// flat GSCard chrome for the static extruded `.gs3DCard` face/lip, for
+    /// call sites on screens whose sibling widgets are already 3D (the
+    /// Campaigns tab). Defaulted so every existing call site renders
+    /// byte-identically.
     public init(
         icon: String,
         title: String,
@@ -748,7 +754,8 @@ public struct GSEmptyState: View {
         ctaTitle: String? = nil,
         action: (() -> Void)? = nil,
         secondaryTitle: String? = nil,
-        secondaryAction: (() -> Void)? = nil
+        secondaryAction: (() -> Void)? = nil,
+        extruded: Bool = false
     ) {
         self.icon = icon
         self.title = title
@@ -757,6 +764,7 @@ public struct GSEmptyState: View {
         self.action = action
         self.secondaryTitle = secondaryTitle
         self.secondaryAction = secondaryAction
+        self.extruded = extruded
     }
 
     // Redesign (2026-07-20 spec §6 + null-states proof): empty states are
@@ -765,47 +773,56 @@ public struct GSEmptyState: View {
     // bare ground (the old "No crew yet" center-center failure). One change
     // here restyles every call site (Social, Friends, etc.) at once.
     public var body: some View {
-        GSCard(bordered: false) {
-            VStack(alignment: .leading, spacing: 0) {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(theme.neutral300)
-                    .frame(width: 40, height: 40)
-                    .overlay(
-                        Image(systemName: icon)
-                            .font(.system(size: 19, weight: .regular))
-                            .foregroundStyle(theme.accent)
-                    )
-
-                Text(title)
-                    .font(GSFont.bold(16, relativeTo: .headline))
-                    .foregroundStyle(theme.text)
-                    .padding(.top, 12)
-
-                Text(message)
-                    .font(GSFont.body(12.5, relativeTo: .caption))
-                    .foregroundStyle(theme.neutral500)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 4)
-
-                if ctaTitle != nil || secondaryTitle != nil {
-                    HStack(spacing: 9) {
-                        if let ctaTitle, let action {
-                            Button(ctaTitle, action: action)
-                                .buttonStyle(GSPrimaryButtonStyle(fontSize: 13, verticalPadding: 11))
-                                .fixedSize()
-                        }
-                        if let secondaryTitle, let secondaryAction {
-                            Button(secondaryTitle, action: secondaryAction)
-                                .buttonStyle(GSSecondaryButtonStyle(fontSize: 13, horizontalPadding: 15, verticalPadding: 11))
-                                .fixedSize()
-                        }
-                    }
-                    .padding(.top, 14)
-                }
+        if extruded {
+            inner
+                .gs3DCard(cornerRadius: GSMetrics.radiusMd)
+        } else {
+            GSCard(bordered: false) {
+                inner
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(18)
         }
+    }
+
+    private var inner: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            RoundedRectangle(cornerRadius: 12)
+                .fill(theme.neutral300)
+                .frame(width: 40, height: 40)
+                .overlay(
+                    Image(systemName: icon)
+                        .font(.system(size: 19, weight: .regular))
+                        .foregroundStyle(theme.accent)
+                )
+
+            Text(title)
+                .font(GSFont.bold(16, relativeTo: .headline))
+                .foregroundStyle(theme.text)
+                .padding(.top, 12)
+
+            Text(message)
+                .font(GSFont.body(12.5, relativeTo: .caption))
+                .foregroundStyle(theme.neutral500)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 4)
+
+            if ctaTitle != nil || secondaryTitle != nil {
+                HStack(spacing: 9) {
+                    if let ctaTitle, let action {
+                        Button(ctaTitle, action: action)
+                            .buttonStyle(GSPrimaryButtonStyle(fontSize: 13, verticalPadding: 11))
+                            .fixedSize()
+                    }
+                    if let secondaryTitle, let secondaryAction {
+                        Button(secondaryTitle, action: secondaryAction)
+                            .buttonStyle(GSSecondaryButtonStyle(fontSize: 13, horizontalPadding: 15, verticalPadding: 11))
+                            .fixedSize()
+                    }
+                }
+                .padding(.top, 14)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
     }
 }
 

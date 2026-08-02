@@ -444,6 +444,11 @@ struct HomeView: View {
 
     /// The debt counter. Fixed width so the start button's concession is a
     /// predictable amount rather than a text-length-dependent jitter.
+    /// 3D pass (2026-08): STATIC extrusion — it's a status widget, not a
+    /// CTA, so it doesn't sink; accent face + derived darker lip (accent
+    /// reads in every palette). lipHeight 7 — the solo pill beside it is a
+    /// 55pt face on a 7pt lip, so a 7pt lip here lands both face/lip seams
+    /// on the same line inside the row's fixed 62pt.
     private var burpeeOwedWidget: some View {
         Button {
             showBurpeeLedger = true
@@ -465,8 +470,7 @@ struct HomeView: View {
             // Accent, not gold (user 2026-07-31): gold is the CHECK-IN
             // signal color and nothing else gets to wear it. Accent =
             // "yours to act on" — a debt is exactly that.
-            .background(theme.accent)
-            .cornerRadius(GSMetrics.radiusMd)
+            .gs3DCard(cornerRadius: GSMetrics.radiusMd, lipHeight: 7, face: theme.accent)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -480,35 +484,33 @@ struct HomeView: View {
         Button {
             showScheduleSheet = true
         } label: {
-            GSCard(bordered: false) {
-                HStack(spacing: 13) {
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(theme.neutral300)
-                        .frame(width: 42, height: 42)
-                        .overlay(
-                            Image(systemName: "calendar.badge.plus")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundStyle(theme.accent)
-                        )
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Schedule a session")
-                            .font(GSFont.bold(15.5, relativeTo: .headline))
-                            .foregroundStyle(theme.text)
-                        Text("Plan your next lift — solo or with a crew")
-                            .font(GSFont.body(12, relativeTo: .caption))
-                            .foregroundStyle(theme.neutral500)
-                    }
-                    Spacer(minLength: 8)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 13, weight: .semibold))
+            HStack(spacing: 13) {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(theme.neutral300)
+                    .frame(width: 42, height: 42)
+                    .overlay(
+                        Image(systemName: "calendar.badge.plus")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(theme.accent)
+                    )
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Schedule a session")
+                        .font(GSFont.bold(15.5, relativeTo: .headline))
+                        .foregroundStyle(theme.text)
+                    Text("Plan your next lift — solo or with a crew")
+                        .font(GSFont.body(12, relativeTo: .caption))
                         .foregroundStyle(theme.neutral500)
                 }
-                .padding(16)
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(theme.neutral500)
             }
-            .contentShape(Rectangle())
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .gsDiscovery(.homeSchedule)
-        .buttonStyle(.plain)
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
         .padding(.horizontal, 16)
         .padding(.bottom, 12)
     }
@@ -605,26 +607,38 @@ struct HomeView: View {
         // line drops out live — the gold shimmer can no longer run forever on
         // an event nobody started.
         TimelineView(.periodic(from: .now, by: 30)) { context in
+            // 3D pass (2026-08): every state of this slot is an extruded
+            // card that sinks on press (`.gs3DCardStyle`) — the two links
+            // are split so the gold state can wear its own gold face
+            // (derived darker lip, the accent-face path) while the
+            // countdown/empty states ride the theme's raised pair.
             if let session = nextActionableSession(now: context.date) {
-                NavigationLink {
-                    // .id — the TimelineView re-resolves this session every
-                    // 30s; a pushed lobby must be rebuilt, not re-propped
-                    // (the exact route that wrote 14 sets into a scheduled
-                    // future occurrence, field bug 2026-07-30/31).
-                    LobbyView(session: session)
-                        .id(session.id)
-                } label: {
-                    if checkInAvailable(session, now: context.date) {
+                if checkInAvailable(session, now: context.date) {
+                    NavigationLink {
+                        // .id — the TimelineView re-resolves this session
+                        // every 30s; a pushed lobby must be rebuilt, not
+                        // re-propped (the exact route that wrote 14 sets
+                        // into a scheduled future occurrence, field bug
+                        // 2026-07-30/31).
+                        LobbyView(session: session)
+                            .id(session.id)
+                    } label: {
                         goldCheckInCard(session)
-                    } else {
-                        GSCard(bordered: false) {
-                            countdownBody(session, now: context.date)
-                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                                .padding(15)
-                        }
                     }
+                    .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd,
+                                                face: Self.goldBottom))
+                } else {
+                    NavigationLink {
+                        // .id — same rebuild-not-reprop rule as above.
+                        LobbyView(session: session)
+                            .id(session.id)
+                    } label: {
+                        countdownBody(session, now: context.date)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .padding(15)
+                    }
+                    .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
                 }
-                .buttonStyle(.plain)
             } else {
                 // Empty state is a POINTER, not a dead card (user feedback
                 // 2026-07-25): with nothing scheduled, this slot offers the
@@ -635,14 +649,11 @@ struct HomeView: View {
                     if hasNoCrew { appState.selectedTab = .social }
                     else { showScheduleSheet = true }
                 } label: {
-                    GSCard(bordered: false) {
-                        checkInEmptyBody
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                            .padding(15)
-                    }
-                    .contentShape(Rectangle())
+                    checkInEmptyBody
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .padding(15)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
             }
         }
     }
@@ -713,6 +724,11 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .padding(15)
+        // 3D pass: the gradient stays the card's visible face — it sits
+        // exactly over the style's solid goldBottom face plate, whose only
+        // remaining jobs are the derived dark-amber lip and the sink. The
+        // style's clipShape rounds gradient + shimmer together (this
+        // replaces the old .cornerRadius here).
         .background(
             LinearGradient(colors: [Self.goldTop, Self.goldBottom],
                            startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -730,9 +746,7 @@ struct HomeView: View {
             }
             .allowsHitTesting(false)
         )
-        .cornerRadius(GSMetrics.radiusMd)
         .onAppear { checkInShimmer = true }
-        .contentShape(Rectangle())
     }
 
     /// Compact countdown units (user feedback 2026-07-23): two significant
@@ -856,32 +870,29 @@ struct HomeView: View {
             // framing.
             showScheduleSheet = true
         } label: {
-            GSCard(bordered: false) {
-                HStack(spacing: 12) {
-                    ZStack {
-                        Circle().stroke(theme.neutral300, lineWidth: 4)
-                        Image(systemName: "flame")
-                            .font(.system(size: 15))
-                            .foregroundStyle(theme.accent)
-                    }
-                    .frame(width: 52, height: 52)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(hasTrainedBefore ? "Start a new streak" : "Schedule your first lift")
-                            .font(GSFont.bold(14, relativeTo: .subheadline))
-                            .foregroundStyle(theme.text)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text(hasTrainedBefore ? "Train this week to get it going again" : "Two sessions a week builds one")
-                            .font(GSFont.body(11, relativeTo: .caption2))
-                            .foregroundStyle(theme.neutral500)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle().stroke(theme.neutral300, lineWidth: 4)
+                    Image(systemName: "flame")
+                        .font(.system(size: 15))
+                        .foregroundStyle(theme.accent)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                .padding(15)
+                .frame(width: 52, height: 52)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(hasTrainedBefore ? "Start a new streak" : "Schedule your first lift")
+                        .font(GSFont.bold(14, relativeTo: .subheadline))
+                        .foregroundStyle(theme.text)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(hasTrainedBefore ? "Train this week to get it going again" : "Two sessions a week builds one")
+                        .font(GSFont.body(11, relativeTo: .caption2))
+                        .foregroundStyle(theme.neutral500)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
-            .contentShape(Rectangle())
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .padding(15)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(hasTrainedBefore
                             ? "Start a new streak. Schedule a workout."
@@ -897,35 +908,38 @@ struct HomeView: View {
         // the subtitle celebrates instead of counting down to the past.
         let next = Self.streakMilestones.first(where: { $0 > current })
         let progress = next.map { min(1, Double(current) / Double($0)) } ?? 1
-        return GSCard(bordered: false) {
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .stroke(theme.neutral300, lineWidth: 4)
-                    Circle()
-                        .trim(from: 0, to: progress)
-                        .stroke(theme.accent, style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                    Image(systemName: "flame.fill")
-                        .font(.system(size: 15))
-                        .foregroundStyle(theme.accent)
-                }
-                .frame(width: 52, height: 52)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("\(current)")
-                        .font(GSFont.heading(24, relativeTo: .title2))
-                        .foregroundStyle(theme.text)
-                    Text("day streak")
-                        .font(GSFont.body(11, relativeTo: .caption2))
-                        .foregroundStyle(theme.neutral500)
-                    Text(next.map { "\($0 - current) to badge" } ?? "every badge earned")
-                        .font(GSFont.bold(10.5, relativeTo: .caption2))
-                        .foregroundStyle(theme.accent)
-                }
+        // Static extrusion — the count card isn't tappable, so it sits
+        // still while its invite sibling (a Button) sinks. Same radius/lip
+        // as the check-in card beside it, so the fixedSize row's equal
+        // heights land on equal FACE heights too.
+        return HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .stroke(theme.neutral300, lineWidth: 4)
+                Circle()
+                    .trim(from: 0, to: progress)
+                    .stroke(theme.accent, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Image(systemName: "flame.fill")
+                    .font(.system(size: 15))
+                    .foregroundStyle(theme.accent)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .padding(15)
+            .frame(width: 52, height: 52)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(current)")
+                    .font(GSFont.heading(24, relativeTo: .title2))
+                    .foregroundStyle(theme.text)
+                Text("day streak")
+                    .font(GSFont.body(11, relativeTo: .caption2))
+                    .foregroundStyle(theme.neutral500)
+                Text(next.map { "\($0 - current) to badge" } ?? "every badge earned")
+                    .font(GSFont.bold(10.5, relativeTo: .caption2))
+                    .foregroundStyle(theme.accent)
+            }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .padding(15)
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(next.map { "\(current) day streak, \($0 - current) days to the next badge" }
                             ?? "\(current) day streak, every badge earned")

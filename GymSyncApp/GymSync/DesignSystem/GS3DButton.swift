@@ -81,3 +81,142 @@ public extension ButtonStyle where Self == GS3DButtonStyle {
         GS3DButtonStyle(face: face, lip: lip, cornerRadius: cornerRadius, lipHeight: lipHeight)
     }
 }
+
+// MARK: - GS3DCard (widget extrusion, 2026-08 "every widget gets depth")
+//
+// The card-class sibling of `GS3DButtonStyle`: the same face-on-lip anatomy
+// applied to WIDGETS — the chunky rounded containers (You grid, Shop tiles,
+// Home cards, lobby cards). Two forms:
+//
+//   * `.gs3DCard(...)` (ViewModifier) — static containers. Face + lip, no
+//     press travel.
+//   * `.buttonStyle(.gs3DCardStyle(...))` — tappable cards (Button /
+//     NavigationLink labels). Same geometry plus the press-sink, so a
+//     tappable widget animates exactly like the RACK IT button.
+//
+// Conventions (mirror the button precedent):
+//   * Default lip is 6pt — one step quieter than the 7pt buttons.
+//   * `face`/`lip` default to nil = the theme's tuned neutral raised pair
+//     (`theme.raised3DFace`/`theme.raised3DLip`). An EXPLICIT non-neutral
+//     face (accent, gold) with no explicit lip derives its lip the way
+//     accent buttons do: face + black 0.45 overlay.
+//   * The face REPLACES `theme.surface` and the old 1pt neutral500 stroke
+//     disappears — the lip is what delineates the card now.
+//   * The lip lives INSIDE the composite's frame: give a fixed-height card
+//     a face of (total − lipHeight) so the layout footprint never grows
+//     (Shop's 172pt tiles keep 172).
+//   * Content + face are clipped to the rounded shape (the `GSCard`
+//     behavior the converted widgets relied on for full-bleed inner rows).
+
+private struct GS3DCardChrome {
+    let cornerRadius: CGFloat
+    let lipHeight: CGFloat
+    let face: Color?
+    let lip: Color?
+
+    func faceColor(_ theme: GSTheme) -> Color {
+        face ?? theme.raised3DFace
+    }
+
+    /// The lip layer under the face. Explicit lip wins; a neutral (default)
+    /// face falls back to the theme's raised pair; an explicit face with no
+    /// explicit lip derives a darker lip (face + black 0.45 — the accent
+    /// button path; `accent700` is a LIGHTER tint, never a lip).
+    @ViewBuilder
+    func lipLayer(_ theme: GSTheme) -> some View {
+        if let lip {
+            RoundedRectangle(cornerRadius: cornerRadius).fill(lip)
+        } else if let face {
+            ZStack {
+                RoundedRectangle(cornerRadius: cornerRadius).fill(face)
+                RoundedRectangle(cornerRadius: cornerRadius).fill(Color.black.opacity(0.45))
+            }
+        } else {
+            RoundedRectangle(cornerRadius: cornerRadius).fill(theme.raised3DLip)
+        }
+    }
+}
+
+/// Static extruded card — see the GS3DCard MARK above.
+public struct GS3DCardModifier: ViewModifier {
+    @Environment(\.gsTheme) private var theme
+
+    private let chrome: GS3DCardChrome
+
+    public init(cornerRadius: CGFloat = 16,
+                lipHeight: CGFloat = 6,
+                face: Color? = nil,
+                lip: Color? = nil) {
+        chrome = GS3DCardChrome(cornerRadius: cornerRadius, lipHeight: lipHeight,
+                                face: face, lip: lip)
+    }
+
+    public func body(content: Content) -> some View {
+        content
+            .background(
+                RoundedRectangle(cornerRadius: chrome.cornerRadius)
+                    .fill(chrome.faceColor(theme))
+            )
+            .clipShape(RoundedRectangle(cornerRadius: chrome.cornerRadius))
+            .padding(.bottom, chrome.lipHeight)
+            .background(chrome.lipLayer(theme))
+    }
+}
+
+public extension View {
+    /// `.gs3DCard()` — static extruded widget card (face + lip, no travel).
+    /// See the GS3DCard MARK in GS3DButton.swift.
+    func gs3DCard(cornerRadius: CGFloat = 16,
+                  lipHeight: CGFloat = 6,
+                  face: Color? = nil,
+                  lip: Color? = nil) -> some View {
+        modifier(GS3DCardModifier(cornerRadius: cornerRadius, lipHeight: lipHeight,
+                                  face: face, lip: lip))
+    }
+}
+
+/// Interactive extruded card — the tappable-widget companion of
+/// `GS3DCardModifier`: identical geometry, plus the RACK IT press-sink.
+/// Content = the card's own label (the caller supplies padding/frames; the
+/// face hugs the label, exactly like `GS3DButtonStyle`).
+public struct GS3DCardStyle: ButtonStyle {
+    @Environment(\.gsTheme) private var theme
+    @Environment(\.isEnabled) private var isEnabled
+
+    private let chrome: GS3DCardChrome
+
+    public init(cornerRadius: CGFloat = 16,
+                lipHeight: CGFloat = 6,
+                face: Color? = nil,
+                lip: Color? = nil) {
+        chrome = GS3DCardChrome(cornerRadius: cornerRadius, lipHeight: lipHeight,
+                                face: face, lip: lip)
+    }
+
+    public func makeBody(configuration: Configuration) -> some View {
+        let pressed = configuration.isPressed && isEnabled
+        return configuration.label
+            .background(
+                RoundedRectangle(cornerRadius: chrome.cornerRadius)
+                    .fill(chrome.faceColor(theme))
+            )
+            .clipShape(RoundedRectangle(cornerRadius: chrome.cornerRadius))
+            .opacity(isEnabled ? 1 : 0.5)
+            .offset(y: pressed ? chrome.lipHeight : 0)
+            .padding(.bottom, chrome.lipHeight)
+            .background(chrome.lipLayer(theme))
+            .contentShape(Rectangle())
+            .animation(.easeOut(duration: 0.08), value: pressed)
+    }
+}
+
+public extension ButtonStyle where Self == GS3DCardStyle {
+    /// `.buttonStyle(.gs3DCardStyle())` — see GS3DCardStyle.
+    static func gs3DCardStyle(cornerRadius: CGFloat = 16,
+                              lipHeight: CGFloat = 6,
+                              face: Color? = nil,
+                              lip: Color? = nil) -> GS3DCardStyle {
+        GS3DCardStyle(cornerRadius: cornerRadius, lipHeight: lipHeight,
+                      face: face, lip: lip)
+    }
+}

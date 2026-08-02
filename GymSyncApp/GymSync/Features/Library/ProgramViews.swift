@@ -34,8 +34,11 @@ struct ProgramCard: View {
         ProgramMath.isComplete(startedOn: enrollment.startedOn, weeks: enrollment.weeks)
     }
 
+    // 3D pass (2026-08): no card chrome of its own anymore — this is the
+    // LABEL of CampaignsTabView's NavigationLink, which wears
+    // `.gs3DCardStyle` (extruded face + lip + press-sink). The old internal
+    // GSCard would have painted flat surface over that face.
     var body: some View {
-        GSCard(bordered: false) {
             // No internal kicker — this card always sits directly under the
             // tab's "Your program" GSSectionHeader (screenshot review: the
             // pair read as a stuttered duplicate).
@@ -83,7 +86,6 @@ struct ProgramCard: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
-        }
     }
 }
 
@@ -93,27 +95,27 @@ struct ProgramTemplateCard: View {
     @Environment(\.gsTheme) private var theme
     let template: ProgramTemplate
 
+    // 3D pass (2026-08): chrome comes from the call site's `.gs3DCardStyle`
+    // — see ProgramCard's body note.
     var body: some View {
-        GSCard(bordered: false) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("PROGRAM")
-                    .font(GSFont.bodyMedium(11, relativeTo: .caption2))
-                    .tracking(1.2)
-                    .foregroundStyle(theme.neutral700)
-                Text(template.name)
-                    .font(GSFont.heading(16, relativeTo: .headline))
-                    .foregroundStyle(theme.text)
-                Text(template.summary)
-                    .font(GSFont.body(13, relativeTo: .subheadline))
-                    .foregroundStyle(theme.neutral500)
-                    .lineLimit(2)
-                Text("\(template.weeks.count) weeks · \(template.sessionsPerWeek) sessions/wk")
-                    .font(GSFont.bodyMedium(12, relativeTo: .caption))
-                    .foregroundStyle(theme.accent700)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
+        VStack(alignment: .leading, spacing: 4) {
+            Text("PROGRAM")
+                .font(GSFont.bodyMedium(11, relativeTo: .caption2))
+                .tracking(1.2)
+                .foregroundStyle(theme.neutral700)
+            Text(template.name)
+                .font(GSFont.heading(16, relativeTo: .headline))
+                .foregroundStyle(theme.text)
+            Text(template.summary)
+                .font(GSFont.body(13, relativeTo: .subheadline))
+                .foregroundStyle(theme.neutral500)
+                .lineLimit(2)
+            Text("\(template.weeks.count) weeks · \(template.sessionsPerWeek) sessions/wk")
+                .font(GSFont.bodyMedium(12, relativeTo: .caption))
+                .foregroundStyle(theme.accent700)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
     }
 }
 

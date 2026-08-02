@@ -28,20 +28,26 @@ struct TrainingCalendarWidget: View {
     let onFindCrew: () -> Void
 
     var body: some View {
-        GSCard(bordered: false) {
-            VStack(alignment: .leading, spacing: 0) {
-                header
-                if isEmpty {
-                    emptyBody
-                } else {
-                    monthGroupedField.padding(.top, 14)
-                    if !upcomingSessions.isEmpty {
-                        upcomingList.padding(.top, 18)
-                    }
+        // 3D pass (2026-08): static extruded card (`.gs3DCard`) replaces the
+        // flat GSCard — this container is large and not itself tappable (the
+        // upcoming rows inside keep their own NavigationLinks), so it sits
+        // still on its lip. The dot field reads against the raised face:
+        // trained (text) and upcoming (accent) dots keep their contrast in
+        // every palette; the dim past/future dots stay dim.
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            if isEmpty {
+                emptyBody
+            } else {
+                monthGroupedField.padding(.top, 14)
+                if !upcomingSessions.isEmpty {
+                    upcomingList.padding(.top, 18)
                 }
             }
-            .padding(16)
         }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd)
     }
 
     private var isEmpty: Bool { completedSessions.isEmpty && upcomingSessions.isEmpty }

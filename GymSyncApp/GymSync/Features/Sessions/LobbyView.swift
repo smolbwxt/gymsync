@@ -773,11 +773,11 @@ struct LobbyView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .background(theme.surface)
         // Onyx alignment (2026-07-31): stripe-and-hairline chrome out,
-        // floating-widget card in — matches the live pages' language.
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        // floating-widget card in. 3D pass (2026-08): the card is extruded
+        // now — static face + lip, no stroke. NOT the gold check-in BUTTON
+        // in the action bar (already 3D) — this is only its status card.
+        .gs3DCard(cornerRadius: 16)
     }
 
     // MARK: - Proposals Section
@@ -824,7 +824,9 @@ struct LobbyView: View {
                 }
             }
 
-            VStack(spacing: 4) {
+            // 3D pass: 4 → 8pt row spacing so each card's 4pt lip keeps a
+            // sliver of ground beneath it instead of touching the next row.
+            VStack(spacing: 8) {
                 ForEach(participants, id: \.participant.userID) { item in
                     participantRow(item)
                 }
@@ -927,8 +929,17 @@ struct LobbyView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .background(theme.surface)
-        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(isSpeaking ? theme.accent : theme.divider, lineWidth: isSpeaking ? 2 : 1))
+        // 3D pass (2026-08): each roster card is a quiet static extrusion —
+        // 4pt lip (compact rows; full cards wear 6). The old neutral/divider
+        // stroke is gone (the lip delineates), but the SPEAKING accent ring
+        // stays as a semantic overlay on the face.
+        .overlay {
+            if isSpeaking {
+                RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
+                    .strokeBorder(theme.accent, lineWidth: 2)
+            }
+        }
+        .gs3DCard(cornerRadius: GSMetrics.radiusSm, lipHeight: 4)
         .opacity(isMuted ? 0.7 : 1)
     }
 

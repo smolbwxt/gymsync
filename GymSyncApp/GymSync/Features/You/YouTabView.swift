@@ -8,11 +8,14 @@ import SwiftUI
 /// `SettingsView`, pushed from the SETTINGS widget — nothing was dropped in
 /// the move.
 ///
-/// Widget card recipe (Onyx): `theme.surface`, radius 16 (`GSMetrics.
-/// radiusSm`), 1pt `theme.neutral500.opacity(0.35)` stroke, k-label title
-/// (11pt bold, tracking 1.1, `theme.neutral700`, uppercase — bumped from
-/// 10 in the 2026-08 bigger-widgets pass), a middle content line, and a
-/// quieter footer k-label.
+/// Widget card recipe (2026-08 3D pass): extruded `GS3DCard` chrome — the
+/// theme's raised face on a 6pt darker lip (the RACK IT anatomy at card
+/// scale) replacing the old flat `theme.surface` + 1pt neutral500 stroke.
+/// Tappable widgets sink on press (`.gs3DCardStyle`); LOCKER sits still
+/// (`.gs3DCard`). Content recipe unchanged: k-label title (11pt bold,
+/// tracking 1.1, `theme.neutral700`, uppercase — bumped from 10 in the
+/// 2026-08 bigger-widgets pass), a middle content line, and a quieter
+/// footer k-label.
 struct YouTabView: View {
     @Environment(\.gsTheme) private var theme
     @Environment(AppState.self) private var appState
@@ -179,7 +182,7 @@ struct YouTabView: View {
                 rackFace
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("My Rack")
     }
@@ -235,7 +238,7 @@ struct YouTabView: View {
                     .minimumScaleFactor(0.8)
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Stats")
     }
@@ -252,7 +255,7 @@ struct YouTabView: View {
                     .minimumScaleFactor(0.8)
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Routines")
     }
@@ -282,7 +285,7 @@ struct YouTabView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 9))
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
         // The exercises catalog's discovery highlight rides along from
         // Library's old Discover segment (same target, same storage key —
         // anyone who already pressed it there stays pressed here).
@@ -292,6 +295,8 @@ struct YouTabView: View {
     }
 
     /// Inert this round — avatar, backdrops and effects come later.
+    /// Static extrusion (no sink — nothing to tap); the whole face + lip
+    /// dims to 0.6, the same treatment a disabled 3D button gets.
     private var lockerWidget: some View {
         widgetCard(title: "LOCKER", footer: "SOON") {
             Text("Avatar · backdrops · effects")
@@ -300,6 +305,7 @@ struct YouTabView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         }
+        .gs3DCard(cornerRadius: GSMetrics.radiusSm)
         .opacity(0.6)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Locker — coming soon")
@@ -317,12 +323,19 @@ struct YouTabView: View {
                     .minimumScaleFactor(0.8)
             }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Settings")
     }
 
     // MARK: - Widget card chrome
+    //
+    // 3D pass (2026-08): this builder is the CONTENT of the card only — the
+    // extruded face/lip chrome comes from the call site (`.gs3DCardStyle`
+    // for tappable widgets, `.gs3DCard` for LOCKER), replacing the old flat
+    // `theme.surface` + neutral500 stroke here. minHeight 144 = the prior
+    // 150 minus the 6pt lip, which lives INSIDE the composite's frame — the
+    // grid's footprint doesn't grow.
 
     private func widgetCard<Face: View>(
         title: String,
@@ -337,14 +350,7 @@ struct YouTabView: View {
             kLabel(footer, color: theme.neutral500)
         }
         .padding(12)
-        .frame(maxWidth: .infinity, minHeight: 150, alignment: .leading)
-        .background(theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: GSMetrics.radiusSm))
-        .overlay(
-            RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
-                .strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1)
-        )
-        .contentShape(RoundedRectangle(cornerRadius: GSMetrics.radiusSm))
+        .frame(maxWidth: .infinity, minHeight: 144, alignment: .leading)
     }
 
     private func kLabel(_ text: String, color: Color) -> some View {

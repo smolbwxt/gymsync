@@ -18,9 +18,12 @@ import SwiftUI
 /// added the price glyph but the economy still doesn't transact here).
 ///
 /// Chrome follows the tab-root idiom every other tab root uses (in-content
-/// title + hidden system bar, 88pt dock clearance) and the Onyx card recipe
-/// (`theme.surface`, radius 16, 1pt `theme.neutral500.opacity(0.35)`
-/// stroke, tracked 10pt k-labels in `theme.neutral700`).
+/// title + hidden system bar, 88pt dock clearance). Card chrome (2026-08 3D
+/// pass): tiles and shelf rows wear the extruded `GS3DCard` face/lip —
+/// tappable ones sink like RACK IT, inert ones sit still — replacing the
+/// old flat surface + neutral500 stroke; tracked 10pt k-labels in
+/// `theme.neutral700` unchanged. RACK IT itself stays a 3D BUTTON inside
+/// its now-extruded tile (chunky-on-chunky, the Duolingo way).
 struct ShopTabView: View {
     @Environment(\.gsTheme) private var theme
 
@@ -169,74 +172,82 @@ struct ShopTabView: View {
 
     /// One fixed tile height for ALL FOUR tiles so grid rows always align
     /// (2026-08 congruity pass — the previous free-height tiles doubled the
-    /// waveform/duration info and left ragged rows).
+    /// waveform/duration info and left ragged rows). The 3D pass keeps the
+    /// 172pt footprint: the lip lives INSIDE it (face = 172 − lip), and the
+    /// tile anatomy's ~12pt of Spacer slack absorbs the 6pt face shrink.
     private static let tileHeight: CGFloat = 172
+    private static let tileLipHeight: CGFloat = 6
 
     /// Tile anatomy, top to bottom (approved mockup): header row (compact
     /// plate token + FREE chip or chalk price) · title · waveform strip ·
     /// footer row (duration k-label + RACK IT / preview affordance).
+    ///
+    /// 3D pass (2026-08): the tile is a Button wearing `.gs3DCardStyle`, so
+    /// the whole card sinks on the preview tap (was an `.onTapGesture`
+    /// container). Same container-tap + inner-button shape as before — the
+    /// nested RACK IT Button still wins its own taps. The loaner keeps its
+    /// SEMANTIC accent ring, drawn on the face so it travels with the press;
+    /// the other tiles' neutral stroke is gone (the lip delineates now).
     private func rackTile(_ sound: SoundboardSound, isLoaner: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top) {
-                GSPlateToken(
-                    name: sound.plateName,
-                    envelope: sound.envelope,
-                    durationMs: sound.durationMs,
-                    isClipped: sound.isClipped,
-                    cooldownUntil: nil,
-                    size: 44,
-                    compact: true
-                )
-                Spacer(minLength: 8)
-                if isLoaner {
-                    freeChip
-                } else {
-                    chalkPrice(for: sound)
-                }
-            }
-            Spacer(minLength: 8)
-            Text(displayLabel(for: sound))
-                .font(GSFont.bold(15, relativeTo: .subheadline))
-                .foregroundStyle(theme.text)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-            Spacer(minLength: 6)
-            waveformStrip(for: sound)
-            Spacer(minLength: 6)
-            HStack(alignment: .center) {
-                Text(durationFooter(sound))
-                    .font(GSFont.bold(10, relativeTo: .caption2))
-                    .tracking(1.1)
-                    .foregroundStyle(theme.neutral700)
-                Spacer(minLength: 8)
-                if isLoaner {
-                    loanerRackControl(for: sound.slug)
-                } else {
-                    // Preview affordance — display-only; the whole tile's
-                    // tap gesture below is what actually previews.
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(theme.neutral700)
-                }
-            }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .frame(height: Self.tileHeight)
-        .background(theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: GSMetrics.radiusSm))
-        .overlay(
-            RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
-                .strokeBorder(
-                    isLoaner ? theme.accent : theme.neutral500.opacity(0.35),
-                    lineWidth: isLoaner ? 1.5 : 1)
-        )
-        .contentShape(Rectangle())
-        // Tap = preview. Same container-tap + inner-button shape the sound
-        // library's rows use; the inner RACK IT Button wins its own taps.
-        .onTapGesture {
+        Button {
             Task { await SoundboardPlayer.shared.play(slug: sound.slug) }
+        } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .top) {
+                    GSPlateToken(
+                        name: sound.plateName,
+                        envelope: sound.envelope,
+                        durationMs: sound.durationMs,
+                        isClipped: sound.isClipped,
+                        cooldownUntil: nil,
+                        size: 44,
+                        compact: true
+                    )
+                    Spacer(minLength: 8)
+                    if isLoaner {
+                        freeChip
+                    } else {
+                        chalkPrice(for: sound)
+                    }
+                }
+                Spacer(minLength: 8)
+                Text(displayLabel(for: sound))
+                    .font(GSFont.bold(15, relativeTo: .subheadline))
+                    .foregroundStyle(theme.text)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                Spacer(minLength: 6)
+                waveformStrip(for: sound)
+                Spacer(minLength: 6)
+                HStack(alignment: .center) {
+                    Text(durationFooter(sound))
+                        .font(GSFont.bold(10, relativeTo: .caption2))
+                        .tracking(1.1)
+                        .foregroundStyle(theme.neutral700)
+                    Spacer(minLength: 8)
+                    if isLoaner {
+                        loanerRackControl(for: sound.slug)
+                    } else {
+                        // Preview affordance — display-only; the tile
+                        // Button itself is what actually previews.
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(theme.neutral700)
+                    }
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .frame(height: Self.tileHeight - Self.tileLipHeight)
+            .overlay {
+                if isLoaner {
+                    RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
+                        .strokeBorder(theme.accent, lineWidth: 1.5)
+                }
+            }
         }
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm,
+                                    lipHeight: Self.tileLipHeight))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(sound.label), tap to preview")
     }
@@ -376,13 +387,10 @@ struct ShopTabView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .frame(height: Self.tileHeight)
-        .background(theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: GSMetrics.radiusSm))
-        .overlay(
-            RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
-                .strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1)
-        )
+        .frame(height: Self.tileHeight - Self.tileLipHeight)
+        // Static extrusion — placeholders stand exactly where the tiles
+        // will, so the loaded grid doesn't pop from flat to 3D.
+        .gs3DCard(cornerRadius: GSMetrics.radiusSm, lipHeight: Self.tileLipHeight)
     }
 
     private var retryRow: some View {
@@ -404,14 +412,11 @@ struct ShopTabView: View {
             .buttonStyle(.plain)
         }
         .padding(.horizontal, 14)
-        .frame(height: 48)
+        // 42pt face + 6pt lip = the shelf rows' 48pt line; the inner RETRY
+        // button keeps its own taps on the static card.
+        .frame(height: 42)
         .frame(maxWidth: .infinity)
-        .background(theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: GSMetrics.radiusSm))
-        .overlay(
-            RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
-                .strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1)
-        )
+        .gs3DCard(cornerRadius: GSMetrics.radiusSm)
     }
 
     private var emptyCard: some View {
@@ -421,12 +426,7 @@ struct ShopTabView: View {
             .foregroundStyle(theme.neutral700)
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(theme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: GSMetrics.radiusSm))
-            .overlay(
-                RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
-                    .strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1)
-            )
+            .gs3DCard(cornerRadius: GSMetrics.radiusSm)
     }
 
     // MARK: - Data
@@ -469,17 +469,13 @@ struct ShopTabView: View {
                     .foregroundStyle(theme.neutral500)
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 15)
-            .frame(minHeight: 44)
-            .background(theme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: GSMetrics.radiusSm))
-            .overlay(
-                RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
-                    .strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1)
-            )
-            .contentShape(Rectangle())
+            // 3D pass: vertical padding 15 → 12 and the 44pt floor spans
+            // face + lip (44 − 6, the GSPrimaryButtonStyle precedent), so
+            // the extruded row keeps the shelf's prior ~45pt footprint.
+            .padding(.vertical, 12)
+            .frame(minHeight: 38)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
         // Campaigns' discovery highlight rides along from Library's old
         // Campaigns segment (same target, same storage key — anyone who
         // already pressed it there stays pressed here).
@@ -491,6 +487,8 @@ struct ShopTabView: View {
     /// The not-yet shelves — inert by design (no action, 0.6 opacity, SOON
     /// chip). They exist so the shelf structure reads as a place that will
     /// grow, without pretending anything is tappable or purchasable.
+    /// Static extrusion (no sink — nothing to press); the whole face + lip
+    /// dims together, and 42pt face + 6pt lip keeps the 48pt row.
     private func inertShelfRow(_ title: String) -> some View {
         HStack(spacing: 8) {
             Text(title)
@@ -508,14 +506,9 @@ struct ShopTabView: View {
                 .clipShape(Capsule())
         }
         .padding(.horizontal, 14)
-        .frame(height: 48)
+        .frame(height: 42)
         .frame(maxWidth: .infinity)
-        .background(theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1)
-        )
+        .gs3DCard(cornerRadius: 14)
         .opacity(0.6)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title), coming soon")

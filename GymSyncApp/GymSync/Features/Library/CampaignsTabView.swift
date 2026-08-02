@@ -65,12 +65,16 @@ struct CampaignsTabView: View {
                     programSection
                     // Campaigns-only empty copy — the programs section above
                     // means the tab itself is never truly empty anymore.
+                    // `extruded` — static 3D card, matching the program
+                    // cards above it (2026-08 3D pass).
                     GSEmptyState(
                         icon: "flag.checkered",
                         title: "No campaigns right now",
-                        message: "Seasonal challenges will show up here when one opens."
+                        message: "Seasonal challenges will show up here when one opens.",
+                        extruded: true
                     )
                     .padding(.top, 40)
+                    .padding(.horizontal, 16)
                 } else {
                     programSection
                     if !active.isEmpty {
@@ -84,9 +88,9 @@ struct CampaignsTabView: View {
                             } label: {
                                 campaignRow(campaign, trailing: "Active")
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
                             .padding(.horizontal, 16)
-                            .padding(.bottom, 6)
+                            .padding(.bottom, 10)
                         }
                     }
                     if !upcoming.isEmpty {
@@ -100,9 +104,9 @@ struct CampaignsTabView: View {
                             } label: {
                                 campaignRow(campaign, trailing: countdownText(campaign))
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
                             .padding(.horizontal, 16)
-                            .padding(.bottom, 6)
+                            .padding(.bottom, 10)
                         }
                     }
                     // "Past" — ended campaigns the user joined (Flow 8 :884's
@@ -119,9 +123,9 @@ struct CampaignsTabView: View {
                             } label: {
                                 campaignRow(campaign, trailing: "Ended")
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
                             .padding(.horizontal, 16)
-                            .padding(.bottom, 6)
+                            .padding(.bottom, 10)
                         }
                     }
                 }
@@ -161,9 +165,12 @@ struct CampaignsTabView: View {
                     sessionsThisWeek: programSessionsThisWeek
                 )
             }
-            .buttonStyle(.plain)
+            // 3D pass (2026-08): tappable card — extruded face + lip +
+            // press-sink. Bottom padding 6 → 10 so the 6pt lip doesn't
+            // crowd the next card.
+            .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
             .padding(.horizontal, 16)
-            .padding(.bottom, 6)
+            .padding(.bottom, 10)
         } else {
             GSSectionHeader("Start a program")
                 .padding(.horizontal, 16)
@@ -178,46 +185,47 @@ struct CampaignsTabView: View {
                 } label: {
                     ProgramTemplateCard(template: template)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
                 .padding(.horizontal, 16)
-                .padding(.bottom, 6)
+                .padding(.bottom, 10)
             }
         }
     }
 
     // MARK: - Row
 
+    // 3D pass (2026-08): chrome comes from the NavigationLink's
+    // `.gs3DCardStyle` — this is the LABEL only (the old internal GSCard
+    // would have painted flat surface over the extruded face).
     private func campaignRow(_ campaign: Campaign, trailing: String) -> some View {
-        GSCard(bordered: false) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("CAMPAIGN")
-                    .font(GSFont.bodyMedium(11, relativeTo: .caption2))
-                    .tracking(1.2)
-                    .foregroundStyle(theme.neutral700)
-                Text(campaign.name)
-                    .font(GSFont.heading(16, relativeTo: .headline))
-                    .foregroundStyle(theme.text)
-                if let description = campaign.description, !description.isEmpty {
-                    Text(description)
-                        .font(GSFont.body(13, relativeTo: .subheadline))
-                        .foregroundStyle(theme.neutral500)
-                        .lineLimit(2)
-                }
-                HStack(spacing: 6) {
-                    Text(dateRangeText(campaign))
-                        .font(GSFont.body(12, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral500)
-                    Text("·")
-                        .font(GSFont.body(12, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral500)
-                    Text(trailing)
-                        .font(GSFont.bodyMedium(12, relativeTo: .caption))
-                        .foregroundStyle(theme.accent700)
-                }
+        VStack(alignment: .leading, spacing: 4) {
+            Text("CAMPAIGN")
+                .font(GSFont.bodyMedium(11, relativeTo: .caption2))
+                .tracking(1.2)
+                .foregroundStyle(theme.neutral700)
+            Text(campaign.name)
+                .font(GSFont.heading(16, relativeTo: .headline))
+                .foregroundStyle(theme.text)
+            if let description = campaign.description, !description.isEmpty {
+                Text(description)
+                    .font(GSFont.body(13, relativeTo: .subheadline))
+                    .foregroundStyle(theme.neutral500)
+                    .lineLimit(2)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
+            HStack(spacing: 6) {
+                Text(dateRangeText(campaign))
+                    .font(GSFont.body(12, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+                Text("·")
+                    .font(GSFont.body(12, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+                Text(trailing)
+                    .font(GSFont.bodyMedium(12, relativeTo: .caption))
+                    .foregroundStyle(theme.accent700)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
     }
 
     private func dateRangeText(_ campaign: Campaign) -> String {

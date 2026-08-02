@@ -270,9 +270,9 @@ struct BurpeeLedgerView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.surface)
-        .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 20))
+        // 3D pass (2026-08): static extruded card (the lip replaces the
+        // old neutral stroke).
+        .gs3DCard(cornerRadius: 20)
     }
 
     // MARK: - Crew debts
@@ -290,11 +290,12 @@ struct BurpeeLedgerView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
-            .background(theme.surface)
             // Onyx alignment (2026-07-31): the row list rides in one
-            // floating card, like every list on the live pages.
-            .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: 20))
+            // floating card, like every list on the live pages. 3D pass
+            // (2026-08): that card is extruded now — static face + lip;
+            // the inner rows (dividers, isMe tint) sit ON the face and are
+            // clipped by the card shape exactly as before.
+            .gs3DCard(cornerRadius: 20)
         }
     }
 
@@ -383,9 +384,8 @@ struct BurpeeLedgerView: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, minHeight: 44)
-        .background(theme.surface)
-        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        // 3D pass (2026-08): static extruded card, same as its siblings.
+        .gs3DCard(cornerRadius: 16)
     }
 
     // MARK: - Payoff sheet (2026-07-31)

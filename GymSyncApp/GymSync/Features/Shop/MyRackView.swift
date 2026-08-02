@@ -140,12 +140,10 @@ struct MyRackView: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: GSMetrics.radiusSm))
-        .overlay(
-            RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
-                .strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1)
-        )
+        // 3D pass (2026-08): static extruded card — the dock is the
+        // screen's one widget; the catalog rows below stay FLAT on purpose
+        // (rows are furniture, not widgets).
+        .gs3DCard(cornerRadius: GSMetrics.radiusSm)
     }
 
     @ViewBuilder
