@@ -70,7 +70,11 @@ struct CompletedSessionView: View {
                 headerSection
                     .padding(.bottom, 14)
 
-                if isLoading {
+                // Full-screen spinner only while the participant list is
+                // EMPTY — the duration-edit sheet re-runs load(), and letting
+                // `isLoading` swap the populated stats/rows for a spinner
+                // resets scroll to the top (ExercisesListView's afbb415 fix).
+                if isLoading && participants.isEmpty {
                     ProgressView()
                         .frame(maxWidth: .infinity)
                         .padding(.top, 32)

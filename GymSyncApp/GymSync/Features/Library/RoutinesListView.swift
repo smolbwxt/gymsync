@@ -35,11 +35,15 @@ struct RoutinesListView: View {
             }
 
             Section {
-                if loading {
+                // Loading/error rows only while the list is EMPTY — `.task`
+                // re-fires on pop-back from a routine detail push, and letting
+                // `loading` swap the populated rows for a spinner resets
+                // scroll to the top (ExercisesListView's afbb415 fix).
+                if loading && routines.isEmpty {
                     HStack { Spacer(); ProgressView().tint(theme.accent); Spacer() }
                         .padding(.vertical, 24)
                         .listRowBackground(theme.bg).listRowSeparator(.hidden)
-                } else if let errorText {
+                } else if let errorText, routines.isEmpty {
                     Text(errorText)
                         .font(GSFont.body(14)).foregroundStyle(.red)
                         .padding(.vertical, 16)
@@ -185,6 +189,7 @@ struct RoutinesListView: View {
     private func load() async {
         guard let ownerID = appState.currentProfile?.id else { return }
         loading = true
+        errorText = nil
         defer { loading = false }
         do {
             let fetchedRoutines = try await RoutineRepository.fetchAll(ownerID: ownerID)
@@ -260,10 +265,13 @@ private struct RoutineDetailChoice: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                if loading {
+                // Full-screen loading/error only while the exercise list is
+                // EMPTY — `.task` re-fires when popping back from an exercise
+                // detail / session push (ExercisesListView's afbb415 fix).
+                if loading && routineExercises.isEmpty {
                     HStack { Spacer(); ProgressView().tint(theme.accent); Spacer() }
                         .padding(.top, 40)
-                } else if let errorText {
+                } else if let errorText, routineExercises.isEmpty {
                     Text(errorText)
                         .font(GSFont.body(14))
                         .foregroundStyle(.red)
@@ -399,6 +407,7 @@ private struct RoutineDetailChoice: View {
     @MainActor
     private func load() async {
         loading = true
+        errorText = nil
         defer { loading = false }
         do {
             exercises = try await ExerciseRepository.fetchAll()

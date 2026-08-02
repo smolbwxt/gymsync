@@ -106,10 +106,15 @@ struct DiscoverWorkoutDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                if loading {
+                // Full-screen loading/error only while BOTH backing lists are
+                // EMPTY — `.task` re-fires when popping back from an exercise
+                // detail / attempt push, and letting `loading` swap the
+                // populated exercise list + leaderboard for a spinner resets
+                // scroll to the top (ExercisesListView's afbb415 fix).
+                if loading && routineExercises.isEmpty && leaderboardEntries.isEmpty {
                     HStack { Spacer(); ProgressView().tint(theme.accent); Spacer() }
                         .padding(.top, 40)
-                } else if let errorText {
+                } else if let errorText, routineExercises.isEmpty && leaderboardEntries.isEmpty {
                     Text(errorText)
                         .font(GSFont.body(14))
                         .foregroundStyle(.red)

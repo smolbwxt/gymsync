@@ -54,10 +54,14 @@ struct CampaignsTabView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                if loading {
+                // Full-screen loading/error only while the campaign lists are
+                // EMPTY — `.task` re-fires on pop-back from a detail push, and
+                // letting `loading` swap the populated scroller for a spinner
+                // resets scroll to the top (ExercisesListView's afbb415 fix).
+                if loading && active.isEmpty && upcoming.isEmpty && past.isEmpty {
                     HStack { Spacer(); ProgressView().tint(theme.accent); Spacer() }
                         .padding(.top, 60)
-                } else if let errorText {
+                } else if let errorText, active.isEmpty && upcoming.isEmpty && past.isEmpty {
                     programSection
                     GSErrorCard(message: errorText) { Task { await load() } }
                         .padding(16)

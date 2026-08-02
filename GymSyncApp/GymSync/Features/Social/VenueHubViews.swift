@@ -135,7 +135,11 @@ struct LocalHubsView: View {
     private var listBody: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                if loading {
+                // Full-screen spinner only while the venue list is EMPTY —
+                // `.task` re-fires on pop-back from a hub push, and letting
+                // `loading` swap the populated list for a spinner resets
+                // scroll to the top (ExercisesListView's afbb415 fix).
+                if loading && venues.isEmpty {
                     HStack { Spacer(); ProgressView().tint(theme.accent); Spacer() }
                         .padding(.top, 60)
                 } else {
@@ -299,7 +303,11 @@ struct VenueHubView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header
-                if loading {
+                // Full-screen spinner only while the member list is EMPTY —
+                // check-in / visibility-toggle re-run load(), and letting
+                // `loading` swap the populated sections for a spinner resets
+                // scroll to the top (ExercisesListView's afbb415 fix).
+                if loading && members.isEmpty {
                     HStack { Spacer(); ProgressView().tint(theme.accent); Spacer() }
                         .padding(.top, 40)
                 } else {

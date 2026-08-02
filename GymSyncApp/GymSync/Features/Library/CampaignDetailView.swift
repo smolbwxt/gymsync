@@ -55,10 +55,15 @@ struct CampaignDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 header
-                if loading {
+                // Full-screen loading/error only while the list sections are
+                // EMPTY — `.task` re-fires when popping back from a curated-
+                // workout push (and join/leave re-run loadAll()); letting
+                // `loading` swap the populated sections for a spinner resets
+                // scroll to the top (ExercisesListView's afbb415 fix).
+                if loading && curatedWorkouts.isEmpty && leaderboard.isEmpty {
                     HStack { Spacer(); ProgressView().tint(theme.accent); Spacer() }
                         .padding(.top, 40)
-                } else if let errorText {
+                } else if let errorText, curatedWorkouts.isEmpty && leaderboard.isEmpty {
                     GSErrorCard(message: errorText) { Task { await loadAll() } }
                         .padding(16)
                 } else {

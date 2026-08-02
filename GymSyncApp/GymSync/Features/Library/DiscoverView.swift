@@ -115,10 +115,15 @@ struct DiscoverView: View {
             VStack(spacing: 0) {
                 topLiftersRow
 
-                if loading {
+                // Full-screen loading/error only while the grid is EMPTY —
+                // `.task` re-fires on pop-back from a workout-detail /
+                // Top Lifters push, and letting `loading` swap the populated
+                // grid for a spinner resets scroll to the top
+                // (ExercisesListView's afbb415 fix).
+                if loading && workouts.isEmpty {
                     HStack { Spacer(); ProgressView().tint(theme.accent); Spacer() }
                         .padding(.top, 60)
-                } else if let errorText {
+                } else if let errorText, workouts.isEmpty {
                     GSErrorCard(message: errorText) { Task { await load() } }
                         .padding(16)
                 } else if workouts.isEmpty {
