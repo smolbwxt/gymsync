@@ -16,18 +16,42 @@ struct StatsTabView: View {
     @State private var selectedBodyWeightRange: TrendRange = .sixMonths
     @State private var showingBodyWeightLogSheet = false
 
+    /// `true` (default) keeps the legacy tab-root form: own `NavigationStack`,
+    /// hidden nav bar, in-content "Stats" title. Pass `false` when PUSHING
+    /// this view inside an existing stack (YouTabView's STATS widget) — the
+    /// content renders bare so the OUTER stack keeps its system bar (back
+    /// chevron + edge-swipe; the build-445 "stuck on Stats" report was this
+    /// view's nested stack swallowing that bar) and supplies the inline
+    /// title; internal pushes (Activity, per-exercise history) ride the
+    /// outer stack.
+    var embedsInOwnStack: Bool = true
+
     var body: some View {
-        NavigationStack {
+        if embedsInOwnStack {
+            NavigationStack {
+                content
+                    .toolbar(.hidden, for: .navigationBar)   // redesign v2: in-content title
+            }
+        } else {
+            content
+        }
+    }
+
+    private var content: some View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    // Redesign v2: in-content title replaces the nav-bar title
-                    // (the empty bar row wasted vertical space — user feedback).
-                    Text("Stats")
-                        .font(GSFont.heading(24, relativeTo: .title))
-                        .foregroundStyle(theme.text)
-                        .padding(.horizontal, 16)
-                        .padding(.top, 14)
-                        .padding(.bottom, 4)
+                    // Redesign v2 (tab-root form only): in-content title
+                    // replaces the nav-bar title (the empty bar row wasted
+                    // vertical space — user feedback). Pushed form gets an
+                    // inline bar title from the push site instead.
+                    if embedsInOwnStack {
+                        Text("Stats")
+                            .font(GSFont.heading(24, relativeTo: .title))
+                            .foregroundStyle(theme.text)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 14)
+                            .padding(.bottom, 4)
+                    }
 
                     // ── Lifetime Volume Card ───────────────────────────────────
                     GSCard(bordered: false) {
@@ -136,7 +160,6 @@ struct StatsTabView: View {
             .scrollContentBackground(.hidden)
             .background(theme.bg)
             .contentMargins(.bottom, 88, for: .scrollContent)   // dock clearance (user bug report)
-            .toolbar(.hidden, for: .navigationBar)   // redesign v2: in-content title above
             .gsSpotlight(.stats)
             .task {
                 exercises = (try? await ExerciseRepository.fetchAll()) ?? []
@@ -158,7 +181,6 @@ struct StatsTabView: View {
             .sheet(isPresented: $showingBodyWeightLogSheet) {
                 BodyWeightLogSheet(onLogged: { Task { await loadBodyWeight() } })
             }
-        }
     }
 
     private var filteredExercises: [Exercise] {

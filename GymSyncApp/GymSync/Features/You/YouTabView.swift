@@ -72,12 +72,18 @@ struct YouTabView: View {
                 MyRackView()
             }
             .navigationDestination(isPresented: $showStats) {
-                // Pushed UNCHANGED (Phase-1 law: Stats internals stay
-                // untouched). StatsTabView still carries its own
-                // NavigationStack, which nests inside this one — its
-                // internal pushes (Activity, per-exercise history) ride the
-                // inner stack; the back button here belongs to the outer.
-                StatsTabView()
+                // Pushed in content form (embedsInOwnStack: false). The
+                // build-445 field report ("If I click You, then Stats, I'm
+                // stuck") was StatsTabView's own nested NavigationStack
+                // swallowing this stack's bar — no back chevron, no
+                // edge-swipe. Bare content keeps the system bar, and Stats'
+                // internal pushes (Activity, per-exercise history) now ride
+                // THIS stack — same presentation as the Campaigns push from
+                // Shop and the Routines/Exercises destinations below.
+                StatsTabView(embedsInOwnStack: false)
+                    .background(theme.bg)
+                    .navigationTitle("Stats")
+                    .navigationBarTitleDisplayMode(.inline)
             }
             .navigationDestination(isPresented: $showRoutines) {
                 // The routines list the Library tab used to host. The
