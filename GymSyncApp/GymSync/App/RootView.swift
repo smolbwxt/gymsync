@@ -36,6 +36,11 @@ struct RootView: View {
     @AppStorage(OneShotFlags.walkthroughKey) private var hasSeenWalkthrough = false
     @State private var showWalkthrough = false
 
+    /// Launch overlay gate. `RootView` is alive for the whole app run, so this
+    /// stays true after the first reveal — a later sign-out/sign-in transition
+    /// does not replay the animation.
+    @State private var launchOverlayFinished = false
+
     var body: some View {
         Group {
             switch auth.state {
@@ -50,6 +55,21 @@ struct RootView: View {
                 } else {
                     MainTabView()
                         .environment(appState)
+                        // Cold-launch brand moment: every tab mounts and fetches
+                        // underneath this, so the first tap on any tab lands on a
+                        // settled screen instead of one still assembling itself.
+                        // Signed-in only — sign-in and onboarding own their own
+                        // first impression.
+                        .overlay {
+                            if !launchOverlayFinished {
+                                LaunchLoadingOverlay {
+                                    withAnimation(.easeOut(duration: 0.35)) {
+                                        launchOverlayFinished = true
+                                    }
+                                }
+                                .transition(.opacity)
+                            }
+                        }
                         .onAppear {
                             if !hasSeenWalkthrough { showWalkthrough = true }
                         }
@@ -241,12 +261,26 @@ private struct MainTabView: View {
     /// re-ran, and content re-appeared piecewise as each fetch landed. That
     /// teardown/rebuild, not network latency, was the perceived jank.
     ///
-    /// Now a tab mounts on FIRST visit and stays alive, so every subsequent
-    /// switch is a pure visibility change with nothing to rebuild.
-    /// Deliberately lazy rather than mounting all five up front: eager
-    /// mounting would trade tab-switch jank for a slower cold start and five
-    /// simultaneous fetch storms on launch.
-    @State private var mountedTabs: Set<AppState.Tab> = []
+    /// Now a tab mounts and stays alive, so every switch is a pure visibility
+    /// change with nothing to rebuild.
+    ///
+    /// EAGER since 2026-08-02 (user report: "click a tab and then see all the
+    /// widgets kind of push each other around and populate asynchronously").
+    /// This was deliberately lazy before, to avoid trading tab-switch jank for
+    /// a slower cold start and four simultaneous fetch storms at launch — the
+    /// launch overlay (`LaunchLoadingOverlay`, shown by `RootView`) is what
+    /// changed the calculus: the cold-start cost is now paid ONCE behind a
+    /// brand moment the user reads as intentional, and the fetch storm is the
+    /// point rather than the problem, because it resolves while nobody is
+    /// looking at a half-built screen.
+    ///
+    /// Safe because no tab root performs a "the user saw this" side effect at
+    /// mount (audited 2026-08-02): read receipts live in `ChatView` (pushed,
+    /// never mounted at launch), and the two `consumePendingRouteIfNeeded()`
+    /// callers claim DISJOINT deep-link cases — Home takes `.lobby`/`.session`,
+    /// Social takes `.friends`/`.chat` — so mounting both cannot race for one
+    /// route.
+    @State private var mountedTabs: Set<AppState.Tab> = Set(AppState.Tab.allCases)
 
     var body: some View {
         @Bindable var appState = appState
