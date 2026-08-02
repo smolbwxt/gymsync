@@ -4850,13 +4850,11 @@ struct GroupSessionLiveView: View {
     /// Fetch the prior weight maximum for a given exercise (excluding failed/penalty sets).
     /// Mirrors the identical helper in WorkoutSessionView.
     private func priorMax(exerciseID: UUID, weight: Decimal, userID: UUID) async throws -> Decimal {
-        let history = try await SessionRepository.exerciseHistory(userID: userID,
-                                                                   exerciseID: exerciseID,
-                                                                   limit: 200)
-        return history
-            .filter { !$0.isFailed && !$0.isPenalty }
-            .compactMap { $0.weight }
-            .max() ?? 0
+        // One indexed row instead of a 200-row download in front of every set
+        // write (2026-08-02 latency fix; `SessionRepository.bestWeight` carries
+        // the full rationale). Same filters, same answer — this call sits on
+        // the critical path of the turn CTA, and the whole rotation waits on it.
+        try await SessionRepository.bestWeight(userID: userID, exerciseID: exerciseID)
     }
 
     /// Show the full-screen, USER-DISMISSED PR celebration (p29) — no auto-timeout.

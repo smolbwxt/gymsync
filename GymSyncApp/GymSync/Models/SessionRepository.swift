@@ -166,6 +166,37 @@ enum SessionRepository {
         } catch { throw ErrorMapping.map(error) }
     }
 
+    /// The heaviest non-failed, non-penalty set a user has ever recorded for
+    /// one exercise — the PR comparison baseline.
+    ///
+    /// Deliberately NOT `exerciseHistory(limit: 200).compactMap(\.weight).max()`,
+    /// which is what both live views used to call. That pulled 200 FULL rows
+    /// across the network on every single set log, sitting in front of the
+    /// write, and was the dominant cost behind the "app hangs, so users hit
+    /// log repeatedly" report (2026-08-02). Postgres does the ordering here
+    /// and answers with one column of one row.
+    ///
+    /// `nullsFirst: false` matters: Postgres sorts NULLs FIRST on a DESC
+    /// order, so without it a weightless set (bodyweight/time-only) would win
+    /// the `limit(1)` and report a prior best of 0. Filters mirror
+    /// `exerciseHistory`'s exclusions exactly, so both agree on what counts.
+    static func bestWeight(userID: UUID, exerciseID: UUID) async throws -> Decimal {
+        struct WeightRow: Decodable { let weight: Decimal? }
+        do {
+            let rows: [WeightRow] = try await client
+                .from("set_logs")
+                .select("weight")
+                .eq("user_id", value: userID)
+                .eq("exercise_id", value: exerciseID)
+                .eq("is_failed", value: "false")
+                .eq("is_penalty", value: "false")
+                .order("weight", ascending: false, nullsFirst: false)
+                .limit(1)
+                .execute().value
+            return rows.first?.weight ?? 0
+        } catch { throw ErrorMapping.map(error) }
+    }
+
     /// All of a user's set logs since `since`, excluding failed/penalty —
     /// backs the Stats weekly-volume chart. Mirrors `exerciseHistory`'s
     /// failed/penalty exclusion filters exactly.
