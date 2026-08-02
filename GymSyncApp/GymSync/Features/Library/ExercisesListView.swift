@@ -75,11 +75,16 @@ struct ExercisesListView: View {
             .fixedSize(horizontal: false, vertical: true)
             .background(theme.bg)
 
-            if loading {
+            // Full-screen loading/error states only while the list is EMPTY.
+            // `.task` re-fires on every pop-back from a detail push; letting
+            // `loading` swap the populated List for a spinner destroys the
+            // List and resets scroll to the top (field report 2026-08-02).
+            // With data present, the refresh updates rows in place instead.
+            if loading && exercises.isEmpty {
                 Spacer()
                 ProgressView().tint(theme.accent)
                 Spacer()
-            } else if let errorText {
+            } else if let errorText, exercises.isEmpty {
                 Spacer()
                 Text(errorText)
                     .font(GSFont.body(14))
@@ -141,6 +146,7 @@ struct ExercisesListView: View {
     @MainActor
     private func load() async {
         loading = true
+        errorText = nil
         defer { loading = false }
         do { exercises = try await ExerciseRepository.fetchAll() }
         catch { errorText = ErrorMapping.map(error).errorDescription }
