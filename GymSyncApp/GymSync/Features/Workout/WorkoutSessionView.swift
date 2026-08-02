@@ -52,6 +52,15 @@ struct WorkoutSessionView: View {
     @State private var currentExerciseIndex: Int = 0
     @State private var currentSetIndex: Int = 1
 
+    /// Re-entrancy guard for the log CTA (user report 2026-08-02: "sometimes
+    /// the app hangs, and instinctively users will just hit the log button
+    /// multiple times. This advances the set without them actually being
+    /// completed"). The CTA stays tappable for the whole round trip, so a
+    /// slow submit used to accept N taps and advance the set counter N times.
+    /// `GroupSessionLiveView` has carried this guard since its own report;
+    /// solo never got it.
+    @State private var isLoggingSet = false
+
     // Solo fixed page (2026-07-30) — inline entry state, replacing the
     // log sheet for routine sessions (the sheet remains for edit mode).
     @State private var soloWeight = ""
@@ -374,10 +383,18 @@ struct WorkoutSessionView: View {
             // `startedAt`, ZERO Swift Timers.
             ToolbarItem(placement: .navigationBarLeading) {
                 if let startedAt = session?.startedAt {
+                    // Whole-session elapsed. `.fixedSize()` + a fixed-width
+                    // font: without them the system sized this to the leading
+                    // slot's proportional width and truncated it to "26:…"
+                    // (user screenshot 2026-08-02). Bare label — the system
+                    // draws its own toolbar capsule, and painting another
+                    // background inside it is the double-chrome bug the
+                    // Finish button's comment records.
                     Text(startedAt, style: .timer)
-                        .font(GSFont.bold(14, relativeTo: .caption))
+                        .font(GSFont.boldFixed(14).monospacedDigit())
                         .foregroundStyle(theme.text)
-                        .monospacedDigit()
+                        .lineLimit(1)
+                        .fixedSize()
                 }
             }
             ToolbarItem(placement: .topBarTrailing) {
@@ -524,7 +541,13 @@ struct WorkoutSessionView: View {
             let until = restEndAt
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(max(0, until.timeIntervalSinceNow) + 1))
-                if self.restEndAt == until { self.restEndAt = nil }
+                if self.restEndAt == until {
+                    self.restEndAt = nil
+                    // A lapsed rest window starts the next set — same stamp as
+                    // the START SET shortcut, so the set clock never inherits
+                    // the rest it just finished.
+                    self.setStartedAt = .now
+                }
             }
         } else {
             RestNotification.cancel()
@@ -1297,12 +1320,20 @@ struct WorkoutSessionView: View {
                     Text(timerInterval: .now...restEndAt, countsDown: true)
                         .font(GSFont.bold(17, relativeTo: .body).monospacedDigit())
                         .foregroundStyle(theme.text.opacity(0.78))
-                } else if let startedAt = session?.startedAt {
+                } else {
+                    // THIS SET's elapsed time — not the session's (user report
+                    // 2026-08-02: "the timer on the set widget should be just
+                    // the time elapsed for this set, not including the rest and
+                    // transit times"). `setStartedAt` is re-stamped whenever a
+                    // set actually begins: on log (when no rest follows), when
+                    // rest is cut short via START SET, and when a rest window
+                    // lapses on its own. The whole-session clock lives in the
+                    // header.
                     Image(systemName: "timer")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(theme.neutral700)
                         .padding(.trailing, 5)
-                    Text(startedAt, style: .timer)
+                    Text(setStartedAt, style: .timer)
                         .font(GSFont.bold(17, relativeTo: .body).monospacedDigit())
                         .foregroundStyle(theme.text.opacity(0.78))
                 }
@@ -1427,7 +1458,10 @@ struct WorkoutSessionView: View {
                 // 3D pass (2026-08): accent gs3D face, 57pt + 7pt lip =
                 // the prior 64pt CTA footprint (the group interlude's idiom).
                 Button {
+                    // Cutting rest short IS the start of the set — stamp it so
+                    // the set card's clock times this set, not the rest before it.
                     restEndAt = nil
+                    setStartedAt = .now
                 } label: {
                     VStack(spacing: 2) {
                         Text("START SET")
@@ -1453,11 +1487,16 @@ struct WorkoutSessionView: View {
                 .padding(.horizontal, 16)
             } else {
             Button {
+                // Re-entrancy guard: a second tap while the first submit is
+                // still in flight must not log again or advance the set.
+                guard !isLoggingSet else { return }
+                isLoggingSet = true
                 setStartedAt = .now
                 restEndAt = nil
                 let weightPounds = Decimal.parseUserInput(soloWeight)
                     .map { Units.toPounds($0, from: soloUnit) }
                 Task {
+                    defer { isLoggingSet = false }
                     guard await log(reps: leadingInt(soloReps),
                                     weight: weightPounds,
                                     rpe: Decimal(Int(soloRPE)),
@@ -1498,7 +1537,7 @@ struct WorkoutSessionView: View {
             .buttonStyle(.gs3D(face: soloFailed ? theme.raised3DFace : theme.accent,
                                lip: soloFailed ? theme.raised3DLip : nil,
                                cornerRadius: 16))
-            .disabled(leadingInt(soloReps) == nil && !soloFailed)
+            .disabled(isLoggingSet || (leadingInt(soloReps) == nil && !soloFailed))
             .gsSpotlightTarget(.workout)
             .padding(.horizontal, 16)
             }

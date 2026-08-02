@@ -24,7 +24,8 @@ struct LaunchLoadingOverlay: View {
     /// overlay away.
     let onFinished: () -> Void
 
-    @Environment(\.gsTheme) private var theme
+    // No theme environment on purpose — this surface commits to black in every
+    // palette (see the floor's comment below).
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// How long the overlay holds before revealing the app. Long enough to
@@ -36,14 +37,20 @@ struct LaunchLoadingOverlay: View {
 
     var body: some View {
         ZStack {
-            theme.bg.ignoresSafeArea()
+            // Black, not `theme.bg` (user 2026-08-02: "make sure the background
+            // behind it is black). The clip's own vignette fades to black at
+            // its edges, so a pure-black floor is what makes the art read as
+            // full-bleed rather than as a pasted square. This is the one
+            // surface in the app that deliberately ignores the palette — a
+            // launch moment is a single committed image, not a themed screen.
+            Color.black.ignoresSafeArea()
 
             VStack(spacing: 20) {
                 loopArt
                 Text("LOADING THE BAR")
                     .font(GSFont.bold(11, relativeTo: .caption2))
                     .tracking(1.6)
-                    .foregroundStyle(theme.neutral700)
+                    .foregroundStyle(.white.opacity(0.55))
                     .opacity(settled ? 1 : 0)
             }
         }
@@ -58,30 +65,14 @@ struct LaunchLoadingOverlay: View {
         }
     }
 
-    /// The looping bench-press animation, framed as a card so its own
-    /// background never reads as an accidental black rectangle. Light themes
-    /// invert the ink (the clip is white-on-black line art, so inverted it
-    /// becomes black-on-white — right at home on the cream palettes).
+    /// The looping bench-press animation. No card frame or stroke: the clip
+    /// carries its own inked vignette that dissolves into the black floor, and
+    /// any border we drew would cut straight through that fade.
     private var loopArt: some View {
         LaunchLoopVideo()
-            .frame(width: 264, height: 264)
-            .colorInvert(isActive: !theme.isDark)
-            .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1)
-            )
+            .frame(width: 300, height: 300)
             .scaleEffect(settled ? 1 : 0.96)
             .opacity(settled ? 1 : 0)
-    }
-}
-
-private extension View {
-    /// `colorInvert()` is unconditional; this keeps the call site declarative
-    /// without an `if` that would change the view's identity mid-animation.
-    @ViewBuilder
-    func colorInvert(isActive: Bool) -> some View {
-        if isActive { self.colorInvert() } else { self }
     }
 }
 
