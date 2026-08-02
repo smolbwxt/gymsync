@@ -131,6 +131,62 @@ final class WorkingWeightTests: XCTestCase {
         XCTAssertEqual(result?.source, .lastSet)
     }
 
+    // MARK: - Rung 4 is rep-aware (user 2026-08-02)
+
+    /// The headline hazard: a near-max single must not be handed back as the
+    /// working weight for a set of five. 405 × 1 is a 418.5 est-1RM; scaled to
+    /// 5 reps that's 418.5 / (1 + 5/30) ≈ 358.7 → 360 at the 5 lb rounding.
+    /// Absolute expectation, hand-computed — not a re-derivation of the
+    /// implementation's own arithmetic.
+    func testLastSetRungScalesAHeavySingleDownForAFiveRepTarget() {
+        let result = WorkingWeight.suggest(
+            exerciseID: exerciseID, targetReps: 5,
+            routineTargetPounds: nil,
+            history: [log(reps: 1, weight: 405)],
+            lastSetPounds: 405, enrollment: nil
+        )
+        XCTAssertEqual(result?.source, .lastSet)
+        XCTAssertEqual(result?.pounds, 360)
+        XCTAssertNotEqual(result?.pounds, 405, "a 1RM must never be suggested for a set of 5")
+    }
+
+    /// The mirror case: coming off a high-rep set into a heavy target should
+    /// scale UP, not carry the light weight forward. 200 × 10 is a 266.67
+    /// est-1RM; at 1 rep that's 266.67 / (1 + 1/30) ≈ 258.1 → 260.
+    func testLastSetRungScalesUpWhenTheTargetRepsDrop() {
+        let result = WorkingWeight.suggest(
+            exerciseID: exerciseID, targetReps: 1,
+            routineTargetPounds: nil,
+            history: [log(reps: 10, weight: 200)],
+            lastSetPounds: 200, enrollment: nil
+        )
+        XCTAssertEqual(result?.pounds, 260)
+    }
+
+    /// Matching rep counts must pass the weight through untouched — no
+    /// rounding drift on the ordinary "same again" case.
+    func testLastSetRungLeavesMatchingRepsAlone() {
+        let result = WorkingWeight.suggest(
+            exerciseID: exerciseID, targetReps: 8,
+            routineTargetPounds: nil,
+            history: [log(reps: 8, weight: 185)],
+            lastSetPounds: 185, enrollment: nil
+        )
+        XCTAssertEqual(result?.pounds, 185)
+    }
+
+    /// A failed set is not evidence of what you can lift, so it must not
+    /// become the scaling basis — the raw carry-forward stands instead.
+    func testLastSetRungIgnoresFailedSetsAsScalingBasis() {
+        let result = WorkingWeight.suggest(
+            exerciseID: exerciseID, targetReps: 5,
+            routineTargetPounds: nil,
+            history: [log(reps: 1, weight: 405, failed: true)],
+            lastSetPounds: 225, enrollment: nil
+        )
+        XCTAssertEqual(result?.pounds, 225)
+    }
+
     // MARK: - The floor: never invent a number
 
     func testNothingKnownReturnsNil() {

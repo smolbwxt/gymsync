@@ -3814,7 +3814,21 @@ struct GroupSessionLiveView: View {
             // holds — SetProgression, unit-tested.
             if let last = myTurnSets.last(where: { !$0.isFailed && $0.weight != nil }),
                let w = last.weight {
-                return SetProgression.nextWeight(afterPounds: w, rpe: last.rpe, isFailed: last.isFailed)
+                // Rep-scaled before the RPE step (user 2026-08-02): carrying a
+                // heavy low-rep set's load into a higher-rep set suggests a
+                // weight nobody can hit for the reps — the 405 × 1 → "set of
+                // 5" hazard. Inverse Epley via StatMath, the same helper
+                // WorkingWeight's rungs use, so every suggestion in the app
+                // agrees on what a rep count is worth.
+                let targetReps = leadingInt(target ?? "")
+                var base = w
+                if let targetReps, let lastReps = last.reps, lastReps != targetReps,
+                   let scaled = StatMath.projectedWeight(prWeight: w,
+                                                         prReps: lastReps,
+                                                         targetReps: targetReps) {
+                    base = Decimal(scaled)
+                }
+                return SetProgression.nextWeight(afterPounds: base, rpe: last.rpe, isFailed: last.isFailed)
             }
             if let t = currentRoutineExercise?.targetWeight,
                let parsed = Decimal(string: t), parsed > 0 { return parsed }

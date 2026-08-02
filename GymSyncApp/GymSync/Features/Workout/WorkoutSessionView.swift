@@ -670,7 +670,22 @@ struct WorkoutSessionView: View {
                   let w = last.weight {
             // This session's own work outranks the ladder's static rungs
             // (user 2026-08-01) — RPE-aware step via SetProgression.
-            let next = SetProgression.nextWeight(afterPounds: w, rpe: last.rpe, isFailed: last.isFailed)
+            //
+            // Rep-scaled first (user 2026-08-02): this branch bypasses
+            // `WorkingWeight.suggest` entirely, so without this it would carry
+            // a heavy low-rep set's load straight into a higher-rep set — the
+            // 405 × 1 → "set of 5" hazard. Scale to today's target, THEN apply
+            // the RPE progression step, so the +5 lands on a weight that
+            // actually fits the reps.
+            let targetReps = currentRoutineExercise?.targetReps.flatMap { leadingInt($0) }
+            var base = w
+            if let targetReps, let lastReps = last.reps, lastReps != targetReps,
+               let scaled = StatMath.projectedWeight(prWeight: w,
+                                                     prReps: lastReps,
+                                                     targetReps: targetReps) {
+                base = Decimal(scaled)
+            }
+            let next = SetProgression.nextWeight(afterPounds: base, rpe: last.rpe, isFailed: last.isFailed)
             soloWeight = Units.format(pounds: next, unit: soloUnit,
                                       rounded: false, includeUnit: false)
         } else if let re = currentRoutineExercise,
