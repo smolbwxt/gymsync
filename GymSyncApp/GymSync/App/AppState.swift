@@ -15,7 +15,12 @@ final class AppState {
     /// `CaseIterable` so `MainTabView` can iterate every tab to decide which
     /// are mounted (tab retention, RootView.swift) rather than switching on
     /// the selected one.
-    enum Tab: Hashable, CaseIterable { case home, library, social, stats, you }
+    ///
+    /// Redesign Phase 1 (four-tab reorientation, 2026-08): `.library` and
+    /// `.stats` left the tab bar — their content is reachable from the You
+    /// tab's widget grid (`YouTabView`) and Campaigns from the new `.shop`
+    /// tab. `LibraryTabView`/`StatsTabView` still exist as destinations.
+    enum Tab: Hashable, CaseIterable { case home, social, shop, you }
     var selectedTab: Tab = .home
 
     // Set to the user's profile once loaded post-sign-in.

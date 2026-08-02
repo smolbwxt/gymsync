@@ -53,14 +53,19 @@ final class DiscoveryStoreTests: XCTestCase {
     /// undiscovered, and vanish once everything there is pressed —
     /// a dot outliving its reason is worse than no dot.
     func testTabRollupTracksItsOwnTargetsOnly() {
-        XCTAssertTrue(DiscoveryStore.shared.hasNew(in: .library))
-        DiscoveryStore.shared.markPressed(.libraryDiscover)
-        XCTAssertTrue(DiscoveryStore.shared.hasNew(in: .library), "one of two library targets pressed — dot stays")
+        // Four-tab reorientation: Shop rolls up exactly one target (the
+        // CAMPAIGNS row), You rolls up two (DISCOVER widget + Appearance).
+        XCTAssertTrue(DiscoveryStore.shared.hasNew(in: .shop))
         DiscoveryStore.shared.markPressed(.libraryCampaigns)
-        XCTAssertFalse(DiscoveryStore.shared.hasNew(in: .library), "both pressed — dot must clear")
-        // Stats has no targets at all, so it can never show a dot.
-        XCTAssertFalse(DiscoveryStore.shared.hasNew(in: .stats))
-        // An unrelated tab is unaffected by Library presses.
+        XCTAssertFalse(DiscoveryStore.shared.hasNew(in: .shop), "sole shop target pressed — dot must clear")
+
+        XCTAssertTrue(DiscoveryStore.shared.hasNew(in: .you))
+        DiscoveryStore.shared.markPressed(.libraryDiscover)
+        XCTAssertTrue(DiscoveryStore.shared.hasNew(in: .you), "one of two You targets pressed — dot stays")
+        DiscoveryStore.shared.markPressed(.youAppearance)
+        XCTAssertFalse(DiscoveryStore.shared.hasNew(in: .you), "both pressed — dot must clear")
+
+        // An unrelated tab is unaffected by those presses.
         XCTAssertTrue(DiscoveryStore.shared.hasNew(in: .social))
     }
 

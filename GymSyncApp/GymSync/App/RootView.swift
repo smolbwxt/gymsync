@@ -321,11 +321,10 @@ private struct MainTabView: View {
     @ViewBuilder
     private func tabContent(_ tab: AppState.Tab) -> some View {
         switch tab {
-        case .home:    HomeView()
-        case .library: LibraryTabView()
-        case .social:  SocialTabView()
-        case .stats:   StatsTabView()
-        case .you:     YouTabView()
+        case .home:   HomeView()
+        case .social: SocialTabView()
+        case .shop:   ShopTabView()
+        case .you:    YouTabView()
         }
     }
 }

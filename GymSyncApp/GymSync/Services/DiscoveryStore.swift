@@ -34,12 +34,20 @@ enum DiscoveryTarget: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     /// Which tab's icon carries the rollup dot for this control.
+    ///
+    /// Redesign Phase 1 (four-tab reorientation, 2026-08): the two Library
+    /// targets follow their controls to the tabs that now host them — the
+    /// exercises catalog is the You grid's DISCOVER widget, Campaigns is the
+    /// Shop tab's CAMPAIGNS row. Case names and raw values (the storage
+    /// keys) deliberately stay put so nobody who already pressed them gets
+    /// re-highlighted.
     var tab: AppState.Tab {
         switch self {
-        case .homeSchedule:                       return .home
-        case .libraryDiscover, .libraryCampaigns: return .library
-        case .socialLocal, .socialFeed:           return .social
-        case .youAppearance:                      return .you
+        case .homeSchedule:             return .home
+        case .libraryDiscover:          return .you
+        case .libraryCampaigns:         return .shop
+        case .socialLocal, .socialFeed: return .social
+        case .youAppearance:            return .you
         }
     }
 
@@ -47,8 +55,8 @@ enum DiscoveryTarget: String, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .homeSchedule:     return "Schedule widget (new)"
-        case .libraryDiscover:  return "Discover tab (new)"
-        case .libraryCampaigns: return "Campaigns tab (new)"
+        case .libraryDiscover:  return "Discover widget (new)"
+        case .libraryCampaigns: return "Campaigns row (new)"
         case .socialLocal:      return "Local hubs (new)"
         case .socialFeed:       return "Pump check feed (new)"
         case .youAppearance:    return "Appearance (new)"

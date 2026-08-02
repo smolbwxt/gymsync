@@ -43,7 +43,9 @@ struct WelcomeView: View {
                             title: "Build your first routine",
                             subtitle: "Pick exercises, set targets"
                         ) {
-                            appState.selectedTab = .library
+                            // Four-tab reorientation: routines live under the
+                            // You tab's widget grid now (ROUTINES widget).
+                            appState.selectedTab = .you
                             onComplete()
                         }
 

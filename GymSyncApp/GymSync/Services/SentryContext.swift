@@ -80,11 +80,10 @@ enum SentryContext {
 
     private static func screenName(_ tab: AppState.Tab) -> String {
         switch tab {
-        case .home:    return "home"
-        case .library: return "library"
-        case .social:  return "social"
-        case .stats:   return "stats"
-        case .you:     return "you"
+        case .home:   return "home"
+        case .social: return "social"
+        case .shop:   return "shop"
+        case .you:    return "you"
         }
     }
 
