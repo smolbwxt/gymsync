@@ -106,8 +106,10 @@ struct ScheduleSessionView: View {
                     // ROUTINE section
                     whatSection
 
-                    // REPEATS section (Group-only)
-                    if whoMode == .group {
+                    // REPEATS section — group or solo. Friends/Code invites are
+                    // one-off by design (there's no standing roster to recur
+                    // against); a solo series recurs against just you.
+                    if whoMode == .group || whoMode == .solo {
                         Spacer().frame(height: 8)
                         repeatsSection
                     }
@@ -600,7 +602,9 @@ struct ScheduleSessionView: View {
             if selectedGroupID == nil { return true }
             if repeatWeekly && selectedWeekdays.isEmpty { return true }
             return false
-        case .solo:     return false
+        case .solo:
+            if repeatWeekly && selectedWeekdays.isEmpty { return true }
+            return false
         case .friends:  return false
         case .code:     return false
         }
@@ -694,7 +698,9 @@ struct ScheduleSessionView: View {
         }
 
         // Repeating series path (Group only)
-        if whoMode == .group, repeatWeekly, let gid = groupID {
+        // Repeating path — group series (gid non-nil) or solo series (nil).
+        // `SeriesRepository.create` takes an optional group since 2026-08-02.
+        if (whoMode == .group || whoMode == .solo), repeatWeekly {
             do {
                 let days = buildSeriesDayInputs()
                 guard !days.isEmpty else {
@@ -702,7 +708,7 @@ struct ScheduleSessionView: View {
                     return
                 }
                 let series = try await SeriesRepository.create(
-                    groupID: gid,
+                    groupID: groupID,
                     days: days,
                     untilDate: untilDate,
                     timezone: .current

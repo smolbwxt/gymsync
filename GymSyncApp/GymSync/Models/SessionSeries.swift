@@ -9,7 +9,9 @@ import Supabase
 /// Tasks 5/6 must use `untilDate` (the computed Date property), not the raw string.
 struct SessionSeries: Codable, Identifiable, Sendable {
     let id: UUID
-    let groupID: UUID
+    /// Nil for a SOLO series — a standing commitment with no crew
+    /// (migration 20260803000006 made the column nullable).
+    let groupID: UUID?
     let organizerID: UUID
     let timezone: String
     /// Raw DATE string from PostgREST ("yyyy-MM-dd"). Use `untilDate` for Calendar math.
@@ -176,11 +178,13 @@ enum SeriesRepository {
             var row: [String: String] = [
                 "id": sid.uuidString,
                 "organizer_id": organizerID.uuidString,
-                "group_id": series.groupID.uuidString,
                 "series_id": series.id.uuidString,
                 "state": "scheduled",
                 "scheduled_for": isoString(occ.date)
             ]
+            // Omitted for a solo series, so each occurrence is a groupless
+            // session — the same shape `startSolo` produces.
+            if let gid = series.groupID { row["group_id"] = gid.uuidString }
             if let rid = occ.input.routineID {
                 row["routine_id"] = rid.uuidString
             }
@@ -243,8 +247,12 @@ enum SeriesRepository {
     // its own re-run hazard. A retry after a partial failure is NOT
     // guaranteed idempotent (a second `create` call makes a second series
     // row rather than resuming the first).
+    /// `groupID` is optional (2026-08-02): nil creates a SOLO series — a
+    /// standing commitment with no crew, whose sessions have no group and
+    /// exactly one participant. See migration 20260803000006 for the
+    /// matching RLS and the silent finalize.
     static func create(
-        groupID: UUID,
+        groupID: UUID?,
         days: [SeriesDayInput],
         untilDate: Date,
         timezone: TimeZone = .current
@@ -262,13 +270,15 @@ enum SeriesRepository {
             }
 
             // Insert series row
-            let seriesRow: [String: String] = [
+            var seriesRow: [String: String] = [
                 "id": seriesID.uuidString,
-                "group_id": groupID.uuidString,
                 "organizer_id": organizerID.uuidString,
                 "timezone": timezone.identifier,
                 "until_date": untilStr
             ]
+            // Omitted entirely for a solo series — the column is nullable and
+            // absent means NULL, which is what the solo RLS branch keys on.
+            if let groupID { seriesRow["group_id"] = groupID.uuidString }
             let series: SessionSeries = try await client
                 .from("session_series")
                 .insert(seriesRow)
@@ -292,14 +302,20 @@ enum SeriesRepository {
                 .insert(dayRows)
                 .execute()
 
-            // Fetch all current group members for participant rows
-            let memberRows: [GroupMember] = try await client
-                .from("group_members")
-                .select()
-                .eq("group_id", value: groupID.uuidString)
-                .execute()
-                .value
-            let memberIDs = memberRows.map(\.userID)
+            // Fetch all current group members for participant rows. A solo
+            // series has no roster to fetch — `materializeOccurrences` still
+            // adds the organizer, so each session lands with exactly one
+            // participant, shaped like any other solo workout.
+            var memberIDs: [UUID] = []
+            if let groupID {
+                let memberRows: [GroupMember] = try await client
+                    .from("group_members")
+                    .select()
+                    .eq("group_id", value: groupID.uuidString)
+                    .execute()
+                    .value
+                memberIDs = memberRows.map(\.userID)
+            }
 
             // Materialize sessions + participants — pass the caller's
             // untilDate directly so the count is identical to the hermetic
@@ -472,14 +488,17 @@ enum SeriesRepository {
                 .gt("scheduled_for", value: nowStr)
                 .execute()
 
-            // Fetch group members
-            let memberRows: [GroupMember] = try await client
-                .from("group_members")
-                .select()
-                .eq("group_id", value: existing.groupID.uuidString)
-                .execute()
-                .value
-            let memberIDs = memberRows.map(\.userID)
+            // Fetch group members — a solo series has no roster.
+            var memberIDs: [UUID] = []
+            if let gid = existing.groupID {
+                let memberRows: [GroupMember] = try await client
+                    .from("group_members")
+                    .select()
+                    .eq("group_id", value: gid.uuidString)
+                    .execute()
+                    .value
+                memberIDs = memberRows.map(\.userID)
+            }
 
             // Re-materialize from now forward. `existing` still carries the
             // OLD until_date string, which is why `until` is passed
