@@ -24,7 +24,13 @@ struct ScheduleSessionView: View {
     @Environment(\.gsTheme) private var theme
 
     // MARK: - Who selection
+    /// Owner report 2026-08-02: "there's not an option to schedule a session
+    /// by yourself." Every mode here invited someone, so a planned solo lift
+    /// — the most common kind — was unschedulable. `.solo` leads the segments
+    /// because it's the simplest case, but the default stays `.group` so the
+    /// crew-scheduling flow people already know is unchanged.
     enum WhoMode: String, CaseIterable {
+        case solo    = "Just me"
         case group   = "Group"
         case friends = "Friends"
         case code    = "Code"
@@ -201,6 +207,11 @@ struct ScheduleSessionView: View {
 
             // Content for selected mode
             switch whoMode {
+            case .solo:
+                Text("A solo session — just you. It'll show on your calendar and count toward your streak.")
+                    .font(GSFont.body(13, relativeTo: .footnote))
+                    .foregroundStyle(theme.neutral500)
+                    .padding(.horizontal, 16)
             case .group:
                 groupPickerContent
                     .padding(.horizontal, 16)
@@ -589,6 +600,7 @@ struct ScheduleSessionView: View {
             if selectedGroupID == nil { return true }
             if repeatWeekly && selectedWeekdays.isEmpty { return true }
             return false
+        case .solo:     return false
         case .friends:  return false
         case .code:     return false
         }
@@ -656,6 +668,13 @@ struct ScheduleSessionView: View {
         let generateRoomCode: Bool
 
         switch whoMode {
+        case .solo:
+            // No group, no invitees, no room code — `SessionRepository.schedule`
+            // already adds the organizer as a participant, so the session lands
+            // shaped exactly like a solo workout that happens to be planned.
+            groupID = nil
+            inviteeIDs = []
+            generateRoomCode = false
         case .group:
             guard let gid = selectedGroupID else {
                 errorText = "Please select a group."
