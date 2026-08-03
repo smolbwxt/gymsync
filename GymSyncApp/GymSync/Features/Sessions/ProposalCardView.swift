@@ -58,12 +58,16 @@ struct ProposalCardView: View {
                                 .foregroundStyle(theme.text)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 7)
-                                .background(theme.surface)
-                                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
-                                .frame(minHeight: 44)
+                                // Footprint: face floor 37 + 7pt lip = the
+                                // old 44pt tap target.
+                                .frame(minHeight: 37)
                                 .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        // 3D pass (2026-08 sweep): neutral raised pair — the
+                        // quiet half of the vote pair.
+                        .buttonStyle(.gs3D(face: theme.raised3DFace,
+                                           lip: theme.raised3DLip,
+                                           cornerRadius: GSMetrics.radiusSm))
 
                         Button {
                             Task { await onApprove() }
@@ -73,11 +77,15 @@ struct ProposalCardView: View {
                                 .foregroundStyle(theme.bg)
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 7)
-                                .background(theme.accent)
-                                .frame(minHeight: 44)
+                                // Footprint: face floor 37 + 7pt lip = the
+                                // old 44pt tap target.
+                                .frame(minHeight: 37)
                                 .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        // 3D pass (2026-08 sweep): accent face, derived lip —
+                        // the affirmative half of the vote pair.
+                        .buttonStyle(.gs3D(face: theme.accent,
+                                           cornerRadius: GSMetrics.radiusSm))
                     }
                 }
             }

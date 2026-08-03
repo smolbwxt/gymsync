@@ -141,14 +141,16 @@ struct ScheduleSessionView: View {
                         .padding(.horizontal, 16)
                         .padding(.vertical, 14)
                         .frame(maxWidth: .infinity)
-                        .background(
-                            (isScheduleButtonDisabled || isScheduling)
-                                ? theme.neutral400
-                                : theme.accent
-                        )
-                        .cornerRadius(GSMetrics.radiusSm)   // redesign: rounded CTA
                     }
-                    .buttonStyle(.plain)
+                    // 3D pass (2026-08 sweep): the pinned CTA is extruded. The
+                    // face carries the SAME disabled/enabled fill the label's
+                    // own background used to (neutral400 vs accent) so the
+                    // inert look is unchanged; the lip derives from it.
+                    .buttonStyle(.gs3D(
+                        face: (isScheduleButtonDisabled || isScheduling)
+                            ? theme.neutral400
+                            : theme.accent,
+                        cornerRadius: GSMetrics.radiusSm))
                     .disabled(isScheduleButtonDisabled || isScheduling)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)

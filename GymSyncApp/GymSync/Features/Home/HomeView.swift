@@ -1037,62 +1037,68 @@ struct HomeView: View {
             } label: {
                 campaignCardBody(campaign, joined: true)
             }
-            .buttonStyle(.plain)
+            // 3D pass (2026-08 sweep): the joined card navigates, so it
+            // sinks on press.
+            .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
         } else {
+            // Not a link (it carries its own inline "Join Campaign" CTA), so
+            // it wears the STATIC extrusion — identical at rest, no travel.
             campaignCardBody(campaign, joined: false)
+                .gs3DCard(cornerRadius: GSMetrics.radiusMd)
         }
     }
 
+    // 3D pass (2026-08 sweep): the extruded chrome comes from the CALL SITE
+    // (`.gs3DCardStyle` when joined/tappable, `.gs3DCard` otherwise) — the
+    // old wrapping GSCard would have painted flat surface over the face.
     private func campaignCardBody(_ campaign: Campaign, joined: Bool) -> some View {
-        GSCard(bordered: false) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("CAMPAIGN")
-                    .font(GSFont.bodyMedium(11, relativeTo: .caption2))
-                    .tracking(1.2)
-                    .foregroundStyle(theme.neutral700)
-                Text(campaign.name)
-                    .font(GSFont.heading(16, relativeTo: .headline))
-                    .foregroundStyle(theme.text)
-                    .lineLimit(1)
+        VStack(alignment: .leading, spacing: 6) {
+            Text("CAMPAIGN")
+                .font(GSFont.bodyMedium(11, relativeTo: .caption2))
+                .tracking(1.2)
+                .foregroundStyle(theme.neutral700)
+            Text(campaign.name)
+                .font(GSFont.heading(16, relativeTo: .headline))
+                .foregroundStyle(theme.text)
+                .lineLimit(1)
 
-                if joined {
-                    if let resolved = campaign.individualTarget?.resolvedTarget {
-                        let achieved = CampaignProgressMath.achievedCount(
-                            progress: campaignProgressByID[campaign.id], target: campaign.individualTarget) ?? 0
-                        Text("Your progress: \(achieved)/\(resolved.count) \(resolved.unitLabel)")
-                            .font(GSFont.body(12, relativeTo: .caption))
-                            .foregroundStyle(theme.neutral500)
-                    }
-                    if let community = campaignCommunityByID[campaign.id] {
-                        Text("Community: \(trimmedDecimal(Units.fromPounds(community.volumeLifted, to: ThemeStore.shared.weightUnit))) \(ThemeStore.shared.weightUnit.label)")
-                            .font(GSFont.body(12, relativeTo: .caption))
-                            .foregroundStyle(theme.neutral500)
-                    }
-                } else {
-                    Text(campaign.description ?? "Join a seasonal challenge with the community.")
+            if joined {
+                if let resolved = campaign.individualTarget?.resolvedTarget {
+                    let achieved = CampaignProgressMath.achievedCount(
+                        progress: campaignProgressByID[campaign.id], target: campaign.individualTarget) ?? 0
+                    Text("Your progress: \(achieved)/\(resolved.count) \(resolved.unitLabel)")
                         .font(GSFont.body(12, relativeTo: .caption))
                         .foregroundStyle(theme.neutral500)
-                        .lineLimit(2)
-                    Button {
-                        Task { await joinCampaignFromHome(campaign) }
-                    } label: {
-                        HStack {
-                            Text("Join Campaign")
-                            Spacer()
-                            Image(systemName: "plus")
-                                .font(.system(size: 13, weight: .semibold))
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(GSPrimaryButtonStyle(fontSize: 13, verticalPadding: 10))
-                    .disabled(joiningCampaignIDs.contains(campaign.id))
-                    .opacity(joiningCampaignIDs.contains(campaign.id) ? 0.6 : 1)
-                    .padding(.top, 4)
                 }
+                if let community = campaignCommunityByID[campaign.id] {
+                    Text("Community: \(trimmedDecimal(Units.fromPounds(community.volumeLifted, to: ThemeStore.shared.weightUnit))) \(ThemeStore.shared.weightUnit.label)")
+                        .font(GSFont.body(12, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral500)
+                }
+            } else {
+                Text(campaign.description ?? "Join a seasonal challenge with the community.")
+                    .font(GSFont.body(12, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+                    .lineLimit(2)
+                Button {
+                    Task { await joinCampaignFromHome(campaign) }
+                } label: {
+                    HStack {
+                        Text("Join Campaign")
+                        Spacer()
+                        Image(systemName: "plus")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(GSPrimaryButtonStyle(fontSize: 13, verticalPadding: 10))
+                .disabled(joiningCampaignIDs.contains(campaign.id))
+                .opacity(joiningCampaignIDs.contains(campaign.id) ? 0.6 : 1)
+                .padding(.top, 4)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
     }
 
     // (Declutter round, 2026-07-21 feedback: the Home stat-tile row was

@@ -70,19 +70,29 @@ public struct GSPrimaryButtonStyle: ButtonStyle {
 
 // MARK: - GSSecondaryButtonStyle
 //
-// Matches the design system's `.btn-secondary` (verified against the rendered
-// canvas component sheet): a 1px DIVIDER-gray border with TEXT-color label —
-// a quiet outline that recedes on the surface, NOT the accent. Earlier this
-// drew border + label in `theme.accent`, which read as a prominent navy
-// rectangle everywhere it was used (the You-tab "Edit" button et al).
-// Pressed state: a faint text-tint fill, per the DS hover/active treatment.
+// The NEUTRAL sibling of `GSPrimaryButtonStyle`, wearing the same extruded
+// anatomy (2026-08 visual-language sweep — owner field report: "some buttons
+// still do not have the 3D design"): `theme.raised3DFace` on
+// `theme.raised3DLip` — the theme-tuned neutral pair GSTheme documents as
+// the secondary face/lip — with a TEXT-color label. Pressing sinks the face
+// onto the lip, replacing the old faint text-tint fill.
+//
+// Before this pass it drew a 1px divider-gray outline with no fill, which
+// read as flat next to every 3D primary CTA beside it. The lip is what
+// delineates the button now, so the border is gone (same reasoning as
+// `GS3DCardStyle` retiring the card stroke).
 
 public struct GSSecondaryButtonStyle: ButtonStyle {
     @Environment(\.gsTheme) private var theme
+    /// Drives the inert rendering of a `.disabled` CTA — see `makeBody`.
+    @Environment(\.isEnabled) private var isEnabled
 
     private let fontSize: CGFloat
     private let horizontalPadding: CGFloat
     private let verticalPadding: CGFloat
+
+    /// The extruded bottom lip — matches `GSPrimaryButtonStyle`'s 7pt.
+    private static let lipHeight: CGFloat = 7
 
     /// Defaults match the canonical 16pt/16-horizontal/12-vertical treatment;
     /// callers matching a canvas spec with a smaller scale (e.g. a compact
@@ -95,7 +105,8 @@ public struct GSSecondaryButtonStyle: ButtonStyle {
     }
 
     public func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 0) {
+        let pressed = configuration.isPressed && isEnabled
+        return HStack(spacing: 0) {
             configuration.label
             Spacer(minLength: 0)
         }
@@ -103,15 +114,20 @@ public struct GSSecondaryButtonStyle: ButtonStyle {
         .foregroundColor(theme.text)
         .padding(.horizontal, horizontalPadding)
         .padding(.vertical, verticalPadding)
-        // Same 44pt floor as the primary style (UI audit 2026-07-29).
-        .frame(minHeight: 44)
-        .background(configuration.isPressed ? theme.text.opacity(0.08) : Color.clear)
-        .cornerRadius(GSMetrics.radiusSm)
-        .overlay(
-            RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1)
-        )
+        // Same 44pt floor as the primary style (UI audit 2026-07-29). The
+        // floor now spans face + lip, so the face's own floor is 44 minus
+        // the lip — every compact call site (the 11–13pt chips whose label
+        // never reached 37) keeps its exact 44pt footprint.
+        .frame(minHeight: 44 - Self.lipHeight)
+        .background(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).fill(theme.raised3DFace))
+        .offset(y: pressed ? Self.lipHeight : 0)
+        .padding(.bottom, Self.lipHeight)
+        .background(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).fill(theme.raised3DLip))
+        // Matches `GS3DButtonStyle`: a disabled CTA renders visibly inert
+        // and does not travel.
+        .opacity(isEnabled ? 1 : 0.5)
         .contentShape(Rectangle())
-        .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+        .animation(.easeOut(duration: 0.08), value: pressed)
     }
 }
 
@@ -482,38 +498,44 @@ public struct GSSettingsRow: View {
 
 // MARK: - GSSecondarySignOutButtonStyle
 //
-// Sign-Out variant of GSSecondaryButtonStyle: accent700 text (vs accent),
-// neutral300 border (vs accent), CENTERED label (canvas exception to the
+// Sign-Out variant of GSSecondaryButtonStyle: accent700 text (vs the
+// neutral style's theme.text), CENTERED label (canvas exception to the
 // DS system's flush-left rule — canvas explicitly sets
 // `justify-content:center` for the You-tab Sign Out button only).
 // Promoted from a private one-off in YouTabView so it's reusable/testable.
+//
+// 2026-08 visual-language sweep: wears the same extruded neutral anatomy as
+// `GSSecondaryButtonStyle` (raised face on raised lip, press-sink); the old
+// borderless-with-tint treatment read as flat.
 
 public struct GSSecondarySignOutButtonStyle: ButtonStyle {
     @Environment(\.gsTheme) private var theme
+    @Environment(\.isEnabled) private var isEnabled
+
+    /// Matches `GSSecondaryButtonStyle`'s lip.
+    private static let lipHeight: CGFloat = 7
 
     public init() {}
 
     public func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 0) {
+        let pressed = configuration.isPressed && isEnabled
+        return HStack(spacing: 0) {
             Spacer(minLength: 0)
             configuration.label
             Spacer(minLength: 0)
         }
         .font(GSFont.bold(16, relativeTo: .body))
-        .foregroundColor(configuration.isPressed ? theme.accent600 : theme.accent700)
+        .foregroundColor(pressed ? theme.accent600 : theme.accent700)
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(configuration.isPressed ? theme.accent100 : Color.clear)
-        .cornerRadius(GSMetrics.radiusSm)
-        .overlay(
-            Rectangle()
-                .strokeBorder(
-                    configuration.isPressed ? theme.accent600 : theme.neutral300,
-                    lineWidth: 1
-                )
-        )
+        .frame(minHeight: 44 - Self.lipHeight)
+        .background(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).fill(theme.raised3DFace))
+        .offset(y: pressed ? Self.lipHeight : 0)
+        .padding(.bottom, Self.lipHeight)
+        .background(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).fill(theme.raised3DLip))
+        .opacity(isEnabled ? 1 : 0.5)
         .contentShape(Rectangle())
-        .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+        .animation(.easeOut(duration: 0.08), value: pressed)
     }
 }
 

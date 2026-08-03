@@ -144,11 +144,14 @@ struct SocialTabView: View {
                                 }
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 13)
-                                .background(theme.surface)
-                                .cornerRadius(GSMetrics.radiusSm)
                                 .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain)
+                            // 3D pass (2026-08 sweep): tappable hub row —
+                            // extruded face + lip + press-sink. The old
+                            // `.background(theme.surface).cornerRadius(...)`
+                            // is gone: the style paints the face (flat
+                            // surface over it would hide the extrusion).
+                            .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
                             .padding(.horizontal, 16)
                             .padding(.top, 12)
 
@@ -177,11 +180,10 @@ struct SocialTabView: View {
                                 }
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 13)
-                                .background(theme.surface)
-                                .cornerRadius(GSMetrics.radiusSm)
                                 .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain)
+                            // 3D pass (2026-08 sweep) — see the Friends row.
+                            .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
                             .gsDiscovery(.socialFeed, cornerRadius: GSMetrics.radiusSm)
                             .padding(.horizontal, 16)
                             .padding(.top, 8)
@@ -211,11 +213,10 @@ struct SocialTabView: View {
                                 }
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 13)
-                                .background(theme.surface)
-                                .cornerRadius(GSMetrics.radiusSm)
                                 .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain)
+                            // 3D pass (2026-08 sweep) — see the Friends row.
+                            .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
                             .gsDiscovery(.socialLocal, cornerRadius: GSMetrics.radiusSm)
                             .padding(.horizontal, 16)
                             .padding(.top, 8)
@@ -266,7 +267,9 @@ struct SocialTabView: View {
                                     } label: {
                                         groupRow(group)
                                     }
-                                    .buttonStyle(.plain)
+                                    // 3D pass (2026-08 sweep): group rows sink
+                                    // like the hub rows above.
+                                    .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
                                     .padding(.horizontal, 16)
                                 }
                             }
@@ -486,8 +489,9 @@ struct SocialTabView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .background(theme.surface)
-        .cornerRadius(GSMetrics.radiusSm)
+        // 3D pass (2026-08 sweep): chrome comes from the NavigationLink's
+        // `.gs3DCardStyle` — this is the LABEL only (a flat surface fill
+        // here would paint over the extruded face).
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
     }

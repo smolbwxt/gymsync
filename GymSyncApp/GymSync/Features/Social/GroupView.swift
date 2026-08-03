@@ -245,19 +245,26 @@ struct GroupView: View {
             }
         }
 
-        // Sticky footer — bordered box, accent text, pinned below a divider
+        // Sticky footer — extruded neutral CTA, accent text, pinned below a divider
         GSDivider()
-        Button("Leave Group", role: .destructive) {
+        // 3D pass (2026-08 sweep): the sticky footer CTA wears the neutral
+        // raised pair (accent label kept). Footprint math: the old bordered
+        // box was minHeight 44 — the face is now 37 and the 7pt lip sits
+        // below it, so the footer's total height is unchanged at 44.
+        Button(role: .destructive) {
             Task {
                 try? await GroupRepository.leave(groupID: group.id)
                 dismiss()
             }
+        } label: {
+            Text("Leave Group")
+                .font(GSFont.bodyMedium(14, relativeTo: .body))
+                .foregroundStyle(theme.accent)
+                .frame(maxWidth: .infinity, minHeight: 37)
         }
-        .font(GSFont.bodyMedium(14, relativeTo: .body))
-        .foregroundStyle(theme.accent)
-        .frame(maxWidth: .infinity, minHeight: 44)
-        .contentShape(Rectangle())
-        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
+        .buttonStyle(.gs3D(face: theme.raised3DFace,
+                           lip: theme.raised3DLip,
+                           cornerRadius: GSMetrics.radiusSm))
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(theme.bg)

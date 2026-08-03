@@ -223,12 +223,16 @@ struct LibraryTabView: View {
                                        startPoint: .bottom, endPoint: .top)
                     )
                 }
-                .frame(height: 150)
+                // Footprint: 144 art + 6pt lip = the canvas's 150pt hero.
+                .frame(height: 144)
                 .clipped()
-                .cornerRadius(GSMetrics.radiusSm)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            // 3D pass (2026-08 sweep): the hero art sinks on press. The face
+            // sits behind the (opaque) art, so it's the lip that reads —
+            // `.cornerRadius` here is gone because the style already clips
+            // the label to its rounded shape.
+            .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
 
             Button {
                 Task { await clone(item.routine.id) }

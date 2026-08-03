@@ -107,12 +107,13 @@ struct WelcomeView: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
-            .frame(minHeight: 44)
-            .background(theme.surface)
-            .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
+            // Footprint: face floor 38 + 6pt lip = the old 44pt row.
+            .frame(minHeight: 38)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        // 3D pass (2026-08 sweep): tappable shortcut card — extruded face +
+        // lip + press-sink, replacing the flat surface fill and its outline.
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
     }
 
     // MARK: - Footer

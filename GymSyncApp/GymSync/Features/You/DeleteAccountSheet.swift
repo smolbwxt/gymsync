@@ -135,10 +135,14 @@ struct DeleteAccountSheet: View {
             .font(GSFont.bold(16, relativeTo: .body))
             .foregroundColor(.white)
             .padding(.vertical, 12)
-            .background(canDelete ? Color.red : theme.neutral400)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        // 3D pass (2026-08 sweep): the destructive CTA is extruded. The face
+        // carries the SAME live/inert fill the label's own background used to
+        // (red vs neutral400); the lip derives from it. Corner radius joins
+        // the app's `radiusSm` CTA idiom (this was the last square CTA).
+        .buttonStyle(.gs3D(face: canDelete ? Color.red : theme.neutral400,
+                           cornerRadius: GSMetrics.radiusSm))
         .disabled(!canDelete)
         .padding(.top, 8)
     }

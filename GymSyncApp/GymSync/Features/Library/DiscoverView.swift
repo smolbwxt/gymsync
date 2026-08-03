@@ -156,7 +156,9 @@ struct DiscoverView: View {
                                 } label: {
                                     workoutCard(workout)
                                 }
-                                .buttonStyle(.plain)
+                                // 3D pass (2026-08 sweep): grid tiles sink
+                                // on press, like the Shop tiles.
+                                .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
                             }
                         }
                         .padding(16)
@@ -262,10 +264,11 @@ struct DiscoverView: View {
                     .foregroundStyle(theme.neutral500)
             }
             .padding(12)
-            .background(theme.surface)
-            .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
         }
-        .buttonStyle(.plain)
+        // 3D pass (2026-08 sweep): tappable hub row — the extruded face + lip
+        // replace the flat surface fill and its 1pt outline (the lip is what
+        // delineates the row now).
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
         .padding(.horizontal, 16)
         .padding(.top, 16)
     }
@@ -339,12 +342,16 @@ struct DiscoverView: View {
             // Redesign (user feedback 2026-07-23: "the widgets are not the
             // same size") — a fixed text-zone height makes every grid card
             // uniform regardless of optional chips/attempt lines.
-            .frame(height: 84, alignment: .topLeading)
+            //
+            // 3D pass (2026-08 sweep): 84 → 78 so the 6pt lip added by the
+            // NavigationLink's `.gs3DCardStyle` keeps the tile's total at
+            // the same 168pt (84 art + 78 text + 6 lip).
+            .frame(height: 78, alignment: .topLeading)
         }
+        // 3D pass (2026-08 sweep): chrome comes from the NavigationLink's
+        // `.gs3DCardStyle` — this is the LABEL only (a flat surface fill and
+        // its outline here would hide the extruded face).
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.surface)
-        .cornerRadius(GSMetrics.radiusSm)
-        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
     }
 
     /// Shared with `DiscoverWorkoutDetailView`'s metric chips/segmented sort

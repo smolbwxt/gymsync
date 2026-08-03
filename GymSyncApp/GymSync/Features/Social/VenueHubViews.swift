@@ -167,9 +167,13 @@ struct LocalHubsView: View {
                             } label: {
                                 venueRow(item.venue, distance: item.distance)
                             }
-                            .buttonStyle(.plain)
+                            // 3D pass (2026-08 sweep): tappable venue card —
+                            // extruded face + lip + press-sink. Bottom
+                            // padding 6 → 10 so the 6pt lip doesn't crowd
+                            // the next card (CampaignsTabView precedent).
+                            .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
                             .padding(.horizontal, 16)
-                            .padding(.bottom, 6)
+                            .padding(.bottom, 10)
                         }
                     }
 
@@ -196,32 +200,33 @@ struct LocalHubsView: View {
         .contentMargins(.bottom, 88, for: .scrollContent)
     }
 
+    // 3D pass (2026-08 sweep): chrome comes from the NavigationLink's
+    // `.gs3DCardStyle` — this is the LABEL only (the old wrapping GSCard
+    // would have painted flat surface over the extruded face).
     private func venueRow(_ venue: Venue, distance: Double?) -> some View {
-        GSCard(bordered: false) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(venue.name)
-                        .font(GSFont.heading(16, relativeTo: .headline))
-                        .foregroundStyle(theme.text)
-                    if venue.isVerified {
-                        Image(systemName: "checkmark.seal.fill")
-                            .font(.system(size: 12))
-                            .foregroundStyle(theme.accent)
-                    }
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(theme.neutral500)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text(venue.name)
+                    .font(GSFont.heading(16, relativeTo: .headline))
+                    .foregroundStyle(theme.text)
+                if venue.isVerified {
+                    Image(systemName: "checkmark.seal.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(theme.accent)
                 }
-                if let distance {
-                    Text(VenueMath.distanceText(distance))
-                        .font(GSFont.body(12, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral500)
-                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(theme.neutral500)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
+            if let distance {
+                Text(VenueMath.distanceText(distance))
+                    .font(GSFont.body(12, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
     }
 
     @MainActor
