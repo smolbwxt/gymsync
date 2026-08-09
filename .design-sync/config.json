@@ -1,0 +1,21 @@
+{
+  "projectId": "35bac442-ddb8-453d-8751-6af7b7a5eb44",
+  "shape": "package",
+  "pkg": "@gymsync/onyx",
+  "globalName": "GymSyncOnyx",
+  "buildCmd": "npm run build --prefix design-web",
+  "srcDir": "design-web/src",
+  "tsconfig": "tsconfig.json",
+  "cssEntry": "dist/styles.css",
+  "readmeHeader": ".design-sync/conventions.md",
+  "overrides": {
+    "Bubble": { "cardMode": "column" },
+    "CrewCard": { "cardMode": "column" },
+    "ExtrudedButton": { "cardMode": "column" },
+    "MsgRow": { "cardMode": "column" },
+    "RoutineRow": { "cardMode": "column" },
+    "SysLine": { "cardMode": "column" },
+    "TuneStepper": { "cardMode": "column" },
+    "WeeksBar": { "cardMode": "column" }
+  }
+}

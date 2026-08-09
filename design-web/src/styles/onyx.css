@@ -1,0 +1,138 @@
+/* Onyx component classes — squad room set. All components render on --onyx-bg. */
+
+/* ── extruded button: face on a darker lip; press sinks ── */
+.ox-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  font-family: var(--onyx-font); font-weight: 800; font-size: 11.5px; letter-spacing: .06em;
+  color: var(--onyx-tx); background: var(--onyx-face);
+  border: 0; border-radius: var(--onyx-r-btn); padding: 9px 13px; cursor: pointer;
+  box-shadow: 0 4px 0 var(--onyx-lip);
+  transition: transform .06s ease, box-shadow .06s ease;
+}
+.ox-btn:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--onyx-lip); }
+.ox-btn--accent { background: var(--onyx-ac); color: var(--onyx-onac); box-shadow: 0 4px 0 var(--onyx-ac-lip); }
+.ox-btn--accent:active { box-shadow: 0 1px 0 var(--onyx-ac-lip); }
+.ox-btn--sm { font-size: 9.5px; padding: 6px 10px; box-shadow: 0 3px 0 var(--onyx-lip); }
+.ox-btn--wide { display: flex; width: 100%; box-sizing: border-box; justify-content: space-between; }
+
+/* ── k-label: tracked uppercase utility text ── */
+.ox-klabel {
+  font-family: var(--onyx-font); font-weight: 800; font-size: 10px;
+  letter-spacing: .13em; text-transform: uppercase; color: var(--onyx-n700); line-height: 1.6;
+}
+.ox-klabel--gold { color: var(--onyx-gold); }
+.ox-klabel--green { color: var(--onyx-green); }
+.ox-klabel--dim { color: var(--onyx-n500); }
+
+/* ── avatar chip ── */
+.ox-avatar {
+  border-radius: 999px; display: inline-grid; place-items: center;
+  font-family: var(--onyx-font); font-weight: 800; color: #fff; flex: none;
+}
+
+/* ── crew chip (header crew selector) ── */
+.ox-crewchip {
+  width: 34px; height: 34px; border-radius: 12px; display: inline-grid; place-items: center;
+  font-family: var(--onyx-font); font-size: 11px; font-weight: 800; color: #fff;
+  position: relative; flex: none; border: 0; cursor: pointer;
+  box-shadow: 0 3px 0 var(--onyx-lip);
+}
+.ox-crewchip--active { box-shadow: 0 3px 0 var(--onyx-lip), 0 0 0 2px var(--onyx-bg), 0 0 0 4px var(--onyx-ac); }
+.ox-crewchip__dot {
+  position: absolute; top: -3px; right: -3px; width: 9px; height: 9px; border-radius: 999px;
+  background: var(--onyx-ac); box-shadow: 0 0 0 2px var(--onyx-bg);
+}
+
+/* ── the week's bar ── */
+.ox-bar { position: relative; font-family: var(--onyx-font); }
+.ox-bar__shaft { position: absolute; height: 7px; border-radius: 2px;
+  background: linear-gradient(180deg, var(--onyx-steel-hi), var(--onyx-steel-lo)); }
+.ox-bar__sleeve { position: absolute; height: 11px; border-radius: 3px;
+  background: linear-gradient(180deg, var(--onyx-steel-sleeve-hi), var(--onyx-steel-sleeve-lo)); }
+.ox-bar__hub { position: absolute; width: 9px; height: 20px; border-radius: 2px;
+  background: linear-gradient(180deg, #d5dbe4, #7c828d); }
+.ox-plate { position: absolute; width: 15px; height: 58px; border-radius: 3px;
+  box-shadow: 0 10px 13px -8px rgba(0, 0, 0, .72); }
+.ox-plate__sheen { position: absolute; left: 2px; right: 2px; top: 3px; height: 3px;
+  border-radius: 2px; background: rgba(255, 255, 255, .28); }
+.ox-collar { position: absolute; width: 9px; height: 24px; border-radius: 2.5px;
+  background: linear-gradient(180deg, #e2e7ee, #8a919c);
+  box-shadow: 0 6px 8px -5px rgba(0, 0, 0, .7); }
+.ox-collar__lever { position: absolute; top: -7px; left: 2px; width: 3.5px; height: 9px;
+  border-radius: 2px; background: #aeb6c1; transform: rotate(28deg); }
+.ox-bar--ironclad .ox-collar { box-shadow: 0 6px 8px -5px rgba(0, 0, 0, .7), 0 0 8px 1px rgba(232, 195, 58, .45); }
+.ox-bar__tick { position: absolute; width: 2px; height: 34px; border-radius: 1px; background: #252A31; }
+
+/* ── pixel banner + rail ── */
+.ox-rail { position: relative; height: 4px;
+  background: linear-gradient(180deg, #3d434b, #22252b); }
+.ox-rail__hang { position: absolute; top: 4px; left: 0; display: flex; gap: 6px; align-items: flex-start; }
+.ox-banner { display: inline-block; flex: none; image-rendering: pixelated; }
+.ox-flame { display: inline-flex; align-items: center; gap: 5px; font-family: var(--onyx-font); }
+
+/* ── surface card (extruded, tappable) ── */
+.ox-card {
+  background: var(--onyx-sf); border-radius: var(--onyx-r-card);
+  box-shadow: 0 5px 0 var(--onyx-lip); padding: 14px; font-family: var(--onyx-font);
+}
+
+/* ── chat bubbles (iMessage grammar, Onyx colors) ── */
+.ox-bubble { position: relative; max-width: 258px; padding: 8px 13px;
+  font-family: var(--onyx-font); font-size: 14.5px; font-weight: 500; line-height: 1.35;
+  border-radius: 19px; }
+.ox-bubble--in { color: #E8EAEE; background: #262A31; }
+.ox-bubble--out { color: var(--onyx-onac); background: var(--onyx-ac); }
+.ox-bubble--in.ox-bubble--tail::before { content: ""; position: absolute; left: -5px; bottom: 0;
+  width: 13px; height: 14px; background: #262A31;
+  clip-path: path("M13 0 C13 8 8 13 0 14 C6 14 11 11 13 6 Z"); }
+.ox-bubble--out.ox-bubble--tail::after { content: ""; position: absolute; right: -5px; bottom: 0;
+  width: 13px; height: 14px; background: var(--onyx-ac);
+  clip-path: path("M0 0 C0 8 5 13 13 14 C7 14 2 11 0 6 Z"); }
+.ox-msgrow { display: flex; gap: 8px; align-items: flex-end; margin-bottom: 2px; }
+.ox-msgrow--grp { margin-bottom: 8px; }
+.ox-msgrow--me { justify-content: flex-end; }
+.ox-sender { font-family: var(--onyx-font); font-size: 10.5px; font-weight: 600;
+  color: var(--onyx-n700); margin: 0 0 3px 44px; }
+
+/* ── session system-line ── */
+.ox-sysline { display: flex; align-items: center; gap: 7px; font-family: var(--onyx-font); }
+.ox-sysline__plate { width: 8px; height: 20px; border-radius: 2px; flex: none; }
+
+/* ── chat widget (the page's bottom half) ── */
+.ox-chatwidget { background: var(--onyx-sf); border-radius: 20px 20px 0 0;
+  display: flex; flex-direction: column; overflow: hidden; font-family: var(--onyx-font); }
+.ox-chatwidget__head { display: flex; align-items: center; gap: 9px; padding: 13px 15px 9px; }
+.ox-chatwidget__body { display: flex; flex-direction: column; justify-content: flex-end;
+  flex: 1; min-height: 0; overflow: hidden; padding: 2px 15px 0; }
+.ox-pill { min-width: 20px; height: 20px; border-radius: 999px; background: var(--onyx-ac);
+  color: var(--onyx-onac); font-size: 10px; font-weight: 800;
+  display: inline-grid; place-items: center; padding: 0 6px; flex: none; }
+.ox-composer { display: flex; align-items: center; gap: 9px; padding: 9px 12px 10px; }
+.ox-composer__field { flex: 1; display: flex; align-items: center; gap: 8px;
+  background: var(--onyx-well); border: 1px solid #30343c; border-radius: 19px;
+  padding: 8px 6px 8px 14px; color: var(--onyx-n500); font-size: 14px; font-weight: 600; }
+.ox-composer__plus { width: 34px; height: 34px; border-radius: 999px; background: var(--onyx-well);
+  display: grid; place-items: center; font-size: 17px; color: var(--onyx-n700); flex: none;
+  border: 0; cursor: pointer; box-shadow: 0 3px 0 var(--onyx-lip); }
+
+/* ── routine row + tune stepper ── */
+.ox-routinerow { display: flex; align-items: center; gap: 12px; padding: 13px 15px;
+  background: var(--onyx-sf); border-radius: 16px; box-shadow: 0 5px 0 var(--onyx-lip);
+  font-family: var(--onyx-font); }
+.ox-routinerow--open { flex-direction: column; align-items: stretch;
+  box-shadow: 0 5px 0 var(--onyx-lip), 0 0 0 2px var(--onyx-ac); }
+.ox-routinerow__name { font-weight: 800; font-size: 14.5px; color: var(--onyx-tx); line-height: 1.2; }
+.ox-routinerow__num { font-weight: 800; font-size: 17px; font-variant-numeric: tabular-nums; }
+.ox-stepper { display: flex; align-items: center; gap: 10px; font-family: var(--onyx-font); }
+.ox-stepper__val { font-weight: 800; font-size: 22px; color: var(--onyx-tx);
+  font-variant-numeric: tabular-nums; text-align: center; }
+
+/* ── tab bar ── */
+.ox-tabbar { display: flex; border-top: 1px solid var(--onyx-dvs); padding: 11px 18px 14px;
+  gap: 4px; background: var(--onyx-bg); font-family: var(--onyx-font); }
+.ox-tabbar__item { flex: 1; text-align: center; color: var(--onyx-n700); border: 0;
+  background: none; cursor: pointer; }
+.ox-tabbar__item--active { color: var(--onyx-ac); }
+.ox-tabbar__icon { font-size: 18px; line-height: 1; }
+.ox-tabbar__label { font-weight: 800; font-size: 9px; letter-spacing: .07em; margin-top: 5px;
+  text-transform: uppercase; }

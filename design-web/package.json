@@ -1,0 +1,22 @@
+{
+  "name": "@gymsync/onyx",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Web edition of GymSync's Onyx design system — squad room set. Mirrors the SwiftUI components 1:1.",
+  "main": "dist/index.js",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "esbuild src/index.ts --bundle --format=esm --external:react --external:react-dom --outfile=dist/index.js && tsc -p . --emitDeclarationOnly && esbuild src/styles/styles.css --bundle --outfile=dist/styles.css"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "esbuild": "^0.24.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.6.0"
+  }
+}
