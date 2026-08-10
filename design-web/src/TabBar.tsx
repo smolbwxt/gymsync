@@ -8,7 +8,7 @@ export interface TabBarItem {
 }
 
 export interface TabBarProps {
-  /** The tabs in order. GymSync ships HOME · SQUAD · SHOP · YOU. */
+  /** The tabs in order. GymSync ships HOME · HOME GYM · SHOP · YOU. */
   items: TabBarItem[];
   /** Index of the active tab (accent-colored). */
   activeIndex?: number;
