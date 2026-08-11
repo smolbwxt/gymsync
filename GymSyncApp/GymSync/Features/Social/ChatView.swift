@@ -728,7 +728,7 @@ struct ChatView: View {
     private func loadSoundReactionData() async {
         ownedSoundSlugs = (try? await SoundboardFavoritesRepository.get()) ?? []
         if let catalog = try? await SoundboardRepository.fetchCatalog() {
-            soundNames = Dictionary(uniqueKeysWithValues: catalog.map { ($0.slug, $0.displayName) })
+            soundNames = Dictionary(uniqueKeysWithValues: catalog.map { ($0.slug, $0.displayName ?? $0.slug) })
         }
     }
 
