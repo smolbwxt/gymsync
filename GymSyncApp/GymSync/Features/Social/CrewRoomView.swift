@@ -25,6 +25,17 @@ struct CrewRoomView: View {
     @State private var chatPreview: [String] = []
     @State private var showChat = false
     @State private var slotBreathing = false
+    // Commit widget (20260811000001): ternary — in / out / no row = unsaid.
+    @State private var commitments: [SessionCommitment] = []
+    @State private var myUserID: UUID?
+    // Campaign meter (20260811000002); loaded flag gates the adopt prompt so
+    // it never flashes before the first fetch resolves.
+    @State private var campaign: GroupCampaign?
+    @State private var campaignLoaded = false
+    @State private var showCampaignSheet = false
+    // What the next session actually is (routine + programmed exercises).
+    @State private var routineName: String?
+    @State private var exerciseSummary: String?
 
     // Design-fixed inks (committed-dark values from the handoff; these are
     // brand semantics, not palette members — gold = debt/goal/streak,
@@ -44,6 +55,7 @@ struct CrewRoomView: View {
                 headerRow
                 bannerRail
                 commitCard
+                campaignCard
                 routinesTogetherCard
                 chatPreviewCard
             }
@@ -66,6 +78,11 @@ struct CrewRoomView: View {
                         .kerning(1.1)
                         .foregroundStyle(theme.neutral500)
                 }
+            }
+        }
+        .sheet(isPresented: $showCampaignSheet) {
+            CampaignCreateSheet(group: group) {
+                Task { await load() }
             }
         }
         .sheet(isPresented: $showChat) {
@@ -142,49 +159,20 @@ struct CrewRoomView: View {
         }
     }
 
-    // MARK: - Commit card: next lift + LET'S RIDE
+    // MARK: - Commit card: the commitment signal (NOT lobby navigation)
+
+    private var myCommitment: SessionCommitment.Status? {
+        guard let myUserID else { return nil }
+        return commitments.first { $0.userID == myUserID }?.status
+    }
 
     private var commitCard: some View {
-        HStack(alignment: .center, spacing: 12) {
+        Group {
             if let session = nextSession {
-                NavigationLink {
-                    LobbyView(session: session)
-                        .id(session.id)
-                } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("LET'S RIDE")
-                            .font(GSFont.bold(15, relativeTo: .headline))
-                            .kerning(-0.2)
-                        Text("TAP TO COMMIT")
-                            .font(GSFont.bold(10, relativeTo: .caption2))
-                            .kerning(1.1)
-                            .opacity(0.72)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 12)
-                }
-                .buttonStyle(GSPrimaryButtonStyle(verticalPadding: 0))
-
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("NEXT LIFT")
-                        .font(GSFont.bold(13.5, relativeTo: .subheadline))
-                        .kerning(-0.1)
-                        .foregroundStyle(theme.text)
-                    if let when = session.scheduledFor {
-                        Text(Self.whenLabel(when).uppercased())
-                            .font(GSFont.bold(10, relativeTo: .caption2))
-                            .kerning(1.1)
-                            .foregroundStyle(theme.neutral700)
-                        Text(Self.countdownLabel(to: when).uppercased())
-                            .font(GSFont.bold(10, relativeTo: .caption2))
-                            .kerning(1.1)
-                            .foregroundStyle(theme.accent)
-                    }
-                }
-                .padding(.leading, 12)
-                .overlay(alignment: .leading) {
-                    Rectangle().fill(theme.divider).frame(width: 1)
+                if myCommitment == nil {
+                    commitFace(session)
+                } else {
+                    statusBoard(session)
                 }
             } else {
                 VStack(alignment: .leading, spacing: 5) {
@@ -197,11 +185,226 @@ struct CrewRoomView: View {
                         .foregroundStyle(theme.neutral500)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(13)
+                .background(theme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+            }
+        }
+    }
+
+    // Pre-answer face: compact commit control on the left, the right side
+    // describing what the workout actually is (owner feedback: the button
+    // was eating the widget).
+    private func commitFace(_ session: WorkoutSession) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(spacing: 7) {
+                Button {
+                    Task { await setCommitment(.committed, session: session) }
+                } label: {
+                    Text("LET'S RIDE")
+                        .font(GSFont.bold(13, relativeTo: .subheadline))
+                        .kerning(-0.1)
+                }
+                .buttonStyle(GSPrimaryButtonStyle(fontSize: 13, verticalPadding: 9))
+                Button {
+                    Task { await setCommitment(.out, session: session) }
+                } label: {
+                    Text("CAN'T MAKE IT")
+                        .font(GSFont.bold(9, relativeTo: .caption2))
+                        .kerning(1.1)
+                        .foregroundStyle(Self.gold)
+                }
+                .buttonStyle(.plain)
+            }
+            .frame(width: 118)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text((routineName ?? "NEXT LIFT").uppercased())
+                    .font(GSFont.bold(13.5, relativeTo: .subheadline))
+                    .kerning(-0.1)
+                    .foregroundStyle(theme.text)
+                    .lineLimit(1)
+                if let exerciseSummary {
+                    Text(exerciseSummary)
+                        .font(GSFont.bold(9.5, relativeTo: .caption2))
+                        .kerning(0.8)
+                        .foregroundStyle(theme.neutral700)
+                        .lineLimit(2)
+                }
+                if let when = session.scheduledFor {
+                    Text("\(Self.whenLabel(when).uppercased()) · \(Self.countdownLabel(to: when).uppercased())")
+                        .font(GSFont.bold(10, relativeTo: .caption2))
+                        .kerning(1.1)
+                        .foregroundStyle(theme.accent)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, 12)
+            .overlay(alignment: .leading) {
+                Rectangle().fill(theme.divider).frame(width: 1)
             }
         }
         .padding(13)
         .background(theme.surface)
         .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+
+    // Answered: the roll call. IN green, OUT gold (dimmed), unsaid dimmest.
+    private func statusBoard(_ session: WorkoutSession) -> some View {
+        let inMembers = boardMembers(.committed)
+        let outMembers = boardMembers(.out)
+        let unsaid = members.filter { entry in
+            !commitments.contains { $0.userID == entry.member.userID }
+        }
+        return VStack(alignment: .leading, spacing: 11) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text((routineName ?? "NEXT LIFT").uppercased())
+                        .font(GSFont.bold(13.5, relativeTo: .subheadline))
+                        .foregroundStyle(theme.text)
+                    if let when = session.scheduledFor {
+                        Text("\(Self.whenLabel(when).uppercased()) · \(Self.countdownLabel(to: when).uppercased())")
+                            .font(GSFont.bold(10, relativeTo: .caption2))
+                            .kerning(1.1)
+                            .foregroundStyle(theme.neutral700)
+                    }
+                }
+                Spacer()
+                Button {
+                    Task { await clearCommitment(session) }
+                } label: {
+                    Text("CHANGE")
+                        .font(GSFont.bold(10, relativeTo: .caption2))
+                        .kerning(1.1)
+                        .foregroundStyle(theme.accent)
+                }
+                .buttonStyle(.plain)
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                if !inMembers.isEmpty {
+                    boardRow(label: "\(inMembers.count) IN", labelColor: Self.green,
+                             entries: inMembers, dim: 1.0)
+                }
+                if !outMembers.isEmpty {
+                    boardRow(label: "\(outMembers.count) OUT", labelColor: Self.gold,
+                             entries: outMembers, dim: 0.42)
+                }
+                if !unsaid.isEmpty {
+                    boardRow(label: "\(unsaid.count) UNSAID", labelColor: theme.neutral500,
+                             entries: unsaid, dim: 0.3)
+                }
+            }
+            .padding(.top, 10)
+            .overlay(alignment: .top) {
+                Rectangle().fill(theme.divider).frame(height: 1)
+            }
+        }
+        .padding(13)
+        .background(theme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+
+    private func boardMembers(_ status: SessionCommitment.Status) -> [(member: GroupMember, profile: Profile)] {
+        members.filter { entry in
+            commitments.contains { $0.userID == entry.member.userID && $0.status == status }
+        }
+    }
+
+    private func boardRow(label: String, labelColor: Color,
+                          entries: [(member: GroupMember, profile: Profile)],
+                          dim: Double) -> some View {
+        HStack(spacing: 9) {
+            Text(label)
+                .font(GSFont.bold(10, relativeTo: .caption2))
+                .kerning(1.1)
+                .foregroundStyle(labelColor)
+                .frame(width: 62, alignment: .leading)
+            HStack(spacing: 6) {
+                ForEach(entries, id: \.member.userID) { entry in
+                    GSInitialsAvatar(
+                        name: entry.profile.username,
+                        avatarURL: entry.profile.avatarURL,
+                        size: 24,
+                        fill: GSGroupColor.color(for: entry.member.userID),
+                        ink: GSGroupColor.onColor(for: entry.member.userID)
+                    )
+                }
+            }
+            .opacity(dim)
+            Spacer(minLength: 0)
+            Text(entries.map { $0.profile.username.uppercased() }.joined(separator: " · "))
+                .font(GSFont.bold(9, relativeTo: .caption2))
+                .kerning(0.8)
+                .foregroundStyle(theme.neutral700)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+    }
+
+    private func setCommitment(_ status: SessionCommitment.Status, session: WorkoutSession) async {
+        try? await CommitmentRepository.setMine(sessionID: session.id, status: status)
+        commitments = (try? await CommitmentRepository.commitments(sessionID: session.id)) ?? []
+    }
+
+    private func clearCommitment(_ session: WorkoutSession) async {
+        try? await CommitmentRepository.clearMine(sessionID: session.id)
+        commitments = (try? await CommitmentRepository.commitments(sessionID: session.id)) ?? []
+    }
+
+    // MARK: - Campaign meter / adoption prompt
+
+    private var campaignCard: some View {
+        Group {
+            if let campaign {
+                ZStack(alignment: .leading) {
+                    GeometryReader { proxy in
+                        Rectangle()
+                            .fill(Color(roomHex: 0x6B4FD6).opacity(0.20))
+                            .frame(width: proxy.size.width * CGFloat(campaign.currentWeek) / CGFloat(campaign.weeks))
+                            .overlay(alignment: .trailing) {
+                                Rectangle().fill(Color(roomHex: 0x6B4FD6)).frame(width: 2.5)
+                            }
+                    }
+                    HStack {
+                        Text(campaign.name.uppercased())
+                            .font(GSFont.bold(10, relativeTo: .caption2))
+                            .kerning(1.1)
+                            .foregroundStyle(theme.neutral700)
+                            .lineLimit(1)
+                        Spacer()
+                        Text("WK \(campaign.currentWeek) OF \(campaign.weeks)")
+                            .font(GSFont.bold(10, relativeTo: .caption2))
+                            .kerning(1.1)
+                            .foregroundStyle(Color(roomHex: 0x6B4FD6))
+                    }
+                    .padding(.horizontal, 13)
+                }
+                .frame(height: 44)
+                .background(theme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+            } else if campaignLoaded {
+                Button {
+                    showCampaignSheet = true
+                } label: {
+                    HStack {
+                        Text("NO CAMPAIGN RUNNING")
+                            .font(GSFont.bold(10, relativeTo: .caption2))
+                            .kerning(1.1)
+                            .foregroundStyle(theme.neutral700)
+                        Spacer()
+                        Text("START ONE ›")
+                            .font(GSFont.bold(10, relativeTo: .caption2))
+                            .kerning(1.1)
+                            .foregroundStyle(theme.accent)
+                    }
+                    .padding(.horizontal, 13)
+                    .frame(height: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.gs3DCardStyle(cornerRadius: 14))
+            }
+        }
     }
 
     // MARK: - Routines together: the crew's bar
@@ -382,15 +585,38 @@ struct CrewRoomView: View {
     ]
 
     private func load() async {
+        myUserID = await SupabaseService.shared.currentUserID()
         members = (try? await GroupRepository.members(groupID: group.id)) ?? []
         streakWeeks = (try? await StreakRepository.groupStreak(groupID: group.id))?.currentStreak ?? 0
         crewDebts = (try? await SessionRepository.burpeeLedger(groupID: group.id)) ?? []
+        campaign = try? await CampaignRepository.active(groupID: group.id)
+        campaignLoaded = true
 
         let sessions = (try? await SessionRepository.groupSessions(groupID: group.id)) ?? []
         nextSession = sessions
             .filter { Self.upcomingStates.contains($0.state) }
             .sorted { ($0.scheduledFor ?? .distantFuture) < ($1.scheduledFor ?? .distantFuture) }
             .first
+
+        if let session = nextSession {
+            commitments = (try? await CommitmentRepository.commitments(sessionID: session.id)) ?? []
+            if let routineID = session.routineID,
+               let (routine, exercises) = try? await RoutineRepository.fetch(id: routineID) {
+                routineName = routine.name
+                var names: [String] = []
+                for exercise in exercises.prefix(2) {
+                    names.append(await ExerciseNameCache.name(for: exercise.exerciseID))
+                }
+                let more = exercises.count - min(2, exercises.count)
+                exerciseSummary = (names.joined(separator: " · ")
+                    + (more > 0 ? " +\(more)" : "")).uppercased()
+            } else {
+                routineName = nil
+                exerciseSummary = nil
+            }
+        } else {
+            commitments = []
+        }
 
         // "Routines together" derivation: there is no declaration table yet,
         // so declared = what the crew put on this week's calendar (completed
@@ -499,6 +725,81 @@ private struct GSPixelBannerShape: View {
             path.addLine(to: CGPoint(x: w * 0.1, y: h))
             path.closeSubpath()
             return path
+        }
+    }
+}
+
+// MARK: - CampaignCreateSheet
+
+// Minimal real campaigns (owner decision 2026-08-11): name + weeks. The
+// meter runs from these two numbers; trainer-lite content layers on later.
+private struct CampaignCreateSheet: View {
+    let group: GymGroup
+    let onCreated: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.gsTheme) private var theme
+    @State private var name = ""
+    @State private var weeks = 8
+    @State private var saving = false
+    @State private var errorText: String?
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("CAMPAIGN NAME")
+                        .font(GSFont.bold(10, relativeTo: .caption2))
+                        .kerning(1.1)
+                        .foregroundStyle(theme.neutral700)
+                    TextField("Summer Campaign", text: $name)
+                        .font(GSFont.body(15, relativeTo: .body))
+                        .foregroundStyle(theme.text)
+                        .tint(theme.accent)
+                        .padding(.horizontal, 12)
+                        .frame(height: 44)
+                        .background(theme.surface)
+                        .clipShape(RoundedRectangle(cornerRadius: GSMetrics.radiusSm))
+                }
+                Stepper(value: $weeks, in: 1...52) {
+                    Text("\(weeks) WEEK\(weeks == 1 ? "" : "S")")
+                        .font(GSFont.bold(13, relativeTo: .subheadline))
+                        .foregroundStyle(theme.text)
+                }
+                if let errorText {
+                    Text(errorText)
+                        .font(GSFont.body(12, relativeTo: .footnote))
+                        .foregroundStyle(.red)
+                }
+                Button {
+                    Task { await create() }
+                } label: {
+                    Text(saving ? "STARTING…" : "START THE CAMPAIGN")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(GSPrimaryButtonStyle())
+                .disabled(saving || name.trimmingCharacters(in: .whitespaces).isEmpty)
+                Spacer()
+            }
+            .padding(16)
+            .background(theme.bg)
+            .navigationTitle("New Campaign")
+            .navigationBarTitleDisplayMode(.inline)
+            .presentationDetents([.medium])
+        }
+    }
+
+    private func create() async {
+        saving = true
+        defer { saving = false }
+        do {
+            try await CampaignRepository.create(groupID: group.id, name: name, weeks: weeks)
+            onCreated()
+            dismiss()
+        } catch let error as GymSyncError {
+            errorText = error.errorDescription
+        } catch {
+            errorText = error.localizedDescription
         }
     }
 }

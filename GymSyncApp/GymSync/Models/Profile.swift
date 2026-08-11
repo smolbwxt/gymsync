@@ -15,6 +15,9 @@ struct Profile: Codable, Identifiable, Sendable, Equatable {
     /// through `Monetization.isPro(_:)`, never directly, so the dormant-
     /// paywall flag and grandfathering live in one place.
     let proUntil: Date?
+    /// Personal weekly session goal (20260811000003) — feeds the Home
+    /// intraweek count + slot widget. Client-writable on the own row.
+    let weeklySessionGoal: Int
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -26,6 +29,7 @@ struct Profile: Codable, Identifiable, Sendable, Equatable {
         case isCurator = "is_curator"
         case showSoloWorkouts = "show_solo_workouts"
         case proUntil = "pro_until"
+        case weeklySessionGoal = "weekly_session_goal"
     }
 
     // Custom decode so any pre-migration cached JSON (no is_curator/
@@ -45,6 +49,8 @@ struct Profile: Codable, Identifiable, Sendable, Equatable {
         isCurator = try c.decodeIfPresent(Bool.self, forKey: .isCurator) ?? false
         showSoloWorkouts = try c.decodeIfPresent(Bool.self, forKey: .showSoloWorkouts) ?? false
         proUntil = try c.decodeIfPresent(Date.self, forKey: .proUntil)
+        // Pre-migration cached JSON defaults to the column's own DEFAULT.
+        weeklySessionGoal = try c.decodeIfPresent(Int.self, forKey: .weeklySessionGoal) ?? 3
     }
 }
 
@@ -216,6 +222,28 @@ enum ProfileRepository {
             let updated: Profile = try await client
                 .from("profiles")
                 .update(["show_solo_workouts": enabled])
+                .eq("id", value: userID.uuidString)
+                .select()
+                .single()
+                .execute()
+                .value
+            return updated
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
+
+    /// Personal weekly session goal (20260811000003) — same own-row update
+    /// shape as `updateShowSoloWorkouts` above. Backs the Home intraweek
+    /// count + slot widget's goal editor.
+    static func updateWeeklySessionGoal(_ goal: Int) async throws -> Profile {
+        guard let userID = await SupabaseService.shared.currentUserID() else {
+            throw GymSyncError.unauthorized
+        }
+        do {
+            let updated: Profile = try await client
+                .from("profiles")
+                .update(["weekly_session_goal": min(max(goal, 1), 14)])
                 .eq("id", value: userID.uuidString)
                 .select()
                 .single()
