@@ -14,7 +14,7 @@
 
 -- ── 1. Schema: warm-up window + lifting gate + the vote ──────────────────
 ALTER TABLE public.sessions
-  ADD COLUMN warmup_minutes integer NOT NULL DEFAULT 0
+  ADD COLUMN IF NOT EXISTS warmup_minutes integer NOT NULL DEFAULT 0
     CHECK (warmup_minutes BETWEEN 0 AND 60);
 
 COMMENT ON COLUMN public.sessions.warmup_minutes IS
@@ -23,7 +23,7 @@ COMMENT ON COLUMN public.sessions.warmup_minutes IS
   'exactly as before.';
 
 ALTER TABLE public.sessions
-  ADD COLUMN lifting_started_at timestamptz;
+  ADD COLUMN IF NOT EXISTS lifting_started_at timestamptz;
 
 COMMENT ON COLUMN public.sessions.lifting_started_at IS
   'When lifting actually began: set by the LAST present participant''s '
@@ -31,7 +31,7 @@ COMMENT ON COLUMN public.sessions.lifting_started_at IS
   '(start_lifting). NULL while warming up — and on every pre-feature row.';
 
 ALTER TABLE public.session_participants
-  ADD COLUMN warmup_ready boolean NOT NULL DEFAULT false;
+  ADD COLUMN IF NOT EXISTS warmup_ready boolean NOT NULL DEFAULT false;
 
 COMMENT ON COLUMN public.session_participants.warmup_ready IS
   '"I''m warm" vote. When every PRESENT participant (advance_turn''s trio: '
@@ -41,7 +41,7 @@ COMMENT ON COLUMN public.session_participants.warmup_ready IS
 -- Returns true when lifting has now started — either this vote completed
 -- unanimity, or lifting had already begun (organizer force-start / an
 -- earlier unanimous vote) — false while the room is still waiting.
-CREATE FUNCTION public.mark_warmup_ready(p_session_id uuid)
+CREATE OR REPLACE FUNCTION public.mark_warmup_ready(p_session_id uuid)
 RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
   v_state              text;
@@ -102,7 +102,7 @@ $$;
 -- not in progress or lifting had already begun. Non-organizers are
 -- rejected with P0001, the engine's authorization idiom (start_session,
 -- advance_turn).
-CREATE FUNCTION public.start_lifting(p_session_id uuid)
+CREATE OR REPLACE FUNCTION public.start_lifting(p_session_id uuid)
 RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
   v_organizer_id       uuid;

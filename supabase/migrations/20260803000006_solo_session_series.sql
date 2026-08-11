@@ -23,6 +23,7 @@ ALTER TABLE public.session_series ALTER COLUMN group_id DROP NOT NULL;
 -- `group_id IS NULL` can never be used to smuggle access to someone else's
 -- schedule because `organizer_id = auth.uid()` is conjoined in every branch.
 DROP POLICY IF EXISTS "group members read series" ON public.session_series;
+DROP POLICY IF EXISTS "group members read series" ON public.session_series;
 CREATE POLICY "group members read series"
   ON public.session_series FOR SELECT TO authenticated
   USING (
@@ -31,6 +32,7 @@ CREATE POLICY "group members read series"
   );
 
 DROP POLICY IF EXISTS "organizer creates series in own group" ON public.session_series;
+DROP POLICY IF EXISTS "organizer creates series in own group" ON public.session_series;
 CREATE POLICY "organizer creates series in own group"
   ON public.session_series FOR INSERT TO authenticated
   WITH CHECK (
@@ -38,6 +40,7 @@ CREATE POLICY "organizer creates series in own group"
     AND (group_id IS NULL OR private.is_group_member(group_id, auth.uid()))
   );
 
+DROP POLICY IF EXISTS "organizer updates series" ON public.session_series;
 DROP POLICY IF EXISTS "organizer updates series" ON public.session_series;
 CREATE POLICY "organizer updates series"
   ON public.session_series FOR UPDATE TO authenticated
@@ -50,6 +53,7 @@ CREATE POLICY "organizer updates series"
     AND (group_id IS NULL OR private.is_group_member(group_id, auth.uid()))
   );
 
+DROP POLICY IF EXISTS "organizer deletes series" ON public.session_series;
 DROP POLICY IF EXISTS "organizer deletes series" ON public.session_series;
 CREATE POLICY "organizer deletes series"
   ON public.session_series FOR DELETE TO authenticated
@@ -64,6 +68,7 @@ CREATE POLICY "organizer deletes series"
 -- `is_group_member(NULL, …)` is not a truth value anyone should rely on —
 -- so each policy now asks the ownership question explicitly first.
 DROP POLICY IF EXISTS "group members read series days" ON public.session_series_days;
+DROP POLICY IF EXISTS "group members read series days" ON public.session_series_days;
 CREATE POLICY "group members read series days"
   ON public.session_series_days FOR SELECT TO authenticated
   USING (
@@ -73,6 +78,7 @@ CREATE POLICY "group members read series days"
   );
 
 DROP POLICY IF EXISTS "organizer writes series days" ON public.session_series_days;
+DROP POLICY IF EXISTS "organizer writes series days" ON public.session_series_days;
 CREATE POLICY "organizer writes series days"
   ON public.session_series_days FOR INSERT TO authenticated
   WITH CHECK (
@@ -81,6 +87,7 @@ CREATE POLICY "organizer writes series days"
          OR private.is_group_member(private.series_group_id(series_id), auth.uid()))
   );
 
+DROP POLICY IF EXISTS "organizer updates series days" ON public.session_series_days;
 DROP POLICY IF EXISTS "organizer updates series days" ON public.session_series_days;
 CREATE POLICY "organizer updates series days"
   ON public.session_series_days FOR UPDATE TO authenticated
@@ -95,6 +102,7 @@ CREATE POLICY "organizer updates series days"
          OR private.is_group_member(private.series_group_id(series_id), auth.uid()))
   );
 
+DROP POLICY IF EXISTS "organizer deletes series days" ON public.session_series_days;
 DROP POLICY IF EXISTS "organizer deletes series days" ON public.session_series_days;
 CREATE POLICY "organizer deletes series days"
   ON public.session_series_days FOR DELETE TO authenticated

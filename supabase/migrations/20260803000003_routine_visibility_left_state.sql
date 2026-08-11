@@ -6,6 +6,10 @@
 --    routines table did not, so `RoutineRepository.fetch` died at the
 --    routine row before the exercises policy ever mattered). The helper is
 --    session-state-agnostic, so the lobby (pre-start) sees it too.
+-- Idempotent (2026-08-11): both statements in this file were applied to
+-- production ad-hoc during the 2026-07-31 field fix, before this migration
+-- was pushed — recreate-if-present so the ledger can catch up.
+DROP POLICY IF EXISTS "session participants read the session routine" ON public.routines;
 CREATE POLICY "session participants read the session routine"
   ON public.routines FOR SELECT
   USING (private.routine_has_active_session_for_user(id, auth.uid()));
@@ -15,7 +19,7 @@ CREATE POLICY "session participants read the session routine"
 --    skips leavers; walking back in (left → online) rides the late-joiner
 --    trigger to the rotation's end like any other re-arrival.
 ALTER TABLE public.session_participants
-  DROP CONSTRAINT session_participants_check_in_state_check;
+  DROP CONSTRAINT IF EXISTS session_participants_check_in_state_check;
 ALTER TABLE public.session_participants
   ADD CONSTRAINT session_participants_check_in_state_check
   CHECK (check_in_state = ANY (ARRAY[
