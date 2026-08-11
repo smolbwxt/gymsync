@@ -144,7 +144,10 @@ struct GroupCampaign: Codable, Identifiable, Sendable, Equatable {
     }
 }
 
-enum CampaignRepository {
+// Named GroupCampaignRepository — `CampaignRepository` already exists for
+// the personal campaigns system (Models/Campaign.swift); these are the
+// crew-level meter's rows, a deliberately separate table.
+enum GroupCampaignRepository {
     private static var client: SupabaseClient { SupabaseService.shared.client }
 
     /// The group's most recent campaign whose window covers today, if any.

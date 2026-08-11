@@ -589,7 +589,7 @@ struct CrewRoomView: View {
         members = (try? await GroupRepository.members(groupID: group.id)) ?? []
         streakWeeks = (try? await StreakRepository.groupStreak(groupID: group.id))?.currentStreak ?? 0
         crewDebts = (try? await SessionRepository.burpeeLedger(groupID: group.id)) ?? []
-        campaign = try? await CampaignRepository.active(groupID: group.id)
+        campaign = try? await GroupCampaignRepository.active(groupID: group.id)
         campaignLoaded = true
 
         let sessions = (try? await SessionRepository.groupSessions(groupID: group.id)) ?? []
@@ -793,7 +793,7 @@ private struct CampaignCreateSheet: View {
         saving = true
         defer { saving = false }
         do {
-            try await CampaignRepository.create(groupID: group.id, name: name, weeks: weeks)
+            try await GroupCampaignRepository.create(groupID: group.id, name: name, weeks: weeks)
             onCreated()
             dismiss()
         } catch let error as GymSyncError {
