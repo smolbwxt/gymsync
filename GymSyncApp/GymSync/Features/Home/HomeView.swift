@@ -39,6 +39,12 @@ struct HomeView: View {
     /// Redesign: feeds the streak-ring widget (proof: ring fills toward the
     /// next milestone). Fetched alongside the other Home data in `refresh()`.
     @State private var userStreak: UserStreak?
+    /// Commit signal for the next actionable GROUP session (20260811000001,
+    /// owner feedback 2026-08-11): nil = hasn't said.
+    @State private var nextCommitStatus: SessionCommitment.Status?
+    /// Weekly-goal editor sheet for the intraweek streak widget.
+    @State private var showGoalSheet = false
+    @State private var homeSlotBreathing = false
     @State private var profile: Profile?
     @State private var todaysRoutine: Routine?
     @State private var todaysRoutineExercises: [RoutineExercise] = []
@@ -627,6 +633,19 @@ struct HomeView: View {
                     }
                     .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd,
                                                 face: Self.goldBottom))
+                } else if let groupID = session.groupID {
+                    // Group session countdown (owner feedback 2026-08-11):
+                    // the body navigates to the CREW ROOM (where committing
+                    // lives), not the lobby — check-in still goes gold above.
+                    Button {
+                        appState.pendingRoute = .chat(groupID: groupID)
+                        appState.selectedTab = .social
+                    } label: {
+                        countdownBody(session, now: context.date)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .padding(15)
+                    }
+                    .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
                 } else {
                     NavigationLink {
                         // .id — same rebuild-not-reprop rule as above.
@@ -762,33 +781,26 @@ struct HomeView: View {
 
     @ViewBuilder
     private func countdownBody(_ session: WorkoutSession, now: Date) -> some View {
+        // Owner feedback 2026-08-11: the routine-title line ("Workout"
+        // fallback) and the greyed "until check-in · opens…" subtitle are
+        // gone; the kicker carries the whole sentence, the number carries
+        // the answer, and group sessions gain the commit control.
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 Image(systemName: "clock")
                     .font(.system(size: 10, weight: .bold))
-                Text("NEXT SESSION")
+                Text("CHECK IN FOR NEXT SESSION IN:")
                     .font(GSFont.bold(10, relativeTo: .caption2))
                     .tracking(1.3)
             }
             .foregroundStyle(theme.accent)
-
-            Text(routineLabel(for: session))
-                .font(GSFont.bold(13, relativeTo: .subheadline))
-                .foregroundStyle(theme.text)
-                .lineLimit(1)
-                .padding(.top, 8)
 
             if let opensAt = checkInOpensAt(session), opensAt > now {
                 Text(compactCountdown(to: opensAt, from: now))
                     .font(GSFont.heading(30, relativeTo: .title2))
                     .foregroundStyle(theme.text)
                     .monospacedDigit()
-                    .padding(.top, 5)
-                Text("until check-in · opens \(opensAt.formatted(date: .omitted, time: .shortened))")
-                    .font(GSFont.body(10.5, relativeTo: .caption2))
-                    .foregroundStyle(theme.neutral500)
-                    .lineLimit(1)
-                    .padding(.top, 3)
+                    .padding(.top, 8)
             } else {
                 // Window has passed but state hasn't flipped live yet.
                 Text("Starting soon")
@@ -800,8 +812,48 @@ struct HomeView: View {
                     .foregroundStyle(theme.neutral500)
                     .padding(.top, 3)
             }
+
+            if session.groupID != nil {
+                commitControl(session)
+                    .padding(.top, 10)
+            }
         }
         .contentShape(Rectangle())
+    }
+
+    /// The commitment signal on the Home widget — quick IN only; OUT and
+    /// CHANGE live on the crew room's status board (which the widget body
+    /// navigates to).
+    @ViewBuilder
+    private func commitControl(_ session: WorkoutSession) -> some View {
+        switch nextCommitStatus {
+        case nil:
+            Button {
+                Task {
+                    try? await CommitmentRepository.setMine(sessionID: session.id, status: .committed)
+                    nextCommitStatus = .committed
+                }
+            } label: {
+                Text("LET'S RIDE")
+                    .font(GSFont.bold(11, relativeTo: .caption))
+                    .kerning(0.5)
+            }
+            .buttonStyle(GSPrimaryButtonStyle(fontSize: 11, verticalPadding: 7))
+        case .committed:
+            HStack(spacing: 5) {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 9, weight: .bold))
+                Text("YOU'RE IN")
+                    .font(GSFont.bold(10, relativeTo: .caption2))
+                    .kerning(1.1)
+            }
+            .foregroundStyle(Color.gsHex(0x2FA45C))
+        case .out:
+            Text("YOU'RE OUT")
+                .font(GSFont.bold(10, relativeTo: .caption2))
+                .kerning(1.1)
+                .foregroundStyle(Self.goldTop)
+        }
     }
 
     private var checkInEmptyBody: some View {
@@ -849,11 +901,79 @@ struct HomeView: View {
     /// someone who trained for three weeks to "schedule your first lift"
     /// would be both wrong and a little insulting.
     private var streakWidget: some View {
-        let current = userStreak?.currentStreak ?? 0
-        if current == 0 {
-            return AnyView(streakInviteWidget(hasTrainedBefore: hasEverTrained))
+        // Owner feedback 2026-08-11: the count card now speaks the crew
+        // room's intraweek language — your sessions this week against YOUR
+        // goal, slots filling bottom-up. The never-trained invitation stays;
+        // a lapsed-but-trained user sees 0-of-goal with the next slot
+        // breathing (an invitation shaped as progress, not a bare zero).
+        if hasEverTrained {
+            return AnyView(weeklyGoalWidget)
         }
-        return AnyView(streakCountWidget(current: current))
+        return AnyView(streakInviteWidget(hasTrainedBefore: false))
+    }
+
+    /// Completed sessions this calendar week (solo included — they count
+    /// toward streaks since 20260803000005).
+    private var sessionsThisWeek: Int {
+        let calendar = Calendar.current
+        return historySessions.filter { session in
+            guard let completedAt = session.completedAt else { return false }
+            return calendar.isDate(completedAt, equalTo: .now, toGranularity: .weekOfYear)
+        }.count
+    }
+
+    private var weeklyGoalWidget: some View {
+        let goal = profile?.weeklySessionGoal ?? 3
+        let done = sessionsThisWeek
+        let met = done >= goal
+        let green = Color.gsHex(0x2FA45C)
+        return Button {
+            showGoalSheet = true
+        } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(done)")
+                        .font(GSFont.heading(24, relativeTo: .title2))
+                        .foregroundStyle(met ? green : theme.text)
+                        .monospacedDigit()
+                    Text("THIS WEEK")
+                        .font(GSFont.bold(9, relativeTo: .caption2))
+                        .kerning(1.4)
+                        .foregroundStyle(met ? green : theme.neutral500)
+                    Text(met ? "GOAL MET · WK \(userStreak?.currentStreak ?? 0) STREAK"
+                             : "\(goal - done) TO YOUR GOAL")
+                        .font(GSFont.bold(10, relativeTo: .caption2))
+                        .kerning(0.6)
+                        .foregroundStyle(met ? green : theme.accent)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                VStack(spacing: 2.5) {
+                    ForEach((0..<max(goal, 1)).reversed(), id: \.self) { index in
+                        let filled = index < done
+                        let isNext = !filled && index == done && !met
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(filled ? (met ? green : theme.text)
+                                         : (isNext && homeSlotBreathing
+                                            ? Color.gsHex(0x3D444E) : Color.gsHex(0x1D2127)))
+                            .frame(width: 12, height: 10)
+                            .animation(isNext ? .easeInOut(duration: 1.1).repeatForever(autoreverses: true) : nil,
+                                       value: homeSlotBreathing)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .padding(15)
+        }
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
+        .onAppear { homeSlotBreathing = true }
+        .sheet(isPresented: $showGoalSheet) {
+            WeeklyGoalSheet(initial: goal) { updated in
+                profile = updated
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(done) of \(goal) sessions this week. Tap to change your goal.")
     }
 
     /// True once the user has any completed session in history — the
@@ -1207,6 +1327,16 @@ struct HomeView: View {
         activeCampaigns = campaigns ?? []
         if let streak { userStreak = streak }
         statsLoading = false
+
+        // Commit signal for the next actionable group session (Phase B,
+        // 2026-08-11) — depends on `upcomingSessions` from the commit block
+        // above, so it deliberately runs after the single-render pass.
+        if let next = nextActionableSession(now: .now), next.groupID != nil {
+            let rows = (try? await CommitmentRepository.commitments(sessionID: next.id)) ?? []
+            nextCommitStatus = rows.first { $0.userID == userID }?.status
+        } else {
+            nextCommitStatus = nil
+        }
 
         // Phase W Task 3 (watch-hr design §2, "Idle state") — see
         // `pushWatchIdleStateIfNoLiveSession()`'s own doc comment for the
@@ -1631,5 +1761,75 @@ private struct RoutinePickerSheet: View {
         }
         chosenRoutine = routine
         startNavigation = true
+    }
+}
+
+// MARK: - WeeklyGoalSheet (2026-08-11)
+
+// The intraweek widget's goal editor: sessions per week, 1–14, saved to
+// profiles.weekly_session_goal (20260811000003).
+private struct WeeklyGoalSheet: View {
+    let initial: Int
+    let onSaved: (Profile) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.gsTheme) private var theme
+    @State private var goal: Int
+    @State private var saving = false
+    @State private var errorText: String?
+
+    init(initial: Int, onSaved: @escaping (Profile) -> Void) {
+        self.initial = initial
+        self.onSaved = onSaved
+        _goal = State(initialValue: initial)
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 18) {
+                Text("How many sessions a week are you holding yourself to?")
+                    .font(GSFont.body(14, relativeTo: .body))
+                    .foregroundStyle(theme.neutral700)
+                    .fixedSize(horizontal: false, vertical: true)
+                Stepper(value: $goal, in: 1...14) {
+                    Text("\(goal) SESSION\(goal == 1 ? "" : "S") / WEEK")
+                        .font(GSFont.bold(14, relativeTo: .subheadline))
+                        .foregroundStyle(theme.text)
+                }
+                if let errorText {
+                    Text(errorText)
+                        .font(GSFont.body(12, relativeTo: .footnote))
+                        .foregroundStyle(.red)
+                }
+                Button {
+                    Task { await save() }
+                } label: {
+                    Text(saving ? "SAVING…" : "SET THE GOAL")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(GSPrimaryButtonStyle())
+                .disabled(saving)
+                Spacer()
+            }
+            .padding(16)
+            .background(theme.bg)
+            .navigationTitle("Weekly Goal")
+            .navigationBarTitleDisplayMode(.inline)
+            .presentationDetents([.medium])
+        }
+    }
+
+    private func save() async {
+        saving = true
+        defer { saving = false }
+        do {
+            let updated = try await ProfileRepository.updateWeeklySessionGoal(goal)
+            onSaved(updated)
+            dismiss()
+        } catch let error as GymSyncError {
+            errorText = error.errorDescription
+        } catch {
+            errorText = error.localizedDescription
+        }
     }
 }
