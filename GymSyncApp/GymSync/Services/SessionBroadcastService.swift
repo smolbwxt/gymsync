@@ -27,8 +27,9 @@ import Supabase
 // Rate limit: 1 send per second shared across all sends from this instance.
 // Drops silently (spec: "drop, don't queue").
 //
-// Sound echo: sendSound also inserts a chat_messages row (kind='soundboard_echo')
-// when groupID is non-nil, so the event is durable in chat history.
+// Sound echo (removed 2026-08-11): sendSound no longer inserts chat rows —
+// sounds are durable as message REACTIONS ('snd:{slug}' in
+// chat_message_reactions); the broadcast here stays ephemeral by design.
 
 @MainActor
 final class SessionBroadcastService {
@@ -139,9 +140,11 @@ final class SessionBroadcastService {
             ]
         )
 
-        if let groupID {
-            await insertSoundboardEcho(groupID: groupID, authorID: me, slug: slug)
-        }
+        // Owner decision 2026-08-11: no more per-play chat echoes — sounds
+        // live as message REACTIONS now (ChatView sound chips). The ephemeral
+        // broadcast above is the whole in-session story; groupID is kept in
+        // the signature for call-site stability.
+        _ = groupID
     }
 
     /// Broadcast a reaction event (no chat echo per spec).
@@ -238,52 +241,4 @@ final class SessionBroadcastService {
         }
     }
 
-    // MARK: - Soundboard echo insert
-
-    /// Insert a soundboard_echo message into the group chat.
-    ///
-    /// Uses a Codable struct so the payload jsonb column encodes correctly
-    /// (matching the ProposalRepository insert pattern).
-    private func insertSoundboardEcho(
-        groupID: UUID,
-        authorID: UUID,
-        slug: String
-    ) async {
-        let soundDisplayName = await SoundboardPlayer.shared.displayName(for: slug)
-
-        struct EchoInsert: Encodable {
-            let id: UUID
-            let groupID: UUID
-            let authorID: UUID
-            let kind: String
-            let body: String
-            let payload: [String: AnyJSON]
-
-            enum CodingKeys: String, CodingKey {
-                case id
-                case groupID   = "group_id"
-                case authorID  = "author_id"
-                case kind, body, payload
-            }
-        }
-
-        let insert = EchoInsert(
-            id: UUID(),
-            groupID: groupID,
-            authorID: authorID,
-            kind: "soundboard_echo",
-            body: "🔊 \(soundDisplayName)",
-            payload: ["sound_slug": .string(slug)]
-        )
-
-        do {
-            try await SupabaseService.shared.client
-                .from("chat_messages")
-                .insert(insert)
-                .execute()
-        } catch {
-            AppLogger.soundboard.error(
-                "soundboard_echo insert failed: \(error, privacy: .public)")
-        }
-    }
 }

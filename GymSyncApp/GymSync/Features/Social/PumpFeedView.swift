@@ -13,6 +13,9 @@ struct PumpFeedView: View {
     @Environment(AppState.self) private var appState
 
     @State private var posts: [WorkoutPost] = []
+    // Sound reactions (20260811000004): rack = attachable, names label chips.
+    @State private var ownedSoundSlugs: [String] = []
+    @State private var soundNames: [String: String] = [:]
     @State private var authorsByID: [UUID: Profile] = [:]
     /// emoji -> count, and the viewer's own reactions, per post.
     @State private var countsByPost: [UUID: [String: Int]] = [:]
@@ -42,6 +45,8 @@ struct PumpFeedView: View {
                         isMine: post.authorID == appState.currentProfile?.id,
                         myReactions: mineByPost[post.id] ?? [],
                         reactionCounts: countsByPost[post.id] ?? [:],
+                        ownedSoundSlugs: ownedSoundSlugs,
+                        soundNames: soundNames,
                         onReact: { emoji in Task { await toggleReaction(post: post, emoji: emoji) } },
                         onDelete: { deleteTarget = post },
                         onReport: { reportTarget = post }
@@ -71,6 +76,12 @@ struct PumpFeedView: View {
         .navigationTitle("Feed")
         .navigationBarTitleDisplayMode(.inline)
         .task { await initialLoad() }
+        .task {
+            ownedSoundSlugs = (try? await SoundboardFavoritesRepository.get()) ?? []
+            if let catalog = try? await SoundboardRepository.fetchCatalog() {
+                soundNames = Dictionary(uniqueKeysWithValues: catalog.map { ($0.slug, $0.displayName) })
+            }
+        }
         .refreshable { await refresh() }
         .sheet(item: $reportTarget) { post in
             ReportSheet(reportedUserID: post.authorID, contentType: .post, contentID: post.id)
@@ -202,6 +213,8 @@ struct PumpPostCard: View {
     let isMine: Bool
     let myReactions: Set<String>
     let reactionCounts: [String: Int]
+    let ownedSoundSlugs: [String]
+    let soundNames: [String: String]
     let onReact: (String) -> Void
     let onDelete: () -> Void
     let onReport: () -> Void
@@ -375,6 +388,62 @@ struct PumpPostCard: View {
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
+            }
+
+            // Sound reactions: chips PLAY for anyone; only owners attach
+            // (the menu below + restrictive RLS). Remove your own via the
+            // chip's context menu.
+            ForEach(reactionCounts.keys.filter { $0.hasPrefix("snd:") }.sorted(), id: \.self) { key in
+                let slug = String(key.dropFirst(4))
+                let count = reactionCounts[key] ?? 0
+                Button {
+                    Task { await SoundboardPlayer.shared.play(slug: slug) }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "speaker.wave.2.fill")
+                            .font(.system(size: 9, weight: .bold))
+                        Text("\(soundNames[slug] ?? slug)\(count > 1 ? " \(count)" : "")")
+                            .font(GSFont.bold(11, relativeTo: .caption2))
+                    }
+                    .foregroundStyle(theme.accent)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(theme.accent100)
+                    .clipShape(Capsule())
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .contextMenu {
+                    if myReactions.contains(key) {
+                        Button(role: .destructive) {
+                            onReact(key)
+                        } label: {
+                            Label("Remove my sound", systemImage: "speaker.slash")
+                        }
+                    }
+                }
+            }
+
+            if !ownedSoundSlugs.isEmpty {
+                Menu {
+                    ForEach(ownedSoundSlugs, id: \.self) { slug in
+                        Button {
+                            onReact("snd:" + slug)
+                        } label: {
+                            Label(soundNames[slug] ?? slug, systemImage: "speaker.wave.2")
+                        }
+                    }
+                } label: {
+                    Image(systemName: "speaker.badge.plus")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(theme.neutral700)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                        .background(theme.bg)
+                        .overlay(Capsule().strokeBorder(theme.divider, lineWidth: 1))
+                        .clipShape(Capsule())
+                        .contentShape(Capsule())
+                }
             }
             Spacer(minLength: 0)
         }

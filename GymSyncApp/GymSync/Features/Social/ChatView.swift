@@ -207,6 +207,12 @@ struct ChatView: View {
 
     private static let reactionChoices = ["👍", "🔥", "💪", "😂"]
 
+    // Sound reactions (20260811000004): the user's rack = what they can
+    // ATTACH; the catalog names render every chip. Anyone taps to play.
+    @State private var ownedSoundSlugs: [String] = []
+    @State private var soundNames: [String: String] = [:]
+    private static let soundReactionPrefix = "snd:"
+
     var body: some View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
@@ -263,6 +269,7 @@ struct ChatView: View {
         }
         .background(theme.bg)
         .task { await load() }
+        .task { await loadSoundReactionData() }
         .onChange(of: draft) {
             typingDebounce?.cancel()
             let isEmpty = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -559,9 +566,10 @@ struct ChatView: View {
             // System messages: centered, inline-block, 1px divider border per canvas
             systemMessageView(message)
         } else if message.kind == .soundboardEcho {
-            // Soundboard echo: centered inline (canvas treatment), no sender kicker
-            messageContent(message, mine: false)
-                .padding(.vertical, 2)
+            // Owner decision 2026-08-11: the per-play echo log is retired —
+            // sounds live as reactions now. Historical echo rows stay in the
+            // table but render nothing (stop new + hide old).
+            EmptyView()
         } else {
             let mine = message.authorID == appState.currentProfile?.id
             VStack(alignment: mine ? .trailing : .leading, spacing: 3) {
@@ -580,6 +588,25 @@ struct ChatView: View {
                                     try? await ChatRepository.react(
                                         messageID: message.id, emoji: emoji)
                                     await refreshReactions()
+                                }
+                            }
+                        }
+                        // Sound reactions — only the sounds YOU own attach
+                        // (RLS enforces it server-side too); everyone can
+                        // tap the resulting chip to hear it.
+                        if !ownedSoundSlugs.isEmpty {
+                            Divider()
+                            ForEach(ownedSoundSlugs, id: \.self) { slug in
+                                Button {
+                                    Task {
+                                        try? await ChatRepository.react(
+                                            messageID: message.id,
+                                            emoji: Self.soundReactionPrefix + slug)
+                                        await refreshReactions()
+                                    }
+                                } label: {
+                                    Label(soundNames[slug] ?? slug,
+                                          systemImage: "speaker.wave.2")
                                 }
                             }
                         }
@@ -609,7 +636,13 @@ struct ChatView: View {
                         .sorted { $0.key < $1.key }
                     HStack(spacing: 4) {
                         ForEach(counts, id: \.key) { emoji, count in
-                            reactionPill(emoji: emoji, count: count)
+                            if emoji.hasPrefix(Self.soundReactionPrefix) {
+                                soundReactionChip(
+                                    slug: String(emoji.dropFirst(Self.soundReactionPrefix.count)),
+                                    count: count)
+                            } else {
+                                reactionPill(emoji: emoji, count: count)
+                            }
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
@@ -669,6 +702,34 @@ struct ChatView: View {
             .padding(.horizontal, 7)
             .padding(.vertical, 1)
             .background(Capsule().fill(theme.neutral300))
+    }
+
+    /// A sound reaction chip: tap PLAYS the sound for anyone — ownership
+    /// only gates attaching (the contextMenu above / RLS below).
+    private func soundReactionChip(slug: String, count: Int) -> some View {
+        Button {
+            Task { await SoundboardPlayer.shared.play(slug: slug) }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "speaker.wave.2.fill")
+                    .font(.system(size: 9, weight: .bold))
+                Text("\(soundNames[slug] ?? slug) \(count)")
+                    .font(GSFont.bold(11, relativeTo: .caption))
+            }
+            .foregroundStyle(theme.accent)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(theme.accent100))
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Rack (attachable set) + catalog names (chip labels) — one fetch each.
+    private func loadSoundReactionData() async {
+        ownedSoundSlugs = (try? await SoundboardFavoritesRepository.get()) ?? []
+        if let catalog = try? await SoundboardRepository.fetchCatalog() {
+            soundNames = Dictionary(uniqueKeysWithValues: catalog.map { ($0.slug, $0.displayName) })
+        }
     }
 
     // MARK: - Message Content

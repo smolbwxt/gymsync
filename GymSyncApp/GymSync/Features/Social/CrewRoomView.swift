@@ -637,7 +637,8 @@ struct CrewRoomView: View {
             switch message.kind {
             case .image: return "Photo"
             case .audio: return "Voice message"
-            case .text, .soundboardEcho, .systemPR, .systemSession, .systemLate, .systemLeaderboard:
+            case .soundboardEcho: return nil  // echoes retired 2026-08-11
+            case .text, .systemPR, .systemSession, .systemLate, .systemLeaderboard:
                 return message.body
             }
         }
