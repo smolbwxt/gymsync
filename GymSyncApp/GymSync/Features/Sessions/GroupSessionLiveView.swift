@@ -2186,10 +2186,26 @@ struct GroupSessionLiveView: View {
     // the chain itself is now layered — arenaBase (page + chrome +
     // transient overlay) → arenaWithThrow (throw arena) → body (sheets,
     // dialogs, lifecycle). Each layer is a separately-checked expression.
+    /// Exercise whose detail page (video demo + history) is open as a sheet —
+    /// set by tapping the exercise name on the spotlight/spectate header
+    /// (user 2026-08-11). A sheet, not a push, so dismissing it lands
+    /// straight back in the session.
+    @State private var exerciseDetailSheet: Exercise?
+
     var body: some View {
         arenaWithThrow
         // Log Set sheet — penalty (burpee) logging only now; normal sets log inline.
         .sheet(isPresented: $showLogSetSheet) { logSetSheetContent }
+        .sheet(item: $exerciseDetailSheet) { ex in
+            NavigationStack {
+                ExerciseDetailView(exercise: ex)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Done") { exerciseDetailSheet = nil }
+                        }
+                    }
+            }
+        }
         // Session chat sheet (Task 3)
         .sheet(isPresented: $showChatSheet) { chatSheet }
         // Voice mixer sheet (Phase O Task 5 item 5)
@@ -2875,10 +2891,21 @@ struct GroupSessionLiveView: View {
                         .tracking(1.4)
                         .foregroundStyle(theme.bg.opacity(0.85))
 
-                    Text(currentExerciseForSheet?.name ?? "Exercise")
-                        .font(GSFont.heading(26, relativeTo: .title))
-                        .foregroundStyle(theme.bg)
-                        .lineLimit(2)
+                    Button {
+                        exerciseDetailSheet = currentExerciseForSheet
+                    } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(currentExerciseForSheet?.name ?? "Exercise")
+                                .font(GSFont.heading(26, relativeTo: .title))
+                                .foregroundStyle(theme.bg)
+                                .lineLimit(2)
+                                .multilineTextAlignment(.leading)
+                            Image(systemName: "chevron.right.circle.fill")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(theme.bg.opacity(0.7))
+                        }
+                    }
+                    .buttonStyle(.plain)
                 }
                 Spacer(minLength: 8)
                 // Phase W Task 5 (watch-hr design §4) — canvas frame 2A's
@@ -3223,9 +3250,20 @@ struct GroupSessionLiveView: View {
                 .foregroundStyle(theme.neutral500)
 
             HStack(alignment: .firstTextBaseline) {
-                Text(currentExerciseForSheet?.name ?? "Exercise")
-                    .font(GSFont.heading(22, relativeTo: .title2))
-                    .foregroundStyle(theme.text)
+                Button {
+                    exerciseDetailSheet = currentExerciseForSheet
+                } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 7) {
+                        Text(currentExerciseForSheet?.name ?? "Exercise")
+                            .font(GSFont.heading(22, relativeTo: .title2))
+                            .foregroundStyle(theme.text)
+                            .multilineTextAlignment(.leading)
+                        Image(systemName: "chevron.right.circle.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(theme.neutral500)
+                    }
+                }
+                .buttonStyle(.plain)
                 Spacer()
                 VStack(alignment: .trailing, spacing: 1) {
                     Text("Round \(currentTurnSetNumber)")

@@ -282,6 +282,14 @@ private struct MainTabView: View {
     /// route.
     @State private var mountedTabs: Set<AppState.Tab> = Set(AppState.Tab.allCases)
 
+    /// The live solo session being re-presented after the lifter swiped its
+    /// sheet away (user report 2026-08-11: sessions were irrecoverable).
+    /// Driven by the "SESSION LIVE" pill below; presents WorkoutSessionView
+    /// in resume mode. A plain sheet ON PURPOSE — swiping it down again is
+    /// harmless now, because `AppState.liveSoloSession` persists until the
+    /// session completes and the pill just comes back.
+    @State private var resumeTarget: AppState.LiveSoloSession?
+
     var body: some View {
         @Bindable var appState = appState
         ZStack {
@@ -345,9 +353,32 @@ private struct MainTabView: View {
             // above it (ChatView compose bar, HomeView join-code field)
             // still receives the keyboard safe-area inset normally.
             if !isDockHidden {
-                GSTabBar(selection: $appState.selectedTab)
-                    .ignoresSafeArea(.keyboard, edges: .bottom)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                VStack(spacing: 0) {
+                    // Rides with the dock (hidden alongside it on full-bleed
+                    // screens — anyone on such a screen is mid-flow anyway).
+                    // While the session's own sheet is up this sits harmlessly
+                    // underneath it; the moment a swipe-down orphans the
+                    // session, the pill is the way back in.
+                    if let live = appState.liveSoloSession {
+                        LiveSessionPill(title: live.routine?.name ?? "Freeform workout") {
+                            resumeTarget = live
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 8)
+                    }
+                    GSTabBar(selection: $appState.selectedTab)
+                        .ignoresSafeArea(.keyboard, edges: .bottom)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .sheet(item: $resumeTarget) { live in
+            NavigationStack {
+                WorkoutSessionView(routine: live.routine,
+                                   routineExercises: live.routineExercises,
+                                   allExercises: live.allExercises,
+                                   resume: live.session,
+                                   onFinished: { resumeTarget = nil })
             }
         }
     }
@@ -360,5 +391,48 @@ private struct MainTabView: View {
         case .shop:   ShopTabView()
         case .you:    YouTabView()
         }
+    }
+}
+
+/// "SESSION LIVE" recovery pill — mounted by MainTabView above the dock
+/// whenever `AppState.liveSoloSession` is set, i.e. a solo workout is
+/// running but its sheet was swiped away. Tap to re-enter the session.
+/// Extruded like every tappable surface (design law); the pulsing accent
+/// dot is the "alive" signal.
+private struct LiveSessionPill: View {
+    @Environment(\.gsTheme) private var theme
+    let title: String
+    let action: () -> Void
+    @State private var pulsing = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(theme.accent)
+                    .frame(width: 8, height: 8)
+                    .opacity(pulsing ? 0.35 : 1)
+                    .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true),
+                               value: pulsing)
+                Text("SESSION LIVE")
+                    .font(GSFont.bold(10, relativeTo: .caption2))
+                    .kerning(1.2)
+                    .foregroundStyle(theme.accent)
+                Text(title)
+                    .font(GSFont.bodyMedium(12, relativeTo: .caption))
+                    .foregroundStyle(theme.text)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(theme.neutral500)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.gs3DCardStyle(cornerRadius: 12, lipHeight: 4))
+        .onAppear { pulsing = true }
+        .accessibilityLabel("Session live: \(title). Tap to return to your workout.")
     }
 }

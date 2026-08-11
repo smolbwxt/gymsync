@@ -53,7 +53,10 @@ struct CrewRoomView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 13) {
                 headerRow
-                bannerRail
+                // Banner rail deliberately absent (owner decision 2026-08-11
+                // round 2): banners are HOISTED when an achievement lands —
+                // a ceremony, not pre-hung silhouettes. Returns with the
+                // perfect-week/achievement system.
                 commitCard
                 campaignCard
                 routinesTogetherCard
@@ -197,24 +200,31 @@ struct CrewRoomView: View {
     // was eating the widget).
     private func commitFace(_ session: WorkoutSession) -> some View {
         HStack(alignment: .center, spacing: 12) {
-            VStack(spacing: 7) {
+            // Owner feedback 2026-08-11 round 2: "COMMIT" (unambiguous verb)
+            // and CAN'T MAKE IT wears the same extruded chrome at the same
+            // size — everything tappable sits proud.
+            VStack(spacing: 8) {
                 Button {
                     Task { await setCommitment(.committed, session: session) }
                 } label: {
-                    Text("LET'S RIDE")
-                        .font(GSFont.bold(13, relativeTo: .subheadline))
-                        .kerning(-0.1)
+                    Text("COMMIT")
+                        .font(GSFont.bold(12, relativeTo: .caption))
+                        .kerning(0.8)
+                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(GSPrimaryButtonStyle(fontSize: 13, verticalPadding: 9))
+                .buttonStyle(GSPrimaryButtonStyle(fontSize: 12, verticalPadding: 9))
                 Button {
                     Task { await setCommitment(.out, session: session) }
                 } label: {
                     Text("CAN'T MAKE IT")
-                        .font(GSFont.bold(9, relativeTo: .caption2))
-                        .kerning(1.1)
+                        .font(GSFont.bold(10, relativeTo: .caption2))
+                        .kerning(0.8)
                         .foregroundStyle(Self.gold)
+                        .frame(maxWidth: .infinity, minHeight: 33)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.gs3D(face: theme.raised3DFace,
+                                   lip: theme.raised3DLip,
+                                   cornerRadius: GSMetrics.radiusSm))
             }
             .frame(width: 118)
 

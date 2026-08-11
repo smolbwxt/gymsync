@@ -105,4 +105,31 @@ final class AppState {
     // Entries are removed (not left as "") once a draft is sent or
     // abandoned empty — see ChatView's onAppear/onDisappear.
     var chatDrafts: [UUID: String] = [:]
+
+    // MARK: - Live solo session recovery (user report 2026-08-11)
+    //
+    // A solo session lives inside a plain `.sheet` (Home's RoutinePickerSheet
+    // → pushed WorkoutSessionView) — swiping the sheet down destroyed every
+    // `@State` in it with no re-entry route, leaving an in_progress session
+    // permanently orphaned. This handle is the durable trace: registered the
+    // moment `SessionRepository.startSolo` succeeds, cleared only when the
+    // session actually completes. While it is non-nil, MainTabView shows a
+    // "SESSION LIVE" pill above the dock; tapping it re-presents
+    // WorkoutSessionView in resume mode (which refetches `set_logs` and
+    // re-derives the exercise/set cursor). Dismissal is therefore harmless
+    // by design rather than prevented — the lifter can browse chat, social,
+    // or routines mid-session and swipe back up.
+    //
+    // Group sessions deliberately have no handle here: they are pushes with
+    // the back button hidden (no swipe-down exists) and Home's "Join" hero +
+    // check-in widget already re-enter an in_progress group session.
+    struct LiveSoloSession: Identifiable, Equatable {
+        let session: WorkoutSession
+        let routine: Routine?
+        let routineExercises: [RoutineExercise]
+        let allExercises: [Exercise]
+        var id: UUID { session.id }
+        static func == (lhs: Self, rhs: Self) -> Bool { lhs.session.id == rhs.session.id }
+    }
+    var liveSoloSession: LiveSoloSession?
 }

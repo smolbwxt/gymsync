@@ -34,12 +34,22 @@ struct WorkoutSessionView: View {
     /// Either way the session ends by selecting Home (see `finishSession`).
     var onFinished: (() -> Void)?
 
+    /// Resume mode (user report 2026-08-11: a swiped-down solo session was
+    /// irrecoverable): a non-nil `resume` skips `startSolo` and adopts this
+    /// already-running session instead — `startIfNeeded()` refetches its
+    /// `set_logs` and re-derives the exercise/set cursor so the lifter lands
+    /// exactly where they left off. Passed only by MainTabView's
+    /// "SESSION LIVE" pill via `AppState.liveSoloSession`.
+    let resumeSession: WorkoutSession?
+
     init(routine: Routine?, routineExercises: [RoutineExercise], allExercises: [Exercise],
-         attemptOptIn: Bool? = nil, onFinished: (() -> Void)? = nil) {
+         attemptOptIn: Bool? = nil, resume: WorkoutSession? = nil,
+         onFinished: (() -> Void)? = nil) {
         self.routine = routine
         self.routineExercises = routineExercises
         self.allExercises = allExercises
         self.attemptOptIn = attemptOptIn
+        self.resumeSession = resume
         self.onFinished = onFinished
     }
 
@@ -183,6 +193,12 @@ struct WorkoutSessionView: View {
     @State private var setPendingDeletion: SetLog?
     /// The set being edited (sheet(item:) — reuses LogSetSheet prefilled).
     @State private var editingSet: SetLog?
+    /// Exercise whose detail page (video demo + history) is open as a sheet —
+    /// set by tapping the exercise name on the header card (user 2026-08-11:
+    /// "click on the name of the exercise in a session and be taken to the
+    /// exercise page"). A sheet, not a push, so dismissing it lands straight
+    /// back in the session.
+    @State private var exerciseDetailSheet: Exercise?
 
     @State private var freeformExercises: [RoutineExercise] = []
     @State private var showExercisePicker = false
@@ -238,6 +254,16 @@ struct WorkoutSessionView: View {
         .toolbarBackground(theme.surface, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbar { sessionToolbar }
+        .sheet(item: $exerciseDetailSheet) { ex in
+            NavigationStack {
+                ExerciseDetailView(exercise: ex)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Done") { exerciseDetailSheet = nil }
+                        }
+                    }
+            }
+        }
         .task { await startIfNeeded() }
         .task { await loadDefaultRestSeconds() }
         .task { await loadPickerCatalogIfFreeform() }
@@ -1886,10 +1912,21 @@ struct WorkoutSessionView: View {
                     .font(GSFont.body(12, relativeTo: .caption))
                     .foregroundStyle(theme.bg.opacity(0.9))
             }
-            Text(ex.name)
-                .font(GSFont.heading(28, relativeTo: .title))
-                .foregroundStyle(theme.bg)
-                .lineLimit(2)
+            Button {
+                exerciseDetailSheet = ex
+            } label: {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(ex.name)
+                        .font(GSFont.heading(28, relativeTo: .title))
+                        .foregroundStyle(theme.bg)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                    Image(systemName: "chevron.right.circle.fill")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(theme.bg.opacity(0.7))
+                }
+            }
+            .buttonStyle(.plain)
 
             // Target line (units sweep: target weight is stored pounds,
             // shown in the user's unit). A reps-only target reads
@@ -2285,9 +2322,20 @@ struct WorkoutSessionView: View {
     @MainActor
     private func startIfNeeded() async {
         guard session == nil else { return }
+        if let resumeSession {
+            // Re-entry after a sheet dismissal: adopt the running session and
+            // rebuild local state from the durable record. Warm-up and
+            // leaderboard-attempt startup are new-session-only concerns.
+            session = resumeSession
+            await restoreLoggedProgress(sessionID: resumeSession.id)
+            return
+        }
         do {
             let newSession = try await SessionRepository.startSolo(routineID: routine?.id)
             session = newSession
+            appState.liveSoloSession = AppState.LiveSoloSession(
+                session: newSession, routine: routine,
+                routineExercises: routineExercises, allExercises: allExercises)
             // Solo warm-up (2026-08): a configured duration opens the
             // warm-up page before the first set — the persisted DEFAULT of
             // 0 keeps existing solo behavior untouched. Routine sessions
@@ -2319,6 +2367,55 @@ struct WorkoutSessionView: View {
             }
         }
         catch { errorText = ErrorMapping.map(error).errorDescription }
+    }
+
+    /// Rebuild `loggedSets` + the exercise/set cursor from the session's
+    /// durable `set_logs` record — the resume-mode half of `startIfNeeded()`.
+    /// Best-effort on the fetch: an empty result just lands the lifter at
+    /// the top of the routine, which is the honest floor.
+    @MainActor
+    private func restoreLoggedProgress(sessionID: UUID) async {
+        let logs = (try? await SessionRepository.setLogs(sessionID: sessionID)) ?? []
+        loggedSets = logs
+        let workSets = logs.filter { !$0.isPenalty }
+        if isFreeform {
+            // The synthesized picks never persisted (only set_logs rows did) —
+            // rebuild them from the log record: distinct exercises in
+            // first-logged order, same synthesis as `addFreeformExercise`.
+            var seen: [UUID] = []
+            for log in workSets.sorted(by: { $0.loggedAt < $1.loggedAt })
+            where !seen.contains(log.exerciseID) {
+                seen.append(log.exerciseID)
+            }
+            freeformExercises = seen.enumerated().map { i, exID in
+                RoutineExercise(id: UUID(), routineID: UUID(), exerciseID: exID,
+                                position: i + 1, targetSets: nil, targetReps: nil,
+                                targetWeight: nil, restSeconds: nil, notes: nil)
+            }
+            currentExerciseIndex = max(freeformExercises.count - 1, 0)
+            currentSetIndex = workSets.filter { $0.exerciseID == seen.last }.count + 1
+        } else {
+            // Walk the plan in order, attributing logged sets to slots
+            // greedily (handles the same exercise appearing twice); land on
+            // the first slot still short of its target. A fully-logged
+            // routine lands on the last slot, one past its target — the
+            // lifter finishes from there.
+            var remaining = workSets
+            for (i, re) in activeExercises.enumerated() {
+                let target = max(re.targetSets ?? 1, 1)
+                var consumed = 0
+                remaining.removeAll { log in
+                    if consumed < target && log.exerciseID == re.exerciseID {
+                        consumed += 1
+                        return true
+                    }
+                    return false
+                }
+                currentExerciseIndex = i
+                currentSetIndex = consumed + 1
+                if consumed < target { break }
+            }
+        }
     }
 
     /// Show the "couldn't join the leaderboard" transient notice for 3
@@ -2590,6 +2687,10 @@ struct WorkoutSessionView: View {
             let completedResult = try await SessionRepository.complete(sessionID: session.id)
             let logs = try await SessionRepository.setLogs(sessionID: completedResult.id)
             completedSession = completedResult
+            // The session is durably over — retire the recovery pill.
+            if appState.liveSoloSession?.id == session.id {
+                appState.liveSoloSession = nil
+            }
 
             // Permission failure must never block completion — `try?` stays here.
             try? await HealthKitBridge.requestPermission()

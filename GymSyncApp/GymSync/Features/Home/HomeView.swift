@@ -821,24 +821,23 @@ struct HomeView: View {
         .contentShape(Rectangle())
     }
 
-    /// The commitment signal on the Home widget — quick IN only; OUT and
-    /// CHANGE live on the crew room's status board (which the widget body
-    /// navigates to).
+    /// Owner feedback 2026-08-11 round 2: the Home widget never commits
+    /// directly — committing happens ON the crew room's board. This chip is
+    /// a visual affordance riding the card's own navigation (the whole card
+    /// already routes to the room), so it deliberately is NOT a nested
+    /// button; it just looks pressable because the destination is where
+    /// pressing happens.
     @ViewBuilder
     private func commitControl(_ session: WorkoutSession) -> some View {
         switch nextCommitStatus {
         case nil:
-            Button {
-                Task {
-                    try? await CommitmentRepository.setMine(sessionID: session.id, status: .committed)
-                    nextCommitStatus = .committed
-                }
-            } label: {
-                Text("LET'S RIDE")
-                    .font(GSFont.bold(11, relativeTo: .caption))
-                    .kerning(0.5)
-            }
-            .buttonStyle(GSPrimaryButtonStyle(fontSize: 11, verticalPadding: 7))
+            Text("COMMIT ›")
+                .font(GSFont.bold(11, relativeTo: .caption))
+                .kerning(0.8)
+                .foregroundStyle(theme.bg)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .gs3DCard(cornerRadius: 10, lipHeight: 4, face: theme.accent)
         case .committed:
             HStack(spacing: 5) {
                 Image(systemName: "checkmark")
@@ -927,43 +926,48 @@ struct HomeView: View {
         let done = sessionsThisWeek
         let met = done >= goal
         let green = Color.gsHex(0x2FA45C)
+        // Owner feedback 2026-08-11 round 2: the number owns the card — no
+        // wasted space — and the captions grew with it.
         return Button {
             showGoalSheet = true
         } label: {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .center, spacing: 14) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text("\(done)")
-                        .font(GSFont.heading(24, relativeTo: .title2))
+                        .font(GSFont.heading(56, relativeTo: .largeTitle))
                         .foregroundStyle(met ? green : theme.text)
                         .monospacedDigit()
+                        .minimumScaleFactor(0.6)
                     Text("THIS WEEK")
-                        .font(GSFont.bold(9, relativeTo: .caption2))
-                        .kerning(1.4)
+                        .font(GSFont.bold(11, relativeTo: .caption))
+                        .kerning(1.6)
                         .foregroundStyle(met ? green : theme.neutral500)
                     Text(met ? "GOAL MET · WK \(userStreak?.currentStreak ?? 0) STREAK"
                              : "\(goal - done) TO YOUR GOAL")
-                        .font(GSFont.bold(10, relativeTo: .caption2))
+                        .font(GSFont.bold(12, relativeTo: .caption))
                         .kerning(0.6)
                         .foregroundStyle(met ? green : theme.accent)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
                 Spacer(minLength: 0)
-                VStack(spacing: 2.5) {
+                VStack(spacing: 4) {
                     ForEach((0..<max(goal, 1)).reversed(), id: \.self) { index in
                         let filled = index < done
                         let isNext = !filled && index == done && !met
-                        RoundedRectangle(cornerRadius: 2)
+                        RoundedRectangle(cornerRadius: 3)
                             .fill(filled ? (met ? green : theme.text)
                                          : (isNext && homeSlotBreathing
                                             ? Color.gsHex(0x3D444E) : Color.gsHex(0x1D2127)))
-                            .frame(width: 12, height: 10)
+                            .frame(width: 17, height: 14)
                             .animation(isNext ? .easeInOut(duration: 1.1).repeatForever(autoreverses: true) : nil,
                                        value: homeSlotBreathing)
                     }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .padding(15)
+            .padding(.horizontal, 15)
+            .padding(.vertical, 12)
         }
         .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
         .onAppear { homeSlotBreathing = true }
