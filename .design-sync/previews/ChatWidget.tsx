@@ -5,7 +5,7 @@ export const LiveTail = () => (
   <div style={{ background: "#0A0B0D", padding: "24px 24px 0", borderRadius: 12, display: "inline-block", width: 360 }}>
     <ChatWidget unread={3} height={290}>
       <div style={{ marginBottom: 10 }}>
-        <SysLine color="#2FA45C" text="DANI PUT A PLATE ON THE BAR" cheers={2} />
+        <SysLine text="DANI PUT A PLATE ON THE BAR" cheers={2} />
       </div>
       <MsgRow endOfRun avatar={{ initials: "MK", color: "#E8834A" }}>
         <Bubble direction="in" tail style={{ fontSize: 13.5, padding: "7px 11px" }}>

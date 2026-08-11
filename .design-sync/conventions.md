@@ -20,16 +20,22 @@ Style your own layout glue with the Onyx tokens, not invented colors:
 | Type | `--onyx-font` (system sans; k-labels are 10px/800 tracked uppercase — use `KLabel`) |
 
 **The extrusion rule:** anything tappable sits proud of the surface — use `ExtrudedButton`
-(or the `ox-btn` classes) for every control; never a flat text button. Gold is reserved for
-debt/goal/check-in marks; don't decorate with it.
+(or the `ox-btn` classes) for every control; never a flat text button.
+
+**The color law — colors are meanings, never decoration.** Accent sky = actionable / presence.
+Gold = debt, goals, streaks, check-in. Green = square with the crew / week made. Lifter colors =
+member identity on avatars ONLY — never on plates, bars, or progress. Iron and the neutral ramp
+carry everything else. One accent moment per view; if a screen reads colorful, it's wrong.
 
 ## Domain semantics (get these right)
 
-- `WeeksBar` is the hero (v7.4 semantics): one uniform IRON plate per routine the crew completed
-  **together** — no lifter colors, no denominations on the bar. The `Clip` clamps at the
-  `declared` goal; bare sleeve to the clip = work remaining (never ghost plates); `completed ≥
-  declared` = "ironclad" (gold clip, green count). Who-showed detail lives one tap deep, never
-  on the bar. Lifter colors belong to `AvatarChip`, `Plate` (the lifter chip), and `SysLine`.
+- `WeeksBar` is the hero: one uniform IRON plate per routine the crew completed **together**.
+  There is NO clip — bare sleeve is the work remaining (never ghost plates); the slot column
+  carries the declared count, and `completed ≥ declared` = "ironclad" (green count and slots).
+  The week count sits dead-center above its THIS WEEK label. Who-showed detail lives one tap
+  deep, never on the bar.
+- `Plate` is the crew's unit of shared effort — always iron, never one member's, never colored
+  by identity. Lifter colors belong to avatars only.
 - Debts (`CrewCard.members[].owes`) are owed **to the crew**, not to individuals; 0 = green check.
 - Chat: `Bubble direction="out"` is accent-with-dark-ink (not Apple blue); tails only on the
   last bubble of a sender's run (`MsgRow endOfRun`); completed sessions appear in-stream as `SysLine`.

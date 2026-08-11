@@ -56,12 +56,9 @@
 .ox-collar { position: absolute; width: 10px; height: 26px; border-radius: 2px;
   background: var(--onyx-n500); }
 .ox-collar__lever { display: none; }
-.ox-clip { position: absolute; width: 7px; height: 42px; border-radius: 2px;
-  background: var(--onyx-n500); }
-.ox-bar--ironclad .ox-clip { background: var(--onyx-gold); }
 .ox-bar__count { font-size: 46px; font-weight: 800; line-height: 1; color: var(--onyx-tx);
-  transform: skewX(-10deg); font-variant-numeric: tabular-nums;
-  text-shadow: 0 3px 0 rgba(0,0,0,.45); }
+  transform: skewX(-10deg); transform-origin: 50% 100%; font-variant-numeric: tabular-nums;
+  text-shadow: 0 3px 0 rgba(0,0,0,.45); text-align: center; }
 .ox-bar--ironclad .ox-bar__count { color: var(--onyx-green); }
 .ox-bar__slot { width: 12px; height: 10px; border-radius: 2px;
   background: #1d2127; box-shadow: inset 0 2px 3px rgba(0,0,0,.45); }
@@ -110,9 +107,11 @@
 .ox-sender { font-family: var(--onyx-font); font-size: 10.5px; font-weight: 600;
   color: var(--onyx-n700); margin: 0 0 3px 44px; }
 
-/* ── session system-line ── */
+/* ── session system-line (glyph is the crew's iron plate — plates are never one person's) ── */
 .ox-sysline { display: flex; align-items: center; gap: 7px; font-family: var(--onyx-font); }
-.ox-sysline__plate { width: 8px; height: 20px; border-radius: 2px; flex: none; }
+.ox-sysline__plate { width: 8px; height: 20px; border-radius: 2px; flex: none;
+  background: #53585F;
+  box-shadow: inset 1px 0 0 rgba(255,255,255,.20), inset -1px 0 0 rgba(0,0,0,.38); }
 
 /* ── chat widget (the page's bottom half) ── */
 .ox-chatwidget { background: var(--onyx-sf); border-radius: 20px 20px 0 0;

@@ -55,8 +55,6 @@ export function MsgRow({ me = false, endOfRun = false, avatar, children }: MsgRo
 }
 
 export interface SysLineProps {
-  /** The member's lifter color — renders their mini plate glyph. */
-  color: string;
   /** Event text (e.g. "DANI PUT A PLATE ON THE BAR · PULL DAY B"). */
   text: string;
   /** Cheer count; renders the extruded cheer chip when present. */
@@ -64,13 +62,14 @@ export interface SysLineProps {
 }
 
 /**
- * A session system-line inside the chat: a completed workout surfaces in the stream
- * as a mini plate glyph + event text, cheerable inline. Sessions are chat citizens.
+ * A session system-line inside the chat: a completed routine surfaces in the stream
+ * as the crew's iron mini-plate glyph + event text, cheerable inline. The glyph is
+ * always iron — plates are the crew's, never one member's; the text carries who.
  */
-export function SysLine({ color, text, cheers }: SysLineProps) {
+export function SysLine({ text, cheers }: SysLineProps) {
   return (
     <div className="ox-sysline">
-      <span className="ox-sysline__plate" style={{ background: color }} />
+      <span className="ox-sysline__plate" />
       <KLabel style={{ color: "var(--onyx-t78)" }}>{text}</KLabel>
       {cheers !== undefined && (
         <button type="button" className="ox-btn ox-btn--sm" style={{ padding: "4px 8px", fontSize: 9, color: "var(--onyx-ac)", display: "inline-flex", alignItems: "center", gap: 4 }}>

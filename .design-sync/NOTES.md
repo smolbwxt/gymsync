@@ -47,3 +47,15 @@
   lifter chip — reversible.
 - Campaign meter + thread-sheet interactions exist only in the .dc.html templates — extract as DS
   components if they ship.
+
+## Tommy's corrections to v7.4 (2026-08-10, applied + synced)
+- NO CLIP — Tommy rejected the clip entirely (reverses upstream #4). Bar = collar + iron plates +
+  bare sleeve + count/slots. Clip component deleted from DS and project.
+- Plate identity RESOLVED (upstream #9): Plate = the crew's unit of shared effort — one plate is
+  one routine completed TOGETHER. Always uniform iron, no color prop. Never one member's.
+- Color law added to conventions: accent=actionable/presence, gold=debt/goal/streak, green=square/
+  complete, lifter colors=avatars ONLY, iron/neutrals everything else. SysLine glyph now iron.
+- WeeksBar count: dead-center above THIS WEEK (transform-origin bottom-center + text-align center).
+- TEMPLATE-SIDE (Tommy prompts in Claude Design; templates/ not writable under our plan): the
+  SocialTabRoot proof needs the same fixes — remove clip, center streak/count numerals over their
+  labels, apply the color law (kill stray lifter-color noise).

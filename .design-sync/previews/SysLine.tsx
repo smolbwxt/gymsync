@@ -7,12 +7,12 @@ const Ground = ({ children }: { children: React.ReactNode }) => (
 
 export const Cheerable = () => (
   <Ground>
-    <SysLine color="#2FA45C" text="DANI PUT A PLATE ON THE BAR · PULL DAY B" cheers={2} />
+    <SysLine text="DANI PUT A PLATE ON THE BAR · PULL DAY B" cheers={2} />
   </Ground>
 );
 
 export const Plain = () => (
   <Ground>
-    <SysLine color="#C9A227" text="TESS PUT A PLATE ON THE BAR" />
+    <SysLine text="TESS PUT A PLATE ON THE BAR" />
   </Ground>
 );
