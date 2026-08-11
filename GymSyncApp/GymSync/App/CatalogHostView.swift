@@ -1288,6 +1288,8 @@ extension Profile {
         // default above and the column's own server-side default.
         self.showSoloWorkouts = false
         self.proUntil = nil
+        // 20260811000003: fixture matches the column's server-side default.
+        self.weeklySessionGoal = 3
     }
 }
 
