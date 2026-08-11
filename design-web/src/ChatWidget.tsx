@@ -35,7 +35,12 @@ export function ChatWidget({ unread, children, placeholder = "Message", onExpand
         <button type="button" className="ox-composer__plus" style={{ width: 30, height: 30, fontSize: 15 }}>＋</button>
         <div className="ox-composer__field" style={{ padding: "6px 6px 6px 12px", fontSize: 12.5 }}>
           <span style={{ flex: 1 }}>{placeholder}</span>
-          <span style={{ fontSize: 13 }}>🎤</span>
+          {/* drawn mic glyph — never emoji */}
+          <svg width="11" height="14" viewBox="0 0 11 14" style={{ display: "block" }}>
+            <rect x="3.5" y="0.5" width="4" height="7.5" rx="2" fill="var(--onyx-n700)" />
+            <path d="M1.5 6.5 a4 4 0 0 0 8 0" fill="none" stroke="var(--onyx-n700)" strokeWidth="1.3" />
+            <line x1="5.5" y1="10.5" x2="5.5" y2="13" stroke="var(--onyx-n700)" strokeWidth="1.3" />
+          </svg>
         </div>
       </div>
     </div>

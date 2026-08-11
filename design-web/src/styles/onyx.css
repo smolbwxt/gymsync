@@ -22,6 +22,7 @@
 }
 .ox-klabel--gold { color: var(--onyx-gold); }
 .ox-klabel--green { color: var(--onyx-green); }
+.ox-klabel--accent { color: var(--onyx-ac); }
 .ox-klabel--dim { color: var(--onyx-n500); }
 
 /* ── avatar chip ── */
@@ -43,25 +44,40 @@
   background: var(--onyx-ac); box-shadow: 0 0 0 2px var(--onyx-bg);
 }
 
-/* ── the week's bar ── */
+/* ── the week's bar (v7.4: crew-together routines as uniform iron; clip bounds the goal) ── */
 .ox-bar { position: relative; font-family: var(--onyx-font); }
-.ox-bar__shaft { position: absolute; height: 7px; border-radius: 2px;
-  background: linear-gradient(180deg, var(--onyx-steel-hi), var(--onyx-steel-lo)); }
-.ox-bar__sleeve { position: absolute; height: 11px; border-radius: 3px;
-  background: linear-gradient(180deg, var(--onyx-steel-sleeve-hi), var(--onyx-steel-sleeve-lo)); }
-.ox-bar__hub { position: absolute; width: 9px; height: 20px; border-radius: 2px;
-  background: linear-gradient(180deg, #d5dbe4, #7c828d); }
-.ox-plate { position: absolute; width: 15px; height: 58px; border-radius: 3px;
-  box-shadow: 0 10px 13px -8px rgba(0, 0, 0, .72); }
-.ox-plate__sheen { position: absolute; left: 2px; right: 2px; top: 3px; height: 3px;
-  border-radius: 2px; background: rgba(255, 255, 255, .28); }
-.ox-collar { position: absolute; width: 9px; height: 24px; border-radius: 2.5px;
-  background: linear-gradient(180deg, #e2e7ee, #8a919c);
-  box-shadow: 0 6px 8px -5px rgba(0, 0, 0, .7); }
-.ox-collar__lever { position: absolute; top: -7px; left: 2px; width: 3.5px; height: 9px;
-  border-radius: 2px; background: #aeb6c1; transform: rotate(28deg); }
-.ox-bar--ironclad .ox-collar { box-shadow: 0 6px 8px -5px rgba(0, 0, 0, .7), 0 0 8px 1px rgba(232, 195, 58, .45); }
-.ox-bar__tick { position: absolute; width: 2px; height: 34px; border-radius: 1px; background: #252A31; }
+.ox-bar__sleeve { position: absolute; height: 9.5px; border-radius: 2px;
+  background: var(--onyx-n500); opacity: .55; }
+.ox-plate { position: absolute; width: 20px; height: 74px; border-radius: 3px;
+  background: #53585F;
+  box-shadow: inset 1.5px 0 0 rgba(255,255,255,.20), inset -2px 0 0 rgba(0,0,0,.38),
+              inset 0 2px 0 rgba(255,255,255,.09), inset 0 -2px 0 rgba(0,0,0,.30); }
+.ox-plate__sheen { display: none; }
+.ox-collar { position: absolute; width: 10px; height: 26px; border-radius: 2px;
+  background: var(--onyx-n500); }
+.ox-collar__lever { display: none; }
+.ox-clip { position: absolute; width: 7px; height: 42px; border-radius: 2px;
+  background: var(--onyx-n500); }
+.ox-bar--ironclad .ox-clip { background: var(--onyx-gold); }
+.ox-bar__count { font-size: 46px; font-weight: 800; line-height: 1; color: var(--onyx-tx);
+  transform: skewX(-10deg); font-variant-numeric: tabular-nums;
+  text-shadow: 0 3px 0 rgba(0,0,0,.45); }
+.ox-bar--ironclad .ox-bar__count { color: var(--onyx-green); }
+.ox-bar__slot { width: 12px; height: 10px; border-radius: 2px;
+  background: #1d2127; box-shadow: inset 0 2px 3px rgba(0,0,0,.45); }
+.ox-bar__slot--filled { background: var(--onyx-tx); box-shadow: 0 2px 0 #0c0e11; }
+.ox-bar--ironclad .ox-bar__slot--filled { background: var(--onyx-green); }
+.ox-bar__slot--next { animation: ox-slot-pulse 2.2s ease-in-out infinite; }
+@keyframes ox-slot-pulse { 0%, 100% { background: #1d2127; } 50% { background: #3d444e; } }
+
+/* ── presence ring (a member training right now) ── */
+.ox-presence { border-radius: 999px;
+  box-shadow: 0 0 0 2px var(--onyx-bg), 0 0 0 4px var(--onyx-ac);
+  animation: ox-presence-pulse 2s ease-in-out infinite; display: inline-grid; }
+@keyframes ox-presence-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px var(--onyx-bg), 0 0 0 4px var(--onyx-ac); }
+  50% { box-shadow: 0 0 0 2px var(--onyx-bg), 0 0 0 4px rgba(58,181,245,.35); }
+}
 
 /* ── pixel banner + rail ── */
 .ox-rail { position: relative; height: 4px;

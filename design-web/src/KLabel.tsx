@@ -1,8 +1,8 @@
 import React from "react";
 
 export interface KLabelProps {
-  /** Semantic tone: default neutral, `gold` for debt/goal marks, `green` for good standing, `dim` for tertiary. */
-  tone?: "default" | "gold" | "green" | "dim";
+  /** Semantic tone: default neutral, `gold` debt/goal marks, `green` good standing, `accent` presence/action (sky), `dim` tertiary. */
+  tone?: "default" | "gold" | "green" | "accent" | "dim";
   children?: React.ReactNode;
   style?: React.CSSProperties;
 }
@@ -16,6 +16,7 @@ export function KLabel({ tone = "default", children, style }: KLabelProps) {
     "ox-klabel",
     tone === "gold" && "ox-klabel--gold",
     tone === "green" && "ox-klabel--green",
+    tone === "accent" && "ox-klabel--accent",
     tone === "dim" && "ox-klabel--dim",
   ]
     .filter(Boolean)

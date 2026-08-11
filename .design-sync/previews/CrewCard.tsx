@@ -14,7 +14,18 @@ const members = [
 
 export const IronChurch = () => (
   <Ground>
-    <CrewCard members={members} routineName="CHEST DAY A" routineTime="FRI 5:30" />
+    <CrewCard members={members} routineName="CHEST DAY A" routineTime="FRI 5:30" routineConfirmed={3} />
+  </Ground>
+);
+
+export const LiftingNow = () => (
+  <Ground>
+    <CrewCard
+      members={[{ ...members[0], active: true }, members[1], members[2], members[3]]}
+      routineName="CHEST DAY A"
+      routineTime="FRI 5:30"
+      routineConfirmed={2}
+    />
   </Ground>
 );
 

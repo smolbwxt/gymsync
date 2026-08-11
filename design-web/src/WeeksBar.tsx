@@ -1,100 +1,106 @@
 import React from "react";
-
-export interface WeeksBarSession {
-  /** The lifter's dedicated color (see the Onyx lifter tokens). */
-  color: string;
-  /** Optional member tag for tooling/a11y. */
-  member?: string;
-}
+import { KLabel } from "./KLabel";
 
 export interface WeeksBarProps {
-  /** Sessions the crew declared for the week — sets where the collars clamp. Render capacity is 8 (4 per sleeve); the count label carries any overflow. */
+  /** Routines declared for the week (the Monday commitment) — sets where the clip clamps and the slot count. */
   declared: number;
-  /** Completed sessions in order; each renders one plate in the lifter's color. */
-  sessions: WeeksBarSession[];
-  /** Faint marks on the bare sleeve where remaining plates will land. Default true. */
-  showTicks?: boolean;
-  /** Rendered width in px (design width 370, scaled proportionally). */
+  /** Routines the crew completed **together** this week (crew-size invariant); one iron plate each. */
+  completed: number;
+  /** Rendered width in px. Default 370. */
   width?: number;
 }
 
-const DESIGN_W = 370;
-const SLOT = 17;
-const PLATE_W = 15;
-const HUB_L = 103; // left hub's left edge; plates load leftward from here
-const HUB_R = 267; // right hub's right edge; plates load rightward from here
+const PLATE_W = 20;
+const COLLAR_X = 6;
+const PLATE_X0 = COLLAR_X + 10; // plates load flush against the collar
+const BAND_H = 90;
 
 /**
- * The week's bar — the squad room's hero. One plate per completed session in that
- * lifter's color; the collars clamp where Monday's declaration set them. Bare sleeve
- * inside the collars is the work remaining; when the last plate seats flush the bar
- * is "ironclad" (collars glint). There are deliberately no ghost plates.
+ * The week's bar (v7.4): one uniform iron plate per routine the crew completed
+ * together, loading flush from the collar toward a clip clamped at the declared
+ * goal — bare sleeve to the clip is the work remaining (deliberately no ghost
+ * plates). A skewed week count with a vertical slot column carries the numbers;
+ * the next empty slot breathes. Ironclad (completed ≥ declared): gold clip, green
+ * count and slots, no pulse. Who-showed detail lives one tap deep, never on the bar.
  */
-export function WeeksBar({ declared, sessions, showTicks = true, width = 370 }: WeeksBarProps) {
-  const cap = Math.min(declared, 8);
-  const leftSlots = Math.ceil(cap / 2);
-  const rightSlots = Math.floor(cap / 2);
-
-  // sessions alternate sleeves (L, R, L, R…) while capacity remains
-  const left: WeeksBarSession[] = [];
-  const right: WeeksBarSession[] = [];
-  for (const s of sessions.slice(0, cap)) {
-    const preferLeft = left.length <= right.length && left.length < leftSlots;
-    if (preferLeft || right.length >= rightSlots) left.push(s);
-    else right.push(s);
-  }
-
-  const ironclad = declared > 0 && sessions.length >= declared;
-  const scale = width / DESIGN_W;
-
-  const leftSlotX = (i: number) => HUB_L - PLATE_W - SLOT * (i - 1); // i is 1-based
-  const rightSlotX = (i: number) => HUB_R + SLOT * (i - 1);
-
-  const els: React.ReactNode[] = [
-    <div key="slvL" className="ox-bar__sleeve" style={{ left: 14, width: 89, top: 24 }} />,
-    <div key="slvR" className="ox-bar__sleeve" style={{ left: HUB_R, width: 89, top: 24 }} />,
-    <div key="shaft" className="ox-bar__shaft" style={{ left: 112, width: 146, top: 26 }} />,
-    <div key="hubL" className="ox-bar__hub" style={{ left: HUB_L, top: 19 }} />,
-    <div key="hubR" className="ox-bar__hub" style={{ left: 258, top: 19 }} />,
-  ];
-
-  left.forEach((s, i) =>
-    els.push(
-      <div key={`pL${i}`} className="ox-plate" style={{ left: leftSlotX(i + 1), top: 0, background: s.color }}>
-        <span className="ox-plate__sheen" />
-      </div>
-    )
-  );
-  right.forEach((s, i) =>
-    els.push(
-      <div key={`pR${i}`} className="ox-plate" style={{ left: rightSlotX(i + 1), top: 0, background: s.color }}>
-        <span className="ox-plate__sheen" />
-      </div>
-    )
-  );
-
-  if (showTicks) {
-    for (let i = left.length + 1; i <= leftSlots; i++)
-      els.push(<div key={`tL${i}`} className="ox-bar__tick" style={{ left: leftSlotX(i) + 6.5, top: 12 }} />);
-    for (let i = right.length + 1; i <= rightSlots; i++)
-      els.push(<div key={`tR${i}`} className="ox-bar__tick" style={{ left: rightSlotX(i) + 6.5, top: 12 }} />);
-  }
-
-  if (leftSlots > 0)
-    els.push(<Collar key="cL" x={leftSlotX(leftSlots) - 9} />);
-  if (rightSlots > 0)
-    els.push(<Collar key="cR" x={rightSlotX(rightSlots) + PLATE_W} />);
+export function WeeksBar({ declared, completed, width = 370 }: WeeksBarProps) {
+  const done = Math.min(completed, declared);
+  const ironclad = declared > 0 && completed >= declared;
+  const clipX = PLATE_X0 + declared * PLATE_W + 2;
+  const sleeveEnd = Math.max(clipX + 24, 185);
+  const midY = BAND_H / 2;
 
   return (
-    <div
-      className={ironclad ? "ox-bar ox-bar--ironclad" : "ox-bar"}
-      style={{ width, height: 64 * scale }}
-    >
-      <div style={{ width: DESIGN_W, height: 64, transform: `scale(${scale})`, transformOrigin: "top left", position: "relative" }}>
-        {els}
+    <div className={ironclad ? "ox-bar ox-bar--ironclad" : "ox-bar"} style={{ width, height: BAND_H }}>
+      {/* sleeve, trimmed short of the counter */}
+      <div className="ox-bar__sleeve" style={{ left: 0, width: sleeveEnd, top: midY - 5 }} />
+      {/* collar — inboard, fixed; first plate sits flush */}
+      <span className="ox-collar" style={{ left: COLLAR_X, top: midY - 13 }} />
+      {/* iron plates, packed flush */}
+      {Array.from({ length: done }, (_, i) => (
+        <span key={i} className="ox-plate" style={{ left: PLATE_X0 + i * PLATE_W, top: midY - 37 }} />
+      ))}
+      {/* clip — outboard, clamped at the declared position in every phase */}
+      <span className="ox-clip" style={{ left: clipX, top: midY - 21 }} />
+      {/* counter block + slot column at the sleeve's end */}
+      <div style={{ position: "absolute", right: 0, top: 0, height: BAND_H, display: "flex", alignItems: "center", gap: 12 }}>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+          <span className="ox-bar__count">{completed}</span>
+          <KLabel tone={ironclad ? "green" : "default"} style={{ letterSpacing: "1.8px", fontSize: 9, color: ironclad ? undefined : "var(--onyx-tx)" }}>
+            THIS WEEK
+          </KLabel>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column-reverse", gap: 4 }}>
+          {Array.from({ length: declared }, (_, i) => {
+            const filled = i < done;
+            const next = !filled && i === done && !ironclad;
+            const cls = ["ox-bar__slot", filled && "ox-bar__slot--filled", next && "ox-bar__slot--next"]
+              .filter(Boolean)
+              .join(" ");
+            return <span key={i} className={cls} />;
+          })}
+        </div>
       </div>
     </div>
   );
+}
+
+export interface CollarProps {
+  /** Absolute x within an ox-bar (internal use); omit for inline display. */
+  x?: number;
+  /** Vertical top within an ox-bar band (internal use). */
+  top?: number;
+}
+
+/**
+ * The bar collar — the inboard, fixed retainer the shoulder plates load against.
+ * (The removable retainer that bounds the load is the Clip.)
+ */
+export function Collar({ x, top }: CollarProps) {
+  const style: React.CSSProperties =
+    x === undefined ? { position: "relative", display: "inline-block" } : { left: x, top };
+  return <span className="ox-collar" style={style} />;
+}
+
+export interface ClipProps {
+  /** Absolute x within an ox-bar (internal use); omit for inline display. */
+  x?: number;
+  /** Vertical top within an ox-bar band (internal use). */
+  top?: number;
+  /** Gold treatment for the ironclad state. */
+  gold?: boolean;
+}
+
+/**
+ * The bar clip — the outboard, removable retainer that bounds the load. On the
+ * week's bar it clamps at the declared goal and turns gold when the week is made.
+ */
+export function Clip({ x, top, gold = false }: ClipProps) {
+  const style: React.CSSProperties = {
+    ...(x === undefined ? { position: "relative", display: "inline-block" } : { left: x, top }),
+    ...(gold ? { background: "var(--onyx-gold)" } : {}),
+  };
+  return <span className="ox-clip" style={style} />;
 }
 
 export interface PlateProps {
@@ -105,33 +111,19 @@ export interface PlateProps {
 }
 
 /**
- * A single session plate in a lifter's color — the unit of effort everywhere in GymSync.
- * Standalone use: shop/cosmetic previews, legends, system-lines.
+ * A lifter chip in plate form — a member-colored glyph used in system-lines,
+ * cheer chips, and legends. NOT the barbell plate: the week's bar and GSBarLoader
+ * draw their own iron (see upstream decision #9).
  */
 export function Plate({ color, height = 58 }: PlateProps) {
   const w = (15 / 58) * height;
   return (
-    <span className="ox-plate" style={{ position: "relative", display: "inline-block", width: w, height, background: color }}>
-      <span className="ox-plate__sheen" />
-    </span>
-  );
-}
-
-export interface CollarProps {
-  /** Absolute x within an ox-bar (internal use); omit for inline display. */
-  x?: number;
-}
-
-/**
- * The bar collar — clamps at the declared weekly goal. Bare sleeve inside it is work
- * remaining; a plate seated flush against it means the week is ironclad.
- */
-export function Collar({ x }: CollarProps) {
-  const style: React.CSSProperties =
-    x === undefined ? { position: "relative", display: "inline-block" } : { left: x, top: 17 };
-  return (
-    <span className="ox-collar" style={style}>
-      <span className="ox-collar__lever" />
-    </span>
+    <span
+      style={{
+        position: "relative", display: "inline-block", width: w, height,
+        borderRadius: 3, background: color,
+        boxShadow: "0 6px 9px -6px rgba(0,0,0,.72)",
+      }}
+    />
   );
 }

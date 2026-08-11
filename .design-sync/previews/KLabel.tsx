@@ -8,8 +8,9 @@ const Ground = ({ children }: { children: React.ReactNode }) => (
 export const Tones = () => (
   <Ground>
     <KLabel>5 OF 12 · EST. MAR '26</KLabel>
-    <KLabel tone="gold">2 TO THE COLLARS</KLabel>
+    <KLabel tone="gold">2 TO GO · 40 OWED</KLabel>
     <KLabel tone="green">✓ SQUARE WITH THE CREW</KLabel>
+    <KLabel tone="accent">LIFTING NOW · 3 IN</KLabel>
     <KLabel tone="dim">PREDICTIONS FROM YOUR OWN HISTORY</KLabel>
   </Ground>
 );

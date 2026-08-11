@@ -41,9 +41,9 @@
 
   /* type */
   --onyx-font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  --onyx-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+  --onyx-mono: /* @kind font */ ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
 
   /* shape */
-  --onyx-r-card: 18px;
-  --onyx-r-btn: 12px;
+  --onyx-r-card: /* @kind radius */ 18px;
+  --onyx-r-btn: /* @kind radius */ 12px;
 }

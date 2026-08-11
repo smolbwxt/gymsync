@@ -25,9 +25,11 @@ debt/goal/check-in marks; don't decorate with it.
 
 ## Domain semantics (get these right)
 
-- `WeeksBar` is the hero: one plate per completed session in that lifter's color; `declared`
-  sets where the collars clamp; bare sleeve inside the collars = work remaining; sessions
-  filling `declared` = "ironclad". Never render ghost/placeholder plates.
+- `WeeksBar` is the hero (v7.4 semantics): one uniform IRON plate per routine the crew completed
+  **together** — no lifter colors, no denominations on the bar. The `Clip` clamps at the
+  `declared` goal; bare sleeve to the clip = work remaining (never ghost plates); `completed ≥
+  declared` = "ironclad" (gold clip, green count). Who-showed detail lives one tap deep, never
+  on the bar. Lifter colors belong to `AvatarChip`, `Plate` (the lifter chip), and `SysLine`.
 - Debts (`CrewCard.members[].owes`) are owed **to the crew**, not to individuals; 0 = green check.
 - Chat: `Bubble direction="out"` is accent-with-dark-ink (not Apple blue); tails only on the
   last bubble of a sender's run (`MsgRow endOfRun`); completed sessions appear in-stream as `SysLine`.

@@ -73,8 +73,10 @@ export function SysLine({ color, text, cheers }: SysLineProps) {
       <span className="ox-sysline__plate" style={{ background: color }} />
       <KLabel style={{ color: "var(--onyx-t78)" }}>{text}</KLabel>
       {cheers !== undefined && (
-        <button type="button" className="ox-btn ox-btn--sm" style={{ padding: "4px 8px", fontSize: 9, color: "var(--onyx-ac)" }}>
-          💪 {cheers}
+        <button type="button" className="ox-btn ox-btn--sm" style={{ padding: "4px 8px", fontSize: 9, color: "var(--onyx-ac)", display: "inline-flex", alignItems: "center", gap: 4 }}>
+          {/* plate-glyph cheer chip — never emoji */}
+          <span style={{ width: 5, height: 12, borderRadius: 1.5, background: "var(--onyx-ac)", display: "inline-block" }} />
+          {cheers}
         </button>
       )}
     </div>

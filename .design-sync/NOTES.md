@@ -30,3 +30,20 @@
 - Build assumes node 22 + esbuild/tsc from design-web devDependencies; converter deps live in
   .ds-sync (gitignored, reinstall on fresh clone: npm i esbuild ts-morph @types/react playwright@1.58.0).
 - Preview scope 2026-08-09: ALL 17 components authored + graded good in one campaign; no floor cards.
+
+## Design handoff v7.4 applied (2026-08-10)
+- Handoff source: design_handoff_social_tab/ in the Claude Design project (README + upstream-fixes.md
+  + SocialTabRoot.dc.html — THE approved screen reference for the Swift build; .dc.html files are
+  design references, not production code).
+- Upstream items applied: #1 --onyx-mono @kind font · #2 r-card/r-btn @kind radius · #3 Collar
+  story gap 2px · #4 Clip component added · #5 CrewCard members[].active + routineConfirmed,
+  KLabel accent tone · #6 de-emoji (drawn mic SVG, plate-glyph cheer chip) · #8 WeeksBar reworked
+  to v7.4 semantics (declared/completed numbers, uniform iron #53585F, clip-at-goal, count+slot
+  column) · BannerRail gap/extruded props.
+- Item #5 TabBar note: DS list (HOME · HOME GYM · SHOP · YOU) is the current direction; the APP's
+  Features/Social/SocialTabView.swift naming is what's stale — reconcile during the Swift build.
+- Item #9 OPEN (Tommy's call): Plate = barbell plate (denomination-driven, DS owns geometry) vs
+  lifter chip (as-is, rename to avoid GSBarLoader collision). JSDoc currently documents it as the
+  lifter chip — reversible.
+- Campaign meter + thread-sheet interactions exist only in the .dc.html templates — extract as DS
+  components if they ship.

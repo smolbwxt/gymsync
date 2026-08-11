@@ -71,17 +71,26 @@ export interface BannerRailProps {
   weeks?: number;
   /** Rail width in px. Default 370. */
   width?: number;
+  /** Gap between hung banners in px. Default 6 (the Ceremony treatment uses 4). */
+  gap?: number;
+  /** Extruded hang: hard lip + soft drop shadow under each banner (the Ceremony treatment). */
+  extruded?: boolean;
 }
 
 /**
  * The steel rail the crew's banners hang from, with the streak flame at its right end.
  * The streak counts weeks of showing up — a low honest bar, distinct from perfect weeks.
  */
-export function BannerRail({ children, weeks, width = 370 }: BannerRailProps) {
+export function BannerRail({ children, weeks, width = 370, gap = 6, extruded = false }: BannerRailProps) {
   return (
     <div style={{ position: "relative", width, height: 56, fontFamily: "var(--onyx-font)" }}>
-      <div className="ox-rail" style={{ width }} />
-      <div className="ox-rail__hang">{children}</div>
+      <div className="ox-rail" style={{ width, boxShadow: extruded ? "0 2px 0 rgba(0,0,0,.4)" : undefined }} />
+      <div
+        className="ox-rail__hang"
+        style={{ gap, filter: extruded ? "drop-shadow(0 3px 0 #0c0e11) drop-shadow(0 7px 9px rgba(0,0,0,.4))" : undefined }}
+      >
+        {children}
+      </div>
       {weeks !== undefined && (
         <span className="ox-flame" style={{ position: "absolute", right: 0, top: 10 }}>
           <svg width={13} height={16} viewBox="0 0 12 15">
