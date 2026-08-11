@@ -263,7 +263,10 @@ struct SocialTabView: View {
                             VStack(spacing: 8) {
                                 ForEach(groups) { group in
                                     NavigationLink {
-                                        GroupView(group: group)
+                                        // Crew room (v7.4 design handoff) — the
+                                        // group's front page; GroupView survives
+                                        // behind its MANAGE toolbar item.
+                                        CrewRoomView(group: group)
                                     } label: {
                                         groupRow(group)
                                     }
@@ -362,7 +365,9 @@ struct SocialTabView: View {
             .onDisappear { Task { await friendRealtime.unsubscribe() } }
             .refreshable { await refresh() }
             .navigationDestination(item: $pendingChatGroup) { group in
-                GroupView(group: group)
+                // Chat push deep link lands on the crew room (chat is one tap
+                // in) — same destination as the group rows above.
+                CrewRoomView(group: group)
             }
             .navigationDestination(isPresented: $navigateToFriends) {
                 FriendsView()
