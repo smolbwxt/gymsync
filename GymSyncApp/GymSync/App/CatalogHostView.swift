@@ -1172,7 +1172,9 @@ struct CatalogHostView: View {
                         createdAt: Date().addingTimeInterval(-3600)),
                     author: nil, isMine: false,
                     myReactions: ["🔥"],
-                    reactionCounts: ["🔥": 3, "💪": 1],
+                    reactionCounts: ["🔥": 3, "💪": 1, "snd:airhorn": 2],
+                    ownedSoundSlugs: ["airhorn"],
+                    soundNames: ["airhorn": "Airhorn"],
                     onReact: { _ in }, onDelete: {}, onReport: {})
                 PumpPostCard(
                     post: WorkoutPost(
@@ -1185,6 +1187,8 @@ struct CatalogHostView: View {
                     author: nil, isMine: true,
                     myReactions: [],
                     reactionCounts: [:],
+                    ownedSoundSlugs: [],
+                    soundNames: [:],
                     onReact: { _ in }, onDelete: {}, onReport: {})
             }
             .padding(16)
