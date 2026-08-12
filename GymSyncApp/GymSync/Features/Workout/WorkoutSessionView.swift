@@ -715,7 +715,9 @@ struct WorkoutSessionView: View {
                                                      targetReps: targetReps) {
                 base = Decimal(scaled)
             }
-            let next = SetProgression.nextWeight(afterPounds: base, rpe: last.rpe, isFailed: last.isFailed)
+            let next = SetProgression.nextWeight(afterPounds: base, rpe: last.rpe, isFailed: last.isFailed,
+                                                 isLowerBody: currentExercise?.isLowerBody ?? false,
+                                                 unit: soloUnit)
             soloWeight = Units.format(pounds: next, unit: soloUnit,
                                       rounded: false, includeUnit: false)
         } else if let re = currentRoutineExercise,

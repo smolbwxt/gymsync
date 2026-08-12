@@ -110,10 +110,36 @@ enum StatMath {
 
     // MARK: - Estimated 1RM (Exercise History stat tile + trend chart)
 
-    /// Epley-formula estimated one-rep max: `weight × (1 + reps/30)`.
+    /// Prediction-equation validity boundary (research audit 2026-08:
+    /// Epley-class formulas hold to ~10 reps and degrade sharply past ~12 —
+    /// a raw 20-rep extrapolation would claim +67%). Inputs beyond the cap
+    /// estimate as cap-rep sets: a conservative floor, never fiction.
+    static let oneRepMaxRepCap = 12
+
+    /// Epley-formula estimated one-rep max: `weight × (1 + reps/30)`,
+    /// reps clamped to `oneRepMaxRepCap`.
     static func estimatedOneRepMax(weight: Decimal, reps: Int) -> Decimal {
         guard reps > 0 else { return weight }
-        return weight * (1 + Decimal(reps) / 30)
+        let capped = min(reps, Self.oneRepMaxRepCap)
+        return weight * (1 + Decimal(capped) / 30)
+    }
+
+    /// RPE-aware variant (research audit 2026-08): effective reps = reps +
+    /// reps-in-reserve (RIR = 10 − RPE, the standard coaching conversion) —
+    /// a 225×5 @7 carries ~3 in the tank and estimates like an 8-rep max
+    /// effort. RIR credit caps at 4 (far-from-failure self-reports are
+    /// unreliable) and the summed reps still honor `oneRepMaxRepCap`.
+    /// nil or out-of-range RPE falls back to the plain estimate.
+    ///
+    /// Consumers: SUGGESTION paths only (WorkingWeight's qualifying-set
+    /// pick). PR judgments deliberately stay on the plain variant — a
+    /// record is what you DID, not what you had in the tank.
+    static func estimatedOneRepMax(weight: Decimal, reps: Int, rpe: Decimal?) -> Decimal {
+        guard reps > 0, let rpe, rpe >= 5, rpe <= 10 else {
+            return estimatedOneRepMax(weight: weight, reps: reps)
+        }
+        let rir = NSDecimalNumber(decimal: 10 - rpe).intValue
+        return estimatedOneRepMax(weight: weight, reps: reps + max(0, min(rir, 4)))
     }
 
     /// Redesign (2026-07-23): projected working weight for a routine exercise

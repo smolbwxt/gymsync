@@ -128,7 +128,10 @@ enum WorkingWeight {
             guard !log.isFailed, !log.isPenalty,
                   let reps = log.reps, let weight = log.weight,
                   reps > 0, weight > 0 else { continue }
-            let oneRM = StatMath.estimatedOneRepMax(weight: weight, reps: reps)
+            // RPE-aware (research audit 2026-08): a hard 5×315 @9 and an
+            // easy 5×315 @6 are different signals — reps-in-reserve feed
+            // the estimate on suggestion paths (never on PR judgments).
+            let oneRM = StatMath.estimatedOneRepMax(weight: weight, reps: reps, rpe: log.rpe)
             if oneRM > bestOneRM {
                 bestOneRM = oneRM
                 best = (weight, reps)

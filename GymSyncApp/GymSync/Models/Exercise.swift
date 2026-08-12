@@ -31,6 +31,21 @@ struct Exercise: Codable, Identifiable, Sendable, Hashable {
     }
 }
 
+extension Exercise {
+    /// Lower-body classifier for progression step sizing (research audit
+    /// 2026-08: ~5% steps lower body, ~2.5% upper). Primary muscle only —
+    /// hip-hinge compounds list their driver first. Unknown muscle strings
+    /// fall through to `false`, which lands on the SMALLER (conservative)
+    /// upper-body step.
+    var isLowerBody: Bool {
+        let lower: Set<String> = [
+            "quads", "quadriceps", "hamstrings", "glutes", "calves",
+            "legs", "adductors", "abductors", "hip flexors"
+        ]
+        return lower.contains(primaryMuscle.lowercased())
+    }
+}
+
 enum ExerciseRepository {
     static func fetchAll() async throws -> [Exercise] {
         do {

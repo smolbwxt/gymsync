@@ -3915,7 +3915,9 @@ struct GroupSessionLiveView: View {
                                                          targetReps: targetReps) {
                     base = Decimal(scaled)
                 }
-                return SetProgression.nextWeight(afterPounds: base, rpe: last.rpe, isFailed: last.isFailed)
+                return SetProgression.nextWeight(afterPounds: base, rpe: last.rpe, isFailed: last.isFailed,
+                                                 isLowerBody: currentExerciseForSheet?.isLowerBody ?? false,
+                                                 unit: turnUnit)
             }
             if let t = currentRoutineExercise?.targetWeight,
                let parsed = Decimal(string: t), parsed > 0 { return parsed }
