@@ -542,50 +542,58 @@ struct LobbyView: View {
         // group session like you can for a solo session"). Swiping down is
         // now a recoverable browse — the session keeps running, the
         // SESSION LIVE pill (AppState.liveGroupSession) and the lobby's
-        // rejoin bar below both route back in. The exit-unwind onChange
-        // above still distinguishes the two dismissals: a deliberate exit
-        // carries sessionExitToHomeID and pops the lobby too; a swipe-down
-        // doesn't, and lands here.
-        .sheet(isPresented: $navigateToInProgress) {
-            // .id — the live view's @State (liveSession, my-turn UI) must
-            // die with its session: on 2026-07-30/31 a live view whose
-            // session prop was swapped underneath kept showing the OLD
-            // session while writing sets into the new one (a scheduled
-            // future occurrence). Identity-pinning makes prop and state
-            // inseparable.
-            //
-            // effectiveSession, not the prop (field 2026-07-31): members'
-            // `session` predates the organizer's routine pick, so the live
-            // view opened with routineID nil. currentSession carries the
-            // freshest row the realtime/poll path fetched.
-            //
-            // No NavigationStack wrapper: the live view is all custom
-            // chrome (its .navigationTitle("") calls are no-ops outside a
-            // stack, and its chat/detail sheets carry their own stacks).
-            SessionInProgressView(session: effectiveSession, participants: participants)
-                .id(effectiveSession.id)
-        }
-        // Rejoin bar — after a swipe-down the lobby is what's on screen and
-        // its auto-forward onChange won't refire (state didn't change), so
-        // the way back in must be visible and extruded like every tappable.
-        .safeAreaInset(edge: .bottom) {
-            if !navigateToInProgress,
-               (currentSession?.state ?? session.state) == "in_progress" {
-                Button {
-                    navigateToInProgress = true
-                } label: {
-                    HStack(spacing: 8) {
-                        Circle().fill(theme.bg).frame(width: 8, height: 8)
-                        Text("REJOIN — SESSION LIVE")
-                            .font(GSFont.bold(13, relativeTo: .subheadline))
-                            .kerning(0.8)
-                    }
-                    .frame(maxWidth: .infinity)
+        // rejoin bar both route back in. The exit-unwind onChange above
+        // still distinguishes the two dismissals: a deliberate exit carries
+        // sessionExitToHomeID and pops the lobby too; a swipe-down doesn't.
+        //
+        // Closure bodies extracted to named vars (CI 2026-08-12: inline
+        // content pushed `body` past the RELEASE type-check budget —
+        // "unable to type-check this expression in reasonable time" on the
+        // archive job only; Debug builds stayed green. Same failure mode
+        // and fix as WorkoutSessionView's body split, 2026-07-27).
+        .sheet(isPresented: $navigateToInProgress) { liveSessionSheetContent }
+        .safeAreaInset(edge: .bottom) { rejoinBar }
+    }
+
+    /// Sheet content for the live session. `.id` — the live view's @State
+    /// (liveSession, my-turn UI) must die with its session: on 2026-07-30/31
+    /// a live view whose session prop was swapped underneath kept showing
+    /// the OLD session while writing sets into the new one. Identity-pinning
+    /// makes prop and state inseparable.
+    ///
+    /// effectiveSession, not the prop (field 2026-07-31): members' `session`
+    /// predates the organizer's routine pick, so the live view opened with
+    /// routineID nil. currentSession carries the freshest fetched row.
+    ///
+    /// No NavigationStack wrapper: the live view is all custom chrome (its
+    /// .navigationTitle("") calls are no-ops outside a stack, and its
+    /// chat/detail sheets carry their own stacks).
+    private var liveSessionSheetContent: some View {
+        SessionInProgressView(session: effectiveSession, participants: participants)
+            .id(effectiveSession.id)
+    }
+
+    /// Rejoin bar — after a swipe-down the lobby is what's on screen and its
+    /// auto-forward onChange won't refire (state didn't change), so the way
+    /// back in must be visible and extruded like every tappable.
+    @ViewBuilder
+    private var rejoinBar: some View {
+        if !navigateToInProgress,
+           (currentSession?.state ?? session.state) == "in_progress" {
+            Button {
+                navigateToInProgress = true
+            } label: {
+                HStack(spacing: 8) {
+                    Circle().fill(theme.bg).frame(width: 8, height: 8)
+                    Text("REJOIN — SESSION LIVE")
+                        .font(GSFont.bold(13, relativeTo: .subheadline))
+                        .kerning(0.8)
                 }
-                .buttonStyle(GSPrimaryButtonStyle())
-                .padding(.horizontal, 16)
-                .padding(.bottom, 8)
+                .frame(maxWidth: .infinity)
             }
+            .buttonStyle(GSPrimaryButtonStyle())
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
         }
     }
 
