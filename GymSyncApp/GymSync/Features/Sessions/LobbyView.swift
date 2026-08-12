@@ -198,8 +198,16 @@ struct LobbyView: View {
     }
 
     // MARK: - Body
+    //
+    // Split into three layered expressions (CI 2026-08-12, twice: the
+    // RELEASE-config type-check timeout at `body` survived closure
+    // extraction — the ~25-modifier chain itself was the over-budget
+    // expression. Same failure mode and fix as GroupSessionLiveView's
+    // arenaBase → arenaWithThrow → body layering). Each layer is a
+    // separately-checked expression; behavior unchanged.
 
-    var body: some View {
+    /// Layer 1: scroll content + navigation chrome.
+    private var lobbyScroll: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 // Room code banner (canvas: full-width accent fill, large monospaced code)
@@ -338,6 +346,12 @@ struct LobbyView: View {
                 }
             }
         }
+    }
+
+    /// Layer 2: lifecycle — load task, voice/scene/state observers, the
+    /// pre-live poll, and the disappear voice guard.
+    private var lobbyWithLifecycle: some View {
+        lobbyScroll
         .task { await openAndLoad() }
         .onChange(of: isVoiceConnected) { wasConnected, nowConnected in
             guard nowConnected, !wasConnected else { return }
@@ -451,6 +465,12 @@ struct LobbyView: View {
                 Task { await VoiceRoomService.shared.leave() }
             }
         }
+    }
+
+    /// Layer 3: presentation — sheets, dialogs, the live-session sheet and
+    /// the rejoin bar.
+    var body: some View {
+        lobbyWithLifecycle
         // Proposal composer sheet
         .sheet(isPresented: $showProposalComposer) {
             proposalComposerSheet
