@@ -8,7 +8,11 @@ final class StatMathOneRepMaxTests: XCTestCase {
     func testEpleyBasicUnchanged() {
         XCTAssertEqual(StatMath.estimatedOneRepMax(weight: 225, reps: 5),
                        225 * (1 + Decimal(5) / 30))
-        XCTAssertEqual(StatMath.estimatedOneRepMax(weight: 300, reps: 1), 310)
+        // Formula expression, not a clean literal — Decimal(1)/30 is a
+        // repeating decimal, so the product lands at 309.999…, and equality
+        // must be judged against the same arithmetic.
+        XCTAssertEqual(StatMath.estimatedOneRepMax(weight: 300, reps: 1),
+                       300 * (1 + Decimal(1) / 30))
     }
 
     func testHighRepSetsClampToValidityCap() {
