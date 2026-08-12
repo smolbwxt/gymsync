@@ -33,6 +33,11 @@ struct LobbyView: View {
     @State private var isStarting = false
     @State private var showStartDialog = false
     @State private var navigateToInProgress = false
+    /// Set by the exit-unwind onChange right before it pops this lobby — the
+    /// onDisappear voice guard reads it to tell a deliberate session exit
+    /// (leave voice) apart from browsing away while the session is still
+    /// live (keep voice — the SESSION LIVE pill re-enters).
+    @State private var exitingSession = false
     @State private var showProposalComposer = false
     /// "Choose routine" picker (user report 2026-07-29 — the lobby had no
     /// path to a routine you'd already built).
@@ -369,6 +374,13 @@ struct LobbyView: View {
         // doubles as the voice-persistence signal in onDisappear, so voice
         // carries into the session exactly like the organizer's own push.
         .onChange(of: currentSession?.state) { _, newState in
+            // Stale-pill hygiene: a session that ended while the user was
+            // browsing elsewhere (swipe-down, then the crew finished it)
+            // must not keep advertising SESSION LIVE.
+            if newState == "completed" || newState == "abandoned",
+               appState.liveGroupSession?.sessionID == session.id {
+                appState.liveGroupSession = nil
+            }
             guard newState == "in_progress", !navigateToInProgress else { return }
             Task { @MainActor in
                 // Same ordering as startSession(): drop the lobby channel
@@ -387,6 +399,7 @@ struct LobbyView: View {
             guard !showing,
                   appState.sessionExitToHomeID == session.id else { return }
             appState.sessionExitToHomeID = nil
+            exitingSession = true
             dismiss()
         }
         // The waiting spinner POLLS what it promises (field 2026-07-31: a
@@ -424,7 +437,17 @@ struct LobbyView: View {
             // doubles as the identity guard here: only leave voice when this
             // disappearance is NOT that push (i.e. the user backed out of
             // the lobby before starting the session).
-            if !navigateToInProgress {
+            // Sheet-era addendum (2026-08-12): with the live view presented
+            // as a SHEET, this onDisappear no longer fires on session entry
+            // (the lobby stays "appeared" under a sheet) — it fires on the
+            // exit-unwind pop and on the user browsing away. Only leave
+            // voice for a deliberate exit or a not-live lobby back-out;
+            // browsing away mid-session keeps voice up, matching the
+            // SESSION LIVE pill's promise that you're still in the session.
+            // (Edge accepted: a session the crew ends while you're browsing
+            // leaves voice up until the room itself closes.)
+            let sessionLive = (currentSession?.state ?? session.state) == "in_progress"
+            if !navigateToInProgress, exitingSession || !sessionLive {
                 Task { await VoiceRoomService.shared.leave() }
             }
         }
@@ -515,7 +538,15 @@ struct LobbyView: View {
         } message: {
             Text("All \(upcomingOccurrenceCount) upcoming sessions in this series will be deleted.")
         }
-        .navigationDestination(isPresented: $navigateToInProgress) {
+        // SHEET, not a push (owner 2026-08-12: "you can't swipe down in a
+        // group session like you can for a solo session"). Swiping down is
+        // now a recoverable browse — the session keeps running, the
+        // SESSION LIVE pill (AppState.liveGroupSession) and the lobby's
+        // rejoin bar below both route back in. The exit-unwind onChange
+        // above still distinguishes the two dismissals: a deliberate exit
+        // carries sessionExitToHomeID and pops the lobby too; a swipe-down
+        // doesn't, and lands here.
+        .sheet(isPresented: $navigateToInProgress) {
             // .id — the live view's @State (liveSession, my-turn UI) must
             // die with its session: on 2026-07-30/31 a live view whose
             // session prop was swapped underneath kept showing the OLD
@@ -527,8 +558,34 @@ struct LobbyView: View {
             // `session` predates the organizer's routine pick, so the live
             // view opened with routineID nil. currentSession carries the
             // freshest row the realtime/poll path fetched.
+            //
+            // No NavigationStack wrapper: the live view is all custom
+            // chrome (its .navigationTitle("") calls are no-ops outside a
+            // stack, and its chat/detail sheets carry their own stacks).
             SessionInProgressView(session: effectiveSession, participants: participants)
                 .id(effectiveSession.id)
+        }
+        // Rejoin bar — after a swipe-down the lobby is what's on screen and
+        // its auto-forward onChange won't refire (state didn't change), so
+        // the way back in must be visible and extruded like every tappable.
+        .safeAreaInset(edge: .bottom) {
+            if !navigateToInProgress,
+               (currentSession?.state ?? session.state) == "in_progress" {
+                Button {
+                    navigateToInProgress = true
+                } label: {
+                    HStack(spacing: 8) {
+                        Circle().fill(theme.bg).frame(width: 8, height: 8)
+                        Text("REJOIN — SESSION LIVE")
+                            .font(GSFont.bold(13, relativeTo: .subheadline))
+                            .kerning(0.8)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(GSPrimaryButtonStyle())
+                .padding(.horizontal, 16)
+                .padding(.bottom, 8)
+            }
         }
     }
 

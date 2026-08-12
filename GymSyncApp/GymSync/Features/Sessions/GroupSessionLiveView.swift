@@ -1134,10 +1134,35 @@ struct GroupSessionLiveView: View {
     private var turnExerciseCard: some View {
         VStack(spacing: 0) {
             HStack {
-                Text(currentExerciseForSheet?.name ?? "Exercise")
-                    .font(GSFont.bold(20, relativeTo: .title3))
-                    .foregroundStyle(theme.text)
-                    .lineLimit(1)
+                // Owner 2026-08-12: the name is an extruded button — tap
+                // opens the exercise page (video + history) as a sheet.
+                // (Round-1 wiring landed on the legacy scroll layout's
+                // spotlight card, which only renders in the roster-failure
+                // state — THIS is the card actually on screen.)
+                if let ex = currentExerciseForSheet {
+                    Button {
+                        exerciseDetailSheet = ex
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text(ex.name)
+                                .font(GSFont.bold(20, relativeTo: .title3))
+                                .foregroundStyle(theme.text)
+                                .lineLimit(1)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(theme.neutral500)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                    }
+                    .buttonStyle(.gs3D(face: theme.raised3DFace, lip: theme.raised3DLip,
+                                       cornerRadius: 10, lipHeight: 3))
+                } else {
+                    Text("Exercise")
+                        .font(GSFont.bold(20, relativeTo: .title3))
+                        .foregroundStyle(theme.text)
+                        .lineLimit(1)
+                }
                 Spacer()
             }
             .padding(.top, 12)
@@ -1623,11 +1648,29 @@ struct GroupSessionLiveView: View {
             }
             Color.clear.frame(height: 10)
             HStack {
-                Text(currentExerciseForSheet?.name ?? "")
-                    .font(GSFont.bold(13, relativeTo: .footnote))
-                    .tracking(0.5)
-                    .foregroundStyle(theme.neutral700)
-                    .lineLimit(1)
+                // Owner 2026-08-12: spectate's exercise name opens the
+                // exercise page too — small extruded chip, same contract as
+                // the my-turn card's title button.
+                if let ex = currentExerciseForSheet {
+                    Button {
+                        exerciseDetailSheet = ex
+                    } label: {
+                        HStack(spacing: 5) {
+                            Text(ex.name)
+                                .font(GSFont.bold(13, relativeTo: .footnote))
+                                .tracking(0.5)
+                                .foregroundStyle(theme.neutral700)
+                                .lineLimit(1)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(theme.neutral500)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                    }
+                    .buttonStyle(.gs3D(face: theme.raised3DFace, lip: theme.raised3DLip,
+                                       cornerRadius: 8, lipHeight: 2))
+                }
                 Spacer()
                 if let ts = liveSession.currentTurnStartedAt {
                     Image(systemName: "timer")
@@ -2364,6 +2407,12 @@ struct GroupSessionLiveView: View {
             // Suppresses the push banner for this same session while it's
             // open live (AppDelegate.willPresent, AppState.activeSessionID).
             appState.activeSessionID = liveSession.id
+            // Recovery handle (owner 2026-08-12): survives swipe-down so the
+            // SESSION LIVE pill can route back in; cleared only by a
+            // deliberate exit (exitToHome) or a terminal state. Title
+            // refreshed after reload() once routineName is real.
+            appState.liveGroupSession = AppState.LiveGroupSession(
+                sessionID: liveSession.id, title: routineName ?? "Crew session")
             // Phase O Task 4 (Sentry) — "session join" refresh; see
             // SentryContext.refreshLiveSession's doc comment.
             SentryContext.refreshLiveSession(rawState: liveSession.state, participantCount: participants.count)
@@ -4090,6 +4139,12 @@ struct GroupSessionLiveView: View {
         // sees the actual current exercise shortly after entering, not
         // only after the first turn change.
         pushWatchSessionState()
+        // Recovery-pill title refresh — onAppear registered before reload()
+        // populated routineName.
+        if appState.liveGroupSession?.sessionID == liveSession.id, let routineName {
+            appState.liveGroupSession = AppState.LiveGroupSession(
+                sessionID: liveSession.id, title: routineName)
+        }
         await ExerciseNameCache.preload()
         if let groupID = liveSession.groupID {
             // Fast-follow wave, Fix 3: this used to be a bare `try?` — a
@@ -4899,6 +4954,11 @@ struct GroupSessionLiveView: View {
     @MainActor
     private func exitToHome() {
         appState.sessionExitToHomeID = session.id
+        // Deliberate exit — retire the recovery pill (the ONLY in-view clear;
+        // onDisappear must not clear it, a swipe-down is recoverable).
+        if appState.liveGroupSession?.sessionID == session.id {
+            appState.liveGroupSession = nil
+        }
         dismiss()
     }
 

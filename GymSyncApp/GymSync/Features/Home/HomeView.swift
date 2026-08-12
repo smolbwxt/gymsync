@@ -950,45 +950,49 @@ struct HomeView: View {
         return Button {
             showGoalSheet = true
         } label: {
-            HStack(alignment: .center, spacing: 14) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("\(streak)")
-                        .font(GSFont.heading(56, relativeTo: .largeTitle))
-                        .foregroundStyle(met ? green : theme.text)
-                        .monospacedDigit()
-                        .minimumScaleFactor(0.6)
-                    Text("STREAK")
-                        .font(GSFont.bold(11, relativeTo: .caption))
-                        .kerning(1.6)
-                        .foregroundStyle(met ? green : theme.neutral500)
-                    // Owner 2026-08-12: progress fraction, not a countdown —
-                    // the widget says (a) your global streak and (b) how
-                    // you're tracking against the week that protects it.
-                    Text("\(done)/\(goal) DAYS THIS WEEK")
-                        .font(GSFont.bold(12, relativeTo: .caption))
-                        .kerning(0.6)
-                        .foregroundStyle(met ? green : theme.accent)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                }
-                Spacer(minLength: 0)
-                HStack(alignment: .bottom, spacing: 4) {
-                    ForEach(columns.indices, id: \.self) { c in
-                        VStack(spacing: 4) {
-                            ForEach(columns[c].reversed(), id: \.self) { index in
-                                let filled = index < done
-                                let isNext = !filled && index == done && !met
-                                RoundedRectangle(cornerRadius: 3)
-                                    .fill(filled ? (met ? green : theme.text)
-                                                 : (isNext && homeSlotBreathing
-                                                    ? theme.neutral400 : theme.neutral300))
-                                    .frame(width: 17, height: 14)
-                                    .animation(isNext ? .easeInOut(duration: 1.1).repeatForever(autoreverses: true) : nil,
-                                               value: homeSlotBreathing)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .center, spacing: 14) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("\(streak)")
+                            .font(GSFont.heading(56, relativeTo: .largeTitle))
+                            .foregroundStyle(met ? green : theme.text)
+                            .monospacedDigit()
+                            .minimumScaleFactor(0.6)
+                        Text("STREAK")
+                            .font(GSFont.bold(11, relativeTo: .caption))
+                            .kerning(1.6)
+                            .foregroundStyle(met ? green : theme.neutral500)
+                    }
+                    Spacer(minLength: 0)
+                    HStack(alignment: .bottom, spacing: 4) {
+                        ForEach(columns.indices, id: \.self) { c in
+                            VStack(spacing: 4) {
+                                ForEach(columns[c].reversed(), id: \.self) { index in
+                                    let filled = index < done
+                                    let isNext = !filled && index == done && !met
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .fill(filled ? (met ? green : theme.text)
+                                                     : (isNext && homeSlotBreathing
+                                                        ? theme.neutral400 : theme.neutral300))
+                                        .frame(width: 17, height: 14)
+                                        .animation(isNext ? .easeInOut(duration: 1.1).repeatForever(autoreverses: true) : nil,
+                                                   value: homeSlotBreathing)
+                                }
                             }
                         }
                     }
                 }
+                // Owner 2026-08-12 round 2: the fraction spans the FULL card
+                // below the number/slots row — sharing the squeezed left
+                // column made "1/4 DAYS THIS WEEK" clip against the grid.
+                // Says (a) your global streak, (b) how you're tracking
+                // against the week that protects it.
+                Text("\(done)/\(goal) DAYS THIS WEEK")
+                    .font(GSFont.bold(12, relativeTo: .caption))
+                    .kerning(0.6)
+                    .foregroundStyle(met ? green : theme.accent)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .padding(.horizontal, 15)

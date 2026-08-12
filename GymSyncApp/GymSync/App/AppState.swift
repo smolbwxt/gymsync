@@ -132,4 +132,19 @@ final class AppState {
         static func == (lhs: Self, rhs: Self) -> Bool { lhs.session.id == rhs.session.id }
     }
     var liveSoloSession: LiveSoloSession?
+
+    /// Group counterpart (owner 2026-08-12: "you can't swipe down in a group
+    /// session like you can for a solo session"). Registered by
+    /// GroupSessionLiveView.onAppear, cleared ONLY by a deliberate exit
+    /// (`exitToHome()` — leave, recap Done, member-side completion) or by
+    /// LobbyView noticing a terminal state — NOT by onDisappear, which now
+    /// also fires on a recoverable swipe-down. While set and the live view
+    /// is off-screen, MainTabView's SESSION LIVE pill routes back through
+    /// the lobby deep-link (`pendingRoute = .lobby`), whose existing
+    /// auto-forward re-presents the live sheet.
+    struct LiveGroupSession: Equatable {
+        let sessionID: UUID
+        let title: String
+    }
+    var liveGroupSession: LiveGroupSession?
 }

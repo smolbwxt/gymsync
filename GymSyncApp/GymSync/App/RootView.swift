@@ -365,6 +365,16 @@ private struct MainTabView: View {
                         }
                         .padding(.horizontal, 16)
                         .padding(.bottom, 8)
+                    } else if let group = appState.liveGroupSession {
+                        // Group re-entry rides the existing lobby deep-link:
+                        // a fresh LobbyView fetch sees in_progress and its
+                        // auto-forward re-presents the live sheet.
+                        LiveSessionPill(title: group.title) {
+                            appState.pendingRoute = .lobby(sessionID: group.sessionID)
+                            appState.selectedTab = .home
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 8)
                     }
                     GSTabBar(selection: $appState.selectedTab)
                         .ignoresSafeArea(.keyboard, edges: .bottom)

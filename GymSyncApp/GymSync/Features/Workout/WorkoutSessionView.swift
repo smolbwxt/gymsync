@@ -1181,10 +1181,35 @@ struct WorkoutSessionView: View {
     private var soloExerciseCard: some View {
         VStack(spacing: 0) {
             HStack {
-                Text(currentExercise?.name ?? "Exercise")
-                    .font(GSFont.bold(20, relativeTo: .title3))
-                    .foregroundStyle(theme.text)
-                    .lineLimit(1)
+                // Owner 2026-08-12: the name is an extruded button — tap
+                // opens the exercise page (video + history) as a sheet.
+                // (Round-1 wiring landed on exerciseHeaderCard, which only
+                // the freeform scroll body renders — THIS is the routine
+                // fixed page's card.)
+                if let ex = currentExercise {
+                    Button {
+                        exerciseDetailSheet = ex
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text(ex.name)
+                                .font(GSFont.bold(20, relativeTo: .title3))
+                                .foregroundStyle(theme.text)
+                                .lineLimit(1)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(theme.neutral500)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                    }
+                    .buttonStyle(.gs3D(face: theme.raised3DFace, lip: theme.raised3DLip,
+                                       cornerRadius: 10, lipHeight: 3))
+                } else {
+                    Text("Exercise")
+                        .font(GSFont.bold(20, relativeTo: .title3))
+                        .foregroundStyle(theme.text)
+                        .lineLimit(1)
+                }
                 Spacer()
             }
             .padding(.top, 12)
