@@ -553,7 +553,6 @@ struct HomeView: View {
     // the taller card and the shorter one fills to match (the v1 mismatch was
     // exactly this missing constraint).
 
-    private static let streakMilestones = [7, 14, 30, 60, 100, 365]
 
     private var checkInAndStreakRow: some View {
         HStack(alignment: .top, spacing: 11) {
@@ -1054,51 +1053,8 @@ struct HomeView: View {
                             : "Schedule your first lift.")
     }
 
-    private func streakCountWidget(current: Int) -> some View {
-        // BUG FIX (spotted in the 2026-07-25 CI capture: the test account's
-        // 627-day streak rendered "-262 to badge"): once a streak passes the
-        // LAST milestone there is no next one, and the old
-        // `?? streakMilestones.last!` fallback subtracted a smaller number
-        // from a bigger one. Past every badge the ring is simply full and
-        // the subtitle celebrates instead of counting down to the past.
-        let next = Self.streakMilestones.first(where: { $0 > current })
-        let progress = next.map { min(1, Double(current) / Double($0)) } ?? 1
-        // Static extrusion — the count card isn't tappable, so it sits
-        // still while its invite sibling (a Button) sinks. Same radius/lip
-        // as the check-in card beside it, so the fixedSize row's equal
-        // heights land on equal FACE heights too.
-        return HStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .stroke(theme.neutral300, lineWidth: 4)
-                Circle()
-                    .trim(from: 0, to: progress)
-                    .stroke(theme.accent, style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                Image(systemName: "flame.fill")
-                    .font(.system(size: 15))
-                    .foregroundStyle(theme.accent)
-            }
-            .frame(width: 52, height: 52)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("\(current)")
-                    .font(GSFont.heading(24, relativeTo: .title2))
-                    .foregroundStyle(theme.text)
-                Text("day streak")
-                    .font(GSFont.body(11, relativeTo: .caption2))
-                    .foregroundStyle(theme.neutral500)
-                Text(next.map { "\($0 - current) to badge" } ?? "every badge earned")
-                    .font(GSFont.bold(10.5, relativeTo: .caption2))
-                    .foregroundStyle(theme.accent)
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .padding(15)
-        .gs3DCard(cornerRadius: GSMetrics.radiusMd)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(next.map { "\(current) day streak, \($0 - current) days to the next badge" }
-                            ?? "\(current) day streak, every badge earned")
-    }
+    // (streakCountWidget deleted 2026-08-12 — dead since the weekly-goal
+    // widget replaced it; the wiring audit confirmed zero call sites.)
 
     // MARK: - Training calendar (redesign: replaces the Upcoming list)
 

@@ -122,6 +122,27 @@ final class ScreenshotTests: XCTestCase {
         tab.tap()
     }
 
+    /// Three-tab restructure (2026-08-12): the old Library/Stats/Shop tab
+    /// destinations live behind You-grid widgets now — open one by its
+    /// accessibility label ("Stats", "Routines", "Exercises", "Programs",
+    /// "Discover", "The Rack", "Settings"). Scrolls once if the widget sits
+    /// below the fold.
+    private func openYouWidget(_ app: XCUIApplication, label: String) {
+        selectTab(app, label: "You")
+        settle()
+        let widget = app.buttons[label]
+        guard widget.waitForExistence(timeout: 15) else {
+            XCTFail("\(label) widget not found on You tab")
+            return
+        }
+        if !widget.isHittable {
+            app.swipeUp()
+            settle()
+        }
+        widget.tap()
+        settle()
+    }
+
     // MARK: - Tab screenshots
 
     func testHomeTab() {
@@ -134,25 +155,18 @@ final class ScreenshotTests: XCTestCase {
     func testLibraryTab() {
         let app = launchApp()
         guard waitForTabBar(app) else { return }
-        selectTab(app, label: "Library")
-        settle()
+        openYouWidget(app, label: "Routines")
         attachScreenshot(app, named: "app-tab-library.png")
     }
 
-    /// The Exercises SUB-tab list (search + chips + list) — added 2026-07-24:
-    /// this surface had no capture (only tab-library's default Routines view
-    /// and the pushed exercise-detail), which let the chips-row gap bug ship
-    /// twice without CI review catching it.
+    /// The exercises list (search + chips + list) — added 2026-07-24: this
+    /// surface had no capture, which let the chips-row gap bug ship twice
+    /// without CI review catching it. Reached via the You grid's EXERCISES
+    /// widget since the restructure (no more Library segmented control).
     func testLibraryExercisesList() {
         let app = launchApp()
         guard waitForTabBar(app) else { return }
-        selectTab(app, label: "Library")
-        settle()
-        let exercisesSegment = app.buttons["Exercises"]
-        if exercisesSegment.waitForExistence(timeout: 10) {
-            exercisesSegment.tap()
-            settle()
-        }
+        openYouWidget(app, label: "Exercises")
         attachScreenshot(app, named: "app-library-exercises.png")
     }
 
@@ -167,8 +181,7 @@ final class ScreenshotTests: XCTestCase {
     func testStatsTab() {
         let app = launchApp()
         guard waitForTabBar(app) else { return }
-        selectTab(app, label: "Stats")
-        settle()
+        openYouWidget(app, label: "Stats")
         attachScreenshot(app, named: "app-tab-stats.png")
     }
 
@@ -185,8 +198,10 @@ final class ScreenshotTests: XCTestCase {
     func testYouAppearance() {
         let app = launchApp()
         guard waitForTabBar(app) else { return }
-        selectTab(app, label: "You")
-        settle()
+        // Settings rows moved into SettingsView behind the You grid's
+        // SETTINGS row (four-tab reorientation; the widget path is the
+        // restructure's).
+        openYouWidget(app, label: "Settings")
 
         // GSSettingsRow buttons carry a derived label of "{title}, {value}"
         // (e.g. "Appearance, Ink" — value = current palette, mutable), so an
@@ -195,7 +210,7 @@ final class ScreenshotTests: XCTestCase {
             NSPredicate(format: "label BEGINSWITH 'Appearance'")
         ).firstMatch
         guard appearanceRow.waitForExistence(timeout: 15) else {
-            XCTFail("Appearance settings row not found on You tab")
+            XCTFail("Appearance settings row not found in Settings")
             return
         }
         appearanceRow.tap()
@@ -448,13 +463,11 @@ final class ScreenshotTests: XCTestCase {
     func testRoutineDetail() {
         let app = launchApp()
         guard waitForTabBar(app) else { return }
-        selectTab(app, label: "Library")
-        settle()
+        openYouWidget(app, label: "Routines")
 
-        // Library's Routines sub-tab is the default. The seeded "[QA] Push
-        // Day" routine card's name Text is the FIRST element in its VStack
-        // (no avatar ahead of it, unlike the group row above), so BEGINSWITH
-        // is reliable here.
+        // The seeded "[QA] Push Day" routine card's name Text is the FIRST
+        // element in its VStack (no avatar ahead of it, unlike the group
+        // row above), so BEGINSWITH is reliable here.
         let pushDay = app.buttons.matching(
             NSPredicate(format: "label BEGINSWITH '[QA] Push Day'")
         ).firstMatch
@@ -468,18 +481,7 @@ final class ScreenshotTests: XCTestCase {
     func testExerciseDetail() {
         let app = launchApp()
         guard waitForTabBar(app) else { return }
-        selectTab(app, label: "Library")
-        settle()
-
-        // Library defaults to the Routines sub-tab — switch to Exercises
-        // (`LibraryTabView.segmentOption`'s label is a plain "Exercises" Text,
-        // so an exact buttons["Exercises"] query is reliable, unlike the
-        // composed labels elsewhere in this file).
-        let exercisesSegment = app.buttons["Exercises"]
-        if exercisesSegment.waitForExistence(timeout: 10) {
-            exercisesSegment.tap()
-            settle()
-        }
+        openYouWidget(app, label: "Exercises")
 
         // Unlike the seeded "[QA] Push Day" routine above, exercise rows have
         // no stable predictable name to match on (the live catalog, not a QA
@@ -502,8 +504,7 @@ final class ScreenshotTests: XCTestCase {
     func testActivityFeed() {
         let app = launchApp()
         guard waitForTabBar(app) else { return }
-        selectTab(app, label: "Stats")
-        settle()
+        openYouWidget(app, label: "Stats")
 
         // StatsTabView's "Recent Activity" row is a NavigationLink labeled
         // "Activity" (retitled from "View sessions" for this frame) + a

@@ -726,23 +726,6 @@ struct GSInitialsAvatar: View {
     }
 }
 
-// Keep the old InitialsAvatar for any remaining callers in other files
-struct InitialsAvatar: View {
-    let name: String
-
-    @Environment(\.gsTheme) private var theme
-
-    var body: some View {
-        Text(initials)
-            .font(.caption.bold())
-            .foregroundStyle(theme.bg)
-            .frame(width: 34, height: 34)
-            .background(theme.accent)
-    }
-
-    private var initials: String {
-        let parts = name.split(separator: " ").prefix(2)
-        return parts.map { String($0.prefix(1)).uppercased() }.joined()
-    }
-}
+// (Legacy InitialsAvatar deleted 2026-08-12 — the wiring audit found zero
+// remaining callers; GSInitialsAvatar is the only avatar component.)
 
