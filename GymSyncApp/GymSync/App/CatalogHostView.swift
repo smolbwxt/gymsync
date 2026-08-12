@@ -1294,6 +1294,9 @@ extension Profile {
         self.proUntil = nil
         // 20260811000003: fixture matches the column's server-side default.
         self.weeklySessionGoal = 3
+        // 20260812000001: nil = never edited, matching fresh-row state.
+        self.weeklySessionGoalPrev = nil
+        self.weeklySessionGoalChangedAt = nil
     }
 }
 

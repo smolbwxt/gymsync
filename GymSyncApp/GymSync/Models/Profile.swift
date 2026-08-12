@@ -15,9 +15,19 @@ struct Profile: Codable, Identifiable, Sendable, Equatable {
     /// through `Monetization.isPro(_:)`, never directly, so the dormant-
     /// paywall flag and grandfathering live in one place.
     let proUntil: Date?
-    /// Personal weekly session goal (20260811000003) — feeds the Home
-    /// intraweek count + slot widget. Client-writable on the own row.
+    /// Personal weekly days goal (20260811000003) — the STANDING goal (what
+    /// the user last set; in effect from next week on). Client-writable on
+    /// the own row via `updateWeeklySessionGoal` only.
     let weeklySessionGoal: Int
+    /// Anti-goalpost pair (20260812000001, owner 2026-08-12: goal edits
+    /// apply NEXT week only). When `weeklySessionGoalChangedAt` falls inside
+    /// the current calendar week, `weeklySessionGoalPrev` is the goal that
+    /// was in effect when the week started and governs THIS week's widget;
+    /// once the week rolls over the standing goal takes effect with no
+    /// write needed. Written only by `updateWeeklySessionGoal`'s snapshot
+    /// logic below.
+    let weeklySessionGoalPrev: Int?
+    let weeklySessionGoalChangedAt: Date?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -30,6 +40,8 @@ struct Profile: Codable, Identifiable, Sendable, Equatable {
         case showSoloWorkouts = "show_solo_workouts"
         case proUntil = "pro_until"
         case weeklySessionGoal = "weekly_session_goal"
+        case weeklySessionGoalPrev = "weekly_session_goal_prev"
+        case weeklySessionGoalChangedAt = "weekly_session_goal_changed_at"
     }
 
     // Custom decode so any pre-migration cached JSON (no is_curator/
@@ -51,6 +63,20 @@ struct Profile: Codable, Identifiable, Sendable, Equatable {
         proUntil = try c.decodeIfPresent(Date.self, forKey: .proUntil)
         // Pre-migration cached JSON defaults to the column's own DEFAULT.
         weeklySessionGoal = try c.decodeIfPresent(Int.self, forKey: .weeklySessionGoal) ?? 3
+        weeklySessionGoalPrev = try c.decodeIfPresent(Int.self, forKey: .weeklySessionGoalPrev)
+        weeklySessionGoalChangedAt = try c.decodeIfPresent(Date.self, forKey: .weeklySessionGoalChangedAt)
+    }
+
+    /// The goal governing the CURRENT calendar week (anti-goalpost rule,
+    /// owner 2026-08-12): an edit made this week doesn't apply until next
+    /// week, so mid-week the week-start snapshot governs.
+    var effectiveWeeklyGoal: Int {
+        if let changedAt = weeklySessionGoalChangedAt,
+           Calendar.current.isDate(changedAt, equalTo: .now, toGranularity: .weekOfYear),
+           let prev = weeklySessionGoalPrev {
+            return prev
+        }
+        return weeklySessionGoal
     }
 }
 
@@ -233,23 +259,55 @@ enum ProfileRepository {
         }
     }
 
-    /// Personal weekly session goal (20260811000003) — same own-row update
-    /// shape as `updateShowSoloWorkouts` above. Backs the Home intraweek
-    /// count + slot widget's goal editor.
+    /// Personal weekly days goal (20260811000003 + 20260812000001) — same
+    /// own-row update shape as `updateShowSoloWorkouts` above, plus the
+    /// anti-goalpost snapshot (owner 2026-08-12: edits apply NEXT week).
+    /// The FIRST edit in a calendar week snapshots the in-effect goal into
+    /// `_prev` and stamps `_changed_at`; later same-week edits keep the
+    /// original snapshot so repeat editing can't walk the week's goal down.
+    /// `Profile.effectiveWeeklyGoal` is the read side of this contract.
     static func updateWeeklySessionGoal(_ goal: Int) async throws -> Profile {
         guard let userID = await SupabaseService.shared.currentUserID() else {
             throw GymSyncError.unauthorized
         }
+        struct WeeklyGoalUpdate: Encodable {
+            let weeklySessionGoal: Int
+            let weeklySessionGoalPrev: Int
+            let weeklySessionGoalChangedAt: String
+            enum CodingKeys: String, CodingKey {
+                case weeklySessionGoal = "weekly_session_goal"
+                case weeklySessionGoalPrev = "weekly_session_goal_prev"
+                case weeklySessionGoalChangedAt = "weekly_session_goal_changed_at"
+            }
+        }
         do {
+            // Read the row fresh (not a caller-supplied snapshot) so the
+            // "was there already an edit this week?" decision can't be made
+            // against stale state.
+            guard let current = try await fetch(userID: userID) else {
+                throw GymSyncError.unauthorized
+            }
+            let changedThisWeek = current.weeklySessionGoalChangedAt.map {
+                Calendar.current.isDate($0, equalTo: .now, toGranularity: .weekOfYear)
+            } ?? false
+            let prev = changedThisWeek
+                ? (current.weeklySessionGoalPrev ?? current.weeklySessionGoal)
+                : current.weeklySessionGoal
             let updated: Profile = try await client
                 .from("profiles")
-                .update(["weekly_session_goal": min(max(goal, 1), 14)])
+                .update(WeeklyGoalUpdate(
+                    weeklySessionGoal: min(max(goal, 1), 14),
+                    weeklySessionGoalPrev: prev,
+                    weeklySessionGoalChangedAt: ISO8601DateFormatter().string(from: .now)
+                ))
                 .eq("id", value: userID.uuidString)
                 .select()
                 .single()
                 .execute()
                 .value
             return updated
+        } catch let error as GymSyncError {
+            throw error
         } catch {
             throw ErrorMapping.map(error)
         }

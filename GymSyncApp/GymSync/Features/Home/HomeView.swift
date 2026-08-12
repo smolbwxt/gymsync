@@ -914,19 +914,27 @@ struct HomeView: View {
         return AnyView(streakInviteWidget(hasTrainedBefore: false))
     }
 
-    /// Completed sessions this calendar week (solo included — they count
-    /// toward streaks since 20260803000005).
-    private var sessionsThisWeek: Int {
+    /// DISTINCT training days this calendar week (solo included — they
+    /// count toward streaks since 20260803000005). Days, not sessions
+    /// (owner 2026-08-12: the goal line reads "1/4 days this week") — two
+    /// sessions on the same day fill one slot.
+    private var daysThisWeek: Int {
         let calendar = Calendar.current
-        return historySessions.filter { session in
-            guard let completedAt = session.completedAt else { return false }
-            return calendar.isDate(completedAt, equalTo: .now, toGranularity: .weekOfYear)
-        }.count
+        let days = historySessions.compactMap { session -> Date? in
+            guard let completedAt = session.completedAt,
+                  calendar.isDate(completedAt, equalTo: .now, toGranularity: .weekOfYear)
+            else { return nil }
+            return calendar.startOfDay(for: completedAt)
+        }
+        return Set(days).count
     }
 
     private var weeklyGoalWidget: some View {
-        let goal = profile?.weeklySessionGoal ?? 3
-        let done = sessionsThisWeek
+        // Anti-goalpost rule (owner 2026-08-12): the widget renders the
+        // EFFECTIVE goal — an edit made mid-week doesn't move this week's
+        // slots or fraction; it lands next week (Profile.effectiveWeeklyGoal).
+        let goal = profile?.effectiveWeeklyGoal ?? 3
+        let done = daysThisWeek
         let met = done >= goal
         let green = Color.gsHex(0x2FA45C)
         // Owner feedback 2026-08-11 round 3: the big number is the ALL-TIME
@@ -953,7 +961,10 @@ struct HomeView: View {
                         .font(GSFont.bold(11, relativeTo: .caption))
                         .kerning(1.6)
                         .foregroundStyle(met ? green : theme.neutral500)
-                    Text(met ? "GOAL MET" : "\(goal - done) TO YOUR GOAL")
+                    // Owner 2026-08-12: progress fraction, not a countdown —
+                    // the widget says (a) your global streak and (b) how
+                    // you're tracking against the week that protects it.
+                    Text("\(done)/\(goal) DAYS THIS WEEK")
                         .font(GSFont.bold(12, relativeTo: .caption))
                         .kerning(0.6)
                         .foregroundStyle(met ? green : theme.accent)
@@ -986,12 +997,14 @@ struct HomeView: View {
         .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
         .onAppear { homeSlotBreathing = true }
         .sheet(isPresented: $showGoalSheet) {
-            WeeklyGoalSheet(initial: goal) { updated in
+            // The editor seeds from the STANDING goal (what next week will
+            // be), not the effective one — that's the value being edited.
+            WeeklyGoalSheet(initial: profile?.weeklySessionGoal ?? 3) { updated in
                 profile = updated
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Session streak \(streak). \(done) of \(goal) sessions this week. Tap to change your goal.")
+        .accessibilityLabel("Streak \(streak). \(done) of \(goal) days this week. Tap to change your goal.")
     }
 
     /// True once the user has any completed session in history — the
@@ -1805,15 +1818,21 @@ private struct WeeklyGoalSheet: View {
     var body: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 18) {
-                Text("How many sessions a week are you holding yourself to?")
+                Text("How many days a week are you holding yourself to?")
                     .font(GSFont.body(14, relativeTo: .body))
                     .foregroundStyle(theme.neutral700)
                     .fixedSize(horizontal: false, vertical: true)
                 Stepper(value: $goal, in: 1...14) {
-                    Text("\(goal) SESSION\(goal == 1 ? "" : "S") / WEEK")
+                    Text("\(goal) DAY\(goal == 1 ? "" : "S") / WEEK")
                         .font(GSFont.bold(14, relativeTo: .subheadline))
                         .foregroundStyle(theme.text)
                 }
+                // Anti-goalpost rule (owner 2026-08-12) — say it up front so
+                // the unchanged widget doesn't read as a save failure.
+                Text("Takes effect next week. This week's goal stays locked — no moving the goalposts mid-week.")
+                    .font(GSFont.body(12, relativeTo: .footnote))
+                    .foregroundStyle(theme.neutral500)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let errorText {
                     Text(errorText)
                         .font(GSFont.body(12, relativeTo: .footnote))
