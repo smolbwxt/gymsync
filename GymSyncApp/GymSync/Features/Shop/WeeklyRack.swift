@@ -1,8 +1,9 @@
 import Foundation
 
-/// Deterministic weekly selection for the Pro Shop's "THIS WEEK'S RACK"
-/// (redesign Phase 2, 2026-08). Pure date math plus a seeded shuffle — no
-/// networking, no state; ShopTabView fetches the catalog and hands it here.
+/// Deterministic weekly selection for "THIS WEEK'S RACK" (redesign Phase 2,
+/// 2026-08; re-homed into MyRackView + the You-tab THE RACK widget when the
+/// Shop tab dissolved, 2026-08-12). Pure date math plus a seeded shuffle —
+/// no networking, no state; callers fetch the catalog and hand it here.
 ///
 /// Determinism contract: the seed derives from the ISO-8601 week
 /// (`yearForWeekOfYear * 100 + weekOfYear`) evaluated in UTC, so every

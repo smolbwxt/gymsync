@@ -86,6 +86,10 @@ struct MyRackView: View {
                     .padding(.horizontal, 16)
                     .padding(.top, 16)
 
+                weeklyRackSection
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+
                 searchField
                     .padding(.horizontal, 16)
                     .padding(.top, 12)
@@ -375,6 +379,49 @@ struct MyRackView: View {
             .buttonStyle(.gs3D(face: theme.accent, cornerRadius: 10, lipHeight: 5))
             .accessibilityLabel("Rack \(sound.label)")
         }
+    }
+
+    // MARK: - This week's rack (Shop merge, 2026-08-12)
+
+    /// The Shop tab's headline concept, re-homed when the tab dissolved:
+    /// WeeklyRack's deterministic four for this ISO week, rendered with the
+    /// same catalog rows — preview and RACK both work, so the shop's
+    /// loaner/browse-only split retires with the tab (on a management
+    /// surface every sound is rackable). Hidden while loading or failed —
+    /// the dock card already carries those states.
+    @ViewBuilder
+    private var weeklyRackSection: some View {
+        if !loading, !loadFailed, let selection = WeeklyRack.select(from: catalog) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("THIS WEEK'S RACK")
+                        .font(GSFont.bold(10, relativeTo: .caption2))
+                        .tracking(1.1)
+                        .foregroundStyle(theme.neutral700)
+                    Spacer(minLength: 8)
+                    Text(rotationText)
+                        .font(GSFont.bold(9.5, relativeTo: .caption2))
+                        .kerning(1.0)
+                        .foregroundStyle(Color.gsHex(0xE8C33A))
+                        .monospacedDigit()
+                }
+                VStack(spacing: 8) {
+                    catalogRow(selection.loaner)
+                    ForEach(selection.others) { sound in
+                        catalogRow(sound)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Static compute at render — day/hour precision doesn't need a
+    /// TimelineView (same call the You-tab THE RACK widget makes).
+    private var rotationText: String {
+        let interval = max(0, WeeklyRack.nextRotation().timeIntervalSinceNow)
+        let days = Int(interval) / 86400
+        let hours = (Int(interval) % 86400) / 3600
+        return "↻ ROTATES IN \(days)D \(hours)H"
     }
 
     // MARK: - Data
