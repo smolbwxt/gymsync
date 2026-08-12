@@ -642,7 +642,7 @@ struct HomeView: View {
                         appState.selectedTab = .social
                     } label: {
                         countdownBody(session, now: context.date)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                             .padding(15)
                     }
                     .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
@@ -653,7 +653,7 @@ struct HomeView: View {
                             .id(session.id)
                     } label: {
                         countdownBody(session, now: context.date)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                             .padding(15)
                     }
                     .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
@@ -784,14 +784,17 @@ struct HomeView: View {
         // Owner feedback 2026-08-11: the routine-title line ("Workout"
         // fallback) and the greyed "until check-in · opens…" subtitle are
         // gone; the kicker carries the whole sentence, the number carries
-        // the answer, and group sessions gain the commit control.
-        VStack(alignment: .leading, spacing: 0) {
+        // the answer, and group sessions gain the commit control. Round 3:
+        // everything centered — the left-justified number + chip floated
+        // awkwardly in the tall card.
+        VStack(alignment: .center, spacing: 0) {
             HStack(spacing: 6) {
                 Image(systemName: "clock")
                     .font(.system(size: 10, weight: .bold))
                 Text("CHECK IN FOR NEXT SESSION IN:")
                     .font(GSFont.bold(10, relativeTo: .caption2))
                     .tracking(1.3)
+                    .multilineTextAlignment(.center)
             }
             .foregroundStyle(theme.accent)
 
@@ -835,7 +838,7 @@ struct HomeView: View {
                 .font(GSFont.bold(11, relativeTo: .caption))
                 .kerning(0.8)
                 .foregroundStyle(theme.bg)
-                .padding(.horizontal, 14)
+                .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
                 .gs3DCard(cornerRadius: 10, lipHeight: 4, face: theme.accent)
         case .committed:
@@ -926,24 +929,31 @@ struct HomeView: View {
         let done = sessionsThisWeek
         let met = done >= goal
         let green = Color.gsHex(0x2FA45C)
-        // Owner feedback 2026-08-11 round 2: the number owns the card — no
-        // wasted space — and the captions grew with it.
+        // Owner feedback 2026-08-11 round 3: the big number is the ALL-TIME
+        // session streak (user_streaks.current_streak — it never resets on
+        // the week), while the slots + goal line stay weekly. Slots wrap
+        // into a new column every 5 so a 14-goal never becomes a tower, and
+        // their colors are THEME TOKENS — the previous hardcoded Onyx-dark
+        // recesses were invisible against a filled slot on light themes.
+        let streak = userStreak?.currentStreak ?? 0
+        let columns: [[Int]] = stride(from: 0, to: max(goal, 1), by: 5).map {
+            Array($0..<min($0 + 5, max(goal, 1)))
+        }
         return Button {
             showGoalSheet = true
         } label: {
             HStack(alignment: .center, spacing: 14) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("\(done)")
+                    Text("\(streak)")
                         .font(GSFont.heading(56, relativeTo: .largeTitle))
                         .foregroundStyle(met ? green : theme.text)
                         .monospacedDigit()
                         .minimumScaleFactor(0.6)
-                    Text("THIS WEEK")
+                    Text("STREAK")
                         .font(GSFont.bold(11, relativeTo: .caption))
                         .kerning(1.6)
                         .foregroundStyle(met ? green : theme.neutral500)
-                    Text(met ? "GOAL MET · WK \(userStreak?.currentStreak ?? 0) STREAK"
-                             : "\(goal - done) TO YOUR GOAL")
+                    Text(met ? "GOAL MET" : "\(goal - done) TO YOUR GOAL")
                         .font(GSFont.bold(12, relativeTo: .caption))
                         .kerning(0.6)
                         .foregroundStyle(met ? green : theme.accent)
@@ -951,17 +961,21 @@ struct HomeView: View {
                         .minimumScaleFactor(0.8)
                 }
                 Spacer(minLength: 0)
-                VStack(spacing: 4) {
-                    ForEach((0..<max(goal, 1)).reversed(), id: \.self) { index in
-                        let filled = index < done
-                        let isNext = !filled && index == done && !met
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(filled ? (met ? green : theme.text)
-                                         : (isNext && homeSlotBreathing
-                                            ? Color.gsHex(0x3D444E) : Color.gsHex(0x1D2127)))
-                            .frame(width: 17, height: 14)
-                            .animation(isNext ? .easeInOut(duration: 1.1).repeatForever(autoreverses: true) : nil,
-                                       value: homeSlotBreathing)
+                HStack(alignment: .bottom, spacing: 4) {
+                    ForEach(columns.indices, id: \.self) { c in
+                        VStack(spacing: 4) {
+                            ForEach(columns[c].reversed(), id: \.self) { index in
+                                let filled = index < done
+                                let isNext = !filled && index == done && !met
+                                RoundedRectangle(cornerRadius: 3)
+                                    .fill(filled ? (met ? green : theme.text)
+                                                 : (isNext && homeSlotBreathing
+                                                    ? theme.neutral400 : theme.neutral300))
+                                    .frame(width: 17, height: 14)
+                                    .animation(isNext ? .easeInOut(duration: 1.1).repeatForever(autoreverses: true) : nil,
+                                               value: homeSlotBreathing)
+                            }
+                        }
                     }
                 }
             }
@@ -977,7 +991,7 @@ struct HomeView: View {
             }
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(done) of \(goal) sessions this week. Tap to change your goal.")
+        .accessibilityLabel("Session streak \(streak). \(done) of \(goal) sessions this week. Tap to change your goal.")
     }
 
     /// True once the user has any completed session in history — the
