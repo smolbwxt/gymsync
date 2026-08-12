@@ -22,7 +22,7 @@ struct UsernameView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     // Step indicator row
                     HStack(spacing: 10) {
-                        Text("STEP 2 OF 3")
+                        Text("STEP 2 OF 4")
                             .font(GSFont.bold(12, relativeTo: .caption2))
                             .tracking(0.6)
                             .foregroundColor(theme.neutral700)

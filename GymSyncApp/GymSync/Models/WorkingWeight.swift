@@ -40,6 +40,11 @@ enum WorkingWeight {
         case routine
         case repGoal(targetReps: Int)
         case lastSet
+        /// Getting-started anchor (owner 2026-08-12): derived from the
+        /// confident 5-rep weights stated at onboarding (LiftAnchorMath).
+        /// Fires only below every real-data rung — the UI should present
+        /// it as a starting estimate, not history.
+        case seeded
     }
 
     struct Suggestion: Equatable {
@@ -59,6 +64,7 @@ enum WorkingWeight {
         history: [SetLog],
         lastSetPounds: Decimal?,
         enrollment: ProgramEnrollment?,
+        seededPounds: Decimal? = nil,
         now: Date = .now
     ) -> Suggestion? {
 
@@ -113,7 +119,16 @@ enum WorkingWeight {
             return Suggestion(pounds: lastSetPounds, source: .lastSet)
         }
 
-        // 5 — nothing honest to say.
+        // 5 — SEEDED (owner 2026-08-12). The onboarding anchor, via
+        // LiftAnchorMath at the call site. Below every real-data rung BY
+        // DESIGN: the first real logged set (rung 3/4) permanently outranks
+        // the seed, and a seed placed higher could override a lighter real
+        // first session.
+        if let seededPounds, seededPounds > 0 {
+            return Suggestion(pounds: seededPounds, source: .seeded)
+        }
+
+        // 6 — nothing honest to say.
         return nil
     }
 

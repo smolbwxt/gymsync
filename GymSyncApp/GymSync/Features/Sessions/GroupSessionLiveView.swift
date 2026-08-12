@@ -1045,7 +1045,12 @@ struct GroupSessionLiveView: View {
                     .flatMap { Decimal(string: $0) },
                 history: history,
                 lastSetPounds: history.last?.weight,
-                enrollment: activeEnrollment
+                enrollment: activeEnrollment,
+                // Getting-started anchor (owner 2026-08-12) — read live off
+                // ThemeStore per the shareHeartRate caching-bug precedent.
+                seededPounds: LiftAnchorMath.seedPounds(
+                    for: ex.slug,
+                    anchors: ThemeStore.shared.liftAnchors)
             )?.pounds
         }()
         let targetInUnit = prefill.map { Units.fromPounds($0, to: unit) } ?? barInUnit

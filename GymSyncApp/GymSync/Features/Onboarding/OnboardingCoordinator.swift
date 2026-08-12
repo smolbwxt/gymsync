@@ -15,12 +15,14 @@ struct OnboardingCoordinator: View {
     @State private var isNewSignup = false
     @State private var onboardingStep: OnboardingStep = .gym
 
-    /// gym -> priming -> welcome. Priming is an unnumbered interstitial (no
-    /// step-pip changes) inserted between the two existing screens — see
-    /// `advancePastGym()` for the "skip entirely if authorization already
-    /// determined" rule (task-6-brief.md).
+    /// gym -> lifts -> priming -> welcome. Lifts (STEP 4 OF 4, owner
+    /// 2026-08-12) collects confident 5-rep anchors for the primary
+    /// compounds — skippable, seeds WorkingWeight's `.seeded` rung.
+    /// Priming stays an unnumbered interstitial — see `advancePastLifts()`
+    /// for the "skip entirely if authorization already determined" rule
+    /// (task-6-brief.md).
     private enum OnboardingStep {
-        case gym, priming, welcome
+        case gym, lifts, priming, welcome
     }
 
     var body: some View {
@@ -39,7 +41,11 @@ struct OnboardingCoordinator: View {
                 switch onboardingStep {
                 case .gym:
                     HomeGymSetupView(isOnboarding: true, onAdvance: {
-                        Task { await advancePastGym() }
+                        onboardingStep = .lifts
+                    })
+                case .lifts:
+                    LiftAnchorsView(onAdvance: {
+                        Task { await advancePastLifts() }
                     })
                 case .priming:
                     PushPrimingView(isOnboarding: true, onAdvance: {
@@ -73,8 +79,10 @@ struct OnboardingCoordinator: View {
     /// resolved the permission prompt through some other path (e.g. a
     /// reinstall where iOS remembers a prior decision) — only
     /// `.notDetermined` shows the priming screen, per task-6-brief.md.
+    /// (Was `advancePastGym` — the lifts step now sits between gym and
+    /// priming, so this decision moved one step later.)
     @MainActor
-    private func advancePastGym() async {
+    private func advancePastLifts() async {
         await PushReceiver.shared.refreshAuthorizationStatus()
         onboardingStep = PushReceiver.shared.authorizationStatus == .notDetermined ? .priming : .welcome
     }

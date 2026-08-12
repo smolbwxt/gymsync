@@ -728,7 +728,12 @@ struct WorkoutSessionView: View {
                       history: soloPriorSets + soloCurrentExerciseSets,
                       lastSetPounds: (soloPriorSets + soloCurrentExerciseSets)
                           .max(by: { $0.loggedAt < $1.loggedAt })?.weight,
-                      enrollment: soloEnrollment) {
+                      enrollment: soloEnrollment,
+                      // Getting-started anchor (owner 2026-08-12): fires
+                      // only when every real-data rung above came up empty.
+                      seededPounds: LiftAnchorMath.seedPounds(
+                          for: currentExercise?.slug ?? "",
+                          anchors: sessionSettings?.liftAnchors)) {
             soloWeight = Units.format(pounds: suggestion.pounds, unit: soloUnit,
                                       rounded: false, includeUnit: false)
         } else {

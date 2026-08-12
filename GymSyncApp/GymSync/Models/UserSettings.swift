@@ -50,6 +50,15 @@ struct UserSettings: Codable, Sendable, Equatable {
     /// would mean "I own no plates"). Trailing default.
     var plateInventory: [Decimal]? = nil
 
+    /// Getting-started lift anchors (`20260812000002`): confident 5-rep
+    /// weights by exercise SLUG (back-squat / bench-press / deadlift / ohp),
+    /// in CANONICAL POUNDS. Seed starting-weight suggestions only —
+    /// `WorkingWeight`'s `.seeded` rung, which any real logged set outranks;
+    /// never set_logs, PR math, or volume. `nil` = the onboarding step was
+    /// skipped or predates this column. Trailing default, per the
+    /// memberwise-init trap the properties above document.
+    var liftAnchors: [String: Decimal]? = nil
+
     /// Parsed `unitSystem`, falling back to lbs for any unexpected value —
     /// a bad string must never crash a weight display.
     var weightUnit: WeightUnit { WeightUnit(rawValue: unitSystem) ?? .lbs }
@@ -64,6 +73,7 @@ struct UserSettings: Codable, Sendable, Equatable {
         case unitSystem = "unit_system"
         case barWeightLbs = "bar_weight_lbs"
         case plateInventory = "plate_inventory"
+        case liftAnchors = "lift_anchors"
     }
 
     /// Mirrors the table's own column defaults exactly (migrations:
@@ -116,6 +126,10 @@ private struct UserSettingsUpsert: Encodable {
     let unitSystem: String
     let barWeightLbs: Decimal
     let plateInventory: [Decimal]?
+    /// Lift anchors — same lockstep rule as every field above; omitting it
+    /// would make the onboarding step look like it saved while never
+    /// persisting.
+    let liftAnchors: [String: Decimal]?
 
     enum CodingKeys: String, CodingKey {
         case userID = "user_id"
@@ -126,6 +140,7 @@ private struct UserSettingsUpsert: Encodable {
         case unitSystem = "unit_system"
         case barWeightLbs = "bar_weight_lbs"
         case plateInventory = "plate_inventory"
+        case liftAnchors = "lift_anchors"
     }
 }
 
@@ -172,7 +187,8 @@ enum UserSettingsRepository {
                     accent: settings.accent,
                     unitSystem: settings.unitSystem,
                     barWeightLbs: settings.barWeightLbs,
-                    plateInventory: settings.plateInventory
+                    plateInventory: settings.plateInventory,
+                    liftAnchors: settings.liftAnchors
                 ))
                 .execute()
         } catch {

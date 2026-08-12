@@ -95,6 +95,11 @@ public final class ThemeStore {
     var barWeightLbs: Decimal { lastKnownSettings?.barWeightLbs ?? 45 }
     var plateInventory: [Decimal]? { lastKnownSettings?.plateInventory }
 
+    /// Getting-started lift anchors off the same cached row (20260812000002)
+    /// — read LIVE at prefill sites (GroupSessionLiveView), never cached
+    /// locally, per the shareHeartRate bug class documented there.
+    var liftAnchors: [String: Decimal]? { lastKnownSettings?.liftAnchors }
+
     /// The in-flight persist `Task` spawned by the most recent `select(_:)`
     /// call, if any. Tracked so rapid palette taps can't race each other: a
     /// second tap cancels the first tap's still-running upsert instead of
