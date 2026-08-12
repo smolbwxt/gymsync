@@ -289,13 +289,13 @@ public struct GSTabBar: View {
         let label: String
     }
 
-    // Redesign Phase 1 (four-tab reorientation, 2026-08): Library and Stats
-    // left the dock — their content lives under the You tab's widget grid;
-    // Shop is new. Icons stay outline (no `.fill`), matching the dock spec.
+    // Three-tab restructure (2026-08-12): Shop dissolved into You; the
+    // social tab wears its real name — CREWS (the app's own vocabulary;
+    // "Home Gym" collided with HomeGymSetupView). Icons stay outline
+    // (no `.fill`), matching the dock spec.
     private let items: [Item] = [
         Item(tab: .home, icon: "house", label: "Home"),
-        Item(tab: .social, icon: "person.2", label: "Social"),
-        Item(tab: .shop, icon: "bag", label: "Shop"),
+        Item(tab: .social, icon: "person.3", label: "Crews"),
         Item(tab: .you, icon: "person.crop.circle", label: "You"),
     ]
 

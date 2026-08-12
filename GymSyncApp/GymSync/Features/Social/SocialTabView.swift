@@ -3,6 +3,8 @@ import SwiftUI
 struct SocialTabView: View {
     @State private var groups: [GymGroup] = []
     @State private var unread: Set<UUID> = []
+    /// Crew-widget bar meta per group (owner 2026-08-12) — fed by refresh().
+    @State private var barByGroup: [UUID: CrewBarMeta] = [:]
     @State private var previews: [UUID: String] = [:]
     @State private var friendCount = 0
     @State private var pendingCount = 0
@@ -41,7 +43,7 @@ struct SocialTabView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
                         // Redesign v2: in-content title replaces the nav-bar title.
-                        Text("Social")
+                        Text("Crews")
                             .font(GSFont.heading(24, relativeTo: .title))
                             .foregroundStyle(theme.text)
                             .padding(.horizontal, 16)
@@ -222,7 +224,7 @@ struct SocialTabView: View {
                             .padding(.top, 8)
 
                             // Groups header
-                            GSSectionHeader("Your groups")
+                            GSSectionHeader("Your crews")
                                 .padding(.horizontal, 16)
                                 .padding(.top, 18)
                                 .padding(.bottom, 8)
@@ -250,9 +252,9 @@ struct SocialTabView: View {
                                 } else {
                                     GSEmptyState(
                                         icon: "person.3",
-                                        title: "No groups yet",
-                                        message: "Start a group with your crew — then take turns on the bar together.",
-                                        ctaTitle: "+ New Group",
+                                        title: "No crews yet",
+                                        message: "Start a crew — then take turns on the bar together.",
+                                        ctaTitle: "+ New Crew",
                                         action: { showCreateGroup = true }
                                     )
                                     .padding(.horizontal, 16)
@@ -287,7 +289,7 @@ struct SocialTabView: View {
                                 Button {
                                     showCreateGroup = true
                                 } label: {
-                                    Text("+ New Group")
+                                    Text("+ New Crew")
                                 }
                                 .buttonStyle(GSSecondaryButtonStyle())
                                 .gsSpotlightTarget(.social)
@@ -451,46 +453,52 @@ struct SocialTabView: View {
         }
     }
 
-    private func groupRow(_ group: GymGroup) -> some View {
-        HStack(spacing: 11) {
-            // Redesign: group avatar carries the group's identity color
-            // (photo when set, colored initials otherwise).
-            GSInitialsAvatar(
-                name: group.name,
-                avatarURL: group.avatarURL,
-                size: 40,
-                fill: GSGroupColor.color(for: group.id),
-                ink: GSGroupColor.onColor(for: group.id)
-            )
+    /// Per-crew bar meta for the widget (owner 2026-08-12: "each group
+    /// should have its own separate widget, with the bar represented to
+    /// denote progress from a distance"). Same derivation as CrewRoomView's
+    /// routines-together card — the glance and the room never disagree.
+    struct CrewBarMeta: Sendable {
+        let completedThisWeek: Int
+        let plannedThisWeek: Int
+        let nextLift: Date?
+    }
 
-            VStack(alignment: .leading, spacing: 2) {
+    /// Crew widget (replaces the old chat-preview row, owner 2026-08-12):
+    /// name row + the crew's iron rendered small + a next-lift meta line.
+    /// Remaining work is bare sleeve, never ghost plates (standing
+    /// decision) — the count lives in the meta line. Chat is one tap away
+    /// in the room.
+    private func groupRow(_ group: GymGroup) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                GSInitialsAvatar(
+                    name: group.name,
+                    avatarURL: group.avatarURL,
+                    size: 28,
+                    fill: GSGroupColor.color(for: group.id),
+                    ink: GSGroupColor.onColor(for: group.id)
+                )
                 Text(group.name)
                     .font(GSFont.bold(14.5, relativeTo: .headline))
                     .foregroundStyle(theme.text)
                     .lineLimit(1)
-
-                if let preview = previews[group.id] {
-                    Text(preview)
-                        .font(GSFont.body(12.5, relativeTo: .subheadline))
-                        .foregroundStyle(theme.neutral700)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                } else if let stats = groupStatsByID[group.id] {
-                    Text("\(StatMath.compactNumber(Units.fromPounds(stats.totalVolume, to: ThemeStore.shared.weightUnit))) \(ThemeStore.shared.weightUnit.label) moved · \(stats.sessionCount) sessions")
-                        .font(GSFont.body(12.5, relativeTo: .subheadline))
-                        .foregroundStyle(theme.neutral500)
-                        .lineLimit(1)
+                Spacer(minLength: 0)
+                if unread.contains(group.id) {
+                    Circle()
+                        .fill(theme.accent)
+                        .frame(width: 9, height: 9)
                 }
             }
 
-            Spacer(minLength: 0)
+            crewBar(completed: barByGroup[group.id]?.completedThisWeek ?? 0)
 
-            // Unread dot — round in the redesign.
-            if unread.contains(group.id) {
-                Circle()
-                    .fill(theme.accent)
-                    .frame(width: 9, height: 9)
-            }
+            Text(crewMetaLine(group))
+                .font(GSFont.bold(9.5, relativeTo: .caption2))
+                .kerning(0.8)
+                .foregroundStyle(theme.neutral500)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+                .monospacedDigit()
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
@@ -499,6 +507,40 @@ struct SocialTabView: View {
         // here would paint over the extruded face).
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
+    }
+
+    /// The room's iron at widget scale: collar, the crew's shared plates
+    /// (uniform iron, one per routine completed together this week), bare
+    /// sleeve for the work remaining.
+    private func crewBar(completed: Int) -> some View {
+        ZStack(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(theme.neutral500.opacity(0.55))
+                .frame(height: 5)
+            HStack(spacing: 2.5) {
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(theme.neutral500)
+                    .frame(width: 6, height: 16)
+                ForEach(0..<min(completed, 10), id: \.self) { _ in
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.gsHex(0x53585F))
+                        .frame(width: 7, height: 20)
+                        .shadow(color: .black.opacity(0.35), radius: 0, x: 0, y: 1.5)
+                }
+            }
+        }
+        .frame(height: 22)
+    }
+
+    private func crewMetaLine(_ group: GymGroup) -> String {
+        let meta = barByGroup[group.id]
+        let done = meta?.completedThisWeek ?? 0
+        let together = "\(done) TOGETHER THIS WK"
+        if let next = meta?.nextLift {
+            let when = next.formatted(.dateTime.weekday(.abbreviated).hour().minute())
+            return "\(together) · NEXT LIFT \(when.uppercased())"
+        }
+        return "\(together) · NO LIFT SCHEDULED"
     }
 
     private func refresh() async {
@@ -550,6 +592,43 @@ struct SocialTabView: View {
                 }
             }
             groupStatsByID = statsByID
+
+            // Crew-widget bar meta (owner 2026-08-12): same derivation as
+            // CrewRoomView's routines-together card — completed = this
+            // week's completed sessions, next lift = earliest upcoming.
+            // Best-effort per group, stale entries preserved on failure.
+            var barMeta = barByGroup
+            await withTaskGroup(of: (UUID, CrewBarMeta?).self) { taskGroup in
+                for group in currentGroups {
+                    taskGroup.addTask {
+                        guard let sessions = try? await SessionRepository.groupSessions(groupID: group.id) else {
+                            return (group.id, nil)
+                        }
+                        let calendar = Calendar.current
+                        let now = Date.now
+                        func inThisWeek(_ date: Date?) -> Bool {
+                            guard let date else { return false }
+                            return calendar.isDate(date, equalTo: now, toGranularity: .weekOfYear)
+                        }
+                        let upcomingStates: Set<String> = [
+                            "scheduled", "lobby_open", "editing", "voting", "locked", "in_progress"
+                        ]
+                        let completed = sessions.filter { $0.state == "completed" && inThisWeek($0.scheduledFor) }.count
+                        let upcoming = sessions.filter { upcomingStates.contains($0.state) && inThisWeek($0.scheduledFor) }.count
+                        let next = sessions
+                            .filter { upcomingStates.contains($0.state) }
+                            .sorted { ($0.scheduledFor ?? .distantFuture) < ($1.scheduledFor ?? .distantFuture) }
+                            .first?.scheduledFor
+                        return (group.id, CrewBarMeta(completedThisWeek: completed,
+                                                      plannedThisWeek: completed + upcoming,
+                                                      nextLift: next))
+                    }
+                }
+                for await (id, meta) in taskGroup {
+                    if let meta { barMeta[id] = meta }
+                }
+            }
+            barByGroup = barMeta
 
             errorText = nil
         } catch {

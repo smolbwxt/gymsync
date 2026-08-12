@@ -159,7 +159,7 @@ final class ScreenshotTests: XCTestCase {
     func testSocialTab() {
         let app = launchApp()
         guard waitForTabBar(app) else { return }
-        selectTab(app, label: "Social")
+        selectTab(app, label: "Crews")
         settle()
         attachScreenshot(app, named: "app-tab-social.png")
     }
@@ -310,7 +310,7 @@ final class ScreenshotTests: XCTestCase {
     func testChat() {
         let app = launchApp()
         guard waitForTabBar(app) else { return }
-        selectTab(app, label: "Social")
+        selectTab(app, label: "Crews")
         settle()
         // GroupView's `subTab` defaults to `.chat`, so tapping into the crew
         // lands directly on ChatView — no further navigation needed.
@@ -321,7 +321,7 @@ final class ScreenshotTests: XCTestCase {
     func testLobby() {
         let app = launchApp()
         guard waitForTabBar(app) else { return }
-        selectTab(app, label: "Social")
+        selectTab(app, label: "Crews")
         settle()
         openPushCrew(app)
 
@@ -350,7 +350,7 @@ final class ScreenshotTests: XCTestCase {
     func testSessionRecap() {
         let app = launchApp()
         guard waitForTabBar(app) else { return }
-        selectTab(app, label: "Social")
+        selectTab(app, label: "Crews")
         settle()
         openPushCrew(app)
 
@@ -376,7 +376,7 @@ final class ScreenshotTests: XCTestCase {
     func testBurpeeLedger() {
         let app = launchApp()
         guard waitForTabBar(app) else { return }
-        selectTab(app, label: "Social")
+        selectTab(app, label: "Crews")
         settle()
         openPushCrew(app)
 
@@ -408,7 +408,7 @@ final class ScreenshotTests: XCTestCase {
     func testGroupStats() {
         let app = launchApp()
         guard waitForTabBar(app) else { return }
-        selectTab(app, label: "Social")
+        selectTab(app, label: "Crews")
         settle()
         openPushCrew(app)
 
@@ -428,7 +428,7 @@ final class ScreenshotTests: XCTestCase {
     func testFriends() {
         let app = launchApp()
         guard waitForTabBar(app) else { return }
-        selectTab(app, label: "Social")
+        selectTab(app, label: "Crews")
         settle()
 
         // SocialTabView's "Friends" row is a NavigationLink whose label

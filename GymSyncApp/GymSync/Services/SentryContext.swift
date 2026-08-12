@@ -82,7 +82,6 @@ enum SentryContext {
         switch tab {
         case .home:   return "home"
         case .social: return "social"
-        case .shop:   return "shop"
         case .you:    return "you"
         }
     }

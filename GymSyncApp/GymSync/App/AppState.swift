@@ -18,9 +18,13 @@ final class AppState {
     ///
     /// Redesign Phase 1 (four-tab reorientation, 2026-08): `.library` and
     /// `.stats` left the tab bar — their content is reachable from the You
-    /// tab's widget grid (`YouTabView`) and Campaigns from the new `.shop`
-    /// tab. `LibraryTabView`/`StatsTabView` still exist as destinations.
-    enum Tab: Hashable, CaseIterable { case home, social, shop, you }
+    /// tab's widget grid (`YouTabView`).
+    ///
+    /// Three-tab restructure (owner-approved proposal, 2026-08-12): `.shop`
+    /// dissolved — its weekly rack merged into You's grid, Campaigns/
+    /// Programs browse behind You's PROGRAMS widget, the inert Pro/Coach
+    /// rows became You's PRO widget. `.social` is titled CREWS in the dock.
+    enum Tab: Hashable, CaseIterable { case home, social, you }
     var selectedTab: Tab = .home
 
     // Set to the user's profile once loaded post-sign-in.

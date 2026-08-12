@@ -45,7 +45,11 @@ enum DiscoveryTarget: String, CaseIterable, Identifiable {
         switch self {
         case .homeSchedule:             return .home
         case .libraryDiscover:          return .you
-        case .libraryCampaigns:         return .shop
+        // Three-tab restructure (2026-08-12): Campaigns/Programs browse
+        // moved behind You's PROGRAMS widget — the dot follows it. Raw
+        // value (storage key) stays put, same continuity rule as the
+        // Library moves above.
+        case .libraryCampaigns:         return .you
         case .socialLocal, .socialFeed: return .social
         case .youAppearance:            return .you
         }

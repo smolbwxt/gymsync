@@ -398,7 +398,6 @@ private struct MainTabView: View {
         switch tab {
         case .home:   HomeView()
         case .social: SocialTabView()
-        case .shop:   ShopTabView()
         case .you:    YouTabView()
         }
     }

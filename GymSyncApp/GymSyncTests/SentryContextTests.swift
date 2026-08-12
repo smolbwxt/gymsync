@@ -55,7 +55,7 @@ final class SentryContextTests: XCTestCase {
     /// silently adding a 6th key (e.g. a raw session id or username)
     /// without anyone updating this test — that failure IS the review gate.
     func test_neverEmitsKeysOutsideWhitelist() {
-        let tabs: [AppState.Tab] = [.home, .social, .shop, .you]
+        let tabs: [AppState.Tab] = [.home, .social, .you]
         let phases: [SentryContext.SessionPhase] = [.none, .scheduled, .live, .completed, .abandoned]
         let participantCounts: [Int?] = [nil, 0, 4]
 
@@ -84,7 +84,7 @@ final class SentryContextTests: XCTestCase {
 
     func test_screenNames_areCoarseTabIdentifiers_forEveryTab() {
         let expected: [(AppState.Tab, String)] = [
-            (.home, "home"), (.social, "social"), (.shop, "shop"), (.you, "you"),
+            (.home, "home"), (.social, "social"), (.you, "you"),
         ]
         for (tab, name) in expected {
             let tags = SentryContext.tags(
