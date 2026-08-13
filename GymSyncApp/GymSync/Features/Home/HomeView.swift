@@ -1229,7 +1229,9 @@ struct HomeView: View {
                 .padding(.top, 16)
                 .padding(.bottom, 10)
 
-            GSCard(bordered: true) {
+            // gs3D pass (2026-08-13): the last flat Home card joins the
+            // extruded language (static — the Join button is the tappable).
+            Group {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 8) {
                         TextField("6-character code", text: $joinCode)
@@ -1265,8 +1267,10 @@ struct HomeView: View {
                             .foregroundStyle(.red)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(16)
             }
+            .gs3DCard(cornerRadius: GSMetrics.radiusMd)
             .padding(.horizontal, 16)
             .padding(.bottom, 24)
         }

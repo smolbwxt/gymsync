@@ -51,24 +51,24 @@ struct PumpCheckComposerCard: View {
 
     var body: some View {
         if !skipped {
-            GSCard(bordered: true) {
-                VStack(alignment: .leading, spacing: 10) {
-                    if posted {
-                        postedRow
-                    } else if let photo {
-                        reviewBlock(photo)
-                    } else {
-                        captureRow
-                    }
-                    if let errorText {
-                        Text(errorText)
-                            .font(GSFont.body(11, relativeTo: .caption))
-                            .foregroundStyle(.red)
-                    }
+            // gs3D pass (2026-08-13): flat card → extruded.
+            VStack(alignment: .leading, spacing: 10) {
+                if posted {
+                    postedRow
+                } else if let photo {
+                    reviewBlock(photo)
+                } else {
+                    captureRow
                 }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                if let errorText {
+                    Text(errorText)
+                        .font(GSFont.body(11, relativeTo: .caption))
+                        .foregroundStyle(.red)
+                }
             }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .gs3DCard(cornerRadius: GSMetrics.radiusMd)
             .fullScreenCover(isPresented: $showCamera) {
                 CameraPicker { image in
                     photo = image

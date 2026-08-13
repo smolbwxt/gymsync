@@ -75,10 +75,12 @@ struct TrendChartView: View {
 
     var body: some View {
         if embedInCard {
-            GSCard(bordered: true) {
-                chartContent
-                    .padding(16)
-            }
+            // gs3D pass (2026-08-13): the embedded form (ExerciseHistoryView)
+            // joins the extruded language its Stats siblings now wear.
+            chartContent
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .gs3DCard(cornerRadius: GSMetrics.radiusMd)
         } else {
             chartContent
         }

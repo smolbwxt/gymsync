@@ -98,43 +98,30 @@ struct GroupStatsView: View {
 
     @ViewBuilder
     private var streakCard: some View {
-        GSCard(bordered: false) {
-            VStack(alignment: .leading, spacing: 10) {
-                GSSectionHeader("Group streak")
-                HStack(spacing: 8) {
-                    GSStatTile(
-                        value: currentStreakValue,
-                        label: "Current streak",
-                        valueColor: streakValueColor
-                    )
-                    GSStatTile(
-                        value: "\(groupStreak?.longestStreak ?? 0)",
-                        label: "Longest streak"
-                    )
-                }
+        VStack(alignment: .leading, spacing: 10) {
+            GSSectionHeader("Group streak")
+            HStack(spacing: 8) {
+                // Default value color (owner's text law, 2026-08-12).
+                GSStatTile(
+                    value: currentStreakValue,
+                    label: "Current streak"
+                )
+                GSStatTile(
+                    value: "\(groupStreak?.longestStreak ?? 0)",
+                    label: "Longest streak"
+                )
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd)
     }
 
-    private var isStreakLive: Bool { (groupStreak?.currentStreak ?? 0) > 0 }
-
-    /// Same explicit `guard`/`return` shape as `StatsTabView.streakValueColor`
-    /// (that file's comment: no precedent found for a `Color`-ternary
-    /// directly into a `Color?` parameter, so this stays unambiguous under
-    /// CI-only compilation).
-    private var streakValueColor: Color? {
-        guard isStreakLive else { return nil }
-        return theme.accent700
-    }
-
-    /// "🔥 N" while live — same glyph as `StatsTabView.currentStreakValue`
-    /// and the backend's own celebratory copy
-    /// (20260719000008_streak_pushes.sql's push_streak_milestone_group).
+    /// Plain "N" — the emoji sweep (spec §7) and the owner's default-text
+    /// law (2026-08-12) both land here: no 🔥 glyph, no accent tint. The
+    /// backend's push copy keeps its own 🔥 — message text, not UI chrome.
     private var currentStreakValue: String {
-        let current = groupStreak?.currentStreak ?? 0
-        return isStreakLive ? "🔥 \(current)" : "\(current)"
+        "\(groupStreak?.currentStreak ?? 0)"
     }
 
     // MARK: - Leaderboard · By Volume (GroupRecapView.leaderboardRow's row

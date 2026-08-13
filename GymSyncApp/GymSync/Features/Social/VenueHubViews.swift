@@ -364,7 +364,9 @@ struct VenueHubView: View {
 
     @ViewBuilder
     private var checkInSection: some View {
-        GSCard(bordered: false) {
+        // gs3D pass (2026-08-13): the flat check-in card joins the extruded
+        // language (static — the toggle/CTA inside are the tappables).
+        Group {
             VStack(alignment: .leading, spacing: 10) {
                 if isCheckedIn {
                     Toggle(isOn: Binding(
@@ -403,6 +405,7 @@ struct VenueHubView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
         }
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd)
         .padding(.horizontal, 16)
     }
 

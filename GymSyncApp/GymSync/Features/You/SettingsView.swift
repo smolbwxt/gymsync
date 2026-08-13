@@ -543,10 +543,12 @@ struct SettingsView: View {
             healthSyncRow
             calendarSyncRow
         }
-        // Redesign: rounded settings group — the container clips the rows'
-        // square surface fills, so the group reads as one rounded widget.
-        .clipShape(RoundedRectangle(cornerRadius: GSMetrics.radiusMd))
-        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusMd).strokeBorder(theme.divider, lineWidth: 1))
+        // gs3D pass (2026-08-13): the WHOLE group box gets the extruded
+        // face/lip container treatment — rows inside stay flat furniture
+        // (the settings-list idiom; extruding twelve stacked rows would be
+        // noise). gs3DCard clips content to the rounded face, replacing
+        // the old clipShape + divider stroke.
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd)
     }
 
     // MARK: - Solo-workout privacy toggle (Phase M Task 4)

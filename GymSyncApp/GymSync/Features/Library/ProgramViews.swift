@@ -236,7 +236,8 @@ struct ProgramDetailView: View {
 
     // Baseline vs now, per focus lift — the honest payoff screen.
     private func completionSection(_ template: ProgramTemplate) -> some View {
-        GSCard(bordered: false) {
+        // gs3D pass (2026-08-13): flat card → extruded.
+        Group {
             VStack(alignment: .leading, spacing: 10) {
                 Text("RESULTS")
                     .font(GSFont.bodyMedium(11, relativeTo: .caption2))
@@ -272,6 +273,7 @@ struct ProgramDetailView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
         }
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd)
         .padding(.horizontal, 16)
     }
 
