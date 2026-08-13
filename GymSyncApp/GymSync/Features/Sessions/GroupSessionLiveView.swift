@@ -590,6 +590,71 @@ struct GroupSessionLiveView: View {
     /// only read while the interlude is active.
     @State private var selfRotationRestIsTransit = false
 
+    /// Recovery-adaptive rest, group mirror of the solo wiring (owner
+    /// 2026-08-12): window-open stamp + this session's end-of-rest HR
+    /// drops. Applies to the SELF-ROTATION interlude only — crew-rotation
+    /// "rest" is spectating others' turns, not a timed window.
+    @State private var selfRotationRestStartedAt: Date?
+    @State private var selfRotationRestDrops: [Int] = []
+
+    /// Mirror of the solo captureRestDrop — called before every path that
+    /// clears `selfRotationRestUntil`; no-op without a window or HR data.
+    private func captureSelfRotationRestDrop() {
+        guard selfRotationRestUntil != nil, let drop = recoveryBuffer.drop, drop > 0 else { return }
+        selfRotationRestDrops.append(drop)
+    }
+
+    /// GO EARLY / +30s pill for the self-rotation interlude — same
+    /// RestRecoveryMath judgment and house button anatomy as the solo rest
+    /// hero. +30s re-arms its own guarded auto-clear (the original task's
+    /// `until` guard goes stale on extension by design).
+    @ViewBuilder
+    private func selfRotationRecoveryPill(now: Date, start: Date, end: Date) -> some View {
+        let total = end.timeIntervalSince(start)
+        let progress = total > 0 ? min(1, max(0, now.timeIntervalSince(start) / total)) : 0
+        let verdict = RestRecoveryMath.verdict(
+            currentDrop: recoveryBuffer.drop,
+            baseline: RestRecoveryMath.baseline(priorDrops: selfRotationRestDrops),
+            progress: progress)
+        switch verdict {
+        case .ready:
+            Button {
+                captureSelfRotationRestDrop()
+                selfRotationRestUntil = nil
+            } label: {
+                Text("RECOVERED — GO EARLY")
+                    .font(GSFont.bold(11, relativeTo: .caption))
+                    .kerning(0.8)
+                    .foregroundStyle(theme.text)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+            }
+            .buttonStyle(.gs3D(face: theme.raised3DFace, lip: theme.raised3DLip, cornerRadius: 10, lipHeight: 4))
+        case .lagging:
+            Button {
+                let extended = end.addingTimeInterval(30)
+                selfRotationRestUntil = extended
+                Task {
+                    try? await Task.sleep(for: .seconds(max(0, extended.timeIntervalSinceNow)))
+                    if selfRotationRestUntil == extended {
+                        captureSelfRotationRestDrop()
+                        selfRotationRestUntil = nil
+                    }
+                }
+            } label: {
+                Text("SLOW RECOVERY — +30s")
+                    .font(GSFont.bold(11, relativeTo: .caption))
+                    .kerning(0.8)
+                    .foregroundStyle(theme.text)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+            }
+            .buttonStyle(.gs3D(face: theme.raised3DFace, lip: theme.raised3DLip, cornerRadius: 10, lipHeight: 4))
+        case nil:
+            EmptyView()
+        }
+    }
+
     // MARK: - Warm-up phase (2026-08, 20260803000004)
 
     /// One-shot re-render tick at the warm-up deadline. `isInWarmUp` reads
@@ -1987,10 +2052,20 @@ struct GroupSessionLiveView: View {
             turnSoundRail
             Color.clear.frame(height: 6)
             if isInSelfRotationRest {
+                // Recovery-adaptive pill (owner 2026-08-12, group mirror):
+                // judged against this session's own median end-of-rest
+                // drop; silent without HR or a 2-rest baseline.
+                if let until = selfRotationRestUntil, let restStart = selfRotationRestStartedAt {
+                    TimelineView(.periodic(from: .now, by: 5)) { context in
+                        selfRotationRecoveryPill(now: context.date, start: restStart, end: until)
+                    }
+                    Color.clear.frame(height: 6)
+                }
                 // Resting between your own sets — cut it short any time.
                 // 3D pass (2026-08): accent gs3D face, 57pt + 7pt lip =
                 // the prior 64pt CTA footprint.
                 Button {
+                    captureSelfRotationRestDrop()
                     selfRotationRestUntil = nil
                 } label: {
                     VStack(spacing: 2) {
@@ -4030,12 +4105,16 @@ struct GroupSessionLiveView: View {
                     + (isTransit ? TransitWindow.seconds : 0)
                 selfRotationRestIsTransit = isTransit
                 let until = Date().addingTimeInterval(TimeInterval(seconds))
+                selfRotationRestStartedAt = Date()
                 selfRotationRestUntil = until
                 Task {
                     try? await Task.sleep(for: .seconds(max(0, until.timeIntervalSinceNow)))
                     // Only the still-current window clears itself — a rest
                     // the user already cut short must not be re-cleared.
-                    if selfRotationRestUntil == until { selfRotationRestUntil = nil }
+                    if selfRotationRestUntil == until {
+                        captureSelfRotationRestDrop()
+                        selfRotationRestUntil = nil
+                    }
                 }
             }
         }
