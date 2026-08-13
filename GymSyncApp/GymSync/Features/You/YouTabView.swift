@@ -413,8 +413,9 @@ struct YouTabView: View {
     private func plateRow(size: CGFloat) -> some View {
         HStack(spacing: 4) {
             if rackSounds.isEmpty {
+                // Placeholder outlines match the token's v6 tile shape.
                 ForEach(0..<4, id: \.self) { _ in
-                    Circle()
+                    RoundedRectangle(cornerRadius: size * 0.22)
                         .strokeBorder(theme.neutral300, lineWidth: 2)
                         .frame(width: size, height: size)
                 }
