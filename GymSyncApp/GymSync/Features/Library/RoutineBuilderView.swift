@@ -81,7 +81,7 @@ struct RoutineBuilderView: View {
                         .tracking(1.2)
                         .foregroundStyle(theme.neutral700)
                     Spacer()
-                    Text("≈ \(StatMath.estimatedMinutes(exerciseCount: items.count)) min")
+                    Text("≈ \(StatMath.estimatedMinutes(exercises: items)) min")
                         .font(GSFont.body(12, relativeTo: .caption))
                         .foregroundStyle(theme.neutral500)
                 }

@@ -76,7 +76,8 @@ enum EventKitBridge {
     /// Estimated event duration from a routine's exercise count, via the
     /// SAME shared heuristic Home/Library/RoutineBuilder already use for a
     /// routine's "~X min" meta suffix (`Models/StatMath.swift:124`,
-    /// `StatMath.estimatedMinutes(exerciseCount:)` — flat ~15 min/exercise)
+    /// `StatMath.estimatedMinutes(exerciseCount:)` — ~12 min/exercise, the
+    /// prescription formula at its defaults)
     /// — one estimate, reused rather than re-derived for the calendar
     /// event's end time. Floors at 30 min so a 1-2 exercise routine doesn't
     /// produce a near-zero-length event. `nil` exerciseCount (no routine

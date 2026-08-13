@@ -159,11 +159,33 @@ enum StatMath {
 
     // MARK: - Routine duration estimate (Home / Library / Routine Builder)
 
-    /// Rough duration estimate for a routine card's "~X min" meta suffix.
-    /// Flat ~15 min/exercise (warmup + working sets + rest) — a single shared
-    /// heuristic so Home, Library, and the Routine Builder header all agree.
+    /// Seconds budgeted per set: execution + logging overhead (owner
+    /// 2026-08-13 — the flat 15 min/exercise consistently overestimated).
+    /// A future pass replaces this constant with measured set durations
+    /// (the set-pace instrumentation already records them).
+    static let secondsPerSet = 120
+
+    /// Duration estimate from the routine's actual prescription:
+    /// 2 min per set + rest BETWEEN sets (n−1 rests) + a transit window
+    /// between exercises. Exercises missing a prescription fall back to
+    /// 3 sets / the caller's default rest.
+    static func estimatedMinutes(exercises: [RoutineExercise], defaultRestSeconds: Int = 120) -> Int {
+        guard !exercises.isEmpty else { return 0 }
+        var seconds = 0
+        for exercise in exercises {
+            let sets = max(exercise.targetSets ?? 3, 1)
+            let rest = exercise.restSeconds ?? defaultRestSeconds
+            seconds += sets * secondsPerSet + (sets - 1) * rest
+        }
+        seconds += (exercises.count - 1) * TransitWindow.seconds
+        return max(1, Int((Double(seconds) / 60).rounded()))
+    }
+
+    /// Count-only fallback for callers without the exercise list (schedule
+    /// sheet, calendar bridge): the formula above at its defaults
+    /// (3 sets × 2 min + 2 × 2 min rest + transit ≈ 12 min/exercise).
     static func estimatedMinutes(exerciseCount: Int) -> Int {
-        max(0, exerciseCount) * 15
+        max(0, exerciseCount) * 12
     }
 
     // MARK: - Month-over-month volume trend (Stats Lifetime Volume card)

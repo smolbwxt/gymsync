@@ -176,7 +176,7 @@ struct RoutinesListView: View {
                 }
 
                 // Canvas: card meta — real exercise count + duration estimate
-                Text("\(exercises.count) exercises · ~\(StatMath.estimatedMinutes(exerciseCount: exercises.count)) min")
+                Text("\(exercises.count) exercises · ~\(StatMath.estimatedMinutes(exercises: exercises)) min")
                     .font(GSFont.body(12, relativeTo: .caption))
                     .foregroundStyle(theme.neutral500)
             }

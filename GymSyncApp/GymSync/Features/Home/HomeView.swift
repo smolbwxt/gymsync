@@ -531,7 +531,7 @@ struct HomeView: View {
 
     private var soloSubtitle: String {
         if let routine = todaysRoutine {
-            return "\(routine.name) · \(todaysRoutineExercises.count) exercises · ~\(StatMath.estimatedMinutes(exerciseCount: todaysRoutineExercises.count)) min"
+            return "\(routine.name) · \(todaysRoutineExercises.count) exercises · ~\(StatMath.estimatedMinutes(exercises: todaysRoutineExercises)) min"
         }
         return "Pick a routine or go freestyle"
     }
