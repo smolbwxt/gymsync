@@ -204,12 +204,15 @@ final class WorkingWeightTests: XCTestCase {
     }
 
     func testRepGoalDeclinesWithoutAQualifyingSet() {
-        // Failed, penalty, and incomplete sets all fail to qualify — with
-        // no other history the ladder must fall through to nil, not guess.
+        // Failed SINGLES, penalty, and incomplete sets all fail to qualify —
+        // with no other history the ladder must fall through to nil, not
+        // guess. (A failed multi-rep set now DOES qualify at its completed
+        // reps — failure doctrine 2026-08-13 — hence the failed set here is
+        // a missed 1RM, the one failure that carries nothing.)
         let result = WorkingWeight.suggest(
             exerciseID: exerciseID, targetReps: 5,
             routineTargetPounds: nil,
-            history: [log(reps: 5, weight: 225, failed: true),
+            history: [log(reps: 1, weight: 225, failed: true),
                       log(reps: 5, weight: 225, penalty: true),
                       log(reps: nil, weight: 225),
                       log(reps: 5, weight: nil)],
@@ -229,13 +232,27 @@ final class WorkingWeightTests: XCTestCase {
     // MARK: - bestQualifyingSet
 
     func testBestQualifyingSetPicksHighestEpley() {
+        // Failure doctrine 2026-08-13: the failed set qualifies at its
+        // COMPLETED reps (n − 1, true RIR 0) — but a missed single still
+        // carries nothing.
         let best = WorkingWeight.bestQualifyingSet(in: [
             log(reps: 10, weight: 135),   // 180
             log(reps: 5, weight: 225),    // 262.5 — the best
             log(reps: 1, weight: 245),    // 253.2
-            log(reps: 3, weight: 400, failed: true),  // excluded
+            log(reps: 1, weight: 400, failed: true),  // missed 1RM — excluded
         ])
         XCTAssertEqual(best?.weight, 225)
         XCTAssertEqual(best?.reps, 5)
+    }
+
+    func testBestQualifyingSetCountsFailedSetAtCompletedReps() {
+        // "3 + FAIL" at 400 = 2 completed at true RIR 0 → 400×(1+2/30) ≈
+        // 426.7, outranking the clean 225×5 (262.5).
+        let best = WorkingWeight.bestQualifyingSet(in: [
+            log(reps: 5, weight: 225),
+            log(reps: 3, weight: 400, failed: true),
+        ])
+        XCTAssertEqual(best?.weight, 400)
+        XCTAssertEqual(best?.reps, 2)
     }
 }
