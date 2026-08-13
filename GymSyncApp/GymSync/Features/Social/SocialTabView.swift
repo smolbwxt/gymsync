@@ -10,7 +10,6 @@ struct SocialTabView: View {
     @State private var pendingCount = 0
     /// Redesign: per-group `group_stats` aggregates feeding the hub hero
     /// ("your crews have moved X lbs") and each group card's volume meta.
-    @State private var groupStatsByID: [UUID: GroupStats] = [:]
     @State private var showCreateGroup = false
     // Also doubles as the "did the last groups load fail" flag (Canvas
     // Completion Task 4) — it's already a String? set from `refresh()`'s
@@ -89,144 +88,15 @@ struct SocialTabView: View {
                             // exists for friends/groups; HomeView's session
                             // join-by-code is an unrelated domain.)
 
-                            // Null-states proof: dimmed preview of what the hub
-                            // hero will show once a crew exists — fills the space
-                            // below with intent instead of void.
-                            GSSectionHeader("Preview")
-                                .padding(.horizontal, 16)
-                                .padding(.top, 18)
-                                .padding(.bottom, 8)
-                            GSCard(bordered: false) {
-                                VStack(alignment: .leading, spacing: 0) {
-                                    GSSectionHeader("Your crews will move")
-                                    Text("— \(ThemeStore.shared.weightUnit.label)")
-                                        .font(GSFont.heading(30, relativeTo: .largeTitle))
-                                        .foregroundStyle(theme.neutral500)
-                                        .padding(.top, 7)
-                                    Text("once you've got a crew")
-                                        .font(GSFont.body(12, relativeTo: .caption))
-                                        .foregroundStyle(theme.neutral500)
-                                        .padding(.top, 4)
-                                }
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(16)
-                            }
-                            .opacity(0.55)
-                            .padding(.horizontal, 16)
                             Spacer(minLength: 0)
                         } else {
-                            // ── Hub hero (redesign: "cumulative weight moved") ──
-                            if !groups.isEmpty {
-                                hubHero
-                                    .padding(.horizontal, 16)
-                                    .padding(.top, 16)
-                            }
-
-                            // Friends row (redesign: rounded card row)
-                            NavigationLink {
-                                FriendsView()
-                            } label: {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "person.2")
-                                        .font(.system(size: 18, weight: .regular))
-                                        .foregroundStyle(theme.text)
-                                    Text("Friends")
-                                        .font(GSFont.bold(14, relativeTo: .headline))
-                                        .foregroundStyle(theme.text)
-                                    Spacer()
-                                    if pendingCount > 0 {
-                                        GSTag(text: "\(pendingCount) new", style: .accent)
-                                    }
-                                    Text("\(friendCount)")
-                                        .font(GSFont.body(13, relativeTo: .subheadline))
-                                        .foregroundStyle(theme.neutral500)
-                                    Image(systemName: "chevron.right")
-                                        .font(.system(size: 13, weight: .semibold))
-                                        .foregroundStyle(theme.neutral500)
-                                }
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 13)
-                                .contentShape(Rectangle())
-                            }
-                            // 3D pass (2026-08 sweep): tappable hub row —
-                            // extruded face + lip + press-sink. The old
-                            // `.background(theme.surface).cornerRadius(...)`
-                            // is gone: the style paints the face (flat
-                            // surface over it would hide the extrusion).
-                            .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
-                            .padding(.horizontal, 16)
-                            .padding(.top, 12)
-
-                            // Pump Check feed row (spec 2026-07-27, P3) —
-                            // same card idiom as Friends/Local. Pushes the
-                            // full feed; posts are friends-only by RLS.
-                            NavigationLink {
-                                PumpFeedView()
-                            } label: {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "camera")
-                                        .font(.system(size: 18, weight: .regular))
-                                        .foregroundStyle(theme.text)
-                                    VStack(alignment: .leading, spacing: 1) {
-                                        Text("Feed")
-                                            .font(GSFont.bold(14, relativeTo: .headline))
-                                            .foregroundStyle(theme.text)
-                                        Text("Pump checks from your friends")
-                                            .font(GSFont.body(11, relativeTo: .caption))
-                                            .foregroundStyle(theme.neutral500)
-                                    }
-                                    Spacer()
-                                    Image(systemName: "chevron.right")
-                                        .font(.system(size: 13, weight: .semibold))
-                                        .foregroundStyle(theme.neutral500)
-                                }
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 13)
-                                .contentShape(Rectangle())
-                            }
-                            // 3D pass (2026-08 sweep) — see the Friends row.
-                            .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
-                            .gsDiscovery(.socialFeed, cornerRadius: GSMetrics.radiusSm)
-                            .padding(.horizontal, 16)
-                            .padding(.top, 8)
-
-                            // Local hubs row (Venue Hubs H1) — the spec's
-                            // "Social tab gets a Local section" (:691),
-                            // mirroring the Friends row's card idiom above.
-                            NavigationLink {
-                                LocalHubsView()
-                            } label: {
-                                HStack(spacing: 8) {
-                                    Image(systemName: "mappin.and.ellipse")
-                                        .font(.system(size: 18, weight: .regular))
-                                        .foregroundStyle(theme.text)
-                                    VStack(alignment: .leading, spacing: 1) {
-                                        Text("Local")
-                                            .font(GSFont.bold(14, relativeTo: .headline))
-                                            .foregroundStyle(theme.text)
-                                        Text("Who's at your gym")
-                                            .font(GSFont.body(11, relativeTo: .caption))
-                                            .foregroundStyle(theme.neutral500)
-                                    }
-                                    Spacer()
-                                    Image(systemName: "chevron.right")
-                                        .font(.system(size: 13, weight: .semibold))
-                                        .foregroundStyle(theme.neutral500)
-                                }
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 13)
-                                .contentShape(Rectangle())
-                            }
-                            // 3D pass (2026-08 sweep) — see the Friends row.
-                            .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
-                            .gsDiscovery(.socialLocal, cornerRadius: GSMetrics.radiusSm)
-                            .padding(.horizontal, 16)
-                            .padding(.top, 8)
-
-                            // Groups header
+                            // Owner 2026-08-13: the crews ARE the tab — the
+                            // cumulative-stats hero is gone and "Your crews"
+                            // leads, with the Friends/Feed/Local hub rows
+                            // demoted below the crew list.
                             GSSectionHeader("Your crews")
                                 .padding(.horizontal, 16)
-                                .padding(.top, 18)
+                                .padding(.top, 16)
                                 .padding(.bottom, 8)
 
                             // Canvas Completion Task 4 (proof p30/p31): the blank-list
@@ -296,8 +166,110 @@ struct SocialTabView: View {
                                 .frame(maxWidth: .infinity)
                                 .padding(.horizontal, 16)
                                 .padding(.top, 16)
-                                .padding(.bottom, 24)
                             }
+
+                            // Friends row (redesign: rounded card row) —
+                            // now BELOW the crew list with Feed/Local.
+                            NavigationLink {
+                                FriendsView()
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "person.2")
+                                        .font(.system(size: 18, weight: .regular))
+                                        .foregroundStyle(theme.text)
+                                    Text("Friends")
+                                        .font(GSFont.bold(14, relativeTo: .headline))
+                                        .foregroundStyle(theme.text)
+                                    Spacer()
+                                    if pendingCount > 0 {
+                                        GSTag(text: "\(pendingCount) new", style: .accent)
+                                    }
+                                    Text("\(friendCount)")
+                                        .font(GSFont.body(13, relativeTo: .subheadline))
+                                        .foregroundStyle(theme.neutral500)
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(theme.neutral500)
+                                }
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 13)
+                                .contentShape(Rectangle())
+                            }
+                            // 3D pass (2026-08 sweep): tappable hub row —
+                            // extruded face + lip + press-sink. The old
+                            // `.background(theme.surface).cornerRadius(...)`
+                            // is gone: the style paints the face (flat
+                            // surface over it would hide the extrusion).
+                            .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
+                            .padding(.horizontal, 16)
+                            .padding(.top, 18)
+
+                            // Pump Check feed row (spec 2026-07-27, P3) —
+                            // same card idiom as Friends/Local. Pushes the
+                            // full feed; posts are friends-only by RLS.
+                            NavigationLink {
+                                PumpFeedView()
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "camera")
+                                        .font(.system(size: 18, weight: .regular))
+                                        .foregroundStyle(theme.text)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text("Feed")
+                                            .font(GSFont.bold(14, relativeTo: .headline))
+                                            .foregroundStyle(theme.text)
+                                        Text("Pump checks from your friends")
+                                            .font(GSFont.body(11, relativeTo: .caption))
+                                            .foregroundStyle(theme.neutral500)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(theme.neutral500)
+                                }
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 13)
+                                .contentShape(Rectangle())
+                            }
+                            // 3D pass (2026-08 sweep) — see the Friends row.
+                            .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
+                            .gsDiscovery(.socialFeed, cornerRadius: GSMetrics.radiusSm)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 8)
+
+                            // Local hubs row (Venue Hubs H1) — the spec's
+                            // "Social tab gets a Local section" (:691),
+                            // mirroring the Friends row's card idiom above.
+                            NavigationLink {
+                                LocalHubsView()
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: "mappin.and.ellipse")
+                                        .font(.system(size: 18, weight: .regular))
+                                        .foregroundStyle(theme.text)
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text("Local")
+                                            .font(GSFont.bold(14, relativeTo: .headline))
+                                            .foregroundStyle(theme.text)
+                                        Text("Who's at your gym")
+                                            .font(GSFont.body(11, relativeTo: .caption))
+                                            .foregroundStyle(theme.neutral500)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .foregroundStyle(theme.neutral500)
+                                }
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 13)
+                                .contentShape(Rectangle())
+                            }
+                            // 3D pass (2026-08 sweep) — see the Friends row.
+                            .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
+                            .gsDiscovery(.socialLocal, cornerRadius: GSMetrics.radiusSm)
+                            .padding(.horizontal, 16)
+                            .padding(.top, 8)
+                            .padding(.bottom, 24)
 
                             // Non-blank-list case only — the blank-list case already
                             // surfaced this same message via GSErrorCard above, so
@@ -402,54 +374,6 @@ struct SocialTabView: View {
             pendingChatGroup = groups.first
         default:
             break
-        }
-    }
-
-    @ViewBuilder
-    // MARK: - Hub hero (redesign)
-
-    /// "Your crews have moved X lbs" — the cumulative-weight-moved summary,
-    /// summed from each group's `group_stats` aggregate (all-time, matching
-    /// the RPC's shape), with the crew avatars stacked in their identity
-    /// colors. Renders with whatever stats have loaded — a group whose stats
-    /// fetch failed simply isn't counted yet (best-effort, like every other
-    /// fetch on this screen).
-    private var hubHero: some View {
-        let totalVolume = groupStatsByID.values.reduce(Decimal(0)) { $0 + $1.totalVolume }
-        let totalSessions = groupStatsByID.values.reduce(0) { $0 + $1.sessionCount }
-        return GSCard(bordered: false) {
-            VStack(alignment: .leading, spacing: 0) {
-                GSSectionHeader("Your crews have moved")
-                HStack(alignment: .firstTextBaseline, spacing: 5) {
-                    Text(StatMath.compactNumber(Units.fromPounds(totalVolume, to: ThemeStore.shared.weightUnit)))
-                        .font(GSFont.heading(34, relativeTo: .largeTitle))
-                        .foregroundStyle(theme.text)
-                        .monospacedDigit()
-                    Text(ThemeStore.shared.weightUnit.label)
-                        .font(GSFont.bold(15, relativeTo: .subheadline))
-                        .foregroundStyle(theme.neutral500)
-                }
-                .padding(.top, 7)
-                Text("\(totalSessions) sessions across \(groups.count) \(groups.count == 1 ? "crew" : "crews")")
-                    .font(GSFont.body(12, relativeTo: .caption))
-                    .foregroundStyle(theme.neutral500)
-                    .padding(.top, 4)
-                HStack(spacing: -7) {
-                    ForEach(groups.prefix(5)) { group in
-                        GSInitialsAvatar(
-                            name: group.name,
-                            avatarURL: group.avatarURL,
-                            size: 26,
-                            fill: GSGroupColor.color(for: group.id),
-                            ink: GSGroupColor.onColor(for: group.id)
-                        )
-                        .overlay(RoundedRectangle(cornerRadius: 26 * 0.28).strokeBorder(theme.surface, lineWidth: 2))
-                    }
-                }
-                .padding(.top, 12)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
         }
     }
 
@@ -576,22 +500,6 @@ struct SocialTabView: View {
             }
             unread = unreadIDs
             previews = previewsByGroup
-
-            // Redesign: per-group aggregates for the hub hero + card meta.
-            // Best-effort per group — a failed fetch leaves that group's
-            // stale entry in place rather than clobbering it.
-            var statsByID = groupStatsByID
-            await withTaskGroup(of: (UUID, GroupStats?).self) { taskGroup in
-                for group in currentGroups {
-                    taskGroup.addTask {
-                        (group.id, try? await GroupRepository.stats(groupID: group.id))
-                    }
-                }
-                for await (id, stats) in taskGroup {
-                    if let stats { statsByID[id] = stats }
-                }
-            }
-            groupStatsByID = statsByID
 
             // Crew-widget bar meta (owner 2026-08-12): same derivation as
             // CrewRoomView's routines-together card — completed = this
