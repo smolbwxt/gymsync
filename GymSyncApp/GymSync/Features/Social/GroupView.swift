@@ -32,6 +32,19 @@ struct GroupView: View {
     @State private var blockTarget: Profile?
     @State private var showBlockConfirm = false
 
+    // Admin member removal (owner 2026-08-13) — same target/confirm shape
+    // as Block above.
+    @State private var removeTarget: Profile?
+    @State private var showRemoveConfirm = false
+
+    /// Am I an admin of this crew? Derived from the loaded member list —
+    /// the same rows that render the Admin tags.
+    private var amAdmin: Bool {
+        members.contains {
+            $0.profile.id == appState.currentProfile?.id && $0.member.role == .admin
+        }
+    }
+
     // Sessions sub-tab
     @State private var upcomingSessions: [WorkoutSession] = []
     @State private var pastSessions: [WorkoutSession] = []
@@ -103,6 +116,18 @@ struct GroupView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("You won't see their messages or requests.")
+        }
+        .confirmationDialog(
+            "Remove @\(removeTarget?.username ?? "") from the crew?",
+            isPresented: $showRemoveConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("Remove", role: .destructive) {
+                Task { await remove(removeTarget) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("They lose access to the crew's chat, sessions, and stats. They can be re-added later.")
         }
     }
 
@@ -312,6 +337,17 @@ struct GroupView: View {
                 } label: {
                     Label("Block", systemImage: "nosign")
                 }
+                // Admin-only crew removal (owner 2026-08-13). RLS backstops
+                // the client gate: only "self-leave or admin removes" rows
+                // ever actually delete.
+                if amAdmin {
+                    Button(role: .destructive) {
+                        removeTarget = entry.profile
+                        showRemoveConfirm = true
+                    } label: {
+                        Label("Remove from crew", systemImage: "person.badge.minus")
+                    }
+                }
             }
         }
     }
@@ -479,6 +515,22 @@ struct GroupView: View {
         guard let profile else { return }
         do {
             try await ModerationRepository.block(userID: profile.id)
+            errorText = nil
+        } catch let error as GymSyncError {
+            errorText = error.errorDescription
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    /// Admin removes a member, then reloads the roster so the row drops
+    /// immediately (RLS silently no-ops for non-admins — belt over the
+    /// `amAdmin` suspenders in the menu).
+    private func remove(_ profile: Profile?) async {
+        guard let profile else { return }
+        do {
+            try await GroupRepository.removeMember(groupID: group.id, userID: profile.id)
+            members = (try? await GroupRepository.members(groupID: group.id)) ?? members
             errorText = nil
         } catch let error as GymSyncError {
             errorText = error.errorDescription

@@ -201,6 +201,24 @@ enum GroupRepository {
         }
     }
 
+    /// Admin removes a member (owner 2026-08-13: "As the admin of a group,
+    /// I can't actually remove anyone from the crew"). Server-side this was
+    /// ALWAYS allowed — the group_members DELETE policy is "self-leave or
+    /// admin removes" (20260726000002) — the client just never called it.
+    /// RLS is the authority: a non-admin's delete silently affects 0 rows.
+    static func removeMember(groupID: UUID, userID: UUID) async throws {
+        do {
+            try await SupabaseService.shared.client
+                .from("group_members")
+                .delete()
+                .eq("group_id", value: groupID.uuidString)
+                .eq("user_id", value: userID.uuidString)
+                .execute()
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
+
     static func leave(groupID: UUID) async throws {
         guard let me = await SupabaseService.shared.currentUserID() else {
             throw GymSyncError.unauthorized
