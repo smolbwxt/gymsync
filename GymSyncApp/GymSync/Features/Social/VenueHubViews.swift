@@ -261,6 +261,8 @@ struct LocalHubsView: View {
 
 struct VenueHubView: View {
     @Environment(\.gsTheme) private var theme
+    @Environment(AppState.self) private var appState
+    @Environment(\.dismiss) private var dismiss
 
     let venue: Venue
     let here: CLLocationCoordinate2D?
@@ -272,6 +274,16 @@ struct VenueHubView: View {
     @State private var busy = false
     @State private var errorText: String?
     @State private var showAdvisory = false
+
+    // Owner controls (owner 2026-08-13: "I can't relinquish ownership or
+    // delete my hub"). Rename tracks locally since `venue` is a let; the
+    // list view refetches on its next load anyway.
+    @State private var showRenameAlert = false
+    @State private var renameText = ""
+    @State private var showRelinquishConfirm = false
+    @State private var showDeleteConfirm = false
+    @State private var renamedName: String?
+    @State private var didRelinquish = false
     // Key from OneShotFlags — see that file; keeps the QA reset honest.
     @AppStorage(OneShotFlags.venueAdvisoryKey) private var hasSeenAdvisory = false
 
@@ -303,6 +315,15 @@ struct VenueHubView: View {
     }
     private var isCheckedIn: Bool { myMembership != nil }
     private var isVisible: Bool { myMembership?.isVisibleOnHub == true }
+
+    /// Creator of an unverified hub = the one account with owner controls
+    /// (verified venues are admin-managed; relinquished ones show none).
+    private var isOwner: Bool {
+        !didRelinquish
+            && !venue.isVerified
+            && venue.createdBy != nil
+            && venue.createdBy == appState.currentProfile?.id
+    }
 
     var body: some View {
         ScrollView {
@@ -337,12 +358,99 @@ struct VenueHubView: View {
         .sheet(isPresented: $showAdvisory) {
             VenueAdvisoryView { showAdvisory = false }
         }
+        .toolbar {
+            if isOwner {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button {
+                            renameText = renamedName ?? venue.name
+                            showRenameAlert = true
+                        } label: {
+                            Label("Rename hub", systemImage: "pencil")
+                        }
+                        Button {
+                            showRelinquishConfirm = true
+                        } label: {
+                            Label("Relinquish ownership", systemImage: "person.crop.circle.badge.minus")
+                        }
+                        Button(role: .destructive) {
+                            showDeleteConfirm = true
+                        } label: {
+                            Label("Delete hub", systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(theme.text)
+                    }
+                    .disabled(busy)
+                }
+            }
+        }
+        .alert("Rename hub", isPresented: $showRenameAlert) {
+            TextField("Hub name", text: $renameText)
+            Button("Save") { Task { await renameVenue() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Everyone at this hub sees the new name.")
+        }
+        .confirmationDialog("Relinquish ownership?", isPresented: $showRelinquishConfirm, titleVisibility: .visible) {
+            Button("Relinquish", role: .destructive) { Task { await relinquishVenue() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The hub becomes community-owned. It keeps its members and history — you just stop being able to edit it. This can't be undone.")
+        }
+        .confirmationDialog("Delete this hub?", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { Task { await deleteVenue() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Only possible while nobody else has joined. If others train here, relinquish instead.")
+        }
+    }
+
+    // MARK: - Owner control actions
+
+    @MainActor
+    private func renameVenue() async {
+        let name = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            try await VenueRepository.rename(venueID: venue.id, name: name)
+            renamedName = name
+            errorText = nil
+        } catch { errorText = ErrorMapping.map(error).errorDescription }
+    }
+
+    @MainActor
+    private func relinquishVenue() async {
+        busy = true
+        defer { busy = false }
+        do {
+            try await VenueRepository.relinquish(venueID: venue.id)
+            didRelinquish = true
+            errorText = nil
+        } catch { errorText = ErrorMapping.map(error).errorDescription }
+    }
+
+    @MainActor
+    private func deleteVenue() async {
+        busy = true
+        defer { busy = false }
+        do {
+            if try await VenueRepository.deleteOwn(venueID: venue.id) {
+                dismiss()
+            } else {
+                errorText = "Others train here now — the hub is shared context. Relinquish ownership instead."
+            }
+        } catch { errorText = ErrorMapping.map(error).errorDescription }
     }
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 6) {
-                Text(venue.name)
+                Text(renamedName ?? venue.name)
                     .font(GSFont.heading(22, relativeTo: .title2))
                     .foregroundStyle(theme.text)
                 if venue.isVerified {

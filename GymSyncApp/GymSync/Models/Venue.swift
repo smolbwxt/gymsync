@@ -22,7 +22,8 @@ struct Venue: Decodable, Identifiable, Sendable, Equatable {
     let latitude: Double
     let longitude: Double
     let radiusMeters: Int
-    let createdBy: UUID
+    /// nil = community-owned (the creator relinquished — 20260814000002).
+    let createdBy: UUID?
     let isVerified: Bool
     let bannerURL: String?
 
@@ -169,6 +170,45 @@ enum VenueRepository {
                 .execute()
                 .value
             return row
+        } catch { throw ErrorMapping.map(error) }
+    }
+
+    /// Rename an owned, unverified venue — rides the creator-edit RLS
+    /// policy (a verified venue's row is admin-only, and RLS silently
+    /// no-ops the update for non-creators).
+    static func rename(venueID: UUID, name: String) async throws {
+        do {
+            try await client
+                .from("venues")
+                .update(["name": name])
+                .eq("id", value: venueID)
+                .execute()
+        } catch { throw ErrorMapping.map(error) }
+    }
+
+    private struct VenueIDParam: Encodable {
+        let venueID: UUID
+        enum CodingKeys: String, CodingKey { case venueID = "p_venue_id" }
+    }
+
+    /// Hand an owned venue to the community (created_by → NULL). The hub,
+    /// its members, and their history all survive — only edit rights end.
+    static func relinquish(venueID: UUID) async throws {
+        do {
+            try await client
+                .rpc("relinquish_venue", params: VenueIDParam(venueID: venueID))
+                .execute()
+        } catch { throw ErrorMapping.map(error) }
+    }
+
+    /// Delete an owned, unverified venue. Returns false when other members
+    /// exist (shared context — the caller should offer relinquish instead).
+    static func deleteOwn(venueID: UUID) async throws -> Bool {
+        do {
+            return try await client
+                .rpc("delete_own_venue", params: VenueIDParam(venueID: venueID))
+                .execute()
+                .value
         } catch { throw ErrorMapping.map(error) }
     }
 
