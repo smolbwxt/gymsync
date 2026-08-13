@@ -54,22 +54,25 @@ struct StatsTabView: View {
                     }
 
                     // ── Lifetime Volume Card ───────────────────────────────────
-                    GSCard(bordered: false) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            GSSectionHeader("Lifetime volume")
-                            Text(volumeString)
-                                .font(GSFont.heading(34, relativeTo: .largeTitle))
-                                .foregroundStyle(theme.text)
-                                .monospacedDigit()
-                            if let monthTrendPercent {
-                                Text("\(monthTrendPercent >= 0 ? "▲" : "▼") \(abs(Int(monthTrendPercent.rounded())))% vs last month")
-                                    .font(GSFont.body(12, relativeTo: .caption))
-                                    .foregroundStyle(theme.accent700)
-                            }
+                    // gs3D pass (2026-08-13): the zero-radius GSCards were
+                    // this screen's whole debt — every card joins the
+                    // extruded face/lip language, and text follows the
+                    // owner's default-color law (trend line included).
+                    VStack(alignment: .leading, spacing: 4) {
+                        GSSectionHeader("Lifetime volume")
+                        Text(volumeString)
+                            .font(GSFont.heading(34, relativeTo: .largeTitle))
+                            .foregroundStyle(theme.text)
+                            .monospacedDigit()
+                        if let monthTrendPercent {
+                            Text("\(monthTrendPercent >= 0 ? "▲" : "▼") \(abs(Int(monthTrendPercent.rounded())))% vs last month")
+                                .font(GSFont.body(12, relativeTo: .caption))
+                                .foregroundStyle(theme.neutral700)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(16)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
+                    .gs3DCard(cornerRadius: GSMetrics.radiusMd)
                     .padding(.horizontal, 16)
                     .padding(.top, 16)
                     .padding(.bottom, 12)
@@ -97,9 +100,9 @@ struct StatsTabView: View {
 
                     // ── Recent Activity Row (redesign: rounded card row) ───────
                     NavigationLink { ActivityFeedView() } label: {
-                        navRow(title: "Activity", tint: theme.accent)
+                        navRow(title: "Activity")
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
                     .padding(.horizontal, 16)
                     .padding(.bottom, 12)
 
@@ -110,18 +113,17 @@ struct StatsTabView: View {
 
                     if exercises.isEmpty {
                         // Null state (spec §6): card-anchored, never a bare float.
-                        GSCard(bordered: false) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("No exercises yet")
-                                    .font(GSFont.bold(14, relativeTo: .subheadline))
-                                    .foregroundStyle(theme.text)
-                                Text("Exercise history builds automatically as you train.")
-                                    .font(GSFont.body(12, relativeTo: .caption))
-                                    .foregroundStyle(theme.neutral500)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(16)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("No exercises yet")
+                                .font(GSFont.bold(14, relativeTo: .subheadline))
+                                .foregroundStyle(theme.text)
+                            Text("Exercise history builds automatically as you train.")
+                                .font(GSFont.body(12, relativeTo: .caption))
+                                .foregroundStyle(theme.neutral500)
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16)
+                        .gs3DCard(cornerRadius: GSMetrics.radiusMd)
                         .padding(.horizontal, 16)
                         .padding(.bottom, 24)
                     } else {
@@ -146,9 +148,9 @@ struct StatsTabView: View {
                         VStack(spacing: 8) {
                             ForEach(filteredExercises) { ex in
                                 NavigationLink { ExerciseHistoryView(exercise: ex) } label: {
-                                    navRow(title: ex.name, tint: theme.text)
+                                    navRow(title: ex.name)
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
                             }
                         }
                         .padding(.horizontal, 16)
@@ -211,7 +213,7 @@ struct StatsTabView: View {
 
     @ViewBuilder
     private var weeklyVolumeCardView: some View {
-        GSCard(bordered: false) {
+        Group {
             VStack(alignment: .leading, spacing: 10) {
                 GSSectionHeader("Weekly volume")
 
@@ -260,17 +262,20 @@ struct StatsTabView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
         }
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd)
     }
 
     // MARK: - Shared nav row (redesign)
 
-    /// Rounded surface nav row — the card-anchored replacement for the old
-    /// square edge-to-edge rows (Activity, per-exercise history).
-    private func navRow(title: String, tint: Color) -> some View {
+    /// Nav-row LABEL only — the extruded chrome comes from the enclosing
+    /// NavigationLink's `.gs3DCardStyle` (crew-row precedent: a surface
+    /// fill here would paint over the face). Default text per the owner's
+    /// color law.
+    private func navRow(title: String) -> some View {
         HStack {
             Text(title)
                 .font(GSFont.bodyMedium(15, relativeTo: .body))
-                .foregroundStyle(tint)
+                .foregroundStyle(theme.text)
             Spacer()
             Image(systemName: "chevron.right")
                 .font(.system(size: 13, weight: .semibold))
@@ -278,8 +283,6 @@ struct StatsTabView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .background(theme.surface)
-        .cornerRadius(GSMetrics.radiusSm)
         .contentShape(Rectangle())
     }
 
@@ -301,43 +304,30 @@ struct StatsTabView: View {
     // elsewhere on this screen.
     @ViewBuilder
     private var streakCardView: some View {
-        GSCard(bordered: false) {
-            VStack(alignment: .leading, spacing: 10) {
-                GSSectionHeader("Streak")
-                HStack(spacing: 8) {
-                    GSStatTile(
-                        value: currentStreakValue,
-                        label: "Current streak",
-                        valueColor: streakValueColor
-                    )
-                    GSStatTile(
-                        value: "\(userStreak?.longestStreak ?? 0)",
-                        label: "Longest streak"
-                    )
-                }
+        VStack(alignment: .leading, spacing: 10) {
+            GSSectionHeader("Streak")
+            HStack(spacing: 8) {
+                // Default value color (owner's text law, 2026-08-12) — the
+                // old live-streak accent tint retired with the sweep.
+                GSStatTile(
+                    value: currentStreakValue,
+                    label: "Current streak"
+                )
+                GSStatTile(
+                    value: "\(userStreak?.longestStreak ?? 0)",
+                    label: "Longest streak"
+                )
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
         }
-    }
-
-    private var isStreakLive: Bool { (userStreak?.currentStreak ?? 0) > 0 }
-
-    /// Accent color for the current-streak tile's value while live, `nil`
-    /// (falls back to `GSStatTile`'s own `theme.text` default) once broken —
-    /// explicit `guard`/`return` rather than a ternary passed straight into
-    /// the optional `valueColor:` parameter, to leave no ambiguity about
-    /// which `Color?` this resolves to.
-    private var streakValueColor: Color? {
-        guard isStreakLive else { return nil }
-        return theme.accent700
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd)
     }
 
     /// Plain "N" — the redesign's emoji sweep (spec §7) replaced the "🔥 N"
-    /// tile value: liveness is signaled by the accent `streakValueColor`
-    /// above (and by Home's streak-ring flame, which uses `flame.fill`, the
-    /// SF Symbol form). The backend's push copy keeps its own 🔥 — that's
-    /// message text, not UI chrome.
+    /// tile value, and the owner's default-text law (2026-08-12) later
+    /// retired the live-streak accent tint too. The backend's push copy
+    /// keeps its own 🔥 — that's message text, not UI chrome.
     private var currentStreakValue: String {
         "\(userStreak?.currentStreak ?? 0)"
     }
@@ -346,7 +336,7 @@ struct StatsTabView: View {
 
     @ViewBuilder
     private var recentPRsCardView: some View {
-        GSCard(bordered: false) {
+        Group {
             VStack(alignment: .leading, spacing: 0) {
                 GSSectionHeader("Recent PRs")
 
@@ -389,6 +379,7 @@ struct StatsTabView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
         }
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd)
     }
 
     // MARK: - Body Weight Card (Task 3, Phase H)
@@ -428,11 +419,13 @@ struct StatsTabView: View {
     // zero production call sites before this (Finding 2).
     @ViewBuilder
     private var bodyWeightCardView: some View {
-        GSCard(bordered: false) {
+        Group {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     GSSectionHeader("Body Weight")
                     Spacer()
+                    // Extruded like every tappable (design law) — the
+                    // compact gs3D anatomy MyRackView's RACK control uses.
                     Button {
                         showingBodyWeightLogSheet = true
                     } label: {
@@ -440,13 +433,11 @@ struct StatsTabView: View {
                             Image(systemName: "plus").font(.system(size: 12, weight: .bold))
                             Text("Log").font(GSFont.bold(13, relativeTo: .subheadline))
                         }
-                        .foregroundStyle(theme.accent)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(theme.accent, lineWidth: 1))
-                        .contentShape(Rectangle())
+                        .foregroundStyle(theme.bg)
+                        .padding(.horizontal, 12)
+                        .frame(height: 26)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.gs3D(face: theme.accent, cornerRadius: 10, lipHeight: 5))
                 }
 
                 if let latestBodyWeightText {
@@ -482,6 +473,7 @@ struct StatsTabView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
         }
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd)
     }
 
     private var bodyWeightChartData: [(Date, Double)] {
