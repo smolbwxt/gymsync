@@ -129,18 +129,22 @@ struct ExercisesListView: View {
         .padding(.vertical, 2)
     }
 
-    // Redesign: capsule filter chips — filled accent when selected.
+    // gs3D pass (2026-08-13): the flat capsules join the extruded language —
+    // chips are tappable, so they sit proud and sink (accent face when
+    // selected, the neutral raised pair otherwise). The catalog LIST rows
+    // deliberately stay flat: rows are furniture, not widgets (MyRackView's
+    // own catalog precedent) — extruding hundreds of rows is noise.
     private func filterChip(label: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(label)
                 .font(GSFont.bodyMedium(12, relativeTo: .caption))
-                .foregroundStyle(selected ? theme.bg : theme.neutral700)
+                .foregroundStyle(selected ? theme.bg : theme.text.opacity(0.78))
                 .padding(.horizontal, 13)
-                .padding(.vertical, 7)
-                .background(selected ? theme.accent : theme.neutral300)
-                .clipShape(Capsule())
+                .frame(height: 26)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(selected
+            ? .gs3D(face: theme.accent, cornerRadius: 13, lipHeight: 4)
+            : .gs3D(face: theme.raised3DFace, lip: theme.raised3DLip, cornerRadius: 13, lipHeight: 4))
     }
 
     @MainActor

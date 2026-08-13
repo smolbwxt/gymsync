@@ -1730,8 +1730,6 @@ private struct RoutinePickerSheet: View {
             }
             .padding(14)
             .frame(minHeight: 44)
-            .background(theme.surface)
-            .cornerRadius(GSMetrics.radiusSm)
             .overlay(
                 selected
                     ? RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.accent, lineWidth: 2)
@@ -1739,7 +1737,10 @@ private struct RoutinePickerSheet: View {
             )
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        // gs3D pass (2026-08-13): the flat surface rows become sinking
+        // extruded cards — the label sheds its own fill so it can't paint
+        // over the face; the selected accent ring rides as an overlay.
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
     }
 
     @MainActor

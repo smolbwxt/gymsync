@@ -112,15 +112,15 @@ struct RoutinesListView: View {
                     Text("New").font(GSFont.bold(13, relativeTo: .subheadline))
                 }
                 // First-visit spotlight target — the tip itself is attached
-                // to LibraryTabView's root; preferences travel up the tree.
+                // at the You-grid push site; preferences travel up the tree.
                 .gsSpotlightTarget(.library)
-                .foregroundStyle(theme.accent)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.accent, lineWidth: 1))
-                .contentShape(Rectangle())
+                .foregroundStyle(theme.bg)
+                .padding(.horizontal, 12)
+                .frame(height: 26)
             }
-            .buttonStyle(.plain)
+            // Extruded like every tappable (design law) — compact gs3D
+            // accent anatomy, same as Stats' + Log and MyRackView's RACK.
+            .buttonStyle(.gs3D(face: theme.accent, cornerRadius: 10, lipHeight: 5))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 4)
@@ -148,7 +148,11 @@ struct RoutinesListView: View {
             allExercises.first(where: { $0.id == re.exerciseID })
         }
 
-        return GSCard(bordered: true) {
+        // gs3D pass (2026-08-13): the bordered flat card joins the extruded
+        // language. STATIC depth (.gs3DCard, not the sinking style) on
+        // purpose — these rows live in a List whose swipe-to-delete owns
+        // the gesture plumbing; the NavigationLink still navigates.
+        return Group {
             VStack(alignment: .leading, spacing: 8) {
                 Text(routine.name)
                     .font(GSFont.heading(17, relativeTo: .headline))
@@ -179,6 +183,7 @@ struct RoutinesListView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(12)
         }
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd)
     }
 
     private func orderedExercises(for routine: Routine) -> [RoutineExercise] {
@@ -283,18 +288,18 @@ private struct RoutineDetailChoice: View {
                             .foregroundStyle(.red)
                     }
 
-                    // Routine summary header
-                    GSCard(bordered: true) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(routine.name)
-                                .font(GSFont.heading(22, relativeTo: .title2))
-                                .foregroundStyle(theme.text)
-                            Text("\(routineExercises.count) exercise\(routineExercises.count == 1 ? "" : "s")")
-                                .font(GSFont.body(13, relativeTo: .subheadline))
-                                .foregroundStyle(theme.neutral700)
-                        }
-                        .padding(14)
+                    // Routine summary header (gs3D pass 2026-08-13)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(routine.name)
+                            .font(GSFont.heading(22, relativeTo: .title2))
+                            .foregroundStyle(theme.text)
+                        Text("\(routineExercises.count) exercise\(routineExercises.count == 1 ? "" : "s")")
+                            .font(GSFont.body(13, relativeTo: .subheadline))
+                            .foregroundStyle(theme.neutral700)
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+                    .gs3DCard(cornerRadius: GSMetrics.radiusMd)
 
                     // Redesign (2026-07-23): routine CONTENTS — the exercise
                     // list, Discover-detail style, each row navigating to the

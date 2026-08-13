@@ -225,23 +225,28 @@ struct PumpPostCard: View {
     private var unit: WeightUnit { ThemeStore.shared.weightUnit }
 
     var body: some View {
-        GSCard(bordered: true) {
-            VStack(alignment: .leading, spacing: 0) {
-                authorRow
-                    .padding(12)
+        // gs3D pass (2026-08-13): the bordered flat card joins the extruded
+        // language — static depth (the card itself isn't a button; its
+        // reaction chips and menus are the tappables). gs3DCard clips
+        // content to the rounded face, so the full-bleed photo block keeps
+        // its edges.
+        VStack(alignment: .leading, spacing: 0) {
+            authorRow
+                .padding(12)
 
-                if post.photoPath != nil {
-                    photoBlock
-                }
-
-                summaryBlock
-                    .padding(12)
-
-                reactionsRow
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 12)
+            if post.photoPath != nil {
+                photoBlock
             }
+
+            summaryBlock
+                .padding(12)
+
+            reactionsRow
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd)
         .contextMenu {
             if isMine {
                 Button(role: .destructive, action: onDelete) {
