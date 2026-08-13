@@ -1234,15 +1234,29 @@ struct GroupSessionLiveView: View {
                 .padding(.horizontal, 14)
 
             VStack(spacing: 8) {
-                Text(remaining.map { "\($0)" } ?? "\(sets.count)")
-                    .font(GSFont.boldFixed(48).monospacedDigit())
-                    .foregroundStyle(theme.text)
-                Text(remaining != nil
-                     ? (remaining == 1 ? "SET LEFT" : "SETS LEFT")
-                     : "LOGGED")
-                    .font(GSFont.bold(10, relativeTo: .caption2))
-                    .tracking(1.4)
-                    .foregroundStyle(theme.neutral700)
+                if remaining == 0 {
+                    // Owner 2026-08-13: the last set is a moment, not a
+                    // zero — mirrors the solo card.
+                    Text("LAST SET")
+                        .font(GSFont.bold(16, relativeTo: .headline))
+                        .foregroundStyle(theme.text)
+                        .multilineTextAlignment(.center)
+                    Text("GO TO FAILURE!")
+                        .font(GSFont.bold(10, relativeTo: .caption2))
+                        .tracking(1.2)
+                        .foregroundStyle(theme.neutral700)
+                        .multilineTextAlignment(.center)
+                } else {
+                    Text(remaining.map { "\($0)" } ?? "\(sets.count)")
+                        .font(GSFont.boldFixed(48).monospacedDigit())
+                        .foregroundStyle(theme.text)
+                    Text(remaining != nil
+                         ? (remaining == 1 ? "SET LEFT" : "SETS LEFT")
+                         : "LOGGED")
+                        .font(GSFont.bold(10, relativeTo: .caption2))
+                        .tracking(1.4)
+                        .foregroundStyle(theme.neutral700)
+                }
             }
             .frame(width: 96)
         }

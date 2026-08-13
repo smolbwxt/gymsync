@@ -208,6 +208,9 @@ struct WorkoutSessionView: View {
     /// exercise page"). A sheet, not a push, so dismissing it lands straight
     /// back in the session.
     @State private var exerciseDetailSheet: Exercise?
+    /// Routine list during rest (owner 2026-08-13) — the ROUTINE pager
+    /// lives on the exercise card the rest page replaces.
+    @State private var showRestRoutineSheet = false
 
     @State private var freeformExercises: [RoutineExercise] = []
     @State private var showExercisePicker = false
@@ -272,6 +275,21 @@ struct WorkoutSessionView: View {
                         }
                     }
             }
+        }
+        .sheet(isPresented: $showRestRoutineSheet) {
+            NavigationStack {
+                soloRoutinePage
+                    .padding(.top, 8)
+                    .background(theme.bg)
+                    .navigationTitle("Routine")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Done") { showRestRoutineSheet = false }
+                        }
+                    }
+            }
+            .presentationDetents([.medium, .large])
         }
         .task { await startIfNeeded() }
         .task { await loadDefaultRestSeconds() }
@@ -993,14 +1011,53 @@ struct WorkoutSessionView: View {
                     .font(GSFont.bold(9, relativeTo: .caption2))
                     .tracking(1.2)
                     .foregroundStyle(theme.neutral700)
-                Text(currentExercise?.name ?? "—")
-                    .font(GSFont.bold(20, relativeTo: .title3))
-                    .foregroundStyle(theme.text)
-                    .lineLimit(1)
+                // Owner 2026-08-13: tappable during rest too — same
+                // extruded chip → exercise page as the live set card.
+                if let ex = currentExercise {
+                    Button {
+                        exerciseDetailSheet = ex
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text(ex.name)
+                                .font(GSFont.bold(20, relativeTo: .title3))
+                                .foregroundStyle(theme.text)
+                                .lineLimit(1)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(theme.neutral500)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                    }
+                    .buttonStyle(.gs3D(face: theme.raised3DFace, lip: theme.raised3DLip,
+                                       cornerRadius: 10, lipHeight: 3))
+                } else {
+                    Text("—")
+                        .font(GSFont.bold(20, relativeTo: .title3))
+                        .foregroundStyle(theme.text)
+                        .lineLimit(1)
+                }
                 Text(soloUpNextReadback)
                     .font(GSFont.bold(13, relativeTo: .footnote).monospacedDigit())
                     .tracking(0.5)
                     .foregroundStyle(theme.text.opacity(0.78))
+                // Owner 2026-08-13: "can't see routine during rest" — the
+                // ROUTINE pager lives on the exercise card the rest page
+                // replaces, so the rest page gets its own door to the same
+                // list (sheet reuses soloRoutinePage verbatim).
+                Button {
+                    showRestRoutineSheet = true
+                } label: {
+                    Text("VIEW ROUTINE")
+                        .font(GSFont.bold(10, relativeTo: .caption2))
+                        .tracking(1.1)
+                        .foregroundStyle(theme.text.opacity(0.78))
+                        .padding(.horizontal, 12)
+                        .frame(height: 26)
+                }
+                .buttonStyle(.gs3D(face: theme.raised3DFace, lip: theme.raised3DLip,
+                                   cornerRadius: 10, lipHeight: 5))
+                .padding(.top, 4)
             }
         }
         .padding(16)
@@ -1367,15 +1424,29 @@ struct WorkoutSessionView: View {
                 .padding(.horizontal, 14)
 
             VStack(spacing: 8) {
-                Text(remaining.map { "\($0)" } ?? "\(sets.count)")
-                    .font(GSFont.boldFixed(48).monospacedDigit())
-                    .foregroundStyle(theme.text)
-                Text(remaining != nil
-                     ? (remaining == 1 ? "SET LEFT" : "SETS LEFT")
-                     : "LOGGED")
-                    .font(GSFont.bold(10, relativeTo: .caption2))
-                    .tracking(1.4)
-                    .foregroundStyle(theme.neutral700)
+                if remaining == 0 {
+                    // Owner 2026-08-13: the last set is a moment, not a
+                    // zero — "0 SETS LEFT" read like a bug.
+                    Text("LAST SET")
+                        .font(GSFont.bold(16, relativeTo: .headline))
+                        .foregroundStyle(theme.text)
+                        .multilineTextAlignment(.center)
+                    Text("GO TO FAILURE!")
+                        .font(GSFont.bold(10, relativeTo: .caption2))
+                        .tracking(1.2)
+                        .foregroundStyle(theme.neutral700)
+                        .multilineTextAlignment(.center)
+                } else {
+                    Text(remaining.map { "\($0)" } ?? "\(sets.count)")
+                        .font(GSFont.boldFixed(48).monospacedDigit())
+                        .foregroundStyle(theme.text)
+                    Text(remaining != nil
+                         ? (remaining == 1 ? "SET LEFT" : "SETS LEFT")
+                         : "LOGGED")
+                        .font(GSFont.bold(10, relativeTo: .caption2))
+                        .tracking(1.4)
+                        .foregroundStyle(theme.neutral700)
+                }
             }
             .frame(width: 96)
         }
