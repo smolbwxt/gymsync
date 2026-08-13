@@ -69,8 +69,10 @@ enum StatMath {
         for log in logs {
             // Owner item 7 (2026-08-13): effective weight — added load plus
             // the stamped body weight, so bodyweight sets finally count.
-            guard !log.isFailed, !log.isPenalty,
-                  let reps = log.reps, let weight = log.effectiveWeightPounds else { continue }
+            // Failure doctrine: completed reps (n − 1 on failed sets) — the
+            // work that happened counts; the missed single counts nothing.
+            guard !log.isPenalty,
+                  let reps = log.completedReps, let weight = log.effectiveWeightPounds else { continue }
             for (index, weekStart) in weekStarts.enumerated() {
                 guard let weekEnd = calendar.date(byAdding: .day, value: 7, to: weekStart) else { continue }
                 if log.loggedAt >= weekStart && log.loggedAt < weekEnd {
@@ -207,9 +209,10 @@ enum StatMath {
         var thisMonthVolume = Decimal(0)
         var lastMonthVolume = Decimal(0)
         for log in logs {
-            // Owner item 7: effective weight, matching weeklyVolumes.
-            guard !log.isFailed, !log.isPenalty,
-                  let reps = log.reps, let weight = log.effectiveWeightPounds else { continue }
+            // Owner item 7: effective weight, matching weeklyVolumes —
+            // completed reps likewise (failure doctrine).
+            guard !log.isPenalty,
+                  let reps = log.completedReps, let weight = log.effectiveWeightPounds else { continue }
             let volume = Decimal(reps) * weight
             if log.loggedAt >= currentMonthStart {
                 thisMonthVolume += volume

@@ -62,7 +62,7 @@ struct SessionRecapView: View {
             let mySets = sets.filter { $0.userID == item.participant.userID }
             let workSets = mySets.filter { !$0.isPenalty }
             let volume = workSets.reduce(0.0) { acc, log in
-                guard !log.isFailed, let r = log.reps, let w = log.weight else { return acc }
+                guard let r = log.completedReps, let w = log.effectiveWeightPounds else { return acc }
                 return acc + Double(r) * NSDecimalNumber(decimal: w).doubleValue
             }
             let penaltyReps = mySets.filter(\.isPenalty).compactMap(\.reps).reduce(0, +)
@@ -132,7 +132,7 @@ struct SessionRecapView: View {
 
     private var totalVolume: Double {
         sets.filter { !$0.isPenalty }.reduce(0.0) { acc, log in
-            guard !log.isFailed, let r = log.reps, let w = log.weight else { return acc }
+            guard let r = log.completedReps, let w = log.effectiveWeightPounds else { return acc }
             return acc + Double(r) * NSDecimalNumber(decimal: w).doubleValue
         }
     }

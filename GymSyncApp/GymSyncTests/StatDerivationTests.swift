@@ -182,15 +182,18 @@ final class StatDerivationTests: XCTestCase {
         XCTAssertEqual(result[5], 800)
     }
 
-    func testWeeklyVolumes_excludesFailedAndPenaltySets() {
+    func testWeeklyVolumes_countsFailedSetsAtCompletedReps() {
+        // Failure doctrine (owner 2026-08-13): "5 + FAIL" moved 100 lb four
+        // times — 400 counts. Penalty sets and missed singles still don't.
         let now = date(2024, 1, 3, 12)
         let logs = [
-            makeSetLog(loggedAt: date(2024, 1, 2, 9), reps: 5, weight: 100, isFailed: true),
-            makeSetLog(loggedAt: date(2024, 1, 2, 9), reps: 5, weight: 100, isPenalty: true),
-            makeSetLog(loggedAt: date(2024, 1, 2, 9), reps: 5, weight: 100)  // only this counts: 500
+            makeSetLog(loggedAt: date(2024, 1, 2, 9), reps: 5, weight: 100, isFailed: true),   // 4×100
+            makeSetLog(loggedAt: date(2024, 1, 2, 9), reps: 1, weight: 500, isFailed: true),   // missed single: 0
+            makeSetLog(loggedAt: date(2024, 1, 2, 9), reps: 5, weight: 100, isPenalty: true),  // 0
+            makeSetLog(loggedAt: date(2024, 1, 2, 9), reps: 5, weight: 100)                    // 500
         ]
         let result = StatMath.weeklyVolumes(logs: logs, weeks: 6, calendar: utc, now: now)
-        XCTAssertEqual(result[5], 500)
+        XCTAssertEqual(result[5], 900)
     }
 
     func testWeeklyVolumes_excludesSetsMissingRepsOrWeight() {

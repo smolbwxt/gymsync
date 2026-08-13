@@ -5319,7 +5319,7 @@ struct GroupSessionLiveView: View {
         let stats: [Stat] = participants.map { item in
             let mySets = sets.filter { $0.userID == item.participant.userID && !$0.isPenalty }
             let volume = mySets.reduce(0.0) { acc, log in
-                guard !log.isFailed, let r = log.reps, let w = log.weight else { return acc }
+                guard let r = log.completedReps, let w = log.effectiveWeightPounds else { return acc }
                 return acc + Double(r) * NSDecimalNumber(decimal: w).doubleValue
             }
             let prCount = prCountByUser[item.participant.userID] ?? 0
