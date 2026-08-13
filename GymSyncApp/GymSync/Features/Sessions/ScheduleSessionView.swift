@@ -307,9 +307,10 @@ struct ScheduleSessionView: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 9)
-                .background(theme.surface)
-                .cornerRadius(GSMetrics.radiusSm)   // redesign: rounded row
-                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
+                // gs3D pass (2026-08-13): the tappable picker row sits
+                // proud (static depth — Menu owns the tap; form inputs
+                // like the segmented control stay flat as furniture).
+                .gs3DCard(cornerRadius: GSMetrics.radiusSm)
             }
         }
     }
@@ -357,10 +358,18 @@ struct ScheduleSessionView: View {
                         }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 9)
-                        .background(isSelected ? theme.accent100 : theme.surface)
-                        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
+                        .overlay(
+                            isSelected
+                                ? RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
+                                    .strokeBorder(theme.accent, lineWidth: 2)
+                                : nil
+                        )
+                        .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    // gs3D pass (2026-08-13): sinking extruded row; label
+                    // sheds its fills, selection reads as the accent ring
+                    // (pickCard precedent).
+                    .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
                     .padding(.bottom, 4)
                 }
             }
@@ -411,9 +420,8 @@ struct ScheduleSessionView: View {
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 9)
-                .background(theme.surface)
-                .cornerRadius(GSMetrics.radiusSm)   // redesign: rounded row
-                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
+                // gs3D pass (2026-08-13): tappable picker row, static depth.
+                .gs3DCard(cornerRadius: GSMetrics.radiusSm)
             }
             .padding(.horizontal, 16)
         }
