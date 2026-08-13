@@ -219,7 +219,10 @@ struct CrewRoomView: View {
                     Text("CAN'T MAKE IT")
                         .font(GSFont.bold(10, relativeTo: .caption2))
                         .kerning(0.8)
-                        .foregroundStyle(Self.gold)
+                        // Owner 2026-08-12: room text stays default — only
+                        // the header streak keeps gold. (Same quiet-label
+                        // treatment as MyRackView's RACKED.)
+                        .foregroundStyle(theme.text.opacity(0.78))
                         .frame(maxWidth: .infinity, minHeight: 33)
                 }
                 .buttonStyle(.gs3D(face: theme.raised3DFace,
@@ -245,7 +248,7 @@ struct CrewRoomView: View {
                     Text("\(Self.whenLabel(when).uppercased()) · \(Self.countdownLabel(to: when).uppercased())")
                         .font(GSFont.bold(10, relativeTo: .caption2))
                         .kerning(1.1)
-                        .foregroundStyle(theme.accent)
+                        .foregroundStyle(theme.neutral700)
                         .lineLimit(1)
                 }
             }
@@ -287,17 +290,19 @@ struct CrewRoomView: View {
                     Text("CHANGE")
                         .font(GSFont.bold(10, relativeTo: .caption2))
                         .kerning(1.1)
-                        .foregroundStyle(theme.accent)
+                        .foregroundStyle(theme.neutral700)
                 }
                 .buttonStyle(.plain)
             }
             VStack(alignment: .leading, spacing: 8) {
+                // Owner 2026-08-12: row labels go default — in/out/unsaid
+                // still reads through the row dimming (1.0 / 0.42 / 0.3).
                 if !inMembers.isEmpty {
-                    boardRow(label: "\(inMembers.count) IN", labelColor: Self.green,
+                    boardRow(label: "\(inMembers.count) IN", labelColor: theme.text,
                              entries: inMembers, dim: 1.0)
                 }
                 if !outMembers.isEmpty {
-                    boardRow(label: "\(outMembers.count) OUT", labelColor: Self.gold,
+                    boardRow(label: "\(outMembers.count) OUT", labelColor: theme.text,
                              entries: outMembers, dim: 0.42)
                 }
                 if !unsaid.isEmpty {
@@ -386,7 +391,7 @@ struct CrewRoomView: View {
                         Text("WK \(campaign.currentWeek) OF \(campaign.weeks)")
                             .font(GSFont.bold(10, relativeTo: .caption2))
                             .kerning(1.1)
-                            .foregroundStyle(Color(roomHex: 0x6B4FD6))
+                            .foregroundStyle(theme.neutral700)
                     }
                     .padding(.horizontal, 13)
                 }
@@ -406,7 +411,7 @@ struct CrewRoomView: View {
                         Text("START ONE ›")
                             .font(GSFont.bold(10, relativeTo: .caption2))
                             .kerning(1.1)
-                            .foregroundStyle(theme.accent)
+                            .foregroundStyle(theme.neutral700)
                     }
                     .padding(.horizontal, 13)
                     .frame(height: 44)
@@ -453,16 +458,19 @@ struct CrewRoomView: View {
                 // alignment correction) with the forward lean applied to the
                 // whole column so they can never drift apart.
                 VStack(spacing: 4) {
+                    // Owner 2026-08-12: room text stays default (only the
+                    // header streak keeps gold) — ironclad still reads
+                    // through the slot column going full.
                     Text("\(completedThisWeek)")
                         .font(GSFont.heading(40, relativeTo: .largeTitle))
                         .kerning(-2)
-                        .foregroundStyle(ironclad ? Self.green : theme.text)
+                        .foregroundStyle(theme.text)
                         .monospacedDigit()
                         .shadow(color: .black.opacity(0.45), radius: 0, x: 0, y: 3)
                     Text("THIS WEEK")
                         .font(GSFont.bold(9, relativeTo: .caption2))
                         .kerning(1.8)
-                        .foregroundStyle(ironclad ? Self.green : theme.neutral700)
+                        .foregroundStyle(theme.neutral700)
                 }
                 .transformEffect(CGAffineTransform(a: 1, b: 0, c: -0.176, d: 1, tx: 0, ty: 0))
                 .offset(x: 5)
@@ -522,7 +530,7 @@ struct CrewRoomView: View {
                             if outstanding > 0 {
                                 Text("\(outstanding)")
                                     .font(GSFont.bold(10, relativeTo: .caption2))
-                                    .foregroundStyle(Self.gold)
+                                    .foregroundStyle(theme.text)
                                     .monospacedDigit()
                             } else {
                                 Image(systemName: "checkmark")
@@ -537,7 +545,7 @@ struct CrewRoomView: View {
                 Text(totalOwed > 0 ? "\(totalOwed) OWED" : "ALL SQUARE")
                     .font(GSFont.bold(10, relativeTo: .caption2))
                     .kerning(1.1)
-                    .foregroundStyle(totalOwed > 0 ? Self.gold : Self.green)
+                    .foregroundStyle(theme.neutral700)
             }
             .padding(.horizontal, 13)
             .padding(.vertical, 11)
