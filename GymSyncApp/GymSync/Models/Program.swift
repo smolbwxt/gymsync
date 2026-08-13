@@ -174,8 +174,10 @@ enum ProgramMath {
     /// (spec: the app never invents a number).
     static func baseline(fromHistory logs: [SetLog]) -> Decimal? {
         logs.compactMap { log -> Decimal? in
-            guard !log.isFailed, !log.isPenalty,
-                  let reps = log.reps, let weight = log.weight, reps > 0, weight > 0 else { return nil }
+            // Failed sets count at their completed reps (doctrine
+            // 2026-08-13) — true-RIR-0 sets are the best baseline data.
+            guard !log.isPenalty,
+                  let reps = log.completedReps, let weight = log.weight, weight > 0 else { return nil }
             return StatMath.estimatedOneRepMax(weight: weight, reps: reps)
         }.max()
     }

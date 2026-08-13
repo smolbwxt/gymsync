@@ -29,6 +29,21 @@ struct SetLog: Codable, Identifiable, Sendable {
         return (weight ?? 0) + (bodyWeightLbs ?? 0)
     }
 
+    /// Failure doctrine (owner 2026-08-13): a failed set is CALIBRATION,
+    /// not noise. Logging n reps with FAIL means the nth rep was attempted
+    /// and missed — n − 1 reps were COMPLETED with nothing left in the
+    /// tank (true RIR 0), which is the exact domain 1RM formulas were fit
+    /// on and better data than any RPE guess. The one failure that carries
+    /// no strength information is the missed single (n ≤ 1): zero reps
+    /// completed proves nothing was lifted → nil. Clean sets pass reps
+    /// through unchanged. Every PR judgment, e1RM estimate, and suggestion
+    /// path reads THIS, never raw `reps`, so the two can't drift.
+    var completedReps: Int? {
+        guard let reps, reps > 0 else { return nil }
+        guard isFailed else { return reps }
+        return reps > 1 ? reps - 1 : nil
+    }
+
     enum CodingKeys: String, CodingKey {
         case id
         case userID = "user_id"

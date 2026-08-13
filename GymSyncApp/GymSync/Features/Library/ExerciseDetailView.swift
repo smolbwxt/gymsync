@@ -23,7 +23,9 @@ struct ExerciseDetailView: View {
         return trendLogs
             .filter { $0.loggedAt >= cutoff }
             .compactMap { log -> (Date, Double)? in
-                guard let w = log.weight, let reps = log.reps else { return nil }
+                // completedReps: failed sets chart at n − 1 (true RIR 0);
+                // failed singles contribute nothing.
+                guard let w = log.weight, let reps = log.completedReps else { return nil }
                 let oneRM = StatMath.estimatedOneRepMax(weight: w, reps: reps)
                 return (log.loggedAt, Units.fromPounds(NSDecimalNumber(decimal: oneRM).doubleValue, to: unit))
             }

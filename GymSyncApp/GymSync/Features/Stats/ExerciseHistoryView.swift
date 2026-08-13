@@ -14,10 +14,11 @@ struct ExerciseHistoryView: View {
     /// back to no suffix rather than blocking on it.
     @State private var sessionContext: [UUID: String] = [:]
 
-    /// Valid (non-failed, non-penalty) logs — `exerciseHistory` already
-    /// filters these server-side, but this stays defensive/explicit.
+    /// Valid (non-penalty) logs. Failed sets STAY (doctrine 2026-08-13):
+    /// their completed reps are real data — every consumer below reads
+    /// `completedReps`, so failed singles (0 completed) drop out naturally.
     private var validLogs: [SetLog] {
-        logs.filter { !$0.isFailed && !$0.isPenalty }
+        logs.filter { !$0.isPenalty }
     }
 
     private var chartData: [(Date, Double)] {
@@ -25,7 +26,7 @@ struct ExerciseHistoryView: View {
         let unit = ThemeStore.shared.weightUnit
         return validLogs
             .compactMap { log -> (Date, Double)? in
-                guard let w = log.weight, let reps = log.reps else { return nil }
+                guard let w = log.weight, let reps = log.completedReps else { return nil }
                 let oneRM = StatMath.estimatedOneRepMax(weight: w, reps: reps)
                 return (log.loggedAt, Units.fromPounds(NSDecimalNumber(decimal: oneRM).doubleValue, to: unit))
             }
@@ -33,15 +34,18 @@ struct ExerciseHistoryView: View {
     }
 
     // Canvas: "BEST 190×5 / EST 1RM 214 / SESSIONS 28" summary tiles.
+    // Completed reps only — a missed 1RM never becomes "your best".
     private var bestSet: SetLog? {
-        validLogs.max { ($0.weight ?? 0) < ($1.weight ?? 0) }
+        validLogs
+            .filter { ($0.completedReps ?? 0) > 0 }
+            .max { ($0.weight ?? 0) < ($1.weight ?? 0) }
     }
 
     /// Weight/reps pairs for the record math — the shared basis both this
     /// screen and the live views judge against.
     private var basis: [(weight: Decimal, reps: Int)] {
         validLogs.compactMap { log in
-            guard let w = log.weight, let r = log.reps, w > 0, r > 0 else { return nil }
+            guard let w = log.weight, let r = log.completedReps, w > 0 else { return nil }
             return (w, r)
         }
     }
@@ -77,7 +81,7 @@ struct ExerciseHistoryView: View {
         var seen: [(weight: Decimal, reps: Int)] = []
         var ids: Set<UUID> = []
         for log in validLogs.sorted(by: { $0.loggedAt < $1.loggedAt }) {
-            guard let weight = log.weight, let reps = log.reps, weight > 0, reps > 0 else { continue }
+            guard let weight = log.weight, let reps = log.completedReps, weight > 0 else { continue }
             if PersonalRecordMath.isPR(weight: weight, reps: reps, basis: seen) {
                 ids.insert(log.id)
             }
@@ -122,10 +126,14 @@ struct ExerciseHistoryView: View {
                                 .foregroundStyle(theme.neutral500)
                         }
                         Spacer()
+                        // Not either/or anymore: a failed set CAN be the
+                        // record (doctrine 2026-08-13 — "9 + FAIL" may be
+                        // the best 8 ever done). Both tags render.
+                        if prSetIDs.contains(log.id) {
+                            GSTag(text: "PR", style: .accent)
+                        }
                         if log.isFailed {
                             GSTag(text: "FAIL", style: .neutral)
-                        } else if prSetIDs.contains(log.id) {
-                            GSTag(text: "PR", style: .accent)
                         }
                     }
                     .padding(.horizontal, 16)
@@ -156,7 +164,7 @@ struct ExerciseHistoryView: View {
     private var statTileRow: some View {
         HStack(spacing: 8) {
             GSStatTile(
-                value: bestSet.map { "\(weightText($0.weight))×\($0.reps ?? 0)" } ?? "—",
+                value: bestSet.map { "\(weightText($0.weight))×\($0.completedReps ?? 0)" } ?? "—",
                 label: "Best",
                 valueFontSize: 18,
                 labelColor: theme.accent700,

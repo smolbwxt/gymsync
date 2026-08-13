@@ -716,7 +716,7 @@ struct GroupSessionLiveView: View {
     private var lastTimeSet: SetLog? {
         guard let ex = currentExerciseForSheet else { return nil }
         return priorSets
-            .filter { $0.exerciseID == ex.id && !$0.isPenalty }
+            .filter { $0.exerciseID == ex.id && !$0.isFailed && !$0.isPenalty }
             .max { $0.loggedAt < $1.loggedAt }
     }
 
@@ -1112,7 +1112,7 @@ struct GroupSessionLiveView: View {
                 routineTargetPounds: currentRoutineExercise?.targetWeight
                     .flatMap { Decimal(string: $0) },
                 history: history,
-                lastSetPounds: history.last?.weight,
+                lastSetPounds: history.last(where: { !$0.isFailed })?.weight,
                 enrollment: activeEnrollment,
                 // Getting-started anchor (owner 2026-08-12) — read live off
                 // ThemeStore per the shareHeartRate caching-bug precedent.
@@ -4905,7 +4905,11 @@ struct GroupSessionLiveView: View {
             // prior max MUST be captured before the insert (self-comparison bug)
             var isPR = false
             var priorBest: Decimal = 0
-            if !isFailed, let weight, weight > 0 {
+            // Failure doctrine (owner 2026-08-13): failed sets are judged on
+            // COMPLETED reps ("7 + FAIL" = 6 at true RIR 0); only the failed
+            // single carries nothing. Mirrors solo WorkoutSessionView.log.
+            let completedReps = log.completedReps
+            if let weight, weight > 0, let completedReps {
                 // Phase O Task 3 — see WorkoutSessionView.log's identical catch for
                 // the full rationale: without this, an offline attempt throws HERE
                 // (before the set-log write below), so a group-session lifter could
@@ -4915,9 +4919,9 @@ struct GroupSessionLiveView: View {
                     // weight already done for AT LEAST these reps, so a heavy
                     // single and a hard set of ten are separate achievements.
                     let prior = try await priorMax(exerciseID: exerciseID,
-                                                   reps: reps, userID: userID)
+                                                   reps: completedReps, userID: userID)
                     priorBest = prior
-                    isPR = (reps ?? 0) > 0 && weight > prior
+                    isPR = weight > prior
                 } catch let error as GymSyncError {
                     guard case .network = error else { throw error }
                     // Offline — PR check skipped (best-effort, never blocks logging).
@@ -4929,14 +4933,14 @@ struct GroupSessionLiveView: View {
             // weight 0 with previousBest carrying prior REPS.
             var isRepPR = false
             var priorBestReps = 0
-            if !isFailed, (weight ?? 0) == 0,
+            if (weight ?? 0) == 0,
                currentExerciseForSheet?.id == exerciseID,
                currentExerciseForSheet?.equipment == "bodyweight",
-               let reps, reps > 0 {
+               let completedReps {
                 priorBestReps = turnExerciseHistory
-                    .filter { !$0.isFailed && !$0.isPenalty && ($0.weight ?? 0) == 0 }
-                    .compactMap(\.reps).max() ?? 0
-                isRepPR = reps > priorBestReps
+                    .filter { !$0.isPenalty && ($0.weight ?? 0) == 0 }
+                    .compactMap(\.completedReps).max() ?? 0
+                isRepPR = completedReps > priorBestReps
             }
 
             do {
@@ -4997,17 +5001,17 @@ struct GroupSessionLiveView: View {
             // queue) — this is the moment the success haptic fires.
             logHapticTick += 1
 
-            if isRepPR, let reps {
+            if isRepPR, let completedReps {
                 let name = await ExerciseNameCache.name(for: exerciseID)
                 Task { @MainActor in
                     await showPROverlay(exerciseName: name, weight: 0,
-                                         reps: reps, priorBest: Decimal(priorBestReps))
+                                         reps: completedReps, priorBest: Decimal(priorBestReps))
                 }
                 Task { @MainActor in
                     _ = try? await PersonalRecordRepository.record(
                         exerciseID: exerciseID,
                         weight: 0,
-                        reps: reps,
+                        reps: completedReps,
                         previousBest: Decimal(priorBestReps),
                         sessionID: session.id
                     )
@@ -5016,7 +5020,7 @@ struct GroupSessionLiveView: View {
 
             if isPR, let weight {
                 let name = await ExerciseNameCache.name(for: exerciseID)
-                let repsForOverlay = reps ?? 0
+                let repsForOverlay = completedReps ?? 0
                 Task { @MainActor in
                     await showPROverlay(exerciseName: name, weight: weight,
                                          reps: repsForOverlay, priorBest: priorBest)
@@ -5107,7 +5111,8 @@ struct GroupSessionLiveView: View {
     }
 
     /// The rep-aware PR baseline: the heaviest weight already done for AT
-    /// LEAST `reps` reps (excluding failed/penalty sets). Mirrors the identical
+    /// LEAST `reps` reps (failed sets count at completed reps; penalty sets
+    /// excluded). Mirrors the identical
     /// helper in WorkoutSessionView; both defer to `PersonalRecordMath` so the
     /// two live views can never disagree about what a record is.
     ///
@@ -5116,8 +5121,10 @@ struct GroupSessionLiveView: View {
     /// critical path of the turn CTA, and the whole rotation waits on it.
     private func priorMax(exerciseID: UUID, reps: Int?, userID: UUID) async throws -> Decimal {
         let rows = try await SessionRepository.prBasis(userID: userID, exerciseID: exerciseID)
+        // Failed rows enter at their COMPLETED reps (doctrine 2026-08-13:
+        // n logged − 1; failed singles drop out) — mirrors solo's pairs().
         let basis: [(weight: Decimal, reps: Int)] = rows.compactMap { row in
-            guard let w = row.weight, let r = row.reps, w > 0, r > 0 else { return nil }
+            guard let w = row.weight, w > 0, let r = row.completedReps else { return nil }
             return (w, r)
         }
         return PersonalRecordMath.bestWeight(atLeastReps: reps ?? 0, in: basis)
@@ -5426,7 +5433,7 @@ struct GroupSessionLiveView: View {
                     PostSummary.ExerciseEntry.SetEntry(
                         weightLbs: log.weight,
                         reps: log.reps,
-                        isPR: !log.isFailed && log.weight != nil && log.weight == prWeight[id],
+                        isPR: (log.completedReps ?? 0) > 0 && log.weight != nil && log.weight == prWeight[id],
                         isFailed: log.isFailed)
                 }
             return PostSummary.ExerciseEntry(

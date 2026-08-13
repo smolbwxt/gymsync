@@ -152,12 +152,14 @@ enum SessionRepository {
 
     static func exerciseHistory(userID: UUID, exerciseID: UUID, limit: Int) async throws -> [SetLog] {
         do {
+            // Failed rows are INCLUDED (owner 2026-08-13) — history views
+            // already render them (FAIL badge, "authoritative" RPE column)
+            // and math consumers read `completedReps`, never raw reps.
             let rows: [SetLog] = try await client
                 .from("set_logs")
                 .select()
                 .eq("user_id", value: userID)
                 .eq("exercise_id", value: exerciseID)
-                .eq("is_failed", value: "false")
                 .eq("is_penalty", value: "false")
                 .order("logged_at", ascending: false)
                 .limit(limit)
@@ -167,10 +169,25 @@ enum SessionRepository {
     }
 
     /// A weight/reps pair from history — the raw material for rep-aware PR
-    /// comparisons and 1RM estimation.
+    /// comparisons and 1RM estimation. Carries `isFailed` so callers can
+    /// apply the failure doctrine (`SetLog.completedReps`): failed rows
+    /// count at n − 1 completed reps, failed singles not at all.
     struct SetBasis: Decodable, Sendable {
         let weight: Decimal?
         let reps: Int?
+        let isFailed: Bool?
+
+        enum CodingKeys: String, CodingKey {
+            case weight, reps
+            case isFailed = "is_failed"
+        }
+
+        /// The doctrine, applied — mirrors `SetLog.completedReps` exactly.
+        var completedReps: Int? {
+            guard let reps, reps > 0 else { return nil }
+            guard isFailed == true else { return reps }
+            return reps > 1 ? reps - 1 : nil
+        }
     }
 
     /// Every qualifying (weight, reps) pair for one exercise, heaviest first —
@@ -186,12 +203,14 @@ enum SessionRepository {
     /// comparison is measured against.
     static func prBasis(userID: UUID, exerciseID: UUID, limit: Int = 500) async throws -> [SetBasis] {
         do {
+            // Failed rows are INCLUDED (owner 2026-08-13): a failed set's
+            // completed reps are real achievements — the doctrine conversion
+            // (n − 1, failed singles dropped) happens in SetBasis.completedReps.
             let rows: [SetBasis] = try await client
                 .from("set_logs")
-                .select("weight,reps")
+                .select("weight,reps,is_failed")
                 .eq("user_id", value: userID)
                 .eq("exercise_id", value: exerciseID)
-                .eq("is_failed", value: "false")
                 .eq("is_penalty", value: "false")
                 .order("weight", ascending: false, nullsFirst: false)
                 .limit(limit)

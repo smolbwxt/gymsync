@@ -135,18 +135,25 @@ enum WorkingWeight {
     /// Best (weight, reps) pair by Epley est-1RM — the same qualifying
     /// filter `ProgramMath.baseline(fromHistory:)` uses, so a rep-goal
     /// projection and a program baseline never disagree about which sets
-    /// count: no failed sets, no penalty sets, both fields present.
+    /// count: failed sets at their completed reps, no penalty sets, both
+    /// fields present.
     static func bestQualifyingSet(in logs: [SetLog]) -> (weight: Decimal, reps: Int)? {
         var best: (weight: Decimal, reps: Int)?
         var bestOneRM: Decimal = 0
         for log in logs {
-            guard !log.isFailed, !log.isPenalty,
-                  let reps = log.reps, let weight = log.weight,
-                  reps > 0, weight > 0 else { continue }
+            guard !log.isPenalty,
+                  let reps = log.completedReps, let weight = log.weight,
+                  weight > 0 else { continue }
             // RPE-aware (research audit 2026-08): a hard 5×315 @9 and an
             // easy 5×315 @6 are different signals — reps-in-reserve feed
             // the estimate on suggestion paths (never on PR judgments).
-            let oneRM = StatMath.estimatedOneRepMax(weight: weight, reps: reps, rpe: log.rpe)
+            // Failure is authoritative (owner 2026-08-13): a failed set IS
+            // RIR 0 — base Epley on its completed reps, the truest
+            // calibration point history can offer; any logged RPE is
+            // contradicted by the miss and ignored.
+            let oneRM = log.isFailed
+                ? StatMath.estimatedOneRepMax(weight: weight, reps: reps)
+                : StatMath.estimatedOneRepMax(weight: weight, reps: reps, rpe: log.rpe)
             if oneRM > bestOneRM {
                 bestOneRM = oneRM
                 best = (weight, reps)

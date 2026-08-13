@@ -762,6 +762,7 @@ struct WorkoutSessionView: View {
                       routineTargetPounds: re.targetWeight.flatMap { Decimal(string: $0) },
                       history: soloPriorSets + soloCurrentExerciseSets,
                       lastSetPounds: (soloPriorSets + soloCurrentExerciseSets)
+                          .filter { !$0.isFailed }
                           .max(by: { $0.loggedAt < $1.loggedAt })?.weight,
                       enrollment: soloEnrollment,
                       // Getting-started anchor (owner 2026-08-12): fires
@@ -1316,7 +1317,7 @@ struct WorkoutSessionView: View {
             // beneath — the group card's exact grammar, from the same fetch
             // that feeds the prefill ladder.
             if let last = soloPriorSets
-                .filter({ !$0.isPenalty && $0.sessionID != session?.id })
+                .filter({ !$0.isFailed && !$0.isPenalty && $0.sessionID != session?.id })
                 .max(by: { $0.loggedAt < $1.loggedAt }) {
                 Text("\(last.weight.map { Units.format(pounds: $0, unit: soloUnit, rounded: false, includeUnit: false) } ?? "—") × \(last.reps.map { "\($0)" } ?? "—")")
                     .font(GSFont.boldFixed(30).monospacedDigit())
@@ -1998,7 +1999,10 @@ struct WorkoutSessionView: View {
         guard let logs = try? await SessionRepository.exerciseHistory(
             userID: userID, exerciseID: re.exerciseID, limit: 60) else { return }
         // Most recent PRIOR session (exclude the live one), newest first.
-        let prior = logs.filter { $0.sessionID != sessionID }
+        // Clean sets only: history now ARRIVES with failed rows (doctrine
+        // 2026-08-13) — this display card keeps its pre-doctrine content
+        // (a "225×7" whose 7th missed would misread as seven completed).
+        let prior = logs.filter { $0.sessionID != sessionID && !$0.isFailed }
         guard let lastSession = prior.max(by: { $0.loggedAt < $1.loggedAt })?.sessionID else {
             lastTimeByExercise[re.exerciseID] = ""   // sentinel: looked, none
             return
@@ -2709,7 +2713,12 @@ struct WorkoutSessionView: View {
             // GroupSessionLiveView.logSetAndAdvance's identical ordering.
             var isPR = false
             var priorBest: Decimal = 0
-            if !isFailed, let weight, weight > 0 {
+            // Failure doctrine (owner 2026-08-13): failed sets are judged on
+            // their COMPLETED reps ("7 + FAIL" = 6 completed at true RIR 0 —
+            // a real achievement AND a calibration point). Only the failed
+            // single carries nothing — `completedReps` encodes the rule.
+            let completedReps = log.completedReps
+            if let weight, weight > 0, let completedReps {
                 // Phase O Task 3 (offline set logging, master spec §6.4): this is a
                 // READ that requires connectivity. Without this catch, an offline
                 // attempt throws HERE — before the actual set-log write below is ever
@@ -2723,8 +2732,8 @@ struct WorkoutSessionView: View {
                     // already done for AT LEAST this many reps, so a heavy
                     // single and a hard set of ten are separate achievements.
                     let basis = try await prBasis(exerciseID: re.exerciseID, userID: userID)
-                    priorBest = PersonalRecordMath.bestWeight(atLeastReps: reps ?? 0, in: basis)
-                    isPR = PersonalRecordMath.isPR(weight: weight, reps: reps, basis: basis)
+                    priorBest = PersonalRecordMath.bestWeight(atLeastReps: completedReps, in: basis)
+                    isPR = PersonalRecordMath.isPR(weight: weight, reps: completedReps, basis: basis)
                 } catch let error as GymSyncError {
                     guard case .network = error else { throw error }
                     // Offline — PR check skipped (best-effort, never blocks logging;
@@ -2740,13 +2749,13 @@ struct WorkoutSessionView: View {
             // the prior REP count.
             var isRepPR = false
             var priorBestReps = 0
-            if !isFailed, (weight ?? 0) == 0,
+            if (weight ?? 0) == 0,
                currentExercise?.equipment == "bodyweight",
-               let reps, reps > 0 {
+               let completedReps {
                 priorBestReps = (soloPriorSets + soloCurrentExerciseSets)
-                    .filter { $0.exerciseID == re.exerciseID && !$0.isFailed && !$0.isPenalty && ($0.weight ?? 0) == 0 }
-                    .compactMap(\.reps).max() ?? 0
-                isRepPR = reps > priorBestReps
+                    .filter { $0.exerciseID == re.exerciseID && !$0.isPenalty && ($0.weight ?? 0) == 0 }
+                    .compactMap(\.completedReps).max() ?? 0
+                isRepPR = completedReps > priorBestReps
             }
 
             do {
@@ -2775,20 +2784,21 @@ struct WorkoutSessionView: View {
             // Without this, a second PR in the same session would report the
             // pre-session best as "your previous best" instead of the PR set
             // just before it.
-            if !isFailed, let weight, let reps, weight > 0, reps > 0 {
-                prBasisByExercise[re.exerciseID, default: []].append((weight, reps))
+            if let weight, weight > 0, let completedReps {
+                prBasisByExercise[re.exerciseID, default: []].append((weight, completedReps))
             }
 
-            if isRepPR, let reps {
+            if isRepPR, let completedReps {
                 // Bodyweight rep record (owner item 6): weight 0 signals the
                 // rep-PR form to the overlay and every display site;
-                // previousBest carries the prior REP count.
+                // previousBest carries the prior REP count (completed reps —
+                // a failed 12th attempt celebrates the 11 that happened).
                 showPROverlay(exerciseName: exerciseName(for: re.exerciseID), weight: 0,
-                              reps: reps, priorBest: Decimal(priorBestReps))
+                              reps: completedReps, priorBest: Decimal(priorBestReps))
                 if let record = try? await PersonalRecordRepository.record(
                     exerciseID: re.exerciseID,
                     weight: 0,
-                    reps: reps,
+                    reps: completedReps,
                     previousBest: Decimal(priorBestReps),
                     sessionID: session.id
                 ) {
@@ -2796,14 +2806,14 @@ struct WorkoutSessionView: View {
                 } else {
                     sessionPRs.append(PersonalRecord(
                         id: UUID(), userID: userID, exerciseID: re.exerciseID,
-                        weight: 0, reps: reps, previousBest: Decimal(priorBestReps),
+                        weight: 0, reps: completedReps, previousBest: Decimal(priorBestReps),
                         sessionID: session.id, achievedAt: Date()
                     ))
                 }
             }
 
             if isPR, let weight {
-                let repsForOverlay = reps ?? 0
+                let repsForOverlay = completedReps ?? 0
                 // Full-screen, user-dismissed celebration (p29) — content comes from data
                 // already known at this point (no need to wait on the record insert below),
                 // same as GroupSessionLiveView.showPROverlay.
@@ -2961,10 +2971,12 @@ struct WorkoutSessionView: View {
     }
 
     /// Drop rows missing either half — a set without both numbers can neither
-    /// set a record nor be compared against one.
+    /// set a record nor be compared against one. Failed rows enter at their
+    /// COMPLETED reps (doctrine: n logged − 1; failed singles drop out).
     private static func pairs(from rows: [SessionRepository.SetBasis]) -> [(weight: Decimal, reps: Int)] {
         rows.compactMap { row in
-            guard let weight = row.weight, let reps = row.reps, weight > 0, reps > 0 else { return nil }
+            guard let weight = row.weight, weight > 0,
+                  let reps = row.completedReps else { return nil }
             return (weight, reps)
         }
     }
