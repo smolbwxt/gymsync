@@ -23,13 +23,14 @@ final class EventKitBridgeTests: XCTestCase {
     // MARK: - estimatedDuration (pure — mirrors StatMath.estimatedMinutes)
 
     func testEstimatedDurationUsesRoutineExerciseCount() {
-        // StatMath.estimatedMinutes(exerciseCount: 6) == 90 min (flat 15
-        // min/exercise) — well above the 30-min floor.
-        XCTAssertEqual(EventKitBridge.estimatedDuration(exerciseCount: 6), 90 * 60)
+        // StatMath.estimatedMinutes(exerciseCount: 6) == 72 min (~12
+        // min/exercise — the owner prescription formula at its defaults) —
+        // well above the 30-min floor.
+        XCTAssertEqual(EventKitBridge.estimatedDuration(exerciseCount: 6), 72 * 60)
     }
 
     func testEstimatedDurationFloorsAtThirtyMinutesForSmallRoutines() {
-        // 1 exercise -> StatMath's raw 15 min, floored to 30.
+        // 1 exercise -> StatMath's raw 12 min, floored to 30.
         XCTAssertEqual(EventKitBridge.estimatedDuration(exerciseCount: 1), 30 * 60)
         // 0 exercises (routine with nothing added yet) -> also floored to 30,
         // never a zero-length event.
