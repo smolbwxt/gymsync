@@ -35,6 +35,10 @@ struct SettingsView: View {
     @AppStorage(GuidanceTip.tipsEnabledKey) private var tipsEnabled = true
     @State private var showRestTimerSetting = false
     @State private var showGymEquipment = false
+    /// Starting-weights (lift anchors) editor — the onboarding STEP 4 view
+    /// re-used, so existing users (who never see onboarding again) can set
+    /// or revise their confident-5RM seeds (owner 2026-08-12).
+    @State private var showLiftAnchors = false
     @State private var showHeartRateMonitor = false
     @State private var showEditProfile = false
     // Phase M Task 2 (moderation/compliance): You-tab Blocked Users list.
@@ -171,6 +175,19 @@ struct SettingsView: View {
             }
             .navigationDestination(isPresented: $showHeartRateMonitor) {
                 HeartRateMonitorView()
+            }
+            .navigationDestination(isPresented: $showLiftAnchors) {
+                LiftAnchorsView(onAdvance: {
+                    showLiftAnchors = false
+                    // The editor persists via the repository + ThemeStore;
+                    // refresh this screen's own copy so the row's Set/Not
+                    // set value can't go stale.
+                    Task { @MainActor in
+                        if let fresh = try? await UserSettingsRepository.get() {
+                            userSettings = fresh
+                        }
+                    }
+                })
             }
             .navigationDestination(isPresented: $showEditProfile) {
                 EditProfileView(profile: profile ?? appState.currentProfile) { updated in
@@ -511,6 +528,10 @@ struct SettingsView: View {
             GSSettingsRow(title: "Gym equipment", icon: "scalemass",
                           value: gymEquipmentPreview) {
                 showGymEquipment = true
+            }
+            GSSettingsRow(title: "Starting weights", icon: "dumbbell",
+                          value: (effectiveUserSettings.liftAnchors?.isEmpty == false) ? "Set" : "Not set") {
+                showLiftAnchors = true
             }
             GSSettingsRow(title: "Heart rate monitor", icon: "heart",
                           value: BLEHeartRateService.shared.hasRememberedDevice ? "Paired" : "Not set") {

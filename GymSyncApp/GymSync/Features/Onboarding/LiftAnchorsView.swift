@@ -16,6 +16,10 @@ import SwiftUI
 /// Seeds never enter set_logs, PR math, or volume.
 struct LiftAnchorsView: View {
     let onAdvance: () -> Void
+    /// True in the onboarding coordinator (STEP 4 OF 4 chrome + "Skip for
+    /// now"); false when pushed from Settings as the Starting-weights
+    /// editor ("Cancel", no step pip).
+    var isOnboarding: Bool = true
 
     @Environment(\.gsTheme) private var theme
 
@@ -34,14 +38,16 @@ struct LiftAnchorsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 10) {
-                    Text("STEP 4 OF 4")
-                        .font(GSFont.bold(12, relativeTo: .caption2))
-                        .tracking(0.6)
-                        .foregroundColor(theme.neutral700)
-                    Spacer()
+                if isOnboarding {
+                    HStack(spacing: 10) {
+                        Text("STEP 4 OF 4")
+                            .font(GSFont.bold(12, relativeTo: .caption2))
+                            .tracking(0.6)
+                            .foregroundColor(theme.neutral700)
+                        Spacer()
+                    }
+                    .padding(.top, 24)
                 }
-                .padding(.top, 24)
 
                 Text("Where are you starting?")
                     .font(GSFont.heading(26, relativeTo: .title))
@@ -84,7 +90,7 @@ struct LiftAnchorsView: View {
                 Button {
                     onAdvance()
                 } label: {
-                    Text("Skip for now")
+                    Text(isOnboarding ? "Skip for now" : "Cancel")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(GSSecondaryButtonStyle())
@@ -95,6 +101,21 @@ struct LiftAnchorsView: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .background(theme.bg)
+        .task { await prefillExisting() }
+    }
+
+    /// Settings re-entry (and a resumed onboarding step): show what's
+    /// already stored so an edit to one lift can never silently drop the
+    /// others — `save()` builds the dict from the visible entries.
+    @MainActor
+    private func prefillExisting() async {
+        guard entries.isEmpty,
+              let existing = try? await UserSettingsRepository.get() else { return }
+        unit = existing.weightUnit
+        for (slug, pounds) in existing.liftAnchors ?? [:] {
+            entries[slug] = Units.format(pounds: pounds, unit: existing.weightUnit,
+                                         rounded: false, includeUnit: false)
+        }
     }
 
     private var unitToggle: some View {
