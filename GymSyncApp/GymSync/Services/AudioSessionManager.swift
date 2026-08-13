@@ -22,7 +22,13 @@ final class AudioSessionManager {
     private init() {}
 
     func configure() throws {
-        try session.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
+        // .playback, NOT .ambient (owner 2026-08-14: "the soundboard does
+        // not play when the phone is silenced — Spotify plays through
+        // silent mode"): .ambient obeys the ringer switch by definition;
+        // .playback ignores it, which is the whole point of a gym
+        // soundboard. .mixWithOthers keeps the sacred half of the old
+        // behavior — we layer OVER the lifter's music, never replace it.
+        try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
         try session.setActive(true)
     }
 
@@ -80,7 +86,9 @@ final class AudioSessionManager {
     /// so `exitRecordMode`'s and `exitVoiceMode`'s log lines are unchanged).
     private func restoreAmbientBaseline(logPrefix: StaticString) {
         do {
-            try session.setCategory(.ambient, mode: .default, options: [.mixWithOthers])
+            // Matches configure() exactly — .playback so the silent switch
+            // never mutes the board after a voice room/recording ends.
+            try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
             try session.setActive(true)
         } catch {
             AppLogger.audio.error("\(logPrefix) failed: \(error)")

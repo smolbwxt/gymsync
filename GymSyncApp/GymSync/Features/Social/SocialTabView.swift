@@ -168,31 +168,44 @@ struct SocialTabView: View {
                                 .padding(.top, 16)
                             }
 
-                            // Friends row (redesign: rounded card row) —
-                            // now BELOW the crew list with Feed/Local.
+                            // "Outside the box" (owner 2026-08-14): a named
+                            // section for everything that isn't your crews —
+                            // Friends, the pump feed, and Local hubs — with
+                            // the rows grown to fill out the page.
+                            GSSectionHeader("Outside the Box")
+                                .padding(.horizontal, 16)
+                                .padding(.top, 22)
+                                .padding(.bottom, 8)
+
                             NavigationLink {
                                 FriendsView()
                             } label: {
-                                HStack(spacing: 8) {
+                                HStack(spacing: 12) {
                                     Image(systemName: "person.2")
-                                        .font(.system(size: 18, weight: .regular))
+                                        .font(.system(size: 22, weight: .regular))
                                         .foregroundStyle(theme.text)
-                                    Text("Friends")
-                                        .font(GSFont.bold(14, relativeTo: .headline))
-                                        .foregroundStyle(theme.text)
+                                        .frame(width: 30)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Friends")
+                                            .font(GSFont.bold(16, relativeTo: .headline))
+                                            .foregroundStyle(theme.text)
+                                        Text("Your people, requests & adds")
+                                            .font(GSFont.body(12, relativeTo: .caption))
+                                            .foregroundStyle(theme.neutral500)
+                                    }
                                     Spacer()
                                     if pendingCount > 0 {
                                         GSTag(text: "\(pendingCount) new", style: .accent)
                                     }
                                     Text("\(friendCount)")
-                                        .font(GSFont.body(13, relativeTo: .subheadline))
+                                        .font(GSFont.body(14, relativeTo: .subheadline))
                                         .foregroundStyle(theme.neutral500)
                                     Image(systemName: "chevron.right")
                                         .font(.system(size: 13, weight: .semibold))
                                         .foregroundStyle(theme.neutral500)
                                 }
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 13)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 22)
                                 .contentShape(Rectangle())
                             }
                             // 3D pass (2026-08 sweep): tappable hub row —
@@ -210,16 +223,17 @@ struct SocialTabView: View {
                             NavigationLink {
                                 PumpFeedView()
                             } label: {
-                                HStack(spacing: 8) {
+                                HStack(spacing: 12) {
                                     Image(systemName: "camera")
-                                        .font(.system(size: 18, weight: .regular))
+                                        .font(.system(size: 22, weight: .regular))
                                         .foregroundStyle(theme.text)
-                                    VStack(alignment: .leading, spacing: 1) {
+                                        .frame(width: 30)
+                                    VStack(alignment: .leading, spacing: 2) {
                                         Text("Feed")
-                                            .font(GSFont.bold(14, relativeTo: .headline))
+                                            .font(GSFont.bold(16, relativeTo: .headline))
                                             .foregroundStyle(theme.text)
                                         Text("Pump checks from your friends")
-                                            .font(GSFont.body(11, relativeTo: .caption))
+                                            .font(GSFont.body(12, relativeTo: .caption))
                                             .foregroundStyle(theme.neutral500)
                                     }
                                     Spacer()
@@ -227,8 +241,8 @@ struct SocialTabView: View {
                                         .font(.system(size: 13, weight: .semibold))
                                         .foregroundStyle(theme.neutral500)
                                 }
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 13)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 22)
                                 .contentShape(Rectangle())
                             }
                             // 3D pass (2026-08 sweep) — see the Friends row.
@@ -243,16 +257,17 @@ struct SocialTabView: View {
                             NavigationLink {
                                 LocalHubsView()
                             } label: {
-                                HStack(spacing: 8) {
+                                HStack(spacing: 12) {
                                     Image(systemName: "mappin.and.ellipse")
-                                        .font(.system(size: 18, weight: .regular))
+                                        .font(.system(size: 22, weight: .regular))
                                         .foregroundStyle(theme.text)
-                                    VStack(alignment: .leading, spacing: 1) {
+                                        .frame(width: 30)
+                                    VStack(alignment: .leading, spacing: 2) {
                                         Text("Local")
-                                            .font(GSFont.bold(14, relativeTo: .headline))
+                                            .font(GSFont.bold(16, relativeTo: .headline))
                                             .foregroundStyle(theme.text)
                                         Text("Who's at your gym")
-                                            .font(GSFont.body(11, relativeTo: .caption))
+                                            .font(GSFont.body(12, relativeTo: .caption))
                                             .foregroundStyle(theme.neutral500)
                                     }
                                     Spacer()
@@ -260,8 +275,8 @@ struct SocialTabView: View {
                                         .font(.system(size: 13, weight: .semibold))
                                         .foregroundStyle(theme.neutral500)
                                 }
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 13)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 22)
                                 .contentShape(Rectangle())
                             }
                             // 3D pass (2026-08 sweep) — see the Friends row.
