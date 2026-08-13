@@ -211,6 +211,10 @@ struct WorkoutSessionView: View {
     /// Routine list during rest (owner 2026-08-13) — the ROUTINE pager
     /// lives on the exercise card the rest page replaces.
     @State private var showRestRoutineSheet = false
+    /// Set pace (owner item 4, 2026-08-13): seconds from set start to
+    /// durable record, per set this session — the no-HR recovery proxy
+    /// drawn on the YOUR RECOVERY card when no strap is connected.
+    @State private var soloSetDurations: [Double] = []
 
     @State private var freeformExercises: [RoutineExercise] = []
     @State private var showExercisePicker = false
@@ -877,6 +881,21 @@ struct WorkoutSessionView: View {
                         }
                         Spacer()
                         soloRecoverySparkline
+                    } else if soloSetDurations.count >= 2 {
+                        // Owner item 4: no strap — set pace is the honest
+                        // recovery proxy (how long each set took, last one
+                        // emphasized).
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(paceText(soloSetDurations.last ?? 0))
+                                .font(GSFont.boldFixed(30).monospacedDigit())
+                                .foregroundStyle(theme.text)
+                            Text("LAST SET")
+                                .font(GSFont.bold(9, relativeTo: .caption2))
+                                .tracking(1.2)
+                                .foregroundStyle(theme.neutral700)
+                        }
+                        Spacer()
+                        soloSetPaceSparkline
                     } else if HeartRatePrimeStore.hasBeenAsked, let startedAt = session?.startedAt {
                         Text(startedAt, style: .timer)
                             .font(GSFont.boldFixed(30).monospacedDigit())
@@ -901,6 +920,31 @@ struct WorkoutSessionView: View {
         .buttonStyle(.plain)
         .disabled(soloBLEBPM != nil)
         .padding(.horizontal, 16)
+    }
+
+    /// Set-pace bars (owner item 4) — one capsule per completed set,
+    /// normalized against the session's own min/max duration, latest
+    /// emphasized. Same bar language as the HR sparkline beside it.
+    private var soloSetPaceSparkline: some View {
+        let ds = Array(soloSetDurations.suffix(12))
+        let hi = ds.max() ?? 1
+        let lo = ds.min() ?? 0
+        return HStack(alignment: .bottom, spacing: 3) {
+            ForEach(Array(ds.enumerated()), id: \.offset) { pair in
+                let norm = hi == lo ? 0.5 : (pair.element - lo) / (hi - lo)
+                Capsule()
+                    .fill(theme.text.opacity(pair.offset == ds.count - 1 ? 0.9 : 0.45))
+                    .frame(width: 4, height: max(4, CGFloat(norm) * 40))
+            }
+        }
+        .frame(height: 42, alignment: .bottom)
+        .accessibilityHidden(true)
+    }
+
+    /// "1:23" — a set duration in m:ss.
+    private func paceText(_ seconds: Double) -> String {
+        let s = Int(seconds)
+        return String(format: "%d:%02d", s / 60, s % 60)
     }
 
     /// 22-bar bpm history — the same bar language as the group page.
@@ -2743,6 +2787,13 @@ struct WorkoutSessionView: View {
             // set, walk past the (length-1) list, and end the workout. The
             // lifter drives progression here — Log Set N+1, or "Next
             // exercise", or Finish.
+            // Set pace (owner item 4): stamp the completed set's duration —
+            // clamped to a sane range so a backgrounded app can't record a
+            // 40-minute "set".
+            let setDuration = Date().timeIntervalSince(setStartedAt)
+            if setDuration >= 5, setDuration <= 900 {
+                soloSetDurations.append(setDuration)
+            }
             if isFreeform {
                 currentSetIndex += 1
                 let restSeconds = defaultRestSeconds
