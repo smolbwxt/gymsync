@@ -15,6 +15,7 @@ struct SettingsView: View {
     @Environment(\.gsTheme) private var theme
     @Environment(AppState.self) private var appState
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openURL) private var openURL
 
     @State private var profile: Profile?
     @State private var workoutsLogged: Int = 0
@@ -79,6 +80,18 @@ struct SettingsView: View {
                             .padding(.bottom, 10)
 
                         settingsGroupBox
+                            .padding(.horizontal, 16)
+
+                        // V0 legal (2026-08-14): the hosted documents,
+                        // reachable from inside the app — App Review wants
+                        // the agreement text at sign-in to be findable
+                        // later, not a one-time promise.
+                        GSSectionHeader("Legal")
+                            .padding(.horizontal, 16)
+                            .padding(.top, 24)
+                            .padding(.bottom, 10)
+
+                        legalGroupBox
                             .padding(.horizontal, 16)
 
                         // QA tools — curator accounts only. NOT `#if DEBUG`:
@@ -983,6 +996,20 @@ struct SettingsView: View {
         for sessionID in SessionCalendarSyncStore.allSessionIDs() {
             await EventKitBridge.removeEvent(sessionID: sessionID)
         }
+    }
+
+    // MARK: - Legal (V0, 2026-08-14)
+
+    private var legalGroupBox: some View {
+        VStack(spacing: 0) {
+            GSSettingsRow(title: "Privacy Policy", icon: "hand.raised") {
+                openURL(LegalLinks.privacy)
+            }
+            GSSettingsRow(title: "Terms of Service", icon: "doc.text") {
+                openURL(LegalLinks.terms)
+            }
+        }
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd)
     }
 
     // MARK: - Sign Out

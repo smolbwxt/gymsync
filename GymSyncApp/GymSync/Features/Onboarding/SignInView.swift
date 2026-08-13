@@ -56,10 +56,23 @@ struct SignInView: View {
                             .foregroundColor(theme.bg.opacity(0.85))
                     }
 
-                    Text("By continuing you agree to the Terms & Privacy Policy.")
-                        .font(GSFont.body(11, relativeTo: .caption))
-                        .foregroundColor(theme.bg.opacity(0.75))
-                        .multilineTextAlignment(.center)
+                    // V0 legal (2026-08-14): the agreement text now actually
+                    // links to the hosted documents — dead text fails both
+                    // the promise and App Review.
+                    VStack(spacing: 2) {
+                        Text("By continuing you agree to the")
+                            .font(GSFont.body(11, relativeTo: .caption))
+                            .foregroundColor(theme.bg.opacity(0.75))
+                        HStack(spacing: 4) {
+                            Link("Terms of Service", destination: LegalLinks.terms)
+                            Text("and")
+                                .foregroundColor(theme.bg.opacity(0.75))
+                            Link("Privacy Policy", destination: LegalLinks.privacy)
+                        }
+                        .font(GSFont.bold(11, relativeTo: .caption))
+                        .tint(theme.bg)
+                    }
+                    .multilineTextAlignment(.center)
                 }
                 .padding(.horizontal, 24)
                 .padding(.bottom, 40)
