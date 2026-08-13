@@ -78,16 +78,31 @@ struct PRCelebrationOverlay: View {
 
                 Color.clear.frame(height: 14)
 
+                // Rep-PR form (owner item 6, 2026-08-13): weight == 0 means
+                // a bodyweight rep record — the rep count IS the headline,
+                // and priorBest carries prior REPS, not pounds.
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(Units.format(pounds: weight, unit: unit, rounded: false, includeUnit: false))
-                        .font(GSFont.boldFixed(72).monospacedDigit())
-                        .foregroundStyle(theme.text)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.6)
-                    Text(unit.label.uppercased())
-                        .font(GSFont.bold(16, relativeTo: .title3))
-                        .tracking(1.0)
-                        .foregroundStyle(theme.neutral700)
+                    if weight == 0 {
+                        Text("\(reps)")
+                            .font(GSFont.boldFixed(72).monospacedDigit())
+                            .foregroundStyle(theme.text)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                        Text("REPS")
+                            .font(GSFont.bold(16, relativeTo: .title3))
+                            .tracking(1.0)
+                            .foregroundStyle(theme.neutral700)
+                    } else {
+                        Text(Units.format(pounds: weight, unit: unit, rounded: false, includeUnit: false))
+                            .font(GSFont.boldFixed(72).monospacedDigit())
+                            .foregroundStyle(theme.text)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                        Text(unit.label.uppercased())
+                            .font(GSFont.bold(16, relativeTo: .title3))
+                            .tracking(1.0)
+                            .foregroundStyle(theme.neutral700)
+                    }
                 }
                 Capsule().fill(theme.accent)
                     .frame(width: 56, height: 3)
@@ -95,14 +110,16 @@ struct PRCelebrationOverlay: View {
 
                 Color.clear.frame(height: 16)
 
-                Text("\(exerciseName) × \(reps)")
+                Text(weight == 0 ? exerciseName : "\(exerciseName) × \(reps)")
                     .font(GSFont.bold(20, relativeTo: .title3))
                     .foregroundStyle(theme.text)
                     .multilineTextAlignment(.center)
 
                 Color.clear.frame(height: 10)
 
-                Text("▲ \(Units.format(pounds: weight - priorBest, unit: unit, rounded: false, includeUnit: false)) \(unit.label.uppercased()) OVER YOUR BEST")
+                Text(weight == 0
+                     ? "▲ \(reps - NSDecimalNumber(decimal: priorBest).intValue) REPS OVER YOUR BEST"
+                     : "▲ \(Units.format(pounds: weight - priorBest, unit: unit, rounded: false, includeUnit: false)) \(unit.label.uppercased()) OVER YOUR BEST")
                     .font(GSFont.bold(12, relativeTo: .caption).monospacedDigit())
                     .tracking(0.8)
                     .foregroundStyle(theme.accent)
@@ -164,7 +181,9 @@ struct PRCelebrationOverlay: View {
     }
 
     private var shareText: String {
-        "New PR! \(exerciseName) — \(Units.format(pounds: weight, unit: unit, rounded: false, includeUnit: false)) \(unit.label) × \(reps) on GymSync."
+        weight == 0
+            ? "New PR! \(exerciseName) — \(reps) reps on GymSync."
+            : "New PR! \(exerciseName) — \(Units.format(pounds: weight, unit: unit, rounded: false, includeUnit: false)) \(unit.label) × \(reps) on GymSync."
     }
 
     // `decimalString`/`ordinal` are copied verbatim from `GroupSessionLiveView` (which

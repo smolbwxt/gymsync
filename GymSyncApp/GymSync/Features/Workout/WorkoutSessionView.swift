@@ -215,6 +215,9 @@ struct WorkoutSessionView: View {
     /// durable record, per set this session — the no-HR recovery proxy
     /// drawn on the YOUR RECOVERY card when no strap is connected.
     @State private var soloSetDurations: [Double] = []
+    /// Owner item 7: latest logged body weight (canonical lbs), stamped
+    /// onto bodyweight-exercise sets. nil until fetched / never logged.
+    @State private var soloLatestBodyWeightLbs: Decimal?
 
     @State private var freeformExercises: [RoutineExercise] = []
     @State private var showExercisePicker = false
@@ -2667,6 +2670,13 @@ struct WorkoutSessionView: View {
             // logged table / header can format in the user's unit.
             sessionSettings = settings
         }
+        // Owner item 7: the latest logged body weight (canonical lbs) —
+        // stamped onto bodyweight-exercise sets at log time. Best-effort;
+        // no log means bodyweight sets contribute no volume (honest zero).
+        if let userID = appState.currentProfile?.id,
+           let latest = try? await BodyWeightLogRepository.recent(userID: userID).first {
+            soloLatestBodyWeightLbs = latest.weight
+        }
     }
 
     @MainActor
@@ -2686,7 +2696,10 @@ struct WorkoutSessionView: View {
             setIndex: currentSetIndex,
             reps: reps, weight: weight, rpe: rpe,
             isFailed: isFailed, isPenalty: false,
-            note: note, loggedAt: Date()
+            note: note, loggedAt: Date(),
+            // Owner item 7: bodyweight sets carry the load they actually
+            // moved — the latest logged body weight, stamped at log time.
+            bodyWeightLbs: currentExercise?.equipment == "bodyweight" ? soloLatestBodyWeightLbs : nil
         )
         do {
             // Prior max MUST be captured BEFORE the insert below — querying it after
@@ -2720,6 +2733,22 @@ struct WorkoutSessionView: View {
                 }
             }
 
+            // Rep-PR for pure-bodyweight sets (owner item 6): no added
+            // weight means the record IS the rep count. Judged locally
+            // against this exercise's known unloaded sets (prior history +
+            // this session) — stored as weight 0 with previousBest carrying
+            // the prior REP count.
+            var isRepPR = false
+            var priorBestReps = 0
+            if !isFailed, (weight ?? 0) == 0,
+               currentExercise?.equipment == "bodyweight",
+               let reps, reps > 0 {
+                priorBestReps = (soloPriorSets + soloCurrentExerciseSets)
+                    .filter { $0.exerciseID == re.exerciseID && !$0.isFailed && !$0.isPenalty && ($0.weight ?? 0) == 0 }
+                    .compactMap(\.reps).max() ?? 0
+                isRepPR = reps > priorBestReps
+            }
+
             do {
                 try await SessionRepository.logSet(log)
                 // Cheap drain — this task's own design decision (not a brief
@@ -2748,6 +2777,29 @@ struct WorkoutSessionView: View {
             // just before it.
             if !isFailed, let weight, let reps, weight > 0, reps > 0 {
                 prBasisByExercise[re.exerciseID, default: []].append((weight, reps))
+            }
+
+            if isRepPR, let reps {
+                // Bodyweight rep record (owner item 6): weight 0 signals the
+                // rep-PR form to the overlay and every display site;
+                // previousBest carries the prior REP count.
+                showPROverlay(exerciseName: exerciseName(for: re.exerciseID), weight: 0,
+                              reps: reps, priorBest: Decimal(priorBestReps))
+                if let record = try? await PersonalRecordRepository.record(
+                    exerciseID: re.exerciseID,
+                    weight: 0,
+                    reps: reps,
+                    previousBest: Decimal(priorBestReps),
+                    sessionID: session.id
+                ) {
+                    sessionPRs.append(record)
+                } else {
+                    sessionPRs.append(PersonalRecord(
+                        id: UUID(), userID: userID, exerciseID: re.exerciseID,
+                        weight: 0, reps: reps, previousBest: Decimal(priorBestReps),
+                        sessionID: session.id, achievedAt: Date()
+                    ))
+                }
             }
 
             if isPR, let weight {

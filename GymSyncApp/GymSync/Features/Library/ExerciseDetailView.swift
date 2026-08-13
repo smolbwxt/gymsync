@@ -186,6 +186,9 @@ struct ExerciseDetailView: View {
     // convention. Units sweep: stored-lbs converted to the display unit,
     // exact (a PR is what was actually lifted — never snapped).
     private func formatBest(_ pr: PersonalRecord) -> String {
+        // Weight 0 = a bodyweight rep record (owner item 6) — the rep
+        // count IS the record.
+        guard pr.weight > 0 else { return "\(pr.reps) reps" }
         let weightText = Units.format(pounds: pr.weight, unit: ThemeStore.shared.weightUnit,
                                       rounded: false, includeUnit: false)
         return "\(weightText) × \(pr.reps)"

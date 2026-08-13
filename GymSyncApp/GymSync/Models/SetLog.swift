@@ -13,6 +13,21 @@ struct SetLog: Codable, Identifiable, Sendable {
     var isPenalty: Bool
     var note: String?
     let loggedAt: Date
+    /// Owner items 6+7 (20260813000003): the lifter's body weight in
+    /// CANONICAL POUNDS, stamped at log time for bodyweight-equipment
+    /// exercises — a snapshot on purpose (last month's pull-ups were done
+    /// at last month's body weight). nil for loaded lifts and for lifters
+    /// with no body-weight log. Trailing default keeps every construction
+    /// site compiling.
+    var bodyWeightLbs: Decimal? = nil
+
+    /// reps × this = honest tonnage: added load plus the body weight the
+    /// set actually moved. nil when neither component exists (the set
+    /// contributes no volume rather than a guessed one).
+    var effectiveWeightPounds: Decimal? {
+        if weight == nil && bodyWeightLbs == nil { return nil }
+        return (weight ?? 0) + (bodyWeightLbs ?? 0)
+    }
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -27,5 +42,6 @@ struct SetLog: Codable, Identifiable, Sendable {
         case isPenalty = "is_penalty"
         case note
         case loggedAt = "logged_at"
+        case bodyWeightLbs = "body_weight_lbs"
     }
 }

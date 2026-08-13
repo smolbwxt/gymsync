@@ -596,6 +596,9 @@ struct GroupSessionLiveView: View {
     /// "rest" is spectating others' turns, not a timed window.
     @State private var selfRotationRestStartedAt: Date?
     @State private var selfRotationRestDrops: [Int] = []
+    /// Owner item 7: latest logged body weight (canonical lbs), stamped
+    /// onto bodyweight-exercise sets. Fetched once in reload's task.
+    @State private var turnLatestBodyWeightLbs: Decimal?
 
     /// Mirror of the solo captureRestDrop — called before every path that
     /// clears `selfRotationRestUntil`; no-op without a window or HR data.
@@ -4246,6 +4249,11 @@ struct GroupSessionLiveView: View {
                 sessionID: liveSession.id, title: routineName)
         }
         await ExerciseNameCache.preload()
+        // Owner item 7: latest body weight for bodyweight-set stamping.
+        if let uid = selfID,
+           let latest = try? await BodyWeightLogRepository.recent(userID: uid).first {
+            turnLatestBodyWeightLbs = latest.weight
+        }
         if let groupID = liveSession.groupID {
             // Fast-follow wave, Fix 3: this used to be a bare `try?` — a
             // fetch failure here was completely silent. `ledgerGroup` stays
@@ -4885,7 +4893,11 @@ struct GroupSessionLiveView: View {
             setIndex: mySetCount(for: exerciseID) + 1,
             reps: reps, weight: weight, rpe: rpe,
             isFailed: isFailed, isPenalty: false,
-            note: note, loggedAt: Date()
+            note: note, loggedAt: Date(),
+            // Owner item 7: bodyweight sets carry the load they moved.
+            bodyWeightLbs: (currentExerciseForSheet?.id == exerciseID
+                            && currentExerciseForSheet?.equipment == "bodyweight")
+                ? turnLatestBodyWeightLbs : nil
         )
         do {
             // PR check — same logic as solo WorkoutSessionView:
@@ -4910,6 +4922,21 @@ struct GroupSessionLiveView: View {
                     guard case .network = error else { throw error }
                     // Offline — PR check skipped (best-effort, never blocks logging).
                 }
+            }
+
+            // Rep-PR for pure-bodyweight sets (owner item 6) — solo mirror:
+            // judged against this exercise's known unloaded sets; stored as
+            // weight 0 with previousBest carrying prior REPS.
+            var isRepPR = false
+            var priorBestReps = 0
+            if !isFailed, (weight ?? 0) == 0,
+               currentExerciseForSheet?.id == exerciseID,
+               currentExerciseForSheet?.equipment == "bodyweight",
+               let reps, reps > 0 {
+                priorBestReps = turnExerciseHistory
+                    .filter { !$0.isFailed && !$0.isPenalty && ($0.weight ?? 0) == 0 }
+                    .compactMap(\.reps).max() ?? 0
+                isRepPR = reps > priorBestReps
             }
 
             do {
@@ -4969,6 +4996,23 @@ struct GroupSessionLiveView: View {
             // The set is durably recorded either way (server insert or offline
             // queue) — this is the moment the success haptic fires.
             logHapticTick += 1
+
+            if isRepPR, let reps {
+                let name = await ExerciseNameCache.name(for: exerciseID)
+                Task { @MainActor in
+                    await showPROverlay(exerciseName: name, weight: 0,
+                                         reps: reps, priorBest: Decimal(priorBestReps))
+                }
+                Task { @MainActor in
+                    _ = try? await PersonalRecordRepository.record(
+                        exerciseID: exerciseID,
+                        weight: 0,
+                        reps: reps,
+                        previousBest: Decimal(priorBestReps),
+                        sessionID: session.id
+                    )
+                }
+            }
 
             if isPR, let weight {
                 let name = await ExerciseNameCache.name(for: exerciseID)

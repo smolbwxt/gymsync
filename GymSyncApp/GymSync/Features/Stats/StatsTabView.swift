@@ -359,7 +359,10 @@ struct StatsTabView: View {
                                 .foregroundStyle(theme.text)
                                 .lineLimit(1)
                             Spacer(minLength: 8)
-                            Text(Units.format(pounds: pr.weight, unit: ThemeStore.shared.weightUnit, rounded: false))
+                            // Weight 0 = bodyweight rep record (owner item 6).
+                            Text(pr.weight > 0
+                                 ? Units.format(pounds: pr.weight, unit: ThemeStore.shared.weightUnit, rounded: false)
+                                 : "\(pr.reps) reps")
                                 .font(GSFont.bold(14, relativeTo: .subheadline))
                                 .foregroundStyle(theme.text)
                                 .monospacedDigit()
