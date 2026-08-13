@@ -92,6 +92,35 @@ struct ExerciseDetailView: View {
                     }
                 }
 
+                // HOW TO — the free-exercise-db import's step-by-step form
+                // cues (20260813000001); hidden entirely for rows without
+                // them (the curated seeds, until backfilled).
+                if !exercise.instructions.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("HOW TO")
+                            .font(GSFont.bodyMedium(10, relativeTo: .caption2))
+                            .tracking(1.2)
+                            .foregroundStyle(theme.neutral700)
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(Array(exercise.instructions.enumerated()), id: \.offset) { index, step in
+                                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                    Text("\(index + 1)")
+                                        .font(GSFont.bold(12, relativeTo: .caption).monospacedDigit())
+                                        .foregroundStyle(theme.neutral500)
+                                        .frame(width: 18, alignment: .trailing)
+                                    Text(step)
+                                        .font(GSFont.body(13.5, relativeTo: .subheadline))
+                                        .foregroundStyle(theme.text)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .gs3DCard(cornerRadius: GSMetrics.radiusMd)
+                    }
+                }
+
                 // Canvas: Equipment + "Your best" side-by-side stat tiles
                 HStack(spacing: 8) {
                     statTile(kicker: "Equipment", value: exercise.equipment.capitalized)

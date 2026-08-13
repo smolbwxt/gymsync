@@ -16,6 +16,11 @@ struct Exercise: Codable, Identifiable, Sendable, Hashable {
     /// existing memberwise construction site (catalog fixtures) compiles
     /// unchanged; decodes absent as nil.
     var demoYoutubeID: String? = nil
+    /// Step-by-step form cues (20260813000001, free-exercise-db import) —
+    /// the detail screen's HOW TO section. Empty for the curated seeds
+    /// until backfilled. Trailing default keeps fixture sites compiling;
+    /// the column is NOT NULL DEFAULT '{}' so every row decodes.
+    var instructions: [String] = []
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -28,6 +33,7 @@ struct Exercise: Codable, Identifiable, Sendable, Hashable {
         case defaultUnit = "default_unit"
         case demoVideoURL = "demo_video_url"
         case demoYoutubeID = "demo_youtube_id"
+        case instructions
     }
 }
 
