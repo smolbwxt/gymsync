@@ -24,6 +24,9 @@ struct CrewRoomView: View {
     @State private var plannedThisWeek = 0
     @State private var chatPreview: [String] = []
     @State private var showChat = false
+    /// Scheduling from the room (owner 2026-08-13) — the "nothing on the
+    /// books" button opens ScheduleSessionView with THIS crew preselected.
+    @State private var showScheduleSheet = false
     @State private var slotBreathing = false
     // Commit widget (20260811000001): ternary — in / out / no row = unsaid.
     @State private var commitments: [SessionCommitment] = []
@@ -85,6 +88,13 @@ struct CrewRoomView: View {
         }
         .sheet(isPresented: $showCampaignSheet) {
             CampaignCreateSheet(group: group) {
+                Task { await load() }
+            }
+        }
+        .sheet(isPresented: $showScheduleSheet) {
+            // Owner 2026-08-13: schedule from the room, this crew
+            // preselected; a scheduled session refreshes the commit board.
+            ScheduleSessionView(preselectedGroupID: group.id) { _ in
                 Task { await load() }
             }
         }
@@ -178,19 +188,28 @@ struct CrewRoomView: View {
                     statusBoard(session)
                 }
             } else {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("NOTHING ON THE BOOKS")
-                        .font(GSFont.bold(13.5, relativeTo: .subheadline))
-                        .foregroundStyle(theme.text)
-                    Text("SCHEDULE THE NEXT LIFT FROM HOME")
-                        .font(GSFont.bold(10, relativeTo: .caption2))
-                        .kerning(1.1)
-                        .foregroundStyle(theme.neutral500)
+                // Owner 2026-08-13: extruded button (design law — it's
+                // tappable now) that opens scheduling RIGHT HERE with this
+                // crew preselected, instead of pointing at Home.
+                Button {
+                    showScheduleSheet = true
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("NOTHING ON THE BOOKS")
+                                .font(GSFont.bold(13.5, relativeTo: .subheadline))
+                                .foregroundStyle(theme.text)
+                            Text("SCHEDULE THE NEXT LIFT ›")
+                                .font(GSFont.bold(10, relativeTo: .caption2))
+                                .kerning(1.1)
+                                .foregroundStyle(theme.neutral500)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(13)
+                    .contentShape(Rectangle())
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(13)
-                .background(theme.surface)
-                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .buttonStyle(.gs3DCardStyle(cornerRadius: 14))
             }
         }
     }

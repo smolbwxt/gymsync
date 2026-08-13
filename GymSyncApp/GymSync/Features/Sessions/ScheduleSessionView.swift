@@ -13,10 +13,18 @@ struct ScheduleSessionView: View {
     /// every other caller (Home's own "+ Schedule Session" sheet — unchanged).
     let preloadedRoutine: Routine?
 
-    init(preloadedRoutine: Routine? = nil, onScheduled: @escaping (WorkoutSession) -> Void) {
+    /// `preselectedGroupID` (owner 2026-08-13, crew-room "nothing on the
+    /// books" entry): seeds the group picker so scheduling launched FROM a
+    /// crew room lands on that crew. `loadData()`'s first-group default
+    /// only fills a nil selection, so the seed survives the fetch. nil for
+    /// every other caller — unchanged.
+    init(preloadedRoutine: Routine? = nil,
+         preselectedGroupID: UUID? = nil,
+         onScheduled: @escaping (WorkoutSession) -> Void) {
         self.preloadedRoutine = preloadedRoutine
         self.onScheduled = onScheduled
         _selectedRoutineID = State(initialValue: preloadedRoutine?.id)
+        _selectedGroupID = State(initialValue: preselectedGroupID)
     }
 
     @Environment(AppState.self) private var appState
