@@ -29,7 +29,6 @@ struct YouTabView: View {
     @State private var showRoutines = false
     @State private var showExercises = false
     @State private var showPrograms = false
-    @State private var showDiscoverWorkouts = false
     @State private var showPaywall = false
     @State private var showSettings = false
     @State private var showEditProfile = false
@@ -41,10 +40,9 @@ struct YouTabView: View {
     /// Best-effort: a failed fetch leaves the placeholder circles.
     @State private var rackSounds: [SoundboardSound] = []
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 12),
-        GridItem(.flexible(), spacing: 12),
-    ]
+    /// ROUTINES widget slot state ("3 OF 5 SLOTS FILLED") — best-effort
+    /// count fetch; nil until it resolves (footer falls back to "HUB").
+    @State private var routineCount: Int?
 
     var body: some View {
         NavigationStack {
@@ -59,25 +57,35 @@ struct YouTabView: View {
                             .padding(.horizontal, 16)
                             .padding(.top, 16)
 
-                        LazyVGrid(columns: columns, spacing: 12) {
-                            routinesWidget
-                            exercisesWidget
-                            programsWidget
-                            discoverWidget
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.top, 12)
+                        // Owner 2026-08-13: "a series of wide widgets like
+                        // the lifetime volume, with more description as to
+                        // what is housed" — the 2-col grid's terse tiles hid
+                        // content; every widget is now full-width with a
+                        // one-line description. DISCOVER left this page for
+                        // the Routines hub.
+                        routinesWidget
+                            .padding(.horizontal, 16)
+                            .padding(.top, 12)
+
+                        programsWidget
+                            .padding(.horizontal, 16)
+                            .padding(.top, 12)
+
+                        exercisesWidget
+                            .padding(.horizontal, 16)
+                            .padding(.top, 12)
 
                         theRackWidget
                             .padding(.horizontal, 16)
                             .padding(.top, 12)
 
-                        LazyVGrid(columns: columns, spacing: 12) {
-                            lockerWidget
-                            proWidget
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.top, 12)
+                        lockerWidget
+                            .padding(.horizontal, 16)
+                            .padding(.top, 12)
+
+                        proWidget
+                            .padding(.horizontal, 16)
+                            .padding(.top, 12)
 
                         settingsRow
                             .padding(.horizontal, 16)
@@ -95,7 +103,13 @@ struct YouTabView: View {
             .scrollContentBackground(.hidden)
             .background(theme.bg)
             .toolbar(.hidden, for: .navigationBar)   // in-content title (tab-root idiom)
-            .task { await loadRack() }
+            .task {
+                await loadRack()
+                // ROUTINES slot state — one light query, best-effort.
+                if let ownerID = appState.currentProfile?.id {
+                    routineCount = (try? await RoutineRepository.fetchAll(ownerID: ownerID))?.count
+                }
+            }
             .navigationDestination(isPresented: $showMyRack) {
                 MyRackView()
             }
@@ -111,9 +125,10 @@ struct YouTabView: View {
                     .navigationBarTitleDisplayMode(.inline)
             }
             .navigationDestination(isPresented: $showRoutines) {
-                // The routines list the Library tab used to host. The
-                // first-visit tip (`.library`) moved with it.
-                RoutinesListView()
+                // The Routines hub (owner 2026-08-13): slots + Coach +
+                // Builder + Discover — the single home for routine-shaped
+                // things. The first-visit tip (`.library`) rides along.
+                RoutinesHubView()
                     .background(theme.bg)
                     .navigationTitle("Routines")
                     .navigationBarTitleDisplayMode(.inline)
@@ -133,15 +148,6 @@ struct YouTabView: View {
                 CampaignsTabView()
                     .background(theme.bg)
                     .navigationTitle("Programs")
-                    .navigationBarTitleDisplayMode(.inline)
-            }
-            .navigationDestination(isPresented: $showDiscoverWorkouts) {
-                // Resurrected (three-tab restructure): the community-workout
-                // browse grid was orphaned inside the dead LibraryTabView
-                // since the four-tab reorientation.
-                DiscoverView()
-                    .background(theme.bg)
-                    .navigationTitle("Discover")
                     .navigationBarTitleDisplayMode(.inline)
             }
             .navigationDestination(isPresented: $showPaywall) {
@@ -272,8 +278,8 @@ struct YouTabView: View {
         Button {
             showRoutines = true
         } label: {
-            widgetCard(title: "ROUTINES", footer: "LIBRARY") {
-                Text("Build & run your plans")
+            widgetCard(title: "ROUTINES", footer: routinesFooter) {
+                Text("Your plans · the builder · Coach · Discover")
                     .font(GSFont.bodyMedium(17, relativeTo: .body))
                     .foregroundStyle(theme.text)
                     .lineLimit(1)
@@ -283,6 +289,17 @@ struct YouTabView: View {
         .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Routines")
+    }
+
+    /// Slot fill-state on the widget face (owner 2026-08-13: the hub entry
+    /// shows its state from the outside). Falls back to "HUB" until the
+    /// best-effort count resolves; PRO lifters past the cap see a plain
+    /// routine count instead of a slot fraction.
+    private var routinesFooter: String {
+        guard let routineCount else { return "HUB" }
+        let limit = Monetization.freeRoutineLimit
+        if routineCount > limit { return "\(routineCount) ROUTINES" }
+        return "\(routineCount) OF \(limit) SLOTS FILLED"
     }
 
     private var exercisesWidget: some View {
@@ -336,23 +353,6 @@ struct YouTabView: View {
         .gsDiscovery(.libraryCampaigns, cornerRadius: GSMetrics.radiusSm)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Programs")
-    }
-
-    private var discoverWidget: some View {
-        Button {
-            showDiscoverWorkouts = true
-        } label: {
-            widgetCard(title: "DISCOVER", footer: "COMMUNITY") {
-                Text("Workouts & leaderboards")
-                    .font(GSFont.bodyMedium(17, relativeTo: .body))
-                    .foregroundStyle(theme.text)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
-            }
-        }
-        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Discover")
     }
 
     // MARK: - The Rack (Shop merge, 2026-08-12)
@@ -499,8 +499,10 @@ struct YouTabView: View {
     //
     // 3D pass (2026-08): this builder is the CONTENT of the card only — the
     // extruded face/lip chrome comes from the call site (`.gs3DCardStyle`
-    // for tappable widgets, `.gs3DCard` for LOCKER). minHeight 144 = the
-    // prior 150 minus the 6pt lip, which lives INSIDE the composite's frame.
+    // for tappable widgets, `.gs3DCard` for LOCKER). minHeight 92: the
+    // full-width stacked language (owner 2026-08-13) — kicker +
+    // description + footer read comfortably without the grid era's square
+    // proportions.
 
     private func widgetCard<Face: View>(
         title: String,
@@ -516,7 +518,7 @@ struct YouTabView: View {
             kLabel(footer, color: theme.neutral500)
         }
         .padding(12)
-        .frame(maxWidth: .infinity, minHeight: 144, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 92, alignment: .leading)
     }
 
     private func kLabel(_ text: String, color: Color) -> some View {

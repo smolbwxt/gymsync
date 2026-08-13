@@ -231,8 +231,10 @@ struct RoutinesListView: View {
 }
 
 // MARK: - Routine Detail Choice
+// Internal (was private) since the Routines hub's slot rows push it too —
+// one detail screen, whichever surface the routine was opened from.
 
-private struct RoutineDetailChoice: View {
+struct RoutineDetailChoice: View {
     let routine: Routine
     let onEdited: () -> Void
 
