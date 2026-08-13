@@ -141,6 +141,15 @@ struct WorkoutSessionView: View {
     /// card — fed by `.onChange(of: soloBLEBPM)`; the math lives in
     /// RecoveryBuffer (unit-tested, shared with the group spectate page).
     @State private var soloRecoveryBuffer = RecoveryBuffer()
+    /// Recovery-adaptive rest (owner 2026-08-12): when this rest window
+    /// opened — with restEndAt it gives the progress fraction the verdict
+    /// math needs.
+    @State private var soloRestStartedAt: Date?
+    /// End-of-rest HR drops from THIS session — the personal baseline
+    /// (median) behind the GO EARLY / +30s pills. Captured by
+    /// `captureRestDrop()` at every rest-ending path; never persisted
+    /// (yesterday's recovery is a lie today).
+    @State private var soloRestDrops: [Int] = []
     /// Pre-session est-1RM ceilings per exercise for the rest screen's
     /// LOAD · % SELF line — fetched lazily after each log, cached for the
     /// session (the past doesn't change mid-workout).
@@ -588,6 +597,7 @@ struct WorkoutSessionView: View {
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(max(0, until.timeIntervalSinceNow) + 1))
                 if self.restEndAt == until {
+                    self.captureRestDrop()
                     self.restEndAt = nil
                     // A lapsed rest window starts the next set — same stamp as
                     // the START SET shortcut, so the set clock never inherits
@@ -891,6 +901,64 @@ struct WorkoutSessionView: View {
         }
     }
 
+    /// End-of-rest recovery capture (owner 2026-08-12): the drop achieved
+    /// by the time a rest window closes — RecoveryBuffer's 90s window still
+    /// spans set-peak → rest-trough at that moment. Called immediately
+    /// BEFORE every `restEndAt = nil` (lapse task, START SET, both log
+    /// paths); a no-op outside a rest window or without HR samples.
+    private func captureRestDrop() {
+        guard restEndAt != nil, let drop = soloRecoveryBuffer.drop, drop > 0 else { return }
+        soloRestDrops.append(drop)
+    }
+
+    /// The GO EARLY / +30s suggestion pill. Actions follow the house rules:
+    /// GO EARLY is the accent action (starting the set IS the primary
+    /// action, same stamp as the START SET shortcut); +30s is a quiet
+    /// raised-face button. Default-colored labels per the room's text law.
+    @ViewBuilder
+    private func restRecoveryPill(now: Date, start: Date, end: Date) -> some View {
+        let total = end.timeIntervalSince(start)
+        let progress = total > 0 ? min(1, max(0, now.timeIntervalSince(start) / total)) : 0
+        let verdict = RestRecoveryMath.verdict(
+            currentDrop: soloRecoveryBuffer.drop,
+            baseline: RestRecoveryMath.baseline(priorDrops: soloRestDrops),
+            progress: progress)
+        switch verdict {
+        case .ready:
+            Button {
+                captureRestDrop()
+                restEndAt = nil
+                setStartedAt = .now
+            } label: {
+                Text("RECOVERED — GO EARLY")
+                    .font(GSFont.bold(11, relativeTo: .caption))
+                    .kerning(0.8)
+                    .foregroundStyle(theme.bg)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+            }
+            .buttonStyle(.gs3D(face: theme.accent, cornerRadius: 10, lipHeight: 4))
+            .padding(.top, 10)
+            .accessibilityHint("Heart-rate recovery hit your session's usual mark early.")
+        case .lagging:
+            Button {
+                restEndAt = end.addingTimeInterval(30)
+            } label: {
+                Text("SLOW RECOVERY — +30s")
+                    .font(GSFont.bold(11, relativeTo: .caption))
+                    .kerning(0.8)
+                    .foregroundStyle(theme.text)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 7)
+            }
+            .buttonStyle(.gs3D(face: theme.raised3DFace, lip: theme.raised3DLip, cornerRadius: 10, lipHeight: 4))
+            .padding(.top, 10)
+            .accessibilityHint("Heart-rate recovery is behind your session's usual mark.")
+        case nil:
+            EmptyView()
+        }
+    }
+
     /// The countdown, big, over UP NEXT — the entry page is already
     /// prefilled for exactly this set, so the readback echoes it.
     private var soloRestHero: some View {
@@ -908,6 +976,16 @@ struct WorkoutSessionView: View {
                     .foregroundStyle(theme.text)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
+            }
+            // Recovery-adaptive pills (owner 2026-08-12) — suggestions only,
+            // judged against THIS session's own median end-of-rest drop.
+            // Silent without an HR source or a 2-rest baseline; the 5s
+            // periodic tick is the verdict's clock (the countdown Text
+            // renders itself and needs no external ticks).
+            if let restEndAt, let restStart = soloRestStartedAt {
+                TimelineView(.periodic(from: .now, by: 5)) { context in
+                    restRecoveryPill(now: context.date, start: restStart, end: restEndAt)
+                }
             }
             Spacer(minLength: 12)
             VStack(spacing: 7) {
@@ -1553,6 +1631,7 @@ struct WorkoutSessionView: View {
                 Button {
                     // Cutting rest short IS the start of the set — stamp it so
                     // the set card's clock times this set, not the rest before it.
+                    captureRestDrop()
                     restEndAt = nil
                     setStartedAt = .now
                 } label: {
@@ -1585,6 +1664,7 @@ struct WorkoutSessionView: View {
                 guard !isLoggingSet else { return }
                 isLoggingSet = true
                 setStartedAt = .now
+                captureRestDrop()
                 restEndAt = nil
                 let weightPounds = Decimal.parseUserInput(soloWeight)
                     .map { Units.toPounds($0, from: soloUnit) }
@@ -1710,6 +1790,7 @@ struct WorkoutSessionView: View {
                     GSDivider()
                     Button {
                         setStartedAt = .now
+                        captureRestDrop()
                         restEndAt = nil
                         showLogSheet = true
                     } label: {
@@ -2598,6 +2679,7 @@ struct WorkoutSessionView: View {
                 // are always same-exercise rest — never TRANSIT.
                 soloRestIsTransit = false
                 if restSeconds > 0 {
+                    soloRestStartedAt = Date()
                     restEndAt = Date().addingTimeInterval(TimeInterval(restSeconds))
                 }
                 return true
@@ -2628,6 +2710,7 @@ struct WorkoutSessionView: View {
                     + (exerciseChanged ? TransitWindow.seconds : 0)
                 soloRestIsTransit = exerciseChanged
                 if restSeconds > 0 {
+                    soloRestStartedAt = Date()
                     restEndAt = Date().addingTimeInterval(TimeInterval(restSeconds))
                 }
             }
