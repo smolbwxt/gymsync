@@ -616,6 +616,66 @@ struct RoutineBuilderView: View {
             if item.setType == "drop" {
                 dropConfigRow(item)
             }
+
+            // SUPERSET pairing (Phase B): link this exercise with the NEXT
+            // one — the pair alternates A→B with no rest between, one
+            // shared rest after. Pairs only (A/B), matching the design;
+            // shown on every row except the last.
+            if let next = itemAfter(item) {
+                supersetLinkChip(item, next: next)
+            }
+        }
+    }
+
+    /// The exercise after this one in position order, if any.
+    private func itemAfter(_ item: RoutineExercise) -> RoutineExercise? {
+        guard let idx = items.firstIndex(where: { $0.id == item.id }),
+              idx + 1 < items.count else { return nil }
+        return items[idx + 1]
+    }
+
+    private func isLinked(_ item: RoutineExercise, next: RoutineExercise) -> Bool {
+        item.supersetGroup != nil && item.supersetGroup == next.supersetGroup
+    }
+
+    @ViewBuilder
+    private func supersetLinkChip(_ item: RoutineExercise, next: RoutineExercise) -> some View {
+        let linked = isLinked(item, next: next)
+        Button {
+            toggleSupersetLink(item, next: next)
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: linked ? "link" : "link.badge.plus")
+                    .font(.system(size: 10, weight: .bold))
+                Text(linked ? "SUPERSET WITH NEXT" : "LINK SUPERSET ↓")
+                    .font(GSFont.bold(10, relativeTo: .caption2))
+                    .tracking(0.5)
+            }
+            .foregroundStyle(linked ? theme.bg : theme.neutral700)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(linked ? theme.accent : theme.bg)
+            .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Link/unlink item and its next neighbor as a superset pair. Pairs
+    /// only: linking dissolves any pair either exercise already belonged
+    /// to (a lifter re-deciding, not an error).
+    private func toggleSupersetLink(_ item: RoutineExercise, next: RoutineExercise) {
+        if isLinked(item, next: next) {
+            updateItem(item.id) { $0.supersetGroup = nil }
+            updateItem(next.id) { $0.supersetGroup = nil }
+        } else {
+            // Dissolve any existing pair membership first.
+            for member in items where member.supersetGroup != nil
+                && (member.supersetGroup == item.supersetGroup || member.supersetGroup == next.supersetGroup) {
+                updateItem(member.id) { $0.supersetGroup = nil }
+            }
+            let group = item.position
+            updateItem(item.id) { $0.supersetGroup = group }
+            updateItem(next.id) { $0.supersetGroup = group }
         }
     }
 
@@ -804,7 +864,7 @@ struct RoutineBuilderView: View {
             createdAt: editing?.createdAt ?? now,
             updatedAt: now
         )
-        let normalizedItems = items.enumerated().map { idx, item in
+        var normalizedItems = items.enumerated().map { idx, item in
             RoutineExercise(
                 id: item.id,
                 routineID: routineID,
@@ -823,6 +883,27 @@ struct RoutineBuilderView: View {
                 dropPercent: item.dropPercent,
                 targetFailure: item.targetFailure
             )
+        }
+        // Superset normalization: a pair is only real while its members
+        // are ADJACENT — drag-reorders and removals dissolve it (silently
+        // keeping a split pair would alternate across the whole gap).
+        // Surviving pairs renumber to the first member's new position.
+        for idx in normalizedItems.indices {
+            guard let group = normalizedItems[idx].supersetGroup else { continue }
+            let prevMatches = idx > 0 && normalizedItems[idx - 1].supersetGroup == group
+            let nextMatches = idx + 1 < normalizedItems.count
+                && normalizedItems[idx + 1].supersetGroup == group
+            if !prevMatches && !nextMatches {
+                normalizedItems[idx].supersetGroup = nil
+            }
+        }
+        for idx in normalizedItems.indices {
+            guard normalizedItems[idx].supersetGroup != nil, idx + 1 < normalizedItems.count,
+                  normalizedItems[idx + 1].supersetGroup == normalizedItems[idx].supersetGroup
+            else { continue }
+            let renumbered = normalizedItems[idx].position
+            normalizedItems[idx].supersetGroup = renumbered
+            normalizedItems[idx + 1].supersetGroup = renumbered
         }
         do {
             try await RoutineRepository.save(routine, exercises: normalizedItems)

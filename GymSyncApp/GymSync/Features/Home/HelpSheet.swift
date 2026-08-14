@@ -140,6 +140,9 @@ struct HelpSheet: View {
                 question: "How is the workout time estimate calculated?",
                 answer: "From your actual prescription: about two minutes per set, plus your rest between sets, plus a transition window between exercises. A tighter routine really does read shorter."),
             HelpEntry(
+                question: "How do supersets, burnouts, and failure sets work?",
+                answer: "In the routine builder, every exercise has structure chips. LINK SUPERSET pairs an exercise with the next one — in your session the pair alternates with no rest between them and one shared rest after each round. BURNOUT makes the final set an all-out max-rep set (the target reads MAX), and TO FAILURE prescribes the last set to failure — log it with the FAIL flick and the app reads it exactly right."),
+            HelpEntry(
                 question: "What are the rest recovery hints?",
                 answer: "With a heart-rate monitor connected, the app learns how fast YOUR heart rate usually drops during rest. Recover faster than your baseline and it offers GO EARLY; still elevated near the end and it suggests +30s. Hints only — never commands."),
         ]),

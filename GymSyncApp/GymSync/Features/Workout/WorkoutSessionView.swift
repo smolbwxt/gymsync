@@ -2882,8 +2882,25 @@ struct WorkoutSessionView: View {
             }
 
             let targetSets = re.targetSets ?? 1
+            // Superset alternation (Phase B, owner design): an adjacent
+            // pair runs A→B with NO rest, one shared rest after B, then
+            // back to A for the next round; the pair exits together after
+            // B's final set. Non-paired exercises are unchanged below.
+            let partner = supersetPartnerIndex(of: currentExerciseIndex)
             let exerciseChanged: Bool
-            if currentSetIndex >= targetSets {
+            var supersetHandoff = false
+            if let partner, partner == currentExerciseIndex + 1 {
+                // A side: hand the bar straight to B, same round.
+                currentExerciseIndex = partner
+                exerciseChanged = false   // same station cluster — no TRANSIT
+                supersetHandoff = true
+            } else if let partner, partner == currentExerciseIndex - 1,
+                      currentSetIndex < targetSets {
+                // B side, round complete: shared rest, back to A.
+                currentSetIndex += 1
+                currentExerciseIndex = partner
+                exerciseChanged = false
+            } else if currentSetIndex >= targetSets {
                 currentSetIndex = 1
                 currentExerciseIndex += 1
                 exerciseChanged = true
@@ -2892,8 +2909,15 @@ struct WorkoutSessionView: View {
                 exerciseChanged = false
             }
             if currentExerciseIndex >= activeExercises.count {
+                captureRestDrop()
                 restEndAt = nil
                 await endSession()
+            } else if supersetHandoff {
+                // No rest between the pair — the whole point. Capture
+                // first: the lifter may have logged mid-window.
+                captureRestDrop()
+                restEndAt = nil
+                soloRestIsTransit = false
             } else {
                 // Per-exercise rest wins when configured; otherwise fall back
                 // to the user's default_rest_seconds (Canvas Completion Task 2)
@@ -2915,6 +2939,22 @@ struct WorkoutSessionView: View {
             errorText = ErrorMapping.map(error).errorDescription
             return false
         }
+    }
+
+    /// The adjacent index this exercise is superset-paired with, if any.
+    /// Pairs are adjacency-guaranteed by the builder's save normalization,
+    /// so one next/prev probe is the whole lookup.
+    private func supersetPartnerIndex(of index: Int) -> Int? {
+        guard index >= 0, index < activeExercises.count,
+              let group = activeExercises[index].supersetGroup else { return nil }
+        if index + 1 < activeExercises.count,
+           activeExercises[index + 1].supersetGroup == group {
+            return index + 1
+        }
+        if index > 0, activeExercises[index - 1].supersetGroup == group {
+            return index - 1
+        }
+        return nil
     }
 
     // MARK: - Freeform exercise picking

@@ -383,7 +383,8 @@ struct RoutineDetailChoice: View {
                     re.setType == "drop"
                         ? "drop \(re.dropSteps ?? 2)×\(NSDecimalNumber(decimal: re.dropPercent ?? 20).intValue)%"
                         : (re.setType == "burnout" ? "burnout" : nil),
-                    re.targetFailure ? "to failure" : nil
+                    re.targetFailure ? "to failure" : nil,
+                    re.supersetGroup != nil ? "superset" : nil
                 ].compactMap { $0 }
                 if !parts.isEmpty {
                     Text(parts.joined(separator: " · "))
