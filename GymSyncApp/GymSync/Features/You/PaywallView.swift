@@ -1,4 +1,5 @@
 import SwiftUI
+import StoreKit
 
 // MARK: - PaywallView (dormant until Monetization.paywallEnabled)
 //
@@ -13,10 +14,13 @@ import SwiftUI
 struct PaywallView: View {
     @Environment(\.gsTheme) private var theme
     @Environment(\.dismiss) private var dismiss
+    @Environment(AppState.self) private var appState
 
     /// Which gate sent the user here — leads the pitch with the thing they
     /// just tried to do, not a generic list.
     var highlight: Monetization.Feature? = nil
+
+    private var store: StoreKitService { StoreKitService.shared }
 
     var body: some View {
         ScrollView {
@@ -46,16 +50,59 @@ struct PaywallView: View {
                 .background(theme.surface)
                 .cornerRadius(GSMetrics.radiusMd)
 
-                Button {
-                    // StoreKit 2 purchase lands with App Store Connect
-                    // products; until then this screen is design-only.
-                } label: {
-                    Text("Coming soon")
+                // M1 (2026-08-14): a REAL store the moment products exist
+                // in App Store Connect (owner-side setup: paid-apps
+                // agreement, banking, tax, the two product IDs). Until
+                // they do, Product.products returns nothing and the honest
+                // roadmap fallback below renders — which is also what App
+                // Review sees, settling the inert-commerce flag.
+                if let until = store.proUntil ?? appState.currentProfile?.proUntil,
+                   until > .now {
+                    Text("PRO ACTIVE — until \(until.formatted(date: .abbreviated, time: .omitted))")
+                        .font(GSFont.bold(13, relativeTo: .subheadline))
+                        .tracking(0.5)
+                        .foregroundStyle(theme.accent)
                         .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                } else if store.products.isEmpty {
+                    Button {
+                    } label: {
+                        Text("Coming soon")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(GSPrimaryButtonStyle(fontSize: 15, verticalPadding: 13))
+                    .disabled(true)
+                    .opacity(0.6)
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach(store.products, id: \.id) { product in
+                            Button {
+                                Task { _ = await store.purchase(product) }
+                            } label: {
+                                HStack {
+                                    Text(product.id == StoreKitService.yearlyID
+                                         ? "Yearly — 2 months free" : "Monthly")
+                                    Spacer()
+                                    Text(product.displayPrice)
+                                        .monospacedDigit()
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(GSPrimaryButtonStyle(fontSize: 15, verticalPadding: 13))
+                        }
+                        Button {
+                            Task { await store.restore() }
+                        } label: {
+                            Text("Restore purchases")
+                                .font(GSFont.bold(13, relativeTo: .subheadline))
+                                .foregroundStyle(theme.neutral500)
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 4)
+                    }
+                    .disabled(store.isPurchasing)
                 }
-                .buttonStyle(GSPrimaryButtonStyle(fontSize: 15, verticalPadding: 13))
-                .disabled(true)
-                .opacity(0.6)
 
                 Text("Groups, live sessions, voice, logging, PRs and streaks are free for everyone — that never changes.")
                     .font(GSFont.body(12, relativeTo: .caption))
@@ -69,6 +116,10 @@ struct PaywallView: View {
             .padding(20)
         }
         .background(theme.bg)
+        .task {
+            store.start()
+            await store.loadProducts()
+        }
     }
 
     private func featureRow(_ feature: Monetization.Feature, icon: String,
