@@ -971,7 +971,9 @@ struct RoutineBuilderView: View {
                 supersetGroup: item.supersetGroup,
                 dropSteps: item.dropSteps,
                 dropPercent: item.dropPercent,
-                targetFailure: item.targetFailure
+                targetFailure: item.targetFailure,
+                targetRepsLow: item.targetRepsLow,
+                targetRepsHigh: item.targetRepsHigh
             )
         }
         // Superset normalization: a pair is only real while its members

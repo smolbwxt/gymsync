@@ -1,0 +1,262 @@
+import SwiftUI
+
+// MARK: - CoachWizardView (the COACH front door, generator design doc)
+//
+// Four dials → about-you (skippable, only what's missing) → a full
+// preview of the generated week → CREATE, which writes the day routines
+// into the lifter's collection with rep ranges, rests, and %1RM anchors
+// from the evidence-cited generator core (GeneratorScience /
+// ProgramGenerator — pure, deterministic, tested).
+//
+// V1 output = the WEEK OF ROUTINES (the thing you train tomorrow).
+// Enrollment overlays, the Plan queue, and week-by-week waves ride the
+// template-as-data integration next.
+struct CoachWizardView: View {
+    @Environment(\.gsTheme) private var theme
+    @Environment(AppState.self) private var appState
+    @Environment(\.dismiss) private var dismiss
+
+    var onCreated: (() -> Void)? = nil
+
+    // Dials
+    @State private var focus: GeneratorScience.Focus = .hypertrophy
+    @State private var days = 3
+    @State private var duration = 8
+    @State private var experience: GeneratorScience.Experience = .new
+    // About you (prefilled from profile; skippable)
+    @State private var sex: String = ""
+    @State private var birthYearText = ""
+    // Data
+    @State private var allExercises: [Exercise] = []
+    @State private var preview: ProgramGenerator.Program?
+    @State private var busy = false
+    @State private var errorText: String?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                dial("FOCUS", options: GeneratorScience.Focus.allCases.map(\.rawValue),
+                     selected: focus.rawValue) { focus = GeneratorScience.Focus(rawValue: $0) ?? .hypertrophy }
+                dial("DAYS PER WEEK", options: ["2", "3", "4", "5", "6"],
+                     selected: "\(days)") { days = Int($0) ?? 3 }
+                dial("DURATION", options: ["4", "8", "12"],
+                     selected: "\(duration)") { duration = Int($0) ?? 8 }
+                dial("EXPERIENCE", options: GeneratorScience.Experience.allCases.map(\.rawValue),
+                     selected: experience.rawValue) { experience = GeneratorScience.Experience(rawValue: $0) ?? .new }
+
+                aboutYou
+
+                Button {
+                    generatePreview()
+                } label: {
+                    Text(preview == nil ? "Build my week" : "Rebuild")
+                }
+                .buttonStyle(GSPrimaryButtonStyle())
+
+                if let preview {
+                    previewSection(preview)
+                    Button {
+                        Task { await create(preview) }
+                    } label: {
+                        Text(busy ? "Creating…" : "Create these routines")
+                    }
+                    .buttonStyle(GSPrimaryButtonStyle())
+                    .disabled(busy)
+                }
+
+                if let errorText {
+                    Text(errorText)
+                        .font(GSFont.body(12, relativeTo: .footnote))
+                        .foregroundStyle(.red)
+                }
+                Spacer(minLength: 24)
+            }
+            .padding(16)
+        }
+        .background(theme.bg)
+        .navigationTitle("Coach")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            allExercises = (try? await ExerciseRepository.fetchAll()) ?? []
+            sex = appState.currentProfile?.sex ?? ""
+            if let year = appState.currentProfile?.birthYear { birthYearText = "\(year)" }
+        }
+    }
+
+    // MARK: - Dials
+
+    private func dial(_ title: String, options: [String], selected: String,
+                      onPick: @escaping (String) -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(GSFont.bold(11, relativeTo: .caption2))
+                .tracking(1.1)
+                .foregroundStyle(theme.neutral700)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(options, id: \.self) { option in
+                        let isOn = option == selected
+                        Button {
+                            onPick(option)
+                            preview = nil
+                        } label: {
+                            Text(label(for: option))
+                                .font(GSFont.bold(13, relativeTo: .subheadline))
+                                .foregroundStyle(isOn ? theme.bg : theme.neutral700)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 9)
+                                .background(isOn ? theme.accent : theme.surface)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    private func label(for option: String) -> String {
+        switch option {
+        case "weightLoss": return "Weight Loss"
+        case "new": return "New"
+        case "intermediate": return "Intermediate"
+        case "advanced": return "Advanced"
+        default: return option.capitalized
+        }
+    }
+
+    // MARK: - About you
+
+    private var aboutYou: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("ABOUT YOU · OPTIONAL")
+                .font(GSFont.bold(11, relativeTo: .caption2))
+                .tracking(1.1)
+                .foregroundStyle(theme.neutral700)
+            Text("Sex tunes rest and rep tops only — the physiology, never the movements or zones. Birth year sets honest heart-rate bands.")
+                .font(GSFont.body(11, relativeTo: .caption))
+                .foregroundStyle(theme.neutral500)
+            HStack(spacing: 6) {
+                ForEach(["female", "male"], id: \.self) { option in
+                    let isOn = sex == option
+                    Button {
+                        sex = isOn ? "" : option
+                        preview = nil
+                    } label: {
+                        Text(option.capitalized)
+                            .font(GSFont.bold(13, relativeTo: .subheadline))
+                            .foregroundStyle(isOn ? theme.bg : theme.neutral700)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 9)
+                            .background(isOn ? theme.accent : theme.surface)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+                TextField("Birth year", text: $birthYearText)
+                    .keyboardType(.numberPad)
+                    .font(GSFont.body(14, relativeTo: .body))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .frame(width: 110)
+                    .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
+                        .strokeBorder(theme.divider, lineWidth: 1))
+            }
+        }
+    }
+
+    // MARK: - Preview
+
+    private func previewSection(_ program: ProgramGenerator.Program) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            GSSectionHeader("Your week")
+            ForEach(Array(program.days.enumerated()), id: \.offset) { _, day in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(day.name)
+                        .font(GSFont.bold(15, relativeTo: .headline))
+                        .foregroundStyle(theme.text)
+                    ForEach(Array(day.exercises.enumerated()), id: \.offset) { _, ex in
+                        HStack {
+                            Text(ex.name)
+                                .font(GSFont.body(13, relativeTo: .subheadline))
+                                .foregroundStyle(theme.text)
+                            Spacer()
+                            Text("\(ex.sets)×\(ex.repsLow)-\(ex.repsHigh)"
+                                 + (ex.percentOfMax.map { String(format: " @ %.0f%%", $0) } ?? ""))
+                                .font(GSFont.body(12, relativeTo: .caption).monospacedDigit())
+                                .foregroundStyle(theme.neutral500)
+                        }
+                    }
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .gs3DCard(cornerRadius: GSMetrics.radiusMd)
+            }
+            ForEach(Array(program.notes.enumerated()), id: \.offset) { _, note in
+                Text(note)
+                    .font(GSFont.body(11.5, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    // MARK: - Generate + create
+
+    private func generatePreview() {
+        let catalog = allExercises.enumerated().map { index, ex in
+            ProgramGenerator.CatalogExercise(
+                id: ex.id, name: ex.name,
+                primaryMuscle: ex.primaryMuscle,
+                secondaryMuscles: ex.secondaryMuscles,
+                category: ex.category, equipment: ex.equipment,
+                movementPattern: ex.movementPattern ?? "other",
+                rank: index)
+        }
+        let inputs = ProgramGenerator.Inputs(
+            focus: focus, daysPerWeek: days, durationWeeks: duration,
+            experience: experience,
+            sex: GeneratorScience.Sex(rawValue: sex) ?? .unspecified)
+        preview = ProgramGenerator.generate(inputs: inputs, catalog: catalog)
+    }
+
+    @MainActor
+    private func create(_ program: ProgramGenerator.Program) async {
+        guard let ownerID = appState.currentProfile?.id else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            // Persist the skippable demographics when supplied.
+            let year = Int(birthYearText)
+            if !sex.isEmpty || year != nil {
+                try? await ProfileRepository.updateDemographics(
+                    sex: sex.isEmpty ? nil : sex, birthYear: year)
+            }
+            let now = Date()
+            for day in program.days {
+                let routineID = UUID()
+                let routine = Routine(
+                    id: routineID, ownerID: ownerID,
+                    name: "Coach · \(day.name)",
+                    description: "Generated by Coach — \(label(for: focus.rawValue)), \(days)×/week.",
+                    visibility: "private", createdAt: now, updatedAt: now)
+                let exercises = day.exercises.enumerated().map { index, ex in
+                    RoutineExercise(
+                        id: UUID(), routineID: routineID, exerciseID: ex.exerciseID,
+                        position: index + 1,
+                        targetSets: ex.sets,
+                        targetReps: "\(ex.repsLow)-\(ex.repsHigh)",
+                        targetWeight: nil,
+                        restSeconds: ex.restSeconds,
+                        notes: nil,
+                        targetRepsLow: ex.repsLow,
+                        targetRepsHigh: ex.repsHigh)
+                }
+                try await RoutineRepository.save(routine, exercises: exercises)
+            }
+            errorText = nil
+            onCreated?()
+            dismiss()
+        } catch { errorText = ErrorMapping.map(error).errorDescription }
+    }
+}

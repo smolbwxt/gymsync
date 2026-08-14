@@ -28,6 +28,11 @@ struct Profile: Codable, Identifiable, Sendable, Equatable {
     /// logic below.
     let weeklySessionGoalPrev: Int?
     let weeklySessionGoalChangedAt: Date?
+    /// Generator demographics (20260814000009) — all optional/skippable.
+    /// sex feeds PHYSIOLOGY deltas only (never selection); birth year
+    /// retires the HR-max 190 placeholder.
+    let sex: String?
+    let birthYear: Int?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -42,6 +47,8 @@ struct Profile: Codable, Identifiable, Sendable, Equatable {
         case weeklySessionGoal = "weekly_session_goal"
         case weeklySessionGoalPrev = "weekly_session_goal_prev"
         case weeklySessionGoalChangedAt = "weekly_session_goal_changed_at"
+        case sex
+        case birthYear = "birth_year"
     }
 
     // Custom decode so any pre-migration cached JSON (no is_curator/
@@ -65,6 +72,8 @@ struct Profile: Codable, Identifiable, Sendable, Equatable {
         weeklySessionGoal = try c.decodeIfPresent(Int.self, forKey: .weeklySessionGoal) ?? 3
         weeklySessionGoalPrev = try c.decodeIfPresent(Int.self, forKey: .weeklySessionGoalPrev)
         weeklySessionGoalChangedAt = try c.decodeIfPresent(Date.self, forKey: .weeklySessionGoalChangedAt)
+        sex = try c.decodeIfPresent(String.self, forKey: .sex)
+        birthYear = try c.decodeIfPresent(Int.self, forKey: .birthYear)
     }
 
     /// The goal governing the CURRENT calendar week (anti-goalpost rule,
@@ -227,6 +236,25 @@ enum ProfileRepository {
         } catch {
             throw ErrorMapping.map(error)
         }
+    }
+
+    /// Generator demographics (skippable, wizard/onboarding). nil leaves
+    /// a field untouched — never clears.
+    static func updateDemographics(sex: String?, birthYear: Int?) async throws {
+        guard let userID = await SupabaseService.shared.currentUserID() else {
+            throw GymSyncError.unauthorized
+        }
+        var payload: [String: String] = [:]
+        if let sex { payload["sex"] = sex }
+        if let birthYear { payload["birth_year"] = "\(birthYear)" }
+        guard !payload.isEmpty else { return }
+        do {
+            try await client
+                .from("profiles")
+                .update(payload)
+                .eq("id", value: userID.uuidString)
+                .execute()
+        } catch { throw ErrorMapping.map(error) }
     }
 
     // MARK: - Phase M Task 4: solo-workout privacy toggle

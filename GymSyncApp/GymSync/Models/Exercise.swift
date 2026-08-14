@@ -21,6 +21,10 @@ struct Exercise: Codable, Identifiable, Sendable, Hashable {
     /// until backfilled. Trailing default keeps fixture sites compiling;
     /// the column is NOT NULL DEFAULT '{}' so every row decodes.
     var instructions: [String] = []
+    /// Generator selection engine (20260814000009): squat|hinge|lunge|
+    /// push_horizontal|push_vertical|pull_horizontal|pull_vertical|
+    /// isolation|other — deterministic name+muscle classification.
+    var movementPattern: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -34,6 +38,7 @@ struct Exercise: Codable, Identifiable, Sendable, Hashable {
         case demoVideoURL = "demo_video_url"
         case demoYoutubeID = "demo_youtube_id"
         case instructions
+        case movementPattern = "movement_pattern"
     }
 }
 

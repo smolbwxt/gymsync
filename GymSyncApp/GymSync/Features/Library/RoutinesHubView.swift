@@ -213,30 +213,36 @@ struct RoutinesHubView: View {
         .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
     }
 
-    /// The generator's front door — teaser chrome until the four-dial
-    /// wizard ships behind it (same dimmed-static treatment as the You
-    /// tab's LOCKER: nothing to tap yet, so no sink).
+    /// The generator's front door — LIVE (the four-dial wizard ships
+    /// behind it, backed by the evidence-cited ProgramGenerator core).
     private var coachCard: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("COACH")
-                    .font(GSFont.bold(11, relativeTo: .caption2))
-                    .tracking(1.1)
-                    .foregroundStyle(theme.neutral700)
-                Spacer()
-                GSTag(text: "SOON", style: .neutral)
+        NavigationLink {
+            CoachWizardView(onCreated: { Task { await load() } })
+                .background(theme.bg)
+        } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("COACH")
+                        .font(GSFont.bold(11, relativeTo: .caption2))
+                        .tracking(1.1)
+                        .foregroundStyle(theme.neutral700)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(theme.neutral500)
+                }
+                Text("Tell me your goal, days, time, and experience — I'll build your program.")
+                    .font(GSFont.bodyMedium(15, relativeTo: .body))
+                    .foregroundStyle(theme.text)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Text("Tell me your goal, days, time, and experience — I'll build your program.")
-                .font(GSFont.bodyMedium(15, relativeTo: .body))
-                .foregroundStyle(theme.text)
-                .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .contentShape(Rectangle())
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .gs3DCard(cornerRadius: GSMetrics.radiusMd)
-        .opacity(0.6)
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Coach — coming soon")
+        .accessibilityLabel("Coach")
     }
 
     private var builderRow: some View {

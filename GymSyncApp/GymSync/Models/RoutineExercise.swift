@@ -20,6 +20,11 @@ struct RoutineExercise: Codable, Identifiable, Sendable, Equatable {
     /// per the failure doctrine a prescribed failure is the assignment
     /// fulfilled, never a stall signal.
     var targetFailure: Bool = false
+    /// Rep RANGES (generator schema 20260814000009) — the double-
+    /// progression primitive. Legacy targetReps (text) stays for display;
+    /// generated prescriptions fill all three.
+    var targetRepsLow: Int? = nil
+    var targetRepsHigh: Int? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -36,5 +41,7 @@ struct RoutineExercise: Codable, Identifiable, Sendable, Equatable {
         case dropSteps = "drop_steps"
         case dropPercent = "drop_percent"
         case targetFailure = "target_failure"
+        case targetRepsLow = "target_reps_low"
+        case targetRepsHigh = "target_reps_high"
     }
 }
