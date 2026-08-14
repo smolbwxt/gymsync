@@ -1297,6 +1297,10 @@ extension Profile {
         // 20260812000001: nil = never edited, matching fresh-row state.
         self.weeklySessionGoalPrev = nil
         self.weeklySessionGoalChangedAt = nil
+        // 20260814000009: generator demographics — nil = never provided,
+        // matching fresh-row state.
+        self.sex = nil
+        self.birthYear = nil
     }
 }
 
