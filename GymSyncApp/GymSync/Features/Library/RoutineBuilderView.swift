@@ -551,10 +551,128 @@ struct RoutineBuilderView: View {
                     set: { v in updateItem(item.id) { $0.restSeconds = parseRest(v) } }
                 ), label: "REST", keyboard: .numbersAndPunctuation)
             }
+
+            structureRow(item)
         }
         .padding(12)
         .background(theme.surface)
         .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
+    }
+
+    // MARK: - Set structures (owner 2026-08-13/14; schema 20260814000003)
+    //
+    // Third row on the exercise card: the structure prescription. Flat
+    // furniture (form controls inside a bordered card — the builder's
+    // established idiom), chips over menus so the common cases are one tap.
+
+    @ViewBuilder
+    private func structureRow(_ item: RoutineExercise) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                // STRAIGHT / DROP / BURNOUT — one-tap chips.
+                ForEach(["straight", "drop", "burnout"], id: \.self) { kind in
+                    Button {
+                        updateItem(item.id) {
+                            $0.setType = kind
+                            if kind == "drop" {
+                                if $0.dropSteps == nil { $0.dropSteps = 2 }
+                                if $0.dropPercent == nil { $0.dropPercent = 20 }
+                            } else {
+                                $0.dropSteps = nil
+                                $0.dropPercent = nil
+                            }
+                        }
+                    } label: {
+                        Text(kind.uppercased())
+                            .font(GSFont.bold(10, relativeTo: .caption2))
+                            .tracking(0.5)
+                            .foregroundStyle(item.setType == kind ? theme.bg : theme.neutral700)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 5)
+                            .background(item.setType == kind ? theme.accent : theme.bg)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Spacer(minLength: 4)
+
+                // TO FAILURE — the final set is prescribed to failure.
+                Button {
+                    updateItem(item.id) { $0.targetFailure.toggle() }
+                } label: {
+                    Text("TO FAILURE")
+                        .font(GSFont.bold(10, relativeTo: .caption2))
+                        .tracking(0.5)
+                        .foregroundStyle(item.targetFailure ? theme.bg : theme.neutral700)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(item.targetFailure ? theme.accent : theme.bg)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+
+            if item.setType == "drop" {
+                dropConfigRow(item)
+            }
+        }
+    }
+
+    /// "DROP 2 × 20%" — steppers kept as compact −/+ pairs, not a form.
+    private func dropConfigRow(_ item: RoutineExercise) -> some View {
+        HStack(spacing: 10) {
+            Text("DROPS")
+                .font(GSFont.bodyMedium(9, relativeTo: .caption2))
+                .tracking(0.5)
+                .foregroundStyle(theme.neutral500)
+            stepperPair(
+                value: "\(item.dropSteps ?? 2)",
+                minus: { updateItem(item.id) { $0.dropSteps = max(1, ($0.dropSteps ?? 2) - 1) } },
+                plus: { updateItem(item.id) { $0.dropSteps = min(3, ($0.dropSteps ?? 2) + 1) } }
+            )
+            Text("CUT")
+                .font(GSFont.bodyMedium(9, relativeTo: .caption2))
+                .tracking(0.5)
+                .foregroundStyle(theme.neutral500)
+            stepperPair(
+                value: "\(NSDecimalNumber(decimal: item.dropPercent ?? 20).intValue)%",
+                minus: { updateItem(item.id) { $0.dropPercent = max(10, ($0.dropPercent ?? 20) - 5) } },
+                plus: { updateItem(item.id) { $0.dropPercent = min(50, ($0.dropPercent ?? 20) + 5) } }
+            )
+            Spacer()
+            Text("final set: drop \(item.dropSteps ?? 2)×\(NSDecimalNumber(decimal: item.dropPercent ?? 20).intValue)%")
+                .font(GSFont.body(10, relativeTo: .caption2))
+                .foregroundStyle(theme.neutral500)
+        }
+    }
+
+    private func stepperPair(value: String, minus: @escaping () -> Void,
+                             plus: @escaping () -> Void) -> some View {
+        HStack(spacing: 6) {
+            Button(action: minus) {
+                Image(systemName: "minus")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(theme.neutral700)
+                    .frame(width: 22, height: 22)
+                    .background(theme.bg)
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+            Text(value)
+                .font(GSFont.bold(12, relativeTo: .caption).monospacedDigit())
+                .foregroundStyle(theme.text)
+                .frame(minWidth: 30)
+            Button(action: plus) {
+                Image(systemName: "plus")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(theme.neutral700)
+                    .frame(width: 22, height: 22)
+                    .background(theme.bg)
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+        }
     }
 
     // Canvas: stat tile — muted uppercase kicker + bold value, 1px divider border
@@ -696,7 +814,14 @@ struct RoutineBuilderView: View {
                 targetReps: item.targetReps,
                 targetWeight: item.targetWeight,
                 restSeconds: item.restSeconds,
-                notes: item.notes
+                notes: item.notes,
+                // Set structures (20260814000003) — carried through so an
+                // edit round-trip never wipes a structure prescription.
+                setType: item.setType,
+                supersetGroup: item.supersetGroup,
+                dropSteps: item.dropSteps,
+                dropPercent: item.dropPercent,
+                targetFailure: item.targetFailure
             )
         }
         do {

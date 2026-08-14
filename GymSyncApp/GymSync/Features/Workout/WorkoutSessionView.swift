@@ -1585,6 +1585,18 @@ struct WorkoutSessionView: View {
     }
 
     // Entry card 220 — the clock slot shows the REST countdown while one
+    /// The rep-target column label. Set structures (20260814000003): on
+    /// the FINAL prescribed set, a burnout shows MAX and a to-failure
+    /// prescription shows TO FAILURE — the number disappears because the
+    /// number isn't the assignment anymore.
+    private var repTargetLabel: String {
+        guard let re = currentRoutineExercise else { return "REPS" }
+        let isFinalSet = currentSetIndex >= (re.targetSets ?? 1)
+        if isFinalSet, re.setType == "burnout" { return "REPS · MAX" }
+        if isFinalSet, re.targetFailure { return "REPS · TO FAILURE" }
+        return re.targetReps.map { "REPS · \($0)" } ?? "REPS"
+    }
+
     // runs (solo's rest is real state, unlike group's turn clock).
     private var soloEntryCard: some View {
         let target = currentRoutineExercise?.targetSets
@@ -1637,7 +1649,7 @@ struct WorkoutSessionView: View {
                     .tracking(0.9)
                     .foregroundStyle(theme.text.opacity(0.78))
                     .frame(width: 229, alignment: .leading)
-                Text(targetReps.map { "REPS · \($0)" } ?? "REPS")
+                Text(repTargetLabel)
                     .font(GSFont.bold(13, relativeTo: .footnote))
                     .tracking(0.9)
                     .foregroundStyle(theme.text.opacity(0.78))

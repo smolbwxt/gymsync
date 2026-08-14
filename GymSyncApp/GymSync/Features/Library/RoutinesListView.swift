@@ -376,7 +376,14 @@ struct RoutineDetailChoice: View {
             VStack(alignment: .trailing, spacing: 2) {
                 let parts: [String] = [
                     re.targetSets.map { "\($0) sets" },
-                    re.targetReps.flatMap { $0.isEmpty ? nil : $0 }
+                    re.targetReps.flatMap { $0.isEmpty ? nil : $0 },
+                    // Set structures (20260814000003): the prescription
+                    // rides the meta line — "drop 2×20%", "burnout",
+                    // "to failure".
+                    re.setType == "drop"
+                        ? "drop \(re.dropSteps ?? 2)×\(NSDecimalNumber(decimal: re.dropPercent ?? 20).intValue)%"
+                        : (re.setType == "burnout" ? "burnout" : nil),
+                    re.targetFailure ? "to failure" : nil
                 ].compactMap { $0 }
                 if !parts.isEmpty {
                     Text(parts.joined(separator: " · "))

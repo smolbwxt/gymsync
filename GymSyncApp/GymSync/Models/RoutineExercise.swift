@@ -10,6 +10,16 @@ struct RoutineExercise: Codable, Identifiable, Sendable, Equatable {
     var targetWeight: String?
     var restSeconds: Int?
     var notes: String?
+    // Set structures (20260814000003) — trailing defaults keep every
+    // construction site compiling. setType: straight | drop | burnout.
+    var setType: String = "straight"
+    var supersetGroup: Int? = nil
+    var dropSteps: Int? = nil
+    var dropPercent: Decimal? = nil
+    /// Final set prescribed TO FAILURE — renders in place of a rep target;
+    /// per the failure doctrine a prescribed failure is the assignment
+    /// fulfilled, never a stall signal.
+    var targetFailure: Bool = false
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -21,5 +31,10 @@ struct RoutineExercise: Codable, Identifiable, Sendable, Equatable {
         case targetWeight = "target_weight"
         case restSeconds = "rest_seconds"
         case notes
+        case setType = "set_type"
+        case supersetGroup = "superset_group"
+        case dropSteps = "drop_steps"
+        case dropPercent = "drop_percent"
+        case targetFailure = "target_failure"
     }
 }
