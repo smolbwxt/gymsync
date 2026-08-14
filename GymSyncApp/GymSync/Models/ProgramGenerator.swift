@@ -26,9 +26,15 @@ enum ProgramGenerator {
         /// Equipment classes available; nil = everything.
         var equipment: Set<String>? = nil
         /// Dedicated cardio days appended after the lifting split
-        /// (owner 2026-08-14) — prescribed as zone + MINUTES.
+        /// (owner 2026-08-14) — prescribed as zone + MINUTES. When
+        /// lifting + cardio exceed 7 calendar days, the overflow PAIRS
+        /// onto lifting days as PM sessions (two-a-days).
         var cardioDays: Int = 0
         var cardioMinutes: Int = 30
+        /// "Train every day": remaining calendar days fill with ACTIVE
+        /// RECOVERY — mobility work + a zone-1 walk. In the gym daily,
+        /// but recovery days prescribe recovery.
+        var fillWeekWithRecovery: Bool = false
     }
 
     struct CatalogExercise {
@@ -64,7 +70,7 @@ enum ProgramGenerator {
     }
 
     struct Day: Equatable {
-        let name: String
+        var name: String
         var exercises: [Exercise]
     }
 
@@ -127,27 +133,73 @@ enum ProgramGenerator {
             days.append(Day(name: name, exercises: chosen))
         }
 
-        // Dedicated cardio days (owner 2026-08-14): zone + MINUTES.
-        // Conditioning prescribes intervals (zone 4); everything else
-        // steady zone 2. Modality = first catalog cardio entry by rank
-        // (deterministic), equipment-filtered like everything else.
+        // Dedicated cardio (owner 2026-08-14): zone + MINUTES. When
+        // lifting + cardio exceed 7 calendar days, the overflow PAIRS
+        // onto lifting days as PM sessions (two-a-days) — same-day
+        // strength + cardio wants ≥6h separation (Wilson et al.
+        // concurrent-training interference), which the note says.
+        // Modality = first catalog cardio entry by rank (deterministic),
+        // equipment-filtered like everything else.
         if inputs.cardioDays > 0 {
             let modality = usable.first { $0.category == "cardio" }
                 ?? catalog.first { $0.category == "cardio" }
             if let modality {
                 let zone = inputs.focus == .conditioning ? 4 : 2
-                for n in 1...inputs.cardioDays {
-                    let label = inputs.cardioDays > 1 ? "Cardio \(n)" : "Cardio"
-                    days.append(Day(name: label, exercises: [
-                        Exercise(exerciseID: modality.id, name: modality.name,
-                                 sets: 1, repsLow: 0, repsHigh: 0,
-                                 restSeconds: 0, percentOfMax: nil, isMain: false,
-                                 slot: nil,
-                                 cardioZone: zone,
-                                 cardioMinutes: inputs.cardioMinutes),
-                    ]))
+                let cardioEntry = Exercise(
+                    exerciseID: modality.id, name: modality.name,
+                    sets: 1, repsLow: 0, repsHigh: 0,
+                    restSeconds: 0, percentOfMax: nil, isMain: false,
+                    slot: nil, cardioZone: zone,
+                    cardioMinutes: inputs.cardioMinutes)
+
+                let liftingCount = days.count
+                let overflow = max(0, liftingCount + inputs.cardioDays - 7)
+                let paired = min(overflow, liftingCount)
+                for index in 0..<paired {
+                    days[index].name += " · PM Cardio"
+                    days[index].exercises.append(cardioEntry)
+                }
+                if paired > 0 {
+                    notes.append("Cardio rides \(paired) lifting day\(paired == 1 ? "" : "s") as a PM session — keep 6+ hours between the lift and the cardio where you can (Wilson et al.: same-day interference shrinks with separation).")
+                }
+                let standalone = inputs.cardioDays - paired
+                if standalone > 0 {
+                    for n in 1...standalone {
+                        let label = standalone > 1 ? "Cardio \(n)" : "Cardio"
+                        days.append(Day(name: label, exercises: [cardioEntry]))
+                    }
                 }
             }
+        }
+
+        // "Train every day" (owner 2026-08-14): remaining calendar days
+        // become ACTIVE RECOVERY — get in the gym, but the prescription
+        // IS recovery: mobility work + a zone-1 walk. Never replaces a
+        // hard rest the wave already scheduled (the deload week stands).
+        if inputs.fillWeekWithRecovery, days.count < 7 {
+            let mobility = Array(usable.filter { $0.category == "mobility" }.prefix(3))
+            let walk = usable.first {
+                $0.category == "cardio" && $0.name.localizedCaseInsensitiveContains("walk")
+            } ?? usable.first { $0.category == "cardio" }
+            let recoveryCount = 7 - days.count
+            for n in 1...recoveryCount {
+                var entries: [Exercise] = mobility.map { m in
+                    Exercise(exerciseID: m.id, name: m.name,
+                             sets: 2, repsLow: 8, repsHigh: 12,
+                             restSeconds: 30, percentOfMax: nil, isMain: false,
+                             slot: nil, cardioZone: nil, cardioMinutes: nil)
+                }
+                if let walk {
+                    entries.append(Exercise(
+                        exerciseID: walk.id, name: walk.name,
+                        sets: 1, repsLow: 0, repsHigh: 0,
+                        restSeconds: 0, percentOfMax: nil, isMain: false,
+                        slot: nil, cardioZone: 1, cardioMinutes: 25))
+                }
+                let label = recoveryCount > 1 ? "Active Recovery \(n)" : "Active Recovery"
+                days.append(Day(name: label, exercises: entries))
+            }
+            notes.append("Recovery days are prescriptions too: easy mobility and a zone-1 walk aid blood flow without costing adaptation — showing up daily is fine when the easy days stay easy.")
         }
 
         // Wave: flat for 4 weeks (double progression carries it), ramp

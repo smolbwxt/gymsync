@@ -224,6 +224,48 @@ final class ProgramGeneratorTests: XCTestCase {
         XCTAssertEqual(rerolled?.exerciseID, again?.exerciseID)
     }
 
+    // MARK: - Two-a-days + active recovery (owner 2026-08-14)
+
+    private func cardioCatalog() -> [ProgramGenerator.CatalogExercise] {
+        var list = catalog()
+        list.append(ProgramGenerator.CatalogExercise(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000098")!,
+            name: "Walking", primaryMuscle: "quads", secondaryMuscles: [],
+            category: "cardio", equipment: "bodyweight", movementPattern: "other", rank: 98))
+        list.append(ProgramGenerator.CatalogExercise(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000097")!,
+            name: "Hamstring Stretch", primaryMuscle: "hamstrings", secondaryMuscles: [],
+            category: "mobility", equipment: "bodyweight", movementPattern: "other", rank: 97))
+        return list
+    }
+
+    func testOverflowCardioPairsAsTwoADays() {
+        // 5 lifting + 4 cardio = 9 sessions in 7 days: 2 lifting days
+        // carry PM cardio; 2 cardio days stand alone. Calendar total = 7.
+        var inputs = inputs(days: 5)
+        inputs.cardioDays = 4
+        let program = ProgramGenerator.generate(inputs: inputs, catalog: cardioCatalog())
+        XCTAssertEqual(program.days.count, 7)
+        let pmDays = program.days.filter { $0.name.contains("PM Cardio") }
+        XCTAssertEqual(pmDays.count, 2)
+        XCTAssertTrue(pmDays.allSatisfy { $0.exercises.last?.cardioZone != nil })
+        XCTAssertTrue(program.notes.contains { $0.contains("6+ hours") })
+    }
+
+    func testFillWeekAddsActiveRecovery() {
+        var inputs = inputs(days: 3)
+        inputs.fillWeekWithRecovery = true
+        let program = ProgramGenerator.generate(inputs: inputs, catalog: cardioCatalog())
+        XCTAssertEqual(program.days.count, 7, "3 lifting + 4 active recovery")
+        let recovery = program.days.filter { $0.name.hasPrefix("Active Recovery") }
+        XCTAssertEqual(recovery.count, 4)
+        // A recovery day prescribes mobility + a zone-1 walk — never lifting.
+        let day = recovery[0]
+        XCTAssertTrue(day.exercises.contains { $0.name == "Hamstring Stretch" })
+        XCTAssertTrue(day.exercises.contains { $0.cardioZone == 1 })
+        XCTAssertFalse(day.exercises.contains { $0.isMain })
+    }
+
     // MARK: - percentFor table
 
     func testPercentForAnchors() {

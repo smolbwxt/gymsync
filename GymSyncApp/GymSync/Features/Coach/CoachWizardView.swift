@@ -30,6 +30,7 @@ struct CoachWizardView: View {
     /// Cardio (owner 2026-08-14): dedicated days + MINUTES per session.
     @State private var cardioDays = 0
     @State private var cardioMinutes = 30
+    @State private var fillWeek = false
     /// Kept so rerolls re-run the exact generation context.
     @State private var lastInputs: ProgramGenerator.Inputs?
     @State private var lastCatalog: [ProgramGenerator.CatalogExercise] = []
@@ -57,6 +58,36 @@ struct CoachWizardView: View {
                     dial("CARDIO · MINUTES PER SESSION", options: ["15", "20", "30", "45", "60"],
                          selected: "\(cardioMinutes)") { cardioMinutes = Int($0) ?? 30 }
                 }
+                if days + cardioDays > 7 {
+                    Text("More sessions than days — cardio rides your lifting days as PM sessions. Keep 6+ hours between when you can.")
+                        .font(GSFont.body(11, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral500)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                // Train every day: open days become ACTIVE RECOVERY.
+                Button {
+                    fillWeek.toggle()
+                    preview = nil
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: fillWeek ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(fillWeek ? theme.accent : theme.neutral500)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Train every day")
+                                .font(GSFont.bold(14, relativeTo: .headline))
+                                .foregroundStyle(theme.text)
+                            Text("Open days become active recovery — mobility and a zone-1 walk. In the gym daily; the easy days stay easy.")
+                                .font(GSFont.body(11, relativeTo: .caption))
+                                .foregroundStyle(theme.neutral500)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer()
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
                 dial("EXPERIENCE", options: GeneratorScience.Experience.allCases.map(\.rawValue),
                      selected: experience.rawValue) { experience = GeneratorScience.Experience(rawValue: $0) ?? .new }
 
@@ -298,7 +329,8 @@ struct CoachWizardView: View {
             experience: experience,
             sex: GeneratorScience.Sex(rawValue: sex) ?? .unspecified,
             equipment: equipment,
-            cardioDays: cardioDays, cardioMinutes: cardioMinutes)
+            cardioDays: cardioDays, cardioMinutes: cardioMinutes,
+            fillWeekWithRecovery: fillWeek)
         lastInputs = inputs
         lastCatalog = catalog
         preview = ProgramGenerator.generate(inputs: inputs, catalog: catalog)
