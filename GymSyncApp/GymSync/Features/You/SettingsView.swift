@@ -41,6 +41,7 @@ struct SettingsView: View {
     /// or revise their confident-5RM seeds (owner 2026-08-12).
     @State private var showLiftAnchors = false
     @State private var showHeartRateMonitor = false
+    @State private var showCoaching = false
     @State private var showEditProfile = false
     // Phase M Task 2 (moderation/compliance): You-tab Blocked Users list.
     @State private var showBlockedUsers = false
@@ -188,6 +189,9 @@ struct SettingsView: View {
             }
             .navigationDestination(isPresented: $showHeartRateMonitor) {
                 HeartRateMonitorView()
+            }
+            .navigationDestination(isPresented: $showCoaching) {
+                CoachingView()
             }
             .navigationDestination(isPresented: $showLiftAnchors) {
                 LiftAnchorsView(onAdvance: {
@@ -549,6 +553,9 @@ struct SettingsView: View {
             GSSettingsRow(title: "Heart rate monitor", icon: "heart",
                           value: BLEHeartRateService.shared.hasRememberedDevice ? "Paired" : "Not set") {
                 showHeartRateMonitor = true
+            }
+            GSSettingsRow(title: "Coaching", icon: "figure.strengthtraining.traditional") {
+                showCoaching = true
             }
             showTipsRow
             soloPrivacyRow
