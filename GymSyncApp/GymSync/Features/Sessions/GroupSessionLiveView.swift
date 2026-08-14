@@ -4103,20 +4103,30 @@ struct GroupSessionLiveView: View {
                 let nextRE = RoutineProgression.currentExercise(
                     routine: routineExercises,
                     completedSets: { id in id == ex.id ? preLogSetCount + 1 : mySetCount(for: id) })
-                let isTransit = nextRE != nil && nextRE?.exerciseID != ex.id
-                let seconds = (currentRoutineExercise?.restSeconds ?? 120)
-                    + (isTransit ? TransitWindow.seconds : 0)
-                selfRotationRestIsTransit = isTransit
-                let until = Date().addingTimeInterval(TimeInterval(seconds))
-                selfRotationRestStartedAt = Date()
-                selfRotationRestUntil = until
-                Task {
-                    try? await Task.sleep(for: .seconds(max(0, until.timeIntervalSinceNow)))
-                    // Only the still-current window clears itself — a rest
-                    // the user already cut short must not be re-cleared.
-                    if selfRotationRestUntil == until {
-                        captureSelfRotationRestDrop()
-                        selfRotationRestUntil = nil
+                let exerciseChanged = nextRE != nil && nextRE?.exerciseID != ex.id
+                // Superset handoff (phase B group mirror): A→B is the same
+                // station cluster with NO rest — skip the interlude
+                // entirely and stay on my-turn for the partner's set.
+                let currentRE = routineExercises.first(where: { $0.exerciseID == ex.id })
+                if exerciseChanged,
+                   RoutineProgression.arePaired(currentRE, nextRE, in: routineExercises) {
+                    // No interlude — the pair's whole point.
+                } else {
+                    let isTransit = exerciseChanged
+                    let seconds = (currentRoutineExercise?.restSeconds ?? 120)
+                        + (isTransit ? TransitWindow.seconds : 0)
+                    selfRotationRestIsTransit = isTransit
+                    let until = Date().addingTimeInterval(TimeInterval(seconds))
+                    selfRotationRestStartedAt = Date()
+                    selfRotationRestUntil = until
+                    Task {
+                        try? await Task.sleep(for: .seconds(max(0, until.timeIntervalSinceNow)))
+                        // Only the still-current window clears itself — a rest
+                        // the user already cut short must not be re-cleared.
+                        if selfRotationRestUntil == until {
+                            captureSelfRotationRestDrop()
+                            selfRotationRestUntil = nil
+                        }
                     }
                 }
             }
