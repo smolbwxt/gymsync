@@ -364,6 +364,24 @@ struct WorkoutSessionView: View {
         .sheet(isPresented: $showExercisePicker) { exercisePickerSheet }
         .sheet(isPresented: $showLogSheet) { logSheet }
         .sheet(item: $editingSet) { log in editSheet(for: log) }
+        .sheet(item: $dropLadder) { ctx in
+            DropLadderSheet(
+                topWeightPounds: ctx.topWeightPounds,
+                steps: ctx.steps,
+                dropPercent: ctx.percent,
+                unit: soloUnit
+            ) { rungs in
+                // Best-effort — the parent set already logged; a failed
+                // ladder write never blocks anything (the trigger picks up
+                // whatever rows land).
+                let segments = rungs.enumerated().map { index, rung in
+                    SetLogSegment(id: UUID(), setLogID: ctx.setLogID,
+                                  segmentIndex: index + 1,
+                                  weight: rung.weight, reps: rung.reps)
+                }
+                Task { try? await SetLogSegmentRepository.log(segments) }
+            }
+        }
     }
 
     @ViewBuilder
@@ -671,6 +689,17 @@ struct WorkoutSessionView: View {
     // (the WorkingWeight ladder's campaign/rep-goal rungs need a history
     // fetch this view doesn't hold yet — follow-up); LAST TIME card reuses
     // the cached one-line summary rather than the structured card.
+
+    /// Drop-ladder presentation context (set structures phase B): armed
+    /// when the TOP set of a drop-prescribed exercise logs.
+    struct DropLadderContext: Identifiable {
+        let setLogID: UUID
+        let topWeightPounds: Decimal
+        let steps: Int
+        let percent: Decimal
+        var id: UUID { setLogID }
+    }
+    @State private var dropLadder: DropLadderContext?
 
     private var soloUnit: WeightUnit { sessionSettings?.weightUnit ?? .lbs }
     private var soloWeightStep: Decimal { soloUnit == .kg ? Decimal(2.5) : 5 }
@@ -2882,6 +2911,12 @@ struct WorkoutSessionView: View {
             }
 
             let targetSets = re.targetSets ?? 1
+            // Drop ladder (phase B): the FINAL set of a drop-prescribed
+            // exercise is the TOP bell — capture before the advance below
+            // mutates the counters; the sheet arms after the flow settles.
+            let wasFinalDropSet = re.setType == "drop"
+                && currentSetIndex >= targetSets
+                && (weight ?? 0) > 0
             // Superset alternation (Phase B, owner design): an adjacent
             // pair runs A→B with NO rest, one shared rest after B, then
             // back to A for the next round; the pair exits together after
@@ -2933,6 +2968,12 @@ struct WorkoutSessionView: View {
                     soloRestStartedAt = Date()
                     restEndAt = Date().addingTimeInterval(TimeInterval(restSeconds))
                 }
+            }
+            if wasFinalDropSet, let weight {
+                dropLadder = DropLadderContext(setLogID: log.id,
+                                               topWeightPounds: weight,
+                                               steps: re.dropSteps ?? 2,
+                                               percent: re.dropPercent ?? 20)
             }
             return true
         } catch {
