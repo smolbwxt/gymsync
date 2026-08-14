@@ -25,6 +25,10 @@ enum ProgramGenerator {
         var focusMuscles: Set<String>? = nil
         /// Equipment classes available; nil = everything.
         var equipment: Set<String>? = nil
+        /// Dedicated cardio days appended after the lifting split
+        /// (owner 2026-08-14) — prescribed as zone + MINUTES.
+        var cardioDays: Int = 0
+        var cardioMinutes: Int = 30
     }
 
     struct CatalogExercise {
@@ -50,6 +54,13 @@ enum ProgramGenerator {
         var restSeconds: Int
         var percentOfMax: Double?
         var isMain: Bool
+        /// The slot that placed this exercise — carried so a reroll can
+        /// re-run the SAME selection with the current pick excluded
+        /// (deterministic next-best, never a shuffle).
+        var slot: Slot? = nil
+        /// Cardio prescriptions: zone + MINUTES instead of sets × reps.
+        var cardioZone: Int? = nil
+        var cardioMinutes: Int? = nil
     }
 
     struct Day: Equatable {
@@ -114,6 +125,29 @@ enum ProgramGenerator {
                                            inputs: inputs, setsPerExercise: setsPerSlot(slot: slot, perDayBudget: perDayBudget)))
             }
             days.append(Day(name: name, exercises: chosen))
+        }
+
+        // Dedicated cardio days (owner 2026-08-14): zone + MINUTES.
+        // Conditioning prescribes intervals (zone 4); everything else
+        // steady zone 2. Modality = first catalog cardio entry by rank
+        // (deterministic), equipment-filtered like everything else.
+        if inputs.cardioDays > 0 {
+            let modality = usable.first { $0.category == "cardio" }
+                ?? catalog.first { $0.category == "cardio" }
+            if let modality {
+                let zone = inputs.focus == .conditioning ? 4 : 2
+                for n in 1...inputs.cardioDays {
+                    let label = inputs.cardioDays > 1 ? "Cardio \(n)" : "Cardio"
+                    days.append(Day(name: label, exercises: [
+                        Exercise(exerciseID: modality.id, name: modality.name,
+                                 sets: 1, repsLow: 0, repsHigh: 0,
+                                 restSeconds: 0, percentOfMax: nil, isMain: false,
+                                 slot: nil,
+                                 cardioZone: zone,
+                                 cardioMinutes: inputs.cardioMinutes),
+                    ]))
+                }
+            }
         }
 
         // Wave: flat for 4 weeks (double progression carries it), ramp
@@ -252,7 +286,33 @@ enum ProgramGenerator {
                         repsLow: repsLow, repsHigh: repsHigh,
                         restSeconds: rest,
                         percentOfMax: percent,
-                        isMain: isMain)
+                        isMain: isMain,
+                        slot: slot)
+    }
+
+    // MARK: Reroll (owner 2026-08-14: "allow people to reroll accessories
+    // if they have an objection")
+    //
+    // Deterministic next-best, never a shuffle: the SAME slot selection
+    // re-runs with everything already in the day PLUS the rejected pick
+    // excluded — reroll twice and you walk the ranked candidate list.
+    static func reroll(_ exercise: Exercise, in day: Day,
+                       inputs: Inputs, catalog: [CatalogExercise]) -> Exercise? {
+        guard let slot = exercise.slot else { return nil }
+        let usable = catalog.filter { ex in
+            inputs.equipment.map { $0.contains(ex.equipment) } ?? true
+        }
+        var excluded = Set(day.exercises.map(\.exerciseID))
+        excluded.insert(exercise.exerciseID)
+        guard let next = select(slot: slot, from: usable, excluding: excluded,
+                                focus: inputs.focus,
+                                focusMuscles: inputs.focusMuscles) else { return nil }
+        var replacement = prescription(for: next, slot: slot,
+                                       band: GeneratorScience.band(for: inputs.focus),
+                                       inputs: inputs,
+                                       setsPerExercise: exercise.sets)
+        replacement.sets = exercise.sets
+        return replacement
     }
 
     // MARK: Helpers

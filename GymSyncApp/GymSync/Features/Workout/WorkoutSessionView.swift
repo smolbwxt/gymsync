@@ -1636,6 +1636,10 @@ struct WorkoutSessionView: View {
     /// number isn't the assignment anymore.
     private var repTargetLabel: String {
         guard let re = currentRoutineExercise else { return "REPS" }
+        // Cardio prescriptions (generator): zone + MINUTES, not reps.
+        if let zone = re.cardioZone, let minutes = re.cardioMinutes {
+            return "ZONE \(zone) · \(minutes) MIN"
+        }
         let isFinalSet = currentSetIndex >= (re.targetSets ?? 1)
         if re.setType == "drop" {
             // Owner 2026-08-14 (corrected): a drop prescription fires on

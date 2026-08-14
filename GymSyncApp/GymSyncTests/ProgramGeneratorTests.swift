@@ -169,6 +169,61 @@ final class ProgramGeneratorTests: XCTestCase {
                       "the squat slot falls back down the equipment ladder")
     }
 
+    // MARK: - Day range, cardio, reroll (owner 2026-08-14)
+
+    func testOneAndSevenDaySplits() {
+        let one = ProgramGenerator.generate(inputs: inputs(days: 1), catalog: catalog())
+        XCTAssertEqual(one.days.count, 1)
+        XCTAssertEqual(one.days[0].name, "Full Body")
+        let seven = ProgramGenerator.generate(inputs: inputs(days: 7), catalog: catalog())
+        XCTAssertEqual(seven.days.count, 7)
+        XCTAssertEqual(seven.days.last?.name, "Full Body")
+    }
+
+    func testCardioDaysAppendZoneAndMinutes() {
+        var withCardio = inputs(focus: .weightLoss, days: 3)
+        withCardio.cardioDays = 2
+        withCardio.cardioMinutes = 30
+        var cardioCatalog = catalog()
+        cardioCatalog.append(ProgramGenerator.CatalogExercise(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000099")!,
+            name: "Cycling", primaryMuscle: "quads", secondaryMuscles: [],
+            category: "cardio", equipment: "machine", movementPattern: "other", rank: 99))
+        let program = ProgramGenerator.generate(inputs: withCardio, catalog: cardioCatalog)
+        XCTAssertEqual(program.days.count, 5, "3 lifting + 2 cardio")
+        let cardio = program.days.last!.exercises.first!
+        XCTAssertEqual(cardio.cardioZone, 2, "steady zone 2 outside conditioning")
+        XCTAssertEqual(cardio.cardioMinutes, 30)
+    }
+
+    func testConditioningCardioIsZoneFour() {
+        var conditioning = inputs(focus: .conditioning, days: 2)
+        conditioning.cardioDays = 1
+        var cardioCatalog = catalog()
+        cardioCatalog.append(ProgramGenerator.CatalogExercise(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000099")!,
+            name: "Cycling", primaryMuscle: "quads", secondaryMuscles: [],
+            category: "cardio", equipment: "machine", movementPattern: "other", rank: 99))
+        let program = ProgramGenerator.generate(inputs: conditioning, catalog: cardioCatalog)
+        XCTAssertEqual(program.days.last?.exercises.first?.cardioZone, 4,
+                       "conditioning cardio prescribes intervals")
+    }
+
+    func testRerollWalksTheRankedListDeterministically() {
+        let program = ProgramGenerator.generate(inputs: inputs(days: 3), catalog: catalog())
+        let day = program.days[0]
+        let original = day.exercises[0]           // squat slot: Back Squat
+        let rerolled = ProgramGenerator.reroll(original, in: day,
+                                               inputs: inputs(days: 3), catalog: catalog())
+        XCTAssertEqual(rerolled?.name, "Leg Press",
+                       "next-best down the same slot's ranked list — never a shuffle")
+        XCTAssertEqual(rerolled?.sets, original.sets, "prescription volume carries over")
+        // Deterministic: same reroll twice = same answer.
+        let again = ProgramGenerator.reroll(original, in: day,
+                                            inputs: inputs(days: 3), catalog: catalog())
+        XCTAssertEqual(rerolled?.exerciseID, again?.exerciseID)
+    }
+
     // MARK: - percentFor table
 
     func testPercentForAnchors() {

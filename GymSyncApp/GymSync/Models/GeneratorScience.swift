@@ -146,7 +146,7 @@ enum GeneratorScience {
     }
 
     static func split(daysPerWeek: Int, focus: Focus) -> [DayKind] {
-        let days = max(2, min(6, daysPerWeek))
+        let days = max(1, min(7, daysPerWeek))
         // Weight Loss and Conditioning are FULL-BODY programs at any day
         // count (the focus table's own prescription: density circuits and
         // maintenance-floor lifting, not bodypart splits).
@@ -154,11 +154,13 @@ enum GeneratorScience {
             return Array(repeating: .fullBody, count: days)
         }
         switch days {
+        case 1: return [.fullBody]
         case 2: return [.fullBody, .fullBody]
         case 3: return [.fullBody, .fullBody, .fullBody]
         case 4: return [.upper, .lower, .upper, .lower]
         case 5: return [.upper, .lower, .push, .pull, .legs]
-        default: return [.push, .pull, .legs, .push, .pull, .legs]
+        case 6: return [.push, .pull, .legs, .push, .pull, .legs]
+        default: return [.push, .pull, .legs, .push, .pull, .legs, .fullBody]
         }
     }
 

@@ -27,6 +27,12 @@ struct CoachWizardView: View {
     /// our home gym has — so we're not suggesting nonsense"). All on by
     /// default; the hub-hosted inventory refines this next.
     @State private var equipment: Set<String> = ["barbell", "dumbbell", "machine", "cable", "bodyweight"]
+    /// Cardio (owner 2026-08-14): dedicated days + MINUTES per session.
+    @State private var cardioDays = 0
+    @State private var cardioMinutes = 30
+    /// Kept so rerolls re-run the exact generation context.
+    @State private var lastInputs: ProgramGenerator.Inputs?
+    @State private var lastCatalog: [ProgramGenerator.CatalogExercise] = []
     // About you (prefilled from profile; skippable)
     @State private var sex: String = ""
     @State private var birthYearText = ""
@@ -41,10 +47,16 @@ struct CoachWizardView: View {
             VStack(alignment: .leading, spacing: 20) {
                 dial("FOCUS", options: GeneratorScience.Focus.allCases.map(\.rawValue),
                      selected: focus.rawValue) { focus = GeneratorScience.Focus(rawValue: $0) ?? .hypertrophy }
-                dial("DAYS PER WEEK", options: ["2", "3", "4", "5", "6"],
+                dial("LIFTING DAYS PER WEEK", options: ["1", "2", "3", "4", "5", "6", "7"],
                      selected: "\(days)") { days = Int($0) ?? 3 }
-                dial("DURATION", options: ["4", "8", "12"],
+                dial("PROGRAM LENGTH · WEEKS", options: ["4", "8", "12"],
                      selected: "\(duration)") { duration = Int($0) ?? 8 }
+                dial("CARDIO DAYS PER WEEK", options: ["0", "1", "2", "3", "4", "5"],
+                     selected: "\(cardioDays)") { cardioDays = Int($0) ?? 0 }
+                if cardioDays > 0 {
+                    dial("CARDIO · MINUTES PER SESSION", options: ["15", "20", "30", "45", "60"],
+                         selected: "\(cardioMinutes)") { cardioMinutes = Int($0) ?? 30 }
+                }
                 dial("EXPERIENCE", options: GeneratorScience.Experience.allCases.map(\.rawValue),
                      selected: experience.rawValue) { experience = GeneratorScience.Experience(rawValue: $0) ?? .new }
 
@@ -223,16 +235,36 @@ struct CoachWizardView: View {
                     Text(day.name)
                         .font(GSFont.bold(15, relativeTo: .headline))
                         .foregroundStyle(theme.text)
-                    ForEach(Array(day.exercises.enumerated()), id: \.offset) { _, ex in
-                        HStack {
+                    ForEach(Array(day.exercises.enumerated()), id: \.offset) { exIndex, ex in
+                        HStack(spacing: 8) {
                             Text(ex.name)
                                 .font(GSFont.body(13, relativeTo: .subheadline))
                                 .foregroundStyle(theme.text)
                             Spacer()
-                            Text("\(ex.sets)×\(ex.repsLow)-\(ex.repsHigh)"
-                                 + (ex.percentOfMax.map { String(format: " @ %.0f%%", $0) } ?? ""))
-                                .font(GSFont.body(12, relativeTo: .caption).monospacedDigit())
-                                .foregroundStyle(theme.neutral500)
+                            if let zone = ex.cardioZone, let minutes = ex.cardioMinutes {
+                                Text("Zone \(zone) · \(minutes) min")
+                                    .font(GSFont.body(12, relativeTo: .caption).monospacedDigit())
+                                    .foregroundStyle(theme.neutral500)
+                            } else {
+                                Text("\(ex.sets)×\(ex.repsLow)-\(ex.repsHigh)"
+                                     + (ex.percentOfMax.map { String(format: " @ %.0f%%", $0) } ?? ""))
+                                    .font(GSFont.body(12, relativeTo: .caption).monospacedDigit())
+                                    .foregroundStyle(theme.neutral500)
+                            }
+                            // Reroll (deterministic next-best, never a
+                            // shuffle) — any lift can be swapped.
+                            if ex.slot != nil {
+                                Button {
+                                    reroll(dayName: day.name, exerciseIndex: exIndex)
+                                } label: {
+                                    Image(systemName: "arrow.2.circlepath")
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(theme.accent)
+                                        .frame(width: 26, height: 26)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
                     }
                 }
@@ -265,8 +297,23 @@ struct CoachWizardView: View {
             focus: focus, daysPerWeek: days, durationWeeks: duration,
             experience: experience,
             sex: GeneratorScience.Sex(rawValue: sex) ?? .unspecified,
-            equipment: equipment)
+            equipment: equipment,
+            cardioDays: cardioDays, cardioMinutes: cardioMinutes)
+        lastInputs = inputs
+        lastCatalog = catalog
         preview = ProgramGenerator.generate(inputs: inputs, catalog: catalog)
+    }
+
+    private func reroll(dayName: String, exerciseIndex: Int) {
+        guard var program = preview, let inputs = lastInputs,
+              let dayIndex = program.days.firstIndex(where: { $0.name == dayName }),
+              program.days[dayIndex].exercises.indices.contains(exerciseIndex),
+              let replacement = ProgramGenerator.reroll(
+                program.days[dayIndex].exercises[exerciseIndex],
+                in: program.days[dayIndex],
+                inputs: inputs, catalog: lastCatalog) else { return }
+        program.days[dayIndex].exercises[exerciseIndex] = replacement
+        preview = program
     }
 
     @MainActor
@@ -294,12 +341,14 @@ struct CoachWizardView: View {
                         id: UUID(), routineID: routineID, exerciseID: ex.exerciseID,
                         position: index + 1,
                         targetSets: ex.sets,
-                        targetReps: "\(ex.repsLow)-\(ex.repsHigh)",
+                        targetReps: ex.cardioZone != nil ? nil : "\(ex.repsLow)-\(ex.repsHigh)",
                         targetWeight: nil,
                         restSeconds: ex.restSeconds,
                         notes: nil,
-                        targetRepsLow: ex.repsLow,
-                        targetRepsHigh: ex.repsHigh)
+                        targetRepsLow: ex.cardioZone != nil ? nil : ex.repsLow,
+                        targetRepsHigh: ex.cardioZone != nil ? nil : ex.repsHigh,
+                        cardioZone: ex.cardioZone,
+                        cardioMinutes: ex.cardioMinutes)
                 }
                 try await RoutineRepository.save(routine, exercises: exercises)
             }

@@ -25,6 +25,10 @@ struct RoutineExercise: Codable, Identifiable, Sendable, Equatable {
     /// generated prescriptions fill all three.
     var targetRepsLow: Int? = nil
     var targetRepsHigh: Int? = nil
+    /// Cardio prescriptions (generator): zone + MINUTES — the session UI
+    /// branches on their presence instead of sets × reps.
+    var cardioZone: Int? = nil
+    var cardioMinutes: Int? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -43,5 +47,7 @@ struct RoutineExercise: Codable, Identifiable, Sendable, Equatable {
         case targetFailure = "target_failure"
         case targetRepsLow = "target_reps_low"
         case targetRepsHigh = "target_reps_high"
+        case cardioZone = "cardio_zone"
+        case cardioMinutes = "cardio_minutes"
     }
 }
