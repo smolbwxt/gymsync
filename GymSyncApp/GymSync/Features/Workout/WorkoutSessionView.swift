@@ -364,6 +364,16 @@ struct WorkoutSessionView: View {
         .sheet(isPresented: $showExercisePicker) { exercisePickerSheet }
         .sheet(isPresented: $showLogSheet) { logSheet }
         .sheet(item: $editingSet) { log in editSheet(for: log) }
+        // Rest buzz (owner 2026-08-14): ONE observation point covers every
+        // path that opens or closes a rest window — freeform, routine,
+        // superset handoff, START SET, the lapse task.
+        .onChange(of: restEndAt) {
+            if let end = restEndAt {
+                RestNotifier.schedule(at: end)
+            } else {
+                RestNotifier.cancel()
+            }
+        }
         .sheet(item: $dropLadder) { ctx in
             DropLadderSheet(
                 topWeightPounds: ctx.topWeightPounds,
@@ -1621,6 +1631,13 @@ struct WorkoutSessionView: View {
     private var repTargetLabel: String {
         guard let re = currentRoutineExercise else { return "REPS" }
         let isFinalSet = currentSetIndex >= (re.targetSets ?? 1)
+        if isFinalSet, re.setType == "drop" {
+            // Owner 2026-08-14 ("can prescribe drop sets, but doesn't show
+            // in solo workout"): announce the ladder BEFORE the top set
+            // logs — the DropLadderSheet only arms after.
+            let pct = NSDecimalNumber(decimal: re.dropPercent ?? 20).intValue
+            return "REPS · TOP + DROP \(re.dropSteps ?? 2)×\(pct)%"
+        }
         if isFinalSet, re.setType == "burnout" { return "REPS · MAX" }
         if isFinalSet, re.targetFailure { return "REPS · TO FAILURE" }
         return re.targetReps.map { "REPS · \($0)" } ?? "REPS"

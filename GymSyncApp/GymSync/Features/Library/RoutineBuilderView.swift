@@ -17,6 +17,10 @@ struct RoutineBuilderView: View {
     @State private var items: [RoutineExercise] = []
     @State private var loading = false
     @State private var showExercisePicker = false
+    // Picker filters (owner 2026-08-14) — collapsible muscle + equipment.
+    @State private var pickerFiltersOpen = false
+    @State private var pickerMuscle: String?
+    @State private var pickerEquipment: String?
     @State private var pickerSearchText = ""
     @State private var errorText: String?
     @State private var allExercises: [Exercise] = []
@@ -416,8 +420,83 @@ struct RoutineBuilderView: View {
     }
 
     private var pickerFilteredExercises: [Exercise] {
-        pickerSearchText.isEmpty ? allExercises
-            : allExercises.filter { $0.name.localizedCaseInsensitiveContains(pickerSearchText) }
+        allExercises.filter { ex in
+            (pickerSearchText.isEmpty
+                || ex.name.localizedCaseInsensitiveContains(pickerSearchText))
+            && (pickerMuscle == nil || ex.primaryMuscle == pickerMuscle)
+            && (pickerEquipment == nil || ex.equipment == pickerEquipment)
+        }
+    }
+
+    /// Filter vocab derived from the loaded catalog — new muscles or
+    /// equipment classes (e.g. the machine sweep) appear automatically.
+    private var pickerMuscles: [String] {
+        Array(Set(allExercises.map(\.primaryMuscle))).sorted()
+    }
+    private var pickerEquipments: [String] {
+        Array(Set(allExercises.map(\.equipment))).sorted()
+    }
+
+    /// Collapsible filter widget (owner 2026-08-14: "no ability to filter
+    /// muscle groups… also by machine / barbell / body weight") — chips
+    /// stay flat (form furniture), the disclosure row is the only control.
+    @ViewBuilder
+    private var pickerFilters: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                withAnimation(.easeOut(duration: 0.18)) { pickerFiltersOpen.toggle() }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text(pickerFilterSummary)
+                        .font(GSFont.bold(12, relativeTo: .caption))
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 11, weight: .semibold))
+                        .rotationEffect(.degrees(pickerFiltersOpen ? 180 : 0))
+                }
+                .foregroundStyle(pickerMuscle != nil || pickerEquipment != nil
+                                 ? theme.accent : theme.neutral500)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if pickerFiltersOpen {
+                filterChipRow(options: pickerMuscles, selected: $pickerMuscle)
+                filterChipRow(options: pickerEquipments, selected: $pickerEquipment)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
+    }
+
+    private var pickerFilterSummary: String {
+        let parts = [pickerMuscle?.replacingOccurrences(of: "_", with: " ").capitalized,
+                     pickerEquipment?.capitalized].compactMap { $0 }
+        return parts.isEmpty ? "FILTERS" : parts.joined(separator: " · ").uppercased()
+    }
+
+    private func filterChipRow(options: [String], selected: Binding<String?>) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(options, id: \.self) { option in
+                    let isOn = selected.wrappedValue == option
+                    Button {
+                        selected.wrappedValue = isOn ? nil : option
+                    } label: {
+                        Text(option.replacingOccurrences(of: "_", with: " ").capitalized)
+                            .font(GSFont.bodyMedium(12, relativeTo: .caption))
+                            .foregroundStyle(isOn ? theme.bg : theme.neutral700)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(isOn ? theme.accent : theme.surface)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
     }
 
     // Canvas: exercise picker rows — name + muscle kicker, with the shared
@@ -439,6 +518,8 @@ struct RoutineBuilderView: View {
             .background(theme.surface)
             .cornerRadius(GSMetrics.radiusSm)
             .padding(16)
+
+            pickerFilters
 
             exercisePickerList
         }

@@ -2455,6 +2455,27 @@ struct GroupSessionLiveView: View {
         .onChange(of: liveSession.routineID) { _, _ in
             Task { await reload() }
         }
+        // Rest buzz (owner 2026-08-14) — one observation point for the
+        // self-rotation interlude, same shape as solo's restEndAt wire.
+        // The same point PERSISTS the window to LiveSessionTimerStore so a
+        // sheet swipe-down/rejoin can't erase a running rest.
+        .onChange(of: selfRotationRestUntil) { _, _ in
+            if let end = selfRotationRestUntil {
+                RestNotifier.schedule(at: end)
+            } else {
+                RestNotifier.cancel()
+            }
+            LiveSessionTimerStore.shared.updateRest(
+                sessionID: session.id,
+                until: selfRotationRestUntil,
+                startedAt: selfRotationRestStartedAt,
+                isTransit: selfRotationRestIsTransit)
+        }
+        .onChange(of: selfRotationRestDrops) { _, _ in
+            LiveSessionTimerStore.shared.updateDrops(
+                sessionID: session.id, drops: selfRotationRestDrops)
+        }
+        .onAppear { restoreTimersFromStore() }
         .onChange(of: liveSession.state) { _, _ in
             // Phase W Task 3 fix wave 1 (reviewer finding, CRITICAL) —
             // mirrors the `.onChange(of: liveSession.currentTurnUserID)`
@@ -4129,6 +4150,29 @@ struct GroupSessionLiveView: View {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    /// Re-seed the self-rotation rest window + recovery-drop history from
+    /// the store after a sheet swipe-down/rejoin (owner bug 2026-08-14).
+    /// The window only restores while still in the future, and its
+    /// auto-clear task is RE-ARMED here — the original died with the view.
+    private func restoreTimersFromStore() {
+        guard let snap = LiveSessionTimerStore.shared.snapshot(for: session.id) else { return }
+        if selfRotationRestDrops.isEmpty, !snap.restDrops.isEmpty {
+            selfRotationRestDrops = snap.restDrops
+        }
+        guard selfRotationRestUntil == nil,
+              let until = snap.restUntil, until > .now else { return }
+        selfRotationRestUntil = until
+        selfRotationRestStartedAt = snap.restStartedAt
+        selfRotationRestIsTransit = snap.restIsTransit
+        Task {
+            try? await Task.sleep(for: .seconds(max(0, until.timeIntervalSinceNow)))
+            if selfRotationRestUntil == until {
+                captureSelfRotationRestDrop()
+                selfRotationRestUntil = nil
             }
         }
     }
