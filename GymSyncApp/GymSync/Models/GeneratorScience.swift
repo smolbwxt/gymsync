@@ -139,6 +139,22 @@ enum GeneratorScience {
     /// 10-14 days, volume −50%, intensity maintained 90-100%.
     static let taperVolumeMultiplier = 0.5
 
+    // MARK: Recovery constraints (recovery research pass, 2026-08)
+
+    /// Six consecutive hard days is the ceiling: no trial shows a full
+    /// rest day is required for MUSCLE recovery under proper rotation,
+    /// but systemic load (connective tissue, sleep, CNS, adherence) backs
+    /// a weekly floor of one non-hard day — an ACTIVE RECOVERY day
+    /// satisfies it (ECSS/ACSM overreaching consensus, Meeusen 2013;
+    /// practice-based S&C convention, honestly labeled).
+    static let maxConsecutiveHardDays = 6
+
+    /// Same-muscle session spacing: 48 h default (MPS near-baseline by
+    /// 48 h in trained lifters — MacDougall 1995 / Phillips 1997
+    /// time-course), 72 h after high-fatigue sessions. Rendered as
+    /// program NOTES until day-of-week binding exists.
+    static let sameMuscleSpacingHours = 48
+
     // MARK: Split ladder (frequency law: ≥2×/muscle/week wherever days allow)
 
     enum DayKind: String {

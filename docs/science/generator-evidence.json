@@ -502,5 +502,323 @@
         "confidence": "weak"
       }
     ]
+  },
+  {
+    "topic": "rest-days",
+    "findings": [
+      {
+        "claim": "Muscle protein synthesis (MPS) returns to near-baseline roughly 24-48 hours post-resistance-exercise in trained lifters, and takes somewhat longer (up to ~72h) in untrained individuals \u2014 this is the physiological basis for a 48-72h per-muscle recovery window rather than a mandatory whole-body rest day.",
+        "evidence": "Classic human MPS time-course studies (MacDougall et al. 1995; Phillips et al. 1997) tracked quadriceps/biceps protein synthesis after heavy resistance exercise and found synthesis elevated at 4-24h, declining toward baseline by 36-48h in trained subjects. This time-course is the textbook justification cited throughout hypertrophy programming literature for '48-72h same-muscle' guidance.",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "When weekly training volume is held constant, meta-analytic evidence favors training a given muscle at least twice per week over once per week for hypertrophy, but the marginal benefit of pushing frequency higher (4x/week+) per muscle is unclear/diminishing once volume is properly equated.",
+        "evidence": "Schoenfeld, Grgic & Krieger (2019), systematic review and meta-analysis on resistance-training frequency and muscle hypertrophy (Journal of Sports Sciences).",
+        "confidence": "strong"
+      },
+      {
+        "claim": "There is no controlled-trial evidence that a full, whole-body rest day is physiologically required for muscle tissue recovery per se \u2014 high-frequency training models (6+ training days/week, sometimes 2x/day) are standard in Olympic weightlifting and some powerlifting systems, managed via intensity/volume rotation (heavy/light/medium days) rather than full rest days.",
+        "evidence": "Widely documented in strength-and-conditioning coaching texts (e.g., NSCA's Essentials of Strength Training and Conditioning; Bompa-style periodization literature) describing Bulgarian/Russian-style weightlifting training frequencies.",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "Overreaching and overtraining sit on a continuum distinguished primarily by recovery time: functional overreaching (FOR) resolves within days after a short reduction in load, non-functional overreaching (NFOR) requires weeks to months, and overtraining syndrome (OTS) requires months to years and involves systemic hormonal, immune, and psychological disturbance.",
+        "evidence": "Meeusen et al. (2013), joint consensus statement of the European College of Sport Science and American College of Sports Medicine, Medicine & Science in Sports & Exercise.",
+        "confidence": "strong"
+      },
+      {
+        "claim": "Practical overreaching markers usable for recreational-lifter monitoring include elevated resting heart rate relative to personal baseline, suppressed heart-rate variability, disturbed sleep duration/quality, performance decrements at matched RPE across consecutive sessions, elevated multi-muscle-group soreness, mood/motivation disturbance, and increased minor-illness susceptibility.",
+        "evidence": "Composite of overtraining-syndrome literature (Meeusen et al. 2013; the broader 'Overtraining in Sport' research tradition, e.g., Kreider/Fry/O'Toole 1998) and applied RPE/HRV-based autoregulation practice in modern strength & conditioning.",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "Connective tissue (tendon/ligament) and joint structures recover more slowly than muscle tissue due to lower vascularity/metabolic turnover, so repeated heavy loading of the same movement pattern or joint (e.g., squat/deadlift-pattern axial spinal loading) on consecutive days carries elevated overuse risk independent of whether the 'same muscle' was nominally rotated.",
+        "evidence": "Tendon-loading and tendinopathy literature (e.g., Cook & Purdam's tendon pathology continuum model, 2009) and general sports-medicine consensus that overuse injury is driven by cumulative joint/tendon load, not muscle fatigue alone.",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "Growth hormone secretion is concentrated during slow-wave sleep, making sleep a systemic recovery lever that operates independently of, and in parallel to, per-muscle recovery timelines.",
+        "evidence": "Established exercise/sleep endocrinology \u2014 GH pulsatility tied to slow-wave sleep is textbook-level physiology.",
+        "confidence": "strong"
+      },
+      {
+        "claim": "Reduced sleep duration has been linked to elevated injury risk in athletes in at least one commonly cited study, but that finding's generalization from its original population to recreational adult resistance-training lifters is uncertain.",
+        "evidence": "A frequently cited pediatric/adolescent sports-medicine study (attributed to Milewski et al., ~2014, Journal of Pediatric Orthopaedics) associated shorter sleep duration with substantially higher injury risk in young athletes; recall of exact figures/journal is not fully certain and the youth-athlete population differs from recreational adult lifters.",
+        "confidence": "weak"
+      },
+      {
+        "claim": "Delayed-onset muscle soreness (DOMS) is a poor standalone proxy for whether a muscle has finished recovering \u2014 soreness can outlast the return of force-generating capacity, and performance can be impaired with minimal perceived soreness \u2014 so a program generator should not gate rest-day logic on soreness alone.",
+        "evidence": "Widely noted dissociation between DOMS and measured strength/force output in exercise physiology and applied strength-and-conditioning practice.",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "For recreational lifters without elite-level recovery support (sleep optimization, massage, nutrition periodization, monitoring staff), common coaching guidance defaults to at least one full rest day per week even under a well-rotated split, mainly for systemic/psychological/adherence reasons rather than strict muscle-tissue necessity.",
+        "evidence": "Practice-based coaching consensus found in intermediate-lifter program-design literature (e.g., material in the vein of Renaissance Periodization / Helms & Israetel-style resources); this is heuristic coaching convention, not a specific controlled trial.",
+        "confidence": "weak"
+      }
+    ],
+    "prescription_deltas": [
+      {
+        "parameter": "min_hours_between_same_muscle_group_sessions",
+        "adjustment": "48 hours default minimum; extend to 72 hours if the prior session on that muscle group was high-fatigue (roughly RPE >=8 on the majority of working sets, or heavy eccentric-emphasis work) or if the lifter self-reports soreness >=7/10 for that muscle group.",
+        "rationale": "Matches the observed MPS time-course (near-baseline by 48h in trained lifters, slower under higher damage/fatigue or in less-trained lifters) and is consistent with meta-analytic support for >=2x/week per-muscle frequency.",
+        "confidence": "moderate-strong"
+      },
+      {
+        "parameter": "max_consecutive_training_days_before_forced_rest",
+        "adjustment": "6 consecutive training days maximum; on day 7, insert a mandatory full rest day (or, for advanced users, an active-recovery/technique-only day) regardless of whether muscle-group rotation would otherwise allow more consecutive days.",
+        "rationale": "No physiological evidence a full rest day is required purely for muscle recovery if groups rotate correctly, but practice-based S&C consensus and systemic-recovery considerations (sleep, CNS/connective-tissue load, adherence/burnout) support a weekly floor of >=1 rest day for recreational lifters who lack elite-level recovery support.",
+        "confidence": "moderate"
+      },
+      {
+        "parameter": "same_movement_pattern_min_spacing_hours",
+        "adjustment": "48 hours minimum between sessions containing heavy axial/spinal-loading movements (e.g., back squat, deadlift, heavy overhead pressing) even when the nominal primary muscle group differs between the two sessions.",
+        "rationale": "Joint/connective-tissue and spinal loading recover more slowly than muscle tissue and are not captured by muscle-group-only rotation logic; overuse injury risk tracks cumulative pattern/joint load, not just muscle fatigue.",
+        "confidence": "moderate"
+      },
+      {
+        "parameter": "autoregulation_trigger_performance_drop",
+        "adjustment": "If top-set load or total session volume-load (sets x reps x weight) on a given lift falls >=10% versus the prior session performed at matched RPE, for 2 consecutive sessions on that lift, insert a rest day or cut planned volume 30-50% on the next scheduled session.",
+        "rationale": "A single off-session is normal noise; a 2-session pattern of unexplained performance decrement at matched effort is a core marker distinguishing functional overreaching from normal fatigue in the Meeusen et al. (2013) framework.",
+        "confidence": "moderate"
+      },
+      {
+        "parameter": "autoregulation_trigger_resting_heart_rate",
+        "adjustment": "If morning resting heart rate is >=7-10% above the lifter's trailing 7-day rolling average on 2 or more consecutive mornings, flag the next session for reduced intensity or convert it to a rest day.",
+        "rationale": "Elevated resting HR relative to personal baseline is one of the more accessible autonomic markers of accumulated systemic fatigue cited in overreaching/overtraining literature and applied wearable-based monitoring, though individual-level threshold precision is not rigorously validated.",
+        "confidence": "weak-moderate"
+      },
+      {
+        "parameter": "autoregulation_trigger_sleep_debt",
+        "adjustment": "If self-reported sleep is under 6 hours for 2 or more consecutive nights, reduce planned session volume by 20-30% and avoid scheduling new maximal-effort work (RPE 9-10) until sleep normalizes.",
+        "rationale": "Sleep restriction is a systemic-recovery deficit that operates independently of per-muscle recovery timelines and has been associated with impaired recovery and elevated injury risk in athletic populations; using it as a soft gate is conservative and cheap to implement even given uncertainty in exact injury-risk figures.",
+        "confidence": "moderate"
+      },
+      {
+        "parameter": "autoregulation_trigger_multi_group_soreness",
+        "adjustment": "If subjective soreness is rated >=7/10 (0-10 scale) simultaneously in 3 or more distinct trained muscle groups, insert a full rest day rather than continuing the planned rotation, even if per-muscle 48-72h spacing rules would technically permit training.",
+        "rationale": "Isolated soreness in one recently-trained muscle group is expected in a rotating split; concurrent high soreness across multiple unrelated groups suggests systemic fatigue accumulation that per-muscle rotation logic alone does not capture.",
+        "confidence": "weak-moderate"
+      },
+      {
+        "parameter": "low_intensity_exception_to_same_muscle_spacing",
+        "adjustment": "Sessions where the target muscle group is trained at low volume (roughly <50% of that muscle's typical session volume) and RPE <=6 (technique/light-touch work) may be scheduled with less than 48h spacing from a prior harder session on the same muscle.",
+        "rationale": "The 48-72h rule is a proxy for recovery from meaningful fatigue/damage, not a ban on any use of the muscle; low-intensity, low-volume exposure induces minimal additional fatigue and is common practice in higher-frequency programs (e.g., technique-focused daily practice in weightlifting).",
+        "confidence": "weak"
+      }
+    ]
+  },
+  {
+    "topic": "active-recovery",
+    "findings": [
+      {
+        "claim": "Light aerobic activity (walking, easy cycling) clears blood lactate faster than passive rest.",
+        "evidence": "Well-established, long-standing exercise physiology finding \u2014 active recovery increases muscle blood flow and lactate oxidation/clearance relative to sitting still. This is one of the most robust findings in recovery physiology and predates modern DOMS research (classic work in this area is usually attributed to Bonen & Belcastro-era lactate-clearance studies from the 1970s-80s, later replicated many times).",
+        "confidence": "strong"
+      },
+      {
+        "claim": "Faster lactate clearance does NOT translate into less soreness or better next-day performance, because DOMS is caused by exercise-induced muscle damage (eccentric microtrauma + inflammatory cascade), not lactate buildup \u2014 the old 'lactic acid causes soreness' idea is outdated.",
+        "evidence": "Consensus position in modern exercise physiology since the 1980s-90s (muscle-damage/DOMS work associated with researchers like Priscilla Clarkson); lactate returns to baseline within roughly 30-60 minutes post-exercise regardless of recovery mode, long before soreness even peaks (24-72h), so the mechanisms are decoupled.",
+        "confidence": "strong"
+      },
+      {
+        "claim": "A systematic review/meta-analysis comparing post-exercise recovery modalities (commonly cited as Dupuy et al., 2018, Frontiers in Physiology) found massage had the most consistent benefit for reducing DOMS/perceived fatigue, while active recovery showed only small and inconsistent benefits on DOMS and performance markers versus passive rest, despite reliably lowering blood lactate.",
+        "evidence": "Named meta-analysis pooling multiple recovery techniques (massage, active recovery, compression, cryotherapy, stretching) against DOMS/CK/performance outcomes.",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "A narrative review on cool-downs/active recovery (commonly cited as Van Hooren & Peake, 2018, Sports Medicine) concluded there is little evidence that light post-exercise activity meaningfully accelerates recovery of muscle-damage markers, DOMS, or next-day performance versus passive rest, though it may have psychological/perceptual value.",
+        "evidence": "Named narrative review specifically examining cool-down/active-recovery practice against physiological and performance outcomes.",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "There is no evidence that brief, low-intensity (zone 1-2) walking or cycling of 20-40 minutes harms strength/hypertrophy adaptation. Concurrent-training interference is dose- and modality-dependent, showing up mainly at higher frequency/volume/intensity endurance work (especially running) placed close to resistance sessions \u2014 not at the low dose implied by an 'active recovery' day.",
+        "evidence": "A meta-analysis on concurrent training interference (commonly cited as Wilson et al., 2012, Journal of Strength and Conditioning Research) shows interference effects scale with aerobic volume/intensity/frequency and are larger for running than cycling; a single easy 20-40 min zone 1-2 walk is well below the doses associated with measurable interference in that literature.",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "The plausible value of a zone 1-2 active-recovery day is not 'faster muscle repair' but: mild circulatory/nutrient-delivery benefit, contribution toward general cardiovascular-activity guidelines, autonomic/parasympathetic down-regulation, and psychological/adherence benefits (routine maintenance, reduced 'rest day guilt').",
+        "evidence": "Synthesis of the above physiology/meta-analysis findings plus general coaching practice; this bundled claim has not itself been tested as a single hypothesis in a trial.",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "Static stretching reliably and robustly increases joint range of motion (flexibility) \u2014 this is one of the most consistent, well-replicated findings in the strength/conditioning literature.",
+        "evidence": "Broad meta-analytic consensus on stretch training for ROM. A synthesis often cited in this space is Thomas et al. (~2018) on configuring stretching-program variables (frequency/duration) for extensibility gains, though exact author/year recall here is less certain than the underlying flexibility-gain finding itself, which is robust across decades of research.",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "Static stretching (before and/or after exercise) does not meaningfully prevent or reduce DOMS in the following days \u2014 effect sizes are trivial/clinically unimportant.",
+        "evidence": "A Cochrane systematic review on stretching to prevent/reduce post-exercise muscle soreness (Herbert & de Noronha, originally 2007, updated with Kamper ~2011) found negligible effect on DOMS regardless of stretch timing. Exact update year recalled with somewhat lower confidence than the underlying finding.",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "Long-duration static stretch holds (roughly >60 seconds per muscle) performed immediately before a strength/power effort can acutely impair force/power output \u2014 but this concerns pre-performance stretching, not off-day mobility work where no loaded task immediately follows.",
+        "evidence": "Meta-analytic work on acute effects of static stretching on maximal performance (commonly cited as Kay & Blazevich, 2012, Medicine & Science in Sports & Exercise).",
+        "confidence": "strong"
+      },
+      {
+        "claim": "Because an active-recovery day (by definition) isn't followed by a loaded lifting task, static stretching's only evidence-backed purpose on that day is ROM/flexibility development plus subjective relaxation \u2014 not DOMS reduction or performance enhancement.",
+        "evidence": "Logical extension of findings above; not itself a separately tested hypothesis.",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "Foam rolling/self-myofascial release, if included in a 'mobility' block, has modest evidence for transiently reducing DOMS symptoms and slightly improving subsequent performance measures versus nothing.",
+        "evidence": "A study on foam rolling and DOMS/dynamic performance recovery (commonly cited as Pearcey et al., 2015, Journal of Athletic Training) found small, short-lived benefits.",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "Practice-based (not literature-derived) observation: active recovery days are most often used by coaches as an adherence/habit tool and a psychological buffer against 'do nothing = losing progress' anxiety, rather than as a physiologically necessary recovery accelerant \u2014 this framing should be made explicit to avoid overclaiming to end users.",
+        "evidence": "Coaching practice/heuristic, not a cited study \u2014 flagged explicitly as non-literature-derived and should be treated as lower-confidence than the cited findings above.",
+        "confidence": "weak"
+      }
+    ],
+    "prescription_deltas": [
+      {
+        "parameter": "active_recovery_day.aerobic_duration_min",
+        "adjustment": "20-40 minutes continuous, low-impact modality (walking, easy cycling, incline treadmill, swimming)",
+        "rationale": "Matches the literature-supported low-intensity dose with no demonstrated interference risk to strength/hypertrophy adaptation and plausible (though modest) circulatory/psychological benefit; large enough to count toward general activity guidelines without functioning as a training stimulus."
+      },
+      {
+        "parameter": "active_recovery_day.aerobic_intensity_cap",
+        "adjustment": "Zone 1-2 only: cap at ~60-70% HRmax or RPE \u22643/10 (conversational-pace test); stop or slow down if drifting above this",
+        "rationale": "Keeps the session below the dose threshold where concurrent-training interference literature (e.g. Wilson et al. 2012-type findings) shows measurable effects; prevents the 'recovery day' from silently becoming an unplanned conditioning session that compounds fatigue into the next lifting day."
+      },
+      {
+        "parameter": "active_recovery_day.mobility_duration_min",
+        "adjustment": "10-15 minutes total",
+        "rationale": "Sufficient volume to deliver ROM-training benefits without turning the day into a second training session; matches the 'get in the gym anyway' framing of a low-cost, low-risk activity."
+      },
+      {
+        "parameter": "active_recovery_day.stretch_protocol",
+        "adjustment": "2-4 sets x 30-60 sec static hold per major muscle group trained in the prior 48h (target ~60-90 sec cumulative hold time per muscle); do not exceed ~60 sec per single hold",
+        "rationale": "30-60s holds are the range most consistently associated with ROM gains in the stretch-training literature; capping single holds at ~60s avoids any theoretical carryover of acute strength/power impairment (Kay & Blazevich-type findings) in case the user trains again later the same day."
+      },
+      {
+        "parameter": "active_recovery_day.messaging_constraint",
+        "adjustment": "Do not generate copy claiming active recovery or stretching 'accelerates muscle repair,' 'flushes lactic acid to reduce soreness,' or 'prevents DOMS' \u2014 permitted claims are limited to ROM/flexibility improvement, light circulatory benefit, and adherence/routine maintenance",
+        "rationale": "DOMS/performance benefits of both active recovery and static stretching are weak-to-null in the literature (Van Hooren & Peake 2018; Herbert & de Noronha Cochrane review); avoid generating overclaiming user-facing text even though the activity itself is low-risk and worth prescribing."
+      },
+      {
+        "parameter": "active_recovery_day.frequency_per_week",
+        "adjustment": "1-3x per week, only on non-lifting days, and downgradeable to full passive rest if the user flags high fatigue, poor sleep, or elevated soreness",
+        "rationale": "Keeps cumulative light-activity volume within general population activity-guideline range (~150 min/week moderate activity) without stacking additional fatigue cost on top of the resistance-training program; makes the day conditional rather than mandatory since no strong evidence compels it over full rest."
+      },
+      {
+        "parameter": "active_recovery_day.placement_rule",
+        "adjustment": "Prefer scheduling the active-recovery day immediately after the highest-volume/most-damaging lifting session of the week (e.g., leg day), and never stack it back-to-back with another cardio/conditioning day",
+        "rationale": "If any circulatory/psychological benefit exists, it is most plausibly useful right after the highest-damage session; avoiding stacking prevents unintended cumulative fatigue that could interact with the next hard lifting session."
+      },
+      {
+        "parameter": "active_recovery_day.optional_addon_foam_rolling_min",
+        "adjustment": "Optional 5-10 minutes of foam rolling on recently-trained muscle groups",
+        "rationale": "Weak-moderate evidence (Pearcey et al. 2015-type findings) for small, short-lived DOMS/performance benefit; safe to include as optional but should not be marketed as required or strongly effective."
+      },
+      {
+        "parameter": "active_recovery_day.exclusion_rule",
+        "adjustment": "Exclude any loaded resistance work, plyometrics, or intervals from the active-recovery day template \u2014 'get in the gym anyway' should route to walking/mobility, never to a scaled-down lifting session",
+        "rationale": "Keeps the day within the low-dose envelope that the interference literature shows to be safe; a scaled-down lifting session reintroduces mechanical/eccentric loading and defeats the recovery purpose of the day."
+      }
+    ]
+  },
+  {
+    "topic": "two-a-days",
+    "findings": [
+      {
+        "claim": "The concurrent-training interference effect (simultaneous endurance + resistance training blunting resistance-training adaptations relative to resistance training alone) was first documented by Hickson (1980, Eur J Appl Physiol) and remains the foundational reference for the phenomenon.",
+        "evidence": "Hickson's original study is the classic, widely-cited discovery that combining running/cycling endurance work with strength training in the same program impairs strength gains compared to strength training alone. High recall confidence on the existence and rough finding of this study; exact effect sizes not recalled precisely.",
+        "confidence": "strong"
+      },
+      {
+        "claim": "Wilson et al. (2012, Journal of Strength and Conditioning Research) meta-analyzed concurrent-training studies and found interference is largest for power/explosive strength (large negative effect), moderate for maximal strength, and smallest for hypertrophy.",
+        "evidence": "This is a well-known, frequently cited meta-analysis in strength & conditioning literature (Wilson JM, Marin PJ, Rhea MR, Wilson SM, Loenneke JP, Anderson JC). Confident on authorship, journal, and the ranked-effect-size pattern (power > strength > hypertrophy).",
+        "confidence": "strong"
+      },
+      {
+        "claim": "Within that meta-analysis, aerobic exercise mode moderated the interference effect: running produced greater interference with lower-body strength/hypertrophy outcomes than cycling did, plausibly because running's eccentric/impact loading overlaps with and compounds the muscle damage from squat-pattern lower-body lifting, whereas cycling is largely concentric/non-impact.",
+        "evidence": "I recall the meta-analysis flagging exercise mode as a moderator of interference severity with running worse than cycling for lower-body outcomes. Moderate confidence \u2014 the qualitative direction (running > cycling interference) is well recalled; I'm less certain of exact effect-size magnitudes or whether every outcome measure showed this pattern.",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "A leading mechanistic explanation is competition between AMPK signaling (induced by endurance exercise, associated with catabolic/oxidative adaptation) and mTOR signaling (induced by resistance exercise, driving muscle protein synthesis) \u2014 endurance work performed close in time to resistance work may blunt the mTOR-driven anabolic response.",
+        "evidence": "This AMPK-vs-mTOR framing is a standard textbook/practice explanation for concurrent-training interference, discussed in mechanistic reviews of the topic (e.g., work in the vein of Fyfe/Bishop/Stepto's molecular-bases review). Moderate confidence in the general mechanism; low confidence in attributing it to any single named study without risking a wrong citation, so I've kept attribution general.",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "Time-course/recovery studies (recalled as Robineau et al., 2016, JSCR) found that separating a same-day resistance session and endurance session by roughly 6 hours preserved strength/power adaptations nearly as well as a full 24-hour separation, while doing the two sessions back-to-back with minimal recovery impaired adaptation more.",
+        "evidence": "This is the empirical root of the commonly cited '>=6h same-day separation' guideline used by strength coaches. Moderate confidence on the qualitative finding (6h ~ as good as 24h; back-to-back is worse); lower confidence on precise study details (exact population, exact hour conditions tested, sport context) since these are recalled rather than looked up.",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "Muscle protein synthesis (MPS) remains elevated for roughly 24-48 hours after a resistance-training bout in a given muscle group (classic finding associated with MacDougall-era work and later confirmed by Phillips-lab-style research).",
+        "evidence": "Well-established general exercise physiology; used here as the mechanistic rationale for why a same-day second lifting session hitting the same muscle group stacks onto an already-elevated/fatigued signaling state rather than providing a fresh discrete stimulus.",
+        "confidence": "strong"
+      },
+      {
+        "claim": "AM/PM double resistance-training sessions in a single day are an established practice in competitive strength/power sport (most notably associated with the Bulgarian Olympic weightlifting system under Ivan Abadjiev, and powerlifting peaking blocks), used to spread high total volume/intensity across sessions and manage CNS fatigue \u2014 but I am not aware of controlled-trial evidence establishing a benefit of same-day double lifting sessions specifically for recreational, non-competitive lifters.",
+        "evidence": "This is practice-based/anecdotal knowledge from competitive-sport training culture, not a specific peer-reviewed literature base for recreational lifters. Being explicit: the evidentiary support here is thin, and I would not present a study name/year for this population without risking fabrication.",
+        "confidence": "weak"
+      },
+      {
+        "claim": "Because most concurrent-training interference research uses relatively high endurance-training volumes/frequencies on already-trained subjects, the real-world magnitude of interference for a recreational lifter doing modest cardio (e.g., 20-30 min, 2-3x/week, moderate intensity) is likely smaller in practice than meta-analytic averages suggest.",
+        "evidence": "This is a reasonable inference from the typical subject pool and protocol intensity/frequency used in the source studies (Wilson et al. 2012 and its included trials), not a directly tested claim for a recreational population specifically.",
+        "confidence": "moderate"
+      }
+    ],
+    "prescription_deltas": [
+      {
+        "parameter": "min_separation_hours_same_day_cardio_lifting",
+        "adjustment": "When both a lifting session and a cardio session are scheduled on the same calendar day, require >= 6 hours between them by default.",
+        "rationale": "Recovery/time-course research (recalled as Robineau et al. 2016) found ~6h separation preserved strength/power adaptations nearly as well as a full 24h gap, whereas back-to-back sessions impaired adaptation more.",
+        "confidence": "moderate"
+      },
+      {
+        "parameter": "same_day_order_when_separation_below_threshold",
+        "adjustment": "If the 6h minimum cannot be met, order the day as: resistance session first (while fresh), cardio session second \u2014 unless the program's stated primary goal is endurance performance, in which case reverse the order.",
+        "rationale": "Pre-fatiguing lifting with cardio degrades load/technique quality more directly than the reverse; sequencing should protect whichever quality is the trainee's stated priority.",
+        "confidence": "moderate"
+      },
+      {
+        "parameter": "cardio_modality_on_lower_body_lifting_day",
+        "adjustment": "On days where the lifting session is lower-body-dominant (squat/deadlift/lunge/leg-press focus), restrict paired cardio to non-impact/low-eccentric modalities: cycling, rowing, swimming, elliptical. Exclude running from same-day pairing with a leg-dominant lifting day.",
+        "rationale": "Meta-analytic subgroup pattern (Wilson et al. 2012) indicates running interferes with lower-body strength/hypertrophy more than cycling, plausibly from overlapping eccentric muscle damage.",
+        "confidence": "moderate"
+      },
+      {
+        "parameter": "running_leg_day_gap",
+        "adjustment": "If running must appear near a leg-dominant lifting day, require at least 1 full rest day of separation, or place the run at the far end of the >=6h same-day window and never within 24h before a heavy/high-volume leg session.",
+        "rationale": "Minimizes carried-over eccentric muscle damage/soreness from running into the lifting session; extension of the modality-interference finding above.",
+        "confidence": "moderate"
+      },
+      {
+        "parameter": "same_day_cardio_intensity_and_duration_cap_when_lt_6h_separation",
+        "adjustment": "When the 6h minimum is not schedulable, cap same-day cardio to low-intensity steady-state, duration <= 30 minutes; disallow HIIT/interval sessions or long (>45 min) steady-state work on lifting days.",
+        "rationale": "Interference magnitude scales with endurance training volume/intensity/frequency (Wilson et al. 2012); this is the mitigation to apply when full time-separation isn't possible.",
+        "confidence": "moderate"
+      },
+      {
+        "parameter": "interference_rule_strictness_by_goal",
+        "adjustment": "Apply the strictest separation/modality rules (full 6h rule, no running near leg day) when program goal = strength or power. Relax rules (permit <6h separation, permit running near leg day) when program goal = pure hypertrophy or general fitness/health.",
+        "rationale": "Effect sizes from Wilson et al. 2012 are largest for power, moderate for strength, smallest for hypertrophy, so the guardrail should be conditioned on the trainee's primary goal rather than applied uniformly.",
+        "confidence": "moderate"
+      },
+      {
+        "parameter": "am_pm_double_lifting_default",
+        "adjustment": "Default OFF for recreational-lifter tier. Only enable AM/PM double lifting sessions for advanced/competitive tiers or explicit peaking blocks.",
+        "rationale": "Evidence base for same-day double resistance sessions is thin-to-absent for recreational populations; established use is confined to competitive strength/power sport contexts.",
+        "confidence": "weak"
+      },
+      {
+        "parameter": "am_pm_double_lifting_constraints_if_enabled",
+        "adjustment": "If enabled: (a) the two same-day sessions must not target overlapping primary muscle groups/movement patterns; (b) require a minimum 4-6h gap between sessions; (c) combined daily set volume should not exceed the trainee's normal single-session volume ceiling by more than ~20-30%, rather than being simply additive.",
+        "rationale": "MPS remains elevated ~24-48h post-bout, so stacking the same muscle group same-day adds fatigue without a fresh distinct stimulus; the volume cap is a practice-based safety guardrail, not literature-derived, and should be flagged as such in generator documentation.",
+        "confidence": "weak"
+      },
+      {
+        "parameter": "weekly_concurrent_day_cap",
+        "adjustment": "Cap same-day lift + moderate/high-intensity-cardio pairings to <= 2-3 per week for recreational lifters by default. Low-intensity/short-duration cardio pairings (per the intensity cap rule above) are not subject to this weekly cap.",
+        "rationale": "No direct dose-response literature exists for recreational lifters specifically; this is a conservative heuristic cap, loosely consistent with the 2-4x/week protocol frequencies used in the source interference studies, pending more targeted evidence.",
+        "confidence": "weak"
+      }
+    ]
   }
 ]

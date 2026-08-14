@@ -175,9 +175,13 @@ final class ProgramGeneratorTests: XCTestCase {
         let one = ProgramGenerator.generate(inputs: inputs(days: 1), catalog: catalog())
         XCTAssertEqual(one.days.count, 1)
         XCTAssertEqual(one.days[0].name, "Full Body")
+        // Recovery ceiling (Meeusen 2013 consensus): a 7-day request gets
+        // SIX hard days — day 7 converts to active recovery.
         let seven = ProgramGenerator.generate(inputs: inputs(days: 7), catalog: catalog())
         XCTAssertEqual(seven.days.count, 7)
-        XCTAssertEqual(seven.days.last?.name, "Full Body")
+        XCTAssertEqual(seven.days.last?.name, "Active Recovery")
+        XCTAssertFalse(seven.days.last!.exercises.contains { $0.isMain })
+        XCTAssertTrue(seven.notes.contains { $0.contains("Six hard days") })
     }
 
     func testCardioDaysAppendZoneAndMinutes() {

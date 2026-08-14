@@ -133,6 +133,19 @@ enum ProgramGenerator {
             days.append(Day(name: name, exercises: chosen))
         }
 
+        // Recovery ceiling (research pass): six hard days max — a 7-day
+        // request gets six lifting days and day 7 converts to ACTIVE
+        // RECOVERY (the evidence-backed way to train daily).
+        var hardDayCount = days.count
+        if days.count > GeneratorScience.maxConsecutiveHardDays {
+            days[days.count - 1] = recoveryDay(name: "Active Recovery", usable: usable)
+            hardDayCount = GeneratorScience.maxConsecutiveHardDays
+            notes.append("Six hard days is the ceiling — day 7 is active recovery. No trial shows a full rest day is required for muscle under rotation, but connective tissue, sleep, and burnout say otherwise (Meeusen 2013 consensus).")
+        }
+        if split.filter({ $0 == GeneratorScience.DayKind.fullBody }).count >= 3 {
+            notes.append("Space full-body days across the week — 48 hours between sessions hitting the same muscles (muscle protein synthesis runs its course by ~48h in trained lifters).")
+        }
+
         // Dedicated cardio (owner 2026-08-14): zone + MINUTES. When
         // lifting + cardio exceed 7 calendar days, the overflow PAIRS
         // onto lifting days as PM sessions (two-a-days) — same-day
@@ -152,9 +165,10 @@ enum ProgramGenerator {
                     slot: nil, cardioZone: zone,
                     cardioMinutes: inputs.cardioMinutes)
 
-                let liftingCount = days.count
-                let overflow = max(0, liftingCount + inputs.cardioDays - 7)
-                let paired = min(overflow, liftingCount)
+                let overflow = max(0, days.count + inputs.cardioDays - 7)
+                // Pair onto HARD days only — never stack cardio onto the
+                // converted recovery day.
+                let paired = min(overflow, hardDayCount)
                 for index in 0..<paired {
                     days[index].name += " · PM Cardio"
                     days[index].exercises.append(cardioEntry)
@@ -177,27 +191,10 @@ enum ProgramGenerator {
         // IS recovery: mobility work + a zone-1 walk. Never replaces a
         // hard rest the wave already scheduled (the deload week stands).
         if inputs.fillWeekWithRecovery, days.count < 7 {
-            let mobility = Array(usable.filter { $0.category == "mobility" }.prefix(3))
-            let walk = usable.first {
-                $0.category == "cardio" && $0.name.localizedCaseInsensitiveContains("walk")
-            } ?? usable.first { $0.category == "cardio" }
             let recoveryCount = 7 - days.count
             for n in 1...recoveryCount {
-                var entries: [Exercise] = mobility.map { m in
-                    Exercise(exerciseID: m.id, name: m.name,
-                             sets: 2, repsLow: 8, repsHigh: 12,
-                             restSeconds: 30, percentOfMax: nil, isMain: false,
-                             slot: nil, cardioZone: nil, cardioMinutes: nil)
-                }
-                if let walk {
-                    entries.append(Exercise(
-                        exerciseID: walk.id, name: walk.name,
-                        sets: 1, repsLow: 0, repsHigh: 0,
-                        restSeconds: 0, percentOfMax: nil, isMain: false,
-                        slot: nil, cardioZone: 1, cardioMinutes: 25))
-                }
                 let label = recoveryCount > 1 ? "Active Recovery \(n)" : "Active Recovery"
-                days.append(Day(name: label, exercises: entries))
+                days.append(recoveryDay(name: label, usable: usable))
             }
             notes.append("Recovery days are prescriptions too: easy mobility and a zone-1 walk aid blood flow without costing adaptation — showing up daily is fine when the easy days stay easy.")
         }
@@ -340,6 +337,30 @@ enum ProgramGenerator {
                         percentOfMax: percent,
                         isMain: isMain,
                         slot: slot)
+    }
+
+    /// One active-recovery day (recovery research: 20-40 min zone 1-2 +
+    /// easy mobility aids blood flow without costing adaptation): 2-3
+    /// mobility movements at 2×8-12 easy + a 25-minute zone-1 walk.
+    static func recoveryDay(name: String, usable: [CatalogExercise]) -> Day {
+        let mobility = Array(usable.filter { $0.category == "mobility" }.prefix(3))
+        let walk = usable.first {
+            $0.category == "cardio" && $0.name.localizedCaseInsensitiveContains("walk")
+        } ?? usable.first { $0.category == "cardio" }
+        var entries: [Exercise] = mobility.map { m in
+            Exercise(exerciseID: m.id, name: m.name,
+                     sets: 2, repsLow: 8, repsHigh: 12,
+                     restSeconds: 30, percentOfMax: nil, isMain: false,
+                     slot: nil, cardioZone: nil, cardioMinutes: nil)
+        }
+        if let walk {
+            entries.append(Exercise(
+                exerciseID: walk.id, name: walk.name,
+                sets: 1, repsLow: 0, repsHigh: 0,
+                restSeconds: 0, percentOfMax: nil, isMain: false,
+                slot: nil, cardioZone: 1, cardioMinutes: 25))
+        }
+        return Day(name: name, exercises: entries)
     }
 
     // MARK: Reroll (owner 2026-08-14: "allow people to reroll accessories
