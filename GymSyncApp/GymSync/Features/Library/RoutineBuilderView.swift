@@ -782,7 +782,7 @@ struct RoutineBuilderView: View {
                 plus: { updateItem(item.id) { $0.dropPercent = min(50, ($0.dropPercent ?? 20) + 5) } }
             )
             Spacer()
-            Text("final set: drop \(item.dropSteps ?? 2)×\(NSDecimalNumber(decimal: item.dropPercent ?? 20).intValue)%")
+            Text("each set: drop \(item.dropSteps ?? 2)×\(NSDecimalNumber(decimal: item.dropPercent ?? 20).intValue)%")
                 .font(GSFont.body(10, relativeTo: .caption2))
                 .foregroundStyle(theme.neutral500)
         }
