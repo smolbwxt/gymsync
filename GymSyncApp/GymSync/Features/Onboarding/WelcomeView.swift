@@ -39,6 +39,19 @@ struct WelcomeView: View {
 
                     VStack(spacing: 10) {
                         shortcutRow(
+                            icon: "wand.and.stars",
+                            title: "Let Coach build your week",
+                            subtitle: "Answer a few dials, get a program"
+                        ) {
+                            // Onboarding COACH offer (owner 2026-08-13): the
+                            // wizard presents from RootView once the main app
+                            // (and the first-run walkthrough) is up.
+                            appState.pendingCoachOffer = true
+                            appState.selectedTab = .you
+                            onComplete()
+                        }
+
+                        shortcutRow(
                             icon: "square.grid.2x2",
                             title: "Build your first routine",
                             subtitle: "Pick exercises, set targets"

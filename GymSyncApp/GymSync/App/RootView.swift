@@ -36,6 +36,13 @@ struct RootView: View {
     @AppStorage(OneShotFlags.walkthroughKey) private var hasSeenWalkthrough = false
     @State private var showWalkthrough = false
 
+    /// Onboarding COACH offer — the wizard sheet queued behind the
+    /// walkthrough (SwiftUI presents one modal at a time; the walkthrough
+    /// owns the first slot for a fresh signup). Fires either on main-app
+    /// appear (walkthrough already seen) or from the walkthrough's
+    /// completion, whichever consumes `appState.pendingCoachOffer`.
+    @State private var showCoachOffer = false
+
     /// Launch overlay gate. `RootView` is alive for the whole app run, so this
     /// stays true after the first reveal — a later sign-out/sign-in transition
     /// does not replay the animation.
@@ -71,13 +78,32 @@ struct RootView: View {
                             }
                         }
                         .onAppear {
-                            if !hasSeenWalkthrough { showWalkthrough = true }
+                            if !hasSeenWalkthrough {
+                                showWalkthrough = true
+                            } else if appState.pendingCoachOffer {
+                                appState.pendingCoachOffer = false
+                                showCoachOffer = true
+                            }
                         }
                         .fullScreenCover(isPresented: $showWalkthrough) {
                             WalkthroughView {
                                 hasSeenWalkthrough = true
                                 showWalkthrough = false
+                                if appState.pendingCoachOffer {
+                                    appState.pendingCoachOffer = false
+                                    showCoachOffer = true
+                                }
                             }
+                            .environment(\.gsTheme, themeStore.current.withAccent(themeStore.accent))
+                        }
+                        .sheet(isPresented: $showCoachOffer) {
+                            // Same explicit environment injection as the
+                            // walkthrough cover — presentation content does
+                            // not reliably inherit it here.
+                            NavigationStack {
+                                CoachWizardView()
+                            }
+                            .environment(appState)
                             .environment(\.gsTheme, themeStore.current.withAccent(themeStore.accent))
                         }
                 }

@@ -32,6 +32,12 @@ final class AppState {
     /// fresh by CoachingView/TrainerTabView loads.
     var isTrainer = false
 
+    /// Onboarding COACH offer (owner decision 2026-08-13: the wizard caps
+    /// onboarding). Set by WelcomeView's "Let Coach build your week"
+    /// shortcut; RootView consumes it to present the wizard sheet — after
+    /// the first-run walkthrough, which owns the first modal slot.
+    var pendingCoachOffer = false
+
     // Set to the user's profile once loaded post-sign-in.
     var currentProfile: Profile?
 
