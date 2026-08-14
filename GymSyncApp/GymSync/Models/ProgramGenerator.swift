@@ -75,7 +75,7 @@ enum ProgramGenerator {
 
     static func generate(inputs: Inputs, catalog: [CatalogExercise]) -> Program {
         let band = GeneratorScience.band(for: inputs.focus)
-        let split = GeneratorScience.split(daysPerWeek: inputs.daysPerWeek)
+        let split = GeneratorScience.split(daysPerWeek: inputs.daysPerWeek, focus: inputs.focus)
         let usable = catalog.filter { ex in
             inputs.equipment.map { $0.contains(ex.equipment) } ?? true
         }
@@ -107,6 +107,7 @@ enum ProgramGenerator {
             for slot in slots(for: kind) {
                 guard let pick = select(slot: slot, from: usable,
                                         excluding: alreadyChosen,
+                                        focus: inputs.focus,
                                         focusMuscles: inputs.focusMuscles) else { continue }
                 alreadyChosen.insert(pick.id)
                 chosen.append(prescription(for: pick, slot: slot, band: band,
@@ -192,6 +193,7 @@ enum ProgramGenerator {
 
     static func select(slot: Slot, from catalog: [CatalogExercise],
                        excluding: Set<UUID>,
+                       focus: GeneratorScience.Focus,
                        focusMuscles: Set<String>?) -> CatalogExercise? {
         let candidates: [CatalogExercise]
         switch slot {
@@ -203,9 +205,10 @@ enum ProgramGenerator {
             }
         }
         guard !candidates.isEmpty else { return nil }
-        // Rule 2 + 6: equipment ladder — barbell > dumbbell > machine/cable
-        // > bodyweight for mains; rule 8: rank tiebreak (stable order).
-        let ladder = ["barbell": 0, "dumbbell": 1, "machine": 2, "cable": 3, "bodyweight": 4]
+        // Rule 2 + 6: FOCUS-AWARE equipment ladder for mains (barbell-first
+        // strength/hypertrophy, machine-first weight-loss/conditioning);
+        // rule 8: rank tiebreak (stable order).
+        let ladder = GeneratorScience.mainEquipmentLadder(focus: focus)
         let isMain: Bool
         if case .pattern(_, let main) = slot { isMain = main } else { isMain = false }
         return candidates.min { a, b in

@@ -130,6 +130,45 @@ final class ProgramGeneratorTests: XCTestCase {
         XCTAssertTrue(push.exercises.contains { $0.name == "Machine Fly" })
     }
 
+    // MARK: - Focus-aware splits + equipment (owner 2026-08-14: "no
+    // matter what options I pick, it always generates the same split")
+
+    func testWeightLossIsFullBodyAtAnyDayCount() {
+        let program = ProgramGenerator.generate(
+            inputs: inputs(focus: .weightLoss, days: 4), catalog: catalog())
+        XCTAssertEqual(program.days.count, 4)
+        XCTAssertTrue(program.days.allSatisfy { $0.name.hasPrefix("Full Body") },
+                      "weight loss trains full-body density, not bodypart splits")
+    }
+
+    func testConditioningMainsPreferMachines() {
+        let program = ProgramGenerator.generate(
+            inputs: inputs(focus: .conditioning, days: 2), catalog: catalog())
+        let firstMain = program.days[0].exercises.first { $0.isMain }!
+        XCTAssertEqual(firstMain.name, "Leg Press",
+                       "conditioning runs machine-first mains — circuit-safe")
+    }
+
+    func testFocusVisiblyChangesSelection() {
+        let strength = ProgramGenerator.generate(
+            inputs: inputs(focus: .strength, days: 3), catalog: catalog())
+        let conditioning = ProgramGenerator.generate(
+            inputs: inputs(focus: .conditioning, days: 3), catalog: catalog())
+        XCTAssertNotEqual(strength.days.map { $0.exercises.map(\.exerciseID) },
+                          conditioning.days.map { $0.exercises.map(\.exerciseID) })
+    }
+
+    func testEquipmentFilterExcludesMissingClasses() {
+        var noBarbell = inputs(focus: .strength, days: 3)
+        noBarbell.equipment = ["machine", "dumbbell", "cable", "bodyweight"]
+        let program = ProgramGenerator.generate(inputs: noBarbell, catalog: catalog())
+        let allExercises = program.days.flatMap(\.exercises).map(\.name)
+        XCTAssertFalse(allExercises.contains("Back Squat"),
+                       "a gym without a barbell never gets barbell work")
+        XCTAssertTrue(allExercises.contains("Leg Press"),
+                      "the squat slot falls back down the equipment ladder")
+    }
+
     // MARK: - percentFor table
 
     func testPercentForAnchors() {

@@ -145,13 +145,33 @@ enum GeneratorScience {
         case fullBody, upper, lower, push, pull, legs
     }
 
-    static func split(daysPerWeek: Int) -> [DayKind] {
-        switch max(2, min(6, daysPerWeek)) {
+    static func split(daysPerWeek: Int, focus: Focus) -> [DayKind] {
+        let days = max(2, min(6, daysPerWeek))
+        // Weight Loss and Conditioning are FULL-BODY programs at any day
+        // count (the focus table's own prescription: density circuits and
+        // maintenance-floor lifting, not bodypart splits).
+        if focus == .weightLoss || focus == .conditioning {
+            return Array(repeating: .fullBody, count: days)
+        }
+        switch days {
         case 2: return [.fullBody, .fullBody]
         case 3: return [.fullBody, .fullBody, .fullBody]
         case 4: return [.upper, .lower, .upper, .lower]
         case 5: return [.upper, .lower, .push, .pull, .legs]
         default: return [.push, .pull, .legs, .push, .pull, .legs]
+        }
+    }
+
+    /// Main-lift equipment preference by focus (design-doc rule 2):
+    /// Strength/Hypertrophy build mains on the bar (specificity,
+    /// loadability); Weight Loss/Conditioning run machine/cable-first —
+    /// safer at circuit pace and honest to how those sessions train.
+    static func mainEquipmentLadder(focus: Focus) -> [String: Int] {
+        switch focus {
+        case .strength, .hypertrophy:
+            return ["barbell": 0, "dumbbell": 1, "machine": 2, "cable": 3, "bodyweight": 4]
+        case .weightLoss, .conditioning:
+            return ["machine": 0, "cable": 1, "dumbbell": 2, "bodyweight": 3, "barbell": 4]
         }
     }
 }

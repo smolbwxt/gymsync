@@ -23,6 +23,10 @@ struct CoachWizardView: View {
     @State private var days = 3
     @State private var duration = 8
     @State private var experience: GeneratorScience.Experience = .new
+    /// Equipment available (owner 2026-08-14: "factor in what equipment
+    /// our home gym has — so we're not suggesting nonsense"). All on by
+    /// default; the hub-hosted inventory refines this next.
+    @State private var equipment: Set<String> = ["barbell", "dumbbell", "machine", "cable", "bodyweight"]
     // About you (prefilled from profile; skippable)
     @State private var sex: String = ""
     @State private var birthYearText = ""
@@ -43,6 +47,8 @@ struct CoachWizardView: View {
                      selected: "\(duration)") { duration = Int($0) ?? 8 }
                 dial("EXPERIENCE", options: GeneratorScience.Experience.allCases.map(\.rawValue),
                      selected: experience.rawValue) { experience = GeneratorScience.Experience(rawValue: $0) ?? .new }
+
+                equipmentDial
 
                 aboutYou
 
@@ -125,6 +131,41 @@ struct CoachWizardView: View {
         }
     }
 
+    /// Multi-select — "what does your gym actually have."
+    private var equipmentDial: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("YOUR GYM HAS")
+                .font(GSFont.bold(11, relativeTo: .caption2))
+                .tracking(1.1)
+                .foregroundStyle(theme.neutral700)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(["barbell", "dumbbell", "machine", "cable", "bodyweight"], id: \.self) { kind in
+                        let isOn = equipment.contains(kind)
+                        Button {
+                            if isOn {
+                                // Never empty — bodyweight is always true.
+                                if equipment.count > 1 { equipment.remove(kind) }
+                            } else {
+                                equipment.insert(kind)
+                            }
+                            preview = nil
+                        } label: {
+                            Text(kind.capitalized)
+                                .font(GSFont.bold(13, relativeTo: .subheadline))
+                                .foregroundStyle(isOn ? theme.bg : theme.neutral700)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 9)
+                                .background(isOn ? theme.accent : theme.surface)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - About you
 
     private var aboutYou: some View {
@@ -170,6 +211,13 @@ struct CoachWizardView: View {
     private func previewSection(_ program: ProgramGenerator.Program) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             GSSectionHeader("Your week")
+            // The receipt: exactly what the generator was told — any
+            // stuck dial is visible here instantly.
+            Text("\(label(for: focus.rawValue)) · \(days) days · \(duration) weeks · \(label(for: experience.rawValue))\(sex.isEmpty ? "" : " · \(sex)")"
+                 .uppercased())
+                .font(GSFont.bold(10, relativeTo: .caption2))
+                .tracking(0.8)
+                .foregroundStyle(theme.accent)
             ForEach(Array(program.days.enumerated()), id: \.offset) { _, day in
                 VStack(alignment: .leading, spacing: 6) {
                     Text(day.name)
@@ -216,7 +264,8 @@ struct CoachWizardView: View {
         let inputs = ProgramGenerator.Inputs(
             focus: focus, daysPerWeek: days, durationWeeks: duration,
             experience: experience,
-            sex: GeneratorScience.Sex(rawValue: sex) ?? .unspecified)
+            sex: GeneratorScience.Sex(rawValue: sex) ?? .unspecified,
+            equipment: equipment)
         preview = ProgramGenerator.generate(inputs: inputs, catalog: catalog)
     }
 
