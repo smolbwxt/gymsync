@@ -464,6 +464,11 @@ struct ProgramTemplateDetailView: View {
     @State private var selectedMain: Exercise?
     @State private var selectedAccessory: Exercise?
     @State private var selectedMuscle: String?
+    // Multi-lift peaking (owner 2026-08-14) — optional second and third
+    // lifts on .singleBarbellLift templates; focus.exerciseIDs and the
+    // per-lift baseline machinery were already plural.
+    @State private var selectedLift2: Exercise?
+    @State private var selectedLift3: Exercise?
     /// Auto-derived est-1RM per selected lift (from real history).
     @State private var derivedBaseline: [UUID: Decimal] = [:]
     /// Manual "one real set" fallback per lift when no history exists.
@@ -479,7 +484,17 @@ struct ProgramTemplateDetailView: View {
 
     private enum PickerTarget: Identifiable {
         case main, accessory
-        var id: Int { self == .main ? 0 : 1 }
+        // Multi-lift peaking (owner 2026-08-14): up to three lifts in one
+        // peak — squat + bench + dead, heavy days staggered by the lifter.
+        case lift2, lift3
+        var id: Int {
+            switch self {
+            case .main: 0
+            case .accessory: 1
+            case .lift2: 2
+            case .lift3: 3
+            }
+        }
     }
 
     init(template: ProgramTemplate, onEnrolled: @escaping () -> Void) {
@@ -488,8 +503,14 @@ struct ProgramTemplateDetailView: View {
     }
 
     private var selectedExercises: [Exercise] {
-        [selectedMain, template.focusRule == .liftPlusAccessory ? selectedAccessory : nil]
-            .compactMap { $0 }
+        switch template.focusRule {
+        case .singleBarbellLift:
+            return [selectedMain, selectedLift2, selectedLift3].compactMap { $0 }
+        case .liftPlusAccessory:
+            return [selectedMain, selectedAccessory].compactMap { $0 }
+        case .muscleGroup:
+            return []
+        }
     }
     private var isPercentBased: Bool {
         template.weeks.contains { $0.percentOfBaseline != nil }
@@ -518,8 +539,10 @@ struct ProgramTemplateDetailView: View {
         case .muscleGroup:
             return selectedMuscle != nil
         case .singleBarbellLift:
-            guard let main = selectedMain else { return false }
-            return !isPercentBased || baseline(for: main) != nil
+            let lifts = selectedExercises
+            guard !lifts.isEmpty,
+                  Set(lifts.map(\.id)).count == lifts.count else { return false }
+            return !isPercentBased || lifts.allSatisfy { baseline(for: $0) != nil }
         case .liftPlusAccessory:
             guard let main = selectedMain, let accessory = selectedAccessory,
                   main.id != accessory.id else { return false }
@@ -636,6 +659,12 @@ struct ProgramTemplateDetailView: View {
             switch template.focusRule {
             case .singleBarbellLift:
                 exercisePickRow(label: "Lift", selection: selectedMain) { pickerTarget = .main }
+                exercisePickRow(label: "Lift 2 · optional", selection: selectedLift2) { pickerTarget = .lift2 }
+                exercisePickRow(label: "Lift 3 · optional", selection: selectedLift3) { pickerTarget = .lift3 }
+                Text("Peak up to three lifts in one block — run their heavy days on separate days of your week.")
+                    .font(GSFont.body(11, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+                    .padding(.horizontal, 16)
             case .liftPlusAccessory:
                 exercisePickRow(label: "Main lift", selection: selectedMain) { pickerTarget = .main }
                 exercisePickRow(label: "Accessory", selection: selectedAccessory) { pickerTarget = .accessory }
@@ -671,7 +700,9 @@ struct ProgramTemplateDetailView: View {
 
     private var musclePicker: some View {
         // Capsule grid of muscle groups — the ExercisesListView chip idiom.
-        FlowChips(options: muscles, selected: selectedMuscle) { muscle in
+        // "all" leads (owner 2026-08-14: "a general hypertrophy block —
+        // hit all and not think about it again").
+        FlowChips(options: ["all"] + muscles, selected: selectedMuscle) { muscle in
             selectedMuscle = (selectedMuscle == muscle) ? nil : muscle
         }
         .padding(.horizontal, 16)
@@ -810,6 +841,8 @@ struct ProgramTemplateDetailView: View {
         switch target {
         case .main: selectedMain = exercise
         case .accessory: selectedAccessory = exercise
+        case .lift2: selectedLift2 = exercise
+        case .lift3: selectedLift3 = exercise
         }
         Task { await deriveBaseline(for: exercise) }
     }

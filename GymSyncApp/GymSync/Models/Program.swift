@@ -59,7 +59,7 @@ struct ProgramTemplate: Identifiable, Sendable {
         ProgramTemplate(
             slug: "march-to-1rm",
             name: "March to One-Rep Max",
-            summary: "8-week linear peak on one barbell lift: fives to triples to heavy singles, deload on week 5, test on week 8.",
+            summary: "8-week linear peak on up to three barbell lifts: fives to triples to heavy singles, deload on week 5, test on week 8.",
             weeks: [
                 ProgramWeek(percentOfBaseline: 75, sets: 3, reps: 5),
                 ProgramWeek(percentOfBaseline: 80, sets: 3, reps: 5),
