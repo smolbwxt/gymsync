@@ -89,3 +89,49 @@ enum GuidanceTip: String, CaseIterable, Identifiable {
         return UserDefaults.standard.bool(forKey: tipsEnabledKey)
     }
 }
+
+// MARK: - Tours (owner 2026-08-14: "develop the flow after the start solo
+// workout widget"). Each tour steps through targets on ONE screen — see
+// GSSpotlight.swift's tour section for the architectural rule that keeps
+// these safe. Home replaces the old single .home tip; a lifter who saw
+// that tip still gets the tour once (three of its four steps are new).
+enum GuidanceTours {
+    static let home = GuidanceTour(id: "tour.home.v1", steps: [
+        .init(anchorKey: GuidanceTip.home.rawValue,
+              title: "Start here",
+              message: "Start a workout any time — run one of your routines or go freeform."),
+        .init(anchorKey: "tour.home.schedule",
+              title: "Put a lift on the books",
+              message: "Schedule sessions for yourself or a crew — group lifts can repeat weekly on the days you pick."),
+        .init(anchorKey: "tour.home.calendar",
+              title: "Your training calendar",
+              message: "Everything on the books lands here: your solo sessions and every crew session anyone schedules."),
+        .init(anchorKey: "tour.home.streak",
+              title: "Defend the streak",
+              message: "Train each week and the streak grows. Check in when you arrive so your gym time counts."),
+    ])
+
+    static let crews = GuidanceTour(id: "tour.crews.v1", steps: [
+        .init(anchorKey: GuidanceTip.social.rawValue,
+              title: "Train with people",
+              message: "Start a crew to lift together: shared live sessions, turns on the bar, chat, and a streak you defend as a team."),
+        .init(anchorKey: "tour.crews.outside",
+              title: "Outside the box",
+              message: "Friends and requests, pump checks from your people, and who's at your gym right now."),
+    ])
+
+    static let you = GuidanceTour(id: "tour.you.v1", steps: [
+        .init(anchorKey: "tour.you.stats",
+              title: "Everything you lift lands here",
+              message: "Lifetime volume up top — tap through for weekly volume, PRs, body weight, and per-exercise history."),
+        .init(anchorKey: "tour.you.routines",
+              title: "Your routines, your Coach",
+              message: "Five slots to build in, Discover for ready-made plans, and Coach — your generated program — coming soon."),
+        .init(anchorKey: "tour.you.rack",
+              title: "The Rack",
+              message: "Your soundboard for live sessions. It rotates weekly — throw sounds at whoever's on the bar."),
+    ])
+
+    /// QA reset rides along with the tips reset.
+    static let all: [GuidanceTour] = [home, crews, you]
+}

@@ -86,6 +86,99 @@ struct GSSpotlightModifier: ViewModifier {
     }
 }
 
+// MARK: - Tours (owner 2026-08-14)
+//
+// WITHIN-SCREEN multi-step sequences. The header's architectural rule
+// stands untouched: a tour never drives navigation and never spans
+// screens — it steps the scrim through several targets that all live on
+// THIS screen (Home's tour walks solo-start → schedule → calendar →
+// streak, four widgets of one page), so there is still no cross-screen
+// state machine to break when a layout moves.
+
+struct GuidanceTourStep {
+    let anchorKey: String
+    let title: String
+    let message: String
+}
+
+struct GuidanceTour {
+    /// Seen-flag key — bump the version suffix to re-show after a redesign.
+    let id: String
+    let steps: [GuidanceTourStep]
+
+    var hasBeenSeen: Bool { UserDefaults.standard.bool(forKey: id) }
+    func markSeen() { UserDefaults.standard.set(true, forKey: id) }
+    func reset() { UserDefaults.standard.removeObject(forKey: id) }
+}
+
+extension View {
+    /// String-keyed target for tour steps — same anchor namespace as the
+    /// typed `gsSpotlightTarget(_:)`, so a tour step can also point at an
+    /// existing GuidanceTip target by its rawValue.
+    func gsSpotlightTarget(key: String) -> some View {
+        anchorPreference(key: GSSpotlightAnchorKey.self, value: .bounds) { [key: $0] }
+    }
+
+    /// Attach to a screen root. Steps through `tour` once, on first
+    /// appearance; SKIP ends it for good (marked seen — a skipped tour
+    /// nagging again is worse than a lesson missed).
+    func gsSpotlightTour(_ tour: GuidanceTour) -> some View {
+        modifier(GSSpotlightTourModifier(tour: tour))
+    }
+}
+
+struct GSSpotlightTourModifier: ViewModifier {
+    let tour: GuidanceTour
+
+    @State private var stepIndex: Int?
+
+    func body(content: Content) -> some View {
+        content
+            .overlayPreferenceValue(GSSpotlightAnchorKey.self) { anchors in
+                GeometryReader { proxy in
+                    if let index = stepIndex, index < tour.steps.count {
+                        let step = tour.steps[index]
+                        GSSpotlightOverlay(
+                            targetRect: anchors[step.anchorKey].map { proxy[$0] },
+                            title: step.title,
+                            message: step.message,
+                            primaryLabel: index + 1 < tour.steps.count ? "Next" : "Got it",
+                            stepLabel: tour.steps.count > 1 ? "\(index + 1) OF \(tour.steps.count)" : nil,
+                            onSkip: index + 1 < tour.steps.count ? finish : nil,
+                            onDismiss: advance
+                        )
+                        .transition(.opacity)
+                        .id(index)
+                    }
+                }
+                .ignoresSafeArea()
+            }
+            .task { await presentIfNeeded() }
+    }
+
+    private func presentIfNeeded() async {
+        guard GuidanceTip.tipsEnabled, !tour.hasBeenSeen else { return }
+        // Same layout-settle delay as the single-tip modifier.
+        try? await Task.sleep(for: .milliseconds(450))
+        guard !Task.isCancelled else { return }
+        withAnimation(.easeOut(duration: 0.25)) { stepIndex = 0 }
+    }
+
+    private func advance() {
+        guard let index = stepIndex else { return }
+        if index + 1 < tour.steps.count {
+            withAnimation(.easeOut(duration: 0.2)) { stepIndex = index + 1 }
+        } else {
+            finish()
+        }
+    }
+
+    private func finish() {
+        tour.markSeen()
+        withAnimation(.easeIn(duration: 0.2)) { stepIndex = nil }
+    }
+}
+
 /// The scrim + cutout + copy card.
 struct GSSpotlightOverlay: View {
     @Environment(\.gsTheme) private var theme
@@ -93,6 +186,10 @@ struct GSSpotlightOverlay: View {
     let targetRect: CGRect?
     let title: String
     let message: String
+    /// Tour chrome — defaults keep the single-tip call site unchanged.
+    var primaryLabel: String = "Got it"
+    var stepLabel: String? = nil
+    var onSkip: (() -> Void)? = nil
     let onDismiss: () -> Void
 
     /// Breathing room around the highlighted control.
@@ -146,6 +243,12 @@ struct GSSpotlightOverlay: View {
             : (placeBelow ? below : max(60, (hole!.minY) - 190))
 
         VStack(alignment: .leading, spacing: 8) {
+            if let stepLabel {
+                Text(stepLabel)
+                    .font(GSFont.bold(10, relativeTo: .caption2))
+                    .tracking(1.0)
+                    .foregroundStyle(theme.neutral500)
+            }
             Text(title)
                 .font(GSFont.bold(17, relativeTo: .headline))
                 .foregroundStyle(theme.text)
@@ -153,16 +256,26 @@ struct GSSpotlightOverlay: View {
                 .font(GSFont.body(14, relativeTo: .body))
                 .foregroundStyle(theme.neutral500)
                 .fixedSize(horizontal: false, vertical: true)
-            Button(action: onDismiss) {
-                Text("Got it")
-                    .font(GSFont.bold(14, relativeTo: .subheadline))
-                    .foregroundStyle(theme.bg)
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 10)
-                    .background(theme.accent)
-                    .clipShape(Capsule())
+            HStack(spacing: 12) {
+                Button(action: onDismiss) {
+                    Text(primaryLabel)
+                        .font(GSFont.bold(14, relativeTo: .subheadline))
+                        .foregroundStyle(theme.bg)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 10)
+                        .background(theme.accent)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                if let onSkip {
+                    Button(action: onSkip) {
+                        Text("Skip tour")
+                            .font(GSFont.bold(13, relativeTo: .subheadline))
+                            .foregroundStyle(theme.neutral500)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
-            .buttonStyle(.plain)
             .padding(.top, 2)
         }
         .padding(16)

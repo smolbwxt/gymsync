@@ -176,6 +176,7 @@ struct SocialTabView: View {
                                 .padding(.horizontal, 16)
                                 .padding(.top, 22)
                                 .padding(.bottom, 8)
+                                .gsSpotlightTarget(key: "tour.crews.outside")
 
                             NavigationLink {
                                 FriendsView()
@@ -311,7 +312,8 @@ struct SocialTabView: View {
             .background(theme.bg)
             .scrollContentBackground(.hidden)
             .toolbar(.hidden, for: .navigationBar)   // redesign v2: in-content title above
-            .gsSpotlight(.social)
+            // Tour (owner 2026-08-14): crews first, then Outside the Box.
+            .gsSpotlightTour(GuidanceTours.crews)
             .sheet(isPresented: $showCreateGroup) {
                 CreateGroupView { newGroup in
                     groups.insert(newGroup, at: 0)

@@ -89,8 +89,11 @@ struct HomeView: View {
                     replayFailureNotice
                     primaryCTASection
                     checkInAndStreakRow
+                        .gsSpotlightTarget(key: "tour.home.streak")
                     scheduleWidget
+                        .gsSpotlightTarget(key: "tour.home.schedule")
                     calendarWidget
+                        .gsSpotlightTarget(key: "tour.home.calendar")
                     if !activeCampaigns.isEmpty {
                         campaignsSection
                     }
@@ -108,7 +111,9 @@ struct HomeView: View {
             // empty bar row wasted vertical space. Pushed destinations
             // (LobbyView etc.) re-show their own nav bars.
             .toolbar(.hidden, for: .navigationBar)
-            .gsSpotlight(.home)
+            // Tour (owner 2026-08-14): the old single .home tip grew into
+            // the four-step walk — start → schedule → calendar → streak.
+            .gsSpotlightTour(GuidanceTours.home)
             .task {
                 await refresh()
                 await consumePendingRouteIfNeeded()

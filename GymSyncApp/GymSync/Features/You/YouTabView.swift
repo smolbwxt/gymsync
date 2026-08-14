@@ -56,6 +56,7 @@ struct YouTabView: View {
                         statsHero
                             .padding(.horizontal, 16)
                             .padding(.top, 16)
+                            .gsSpotlightTarget(key: "tour.you.stats")
 
                         // Owner 2026-08-13: "a series of wide widgets like
                         // the lifetime volume, with more description as to
@@ -66,6 +67,7 @@ struct YouTabView: View {
                         routinesWidget
                             .padding(.horizontal, 16)
                             .padding(.top, 12)
+                            .gsSpotlightTarget(key: "tour.you.routines")
 
                         programsWidget
                             .padding(.horizontal, 16)
@@ -78,6 +80,7 @@ struct YouTabView: View {
                         theRackWidget
                             .padding(.horizontal, 16)
                             .padding(.top, 12)
+                            .gsSpotlightTarget(key: "tour.you.rack")
 
                         lockerWidget
                             .padding(.horizontal, 16)
@@ -103,6 +106,8 @@ struct YouTabView: View {
             .scrollContentBackground(.hidden)
             .background(theme.bg)
             .toolbar(.hidden, for: .navigationBar)   // in-content title (tab-root idiom)
+            // Tour (owner 2026-08-14): stats → routines → the Rack.
+            .gsSpotlightTour(GuidanceTours.you)
             .task {
                 await loadRack()
                 // ROUTINES slot state — one light query, best-effort.

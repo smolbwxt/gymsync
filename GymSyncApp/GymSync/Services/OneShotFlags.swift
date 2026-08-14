@@ -57,6 +57,13 @@ enum OneShotFlags {
                  label: target.label,
                  isSet: { UserDefaults.standard.bool(forKey: target.rawValue) },
                  reset: { DiscoveryStore.shared.unmark(target) })
+        } + GuidanceTours.all.map { tour in
+            // Tours join the same registry off GuidanceTours.all — same
+            // never-forgets rationale as the tip/discovery registrations.
+            Flag(id: tour.id,
+                 label: "Tour: \(tour.id)",
+                 isSet: { tour.hasBeenSeen },
+                 reset: { tour.reset() })
         } + [
             Flag(id: walkthroughKey,
                  label: "First-run walkthrough",
