@@ -8,6 +8,8 @@ struct HomeView: View {
     @State private var upcomingSessions: [WorkoutSession] = []
     @State private var groups: [GymGroup] = []
     @State private var showScheduleSheet = false
+    /// "?" FAQ sheet (owner 2026-08-14) — see HelpSheet.swift.
+    @State private var showHelp = false
     @State private var joinCode = ""
     @State private var isJoining = false
     @State private var joinError: String?
@@ -135,6 +137,9 @@ struct HomeView: View {
                     upcomingSessions.insert(newSession, at: 0)
                 }
             }
+            .sheet(isPresented: $showHelp) {
+                HelpSheet()
+            }
             .sheet(isPresented: $showRoutinePicker) {
                 RoutinePickerSheet(routines: ownedRoutines, initialRoutine: routinePickerPreselected)
             }
@@ -245,6 +250,22 @@ struct HomeView: View {
                     .foregroundStyle(theme.neutral500)
             }
             Spacer(minLength: 0)
+            // "?" help (owner 2026-08-14): the anti-onboarding — an
+            // extruded button opening the FAQ/walkthrough sheet, so help
+            // lives at the moment of confusion instead of a front-loaded
+            // data dump.
+            Button {
+                showHelp = true
+            } label: {
+                Text("?")
+                    .font(GSFont.bold(16, relativeTo: .body))
+                    .foregroundStyle(theme.text)
+                    .frame(width: 34, height: 30)
+            }
+            .buttonStyle(.gs3D(face: theme.raised3DFace, lip: theme.raised3DLip,
+                               cornerRadius: 10, lipHeight: 4))
+            .accessibilityLabel("Help")
+
             // Redesign: profile avatar (initials) — taps through to the You tab.
             Button {
                 appState.selectedTab = .you
