@@ -8,7 +8,7 @@ import AVFoundation
 /// Contract:
 ///   1. `enterVoiceMode()` switches the session to `.playAndRecord` category /
 ///      `.voiceChat` mode and sets `isInVoiceMode`.
-///   2. `exitVoiceMode()` restores EXACTLY `configure()`'s state: category `.ambient`
+///   2. `exitVoiceMode()` restores EXACTLY `configure()`'s state: category `.playback`
 ///      AND options containing `.mixWithOthers`, and clears `isInVoiceMode`.
 ///   3. Both calls are idempotent — double enter/exit must not throw or leave the
 ///      session in an unexpected state.
@@ -47,12 +47,12 @@ final class AudioSessionVoiceModeTests: XCTestCase {
         )
     }
 
-    func testExitVoiceModeRestoresAmbientCategory() throws {
+    func testExitVoiceModeRestoresPlaybackCategory() throws {
         try manager.enterVoiceMode()
         manager.exitVoiceMode()
         XCTAssertEqual(
-            avSession.category, .ambient,
-            "exitVoiceMode must restore category to .ambient (matches configure())."
+            avSession.category, .playback,
+            "exitVoiceMode must restore category to .playback (matches configure())."
         )
     }
 
@@ -87,8 +87,8 @@ final class AudioSessionVoiceModeTests: XCTestCase {
         manager.exitVoiceMode()
         manager.exitVoiceMode()
         XCTAssertEqual(
-            avSession.category, .ambient,
-            "A second exitVoiceMode() call must remain harmless and stay at .ambient."
+            avSession.category, .playback,
+            "A second exitVoiceMode() call must remain harmless and stay at .playback."
         )
         XCTAssertTrue(avSession.categoryOptions.contains(.mixWithOthers))
         XCTAssertFalse(manager.isInVoiceMode)
@@ -99,7 +99,7 @@ final class AudioSessionVoiceModeTests: XCTestCase {
         // path VoiceRecorder or an early lifecycle event might hit before any
         // enterVoiceMode() call has occurred.
         manager.exitVoiceMode()
-        XCTAssertEqual(avSession.category, .ambient)
+        XCTAssertEqual(avSession.category, .playback)
         XCTAssertTrue(avSession.categoryOptions.contains(.mixWithOthers))
         XCTAssertFalse(manager.isInVoiceMode)
     }

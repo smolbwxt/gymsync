@@ -7,9 +7,9 @@ import AVFoundation
 /// Contract:
 ///   1. `enterRecordMode()` switches the session to `.playAndRecord`.
 ///   2. `exitRecordMode()` restores EXACTLY `configure()`'s state:
-///      category `.ambient` AND options containing `.mixWithOthers`.
+///      category `.playback` AND options containing `.mixWithOthers`.
 ///
-/// The EXISTING `AudioSessionManagerTests` regression guard (ambient+mixWithOthers
+/// The EXISTING `AudioSessionManagerTests` regression guard (playback+mixWithOthers
 /// after `configure()`) is NOT modified — it must stay green.
 final class AudioSessionRestoreTests: XCTestCase {
 
@@ -30,12 +30,12 @@ final class AudioSessionRestoreTests: XCTestCase {
         )
     }
 
-    func testExitRecordModeRestoresAmbientCategory() throws {
+    func testExitRecordModeRestoresPlaybackCategory() throws {
         try manager.enterRecordMode()
         manager.exitRecordMode()
         XCTAssertEqual(
-            avSession.category, .ambient,
-            "exitRecordMode must restore category to .ambient (matches configure())."
+            avSession.category, .playback,
+            "exitRecordMode must restore category to .playback (matches configure())."
         )
     }
 
