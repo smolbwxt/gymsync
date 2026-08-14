@@ -279,8 +279,13 @@ public struct GSTabBar: View {
     // implicitly internal), so a public initializer referencing it would be
     // an access-level violation. GSTabBar is only constructed from RootView
     // within this single-target app, so internal init access is sufficient.
-    init(selection: Binding<AppState.Tab>) {
+    /// Trainer arm T3: the TRAINER tab appears only for accounts that
+    /// coach (AppState.isTrainer) — everyone else keeps three tabs.
+    private let showTrainer: Bool
+
+    init(selection: Binding<AppState.Tab>, showTrainer: Bool = false) {
         self._selection = selection
+        self.showTrainer = showTrainer
     }
 
     private struct Item {
@@ -293,11 +298,17 @@ public struct GSTabBar: View {
     // social tab wears its real name — CREWS (the app's own vocabulary;
     // "Home Gym" collided with HomeGymSetupView). Icons stay outline
     // (no `.fill`), matching the dock spec.
-    private let items: [Item] = [
-        Item(tab: .home, icon: "house", label: "Home"),
-        Item(tab: .social, icon: "person.3", label: "Crews"),
-        Item(tab: .you, icon: "person.crop.circle", label: "You"),
-    ]
+    private var items: [Item] {
+        var list = [
+            Item(tab: .home, icon: "house", label: "Home"),
+            Item(tab: .social, icon: "person.3", label: "Crews"),
+        ]
+        if showTrainer {
+            list.append(Item(tab: .trainer, icon: "figure.strengthtraining.traditional", label: "Trainer"))
+        }
+        list.append(Item(tab: .you, icon: "person.crop.circle", label: "You"))
+        return list
+    }
 
     public var body: some View {
         HStack(spacing: 0) {

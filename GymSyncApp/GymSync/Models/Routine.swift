@@ -9,6 +9,10 @@ struct Routine: Codable, Identifiable, Sendable {
     let visibility: String
     let createdAt: Date
     var updatedAt: Date
+    /// Trainer arm T2 (20260814000008): non-nil = a PRESCRIPTION — a
+    /// trainer wrote this into the client's collection. Prescribed
+    /// routines live OUTSIDE the free five slots and wear the tag.
+    var prescribedBy: UUID? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -18,6 +22,7 @@ struct Routine: Codable, Identifiable, Sendable {
         case visibility
         case createdAt = "created_at"
         case updatedAt = "updated_at"
+        case prescribedBy = "prescribed_by"
     }
 }
 

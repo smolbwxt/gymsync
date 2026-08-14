@@ -100,7 +100,8 @@ struct RoutinesListView: View {
             Spacer()
             Button {
                 // Pro gate (dormant): free tier caps owned routines.
-                guard routines.count < Monetization.freeRoutineLimit
+                // Prescriptions never cost the client their own slots.
+                guard routines.filter({ $0.prescribedBy == nil }).count < Monetization.freeRoutineLimit
                         || Monetization.allows(.unlimitedRoutines, profile: appState.currentProfile) else {
                     showPaywall = true
                     return
@@ -170,6 +171,9 @@ struct RoutinesListView: View {
                 // entirely when the routine has no exercises loaded yet (no fake tag).
                 if let firstExercise {
                     HStack(spacing: 6) {
+                        if routine.prescribedBy != nil {
+                            GSTag(text: "Prescribed", style: .accent)
+                        }
                         GSTag(text: firstExercise.category.capitalized, style: .accent)
                         GSTag(text: firstExercise.equipment.capitalized, style: .neutral)
                     }

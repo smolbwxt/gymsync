@@ -6,6 +6,11 @@ import SwiftUI
 // List/Form chrome), full-width bordered "+ Add Exercise" CTA.
 struct RoutineBuilderView: View {
     let editing: Routine?
+    /// Trainer arm T2: non-nil = this builder session PRESCRIBES for a
+    /// client — the saved routine lands with owner = client and
+    /// prescribed_by = trainer (RLS enforces both). Declared BEFORE the
+    /// closure so trailing-closure call sites stay valid.
+    var prescribing: (clientID: UUID, trainerID: UUID)? = nil
     let onSaved: (Routine) -> Void
 
     @Environment(AppState.self) private var appState
@@ -933,7 +938,10 @@ struct RoutineBuilderView: View {
 
     @MainActor
     private func save() async {
-        guard let ownerID = appState.currentProfile?.id else { return }
+        guard let selfID = appState.currentProfile?.id else { return }
+        // Prescribe mode (trainer T2): the routine lands on the CLIENT,
+        // attributed to the trainer — RLS enforces both halves.
+        let ownerID = prescribing?.clientID ?? selfID
         let routineID = editing?.id ?? UUID()
         let now = Date()
         let routine = Routine(
@@ -943,7 +951,8 @@ struct RoutineBuilderView: View {
             description: description.isEmpty ? nil : description,
             visibility: publishAsFeatured ? "public" : "private",
             createdAt: editing?.createdAt ?? now,
-            updatedAt: now
+            updatedAt: now,
+            prescribedBy: prescribing?.trainerID ?? editing?.prescribedBy
         )
         var normalizedItems = items.enumerated().map { idx, item in
             RoutineExercise(

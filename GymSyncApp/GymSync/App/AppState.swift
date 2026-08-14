@@ -24,8 +24,13 @@ final class AppState {
     /// dissolved — its weekly rack merged into You's grid, Campaigns/
     /// Programs browse behind You's PROGRAMS widget, the inert Pro/Coach
     /// rows became You's PRO widget. `.social` is titled CREWS in the dock.
-    enum Tab: Hashable, CaseIterable { case home, social, you }
+    enum Tab: Hashable, CaseIterable { case home, social, trainer, you }
     var selectedTab: Tab = .home
+
+    /// Trainer arm T3: true when this account has clients or open invite
+    /// codes — injects the TRAINER tab. Set at launch (RootView) and kept
+    /// fresh by CoachingView/TrainerTabView loads.
+    var isTrainer = false
 
     // Set to the user's profile once loaded post-sign-in.
     var currentProfile: Profile?

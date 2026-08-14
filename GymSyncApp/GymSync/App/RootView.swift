@@ -376,7 +376,8 @@ private struct MainTabView: View {
                         .padding(.horizontal, 16)
                         .padding(.bottom, 8)
                     }
-                    GSTabBar(selection: $appState.selectedTab)
+                    GSTabBar(selection: $appState.selectedTab,
+                             showTrainer: appState.isTrainer)
                         .ignoresSafeArea(.keyboard, edges: .bottom)
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -391,14 +392,22 @@ private struct MainTabView: View {
                                    onFinished: { resumeTarget = nil })
             }
         }
+        // Trainer arm T3: does this account coach? One light fetch at
+        // launch; CoachingView/TrainerTabView keep it fresh after.
+        .task {
+            let mine = (try? await TrainerClientRepository.mine()) ?? []
+            let me = appState.currentProfile?.id
+            appState.isTrainer = mine.contains { $0.trainerID == me && $0.status != "ended" }
+        }
     }
 
     @ViewBuilder
     private func tabContent(_ tab: AppState.Tab) -> some View {
         switch tab {
         case .home:   HomeView()
-        case .social: SocialTabView()
-        case .you:    YouTabView()
+        case .social:  SocialTabView()
+        case .trainer: TrainerTabView()
+        case .you:     YouTabView()
         }
     }
 }

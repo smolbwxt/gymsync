@@ -28,10 +28,15 @@ struct RoutinesHubView: View {
 
     private var slotLimit: Int { Monetization.freeRoutineLimit }
 
+    /// Slot math counts OWN routines only — prescriptions (trainer arm
+    /// T2) live outside the five slots by design.
+    private var ownRoutines: [Routine] { routines.filter { $0.prescribedBy == nil } }
+    private var prescribedRoutines: [Routine] { routines.filter { $0.prescribedBy != nil } }
+
     /// May this user add another routine right now? (Dormant paywall:
     /// always yes today — same guard RoutinesListView used.)
     private var canAddRoutine: Bool {
-        routines.count < slotLimit
+        ownRoutines.count < slotLimit
             || Monetization.allows(.unlimitedRoutines, profile: appState.currentProfile)
     }
 
@@ -49,7 +54,7 @@ struct RoutinesHubView: View {
                         .padding(.vertical, 16)
                         .listRowBackground(theme.bg).listRowSeparator(.hidden)
                 } else {
-                    ForEach(routines) { routine in
+                    ForEach(ownRoutines) { routine in
                         NavigationLink {
                             RoutineDetailChoice(routine: routine,
                                                 onEdited: { Task { await load() } })
@@ -62,11 +67,24 @@ struct RoutinesHubView: View {
                     }
                     .onDelete(perform: delete)
 
+                    // Prescriptions (trainer arm): outside the slots, tagged.
+                    ForEach(prescribedRoutines) { routine in
+                        NavigationLink {
+                            RoutineDetailChoice(routine: routine,
+                                                onEdited: { Task { await load() } })
+                        } label: {
+                            filledSlot(routine)
+                        }
+                        .listRowBackground(theme.bg)
+                        .listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                    }
+
                     // Empty slots render as build invitations up to the free
                     // cap; past the cap (PRO, or dormant paywall) a single
                     // "+ new" row keeps the door open.
-                    if routines.count < slotLimit {
-                        ForEach(routines.count..<slotLimit, id: \.self) { index in
+                    if ownRoutines.count < slotLimit {
+                        ForEach(ownRoutines.count..<slotLimit, id: \.self) { index in
                             emptySlot(number: index + 1)
                                 .listRowBackground(theme.bg)
                                 .listRowSeparator(.hidden)
@@ -81,7 +99,7 @@ struct RoutinesHubView: View {
                 }
             } header: {
                 sectionHeader("Your routines",
-                              trailing: routines.isEmpty ? nil : "\(min(routines.count, slotLimit)) of \(slotLimit) slots")
+                              trailing: routines.isEmpty ? nil : "\(min(ownRoutines.count, slotLimit)) of \(slotLimit) slots")
             }
 
             // ── COACH · BUILDER · DISCOVER ──
@@ -123,9 +141,14 @@ struct RoutinesHubView: View {
     private func filledSlot(_ routine: Routine) -> some View {
         let exercises = (routineExercises[routine.id] ?? []).sorted { $0.position < $1.position }
         return VStack(alignment: .leading, spacing: 4) {
-            Text(routine.name)
-                .font(GSFont.heading(16, relativeTo: .headline))
-                .foregroundStyle(theme.text)
+            HStack(spacing: 6) {
+                Text(routine.name)
+                    .font(GSFont.heading(16, relativeTo: .headline))
+                    .foregroundStyle(theme.text)
+                if routine.prescribedBy != nil {
+                    GSTag(text: "Prescribed", style: .accent)
+                }
+            }
             if exercises.isEmpty {
                 Text("Empty routine — add exercises")
                     .font(GSFont.body(12, relativeTo: .caption))
