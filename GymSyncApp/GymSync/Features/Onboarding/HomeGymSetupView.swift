@@ -44,6 +44,14 @@ struct HomeGymSetupView: View {
     @State private var searchTask: Task<Void, Never>?
     @State private var userLocation: CLLocation?
 
+    // Hub join offer (owner 2026-08-14: "when someone sets their home gym
+    // somewhere, they should be prompted to join that hub, if one is
+    // available"). Set after a successful save when a hub sits within
+    // HubMatch.matchRadiusMeters and the user isn't in it yet; the alert's
+    // buttons own the advance/dismiss that normally follows saving.
+    @State private var hubOffer: Venue?
+    @State private var showHubOffer = false
+
     #if DEBUG
     /// Debug-only: when true (screen catalog only, via the fixture init
     /// below), `body`'s `.task` skips `loadInitial()`'s live CheckInService
@@ -113,6 +121,12 @@ struct HomeGymSetupView: View {
             if catalogSkipLoadInitial { return }
             #endif
             await loadInitial()
+        }
+        .alert("Join the \(hubOffer?.name ?? "gym") hub?", isPresented: $showHubOffer) {
+            Button("Join Hub") { Task { await joinOfferedHub() } }
+            Button("Not Now", role: .cancel) { finishAfterSave() }
+        } message: {
+            Text("Your home gym hosts a hub — who's training, the monthly board, and the equipment list Coach builds from. You can leave anytime.")
         }
     }
 
@@ -341,15 +355,43 @@ struct HomeGymSetupView: View {
                 longitude: mapCenter.longitude,
                 radiusMeters: 200
             )
-            if isOnboarding {
-                onAdvance?()
-            } else {
-                onSaved?()
-                dismiss()
+            // Hub match: a hub at this spot the user hasn't joined → offer
+            // it, and let the alert's buttons finish the flow. Any lookup
+            // failure just skips the offer — the gym IS saved either way.
+            if let venues = try? await VenueRepository.all(),
+               let hub = HubMatch.nearest(in: venues, of: mapCenter) {
+                let alreadyMember = await VenueRepository.isMember(venueID: hub.id)
+                if !alreadyMember {
+                    hubOffer = hub
+                    showHubOffer = true
+                    return
+                }
             }
+            finishAfterSave()
         } catch {
             errorText = ErrorMapping.map(error).errorDescription
         }
+    }
+
+    /// The advance/dismiss that follows a successful save — factored out so
+    /// the hub-offer alert's buttons can run it after the offer resolves.
+    private func finishAfterSave() {
+        if isOnboarding {
+            onAdvance?()
+        } else {
+            onSaved?()
+            dismiss()
+        }
+    }
+
+    /// Best-effort by design: a failed join must never wedge onboarding on
+    /// a bonus step — the hub screen's check-in remains the recovery path.
+    @MainActor
+    private func joinOfferedHub() async {
+        if let hub = hubOffer {
+            try? await VenueRepository.join(venueID: hub.id)
+        }
+        finishAfterSave()
     }
 
     // MARK: - Initial camera / prefill

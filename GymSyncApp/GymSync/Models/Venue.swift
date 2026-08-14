@@ -26,6 +26,13 @@ struct Venue: Decodable, Identifiable, Sendable, Equatable {
     let createdBy: UUID?
     let isVerified: Bool
     let bannerURL: String?
+    /// Hub-hosted equipment inventory (20260814000010) — what the Coach
+    /// reads to preset its equipment dial. Creator-editable.
+    let equipment: [String]
+
+    /// The canonical equipment classes — matches the column default and
+    /// `GeneratorScience.mainEquipmentLadder`'s keys.
+    static let equipmentClasses = ["barbell", "dumbbell", "machine", "cable", "bodyweight"]
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -36,10 +43,66 @@ struct Venue: Decodable, Identifiable, Sendable, Equatable {
         case createdBy = "created_by"
         case isVerified = "is_verified"
         case bannerURL = "banner_url"
+        case equipment
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        latitude = try c.decode(Double.self, forKey: .latitude)
+        longitude = try c.decode(Double.self, forKey: .longitude)
+        radiusMeters = try c.decode(Int.self, forKey: .radiusMeters)
+        createdBy = try c.decodeIfPresent(UUID.self, forKey: .createdBy)
+        isVerified = try c.decode(Bool.self, forKey: .isVerified)
+        bannerURL = try c.decodeIfPresent(String.self, forKey: .bannerURL)
+        // Column is NOT NULL with a default, but a select that omits it
+        // (or a cached older payload) must not fail the whole decode.
+        equipment = try c.decodeIfPresent([String].self, forKey: .equipment) ?? Self.equipmentClasses
+    }
+
+    /// The custom decoder above suppresses the synthesized memberwise init;
+    /// restored by hand (fixtures + previews call it).
+    init(id: UUID, name: String, latitude: Double, longitude: Double,
+         radiusMeters: Int, createdBy: UUID?, isVerified: Bool,
+         bannerURL: String?, equipment: [String] = Venue.equipmentClasses) {
+        self.id = id
+        self.name = name
+        self.latitude = latitude
+        self.longitude = longitude
+        self.radiusMeters = radiusMeters
+        self.createdBy = createdBy
+        self.isVerified = isVerified
+        self.bannerURL = bannerURL
+        self.equipment = equipment
     }
 
     var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    }
+}
+
+// MARK: - HubMatch (pure — see VenueMathTests)
+
+/// The home-gym → hub matcher (owner 2026-08-14: "when someone sets their
+/// home gym somewhere, they should be prompted to join that hub, if one is
+/// available"). Pure so the threshold and tiebreak are testable.
+enum HubMatch {
+    /// A home-gym pin and a hub pin for the same building rarely agree to
+    /// the metre — 300 m absorbs pin drift while still meaning "this block,
+    /// this gym", and stays comfortably above the 200 m default check-in
+    /// radius.
+    static let matchRadiusMeters: Double = 300
+
+    /// Nearest hub within `within` metres of the coordinate, or nil.
+    /// Deterministic: distance wins, name breaks ties.
+    static func nearest(in venues: [Venue], of coordinate: CLLocationCoordinate2D,
+                        within maxMeters: Double = matchRadiusMeters) -> Venue? {
+        venues
+            .map { ($0, VenueMath.distanceMeters(from: coordinate, to: $0.coordinate)) }
+            .filter { $0.1 <= maxMeters }
+            .min { ($0.1, $0.0.name) < ($1.1, $1.0.name) }?
+            .0
     }
 }
 
@@ -127,7 +190,7 @@ enum VenueRepository {
         do {
             let rows: [Venue] = try await client
                 .from("venues")
-                .select("id, name, latitude, longitude, radius_meters, created_by, is_verified, banner_url")
+                .select("id, name, latitude, longitude, radius_meters, created_by, is_verified, banner_url, equipment")
                 .order("name", ascending: true)
                 .execute()
                 .value
@@ -165,11 +228,69 @@ enum VenueRepository {
                     radiusMeters: radiusMeters,
                     createdBy: userID
                 ))
-                .select("id, name, latitude, longitude, radius_meters, created_by, is_verified, banner_url")
+                .select("id, name, latitude, longitude, radius_meters, created_by, is_verified, banner_url, equipment")
                 .single()
                 .execute()
                 .value
             return row
+        } catch { throw ErrorMapping.map(error) }
+    }
+
+    private struct MembershipInsert: Encodable {
+        let venueID: UUID
+        let userID: UUID
+        enum CodingKeys: String, CodingKey {
+            case venueID = "venue_id"
+            case userID = "user_id"
+        }
+    }
+
+    /// Join a hub WITHOUT a check-in — the home-gym flow (owner 2026-08-14).
+    /// Rides the owner-scoped INSERT policy, not the geofenced RPC: you can
+    /// join your gym's hub from your couch; presence/visibility stay off
+    /// until a real check-in. `ignoreDuplicates` makes re-joining a no-op
+    /// instead of a PK violation.
+    static func join(venueID: UUID) async throws {
+        guard let userID = await SupabaseService.shared.currentUserID() else {
+            throw GymSyncError.unauthorized
+        }
+        do {
+            try await client
+                .from("venue_users")
+                .upsert(MembershipInsert(venueID: venueID, userID: userID),
+                        ignoreDuplicates: true)
+                .execute()
+        } catch { throw ErrorMapping.map(error) }
+    }
+
+    /// Whether the signed-in user already belongs to a venue (own membership
+    /// row is always readable by RLS). Errors read as "not a member" — the
+    /// callers only use this to decide whether to OFFER joining.
+    static func isMember(venueID: UUID) async -> Bool {
+        guard let userID = await SupabaseService.shared.currentUserID() else { return false }
+        let rows: [VenueMember]? = try? await client
+            .from("venue_users")
+            .select()
+            .eq("venue_id", value: venueID)
+            .eq("user_id", value: userID)
+            .execute()
+            .value
+        return !(rows ?? []).isEmpty
+    }
+
+    private struct EquipmentUpdate: Encodable {
+        let equipment: [String]
+    }
+
+    /// Set a hub's equipment inventory — creator-edit RLS policy, same
+    /// shape as `rename` (silently no-ops for non-creators).
+    static func setEquipment(venueID: UUID, equipment: [String]) async throws {
+        do {
+            try await client
+                .from("venues")
+                .update(EquipmentUpdate(equipment: equipment))
+                .eq("id", value: venueID)
+                .execute()
         } catch { throw ErrorMapping.map(error) }
     }
 

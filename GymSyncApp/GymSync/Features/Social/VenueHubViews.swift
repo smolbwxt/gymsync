@@ -284,6 +284,9 @@ struct VenueHubView: View {
     @State private var showDeleteConfirm = false
     @State private var renamedName: String?
     @State private var didRelinquish = false
+    /// Creator equipment edits track locally (`venue` is a let — the
+    /// renamedName pattern); the list view refetches on its next load.
+    @State private var equipmentLocal: [String]?
     // Key from OneShotFlags — see that file; keeps the QA reset honest.
     @AppStorage(OneShotFlags.venueAdvisoryKey) private var hasSeenAdvisory = false
 
@@ -340,6 +343,7 @@ struct VenueHubView: View {
                     checkInSection
                     whosHereSection
                     leaderboardSection
+                    equipmentSection
                 }
                 if let errorText {
                     Text(errorText)
@@ -588,6 +592,81 @@ struct VenueHubView: View {
     /// two queries).
     private func usernameFor(_ userID: UUID) -> String {
         board.first { $0.userID == userID }?.username ?? "Lifter"
+    }
+
+    // MARK: Equipment (20260814000010 — the inventory Coach reads)
+
+    private var shownEquipment: [String] { equipmentLocal ?? venue.equipment }
+
+    /// Visible to everyone (venue metadata, like the name): non-creators
+    /// see the classes this gym HAS as quiet chips; the creator sees all
+    /// five as toggles. Coach reads this inventory to preset its dial for
+    /// members whose home gym sits here.
+    private var equipmentSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            GSSectionHeader("Equipment")
+                .padding(.horizontal, 16)
+            Text(isOwner
+                 ? "What this gym has — Coach builds from it. Tap to edit."
+                 : "What this gym has — Coach builds from it.")
+                .font(GSFont.body(12, relativeTo: .caption))
+                .foregroundStyle(theme.neutral500)
+                .padding(.horizontal, 16)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(isOwner ? Venue.equipmentClasses : shownEquipment, id: \.self) { kind in
+                        let isOn = shownEquipment.contains(kind)
+                        if isOwner {
+                            Button {
+                                Task { await toggleEquipment(kind) }
+                            } label: {
+                                equipmentChip(kind, on: isOn)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(busy)
+                        } else {
+                            equipmentChip(kind, on: true)
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+            }
+        }
+    }
+
+    private func equipmentChip(_ kind: String, on: Bool) -> some View {
+        Text(kind.capitalized)
+            .font(GSFont.bold(13, relativeTo: .subheadline))
+            .foregroundStyle(on ? theme.text : theme.neutral500)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .background(theme.surface)
+            .clipShape(Capsule())
+            .overlay(
+                Capsule().strokeBorder(on ? theme.accent : theme.divider, lineWidth: 1)
+            )
+            .opacity(on ? 1 : 0.6)
+    }
+
+    /// Creator-only. Never-empty guard mirrors the wizard's dial; classes
+    /// persist in canonical order so the column stays comparable.
+    @MainActor
+    private func toggleEquipment(_ kind: String) async {
+        var set = Set(shownEquipment)
+        if set.contains(kind) {
+            guard set.count > 1 else { return }
+            set.remove(kind)
+        } else {
+            set.insert(kind)
+        }
+        let ordered = Venue.equipmentClasses.filter { set.contains($0) }
+        busy = true
+        defer { busy = false }
+        do {
+            try await VenueRepository.setEquipment(venueID: venue.id, equipment: ordered)
+            equipmentLocal = ordered
+            errorText = nil
+        } catch { errorText = ErrorMapping.map(error).errorDescription }
     }
 
     // MARK: Data

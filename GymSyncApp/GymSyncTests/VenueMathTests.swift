@@ -87,4 +87,49 @@ final class VenueMathTests: XCTestCase {
         XCTAssertEqual(VenueMath.distanceText(999), "999 m away")
         XCTAssertEqual(VenueMath.distanceText(1400), "1.4 km away")
     }
+
+    // MARK: - HubMatch (home-gym → hub matcher)
+
+    private func venue(_ name: String, lat: Double, lng: Double) -> Venue {
+        Venue(id: UUID(), name: name, latitude: lat, longitude: lng,
+              radiusMeters: 200, createdBy: nil, isVerified: false, bannerURL: nil)
+    }
+
+    /// 0.001° of latitude ≈ 111 m — inside the 300 m match radius.
+    func testHubMatchFindsHubNearPin() {
+        let hub = venue("Iron Temple", lat: 34.001, lng: -118.0)
+        XCTAssertEqual(HubMatch.nearest(in: [hub], of: coord(34.0, -118.0))?.name, "Iron Temple")
+    }
+
+    /// 0.005° ≈ 556 m — a hub across the neighborhood is NOT this gym.
+    func testHubMatchIgnoresDistantHub() {
+        let far = venue("Other Gym", lat: 34.005, lng: -118.0)
+        XCTAssertNil(HubMatch.nearest(in: [far], of: coord(34.0, -118.0)))
+    }
+
+    func testHubMatchPicksNearestOfSeveral() {
+        let near = venue("Near", lat: 34.0005, lng: -118.0)   // ~56 m
+        let nearer = venue("Nearer", lat: 34.0002, lng: -118.0) // ~22 m
+        XCTAssertEqual(HubMatch.nearest(in: [near, nearer], of: coord(34.0, -118.0))?.name, "Nearer")
+    }
+
+    /// Equidistant hubs resolve by name — the matcher must be deterministic
+    /// regardless of fetch order.
+    func testHubMatchNameTiebreak() {
+        let b = venue("Beta Barbell", lat: 34.001, lng: -118.0)
+        let a = venue("Alpha Athletics", lat: 34.001, lng: -118.0)
+        XCTAssertEqual(HubMatch.nearest(in: [b, a], of: coord(34.0, -118.0))?.name, "Alpha Athletics")
+        XCTAssertEqual(HubMatch.nearest(in: [a, b], of: coord(34.0, -118.0))?.name, "Alpha Athletics")
+    }
+
+    func testHubMatchEmptyList() {
+        XCTAssertNil(HubMatch.nearest(in: [], of: coord(34.0, -118.0)))
+    }
+
+    /// The memberwise default seeds all classes — fixtures and previews
+    /// lean on it, and the Coach treats "no curation yet" as "has
+    /// everything" (the column default's exact semantics).
+    func testVenueEquipmentDefaultsToAllClasses() {
+        XCTAssertEqual(venue("Any", lat: 34, lng: -118).equipment, Venue.equipmentClasses)
+    }
 }

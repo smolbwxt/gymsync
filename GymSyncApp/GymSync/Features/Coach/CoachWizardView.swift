@@ -1,3 +1,4 @@
+import CoreLocation
 import SwiftUI
 
 // MARK: - CoachWizardView (the COACH front door, generator design doc)
@@ -25,8 +26,11 @@ struct CoachWizardView: View {
     @State private var experience: GeneratorScience.Experience = .new
     /// Equipment available (owner 2026-08-14: "factor in what equipment
     /// our home gym has — so we're not suggesting nonsense"). All on by
-    /// default; the hub-hosted inventory refines this next.
-    @State private var equipment: Set<String> = ["barbell", "dumbbell", "machine", "cable", "bodyweight"]
+    /// default; the home-gym hub's inventory presets it when one exists.
+    @State private var equipment: Set<String> = Set(Venue.equipmentClasses)
+    /// Name of the hub whose inventory preset the dial — nil when the
+    /// default all-on seed is showing.
+    @State private var presetHubName: String?
     /// Cardio (owner 2026-08-14): dedicated days + MINUTES per session.
     @State private var cardioDays = 0
     @State private var cardioMinutes = 30
@@ -129,6 +133,21 @@ struct CoachWizardView: View {
             allExercises = (try? await ExerciseRepository.fetchAll()) ?? []
             sex = appState.currentProfile?.sex ?? ""
             if let year = appState.currentProfile?.birthYear { birthYearText = "\(year)" }
+            // Hub inventory preset (owner 2026-08-14: "the hub should host
+            // what equipment is available, and that then should tell the
+            // coach what's possible"): home gym → nearest hub → its
+            // equipment seeds the dial. A preset, not a lock — every chip
+            // stays tappable; any lookup failure keeps the all-on default.
+            if let gym = try? await CheckInService.primaryGym(),
+               let venues = try? await VenueRepository.all(),
+               let hub = HubMatch.nearest(in: venues, of: CLLocationCoordinate2D(
+                   latitude: gym.latitude, longitude: gym.longitude)) {
+                let preset = Set(hub.equipment).intersection(Venue.equipmentClasses)
+                if !preset.isEmpty {
+                    equipment = preset
+                    presetHubName = hub.name
+                }
+            }
         }
     }
 
@@ -183,7 +202,7 @@ struct CoachWizardView: View {
                 .foregroundStyle(theme.neutral700)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
-                    ForEach(["barbell", "dumbbell", "machine", "cable", "bodyweight"], id: \.self) { kind in
+                    ForEach(Venue.equipmentClasses, id: \.self) { kind in
                         let isOn = equipment.contains(kind)
                         Button {
                             if isOn {
@@ -205,6 +224,12 @@ struct CoachWizardView: View {
                         .buttonStyle(.plain)
                     }
                 }
+            }
+            if let presetHubName {
+                Text("Preset from the \(presetHubName) hub's inventory — tap to adjust.")
+                    .font(GSFont.body(11, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
