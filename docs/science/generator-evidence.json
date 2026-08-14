@@ -1,0 +1,506 @@
+[
+  {
+    "topic": "sex-differences",
+    "findings": [
+      {
+        "claim": "Women are consistently more fatigue-resistant than men during sustained and intermittent isometric and dynamic contractions, across a wide range of muscle groups, intensities, and contraction types.",
+        "evidence": "Hunter, S.K. \u2014 multiple reviews, e.g. 'Sex differences in human fatigability: mechanisms and insight to physiological responses' (Acta Physiologica, 2014) and follow-up work (~2016, Med Sci Sports Exerc / Exp Physiol) on performance fatigability. One of the most replicated findings in neuromuscular physiology.",
+        "confidence": "strong"
+      },
+      {
+        "claim": "The mechanistic basis for greater female fatigue resistance includes relatively greater reliance on oxidative metabolism, greater muscle perfusion/blood flow per unit muscle mass during contraction, and lower occlusive intramuscular pressure allowing better blood flow recovery between contractions; fiber-type-area studies show men carry disproportionately larger Type II fiber cross-sectional area, which fatigues faster.",
+        "evidence": "Hunter SK mechanistic reviews; Miller AE, MacDougall JD, Tarnopolsky MA, Sale DG (1993) 'Gender differences in strength and muscle fiber characteristics,' European Journal of Applied Physiology.",
+        "confidence": "strong"
+      },
+      {
+        "claim": "At a given %1RM, women typically complete more repetitions to failure than men, with the sex gap most pronounced at moderate-to-high relative intensities and narrowing near true 1RM.",
+        "evidence": "Hoeger WW, Hopkins DR, Barette SL, Hale DF (1990), 'Relationship between repetitions and selected percentages of one repetition maximum,' \u2014 commonly cited reps-vs-%1RM-by-sex dataset in strength & conditioning texts. Direction is well established; exact magnitude/dose-response is less certain from memory.",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "Women recover force-generating capacity faster between sets/bouts of heavy resistance exercise than men, consistent with the fatigability literature.",
+        "evidence": "H\u00e4kkinen K neuromuscular fatigue/recovery studies comparing sexes in strength training contexts (early-to-mid 1990s work). Recalled with less certainty on exact citation/year and effect size than the Hunter fatigability body of work; not translated into a large rest-interval-prescription RCT literature.",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "Unlike intra-session fatigue resistance, next-day exercise-induced muscle damage and soreness after eccentric-emphasis training does NOT show a consistent, well-replicated sex difference \u2014 this is a mechanistically distinct phenomenon from within-session fatigability and should not be assumed to move the same direction.",
+        "evidence": "Clarkson/Sewright-type exercise-induced muscle damage (EIMD) studies finding no clear sex difference in damage/soreness magnitude. Citation recalled with lower confidence than the fatigability literature.",
+        "confidence": "weak"
+      },
+      {
+        "claim": "Relative (%) strength gains from resistance training are similar between men and women; men show larger absolute strength gains, largely because they start with greater muscle cross-sectional area/mass.",
+        "evidence": "Roberts BM, Nuckols G, Krieger JW (2020), 'Sex Differences in Resistance Training: A Systematic Review and Meta-Analysis,' Journal of Strength and Conditioning Research.",
+        "confidence": "strong"
+      },
+      {
+        "claim": "Relative hypertrophy (% change in muscle size) is broadly similar between sexes; absolute hypertrophy (cm\u00b2/kg of muscle) is greater in men.",
+        "evidence": "Roberts, Nuckols & Krieger (2020) JSCR meta-analysis. Direction recalled confidently; precise effect sizes recalled with lower certainty.",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "Acute post-exercise hormonal responses (testosterone, growth hormone) are not meaningfully predictive of hypertrophic adaptation, which undercuts the folk rationale that women need fundamentally different volume/rep prescriptions to 'compensate' for lower circulating testosterone.",
+        "evidence": "West DW, Phillips SM \u2014 work on acute anabolic hormones and muscle protein synthesis / hypertrophy (~2010-2012, e.g. Physician and Sportsmedicine / J Appl Physiol lineage). Recalled with moderate confidence on general conclusion, less certain on exact title/year.",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "There is no credible evidence base for sex-specific %1RM training-zone boundaries, sex-specific hypertrophy rep-range targets, or restricting exercise selection (e.g. excluding women from heavy compound barbell lifts) \u2014 these should remain identical by default.",
+        "evidence": "Absence of contrary evidence combined with the relative-gains parity shown in Roberts et al. (2020). This is a 'do not change' conclusion, not a positive finding from a dedicated study.",
+        "confidence": "strong"
+      },
+      {
+        "claim": "Menstrual-cycle-phase-based periodization of resistance training (tying load/volume to follicular vs. luteal phase) has weak and inconsistent evidentiary support; systematic reviews find no reliable, reproducible effect of cycle phase on strength/resistance-training performance, and much of the primary literature has methodological problems (inadequate phase verification via hormone assay).",
+        "evidence": "McNulty KL et al. (2020), systematic review/meta-analysis in Sports Medicine on menstrual cycle phase and exercise performance; Elliott-Sale KJ and colleagues' methodological critiques of menstrual-cycle exercise research quality. EXPLICITLY FLAGGED per task instructions as weak evidence.",
+        "confidence": "weak"
+      },
+      {
+        "claim": "Sex-based differences in weekly volume tolerance (sets/week) or training-frequency tolerance are not established by direct sex-stratified dose-response RCTs; any prescriptive delta here is an extrapolation from the fatigability/recovery literature rather than a directly demonstrated volume-landmark finding.",
+        "evidence": "No specific sex-stratified volume-landmark (MEV/MRV) trials recalled; inference is downstream of Hunter/H\u00e4kkinen fatigability and recovery work.",
+        "confidence": "weak"
+      }
+    ],
+    "prescription_deltas": [
+      {
+        "parameter": "reps_at_matched_pct1RM",
+        "adjustment": "+1 to +3 reps for women vs. men at the same %1RM; effect largest around 75-90% 1RM, tapering toward ~0 near 95-100% 1RM",
+        "rationale": "Hoeger et al. (1990) reps-vs-%1RM relationship, consistent with Hunter's fatigue-resistance mechanism. Direction solid, magnitude approximate.",
+        "confidence": "moderate"
+      },
+      {
+        "parameter": "inter_set_rest_seconds",
+        "adjustment": "-15s to -30s vs. the male-default rest interval, applied at working sets \u2264 ~85% 1RM",
+        "rationale": "Faster inter-set recovery of force capacity reported for women (H\u00e4kkinen recovery work; Hunter fatigability mechanism). No direct rest-interval-prescription RCT exists \u2014 numeric anchor is a practice-based translation of the underlying physiology.",
+        "confidence": "weak"
+      },
+      {
+        "parameter": "weekly_set_volume_ceiling_per_muscle",
+        "adjustment": "+10% to +20% relative to the male-default estimated MRV (maximum recoverable volume)",
+        "rationale": "Extrapolated from fatigue-resistance/recovery literature (Hunter, H\u00e4kkinen); NOT directly validated by sex-stratified volume dose-response trials. Treat as a soft ceiling nudge, not a hard rule.",
+        "confidence": "weak"
+      },
+      {
+        "parameter": "weekly_training_frequency_per_muscle",
+        "adjustment": "+0 to +1 session/week tolerated at equal per-session volume",
+        "rationale": "Practice-based extrapolation from intra-session fatigability; deliberately conservative because next-day muscle-damage recovery (a separate mechanism) does not show a consistent sex difference (Clarkson/Sewright-type EIMD work).",
+        "confidence": "weak"
+      },
+      {
+        "parameter": "relative_intensity_zone_pct1RM_bounds",
+        "adjustment": "0 \u2014 no sex-based change to %1RM zone boundaries for strength/power/hypertrophy/endurance blocks",
+        "rationale": "Roberts, Nuckols & Krieger (2020) show relative-gain parity between sexes; no evidence base supports differential zones.",
+        "confidence": "strong"
+      },
+      {
+        "parameter": "exercise_selection_eligibility",
+        "adjustment": "0 \u2014 do not gate compound/heavy-barbell-lift eligibility (squat, deadlift, bench, overhead press) on the sex field",
+        "rationale": "No evidence base for restricting exercise pools by sex; guards against encoding 'toning vs. bulking' stereotypes into the generator.",
+        "confidence": "strong"
+      },
+      {
+        "parameter": "hypertrophy_rep_range_target",
+        "adjustment": "0 \u2014 identical rep-range bands for a given hypertrophy target regardless of sex",
+        "rationale": "Roberts et al. (2020) relative-hypertrophy parity; no sex-specific rep-range research exists to justify divergence.",
+        "confidence": "moderate"
+      },
+      {
+        "parameter": "load_increment_step",
+        "adjustment": "use finer microloading increments (~0.5-1 kg / 1-2.5 lb) once a lift's working load falls under a low absolute-1RM threshold, keyed to the trainee's current absolute load \u2014 NOT keyed to sex directly",
+        "rationale": "Practice-based: smaller absolute working loads (more common though not universal among female trainees, especially on upper-body press lifts) need finer progression granularity to avoid stalling on standard 5lb/2.5kg plate jumps. Explicit design caveat: gate on absolute load, not on the sex field, to avoid a spurious proxy variable.",
+        "confidence": "weak"
+      },
+      {
+        "parameter": "menstrual_cycle_phase_periodization",
+        "adjustment": "0 by default \u2014 do not hard-code calendar- or phase-locked load/volume periodization; if offered at all, expose only as an optional user-driven RPE/symptom-based autoregulation input, never a mandatory scheduling rule",
+        "rationale": "McNulty et al. (2020) meta-analysis and Elliott-Sale et al. methodological critiques show weak, inconsistent, and poorly-verified evidence for cycle-phase effects on resistance-training performance. EXPLICITLY FLAGGED as weak evidence per task instructions \u2014 do not treat as a validated prescription lever.",
+        "confidence": "weak"
+      },
+      {
+        "parameter": "progress_reporting_units",
+        "adjustment": "default to %-change / %1RM-relative progress metrics rather than absolute kg or cm when generating cross-sex comparative feedback, benchmarks, or normed progress displays",
+        "rationale": "Roberts et al. (2020): relative gains converge between sexes while absolute gains diverge (driven by starting muscle mass) \u2014 absolute-unit comparisons risk miscalibrating expectations for female users.",
+        "confidence": "moderate"
+      }
+    ]
+  },
+  {
+    "topic": "reps-at-percent",
+    "findings": [
+      {
+        "claim": "Practical %1RM-to-rep-capacity table (typical trained adult, compound barbell lift, point estimates from averaging the Brzycki and Epley 1RM-prediction formulas with the rep-count ranges commonly printed in NSCA/CSCS-style materials): 60%\u2192~15-20 reps, 65%\u2192~14-16, 70%\u2192~12-13, 75%\u2192~10, 80%\u2192~7-8, 85%\u2192~5-6, 90%\u2192~3-5. Note the two source formulas diverge increasingly as %1RM drops below ~75% (i.e. above ~10 reps), so these should be treated as bands, not exact values.",
+        "evidence": "Brzycki M (1993), 'Strength testing\u2014predicting a one-rep max from reps-to-fatigue,' JOPERD 64(1):88-90 (reps = (1.0278-%1RM)/0.0278); Epley B (1985), Boyd Epley Workout 'Poundage Chart' (reps = 30\u00d7(1/%1RM \u2013 1)). The commonly-reproduced NSCA/CSCS %1RM-rep chart (100%=1\u2026 65%=15\u2026 60%=16-20) is frequently attributed to Landers KM (1985) 'Maximums based on reps,' NSCA Journal 6(6):60-61 \u2014 I hold only moderate confidence in that specific attribution vs. it simply being a widely-copied secondary-source chart.",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "1RM-prediction equations (and by extension any %1RM-to-reps table) lose accuracy as predicted reps climb above ~10 (i.e., %1RM \u226475%); different formulas diverge substantially in this zone, so point-estimates should be widened into ranges the lower the %1RM goes.",
+        "evidence": "LeSuer DA, McCormick JH, Mayhew JL, Wasserstein RL, Arnold MD (1997), 'The accuracy of prediction equations for estimating 1-RM performance in the bench press, squat, and deadlift,' Journal of Strength and Conditioning Research 11(4):211-213 (compared Epley, Brzycki, Lombardi, O'Conner, Wathen equations).",
+        "confidence": "strong"
+      },
+      {
+        "claim": "Training status changes the reps-at-%1RM relationship: strength-trained lifters complete more reps than untrained lifters at a given submaximal %1RM, and endurance-trained individuals complete even more reps than strength-trained at the same %1RM. The gap is largest at lower %1RM (higher rep zones, ~60-80%) and shrinks near-maximal (\u226585%).",
+        "evidence": "Richens B, Cleather DJ (2014), 'The relationship between the number of repetitions performed at given intensities is different in endurance and strength trained athletes,' Biology of Sport 31(2):157-161; Shimano T, Kraemer WJ, Spiering BA, et al. (2006), 'Relationship between the number of repetitions and selected percentages of one repetition maximum in free weight exercises in trained and untrained men,' Journal of Strength and Conditioning Research 20(4):819-823.",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "The reps-%1RM relationship is exercise-specific rather than universal: at a matched %1RM, larger-muscle-mass / lower-body lifts (e.g., squat, leg press) generally permit more reps than upper-body press movements (e.g., bench press).",
+        "evidence": "Shimano et al. (2006) JSCR 20(4):819-823, comparing squat, bench press, and jump squat; broadly consistent with earlier work by Hoeger WWK, Hopkins DR, Barette SL, Hale DF (1987), Journal of Applied Sport Science Research, comparing leg press and bench press \u2014 I hold moderate confidence in this earlier citation's exact title/year.",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "Trained women may complete slightly more reps than trained men at a matched %1RM, particularly in higher-rep/lower-intensity zones, plausibly tied to greater skeletal-muscle fatigue resistance in women; the effect appears small and inconsistent, and likely shrinks near 1RM. This is a weaker, less-quantified finding than the training-status effect.",
+        "evidence": "Hoeger WWK, Barette SL, Hale DF, Hopkins DR (1990), 'Relationship between repetitions and selected percentages of one repetition maximum: a comparison between untrained and trained males and females,' Journal of Applied Sport Science Research 4(2):47-54 \u2014 moderate confidence on this citation existing. The broader claim that women show greater fatigue resistance during repeated submaximal contractions is a general exercise-physiology finding (e.g., sex-differences-in-muscle-fatigue literature associated with researchers like Kent-Braun/Hicks); I cannot confidently pin an exact title/year for that strand, so treat that generalization as practice-based.",
+        "confidence": "weak"
+      },
+      {
+        "claim": "A validated 0-10 Repetitions-in-Reserve (RIR) based RPE scale exists for resistance training and correlates with %1RM in trained lifters, though individual accuracy in estimating RIR varies. The applied version pairs RPE 10=0 RIR, RPE 9=1 RIR, RPE 8=2 RIR, RPE 7=3 RIR, RPE 5-6\u22484-6 RIR (approximate; I'm less certain of the exact RPE\u2013RIR pairing at the lower end of the scale).",
+        "evidence": "Zourdos MC, Klemp A, Dolan C, Quiles JM, Schau KA, Jo E, Helms E, et al. (2016), 'Novel resistance training-specific rating of perceived exertion scale measuring repetitions in reserve,' Journal of Strength and Conditioning Research 30(1):267-275; Helms ER, Cronin J, Storey A, Zourdos MC (2016), 'Application of the repetitions in reserve-based rating of perceived exertion scale for resistance training,' Strength and Conditioning Journal 38(4):42-49.",
+        "confidence": "strong"
+      },
+      {
+        "claim": "The RPE(RIR)-to-%1RM relationship is lift-specific in trained powerlifters, not a single universal curve; squat, bench press, and deadlift each showed somewhat different RPE\u2013%1RM/velocity relationships, with deadlift generally the noisiest/least consistent of the three (though I hold only moderate confidence in that specific 'deadlift is noisiest' detail vs. the broader lift-specificity finding, which I'm more confident about).",
+        "evidence": "Helms ER, Storey A, Cross MR, Brown SR, Lenetsky S, Ramsay H, Dillen C, Zourdos MC (2017), 'RPE and Velocity Relationships for the Back Squat, Bench Press, and Deadlift in Powerlifters,' Journal of Strength and Conditioning Research 31(2):292-297.",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "Autoregulated load prescription (RIR/RPE-based) can match or exceed fixed linear %1RM progression for strength outcomes in trained populations, because it adapts to daily readiness (fatigue, sleep, stress) that a static %1RM (anchored to a past 1RM test/estimate) cannot capture.",
+        "evidence": "Mann JB, Thyfault JP, Ivey PA, Sayers SP (2010), 'The effect of autoregulatory progressive resistance exercise vs. linear periodization on strength improvement in college athletes,' Journal of Strength and Conditioning Research 24(7):1718-1723.",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "Practical decision rule for when to prefer each system: %1RM-based prescription is preferable for novice lifters (unreliable proximity-to-failure self-estimation), for contexts requiring a known/pre-planned absolute load (meet peaking, group/team programming, standardized testing), and whenever the exact load lifted must be recorded objectively. RIR/RPE-based prescription is preferable for trained lifters with reasonable interoceptive accuracy, for day-to-day autoregulation around fatigue/stress/sleep, and for hypertrophy-oriented blocks where proximity-to-failure matters more than the exact absolute load. Many applied systems blend the two: %1RM defines a target rep-range 'zone', RIR fine-tunes the actual load session-to-session within that zone.",
+        "evidence": "Synthesis of Helms et al. 2016/2017 and Zourdos et al. 2016 (individually sourced above) plus common applied practice in RTS/RP-style periodization templates; the blended-system claim itself is practice-based (I know of no single controlled trial validating the blend as such), and the 'novices estimate RIR poorly' claim is a widely-repeated S&C heuristic that I cannot tie to one specific study with confidence \u2014 treat both as practice-based.",
+        "confidence": "moderate"
+      }
+    ],
+    "prescription_deltas": [
+      {
+        "parameter": "reps_at_pct1rm_table_baseline",
+        "adjustment": "Set baseline (mixed-population default) reps-per-%1RM as: 60%=16, 65%=15, 70%=12, 75%=10, 80%=8, 85%=6, 90%=4",
+        "rationale": "Midpoint of Brzycki (1993) and Epley (1985) formula outputs, consistent with commonly-reproduced NSCA/CSCS %1RM-rep charts.",
+        "confidence": "moderate"
+      },
+      {
+        "parameter": "reps_at_pct1rm_uncertainty_band",
+        "adjustment": "Widen the predicted-rep output by \u00b120% when %1RM \u2264 75% (i.e., point estimate \u226510 reps); narrow to \u00b11 rep when %1RM \u2265 85%",
+        "rationale": "1RM-prediction-equation accuracy degrades sharply above ~10 reps (LeSuer et al. 1997); treat low-%1RM rep predictions as ranges, not exact values.",
+        "confidence": "strong"
+      },
+      {
+        "parameter": "trained_lifter_rep_bonus",
+        "adjustment": "+2 to +3 reps (~+15% rep capacity) at matched %1RM for lifters with \u22651-2 years consistent training vs. an untrained baseline, when %1RM is in the 60-80% band; taper the bonus to +0 to +1 rep when %1RM \u2265 85%",
+        "rationale": "Richens & Cleather (2014) and Shimano et al. (2006) both found trained individuals sustain more reps than untrained at matched submaximal %1RM, with the gap shrinking near maximal loads.",
+        "confidence": "moderate"
+      },
+      {
+        "parameter": "lower_body_vs_upper_body_rep_adjustment",
+        "adjustment": "+2 to +4 reps for squat/leg-press-pattern lifts vs. bench-press-pattern lifts at matched %1RM",
+        "rationale": "Shimano et al. (2006) found exercise-specific reps-%1RM curves, with larger-muscle-mass lower-body lifts permitting more reps than upper-body pressing at the same relative intensity.",
+        "confidence": "moderate"
+      },
+      {
+        "parameter": "female_rep_adjustment",
+        "adjustment": "+1 to +2 reps at matched %1RM when %1RM \u2264 75%; ~0 adjustment when %1RM \u2265 85%. Apply only as an optional/small correction, not a primary driver.",
+        "rationale": "Hoeger et al. (1990) trained-women data plus general (less precisely sourced) fatigue-resistance-in-women physiology literature; effect is small and not well quantified for %1RM tables specifically.",
+        "confidence": "weak"
+      },
+      {
+        "parameter": "rir_to_pct1rm_step_size",
+        "adjustment": "Near-maximal zone (\u226585% 1RM, 1-5 rep range): ~2.5-5% of 1RM per 1-RIR step. Higher-rep zone (\u226410 target reps, \u226475% 1RM): compress to ~1-2% of 1RM per 1-RIR step.",
+        "rationale": "Derived from the structure of the Helms/Zourdos RIR-based RPE scale (RPE 10=0RIR\u2026RPE 7=3RIR); this exact step-size mapping is a practice-based convention used in applied RTS-style templates, not a directly published regression coefficient.",
+        "confidence": "weak"
+      },
+      {
+        "parameter": "prescription_mode_selector",
+        "adjustment": "IF training_age < 1 year OR context requires a pre-planned/known absolute load (meet peaking, group programming, testing day) THEN primary_mode = '%1RM'. ELSE IF training_age >= 1-2 years AND session-to-session autoregulation is desired (hypertrophy block, in-season/concurrent training, high life-stress variability) THEN primary_mode = 'RIR'.",
+        "rationale": "Advanced/trained lifters have more reliable proximity-to-failure perception and benefit from readiness-adaptive loading (Helms et al. 2016, Zourdos et al. 2016, Mann et al. 2010); novice RIR-inaccuracy is a common applied S&C heuristic, not tied to one specific study I can confidently name \u2014 practice-based component.",
+        "confidence": "moderate"
+      },
+      {
+        "parameter": "stale_1rm_retest_trigger_weeks",
+        "adjustment": "IF weeks_since_last_1RM_test_or_estimate > 4-6 THEN switch that block's primary prescription mode from '%1RM' to 'RIR-anchored'",
+        "rationale": "Practice-based periodization heuristic (used in RTS/RP-style applied templates) to avoid prescribing load off a stale or drifted maximum; no single controlled-trial citation for this exact threshold.",
+        "confidence": "weak"
+      },
+      {
+        "parameter": "deadlift_rpe_reliability_derate",
+        "adjustment": "Widen the acceptable RIR target band by +1 RIR for deadlift relative to squat/bench when using RPE-based autoregulation (e.g., target '2-3 RIR' becomes '2-4 RIR' for deadlift)",
+        "rationale": "Helms et al. (2017) found lift-specific differences in the RPE(RIR)\u2013%1RM/velocity relationship in powerlifters, with deadlift showing more scatter than squat or bench press.",
+        "confidence": "moderate"
+      }
+    ]
+  },
+  {
+    "topic": "progression-models",
+    "findings": [
+      {
+        "claim": "Early-phase novice strength gains are driven predominantly by neural adaptation (motor unit recruitment/rate coding, coordination) rather than hypertrophy, which is the physiological basis for tolerating a new load increase every single session in linear progression (LP) programs.",
+        "evidence": "Moritani & deVries (1979), Am J Phys Med \u2014 classic EMG study establishing the neural-adaptation-dominant early training phase",
+        "confidence": "strong"
+      },
+      {
+        "claim": "Novice LP prescribes per-session load increments that are commonly larger for lower-body/multi-joint lifts (squat, deadlift) than upper-body lifts (press, bench) \u2014 roughly 2.5-5 kg (5-10 lb) lower body vs 1-2.5 kg (2.5-5 lb) upper body per session.",
+        "evidence": "Coaching methodology (Rippetoe, Starting Strength; general S&C coaching convention) \u2014 not derived from a controlled dose-response trial testing these specific increments against alternatives",
+        "confidence": "weak"
+      },
+      {
+        "claim": "Novice LP reliably stalls (can no longer add load session-to-session) within roughly 2-6 months of consistent training, with upper-body/smaller-muscle-mass lifts typically stalling sooner than lower-body/compound lifts.",
+        "evidence": "No controlled study establishes exact stall timelines; this is a widely-repeated observation across S&C coaching literature and popular programs (Rippetoe's Practical Programming), consistent with the general principle that neural-adaptation-phase gains diminish over the trainee's first training months",
+        "confidence": "weak"
+      },
+      {
+        "claim": "Standard coached response to an LP stall is a load deload (commonly ~10%) followed by resumption of the same session-to-session increment scheme, or a switch to a slower progression model (weekly/double progression) rather than continuing session-to-session jumps.",
+        "evidence": "Coaching consensus (Rippetoe; Helms, 'The Muscle and Strength Pyramid') rather than a comparative RCT of stall-response strategies",
+        "confidence": "weak"
+      },
+      {
+        "claim": "Double progression (fix a rep range, e.g., 8-12; add reps until all sets hit the top of the range, then add load and drop back to the bottom) is the standard intermediate progression model once session-to-session LP is no longer viable, and is described as a core periodization technique in mainstream S&C texts.",
+        "evidence": "NSCA's Essentials of Strength Training and Conditioning (Baechle & Earle, eds.) \u2014 textbook coverage of progression models; supporting rationale from periodization dose-response meta-analysis showing structured/periodized progression outperforms non-periodized approaches in trained lifters: Rhea, Alvar, Burkett & Ball (2003), Med Sci Sports Exerc",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "RIR (Reps in Reserve)/RPE-based autoregulation is a validated framework for prescribing load in advanced/well-trained lifters, letting session load float around a target proximity-to-failure rather than a fixed percentage.",
+        "evidence": "Helms, Cronin, Storey & Zourdos (2016), Strength and Conditioning Journal \u2014 RIR-based RPE scale application paper; Zourdos, Klemp, Dolan et al. (2016), J Strength Cond Res \u2014 validation of the novel RIR/RPE scale",
+        "confidence": "strong"
+      },
+      {
+        "claim": "How well an individual lifter's subjective RIR estimate matches their true proximity to failure varies, so RIR-based load prescription is validated as a framework but generalizes imperfectly across lifters and exercises.",
+        "evidence": "Related work on RPE/velocity relationships in trained powerlifters (e.g., Helms et al. work on RPE-velocity relationships for squat/bench/deadlift) \u2014 recalled with only moderate confidence on exact citation details",
+        "confidence": "weak"
+      },
+      {
+        "claim": "An autoregulated progression model (APRE) has outperformed a fixed linear periodization model for strength gains over an off-season training block in college athletes.",
+        "evidence": "Mann, Thyfault, Ivey & Sayers (2010), J Strength Cond Res \u2014 APRE vs. linear periodization in college athletes",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "Overreaching/overtraining in strength sports has been reviewed, but the review found the direct evidence base for specific deload protocols (frequency, duration, proactive-vs-reactive triggers) to be sparse and inconsistently defined across studies.",
+        "evidence": "Recalled as Bell, Ruddock, Maden-Wilkinson & Rogerson (~2020), a scoping review on overreaching and overtraining in strength sports/resistance training \u2014 I hold only moderate confidence in the precise author list/venue/year for this citation",
+        "confidence": "weak"
+      },
+      {
+        "claim": "The proactive (scheduled, e.g., every 4-6 weeks) vs. reactive (triggered by performance/readiness decline) deload dichotomy is a coaching heuristic, not a head-to-head experimentally validated comparison.",
+        "evidence": "Practice-based (Renaissance Periodization / Mike Israetel materials, Helms' Muscle & Strength Pyramid) \u2014 no RCT directly comparing proactive vs. reactive deload scheduling that I can confidently cite",
+        "confidence": "weak"
+      },
+      {
+        "claim": "Planned unloading (deload) periods are physiologically motivated by the overreaching/overtraining literature showing that unmanaged accumulated fatigue without dissipation can produce non-functional overreaching or overtraining.",
+        "evidence": "Fry & Kraemer (1997), Sports Medicine \u2014 resistance exercise overtraining/overreaching neuroendocrine responses review",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "Tapering (progressive reduction of training volume while maintaining intensity) before competition improves performance, with meta-analytic evidence favoring a progressive/exponential taper of roughly 2 weeks with training volume reduced by about 41-60% from pre-taper levels.",
+        "evidence": "Bosquet, Montpetit, Arvisais & Mujika (2007), Med Sci Sports Exerc \u2014 meta-analysis of tapering effects on performance; Mujika & Padilla (2003), Med Sci Sports Exerc \u2014 foundational tapering review",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "Strength/power-specific tapering (as opposed to endurance tapering) has been reviewed directly, generally supporting shorter tapers with volume reduction and maintained/near-maximal intensity to preserve neuromuscular readiness for a 1RM peak.",
+        "evidence": "Recalled as Pritchard, Keogh, Barnes & McGuigan (2015), Strength and Conditioning Journal, a review on effects and mechanisms of tapering for maximizing muscular strength \u2014 citation held with only moderate confidence; cannot confidently reproduce specific numeric findings from it beyond the general direction described",
+        "confidence": "weak"
+      },
+      {
+        "claim": "Powerlifting-specific peaking programs (Sheiko, Candito 6-week, Juggernaut Method, etc.) that prescribe specific taper structures are coaching methodologies, not peer-reviewed controlled studies.",
+        "evidence": "Practice-based \u2014 no controlled trial source",
+        "confidence": "weak"
+      }
+    ],
+    "prescription_deltas": [
+      {
+        "parameter": "novice_LP_upper_body_load_increment",
+        "adjustment": "+1.0 to +2.5 kg per session (+2.5 to +5 lb)",
+        "rationale": "Standard coaching increment for smaller-muscle-mass/upper-body lifts (press, bench) in novice linear progression; practice-based convention, not RCT-derived.",
+        "confidence": "weak"
+      },
+      {
+        "parameter": "novice_LP_lower_body_load_increment",
+        "adjustment": "+2.5 to +5.0 kg per session (+5 to +10 lb)",
+        "rationale": "Standard coaching increment for compound lower-body lifts (squat, deadlift) \u2014 larger muscle mass tolerates larger session-to-session jumps; practice-based convention.",
+        "confidence": "weak"
+      },
+      {
+        "parameter": "novice_LP_stall_trigger",
+        "adjustment": "2 consecutive sessions failing to complete prescribed reps at the same load",
+        "rationale": "Common operational definition used to flag an LP stall and trigger a response in coaching methodologies.",
+        "confidence": "weak"
+      },
+      {
+        "parameter": "novice_LP_expected_duration_before_first_stall",
+        "adjustment": "8-24 weeks (lower body toward the upper end of the range, upper body toward the lower end)",
+        "rationale": "Widely repeated coaching-literature observation about how long session-to-session progression remains viable; no controlled timeline study underlies the specific figure.",
+        "confidence": "weak"
+      },
+      {
+        "parameter": "stall_response_deload_pct",
+        "adjustment": "-8% to -12% (typically -10%) of working load, then resume prior per-session increment",
+        "rationale": "Standard coaching reset heuristic after an LP stall.",
+        "confidence": "weak"
+      },
+      {
+        "parameter": "intermediate_double_progression_rep_range_width",
+        "adjustment": "3-5 rep window (e.g., 8-12 or 6-10)",
+        "rationale": "Standard double-progression bracket as described in mainstream S&C textbooks (Baechle & Earle, NSCA).",
+        "confidence": "moderate"
+      },
+      {
+        "parameter": "intermediate_double_progression_load_increment",
+        "adjustment": "+2.5% to +5% of current load, applied once all sets hit the top of the rep range",
+        "rationale": "General load-progression guideline consistent with periodization dose-response literature (Rhea et al. 2003) favoring structured incremental progression over ad hoc jumps.",
+        "confidence": "moderate"
+      },
+      {
+        "parameter": "advanced_RIR_target_accumulation_block",
+        "adjustment": "RIR 2-4",
+        "rationale": "Higher reserve maintained during volume-accumulation phases per RIR-based RPE framework (Helms et al. 2016; Zourdos et al. 2016); the specific block target is a practice-based extrapolation of the validated scale.",
+        "confidence": "weak"
+      },
+      {
+        "parameter": "advanced_RIR_target_intensification_block",
+        "adjustment": "RIR 0-2",
+        "rationale": "Reserve narrows as training approaches peak/competition per RIR-based autoregulation framework; practice-based extrapolation of the scale rather than a directly-tested block prescription.",
+        "confidence": "weak"
+      },
+      {
+        "parameter": "deload_frequency_proactive",
+        "adjustment": "every 4-6 training weeks",
+        "rationale": "Common scheduled-deload cadence in applied periodization writing (Renaissance Periodization, Helms' Muscle & Strength Pyramid); not established by a comparative RCT.",
+        "confidence": "weak"
+      },
+      {
+        "parameter": "deload_trigger_reactive",
+        "adjustment": ">=2 consecutive sessions with unexpected RPE overshoot (actual RPE >= prescribed RPE + 1) or a missed top set",
+        "rationale": "Practice-based readiness-decline trigger used in autoregulated programming; no validated threshold from controlled research.",
+        "confidence": "weak"
+      },
+      {
+        "parameter": "deload_week_volume_reduction",
+        "adjustment": "-40% to -60% of working set volume",
+        "rationale": "Extrapolated from general tapering/overreaching-recovery literature rather than deload-specific controlled trials.",
+        "confidence": "weak"
+      },
+      {
+        "parameter": "deload_week_intensity_reduction",
+        "adjustment": "0% to -10% of working load (i.e., intensity mostly maintained)",
+        "rationale": "Consistent with general taper principle of preserving intensity/neural drive while cutting volume.",
+        "confidence": "weak"
+      },
+      {
+        "parameter": "peaking_taper_duration",
+        "adjustment": "7-21 days, with 10-14 days as a typical target",
+        "rationale": "Bosquet et al. (2007) meta-analysis (endurance-derived) found ~2-week progressive tapers most effective; a strength-specific review (recalled as Pritchard et al. 2015) directionally supports shorter strength-specific tapers, though that citation is held with only moderate confidence.",
+        "confidence": "moderate"
+      },
+      {
+        "parameter": "peaking_taper_volume_reduction",
+        "adjustment": "-41% to -60% of pre-taper training volume",
+        "rationale": "Bosquet, Montpetit, Arvisais & Mujika (2007) meta-analysis identified this reduction range, delivered progressively/non-linearly, as producing the largest performance improvements; commonly extrapolated from endurance to strength peaking contexts.",
+        "confidence": "moderate"
+      },
+      {
+        "parameter": "peaking_taper_intensity_maintenance",
+        "adjustment": "maintain load intensity at 90-100% of pre-taper peak (do not reduce %1RM proportionally with volume)",
+        "rationale": "Core taper principle across Mujika & Padilla (2003) and Bosquet et al. (2007): cut volume, preserve intensity, to dissipate fatigue while retaining neuromuscular readiness.",
+        "confidence": "moderate"
+      }
+    ]
+  },
+  {
+    "topic": "female-hypertrophy-volume",
+    "findings": [
+      {
+        "claim": "The canonical hypertrophy volume landmark of ~10-20 hard sets/muscle/week (Schoenfeld, Ogborn & Krieger 2017 meta-analysis; Baz-Valle et al. 2022; Ralston et al. 2017) is built almost entirely on samples that are male-only or mixed-sex without sex-stratified reporting. Very few dose-response volume trials isolate women, so the landmark is technically an extrapolation onto female trainees, not a validated female finding.",
+        "evidence": "Schoenfeld, Ogborn & Krieger 2017 (Sports Med) volume meta-analysis; Baz-Valle et al. 2022 volume-hypertrophy systematic review",
+        "confidence": "strong"
+      },
+      {
+        "claim": "One of the only dedicated volume dose-response trials run specifically in trained women found no additional hypertrophy from progressively higher weekly set counts beyond a fairly low threshold, in apparent contradiction to the male-derived dose-response curve.",
+        "evidence": "Barbalho M, Coswig VS, Steele J, Fisher JP, Paoli A, Gentil P \u2014 trained-women set-volume dose-response trial, Med Sci Sports Exerc, ~2019",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "A parallel/companion trial by a different-but-related author group, run in trained men using a similar graded-volume design around the same period, found hypertrophy continued to scale with higher weekly set volumes \u2014 the two studies are commonly cited against each other as the closest thing to a controlled male-vs-female volume-response comparison, but they are different trials/populations, not a true head-to-head.",
+        "evidence": "Schoenfeld BJ, Contreras B, Krieger J, et al. \u2014 trained-men volume dose-response trial, Med Sci Sports Exerc, ~2019",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "The trained-women volume trial (and the broader low-volume-sufficiency body of work from the same research cluster, e.g. Gentil P's single-vs-multiple-set line of research) has drawn methodological criticism \u2014 concerns raised about ultrasound measurement reliability/blinding and exercise technique standardization \u2014 so its 'volume plateaus earlier in women' conclusion should be treated as contested, not confirmed.",
+        "evidence": "post-publication commentary/critique of the Barbalho et al. trained-women volume trial (exact citation not confidently recalled)",
+        "confidence": "weak"
+      },
+      {
+        "claim": "There is a separate, moderate-confidence line of volume dose-response work specifically in older/postmenopausal women (low- vs high-volume strength training, neuromuscular and muscle-quality outcomes), distinct from the trained-young-women literature above, from a Brazilian research group working in elderly populations.",
+        "evidence": "Radaelli R et al., low- vs high-volume strength training in older women, time-course/neuromuscular outcomes, ~2013-2014 (journal/exact title not fully certain)",
+        "confidence": "weak"
+      },
+      {
+        "claim": "There is essentially no dedicated female-cohort dose-response literature on proximity-to-failure/effort (RIR) for hypertrophy or strength outcomes. The training-to-failure and RIR-based training literature (e.g., Lasevicius, N\u00f3brega, and the Refalo et al. 2021 meta-analysis on proximity to failure) does not stratify or report by sex.",
+        "evidence": "absence of identified female-specific RIR/failure-proximity RCTs; Refalo MC et al. proximity-to-failure meta-analysis, ~2021, sex-unstratified",
+        "confidence": "strong"
+      },
+      {
+        "claim": "Sex differences in neuromuscular fatigability are well documented and support a plausible physiological rationale for women tolerating higher training frequency/effort or recovering faster between sessions \u2014 but this comes from fatigue-physiology research (isometric/dynamic submaximal contraction tasks), not from hypertrophy or strength training dose-response trials, so it is an inference, not a direct finding.",
+        "evidence": "Hunter SK \u2014 body of work on sex differences in performance fatigability, e.g. Exp Physiol 2016 and Med Sci Sports Exerc 2016 reviews",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "Claims common in coaching practice that women can handle higher training frequency, more effort proximity to failure, or shorter deload cycles than men are practice-based extrapolations from the fatigue-resistance physiology literature above, not from direct hypertrophy/strength dose-response RCTs in women.",
+        "evidence": "practice-based (no direct RCT support identified)",
+        "confidence": "weak"
+      },
+      {
+        "claim": "No dedicated female-cohort training-frequency dose-response trial was identified. Frequency meta-analyses (e.g., Schoenfeld, Grgic & Krieger 2016; subsequent Grgic et al. reviews) pool mixed/unstratified samples, so the frequency answer for women is 'same as mixed-cohort evidence' by default, not a distinct female finding.",
+        "evidence": "Schoenfeld BJ, Grgic J, Krieger J \u2014 frequency meta-analysis, Sports Med ~2016 (sex-unstratified)",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "The glute/hip-thrust literature that does skew toward female subjects (recruitment for glute-focused exercise research tends to draw predominantly female cohorts) is primarily EMG/exercise-selection research, not rep-range or set/rep dose-response research \u2014 it answers 'which exercise activates the glutes more,' not 'what rep range or intensiveness maximizes hypertrophy in women.' It should not be read as female-specific rep-range dose-response evidence.",
+        "evidence": "Contreras B, Vigotsky AD, Schoenfeld BJ, Beardsley C, Cronin J \u2014 gluteal EMG comparisons (back squat vs hip thrust etc.), J Appl Biomech ~2015-2017; Contreras B, Vigotsky AD, Schoenfeld BJ, et al. \u2014 hip thrust vs front squat training study in adolescent female soccer players, J Strength Cond Res ~2017",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "General rep-range/load-hypertrophy equivalence literature (loads from roughly 30% to 80%+ 1RM producing similar hypertrophy when effort/volume is equated) was built mostly in men or in sex-unstratified samples; no confidently-recalled dedicated female-cohort replication exists, so 'rep range doesn't matter much for hypertrophy' should be treated as unconfirmed-but-plausible for women rather than established.",
+        "evidence": "Schoenfeld BJ et al. load/hypertrophy studies and meta-analyses, ~2014-2021 (predominantly male or unstratified samples)",
+        "confidence": "moderate"
+      },
+      {
+        "claim": "A small emerging literature on menstrual-cycle-phase-based periodization (training harder in follicular vs luteal phase) generally finds weak, inconsistent, or null evidence that phase-locked programming outperforms standard undulating programming, with common critiques of poor hormonal-phase verification and small samples.",
+        "evidence": "systematic reviews on menstrual-cycle-based resistance training periodization (specific author/year not confidently recalled)",
+        "confidence": "weak"
+      }
+    ],
+    "prescription_deltas": [
+      {
+        "parameter": "weekly_sets_per_muscle_group (female trainees)",
+        "adjustment": "0 \u2014 retain the standard 10-20 sets/muscle/week landmark; do not apply a blanket reduction",
+        "rationale": "The only dedicated trained-women volume trial suggesting an earlier plateau (~5 sets) is a single, methodologically contested study that contradicts the much larger mixed/male-derived meta-analytic base rate; overriding the base rate on one contested trial is not justified.",
+        "confidence": "weak-moderate"
+      },
+      {
+        "parameter": "rir_target / proximity_to_failure (female trainees)",
+        "adjustment": "0 \u2014 do not apply an automatic -0.5 to -1.0 RIR adjustment by default",
+        "rationale": "No direct RCT dose-response data on failure proximity exists specifically for women; the fatigue-resistance physiology literature (Hunter et al.) is only a plausible mechanism, not a tested training variable. Treat any RIR delta for women as an experimental hypothesis to A/B test, not a default program parameter.",
+        "confidence": "weak"
+      },
+      {
+        "parameter": "training_frequency_per_muscle (female trainees)",
+        "adjustment": "0 \u2014 retain mixed-cohort default (commonly 2x/week/muscle)",
+        "rationale": "No dedicated female-cohort frequency dose-response trial identified; existing frequency meta-analyses are sex-unstratified, so there is no evidence base to justify a female-specific frequency increase or decrease.",
+        "confidence": "weak"
+      },
+      {
+        "parameter": "inter-session_recovery_interval_same_muscle_hours",
+        "adjustment": "optional experimental -10% to -15% (shorter interval), flagged as untested",
+        "rationale": "Sex-difference fatigue-resistance research (Hunter SK) shows women are generally more fatigue-resistant across many submaximal contraction tasks, which could support marginally shorter recovery windows as a soft prior \u2014 but this has not been validated in hypertrophy/strength dose-response trials, so it should only be applied as a labeled experiment, not a silent default.",
+        "confidence": "weak"
+      },
+      {
+        "parameter": "rep_range_hypertrophy_zone (female trainees)",
+        "adjustment": "0 \u2014 retain the broad ~5-30RM equal-effect zone from mixed-cohort literature",
+        "rationale": "The literature that does skew female (hip-thrust/glute EMG studies) addresses exercise selection, not rep range dose-response; no evidence base exists to narrow or shift the rep-range zone for women specifically.",
+        "confidence": "moderate"
+      },
+      {
+        "parameter": "menstrual_cycle_phase_periodization_toggle",
+        "adjustment": "0 \u2014 do not phase-lock intensity/volume to cycle phase by default",
+        "rationale": "Existing reviews on follicular/luteal phase-based periodization show weak, inconsistent evidence of benefit over standard undulating programming, with common methodological weaknesses (poor hormonal verification, small n). Insufficient basis for a default programming adjustment.",
+        "confidence": "weak"
+      }
+    ]
+  }
+]
