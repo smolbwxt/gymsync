@@ -19,6 +19,13 @@ struct LogSetSheet: View {
     /// call sites (GroupSessionLiveView's) compile unchanged as lbs until
     /// they're swept.
     var unit: WeightUnit = .lbs
+
+    /// Equipment-aware tuner step (owner 2026-08-14): machines/cables
+    /// step a whole stack peg; free weights keep the micro step.
+    private var tunerStep: Double {
+        NSDecimalNumber(decimal: Units.tunerStep(unit: unit, equipment: exercise.equipment)).doubleValue
+    }
+
     /// Edit-mode prefills (2026-07-27, "Only delete? No edit?"): seeding the
     /// full previous entry so fixing one field doesn't cost re-entering the
     /// other four. All trailing-defaulted — log-new call sites unchanged.
@@ -117,8 +124,10 @@ struct LogSetSheet: View {
                             borderColor: theme.accent,        // Canvas: accent border on weight
                             valueColor: theme.accent700,      // Canvas: accent700 for weight value
                             keyboard: .decimalPad,
-                            onDecrement: { decrementDecimal(&weight) },
-                            onIncrement: { incrementDecimal(&weight) }
+                            // Equipment-aware step (owner 2026-08-14):
+                            // machines move a whole peg, not 2.5.
+                            onDecrement: { decrementDecimal(&weight, step: tunerStep) },
+                            onIncrement: { incrementDecimal(&weight, step: tunerStep) }
                         )
                     }
                     .padding(.horizontal, 16)
@@ -415,13 +424,13 @@ func incrementInt(_ s: inout String) {
     let v = (leadingInt(s) ?? 0) + 1
     s = "\(v)"
 }
-func decrementDecimal(_ s: inout String) {
-    let v = max(0, (Double(s) ?? 0) - 2.5)
+func decrementDecimal(_ s: inout String, step: Double = 2.5) {
+    let v = max(0, (Double(s) ?? 0) - step)
     s = v.truncatingRemainder(dividingBy: 1) == 0
            ? "\(Int(v))" : String(format: "%.1f", v)
 }
-func incrementDecimal(_ s: inout String) {
-    let v = (Double(s) ?? 0) + 2.5
+func incrementDecimal(_ s: inout String, step: Double = 2.5) {
+    let v = (Double(s) ?? 0) + step
     s = v.truncatingRemainder(dividingBy: 1) == 0
            ? "\(Int(v))" : String(format: "%.1f", v)
 }

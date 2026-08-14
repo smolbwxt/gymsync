@@ -132,6 +132,18 @@ enum Units {
     /// "225 lbs" / "102.5 kg". Trims a trailing ".0" (the app already does
     /// this for body weight and est-1RM, so a new format here would read as
     /// inconsistent).
+    /// Weight-tuner step (owner 2026-08-14: "when using machines, the
+    /// weight tuner suggests impossible increments"): stack equipment
+    /// moves in PEGS — a whole selectorized increment — while free
+    /// weights keep the micro-plate step.
+    static func tunerStep(unit: WeightUnit, equipment: String?) -> Decimal {
+        let stack = equipment == "machine" || equipment == "cable"
+        switch unit {
+        case .kg: return stack ? 5 : Decimal(2.5)
+        case .lbs: return stack ? 10 : 5
+        }
+    }
+
     static func format(pounds: Decimal, unit: WeightUnit,
                        rounded: Bool = true, includeUnit: Bool = true) -> String {
         let converted = fromPounds(pounds, to: unit)

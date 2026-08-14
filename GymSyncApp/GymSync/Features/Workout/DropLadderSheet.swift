@@ -15,6 +15,10 @@ struct DropLadderSheet: View {
     let steps: Int
     let dropPercent: Decimal
     let unit: WeightUnit
+    /// Tuner step in the DISPLAY unit (owner 2026-08-14: "give me the
+    /// incrementers on it like on the logging widget") — equipment-aware,
+    /// passed from the session so machine drops move whole pegs.
+    var weightStep: Double = 5
     /// Called with the completed rungs (weight in canonical POUNDS, reps).
     let onLog: ([(weight: Decimal, reps: Int)]) -> Void
 
@@ -72,30 +76,63 @@ struct DropLadderSheet: View {
                 .frame(width: 62, alignment: .leading)
             fieldBox(label: unit.label.uppercased(),
                      text: bindingFor(index, in: $weights),
-                     keyboard: .decimalPad)
+                     keyboard: .decimalPad,
+                     onMinus: { stepWeight(index, up: false) },
+                     onPlus: { stepWeight(index, up: true) })
             fieldBox(label: "REPS",
                      text: bindingFor(index, in: $reps),
-                     keyboard: .numberPad)
+                     keyboard: .numberPad,
+                     onMinus: { stepReps(index, up: false) },
+                     onPlus: { stepReps(index, up: true) })
         }
     }
 
     private func fieldBox(label: String, text: Binding<String>,
-                          keyboard: UIKeyboardType) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(label)
-                .font(GSFont.bodyMedium(9, relativeTo: .caption2))
-                .tracking(0.5)
-                .foregroundStyle(theme.neutral500)
-            TextField(label, text: text)
-                .keyboardType(keyboard)
-                .font(GSFont.heading(16, relativeTo: .body))
-                .foregroundStyle(theme.text)
+                          keyboard: UIKeyboardType,
+                          onMinus: @escaping () -> Void,
+                          onPlus: @escaping () -> Void) -> some View {
+        HStack(spacing: 6) {
+            stepButton("minus", action: onMinus)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(label)
+                    .font(GSFont.bodyMedium(9, relativeTo: .caption2))
+                    .tracking(0.5)
+                    .foregroundStyle(theme.neutral500)
+                TextField(label, text: text)
+                    .keyboardType(keyboard)
+                    .font(GSFont.heading(16, relativeTo: .body))
+                    .foregroundStyle(theme.text)
+            }
+            stepButton("plus", action: onPlus)
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, 8)
         .padding(.vertical, 7)
         .frame(maxWidth: .infinity)
         .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
             .strokeBorder(theme.divider, lineWidth: 1))
+    }
+
+    private func stepWeight(_ index: Int, up: Bool) {
+        while weights.count <= index { weights.append("") }
+        if up { incrementDecimal(&weights[index], step: weightStep) }
+        else { decrementDecimal(&weights[index], step: weightStep) }
+    }
+
+    private func stepReps(_ index: Int, up: Bool) {
+        while reps.count <= index { reps.append("") }
+        if up { incrementInt(&reps[index]) } else { decrementInt(&reps[index]) }
+    }
+
+    private func stepButton(_ symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(theme.neutral700)
+                .frame(width: 28, height: 28)
+                .background(theme.surface)
+                .clipShape(Circle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func bindingFor(_ index: Int, in array: Binding<[String]>) -> Binding<String> {

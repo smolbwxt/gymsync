@@ -340,6 +340,10 @@ struct RoutineDetailChoice: View {
             .padding(16)
         }
         .background(theme.bg)
+        // Owner 2026-08-14 ("a workout going can hide some buttons"): the
+        // live-session pill + dock stack above the bottom edge; without a
+        // margin the Edit/Start buttons sit underneath them.
+        .contentMargins(.bottom, 110, for: .scrollContent)
         .navigationTitle(routine.name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(theme.surface, for: .navigationBar)

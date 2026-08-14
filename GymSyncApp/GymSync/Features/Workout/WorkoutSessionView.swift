@@ -374,12 +374,13 @@ struct WorkoutSessionView: View {
                 RestNotifier.cancel()
             }
         }
-        .sheet(item: $dropLadder) { ctx in
+        .sheet(item: $dropLadder, onDismiss: startPostDropRest) { ctx in
             DropLadderSheet(
                 topWeightPounds: ctx.topWeightPounds,
                 steps: ctx.steps,
                 dropPercent: ctx.percent,
-                unit: soloUnit
+                unit: soloUnit,
+                weightStep: NSDecimalNumber(decimal: soloWeightStep).doubleValue
             ) { rungs in
                 // Best-effort — the parent set already logged; a failed
                 // ladder write never blocks anything (the trigger picks up
@@ -710,9 +711,14 @@ struct WorkoutSessionView: View {
         var id: UUID { setLogID }
     }
     @State private var dropLadder: DropLadderContext?
+    /// Rest deferred while the drop ladder runs — applied on sheet dismiss.
+    @State private var pendingDropRestSeconds: Int?
+    @State private var pendingDropRestIsTransit = false
 
     private var soloUnit: WeightUnit { sessionSettings?.weightUnit ?? .lbs }
-    private var soloWeightStep: Decimal { soloUnit == .kg ? Decimal(2.5) : 5 }
+    private var soloWeightStep: Decimal {
+        Units.tunerStep(unit: soloUnit, equipment: currentExercise?.equipment)
+    }
 
     private var soloBLEBPM: Int? {
         if case .connected = BLEHeartRateService.shared.state {
@@ -2970,6 +2976,14 @@ struct WorkoutSessionView: View {
                 captureRestDrop()
                 restEndAt = nil
                 soloRestIsTransit = false
+            } else if wasFinalDropSet {
+                // Drop ladder (owner 2026-08-14): no rest DURING the
+                // ladder — rungs are back-to-back by definition. The rest
+                // (with any TRANSIT extension) starts when the ladder
+                // sheet closes, via its onDismiss.
+                pendingDropRestSeconds = (re.restSeconds ?? defaultRestSeconds)
+                    + (exerciseChanged ? TransitWindow.seconds : 0)
+                pendingDropRestIsTransit = exerciseChanged
             } else {
                 // Per-exercise rest wins when configured; otherwise fall back
                 // to the user's default_rest_seconds (Canvas Completion Task 2)
@@ -2996,6 +3010,19 @@ struct WorkoutSessionView: View {
         } catch {
             errorText = ErrorMapping.map(error).errorDescription
             return false
+        }
+    }
+
+    /// The rest deferred by a drop ladder starts the moment the sheet
+    /// closes — logged or skipped, the recovery clock is honest either way.
+    private func startPostDropRest() {
+        guard let seconds = pendingDropRestSeconds else { return }
+        pendingDropRestSeconds = nil
+        soloRestIsTransit = pendingDropRestIsTransit
+        pendingDropRestIsTransit = false
+        if seconds > 0 {
+            soloRestStartedAt = Date()
+            restEndAt = Date().addingTimeInterval(TimeInterval(seconds))
         }
     }
 

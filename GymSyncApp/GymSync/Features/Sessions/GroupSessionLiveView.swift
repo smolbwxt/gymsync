@@ -600,6 +600,13 @@ struct GroupSessionLiveView: View {
     /// onto bodyweight-exercise sets. Fetched once in reload's task.
     @State private var turnLatestBodyWeightLbs: Decimal?
 
+    /// Equipment-aware tuner step for the inline log card (owner
+    /// 2026-08-14: machines move a whole peg).
+    private var turnTunerStep: Double {
+        NSDecimalNumber(decimal: Units.tunerStep(
+            unit: .lbs, equipment: currentExerciseForSheet?.equipment)).doubleValue
+    }
+
     /// Mirror of the solo captureRestDrop — called before every path that
     /// clears `selfRotationRestUntil`; no-op without a window or HR data.
     private func captureSelfRotationRestDrop() {
@@ -3307,8 +3314,8 @@ struct GroupSessionLiveView: View {
                     borderColor: theme.accent,
                     valueColor: theme.accent700,
                     keyboard: .decimalPad,
-                    onDecrement: { decrementDecimal(&logWeight) },
-                    onIncrement: { incrementDecimal(&logWeight) }
+                    onDecrement: { decrementDecimal(&logWeight, step: turnTunerStep) },
+                    onIncrement: { incrementDecimal(&logWeight, step: turnTunerStep) }
                 )
             }
 
