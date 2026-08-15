@@ -2,6 +2,10 @@ import SwiftUI
 
 struct ExerciseHistoryView: View {
     let exercise: Exercise
+    /// nil = the signed-in lifter. A trainer passes the CLIENT's id —
+    /// the reads ride the history-scope RLS, so an ungranted scope shows
+    /// an empty history, never someone else's data.
+    var subjectID: UUID? = nil
     @Environment(AppState.self) private var appState
     @Environment(\.gsTheme) private var theme
 
@@ -216,7 +220,7 @@ struct ExerciseHistoryView: View {
 
     @MainActor
     private func load() async {
-        guard let userID = appState.currentProfile?.id else { return }
+        guard let userID = subjectID ?? appState.currentProfile?.id else { return }
         loading = true
         defer { loading = false }
         do {

@@ -29,6 +29,11 @@ struct ClientDetailView: View {
     // Calendar (trainer arm T4 — owner 2026-08-16: "How do I schedule
     // workouts…from here?"). Reads + writes both ride the calendar scope.
     @State private var upcomingSessions: [WorkoutSession] = []
+    // Client ledger + records (owner 2026-08-16: "There's no calendar, or
+    // ledger of exercises… see statistics"). Same machinery as the
+    // lifter's own Stats page, scope-gated.
+    @State private var clientLedger: [ClientLedgerEntry] = []
+    @State private var clientAttempted: [Exercise] = []
     @State private var showScheduleSheet = false
     @State private var scheduleDate = Date().addingTimeInterval(3600)
     @State private var scheduleRoutineID: UUID?
@@ -47,6 +52,8 @@ struct ClientDetailView: View {
                 overviewStrip
                 routinesSection
                 calendarSection
+                ledgerSection
+                recordsSection
                 notesSection
                 if let errorText {
                     Text(errorText)
@@ -322,6 +329,96 @@ struct ClientDetailView: View {
         } catch { errorText = ErrorMapping.map(error).errorDescription }
     }
 
+    // MARK: - Ledger + records (owner 2026-08-16 — the client's training,
+    // in the same shapes their own Stats page uses)
+
+    struct ClientLedgerEntry: Identifiable {
+        let session: WorkoutSession
+        let routineName: String?
+        let sets: Int
+        let minutes: Int?
+        var id: UUID { session.id }
+    }
+
+    private var ledgerSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            GSSectionHeader("Ledger")
+            if !relationship.scopes.history {
+                Text("Workout history isn't shared — the client controls this from their Coaching settings.")
+                    .font(GSFont.body(13, relativeTo: .subheadline))
+                    .foregroundStyle(theme.neutral500)
+            } else if clientLedger.isEmpty {
+                Text("No workouts in the last 90 days.")
+                    .font(GSFont.body(13, relativeTo: .subheadline))
+                    .foregroundStyle(theme.neutral500)
+            } else {
+                ForEach(clientLedger) { entry in
+                    NavigationLink {
+                        CompletedSessionView(session: entry.session)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(spacing: 8) {
+                                Text(entry.routineName ?? "Freeform workout")
+                                    .font(GSFont.bold(14, relativeTo: .headline))
+                                    .foregroundStyle(theme.text)
+                                    .lineLimit(1)
+                                Spacer(minLength: 8)
+                                Text((entry.session.startedAt ?? entry.session.scheduledFor ?? .now)
+                                    .formatted(.dateTime.month(.abbreviated).day()))
+                                    .font(GSFont.body(11, relativeTo: .caption))
+                                    .foregroundStyle(theme.neutral500)
+                            }
+                            Text(entry.minutes.map { "\(entry.sets) sets · ~\($0) min" }
+                                 ?? "\(entry.sets) sets")
+                                .font(GSFont.body(11, relativeTo: .caption))
+                                .foregroundStyle(theme.neutral500)
+                                .monospacedDigit()
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
+                }
+            }
+        }
+    }
+
+    private var recordsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            GSSectionHeader("Records")
+            if !relationship.scopes.stats {
+                Text("Stats aren't shared — the client controls this from their Coaching settings.")
+                    .font(GSFont.body(13, relativeTo: .subheadline))
+                    .foregroundStyle(theme.neutral500)
+            } else if let clientID {
+                NavigationLink {
+                    AttemptedExercisesView(exercises: clientAttempted, subjectID: clientID)
+                        .background(theme.bg)
+                        .navigationTitle("\(clientName) · records")
+                        .navigationBarTitleDisplayMode(.inline)
+                } label: {
+                    HStack {
+                        Text(clientAttempted.isEmpty
+                             ? "No lifts attempted yet"
+                             : "\(clientAttempted.count) lifts — trends and history per exercise")
+                            .font(GSFont.bold(13, relativeTo: .subheadline))
+                            .foregroundStyle(theme.text)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(theme.neutral500)
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
+            }
+        }
+    }
+
     // MARK: - Notes (T5 — trainer-private)
 
     private var notesSection: some View {
@@ -384,9 +481,50 @@ struct ClientDetailView: View {
                 .filter { $0.prescribedBy == nil }
         }
         if relationship.scopes.history,
-           let weekStart = Calendar.current.date(byAdding: .day, value: -7, to: .now),
-           let logs = try? await SessionRepository.recentSetLogs(userID: clientID, since: weekStart) {
-            sessionsThisWeek = Set(logs.map(\.sessionID)).count
+           let since = Calendar.current.date(byAdding: .day, value: -90, to: .now),
+           let logs = try? await SessionRepository.recentSetLogs(userID: clientID, since: since) {
+            // One 90-day fetch feeds both the weekly count and the ledger.
+            let valid = logs.filter { !$0.isPenalty }
+            if let weekStart = Calendar.current.date(byAdding: .day, value: -7, to: .now) {
+                sessionsThisWeek = Set(valid.filter { $0.loggedAt >= weekStart }.map(\.sessionID)).count
+            }
+            let bySession = Dictionary(grouping: valid, by: \.sessionID)
+            let sessions = (try? await SessionRepository.byIDs(Array(bySession.keys))) ?? []
+            let names = routines.reduce(into: [UUID: String]()) { $0[$1.id] = $1.name }
+            clientLedger = sessions
+                .map { session -> ClientLedgerEntry in
+                    let sessionLogs = bySession[session.id] ?? []
+                    let times = sessionLogs.map(\.loggedAt)
+                    let minutes: Int?
+                    if let first = times.min(), let last = times.max(), last > first {
+                        minutes = Int(last.timeIntervalSince(first) / 60)
+                    } else {
+                        minutes = nil
+                    }
+                    return ClientLedgerEntry(
+                        session: session,
+                        routineName: session.routineID.flatMap { names[$0] },
+                        sets: sessionLogs.count,
+                        minutes: minutes)
+                }
+                .sorted { ($0.session.startedAt ?? .distantPast) > ($1.session.startedAt ?? .distantPast) }
+                .prefix(10)
+                .map { $0 }
+        }
+        if relationship.scopes.stats {
+            // Attempted lifts (the records list): distinct exercises across
+            // the client's PR ledger, most recent first.
+            let prs = (try? await PersonalRecordRepository.recent(userID: clientID, limit: 400)) ?? []
+            if !prs.isEmpty, let catalog = try? await ExerciseRepository.fetchAll() {
+                let byID = Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, $0) })
+                var seen = Set<UUID>()
+                var ordered: [Exercise] = []
+                for pr in prs where !seen.contains(pr.exerciseID) {
+                    seen.insert(pr.exerciseID)
+                    if let ex = byID[pr.exerciseID] { ordered.append(ex) }
+                }
+                clientAttempted = ordered
+            }
         }
         if relationship.scopes.bodyWeight {
             latestBodyWeight = (try? await BodyWeightLogRepository.recent(userID: clientID))?.first?.weight

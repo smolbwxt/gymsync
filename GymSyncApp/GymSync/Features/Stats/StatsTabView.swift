@@ -654,6 +654,8 @@ struct StatsTabView: View {
 struct AttemptedExercisesView: View {
     @Environment(\.gsTheme) private var theme
     let exercises: [Exercise]
+    /// nil = the signed-in lifter; a trainer passes the client's id.
+    var subjectID: UUID? = nil
 
     var body: some View {
         ScrollView {
@@ -666,7 +668,7 @@ struct AttemptedExercisesView: View {
                 } else {
                     ForEach(exercises) { exercise in
                         NavigationLink {
-                            ExerciseHistoryView(exercise: exercise)
+                            ExerciseHistoryView(exercise: exercise, subjectID: subjectID)
                         } label: {
                             HStack {
                                 Text(exercise.name)
