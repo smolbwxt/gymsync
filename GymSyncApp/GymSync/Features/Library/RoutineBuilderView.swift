@@ -29,6 +29,15 @@ struct RoutineBuilderView: View {
     @State private var pickerSearchText = ""
     @State private var errorText: String?
     @State private var allExercises: [Exercise] = []
+    /// The SUBJECT's per-exercise history (prescribing → the client,
+    /// otherwise yourself) — feeds the e1RM line and the weight
+    /// prepopulation (owner 2026-08-16). Client reads ride the history
+    /// scope; ungranted or empty = no line, honestly.
+    @State private var subjectLogs: [UUID: [SetLog]] = [:]
+    /// itemID → the weight string auto-fill last wrote. A reps change only
+    /// rewrites a weight this auto-fill produced — a hand-typed weight is
+    /// never touched.
+    @State private var autoFilledWeights: [UUID: String] = [:]
     // Save honors this (private vs public); UI toggle below (curator-only),
     // bootstrap-seeded from `editing?.visibility` in `load()`.
     @State private var publishAsFeatured = false
@@ -580,7 +589,7 @@ struct RoutineBuilderView: View {
     private var exercisePickerRows: some View {
         List(pickerFilteredExercises) { ex in
             Button {
-                items.append(RoutineExercise(
+                let newItem = RoutineExercise(
                     id: UUID(),
                     routineID: editing?.id ?? UUID(),
                     exerciseID: ex.id,
@@ -590,7 +599,10 @@ struct RoutineBuilderView: View {
                     targetWeight: nil,
                     restSeconds: AppConfig.defaultRestSeconds,
                     notes: nil
-                ))
+                )
+                items.append(newItem)
+                // Weight lands prepopulated when history supports it.
+                autoFillWeight(itemID: newItem.id, reps: "8-12")
                 showExercisePicker = false
             } label: {
                 VStack(alignment: .leading, spacing: 3) {
@@ -661,7 +673,10 @@ struct RoutineBuilderView: View {
 
                 statTile(value: Binding(
                     get: { item.targetReps ?? "" },
-                    set: { v in updateItem(item.id) { $0.targetReps = v } }
+                    set: { v in
+                        updateItem(item.id) { $0.targetReps = v }
+                        autoFillWeight(itemID: item.id, reps: v)
+                    }
                 ), label: "REPS", keyboard: .default)
 
                 statTile(value: Binding(
@@ -673,6 +688,14 @@ struct RoutineBuilderView: View {
                     get: { item.restSeconds.map(formatRest) ?? "" },
                     set: { v in updateItem(item.id) { $0.restSeconds = parseRest(v) } }
                 ), label: "REST", keyboard: .numbersAndPunctuation)
+            }
+
+            // The one place PR data belongs (owner 2026-08-16): small text
+            // at weight-setting time, never a section of its own.
+            if let line = strengthLine(for: item) {
+                Text(line)
+                    .font(GSFont.body(10.5, relativeTo: .caption2))
+                    .foregroundStyle(theme.neutral500)
             }
 
             structureRow(item)
@@ -882,6 +905,41 @@ struct RoutineBuilderView: View {
         mutate(&items[idx])
     }
 
+    /// "Your e1RM ~225 lb · best 205 × 5" — the subject's demonstrated
+    /// strength beside the weight field (owner 2026-08-16). Same
+    /// qualifying-set filter as the session's suggestion, so the two
+    /// never disagree about which sets count.
+    private func strengthLine(for item: RoutineExercise) -> String? {
+        guard let logs = subjectLogs[item.exerciseID],
+              let best = WorkingWeight.bestQualifyingSet(in: logs) else { return nil }
+        let oneRM = StatMath.estimatedOneRepMax(weight: best.weight, reps: best.reps)
+        let unit = ThemeStore.shared.weightUnit
+        let who = prescribing == nil ? "Your" : "Client"
+        return "\(who) e1RM ~\(Units.format(pounds: oneRM, unit: unit, rounded: true))"
+            + " · best \(Units.format(pounds: best.weight, unit: unit, rounded: false)) × \(best.reps)"
+    }
+
+    /// Prepopulate WEIGHT from the rep target × the subject's e1RM —
+    /// inverse Epley off the best qualifying set, the SAME rung the
+    /// session's suggestion uses (leadingInt of the reps text, pounds
+    /// string), so builder and session always agree. Only writes a field
+    /// that's empty or that this auto-fill last wrote.
+    private func autoFillWeight(itemID: UUID, reps: String) {
+        guard let item = items.first(where: { $0.id == itemID }),
+              let logs = subjectLogs[item.exerciseID],
+              let best = WorkingWeight.bestQualifyingSet(in: logs),
+              let target = leadingInt(reps),
+              let projected = StatMath.projectedWeight(prWeight: best.weight,
+                                                       prReps: best.reps,
+                                                       targetReps: target)
+        else { return }
+        let current = item.targetWeight ?? ""
+        guard current.isEmpty || current == autoFilledWeights[itemID] else { return }
+        let text = String(projected)
+        updateItem(itemID) { $0.targetWeight = text }
+        autoFilledWeights[itemID] = text
+    }
+
     private func removeItem(_ id: UUID) {
         withAnimation {
             items.removeAll { $0.id == id }
@@ -942,6 +1000,15 @@ struct RoutineBuilderView: View {
         defer { loading = false }
         do {
             allExercises = try await ExerciseRepository.fetchAll()
+            // Subject strength history — best-effort: a client without the
+            // history scope (or anyone with no logs) just gets no e1RM
+            // line and no prepopulation.
+            let subjectID = prescribing?.clientID ?? appState.currentProfile?.id
+            if let subjectID,
+               let since = Calendar.current.date(byAdding: .day, value: -180, to: .now),
+               let logs = try? await SessionRepository.recentSetLogs(userID: subjectID, since: since) {
+                subjectLogs = Dictionary(grouping: logs, by: \.exerciseID)
+            }
             if let editing {
                 name = editing.name
                 description = editing.description ?? ""
