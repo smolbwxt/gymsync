@@ -59,14 +59,27 @@ extension Exercise {
 
 enum ExerciseRepository {
     static func fetchAll() async throws -> [Exercise] {
+        // Paged on purpose: PostgREST silently caps un-ranged selects at
+        // 1000 rows and the machine sweeps pushed the catalog past 1300 —
+        // without explicit ranges the tail of the alphabet vanishes from
+        // every picker and the generator's candidate pool.
         do {
-            let rows: [Exercise] = try await SupabaseService.shared.client
-                .from("exercises")
-                .select()
-                .order("name", ascending: true)
-                .execute()
-                .value
-            return rows
+            var all: [Exercise] = []
+            let pageSize = 1000
+            var from = 0
+            while true {
+                let rows: [Exercise] = try await SupabaseService.shared.client
+                    .from("exercises")
+                    .select()
+                    .order("name", ascending: true)
+                    .range(from: from, to: from + pageSize - 1)
+                    .execute()
+                    .value
+                all.append(contentsOf: rows)
+                if rows.count < pageSize { break }
+                from += pageSize
+            }
+            return all
         } catch {
             throw ErrorMapping.map(error)
         }

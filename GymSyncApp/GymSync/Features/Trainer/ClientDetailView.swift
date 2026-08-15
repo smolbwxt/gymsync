@@ -16,7 +16,9 @@ struct ClientDetailView: View {
     let clientProfile: Profile?
 
     @State private var routines: [Routine] = []
-    @State private var recentPRs: [PersonalRecord] = []
+    /// The trainer's OWN (non-prescribed) routines — the "copy one of
+    /// yours" prescribe source.
+    @State private var myRoutines: [Routine] = []
     @State private var sessionsThisWeek: Int?
     @State private var latestBodyWeight: Decimal?
     @State private var notes: [TrainerNote] = []
@@ -37,7 +39,6 @@ struct ClientDetailView: View {
             VStack(alignment: .leading, spacing: 18) {
                 overviewStrip
                 routinesSection
-                statsSection
                 notesSection
                 if let errorText {
                     Text(errorText)
@@ -147,46 +148,39 @@ struct ClientDetailView: View {
                 .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
                 .disabled(!mine)
             }
-            Button {
-                prescribeSheet = true
+            // Prescribe menu (owner 2026-08-16: "I can't prescribe pre
+            // generated workouts"): build fresh, or duplicate one of the
+            // trainer's own routines as a prescription (the copy lands on
+            // the client, attributed — the T2 namespace, never a shared
+            // reference). PR history left this screen on the same report;
+            // it returns as small text in the builder where weight gets set.
+            Menu {
+                Button {
+                    prescribeSheet = true
+                } label: {
+                    Label("Build a new routine", systemImage: "hammer")
+                }
+                if !myRoutines.isEmpty {
+                    Menu {
+                        ForEach(myRoutines) { routine in
+                            Button(routine.name) {
+                                Task { await prescribeCopy(of: routine) }
+                            }
+                        }
+                    } label: {
+                        Label("Copy one of your routines", systemImage: "doc.on.doc")
+                    }
+                }
             } label: {
                 Text("+ Prescribe a routine")
+                    .font(GSFont.bold(14, relativeTo: .headline))
+                    .foregroundStyle(theme.text)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(GSSecondaryButtonStyle())
-        }
-    }
-
-    // MARK: - Stats (scope-gated)
-
-    private var statsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            GSSectionHeader("Recent records")
-            if !relationship.scopes.stats {
-                Text("Stats aren't shared — the client controls this from their Coaching settings.")
-                    .font(GSFont.body(13, relativeTo: .subheadline))
-                    .foregroundStyle(theme.neutral500)
-            } else if recentPRs.isEmpty {
-                Text("No records yet.")
-                    .font(GSFont.body(13, relativeTo: .subheadline))
-                    .foregroundStyle(theme.neutral500)
-            } else {
-                ForEach(recentPRs.prefix(5)) { pr in
-                    HStack {
-                        Text(pr.weight > 0
-                             ? "\(Units.format(pounds: pr.weight, unit: ThemeStore.shared.weightUnit, rounded: false)) × \(pr.reps)"
-                             : "\(pr.reps) reps")
-                            .font(GSFont.bold(14, relativeTo: .headline).monospacedDigit())
-                            .foregroundStyle(theme.text)
-                        Spacer()
-                        Text(pr.achievedAt.formatted(date: .abbreviated, time: .omitted))
-                            .font(GSFont.body(11, relativeTo: .caption))
-                            .foregroundStyle(theme.neutral500)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 9)
-                    .gs3DCard(cornerRadius: GSMetrics.radiusSm)
-                }
-            }
+            .menuStyle(.button)
+            .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
         }
     }
 
@@ -247,8 +241,9 @@ struct ClientDetailView: View {
         // Routines: readable via the trainer-read policy; client-authored
         // rows arrive read-only (the UI disables them).
         routines = (try? await RoutineRepository.fetchAll(ownerID: clientID)) ?? []
-        if relationship.scopes.stats {
-            recentPRs = (try? await PersonalRecordRepository.recent(userID: clientID, limit: 10)) ?? []
+        if let selfID {
+            myRoutines = ((try? await RoutineRepository.fetchAll(ownerID: selfID)) ?? [])
+                .filter { $0.prescribedBy == nil }
         }
         if relationship.scopes.history,
            let weekStart = Calendar.current.date(byAdding: .day, value: -7, to: .now),
@@ -259,6 +254,38 @@ struct ClientDetailView: View {
             latestBodyWeight = (try? await BodyWeightLogRepository.recent(userID: clientID))?.first?.weight
         }
         await loadNotes()
+    }
+
+    /// Duplicate-then-prescribe: a full copy (structure fields included)
+    /// with owner = client, prescribed_by = self — the trainer's original
+    /// stays untouched and unlinked.
+    @MainActor
+    private func prescribeCopy(of source: Routine) async {
+        guard let clientID, let selfID else { return }
+        do {
+            guard let (_, exercises) = try await RoutineRepository.fetch(id: source.id) else { return }
+            let routineID = UUID()
+            let now = Date()
+            let copy = Routine(
+                id: routineID, ownerID: clientID, name: source.name,
+                description: source.description, visibility: "private",
+                createdAt: now, updatedAt: now, prescribedBy: selfID)
+            let copied = exercises.sorted { $0.position < $1.position }.enumerated().map { index, ex in
+                RoutineExercise(
+                    id: UUID(), routineID: routineID, exerciseID: ex.exerciseID,
+                    position: index + 1, targetSets: ex.targetSets,
+                    targetReps: ex.targetReps, targetWeight: ex.targetWeight,
+                    restSeconds: ex.restSeconds, notes: ex.notes,
+                    setType: ex.setType, supersetGroup: ex.supersetGroup,
+                    dropSteps: ex.dropSteps, dropPercent: ex.dropPercent,
+                    targetFailure: ex.targetFailure,
+                    targetRepsLow: ex.targetRepsLow, targetRepsHigh: ex.targetRepsHigh,
+                    cardioZone: ex.cardioZone, cardioMinutes: ex.cardioMinutes)
+            }
+            try await RoutineRepository.save(copy, exercises: copied)
+            errorText = nil
+            await load()
+        } catch { errorText = ErrorMapping.map(error).errorDescription }
     }
 
     @MainActor

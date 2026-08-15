@@ -540,7 +540,44 @@ struct RoutineBuilderView: View {
         }
     }
 
+    /// Honest states (owner field report 2026-08-16: prescribe picker sat
+    /// silently empty): a failed catalog load now says so and offers
+    /// Retry — before this, one bad fetch left the picker permanently
+    /// blank with no way back short of re-opening the builder.
+    @ViewBuilder
     private var exercisePickerList: some View {
+        if allExercises.isEmpty {
+            VStack(spacing: 12) {
+                if loading {
+                    ProgressView().tint(theme.accent)
+                    Text("Loading the catalog…")
+                        .font(GSFont.body(13, relativeTo: .subheadline))
+                        .foregroundStyle(theme.neutral500)
+                } else {
+                    Text(errorText ?? "The exercise catalog didn't load.")
+                        .font(GSFont.body(13, relativeTo: .subheadline))
+                        .foregroundStyle(theme.neutral500)
+                        .multilineTextAlignment(.center)
+                    Button("Retry") { Task { await load() } }
+                        .buttonStyle(GSPrimaryButtonStyle(fontSize: 14, verticalPadding: 10))
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.top, 60)
+            Spacer()
+        } else if pickerFilteredExercises.isEmpty {
+            Text("No exercises match — clear the search or filters.")
+                .font(GSFont.body(13, relativeTo: .subheadline))
+                .foregroundStyle(theme.neutral500)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 60)
+            Spacer()
+        } else {
+            exercisePickerRows
+        }
+    }
+
+    private var exercisePickerRows: some View {
         List(pickerFilteredExercises) { ex in
             Button {
                 items.append(RoutineExercise(
