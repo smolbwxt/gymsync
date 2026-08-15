@@ -280,6 +280,87 @@ final class ProgramGeneratorTests: XCTestCase {
         XCTAssertEqual(GeneratorScience.percentFor(reps: 20), 60, "above table ceiling clamps light")
     }
 
+    // MARK: - Focus differentiation + variety + duration (owner 2026-08-15)
+
+    /// catalog() plus a second option for two accessory slots — the pool
+    /// cross-day rotation and the seed need room to move in.
+    private func variedCatalog() -> [ProgramGenerator.CatalogExercise] {
+        func ex(_ rank: Int, _ name: String, _ muscle: String,
+                _ equip: String) -> ProgramGenerator.CatalogExercise {
+            ProgramGenerator.CatalogExercise(
+                id: UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", rank))!,
+                name: name, primaryMuscle: muscle, secondaryMuscles: [],
+                category: "isolation", equipment: equip,
+                movementPattern: "isolation", rank: rank)
+        }
+        return catalog() + [
+            ex(17, "Cable Lateral Raise", "shoulders", "cable"),
+            ex(18, "Rope Crunch", "core", "cable"),
+        ]
+    }
+
+    func testStrengthAndHypertrophyDifferInStructure() {
+        let strength = ProgramGenerator.generate(
+            inputs: inputs(focus: .strength, days: 4), catalog: catalog())
+        let hyper = ProgramGenerator.generate(
+            inputs: inputs(focus: .hypertrophy, days: 4), catalog: catalog())
+        XCTAssertNotEqual(strength.days.map { $0.exercises.map(\.exerciseID) },
+                          hyper.days.map { $0.exercises.map(\.exerciseID) },
+                          "strength and hypertrophy are different programs now")
+        XCTAssertLessThan(strength.days[0].exercises.count,
+                          hyper.days[0].exercises.count,
+                          "strength spends its budget on the bar - fewer accessories")
+    }
+
+    func testWeightLossAndConditioningDiffer() {
+        let wl = ProgramGenerator.generate(
+            inputs: inputs(focus: .weightLoss, days: 3), catalog: catalog())
+        let cond = ProgramGenerator.generate(
+            inputs: inputs(focus: .conditioning, days: 3), catalog: catalog())
+        XCTAssertNotEqual(wl.days.map { $0.exercises.map(\.exerciseID) },
+                          cond.days.map { $0.exercises.map(\.exerciseID) },
+                          "weight loss trains density; conditioning holds a maintenance floor")
+    }
+
+    func testFullBodyDaysVaryAccessoriesAcrossTheWeek() {
+        let program = ProgramGenerator.generate(inputs: inputs(days: 3), catalog: variedCatalog())
+        let fb1 = program.days[0], fb2 = program.days[1]
+        XCTAssertEqual(fb1.exercises.filter(\.isMain).map(\.exerciseID),
+                       fb2.exercises.filter(\.isMain).map(\.exerciseID),
+                       "mains repeat - the frequency law wants the lifts practiced")
+        XCTAssertNotEqual(fb1.exercises.filter { !$0.isMain }.map(\.exerciseID),
+                          fb2.exercises.filter { !$0.isMain }.map(\.exerciseID),
+                          "accessories rotate across the week - no more identical days")
+    }
+
+    func testSeedShufflesWithinEquivalenceDeterministically() {
+        let base = ProgramGenerator.generate(inputs: inputs(), catalog: variedCatalog())
+        var shuffled = inputs()
+        shuffled.seed = 1
+        let b = ProgramGenerator.generate(inputs: shuffled, catalog: variedCatalog())
+        XCTAssertNotEqual(base.days.map { $0.exercises.map(\.exerciseID) },
+                          b.days.map { $0.exercises.map(\.exerciseID) },
+                          "the seed rotates equivalent picks")
+        let b2 = ProgramGenerator.generate(inputs: shuffled, catalog: variedCatalog())
+        XCTAssertEqual(b.days.map { $0.exercises.map(\.exerciseID) },
+                       b2.days.map { $0.exercises.map(\.exerciseID) },
+                       "same seed = same program, byte for byte")
+    }
+
+    func testSessionMinutesTrimsAccessoriesNeverMains() {
+        var capped = inputs(days: 4)
+        capped.sessionMinutes = 45
+        let program = ProgramGenerator.generate(inputs: capped, catalog: catalog())
+        let uncapped = ProgramGenerator.generate(inputs: inputs(days: 4), catalog: catalog())
+        XCTAssertLessThan(program.days[0].exercises.count,
+                          uncapped.days[0].exercises.count,
+                          "the cap trims the day")
+        XCTAssertEqual(program.days[0].exercises.filter(\.isMain).count,
+                       uncapped.days[0].exercises.filter(\.isMain).count,
+                       "mains are never trimmed for time")
+        XCTAssertTrue(program.notes.contains { $0.contains("45-minute") })
+    }
+
     // MARK: - Selection demotions (owner field report 2026-08-15)
 
     /// The exact bug: "Assisted Pull-Up Machine" is alphabetically first

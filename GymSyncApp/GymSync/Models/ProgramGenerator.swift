@@ -35,6 +35,16 @@ enum ProgramGenerator {
         /// RECOVERY — mobility work + a zone-1 walk. In the gym daily,
         /// but recovery days prescribe recovery.
         var fillWeekWithRecovery: Bool = false
+        /// Session length cap in minutes (owner 2026-08-15: "there's no
+        /// option for workout duration"); nil = uncapped. Days trim
+        /// accessories (never mains) until they fit.
+        var sessionMinutes: Int? = nil
+        /// Deterministic variety (owner 2026-08-15: "there should be some
+        /// variation"): rotates picks among SCIENTIFICALLY-EQUIVALENT
+        /// candidates (same penalty class, focus standing, and equipment
+        /// tier). Same seed = same program, byte for byte — variety
+        /// without giving up the testable pure function.
+        var seed: Int = 0
     }
 
     struct CatalogExercise {
@@ -117,20 +127,60 @@ enum ProgramGenerator {
         let perDayBudget = max(2, targetWeeklySets / max(1, muscleFrequency(split: split)))
 
         var days: [Day] = []
+        // Cross-day variety (owner 2026-08-15: "the same exact one every
+        // single time"): accessories exclude other days' accessory picks,
+        // so Full Body 2 accessorizes differently than Full Body 1. MAINS
+        // repeat on purpose — the frequency law wants the same big lifts
+        // practiced across the week.
+        var usedAccessories = Set<UUID>()
+        var trimmedForTime = false
         for (index, kind) in split.enumerated() {
             let name = dayName(kind: kind, index: index, split: split)
             var chosen: [Exercise] = []
             var alreadyChosen = Set<UUID>()
-            for slot in slots(for: kind) {
-                guard let pick = select(slot: slot, from: usable,
-                                        excluding: alreadyChosen,
-                                        focus: inputs.focus,
-                                        focusMuscles: inputs.focusMuscles) else { continue }
+            for slot in slots(for: kind, focus: inputs.focus) {
+                let isMainSlot: Bool
+                if case .pattern(_, let main) = slot { isMainSlot = main } else { isMainSlot = false }
+                let exclusions = isMainSlot ? alreadyChosen : alreadyChosen.union(usedAccessories)
+                var pick = select(slot: slot, from: usable,
+                                  excluding: exclusions,
+                                  focus: inputs.focus,
+                                  focusMuscles: inputs.focusMuscles,
+                                  seed: inputs.seed)
+                if pick == nil, !isMainSlot {
+                    // Accessory pool exhausted — repeats beat holes.
+                    pick = select(slot: slot, from: usable,
+                                  excluding: alreadyChosen,
+                                  focus: inputs.focus,
+                                  focusMuscles: inputs.focusMuscles,
+                                  seed: inputs.seed)
+                }
+                guard let pick else { continue }
                 alreadyChosen.insert(pick.id)
+                if !isMainSlot { usedAccessories.insert(pick.id) }
                 chosen.append(prescription(for: pick, slot: slot, band: band,
                                            inputs: inputs, setsPerExercise: setsPerSlot(slot: slot, perDayBudget: perDayBudget)))
             }
+            // Session-length cap (owner 2026-08-15: "no option for workout
+            // duration"): trim accessories — never mains — until the day
+            // fits. Estimate mirrors the session-time doctrine: ~2 min a
+            // set + rests + a transition window per exercise.
+            if let cap = inputs.sessionMinutes {
+                func estimatedMinutes(_ list: [Exercise]) -> Int {
+                    list.reduce(0) { acc, ex in
+                        acc + ex.sets * 2 + ex.sets * ex.restSeconds / 60 + 2
+                    }
+                }
+                while estimatedMinutes(chosen) > cap, chosen.count > 1,
+                      let lastAccessory = chosen.lastIndex(where: { !$0.isMain }) {
+                    chosen.remove(at: lastAccessory)
+                    trimmedForTime = true
+                }
+            }
             days.append(Day(name: name, exercises: chosen))
+        }
+        if trimmedForTime, let cap = inputs.sessionMinutes {
+            notes.append("Accessories trimmed to fit \(cap)-minute sessions — the main lifts keep their place. More time brings them back.")
         }
 
         // Recovery ceiling (research pass): six hard days max — a 7-day
@@ -245,30 +295,71 @@ enum ProgramGenerator {
         case isolation(String)      // primary muscle
     }
 
-    static func slots(for kind: GeneratorScience.DayKind) -> [Slot] {
+    /// Slot templates by day kind AND FOCUS (owner 2026-08-15:
+    /// "hypertrophy and strength always generate the same exact
+    /// workouts") — the structures now differ, not just the bands:
+    ///   strength     — main-lift emphasis: the compounds, minimal
+    ///                  isolation (specificity; volume goes to the bar).
+    ///   hypertrophy  — the baseline templates + fuller isolation menu.
+    ///   weightLoss   — compound density circuits + core; small-muscle
+    ///                  isolation is poor calorie-per-minute work.
+    ///   conditioning — a maintenance lifting floor (3 compounds + core);
+    ///                  the cardio prescription is the session's point.
+    static func slots(for kind: GeneratorScience.DayKind,
+                      focus: GeneratorScience.Focus) -> [Slot] {
+        let base: [Slot]
         switch kind {
         case .fullBody:
-            return [.pattern("squat", main: true), .pattern("hinge", main: true),
+            base = [.pattern("squat", main: true), .pattern("hinge", main: true),
                     .pattern("push_horizontal", main: true), .pattern("pull_horizontal", main: true),
                     .isolation("shoulders"), .isolation("core")]
         case .upper:
-            return [.pattern("push_horizontal", main: true), .pattern("pull_horizontal", main: true),
+            base = [.pattern("push_horizontal", main: true), .pattern("pull_horizontal", main: true),
                     .pattern("push_vertical", main: false), .pattern("pull_vertical", main: false),
                     .isolation("biceps"), .isolation("triceps")]
         case .lower:
-            return [.pattern("squat", main: true), .pattern("hinge", main: true),
+            base = [.pattern("squat", main: true), .pattern("hinge", main: true),
                     .pattern("lunge", main: false),
                     .isolation("hamstrings"), .isolation("calves")]
         case .push:
-            return [.pattern("push_horizontal", main: true), .pattern("push_vertical", main: false),
+            base = [.pattern("push_horizontal", main: true), .pattern("push_vertical", main: false),
                     .isolation("shoulders"), .isolation("triceps"), .isolation("chest")]
         case .pull:
-            return [.pattern("pull_horizontal", main: true), .pattern("pull_vertical", main: false),
+            base = [.pattern("pull_horizontal", main: true), .pattern("pull_vertical", main: false),
                     .isolation("shoulders"), .isolation("biceps"), .isolation("back")]
         case .legs:
-            return [.pattern("squat", main: true), .pattern("hinge", main: true),
+            base = [.pattern("squat", main: true), .pattern("hinge", main: true),
                     .pattern("lunge", main: false),
                     .isolation("hamstrings"), .isolation("quads"), .isolation("calves")]
+        }
+        switch focus {
+        case .hypertrophy:
+            return base
+        case .strength:
+            // Compounds only, plus core on full-body days — strength
+            // sessions spend their budget on the bar.
+            return base.filter { slot in
+                if case .pattern = slot { return true }
+                if case .isolation("core") = slot { return kind == .fullBody }
+                return false
+            }
+        case .weightLoss:
+            // Compounds + core: big-muscle density work. Small-muscle
+            // isolation is poor calorie-per-minute training.
+            return base.filter { slot in
+                if case .pattern = slot { return true }
+                if case .isolation("core") = slot { return true }
+                return false
+            } + (kind == .fullBody ? [] : [.isolation("core")])
+        case .conditioning:
+            // The maintenance floor: three compounds + core. Lifting
+            // holds muscle; the zone work is the training.
+            var trimmed: [Slot] = []
+            for slot in base {
+                if case .pattern = slot, trimmed.count < 3 { trimmed.append(slot) }
+            }
+            trimmed.append(.isolation("core"))
+            return trimmed
         }
     }
 
@@ -277,7 +368,8 @@ enum ProgramGenerator {
     static func select(slot: Slot, from catalog: [CatalogExercise],
                        excluding: Set<UUID>,
                        focus: GeneratorScience.Focus,
-                       focusMuscles: Set<String>?) -> CatalogExercise? {
+                       focusMuscles: Set<String>?,
+                       seed: Int = 0) -> CatalogExercise? {
         let candidates: [CatalogExercise]
         switch slot {
         case .pattern(let pattern, _):
@@ -294,30 +386,35 @@ enum ProgramGenerator {
         let ladder = GeneratorScience.mainEquipmentLadder(focus: focus)
         let isMain: Bool
         if case .pattern(_, let main) = slot { isMain = main } else { isMain = false }
-        return candidates.min { a, b in
-            // Demotions outrank EVERYTHING (assisted regressions, form-risk
-            // defaults, digit-named niche machines) — a penalized variant
-            // fills a slot only when nothing clean can.
-            let aPen = GeneratorScience.selectionPenalty(name: a.name)
-            let bPen = GeneratorScience.selectionPenalty(name: b.name)
-            if aPen != bPen { return aPen < bPen }
-            // Focus muscles first when a selection exists.
-            if let focus = focusMuscles {
-                let aFocus = focus.contains(a.primaryMuscle), bFocus = focus.contains(b.primaryMuscle)
-                if aFocus != bFocus { return aFocus }
-            }
+        // The science-equivalence key: penalty class, focus standing, and
+        // equipment tier. Candidates sharing all three are interchangeable
+        // by every rule — exactly the pool the SEED may rotate within.
+        func tier(_ c: CatalogExercise) -> (Int, Int, Int) {
+            let pen = GeneratorScience.selectionPenalty(name: c.name)
+            let focusStanding = (focusMuscles?.contains(c.primaryMuscle) == true) ? 0 : 1
+            let lad: Int
             if isMain {
-                let aLad = ladder[a.equipment] ?? 5, bLad = ladder[b.equipment] ?? 5
-                if aLad != bLad { return aLad < bLad }
+                lad = ladder[c.equipment] ?? 5
             } else {
                 // Rule 5: accessories favor machine/cable (low systemic
                 // fatigue, safe near failure).
                 let inverse = ["machine": 0, "cable": 0, "dumbbell": 1, "bodyweight": 2, "barbell": 3]
-                let aLad = inverse[a.equipment] ?? 4, bLad = inverse[b.equipment] ?? 4
-                if aLad != bLad { return aLad < bLad }
+                lad = inverse[c.equipment] ?? 4
             }
+            return (pen, focusStanding, lad)
+        }
+        let sorted = candidates.sorted { a, b in
+            let ta = tier(a), tb = tier(b)
+            if ta != tb { return ta < tb }
             return a.rank < b.rank
         }
+        guard let first = sorted.first else { return nil }
+        guard seed > 0 else { return first }
+        // Deterministic variety (owner 2026-08-15): rotate within the top
+        // equivalence tier only — the seed never promotes a worse-tier
+        // pick, so every science rule still holds at any seed.
+        let top = sorted.prefix { tier($0) == tier(first) }
+        return top[top.startIndex + seed % top.count]
     }
 
     // MARK: Prescription

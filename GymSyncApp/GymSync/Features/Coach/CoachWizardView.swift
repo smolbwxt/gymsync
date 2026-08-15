@@ -35,6 +35,12 @@ struct CoachWizardView: View {
     @State private var cardioDays = 0
     @State private var cardioMinutes = 30
     @State private var fillWeek = false
+    /// Session-length cap (owner 2026-08-15) — nil = no cap; the
+    /// generator trims accessories, never mains, to fit.
+    @State private var sessionMinutes: Int? = nil
+    /// Deterministic shuffle counter — rotates picks among equivalent
+    /// candidates; same seed always rebuilds the same week.
+    @State private var seed = 0
     /// Kept so rerolls re-run the exact generation context.
     @State private var lastInputs: ProgramGenerator.Inputs?
     @State private var lastCatalog: [ProgramGenerator.CatalogExercise] = []
@@ -95,6 +101,11 @@ struct CoachWizardView: View {
                 dial("EXPERIENCE", options: GeneratorScience.Experience.allCases.map(\.rawValue),
                      selected: experience.rawValue) { experience = GeneratorScience.Experience(rawValue: $0) ?? .new }
 
+                dial("SESSION LENGTH · MINUTES", options: ["45", "60", "75", "90", "No cap"],
+                     selected: sessionMinutes.map(String.init) ?? "No cap") {
+                    sessionMinutes = Int($0)
+                }
+
                 equipmentDial
 
                 aboutYou
@@ -105,6 +116,23 @@ struct CoachWizardView: View {
                     Text(preview == nil ? "Build my week" : "Rebuild")
                 }
                 .buttonStyle(GSPrimaryButtonStyle())
+
+                if preview != nil {
+                    // Deterministic variety: rotates among candidates the
+                    // science rules score as interchangeable.
+                    Button {
+                        seed += 1
+                        generatePreview()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "shuffle")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text("Shuffle the picks")
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(GSSecondaryButtonStyle())
+                }
 
                 if let preview {
                     previewSection(preview)
@@ -355,7 +383,9 @@ struct CoachWizardView: View {
             sex: GeneratorScience.Sex(rawValue: sex) ?? .unspecified,
             equipment: equipment,
             cardioDays: cardioDays, cardioMinutes: cardioMinutes,
-            fillWeekWithRecovery: fillWeek)
+            fillWeekWithRecovery: fillWeek,
+            sessionMinutes: sessionMinutes,
+            seed: seed)
         lastInputs = inputs
         lastCatalog = catalog
         preview = ProgramGenerator.generate(inputs: inputs, catalog: catalog)
