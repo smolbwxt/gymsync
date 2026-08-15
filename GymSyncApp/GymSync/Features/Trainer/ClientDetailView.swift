@@ -26,6 +26,13 @@ struct ClientDetailView: View {
     @State private var prescribeSheet = false
     @State private var editingPrescription: Routine?
     @State private var errorText: String?
+    // Calendar (trainer arm T4 — owner 2026-08-16: "How do I schedule
+    // workouts…from here?"). Reads + writes both ride the calendar scope.
+    @State private var upcomingSessions: [WorkoutSession] = []
+    @State private var showScheduleSheet = false
+    @State private var scheduleDate = Date().addingTimeInterval(3600)
+    @State private var scheduleRoutineID: UUID?
+    @State private var booking = false
 
     private var clientID: UUID? { relationship.clientID }
     private var selfID: UUID? { appState.currentProfile?.id }
@@ -39,6 +46,7 @@ struct ClientDetailView: View {
             VStack(alignment: .leading, spacing: 18) {
                 overviewStrip
                 routinesSection
+                calendarSection
                 notesSection
                 if let errorText {
                     Text(errorText)
@@ -64,6 +72,7 @@ struct ClientDetailView: View {
                 }
             }
         }
+        .sheet(isPresented: $showScheduleSheet) { scheduleSheet }
         .sheet(item: $editingPrescription) { routine in
             if let clientID, let selfID {
                 NavigationStack {
@@ -184,6 +193,135 @@ struct ClientDetailView: View {
         }
     }
 
+    // MARK: - Calendar (T4 — scope-gated both ways)
+
+    private var calendarSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            GSSectionHeader("Calendar")
+            if !relationship.scopes.calendar {
+                Text("Calendar isn't shared — the client controls this from their Coaching settings.")
+                    .font(GSFont.body(13, relativeTo: .subheadline))
+                    .foregroundStyle(theme.neutral500)
+            } else {
+                if upcomingSessions.isEmpty {
+                    Text("Nothing on the books.")
+                        .font(GSFont.body(13, relativeTo: .subheadline))
+                        .foregroundStyle(theme.neutral500)
+                } else {
+                    ForEach(upcomingSessions) { session in
+                        HStack(spacing: 8) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(session.scheduledFor?.formatted(
+                                    .dateTime.weekday(.abbreviated).month(.abbreviated).day()
+                                        .hour().minute()) ?? "Scheduled")
+                                    .font(GSFont.bold(13, relativeTo: .subheadline))
+                                    .foregroundStyle(theme.text)
+                                Text(session.routineID.flatMap { id in
+                                    routines.first { $0.id == id }?.name
+                                } ?? "Open session")
+                                    .font(GSFont.body(11, relativeTo: .caption))
+                                    .foregroundStyle(theme.neutral500)
+                            }
+                            Spacer()
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 9)
+                        .gs3DCard(cornerRadius: GSMetrics.radiusSm)
+                    }
+                }
+                Button {
+                    scheduleRoutineID = routines.first { $0.prescribedBy == selfID }?.id
+                    showScheduleSheet = true
+                } label: {
+                    Text("+ Schedule a session")
+                        .font(GSFont.bold(14, relativeTo: .headline))
+                        .foregroundStyle(theme.text)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
+            }
+        }
+    }
+
+    /// Minimal booking form: when + which routine. The insert rides the
+    /// "trainer books for client" policy — organizer is the CLIENT, so it
+    /// lands on their Home calendar like any lift they booked themselves.
+    private var scheduleSheet: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 18) {
+                DatePicker("When", selection: $scheduleDate, in: Date()...)
+                    .tint(theme.accent)
+                    .font(GSFont.bodyMedium(14, relativeTo: .body))
+                    .foregroundStyle(theme.text)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("ROUTINE")
+                        .font(GSFont.bold(11, relativeTo: .caption2))
+                        .tracking(1.1)
+                        .foregroundStyle(theme.neutral700)
+                    Menu {
+                        Button("Open session — no routine") { scheduleRoutineID = nil }
+                        ForEach(routines) { routine in
+                            Button(routine.name) { scheduleRoutineID = routine.id }
+                        }
+                    } label: {
+                        HStack {
+                            Text(scheduleRoutineID.flatMap { id in
+                                routines.first { $0.id == id }?.name
+                            } ?? "Open session — no routine")
+                                .font(GSFont.bodyMedium(14, relativeTo: .body))
+                                .foregroundStyle(theme.text)
+                            Spacer()
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(theme.neutral500)
+                        }
+                        .padding(12)
+                        .background(theme.surface)
+                        .cornerRadius(GSMetrics.radiusSm)
+                    }
+                }
+
+                Button {
+                    Task { await book() }
+                } label: {
+                    Text(booking ? "Booking…" : "Book it")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(GSPrimaryButtonStyle())
+                .disabled(booking)
+
+                Spacer()
+            }
+            .padding(16)
+            .background(theme.bg)
+            .navigationTitle("Schedule for \(clientName)")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { showScheduleSheet = false }
+                        .tint(theme.accent)
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func book() async {
+        guard let clientID else { return }
+        booking = true
+        defer { booking = false }
+        do {
+            _ = try await SessionRepository.scheduleForClient(
+                clientID: clientID, routineID: scheduleRoutineID, scheduledFor: scheduleDate)
+            showScheduleSheet = false
+            errorText = nil
+            await load()
+        } catch { errorText = ErrorMapping.map(error).errorDescription }
+    }
+
     // MARK: - Notes (T5 — trainer-private)
 
     private var notesSection: some View {
@@ -252,6 +390,9 @@ struct ClientDetailView: View {
         }
         if relationship.scopes.bodyWeight {
             latestBodyWeight = (try? await BodyWeightLogRepository.recent(userID: clientID))?.first?.weight
+        }
+        if relationship.scopes.calendar {
+            upcomingSessions = (try? await SessionRepository.upcomingScheduled(organizerID: clientID)) ?? []
         }
         await loadNotes()
     }

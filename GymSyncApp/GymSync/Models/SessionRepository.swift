@@ -270,6 +270,50 @@ enum SessionRepository {
         } catch { throw ErrorMapping.map(error) }
     }
 
+    // MARK: - Trainer arm T4: the client's calendar
+
+    /// Upcoming scheduled sessions on a user's calendar. For a trainer
+    /// reading a client this rides the calendar-scope SELECT policy —
+    /// an ungranted scope returns empty rows, never an error.
+    static func upcomingScheduled(organizerID: UUID, limit: Int = 10) async throws -> [WorkoutSession] {
+        do {
+            let rows: [WorkoutSession] = try await client
+                .from("sessions")
+                .select()
+                .eq("organizer_id", value: organizerID)
+                .eq("state", value: "scheduled")
+                .gte("scheduled_for", value: ISO8601DateFormatter().string(from: .now))
+                .order("scheduled_for", ascending: true)
+                .limit(limit)
+                .execute()
+                .value
+            return rows
+        } catch { throw ErrorMapping.map(error) }
+    }
+
+    /// Trainer books ON the client's calendar (policy "trainer books for
+    /// client", 20260814000008): organizer stays the CLIENT so every
+    /// downstream surface treats it as their own booked lift. Session row
+    /// only — participant rows are the client's own session-start
+    /// machinery's job, and RLS wouldn't let the trainer write them anyway.
+    static func scheduleForClient(clientID: UUID, routineID: UUID?,
+                                  scheduledFor: Date) async throws -> WorkoutSession {
+        do {
+            var row: [String: String] = [
+                "id": UUID().uuidString,
+                "organizer_id": clientID.uuidString,
+                "state": "scheduled",
+                "scheduled_for": ISO8601DateFormatter().string(from: scheduledFor)
+            ]
+            if let rid = routineID { row["routine_id"] = rid.uuidString }
+            let inserted: WorkoutSession = try await client
+                .from("sessions")
+                .insert(row)
+                .select().single().execute().value
+            return inserted
+        } catch { throw ErrorMapping.map(error) }
+    }
+
     // MARK: - Phase 3a: Scheduling
 
     /// Schedule a session (group or ad-hoc). Inserts organizer + invitee participant rows.
