@@ -280,6 +280,56 @@ final class ProgramGeneratorTests: XCTestCase {
         XCTAssertEqual(GeneratorScience.percentFor(reps: 20), 60, "above table ceiling clamps light")
     }
 
+    // MARK: - Selection demotions (owner field report 2026-08-15)
+
+    /// The exact bug: "Assisted Pull-Up Machine" is alphabetically first
+    /// among machine vertical pulls, so the rank tiebreak (fetch order =
+    /// alphabetical) prescribed a REGRESSION to an advanced lifter. The
+    /// penalty must beat both the rank AND the equipment ladder.
+    func testAssistedVariantsNeverBeatCleanCandidates() {
+        func ex(_ rank: Int, _ name: String, _ equip: String) -> ProgramGenerator.CatalogExercise {
+            ProgramGenerator.CatalogExercise(
+                id: UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", rank))!,
+                name: name, primaryMuscle: "lats", secondaryMuscles: [],
+                category: "compound", equipment: equip,
+                movementPattern: "pull_vertical", rank: rank)
+        }
+        // Alphabetical reality: assisted ranks FIRST, and it's even on the
+        // preferred equipment tier (machine) while pulldown is cable.
+        let verticalPulls = [
+            ex(1, "Assisted Pull-Up Machine", "machine"),
+            ex(2, "Behind The Neck Pulldown", "machine"),
+            ex(9, "Lat Pulldown", "cable"),
+        ]
+        let picked = ProgramGenerator.select(
+            slot: .pattern("pull_vertical", main: true),
+            from: verticalPulls, excluding: [],
+            focus: .hypertrophy, focusMuscles: nil)
+        XCTAssertEqual(picked?.name, "Lat Pulldown",
+                       "assisted/behind-the-neck variants must not be default prescriptions")
+    }
+
+    func testSelectionPenaltyClasses() {
+        XCTAssertGreaterThanOrEqual(GeneratorScience.selectionPenalty(name: "Assisted Dip Machine"), 10_000)
+        XCTAssertGreaterThanOrEqual(GeneratorScience.selectionPenalty(name: "Behind The Neck Pulldown"), 2_000)
+        XCTAssertGreaterThanOrEqual(GeneratorScience.selectionPenalty(name: "45-Degree Leg Press"), 500)
+        XCTAssertEqual(GeneratorScience.selectionPenalty(name: "Lat Pulldown"), 0)
+        XCTAssertEqual(GeneratorScience.selectionPenalty(name: "Back Squat"), 0)
+    }
+
+    /// A slot ONLY an assisted variant can fill still fills — demotion is
+    /// a preference, never a hole in the program.
+    func testAssistedFillsSlotWhenNothingCleanExists() {
+        let only = ProgramGenerator.CatalogExercise(
+            id: UUID(), name: "Assisted Pull-Up Machine", primaryMuscle: "lats",
+            secondaryMuscles: [], category: "compound", equipment: "machine",
+            movementPattern: "pull_vertical", rank: 1)
+        let picked = ProgramGenerator.select(
+            slot: .pattern("pull_vertical", main: true),
+            from: [only], excluding: [], focus: .strength, focusMuscles: nil)
+        XCTAssertEqual(picked?.name, "Assisted Pull-Up Machine")
+    }
+
     // MARK: - Data bridge (weekSummaries + jsonb contract)
 
     func testWeekSummariesCarryTheWave() {

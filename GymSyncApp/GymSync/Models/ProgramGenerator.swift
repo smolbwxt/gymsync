@@ -295,6 +295,12 @@ enum ProgramGenerator {
         let isMain: Bool
         if case .pattern(_, let main) = slot { isMain = main } else { isMain = false }
         return candidates.min { a, b in
+            // Demotions outrank EVERYTHING (assisted regressions, form-risk
+            // defaults, digit-named niche machines) — a penalized variant
+            // fills a slot only when nothing clean can.
+            let aPen = GeneratorScience.selectionPenalty(name: a.name)
+            let bPen = GeneratorScience.selectionPenalty(name: b.name)
+            if aPen != bPen { return aPen < bPen }
             // Focus muscles first when a selection exists.
             if let focus = focusMuscles {
                 let aFocus = focus.contains(a.primaryMuscle), bFocus = focus.contains(b.primaryMuscle)

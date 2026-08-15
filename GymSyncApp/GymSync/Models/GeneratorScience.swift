@@ -180,6 +180,27 @@ enum GeneratorScience {
         }
     }
 
+    /// Selection demotions (owner field report 2026-08-15: an ADVANCED
+    /// lifter drew "Assisted Pull-Up Machine" on upper days). Catalog rank
+    /// is alphabetical fetch order, so the machine sweep's A-named
+    /// assisted variants silently won every tiebreak. Assisted machines
+    /// are REGRESSIONS — never a default prescription for anyone (rerolls
+    /// and the manual picker still reach them); behind-the-neck variants
+    /// are a form-risk default; digit-prefixed niche machines lose their
+    /// accidental alphabetical head start. The penalty compares FIRST in
+    /// selection — ahead of the equipment ladder — so a penalized variant
+    /// only fills a slot no clean candidate can.
+    static func selectionPenalty(name: String) -> Int {
+        let lower = name.lowercased()
+        var penalty = 0
+        if lower.contains("assisted") { penalty += 10_000 }
+        if lower.contains("behind the neck") || lower.contains("behind-the-neck") {
+            penalty += 2_000
+        }
+        if let first = lower.first, first.isNumber { penalty += 500 }
+        return penalty
+    }
+
     /// Main-lift equipment preference by focus (design-doc rule 2):
     /// Strength/Hypertrophy build mains on the bar (specificity,
     /// loadability); Weight Loss/Conditioning run machine/cable-first —
