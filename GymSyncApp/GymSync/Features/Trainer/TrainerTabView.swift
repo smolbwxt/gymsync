@@ -100,7 +100,12 @@ struct TrainerTabView: View {
             .scrollContentBackground(.hidden)
             .background(theme.bg)
             .toolbar(.hidden, for: .navigationBar)
-            .task { await load() }
+            .task {
+                // Launch-readiness accounting (RootView's overlay hold).
+                appState.beginLaunchFetch()
+                await load()
+                appState.endLaunchFetch()
+            }
             .refreshable { await load() }
         }
     }

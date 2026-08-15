@@ -38,6 +38,15 @@ final class AppState {
     /// the first-run walkthrough, which owns the first modal slot.
     var pendingCoachOffer = false
 
+    /// Cold-launch readiness (owner 2026-08-16: the launch overlay lifted
+    /// before below-the-fold content had settled). Tab roots wrap their
+    /// INITIAL fetch in begin/end; RootView holds the overlay past the
+    /// brand moment while this is non-zero — capped, so a hung request
+    /// can never wedge the reveal.
+    var launchFetchesInFlight = 0
+    func beginLaunchFetch() { launchFetchesInFlight += 1 }
+    func endLaunchFetch() { launchFetchesInFlight = max(0, launchFetchesInFlight - 1) }
+
     // Set to the user's profile once loaded post-sign-in.
     var currentProfile: Profile?
 

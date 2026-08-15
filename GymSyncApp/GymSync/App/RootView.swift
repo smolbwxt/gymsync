@@ -70,8 +70,20 @@ struct RootView: View {
                         .overlay {
                             if !launchOverlayFinished {
                                 LaunchLoadingOverlay {
-                                    withAnimation(.easeOut(duration: 0.35)) {
-                                        launchOverlayFinished = true
+                                    // Brand moment elapsed — hold (capped)
+                                    // while the tab roots' initial fetches
+                                    // settle, so the reveal shows a page
+                                    // that's populated all the way down
+                                    // (owner 2026-08-16). The cap keeps a
+                                    // hung request from wedging the app.
+                                    Task { @MainActor in
+                                        let cap = Date.now.addingTimeInterval(2.5)
+                                        while appState.launchFetchesInFlight > 0, Date.now < cap {
+                                            try? await Task.sleep(for: .milliseconds(120))
+                                        }
+                                        withAnimation(.easeOut(duration: 0.35)) {
+                                            launchOverlayFinished = true
+                                        }
                                     }
                                 }
                                 .transition(.opacity)
@@ -433,10 +445,23 @@ private struct MainTabView: View {
         // Trainer arm T3: does this account coach? One light fetch at
         // launch; CoachingView/TrainerTabView keep it fresh after.
         .task {
-            let mine = (try? await TrainerClientRepository.mine()) ?? []
-            let me = appState.currentProfile?.id
-            appState.isTrainer = mine.contains { $0.trainerID == me && $0.status != "ended" }
+            await refreshTrainerGate()
         }
+        // …and on every foreground (owner 2026-08-16: the tab required an
+        // app kill to appear) — a client redeeming your invite while the
+        // app was backgrounded now injects the tab the moment you return.
+        .onChange(of: scenePhase) {
+            guard scenePhase == .active else { return }
+            Task { await refreshTrainerGate() }
+        }
+    }
+
+    @Environment(\.scenePhase) private var scenePhase
+
+    private func refreshTrainerGate() async {
+        let mine = (try? await TrainerClientRepository.mine()) ?? []
+        let me = appState.currentProfile?.id
+        appState.isTrainer = mine.contains { $0.trainerID == me && $0.status != "ended" }
     }
 
     @ViewBuilder

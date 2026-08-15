@@ -320,7 +320,10 @@ struct SocialTabView: View {
                 }
             }
             .task {
+                // Launch-readiness accounting (RootView's overlay hold).
+                appState.beginLaunchFetch()
                 await refresh()
+                appState.endLaunchFetch()
                 if let me = await SupabaseService.shared.currentUserID() {
                     await friendRealtime.subscribe(userID: me) {
                         Task { await refresh() }

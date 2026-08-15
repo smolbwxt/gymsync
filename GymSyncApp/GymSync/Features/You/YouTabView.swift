@@ -91,10 +91,13 @@ struct YouTabView: View {
             // Tour (owner 2026-08-14): stats → routines → the Rack.
             .gsSpotlightTour(GuidanceTours.you)
             .task {
+                // Launch-readiness accounting (RootView's overlay hold).
+                appState.beginLaunchFetch()
                 // ROUTINES slot state — one light query, best-effort.
                 if let ownerID = appState.currentProfile?.id {
                     routineCount = (try? await RoutineRepository.fetchAll(ownerID: ownerID))?.count
                 }
+                appState.endLaunchFetch()
             }
             .navigationDestination(isPresented: $showShop) {
                 ShopView()

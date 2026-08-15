@@ -15,6 +15,20 @@ struct StatsTabView: View {
     /// every qualifying set mints one), most recent first. The PR widget's
     /// destination list.
     @State private var attemptedExercises: [Exercise] = []
+    /// Rolling-load cursor: how many days back the ledger has fetched.
+    /// Starts at the free window (owner: 30 days free, beyond is Pro).
+    @State private var ledgerDaysLoaded = Monetization.freeHistoryDays
+    @State private var ledgerLoadingMore = false
+    @State private var ledgerExhausted = false
+    @State private var showLedgerPaywall = false
+
+    /// True when the next window is behind the Pro line for this user —
+    /// renders the upsell row instead of silently stopping. Always false
+    /// while the paywall is dormant.
+    private var ledgerGated: Bool {
+        !ledgerExhausted
+            && !Monetization.allows(.deepHistory, profile: appState.currentProfile)
+    }
     @State private var monthTrendPercent: Double?
     @State private var userStreak: UserStreak?
     // Body weight card (Phase H Task 3)
@@ -77,6 +91,32 @@ struct StatsTabView: View {
                                     CompletedSessionView(session: entry.session)
                                 } label: {
                                     ledgerRow(entry)
+                                }
+                                .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
+                                // Rolling load (owner 2026-08-16): reaching
+                                // the last row fetches the next window.
+                                .onAppear {
+                                    if entry.id == ledgerEntries.last?.id {
+                                        Task { await loadMoreLedger() }
+                                    }
+                                }
+                            }
+                            if ledgerLoadingMore {
+                                ProgressView().tint(theme.accent)
+                                    .padding(.vertical, 8)
+                            } else if ledgerGated {
+                                // The 30-day line (owner: free ledger = 30
+                                // days; everything beyond is Pro). Inert
+                                // while the paywall is dormant.
+                                Button {
+                                    showLedgerPaywall = true
+                                } label: {
+                                    Text("Older workouts are PRO — the full ledger, all time.")
+                                        .font(GSFont.bold(13, relativeTo: .subheadline))
+                                        .foregroundStyle(Color.gsHex(0xE8C33A))
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 12)
+                                        .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
                             }
@@ -183,6 +223,9 @@ struct StatsTabView: View {
             }
             .sheet(isPresented: $showingBodyWeightLogSheet) {
                 BodyWeightLogSheet(onLogged: { Task { await loadBodyWeight() } })
+            }
+            .sheet(isPresented: $showLedgerPaywall) {
+                PaywallView(highlight: .deepHistory)
             }
     }
 
@@ -543,13 +586,15 @@ struct StatsTabView: View {
         return parts.joined(separator: " · ")
     }
 
-    /// One 90-day logs fetch → per-session aggregates → the session rows.
-    /// Duration derives from the logs' own timestamps (first to last set)
-    /// — honest for how long the lifting actually ran.
+    /// One windowed logs fetch (`ledgerDaysLoaded` deep) → per-session
+    /// aggregates → the session rows. Duration derives from the logs' own
+    /// timestamps (first to last set) — honest for how long the lifting
+    /// actually ran. Rolling load re-runs this with a deeper window; the
+    /// rebuild is O(total) but a ledger's volume stays small.
     @MainActor
     private func loadLedger() async {
         guard let userID = appState.currentProfile?.id else { return }
-        let since = Calendar.current.date(byAdding: .day, value: -90, to: .now) ?? .now
+        let since = Calendar.current.date(byAdding: .day, value: -ledgerDaysLoaded, to: .now) ?? .now
         let logs = (try? await SessionRepository.recentSetLogs(userID: userID, since: since)) ?? []
         let bySession = Dictionary(grouping: logs.filter { !$0.isPenalty }, by: \.sessionID)
         guard !bySession.isEmpty else { return }
@@ -577,8 +622,26 @@ struct StatsTabView: View {
                     minutes: minutes)
             }
             .sorted { ($0.session.startedAt ?? .distantPast) > ($1.session.startedAt ?? .distantPast) }
-            .prefix(12)
-            .map { $0 }
+    }
+
+    /// Rolling load: extend the window 30 days at a time. Free users stop
+    /// at the 30-day line (`ledgerGated` renders the Pro row instead);
+    /// a lifting gap of up to ~90 days is bridged before calling the
+    /// history exhausted, and three years is the hard floor.
+    @MainActor
+    private func loadMoreLedger() async {
+        guard !ledgerLoadingMore, !ledgerExhausted, !ledgerGated,
+              ledgerDaysLoaded < 1095 else { return }
+        ledgerLoadingMore = true
+        defer { ledgerLoadingMore = false }
+        var grew = false
+        for _ in 0..<3 {
+            ledgerDaysLoaded += 30
+            let before = ledgerEntries.count
+            await loadLedger()
+            if ledgerEntries.count > before { grew = true; break }
+        }
+        if !grew { ledgerExhausted = true }
     }
 }
 

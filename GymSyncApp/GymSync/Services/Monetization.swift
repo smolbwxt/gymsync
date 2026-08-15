@@ -40,7 +40,9 @@ enum Monetization {
     /// Free-tier allowances, in one place so the paywall copy and the
     /// gates can never disagree.
     static let freeRoutineLimit = 5
-    static let freeHistoryDays = 90
+    /// Owner 2026-08-16: "The 30 day ledger is free, everything beyond
+    /// that is Pro." (Was 90 in the original monetization sketch.)
+    static let freeHistoryDays = 30
 
     /// The single entitlement question. `profile` nil (signed out / still
     /// loading) fails OPEN while dormant and CLOSED once live — a loading

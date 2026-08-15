@@ -115,7 +115,11 @@ struct HomeView: View {
             // the four-step walk — start → schedule → calendar → streak.
             .gsSpotlightTour(GuidanceTours.home)
             .task {
+                // Launch-readiness accounting — RootView holds the launch
+                // overlay while initial tab fetches are in flight.
+                appState.beginLaunchFetch()
                 await refresh()
+                appState.endLaunchFetch()
                 await consumePendingRouteIfNeeded()
             }
             .refreshable { await refresh() }
