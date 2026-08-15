@@ -283,9 +283,16 @@ public struct GSTabBar: View {
     /// coach (AppState.isTrainer) — everyone else keeps three tabs.
     private let showTrainer: Bool
 
-    init(selection: Binding<AppState.Tab>, showTrainer: Bool = false) {
+    /// Fired when the ALREADY-selected tab is tapped again (owner
+    /// 2026-08-16: re-tapping a tab returns it to tier 1). The dock only
+    /// signals; the host owns what "reset" means.
+    private let onReselect: (AppState.Tab) -> Void
+
+    init(selection: Binding<AppState.Tab>, showTrainer: Bool = false,
+         onReselect: @escaping (AppState.Tab) -> Void = { _ in }) {
         self._selection = selection
         self.showTrainer = showTrainer
+        self.onReselect = onReselect
     }
 
     private struct Item {
@@ -328,7 +335,11 @@ public struct GSTabBar: View {
     private func tabButton(_ item: Item) -> some View {
         let isActive = selection == item.tab
         Button {
-            selection = item.tab
+            if selection == item.tab {
+                onReselect(item.tab)
+            } else {
+                selection = item.tab
+            }
         } label: {
             VStack(spacing: 3) {
                 Image(systemName: item.icon)

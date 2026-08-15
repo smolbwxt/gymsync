@@ -316,12 +316,21 @@ private struct MainTabView: View {
     /// session completes and the pill just comes back.
     @State private var resumeTarget: AppState.LiveSoloSession?
 
+    /// Re-tap-to-reset (owner 2026-08-16: "Clicking the you page doesn't
+    /// take us to T1 if we are in a lower tier"). Bumping a tab's token
+    /// changes its content's `.id`, recreating the tab root — the whole
+    /// pushed stack unwinds to tier 1. Identity-based because the tab
+    /// roots push via `navigationDestination(isPresented:)` booleans, so
+    /// there is no single NavigationPath to clear.
+    @State private var tabResetTokens: [AppState.Tab: Int] = [:]
+
     var body: some View {
         @Bindable var appState = appState
         ZStack {
             ForEach(AppState.Tab.allCases, id: \.self) { tab in
                 if mountedTabs.contains(tab) {
                     tabContent(tab)
+                        .id(tabResetTokens[tab] ?? 0)
                         .opacity(appState.selectedTab == tab ? 1 : 0)
                         // A retained-but-hidden tab must not absorb touches
                         // or be reachable by VoiceOver — invisible is not the
@@ -403,7 +412,10 @@ private struct MainTabView: View {
                         .padding(.bottom, 8)
                     }
                     GSTabBar(selection: $appState.selectedTab,
-                             showTrainer: appState.isTrainer)
+                             showTrainer: appState.isTrainer,
+                             onReselect: { tab in
+                                 tabResetTokens[tab, default: 0] += 1
+                             })
                         .ignoresSafeArea(.keyboard, edges: .bottom)
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
