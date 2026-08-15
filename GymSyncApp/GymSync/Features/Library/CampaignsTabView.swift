@@ -194,6 +194,10 @@ struct CampaignsTabView: View {
                 .padding(.bottom, 10)
             }
         }
+        // THE PLAN — the macrocycle queue (generator wave). Self-contained:
+        // renders nothing until the user has generated blocks or queue
+        // entries, and its fetches never disturb the campaigns content.
+        PlanQueueSection()
     }
 
     // MARK: - Row
