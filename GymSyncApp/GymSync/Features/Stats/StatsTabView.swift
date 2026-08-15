@@ -5,10 +5,16 @@ struct StatsTabView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.gsTheme) private var theme
     @State private var exercises: [Exercise] = []
-    @State private var exerciseSearchText = ""
     @State private var refreshedProfile: Profile?
     @State private var weeklyVolumes: [Decimal] = Array(repeating: 0, count: 6)
-    @State private var recentPRs: [PersonalRecord] = []
+    /// The workout ledger (owner 2026-08-16: "what people actually care
+    /// about... the ledger of their workouts"): recent completed sessions
+    /// with abbreviated aggregates; rows open the recap-language detail.
+    @State private var ledgerEntries: [LedgerEntry] = []
+    /// Exercises the lifter has actually attempted (derived from PR rows -
+    /// every qualifying set mints one), most recent first. The PR widget's
+    /// destination list.
+    @State private var attemptedExercises: [Exercise] = []
     @State private var monthTrendPercent: Double?
     @State private var userStreak: UserStreak?
     // Body weight card (Phase H Task 3)
@@ -53,6 +59,55 @@ struct StatsTabView: View {
                             .padding(.bottom, 4)
                     }
 
+                    // ── The Ledger (owner 2026-08-16: leads the page) ──────────
+                    GSSectionHeader("Ledger")
+                        .padding(.horizontal, 16)
+                        .padding(.top, 16)
+                        .padding(.bottom, 8)
+                    if ledgerEntries.isEmpty {
+                        Text("Finished workouts land here — abbreviated, tap for the full picture.")
+                            .font(GSFont.body(13, relativeTo: .subheadline))
+                            .foregroundStyle(theme.neutral500)
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 12)
+                    } else {
+                        VStack(spacing: 8) {
+                            ForEach(ledgerEntries) { entry in
+                                NavigationLink {
+                                    CompletedSessionView(session: entry.session)
+                                } label: {
+                                    ledgerRow(entry)
+                                }
+                                .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 12)
+                    }
+
+                    // ── Personal records (→ attempted lifts → trend + history) ─
+                    NavigationLink {
+                        AttemptedExercisesView(exercises: attemptedExercises)
+                            .background(theme.bg)
+                            .navigationTitle("Personal records")
+                            .navigationBarTitleDisplayMode(.inline)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            GSSectionHeader("Personal records")
+                            Text(attemptedExercises.isEmpty
+                                 ? "Every lift you attempt builds a record page."
+                                 : "\(attemptedExercises.count) lifts — trend graphs and full history per exercise.")
+                                .font(GSFont.body(13, relativeTo: .subheadline))
+                                .foregroundStyle(theme.neutral700)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
+
                     // ── Lifetime Volume Card ───────────────────────────────────
                     // gs3D pass (2026-08-13): the zero-radius GSCards were
                     // this screen's whole debt — every card joins the
@@ -74,7 +129,6 @@ struct StatsTabView: View {
                     .padding(16)
                     .gs3DCard(cornerRadius: GSMetrics.radiusMd)
                     .padding(.horizontal, 16)
-                    .padding(.top, 16)
                     .padding(.bottom, 12)
                     .gsSpotlightTarget(.stats)
 
@@ -85,11 +139,6 @@ struct StatsTabView: View {
 
                     // ── Streak Card (Task 5, Phase S) ───────────────────────────
                     streakCardView
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 12)
-
-                    // ── Recent PRs ─────────────────────────────────────────────
-                    recentPRsCardView
                         .padding(.horizontal, 16)
                         .padding(.bottom, 12)
 
@@ -106,56 +155,6 @@ struct StatsTabView: View {
                     .padding(.horizontal, 16)
                     .padding(.bottom, 12)
 
-                    // ── Per-Exercise History ───────────────────────────────────
-                    GSSectionHeader("Per-Exercise History")
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 10)
-
-                    if exercises.isEmpty {
-                        // Null state (spec §6): card-anchored, never a bare float.
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("No exercises yet")
-                                .font(GSFont.bold(14, relativeTo: .subheadline))
-                                .foregroundStyle(theme.text)
-                            Text("Exercise history builds automatically as you train.")
-                                .font(GSFont.body(12, relativeTo: .caption))
-                                .foregroundStyle(theme.neutral500)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(16)
-                        .gs3DCard(cornerRadius: GSMetrics.radiusMd)
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 24)
-                    } else {
-                        // Shared in-content search field shape (ExercisesListView
-                        // idiom) — the history list is the full catalog.
-                        HStack(spacing: 8) {
-                            Image(systemName: "magnifyingglass")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(theme.neutral500)
-                            TextField("Search exercises", text: $exerciseSearchText)
-                                .font(GSFont.body(14, relativeTo: .body))
-                                .foregroundStyle(theme.text)
-                                .autocorrectionDisabled()
-                        }
-                        .padding(.horizontal, 13)
-                        .padding(.vertical, 10)
-                        .background(theme.surface)
-                        .cornerRadius(GSMetrics.radiusSm)
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 10)
-
-                        VStack(spacing: 8) {
-                            ForEach(filteredExercises) { ex in
-                                NavigationLink { ExerciseHistoryView(exercise: ex) } label: {
-                                    navRow(title: ex.name)
-                                }
-                                .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                    }
-
                     Spacer(minLength: 24)
                 }
             }
@@ -169,6 +168,7 @@ struct StatsTabView: View {
                     refreshedProfile = try? await ProfileRepository.refresh(userID: id)
                 }
                 await loadWeeklyVolumeAndPRs()
+                await loadLedger()
                 await loadStreak()
                 await loadBodyWeight()
             }
@@ -177,6 +177,7 @@ struct StatsTabView: View {
                     refreshedProfile = try? await ProfileRepository.refresh(userID: id)
                 }
                 await loadWeeklyVolumeAndPRs()
+                await loadLedger()
                 await loadStreak()
                 await loadBodyWeight()
             }
@@ -185,10 +186,6 @@ struct StatsTabView: View {
             }
     }
 
-    private var filteredExercises: [Exercise] {
-        exerciseSearchText.isEmpty ? exercises
-            : exercises.filter { $0.name.localizedCaseInsensitiveContains(exerciseSearchText) }
-    }
 
     private var volumeString: String {
         let profile = refreshedProfile ?? appState.currentProfile
@@ -330,59 +327,6 @@ struct StatsTabView: View {
     /// keeps its own 🔥 — that's message text, not UI chrome.
     private var currentStreakValue: String {
         "\(userStreak?.currentStreak ?? 0)"
-    }
-
-    // MARK: - Recent PRs Card (Task 6)
-
-    @ViewBuilder
-    private var recentPRsCardView: some View {
-        Group {
-            VStack(alignment: .leading, spacing: 0) {
-                GSSectionHeader("Recent PRs")
-
-                if recentPRs.isEmpty {
-                    // Null state (spec §6): stays inside the card, invitational.
-                    Text("No PRs yet — your first record lands here.")
-                        .font(GSFont.body(13, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral500)
-                        .padding(.top, 10)
-                } else {
-                    // Redesign (all-tabs proof): accent up-arrow rows replace
-                    // the three-column table — lift · weight · date.
-                    ForEach(Array(recentPRs.enumerated()), id: \.element.id) { index, pr in
-                        HStack(spacing: 10) {
-                            Image(systemName: "arrow.up")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundStyle(theme.accent)
-                            Text(exerciseName(for: pr.exerciseID))
-                                .font(GSFont.bold(13.5, relativeTo: .subheadline))
-                                .foregroundStyle(theme.text)
-                                .lineLimit(1)
-                            Spacer(minLength: 8)
-                            // Weight 0 = bodyweight rep record (owner item 6).
-                            Text(pr.weight > 0
-                                 ? Units.format(pounds: pr.weight, unit: ThemeStore.shared.weightUnit, rounded: false)
-                                 : "\(pr.reps) reps")
-                                .font(GSFont.bold(14, relativeTo: .subheadline))
-                                .foregroundStyle(theme.text)
-                                .monospacedDigit()
-                            Text(shortDate(pr.achievedAt))
-                                .font(GSFont.body(11, relativeTo: .caption2))
-                                .foregroundStyle(theme.neutral500)
-                                .frame(width: 48, alignment: .trailing)
-                        }
-                        .padding(.vertical, 10)
-
-                        if index < recentPRs.count - 1 {
-                            Rectangle().fill(theme.divider).frame(height: 1)
-                        }
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-        }
-        .gs3DCard(cornerRadius: GSMetrics.radiusMd)
     }
 
     // MARK: - Body Weight Card (Task 3, Phase H)
@@ -527,7 +471,17 @@ struct StatsTabView: View {
         let logs = (try? await SessionRepository.recentSetLogs(userID: userID, since: since)) ?? []
         weeklyVolumes = StatMath.weeklyVolumes(logs: logs, weeks: 6, calendar: .current)
         monthTrendPercent = StatMath.monthOverMonthVolumeChangePercent(logs: logs, calendar: .current)
-        recentPRs = (try? await PersonalRecordRepository.recent(userID: userID, limit: 5)) ?? []
+        // Attempted lifts: distinct exercises across the PR ledger (every
+        // qualifying set mints a record), most recent first.
+        let prs = (try? await PersonalRecordRepository.recent(userID: userID, limit: 400)) ?? []
+        var seen = Set<UUID>()
+        var ordered: [UUID] = []
+        for pr in prs where !seen.contains(pr.exerciseID) {
+            seen.insert(pr.exerciseID)
+            ordered.append(pr.exerciseID)
+        }
+        let byID = Dictionary(uniqueKeysWithValues: exercises.map { ($0.id, $0) })
+        attemptedExercises = ordered.compactMap { byID[$0] }
     }
 
     @MainActor
@@ -540,5 +494,138 @@ struct StatsTabView: View {
     private func loadBodyWeight() async {
         guard let userID = appState.currentProfile?.id else { return }
         bodyWeightLogs = (try? await BodyWeightLogRepository.recent(userID: userID)) ?? []
+    }
+
+    // MARK: - The Ledger (owner 2026-08-16)
+
+    struct LedgerEntry: Identifiable {
+        let session: WorkoutSession
+        let routineName: String?
+        let sets: Int
+        let volumePounds: Decimal
+        let minutes: Int?
+        var id: UUID { session.id }
+    }
+
+    private func ledgerRow(_ entry: LedgerEntry) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 8) {
+                Text(entry.routineName ?? "Freeform workout")
+                    .font(GSFont.bold(14, relativeTo: .headline))
+                    .foregroundStyle(theme.text)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Text((entry.session.startedAt ?? entry.session.scheduledFor ?? .now)
+                    .formatted(.dateTime.month(.abbreviated).day()))
+                    .font(GSFont.body(11, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+            }
+            Text(ledgerMetaLine(entry))
+                .font(GSFont.body(11, relativeTo: .caption))
+                .foregroundStyle(theme.neutral500)
+                .monospacedDigit()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .contentShape(Rectangle())
+    }
+
+    private func ledgerMetaLine(_ entry: LedgerEntry) -> String {
+        var parts = ["\(entry.sets) sets"]
+        if entry.volumePounds > 0 {
+            let unit = ThemeStore.shared.weightUnit
+            parts.append("\(StatMath.compactNumber(Units.fromPounds(entry.volumePounds, to: unit))) \(unit.label)")
+        }
+        if let minutes = entry.minutes, minutes > 0 {
+            parts.append("~\(minutes) min")
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    /// One 90-day logs fetch → per-session aggregates → the session rows.
+    /// Duration derives from the logs' own timestamps (first to last set)
+    /// — honest for how long the lifting actually ran.
+    @MainActor
+    private func loadLedger() async {
+        guard let userID = appState.currentProfile?.id else { return }
+        let since = Calendar.current.date(byAdding: .day, value: -90, to: .now) ?? .now
+        let logs = (try? await SessionRepository.recentSetLogs(userID: userID, since: since)) ?? []
+        let bySession = Dictionary(grouping: logs.filter { !$0.isPenalty }, by: \.sessionID)
+        guard !bySession.isEmpty else { return }
+        let sessions = (try? await SessionRepository.byIDs(Array(bySession.keys))) ?? []
+        let names = ((try? await RoutineRepository.fetchAll(ownerID: userID)) ?? [])
+            .reduce(into: [UUID: String]()) { $0[$1.id] = $1.name }
+        ledgerEntries = sessions
+            .map { session -> LedgerEntry in
+                let sessionLogs = bySession[session.id] ?? []
+                let volume = sessionLogs.reduce(Decimal(0)) { acc, log in
+                    acc + (log.effectiveWeightPounds ?? 0) * Decimal(log.completedReps ?? 0)
+                }
+                let times = sessionLogs.map(\.loggedAt)
+                let minutes: Int?
+                if let first = times.min(), let last = times.max(), last > first {
+                    minutes = Int(last.timeIntervalSince(first) / 60)
+                } else {
+                    minutes = nil
+                }
+                return LedgerEntry(
+                    session: session,
+                    routineName: session.routineID.flatMap { names[$0] },
+                    sets: sessionLogs.count,
+                    volumePounds: volume,
+                    minutes: minutes)
+            }
+            .sorted { ($0.session.startedAt ?? .distantPast) > ($1.session.startedAt ?? .distantPast) }
+            .prefix(12)
+            .map { $0 }
+    }
+}
+
+// MARK: - AttemptedExercisesView (the PR widget's destination)
+
+/// The populated list of lifts you've actually attempted (owner
+/// 2026-08-16) — each row opens the per-exercise page: est-1RM trend
+/// graph up top, the time series below, exactly the existing
+/// ExerciseHistoryView language.
+struct AttemptedExercisesView: View {
+    @Environment(\.gsTheme) private var theme
+    let exercises: [Exercise]
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 8) {
+                if exercises.isEmpty {
+                    Text("Nothing attempted yet — records build as you train.")
+                        .font(GSFont.body(13, relativeTo: .subheadline))
+                        .foregroundStyle(theme.neutral500)
+                        .padding(.top, 40)
+                } else {
+                    ForEach(exercises) { exercise in
+                        NavigationLink {
+                            ExerciseHistoryView(exercise: exercise)
+                        } label: {
+                            HStack {
+                                Text(exercise.name)
+                                    .font(GSFont.bold(14, relativeTo: .headline))
+                                    .foregroundStyle(theme.text)
+                                    .lineLimit(1)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(theme.neutral500)
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 12)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
+                    }
+                }
+            }
+            .padding(16)
+        }
+        .background(theme.bg)
+        .contentMargins(.bottom, 88, for: .scrollContent)
     }
 }

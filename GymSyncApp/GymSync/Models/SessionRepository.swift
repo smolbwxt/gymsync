@@ -270,6 +270,21 @@ enum SessionRepository {
         } catch { throw ErrorMapping.map(error) }
     }
 
+    /// Sessions by id — the workout ledger's second hop (distinct session
+    /// ids from the caller's own set logs → the session rows).
+    static func byIDs(_ ids: [UUID]) async throws -> [WorkoutSession] {
+        guard !ids.isEmpty else { return [] }
+        do {
+            let rows: [WorkoutSession] = try await client
+                .from("sessions")
+                .select()
+                .in("id", values: ids.map(\.uuidString))
+                .execute()
+                .value
+            return rows
+        } catch { throw ErrorMapping.map(error) }
+    }
+
     // MARK: - Trainer arm T4: the client's calendar
 
     /// Upcoming scheduled sessions on a user's calendar. For a trainer
