@@ -24,21 +24,12 @@ struct YouTabView: View {
     @Environment(\.gsTheme) private var theme
     @Environment(AppState.self) private var appState
 
-    @State private var showMyRack = false
+    @State private var showShop = false
     @State private var showStats = false
     @State private var showRoutines = false
-    @State private var showExercises = false
     @State private var showPrograms = false
-    @State private var showPaywall = false
     @State private var showSettings = false
     @State private var showEditProfile = false
-
-    /// THE RACK widget face — the user's soundboard favorites, falling back
-    /// to the first four curated catalog sounds (the same fallback rule the
-    /// live session's Rack Room applies when no favorites row exists). Pure
-    /// catalog/favorites reads — deliberately NO live-session state here.
-    /// Best-effort: a failed fetch leaves the placeholder circles.
-    @State private var rackSounds: [SoundboardSound] = []
 
     /// ROUTINES widget slot state ("3 OF 5 SLOTS FILLED") — best-effort
     /// count fetch; nil until it resolves (footer falls back to "HUB").
@@ -58,12 +49,16 @@ struct YouTabView: View {
                             .padding(.top, 16)
                             .gsSpotlightTarget(key: "tour.you.stats")
 
-                        // Owner 2026-08-13: "a series of wide widgets like
-                        // the lifetime volume, with more description as to
-                        // what is housed" — the 2-col grid's terse tiles hid
-                        // content; every widget is now full-width with a
-                        // one-line description. DISCOVER left this page for
-                        // the Routines hub.
+                        // Owner 2026-08-13: full-width widgets with real
+                        // descriptions. Reorder 2026-08-16: SHOP leads (it
+                        // houses PRO, the Rack, Coaching, and every future
+                        // sellable); EXERCISES moved into the Routines hub;
+                        // Settings became a full widget.
+                        shopWidget
+                            .padding(.horizontal, 16)
+                            .padding(.top, 12)
+                            .gsSpotlightTarget(key: "tour.you.rack")
+
                         routinesWidget
                             .padding(.horizontal, 16)
                             .padding(.top, 12)
@@ -73,24 +68,11 @@ struct YouTabView: View {
                             .padding(.horizontal, 16)
                             .padding(.top, 12)
 
-                        exercisesWidget
-                            .padding(.horizontal, 16)
-                            .padding(.top, 12)
-
-                        theRackWidget
-                            .padding(.horizontal, 16)
-                            .padding(.top, 12)
-                            .gsSpotlightTarget(key: "tour.you.rack")
-
                         lockerWidget
                             .padding(.horizontal, 16)
                             .padding(.top, 12)
 
-                        proWidget
-                            .padding(.horizontal, 16)
-                            .padding(.top, 12)
-
-                        settingsRow
+                        settingsWidget
                             .padding(.horizontal, 16)
                             .padding(.top, 12)
 
@@ -109,14 +91,15 @@ struct YouTabView: View {
             // Tour (owner 2026-08-14): stats → routines → the Rack.
             .gsSpotlightTour(GuidanceTours.you)
             .task {
-                await loadRack()
                 // ROUTINES slot state — one light query, best-effort.
                 if let ownerID = appState.currentProfile?.id {
                     routineCount = (try? await RoutineRepository.fetchAll(ownerID: ownerID))?.count
                 }
             }
-            .navigationDestination(isPresented: $showMyRack) {
-                MyRackView()
+            .navigationDestination(isPresented: $showShop) {
+                ShopView()
+                    .navigationTitle("Shop")
+                    .navigationBarTitleDisplayMode(.inline)
             }
             .navigationDestination(isPresented: $showStats) {
                 // Pushed in content form (embedsInOwnStack: false). The
@@ -139,12 +122,6 @@ struct YouTabView: View {
                     .navigationBarTitleDisplayMode(.inline)
                     .gsSpotlight(.library)
             }
-            .navigationDestination(isPresented: $showExercises) {
-                ExercisesListView()
-                    .background(theme.bg)
-                    .navigationTitle("Exercises")
-                    .navigationBarTitleDisplayMode(.inline)
-            }
             .navigationDestination(isPresented: $showPrograms) {
                 // Programs (né Campaigns — owner 2026-08-12: "Programs" is
                 // the word the industry uses). The browse screen keeps its
@@ -154,9 +131,6 @@ struct YouTabView: View {
                     .background(theme.bg)
                     .navigationTitle("Programs")
                     .navigationBarTitleDisplayMode(.inline)
-            }
-            .navigationDestination(isPresented: $showPaywall) {
-                PaywallView()
             }
             .navigationDestination(isPresented: $showSettings) {
                 SettingsView()
@@ -307,39 +281,6 @@ struct YouTabView: View {
         return "\(routineCount) OF \(limit) SLOTS FILLED"
     }
 
-    private var exercisesWidget: some View {
-        Button {
-            showExercises = true
-        } label: {
-            widgetCard(title: "EXERCISES", footer: "CATALOG") {
-                // Non-interactive search-pill visual — search IS this
-                // surface's identity (ExercisesListView opens with its own
-                // live search field), so the widget face wears one.
-                HStack(spacing: 6) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(theme.neutral500)
-                    Text("Search exercises")
-                        .font(GSFont.body(14, relativeTo: .subheadline))
-                        .foregroundStyle(theme.neutral500)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.8)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(theme.bg)
-                .clipShape(RoundedRectangle(cornerRadius: 9))
-            }
-        }
-        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
-        // The exercises catalog's discovery highlight rides along from
-        // Library's old Discover segment (same target, same storage key).
-        .gsDiscovery(.libraryDiscover, cornerRadius: GSMetrics.radiusSm)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Exercises")
-    }
-
     private var programsWidget: some View {
         Button {
             showPrograms = true
@@ -360,87 +301,26 @@ struct YouTabView: View {
         .accessibilityLabel("Programs")
     }
 
-    // MARK: - The Rack (Shop merge, 2026-08-12)
+    // MARK: - Shop (owner 2026-08-16: the storefront leads the page)
 
-    /// One soundboard home: the dock plates up front, the weekly-rotation
-    /// countdown riding the title row (the Shop tab's headline concept,
-    /// carried over — `WeeklyRack.nextRotation()` is pure date math, no
-    /// fetch). Pushes MyRackView, which owns browsing + dock management.
-    private var theRackWidget: some View {
+    /// SHOP houses every sellable: PRO, the Rack, Coaching, and whatever
+    /// comes later. The Rack's plate face and rotation moved into
+    /// ShopView with it.
+    private var shopWidget: some View {
         Button {
-            showMyRack = true
+            showShop = true
         } label: {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text("THE RACK")
-                        .font(GSFont.bold(20, relativeTo: .title3))
-                        .tracking(0.5)
-                        .foregroundStyle(theme.text)
-                    Spacer(minLength: 8)
-                    Text(rotationText)
-                        .font(GSFont.bold(9.5, relativeTo: .caption2))
-                        .kerning(1.0)
-                        .foregroundStyle(Color.gsHex(0xE8C33A))
-                        .monospacedDigit()
-                }
-                Spacer(minLength: 10)
-                rackFace
-                Spacer(minLength: 10)
-                kLabel("SOUNDBOARD · THIS WEEK'S RACK + YOUR DOCK", color: theme.neutral500)
+            widgetCard(title: "SHOP", footer: "PRO - THE RACK - COACHING") {
+                Text("Pro, the soundboard rack, and training with a coach")
+                    .font(GSFont.body(13, relativeTo: .subheadline))
+                    .foregroundStyle(theme.neutral700)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
-            .padding(12)
-            .frame(maxWidth: .infinity, minHeight: 116, alignment: .leading)
         }
         .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("The Rack")
-    }
-
-    /// Static compute at render — day/hour precision doesn't need a
-    /// TimelineView; the row re-renders on any tab revisit.
-    private var rotationText: String {
-        let interval = max(0, WeeklyRack.nextRotation().timeIntervalSinceNow)
-        let days = Int(interval) / 86400
-        let hours = (Int(interval) % 86400) / 3600
-        return "↻ ROTATES IN \(days)D \(hours)H"
-    }
-
-    /// Up to four compact plate tokens (the session dock's own component,
-    /// at widget scale); neutral placeholder rings until the catalog
-    /// resolves. ViewThatFits steps down on narrow devices.
-    @ViewBuilder
-    private var rackFace: some View {
-        ViewThatFits(in: .horizontal) {
-            plateRow(size: 38)
-            plateRow(size: 34)
-            plateRow(size: 30)
-        }
-    }
-
-    @ViewBuilder
-    private func plateRow(size: CGFloat) -> some View {
-        HStack(spacing: 4) {
-            if rackSounds.isEmpty {
-                // Placeholder outlines match the token's v6 tile shape.
-                ForEach(0..<4, id: \.self) { _ in
-                    RoundedRectangle(cornerRadius: size * 0.22)
-                        .strokeBorder(theme.neutral300, lineWidth: 2)
-                        .frame(width: size, height: size)
-                }
-            } else {
-                ForEach(rackSounds.prefix(4)) { sound in
-                    GSPlateToken(
-                        name: sound.plateName,
-                        envelope: sound.envelope,
-                        durationMs: sound.durationMs,
-                        isClipped: sound.isClipped,
-                        cooldownUntil: nil,
-                        size: size,
-                        compact: true
-                    )
-                }
-            }
-        }
+        .accessibilityLabel("Shop")
     }
 
     /// Inert this round — avatar, backdrops and effects come later.
@@ -460,44 +340,17 @@ struct YouTabView: View {
         .accessibilityLabel("Locker — coming soon")
     }
 
-    /// The Shop tab's inert "GYMSYNC PRO" row, made honest: it now opens
-    /// the real PaywallView (design-only, says "coming soon", CTA
-    /// disabled — Monetization ships dormant). Gold title = the one gold
-    /// moment on this tab (debt/goal/aspiration color).
-    private var proWidget: some View {
+    private var settingsWidget: some View {
         Button {
-            showPaywall = true
+            showSettings = true
         } label: {
-            widgetCard(title: "PRO", titleColor: Color.gsHex(0xE8C33A), footer: "GYMSYNC PRO") {
-                Text("See what's coming")
+            widgetCard(title: "SETTINGS", footer: "ACCOUNT - PREFERENCES") {
+                Text("Account, appearance, notifications, home gym")
                     .font(GSFont.body(13, relativeTo: .subheadline))
                     .foregroundStyle(theme.neutral700)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
-        }
-        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("GymSync Pro")
-    }
-
-    private var settingsRow: some View {
-        Button {
-            showSettings = true
-        } label: {
-            HStack {
-                kLabel("SETTINGS", color: theme.neutral700)
-                Spacer(minLength: 0)
-                Text("Account · preferences")
-                    .font(GSFont.body(13, relativeTo: .footnote))
-                    .foregroundStyle(theme.neutral500)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(theme.neutral500)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 14)
-            .frame(maxWidth: .infinity)
         }
         .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
         .accessibilityElement(children: .ignore)
@@ -544,15 +397,4 @@ struct YouTabView: View {
 
     // MARK: - Data
 
-    @MainActor
-    private func loadRack() async {
-        guard let catalog = try? await SoundboardRepository.fetchCatalog(),
-              !catalog.isEmpty else { return }
-        let bySlug = Dictionary(catalog.map { ($0.slug, $0) },
-                                uniquingKeysWith: { first, _ in first })
-        let favoriteSlugs = (try? await SoundboardFavoritesRepository.get()) ?? []
-        let favored = favoriteSlugs.compactMap { bySlug[$0] }
-        let chosen = favored.isEmpty ? catalog.filter(\.isCurated) : favored
-        rackSounds = Array(chosen.prefix(4))
-    }
 }

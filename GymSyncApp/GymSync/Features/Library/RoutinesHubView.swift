@@ -62,8 +62,10 @@ struct RoutinesHubView: View {
                     prescribedCard
                 }
 
-                discoverRow
+                exercisesRow
                     .padding(.top, 8)
+
+                discoverRow
 
                 if let errorText {
                     Text(errorText)
@@ -300,6 +302,44 @@ struct RoutinesHubView: View {
             }
         }
         .gs3DCard(cornerRadius: GSMetrics.radiusMd)
+    }
+
+    // MARK: - Exercises (moved in from the You grid, owner 2026-08-16:
+    // "the exploratory exercises widget should live in Routines")
+
+    private var exercisesRow: some View {
+        NavigationLink {
+            ExercisesListView()
+                .background(theme.bg)
+                .navigationTitle("Exercises")
+                .navigationBarTitleDisplayMode(.inline)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(theme.text)
+                    .frame(width: 24)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("EXERCISES")
+                        .font(GSFont.bold(16, relativeTo: .headline))
+                        .tracking(0.5)
+                        .foregroundStyle(theme.text)
+                    Text("Browse the full catalog — form demos and how-tos")
+                        .font(GSFont.body(11, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral500)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(theme.neutral500)
+            }
+            .padding(12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
+        .gsDiscovery(.libraryDiscover, cornerRadius: GSMetrics.radiusMd)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Exercises")
     }
 
     // MARK: - Discover

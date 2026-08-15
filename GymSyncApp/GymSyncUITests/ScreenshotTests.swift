@@ -166,7 +166,11 @@ final class ScreenshotTests: XCTestCase {
     func testLibraryExercisesList() {
         let app = launchApp()
         guard waitForTabBar(app) else { return }
-        openYouWidget(app, label: "Exercises")
+        // EXERCISES moved into the Routines hub (owner 2026-08-16).
+        openYouWidget(app, label: "Routines")
+        let exercisesRow = app.buttons["Exercises"]
+        if exercisesRow.waitForExistence(timeout: 10) { exercisesRow.tap() }
+        settle()
         attachScreenshot(app, named: "app-library-exercises.png")
     }
 
@@ -481,7 +485,10 @@ final class ScreenshotTests: XCTestCase {
     func testExerciseDetail() {
         let app = launchApp()
         guard waitForTabBar(app) else { return }
-        openYouWidget(app, label: "Exercises")
+        // EXERCISES moved into the Routines hub (owner 2026-08-16).
+        openYouWidget(app, label: "Routines")
+        let exercisesRow = app.buttons["Exercises"]
+        if exercisesRow.waitForExistence(timeout: 10) { exercisesRow.tap() }
 
         // Unlike the seeded "[QA] Push Day" routine above, exercise rows have
         // no stable predictable name to match on (the live catalog, not a QA

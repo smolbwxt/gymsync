@@ -128,8 +128,8 @@ enum GuidanceTours {
               title: "Your routines, your Coach",
               message: "Five slots to build in, Discover for ready-made plans, and Coach — your generated program — coming soon."),
         .init(anchorKey: "tour.you.rack",
-              title: "The Rack",
-              message: "Your soundboard for live sessions. It rotates weekly — throw sounds at whoever's on the bar."),
+              title: "The Shop",
+              message: "Pro, the Rack — your live-session soundboard — and coaching all live here."),
     ])
 
     /// QA reset rides along with the tips reset.
