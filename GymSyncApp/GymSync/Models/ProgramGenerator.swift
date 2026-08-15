@@ -418,4 +418,26 @@ enum ProgramGenerator {
         }
         return sameKind.count > 1 ? "\(base) \(ordinal)" : base
     }
+
+    // MARK: Data bridge (program_template_weeks contract)
+
+    /// The generated wave as `[ProgramWeek]` rows — the SUMMARY a template
+    /// row carries (store card, Plan queue), never the executable program
+    /// (the day routines carry that). One line per week: the lead main
+    /// lift's prescription with the wave's multipliers applied. Percent
+    /// stays nil when the generator prescribed by rep range alone.
+    static func weekSummaries(_ program: Program) -> [ProgramWeek] {
+        let lifts = program.days.flatMap(\.exercises).filter { $0.cardioZone == nil }
+        guard let main = lifts.first(where: { $0.isMain }) ?? lifts.first else { return [] }
+        return program.weeks.map { week in
+            ProgramWeek(
+                percentOfBaseline: main.percentOfMax.map {
+                    ($0 * week.intensityMultiplier).rounded()
+                },
+                sets: max(1, Int((Double(main.sets) * week.volumeMultiplier).rounded())),
+                reps: main.repsLow,
+                isDeload: week.isDeload,
+                note: week.note)
+        }
+    }
 }

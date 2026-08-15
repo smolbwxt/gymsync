@@ -409,6 +409,19 @@ struct CoachWizardView: View {
                 }
                 try await RoutineRepository.save(routine, exercises: exercises)
             }
+            // Data bridge (generator wave): the block also persists as a
+            // user-owned template row (kind 'takeover') so it has identity
+            // in the Plan queue and on the shelf. Best-effort by design —
+            // the day routines above are the deliverable; a missed row
+            // just means no queue card.
+            let focusKind = focus == .weightLoss ? "weight_loss" : focus.rawValue
+            _ = try? await ProgramTemplateRepository.saveGenerated(
+                name: "Coach · \(label(for: focus.rawValue)) · \(days)-day",
+                summary: "Generated \(duration)-week \(label(for: focus.rawValue).lowercased()) block — \(days) lifting days a week.",
+                focusKind: focusKind,
+                sessionsPerWeek: days,
+                durationWeeks: duration,
+                weeks: ProgramGenerator.weekSummaries(program))
             errorText = nil
             onCreated?()
             dismiss()

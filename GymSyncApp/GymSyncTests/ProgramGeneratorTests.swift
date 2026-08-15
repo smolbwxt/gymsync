@@ -279,4 +279,49 @@ final class ProgramGeneratorTests: XCTestCase {
         XCTAssertEqual(GeneratorScience.percentFor(reps: 2), 90, "below table floor clamps heavy")
         XCTAssertEqual(GeneratorScience.percentFor(reps: 20), 60, "above table ceiling clamps light")
     }
+
+    // MARK: - Data bridge (weekSummaries + jsonb contract)
+
+    func testWeekSummariesCarryTheWave() {
+        // 8-week plan: deload at the 3/4 mark, one row per week, sets
+        // halved on the deload against the plain weeks around it.
+        let program = ProgramGenerator.generate(inputs: inputs(weeks: 8), catalog: catalog())
+        let rows = ProgramGenerator.weekSummaries(program)
+        XCTAssertEqual(rows.count, 8)
+        let deloadIndexes = rows.enumerated().filter { $0.element.isDeload }.map(\.offset)
+        XCTAssertEqual(deloadIndexes.count, 1, "one deload week in an 8-week wave")
+        let deload = rows[deloadIndexes[0]]
+        let plain = rows[0]
+        XCTAssertLessThan(deload.sets, plain.sets, "deload halves volume")
+        XCTAssertNotNil(deload.note)
+    }
+
+    func testWeekSummariesAreDeterministic() {
+        let a = ProgramGenerator.weekSummaries(
+            ProgramGenerator.generate(inputs: inputs(), catalog: catalog()))
+        let b = ProgramGenerator.weekSummaries(
+            ProgramGenerator.generate(inputs: inputs(), catalog: catalog()))
+        XCTAssertEqual(a, b)
+    }
+
+    func testProgramWeekJSONRoundTripUsesSnakeCase() throws {
+        // The program_template_weeks.weeks jsonb contract: snake_case keys,
+        // optionals absent when nil, is_deload always present.
+        let week = ProgramWeek(percentOfBaseline: 82.5, sets: 4, reps: 5,
+                               isDeload: true, note: "Deload")
+        let data = try JSONEncoder().encode([week])
+        let json = String(data: data, encoding: .utf8) ?? ""
+        XCTAssertTrue(json.contains("\"percent_of_baseline\""))
+        XCTAssertTrue(json.contains("\"is_deload\""))
+        let decoded = try JSONDecoder().decode([ProgramWeek].self, from: data)
+        XCTAssertEqual(decoded, [week])
+
+        // Volume-driven week: percent + note absent entirely.
+        let volume = ProgramWeek(sets: 3, reps: 10)
+        let volumeJSON = String(data: try JSONEncoder().encode(volume), encoding: .utf8) ?? ""
+        XCTAssertFalse(volumeJSON.contains("percent_of_baseline"))
+        let volumeBack = try JSONDecoder().decode(
+            ProgramWeek.self, from: try JSONEncoder().encode(volume))
+        XCTAssertEqual(volumeBack, volume)
+    }
 }

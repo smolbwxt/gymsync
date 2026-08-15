@@ -43,6 +43,20 @@ struct ProgramWeek: Sendable {
     }
 }
 
+/// The `program_template_weeks.weeks` jsonb contract (20260814000009) —
+/// snake_case keys so the column reads naturally in SQL. Codable synthesis
+/// stays valid (the convenience init above doesn't block it); the optional
+/// fields decode as absent, `is_deload` is always written.
+extension ProgramWeek: Codable, Equatable {
+    enum CodingKeys: String, CodingKey {
+        case percentOfBaseline = "percent_of_baseline"
+        case sets
+        case reps
+        case isDeload = "is_deload"
+        case note
+    }
+}
+
 struct ProgramTemplate: Identifiable, Sendable {
     let slug: String
     let name: String
