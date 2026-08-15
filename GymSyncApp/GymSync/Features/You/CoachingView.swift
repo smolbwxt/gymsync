@@ -237,6 +237,13 @@ struct CoachingView: View {
         do {
             let rows = try await TrainerClientRepository.mine()
             relationships = rows
+            // Keep the TRAINER tab gate live (owner report 2026-08-16: tab
+            // invisible after minting): MainTabView only evaluates it at
+            // launch, so minting your FIRST invite here must inject the tab
+            // now — not after an app restart. Same predicate as launch.
+            if let me = selfID {
+                appState.isTrainer = rows.contains { $0.trainerID == me && $0.status != "ended" }
+            }
             let ids = Set(rows.flatMap { [$0.trainerID, $0.clientID].compactMap { $0 } })
             let profiles = (try? await ProfileRepository.fetchMany(ids: Array(ids))) ?? []
             profilesByID = Dictionary(uniqueKeysWithValues: profiles.map { ($0.id, $0) })

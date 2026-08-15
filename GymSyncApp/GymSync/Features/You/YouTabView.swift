@@ -284,9 +284,9 @@ struct YouTabView: View {
             showRoutines = true
         } label: {
             widgetCard(title: "ROUTINES", footer: routinesFooter) {
-                Text("Your plans · the builder · Coach · Discover")
-                    .font(GSFont.bodyMedium(17, relativeTo: .body))
-                    .foregroundStyle(theme.text)
+                Text("Coach · the builder · your five slots · Discover")
+                    .font(GSFont.body(13, relativeTo: .subheadline))
+                    .foregroundStyle(theme.neutral700)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
@@ -346,8 +346,8 @@ struct YouTabView: View {
         } label: {
             widgetCard(title: "PROGRAMS", footer: "GUIDED") {
                 Text("Multi-week plans + campaigns")
-                    .font(GSFont.bodyMedium(17, relativeTo: .body))
-                    .foregroundStyle(theme.text)
+                    .font(GSFont.body(13, relativeTo: .subheadline))
+                    .foregroundStyle(theme.neutral700)
                     .lineLimit(2)
                     .minimumScaleFactor(0.8)
             }
@@ -372,7 +372,10 @@ struct YouTabView: View {
         } label: {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(alignment: .firstTextBaseline) {
-                    kLabel("THE RACK", color: theme.neutral700)
+                    Text("THE RACK")
+                        .font(GSFont.bold(20, relativeTo: .title3))
+                        .tracking(0.5)
+                        .foregroundStyle(theme.text)
                     Spacer(minLength: 8)
                     Text(rotationText)
                         .font(GSFont.bold(9.5, relativeTo: .caption2))
@@ -446,7 +449,7 @@ struct YouTabView: View {
     private var lockerWidget: some View {
         widgetCard(title: "LOCKER", footer: "SOON") {
             Text("Avatar · backdrops · effects")
-                .font(GSFont.bodyMedium(17, relativeTo: .body))
+                .font(GSFont.body(13, relativeTo: .subheadline))
                 .foregroundStyle(theme.neutral700)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
@@ -467,8 +470,8 @@ struct YouTabView: View {
         } label: {
             widgetCard(title: "PRO", titleColor: Color.gsHex(0xE8C33A), footer: "GYMSYNC PRO") {
                 Text("See what's coming")
-                    .font(GSFont.bodyMedium(17, relativeTo: .body))
-                    .foregroundStyle(theme.text)
+                    .font(GSFont.body(13, relativeTo: .subheadline))
+                    .foregroundStyle(theme.neutral700)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
@@ -517,8 +520,13 @@ struct YouTabView: View {
         @ViewBuilder face: () -> Face
     ) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            kLabel(title, color: titleColor ?? theme.neutral700)
-            Spacer(minLength: 10)
+            // Owner 2026-08-16: the title IS the widget — big and bold; the
+            // face below it describes what the screen behind holds.
+            Text(title)
+                .font(GSFont.bold(20, relativeTo: .title3))
+                .tracking(0.5)
+                .foregroundStyle(titleColor ?? theme.text)
+            Spacer(minLength: 8)
             face()
             Spacer(minLength: 10)
             kLabel(footer, color: theme.neutral500)
