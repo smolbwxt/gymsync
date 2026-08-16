@@ -375,7 +375,20 @@ struct CoachWizardView: View {
                 secondaryMuscles: ex.secondaryMuscles,
                 category: ex.category, equipment: ex.equipment,
                 movementPattern: ex.movementPattern ?? "other",
-                rank: index)
+                rank: index,
+                // Catalog labels (20260816000002) — the score-first
+                // selection's fuel; defaults keep pre-label rows sane.
+                focusScores: ex.focusScores ?? [:],
+                complexity: ex.complexity ?? 3,
+                fatigueCost: ex.fatigueCost ?? 3,
+                spinalLoad: ex.spinalLoad ?? 0,
+                repMin: ex.repMin,
+                repMax: ex.repMax,
+                lengthenedBias: ex.lengthenedBias ?? false,
+                unilateral: ex.unilateral ?? false,
+                impact: ex.impact ?? "none",
+                legInterference: ex.legInterference ?? false,
+                explosive: ex.explosive ?? false)
         }
         let inputs = ProgramGenerator.Inputs(
             focus: focus, daysPerWeek: days, durationWeeks: duration,

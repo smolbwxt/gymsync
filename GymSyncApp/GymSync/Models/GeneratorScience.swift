@@ -180,6 +180,33 @@ enum GeneratorScience {
         }
     }
 
+    /// Experience-scaled main-lift intensity ceilings (trainer audit
+    /// 2026-08-16, the corpus's most-repeated CRITICAL: novices were
+    /// opened at 90% 1RM with no established max — contradicting the
+    /// neural-adaptation basis of novice progression the evidence file
+    /// itself cites). The ceiling clamps the %1RM anchor; novices climb
+    /// via linear progression instead of starting pinned near max.
+    static func mainIntensityCeiling(experience: Experience) -> Double {
+        switch experience {
+        case .new: return 72.5
+        case .intermediate: return 87.5
+        case .advanced: return 92.5
+        }
+    }
+
+    /// Complexity gate (catalog labels; owner law: complexity GATES by
+    /// experience, never penalizes). Auto-prescription cap on technical
+    /// demand — a soft gate: violating candidates sort behind clean ones
+    /// but can still fill a slot nothing else can. Rerolls and manual
+    /// picks reach everything.
+    static func complexityCap(experience: Experience) -> Int {
+        switch experience {
+        case .new: return 3
+        case .intermediate: return 4
+        case .advanced: return 5
+        }
+    }
+
     /// Selection demotions (owner field report 2026-08-15: an ADVANCED
     /// lifter drew "Assisted Pull-Up Machine" on upper days). Catalog rank
     /// is alphabetical fetch order, so the machine sweep's A-named

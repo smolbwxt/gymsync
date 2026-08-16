@@ -25,6 +25,22 @@ struct Exercise: Codable, Identifiable, Sendable, Hashable {
     /// push_horizontal|push_vertical|pull_horizontal|pull_vertical|
     /// isolation|other — deterministic name+muscle classification.
     var movementPattern: String? = nil
+    // Catalog labels (20260816000002, swarm-authored taxonomy) — all
+    // trailing-defaulted optionals so fixtures compile and pre-label
+    // rows decode.
+    var focusScores: [String: Int]? = nil
+    var complexity: Int? = nil
+    var fatigueCost: Int? = nil
+    var spinalLoad: Int? = nil
+    var repMin: Int? = nil
+    var repMax: Int? = nil
+    var lengthenedBias: Bool? = nil
+    var unilateral: Bool? = nil
+    var impact: String? = nil
+    var legInterference: Bool? = nil
+    var jointStress: [String]? = nil
+    var setupCost: Int? = nil
+    var explosive: Bool? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -39,6 +55,19 @@ struct Exercise: Codable, Identifiable, Sendable, Hashable {
         case demoYoutubeID = "demo_youtube_id"
         case instructions
         case movementPattern = "movement_pattern"
+        case focusScores = "focus_scores"
+        case complexity
+        case fatigueCost = "fatigue_cost"
+        case spinalLoad = "spinal_load"
+        case repMin = "rep_min"
+        case repMax = "rep_max"
+        case lengthenedBias = "lengthened_bias"
+        case unilateral
+        case impact
+        case legInterference = "leg_interference"
+        case jointStress = "joint_stress"
+        case setupCost = "setup_cost"
+        case explosive
     }
 }
 

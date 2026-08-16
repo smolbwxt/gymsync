@@ -57,6 +57,28 @@ enum ProgramGenerator {
         let movementPattern: String // squat|hinge|lunge|push_horizontal|push_vertical|pull_horizontal|pull_vertical|isolation|other
         /// Stable order (catalog fetch order) — the deterministic tiebreak.
         let rank: Int
+        // Catalog labels (20260816000002, swarm-authored) — trailing
+        // defaults keep every construction site compiling; unlabeled
+        // rows behave like the pre-label generator.
+        /// 0-10 effectiveness per goal, keys strength|hypertrophy|
+        /// weight_loss|conditioning. Empty = unscored.
+        var focusScores: [String: Int] = [:]
+        /// 1-5 technical demand; GATES by experience, never penalizes.
+        var complexity: Int = 3
+        /// 1-5 systemic drain per hard set.
+        var fatigueCost: Int = 3
+        /// 0-2 axial loading (2 = heavy: squats, deadlifts, standing OHP).
+        var spinalLoad: Int = 0
+        /// Sensible prescription window; nil = unclamped.
+        var repMin: Int? = nil
+        var repMax: Int? = nil
+        var lengthenedBias: Bool = false
+        var unilateral: Bool = false
+        /// high | low | none (cardio modality attribute).
+        var impact: String = "none"
+        var legInterference: Bool = false
+        /// Power/velocity intent — the conditioning focus's consumer.
+        var explosive: Bool = false
     }
 
     // MARK: Output
@@ -146,6 +168,7 @@ enum ProgramGenerator {
                                   excluding: exclusions,
                                   focus: inputs.focus,
                                   focusMuscles: inputs.focusMuscles,
+                                  experience: inputs.experience,
                                   seed: inputs.seed)
                 if pick == nil, !isMainSlot {
                     // Accessory pool exhausted — repeats beat holes.
@@ -153,13 +176,52 @@ enum ProgramGenerator {
                                   excluding: alreadyChosen,
                                   focus: inputs.focus,
                                   focusMuscles: inputs.focusMuscles,
+                                  experience: inputs.experience,
                                   seed: inputs.seed)
                 }
                 guard let pick else { continue }
                 alreadyChosen.insert(pick.id)
                 if !isMainSlot { usedAccessories.insert(pick.id) }
+                var sets = setsPerSlot(slot: slot, perDayBudget: perDayBudget)
+                // Low-frequency density (trainer audit: 1-2 day weeks
+                // undershoot the weekly volume floor): mains carry an
+                // extra set; intensity trades down below.
+                if inputs.daysPerWeek <= 2, isMainSlot { sets = min(6, sets + 1) }
                 chosen.append(prescription(for: pick, slot: slot, band: band,
-                                           inputs: inputs, setsPerExercise: setsPerSlot(slot: slot, perDayBudget: perDayBudget)))
+                                           inputs: inputs, setsPerExercise: sets))
+            }
+            // Session post-pass (trainer audit 2026-08-16):
+            // 1. Explosive work FIRST — power output needs a fresh CNS;
+            //    ballistic movements after near-max compounds are a
+            //    technical-breakdown risk. Stable within groups.
+            let labelByID = Dictionary(uniqueKeysWithValues: usable.map { ($0.id, $0) })
+            chosen = chosen.enumerated().sorted { a, b in
+                func group(_ e: Exercise) -> Int {
+                    if labelByID[e.exerciseID]?.explosive == true { return 0 }
+                    return e.isMain ? 1 : 2
+                }
+                let ga = group(a.element), gb = group(b.element)
+                if ga != gb { return ga < gb }
+                return a.offset < b.offset
+            }.map(\.element)
+            // 2. Axial stagger: only ONE heavy-spinal-load main keeps the
+            //    session's top anchor; later ones drop ~10% (squat +
+            //    deadlift both maxed back-to-back was a repeated CRITICAL).
+            var axialSeen = false
+            chosen = chosen.map { e in
+                var e = e
+                if e.isMain, labelByID[e.exerciseID]?.spinalLoad == 2 {
+                    if axialSeen, let p = e.percentOfMax {
+                        e.percentOfMax = max(60, p - 10)
+                    }
+                    axialSeen = true
+                }
+                // 3. Low-frequency density trade: at 1-2 days the extra
+                //    sets come with a capped anchor.
+                if inputs.daysPerWeek <= 2, e.isMain, let p = e.percentOfMax {
+                    e.percentOfMax = min(p, 82.5)
+                }
+                return e
             }
             // Session-length cap (owner 2026-08-15: "no option for workout
             // duration"): trim accessories — never mains — until the day
@@ -182,6 +244,48 @@ enum ProgramGenerator {
         if trimmedForTime, let cap = inputs.sessionMinutes {
             notes.append("Accessories trimmed to fit \(cap)-minute sessions — the main lifts keep their place. More time brings them back.")
         }
+        if inputs.daysPerWeek <= 2 {
+            notes.append("Low-frequency week: mains carry an extra set at a capped intensity — density over ceiling when sessions are scarce.")
+        }
+
+        // Weekly heavy/light wave (trainer audit: the same lift repeated
+        // at its top anchor every session, no undulation — the precedent
+        // for high-frequency lifting is daily load WAVING, not daily
+        // maxing): a lift keeps its top anchor at most twice a week;
+        // further exposures drop ~10%.
+        var topExposures: [UUID: Int] = [:]
+        for dayIndex in days.indices {
+            for exIndex in days[dayIndex].exercises.indices {
+                let e = days[dayIndex].exercises[exIndex]
+                guard e.isMain, let p = e.percentOfMax, p >= 80 else { continue }
+                let seen = topExposures[e.exerciseID, default: 0]
+                if seen >= 2 {
+                    days[dayIndex].exercises[exIndex].percentOfMax = max(60, p - 10)
+                } else {
+                    topExposures[e.exerciseID] = seen + 1
+                }
+            }
+        }
+
+        // Conditioning zone floor (trainer audit, GOAL FAILURE class: a
+        // conditioning focus with cardioDays=0 shipped zero zone work —
+        // the thing the session is FOR). Every conditioning lifting day
+        // ends in a zone-4 interval finisher unless dedicated cardio days
+        // already carry the load.
+        if inputs.focus == .conditioning, inputs.cardioDays == 0 {
+            let modality = usable.first { $0.category == "cardio" }
+                ?? catalog.first { $0.category == "cardio" }
+            if let modality {
+                for index in days.indices where days[index].exercises.contains(where: { $0.isMain }) {
+                    days[index].exercises.append(Exercise(
+                        exerciseID: modality.id, name: modality.name,
+                        sets: 1, repsLow: 0, repsHigh: 0,
+                        restSeconds: 0, percentOfMax: nil, isMain: false,
+                        slot: nil, cardioZone: 4, cardioMinutes: 12))
+                }
+                notes.append("Every conditioning session ends in a zone-4 interval finisher — the zone work IS the goal; the lifting holds muscle underneath it.")
+            }
+        }
 
         // Recovery ceiling (research pass): six hard days max — a 7-day
         // request gets six lifting days and day 7 converts to ACTIVE
@@ -192,8 +296,12 @@ enum ProgramGenerator {
             hardDayCount = GeneratorScience.maxConsecutiveHardDays
             notes.append("Six hard days is the ceiling — day 7 is active recovery. No trial shows a full rest day is required for muscle under rotation, but connective tissue, sleep, and burnout say otherwise (Meeusen 2013 consensus).")
         }
-        if split.filter({ $0 == GeneratorScience.DayKind.fullBody }).count >= 3 {
-            notes.append("Space full-body days across the week — 48 hours between sessions hitting the same muscles (muscle protein synthesis runs its course by ~48h in trained lifters).")
+        // Threshold ≥2 (trainer audit: the off-by-one left 2-day full-body
+        // weeks without the spacing reminder they need just as much) and
+        // arithmetically honest wording — five same-muscle days cannot all
+        // sit 48h apart, so the note asks for the possible, not the ideal.
+        if split.filter({ $0 == GeneratorScience.DayKind.fullBody }).count >= 2 {
+            notes.append("Space full-body days as evenly as the week allows — muscles want ~48 hours between sessions that hit them (muscle protein synthesis runs its course by ~48h in trained lifters).")
         }
 
         // Dedicated cardio (owner 2026-08-14): zone + MINUTES. When
@@ -233,6 +341,10 @@ enum ProgramGenerator {
                         days.append(Day(name: label, exercises: [cardioEntry]))
                     }
                 }
+                // Cardio periodizes too (trainer audit: flat zone work for
+                // 8 straight weeks has no recovery undulation while the
+                // lifting side waves and deloads).
+                notes.append("Progress the cardio like the lifting: add ~5 minutes or one interval every two weeks, and halve it on the deload week.")
             }
         }
 
@@ -365,10 +477,16 @@ enum ProgramGenerator {
 
     // MARK: Selection (the 8 rules, deterministic)
 
+    /// The label-key spelling for a focus (weightLoss → weight_loss).
+    static func focusScoreKey(_ focus: GeneratorScience.Focus) -> String {
+        focus == .weightLoss ? "weight_loss" : focus.rawValue
+    }
+
     static func select(slot: Slot, from catalog: [CatalogExercise],
                        excluding: Set<UUID>,
                        focus: GeneratorScience.Focus,
                        focusMuscles: Set<String>?,
+                       experience: GeneratorScience.Experience = .intermediate,
                        seed: Int = 0) -> CatalogExercise? {
         let candidates: [CatalogExercise]
         switch slot {
@@ -380,18 +498,33 @@ enum ProgramGenerator {
             }
         }
         guard !candidates.isEmpty else { return nil }
-        // Rule 2 + 6: FOCUS-AWARE equipment ladder for mains (barbell-first
-        // strength/hypertrophy, machine-first weight-loss/conditioning);
-        // rule 8: rank tiebreak (stable order).
+        // SCORE-FIRST selection (labels rewire, 2026-08-16): the swarm-
+        // authored focus_scores lead; the equipment ladder — formerly the
+        // primary rule — is now a tiebreak among equally-scored lifts.
+        // Order: penalty (unlabeled-catalog safety net) → complexity gate
+        // (soft: violators sort last, never leave a hole; owner law —
+        // gates by experience, never penalizes) → focus muscles →
+        // effectiveness score DESC → lengthened bias (hypertrophy
+        // accessories) → ladder → rank.
         let ladder = GeneratorScience.mainEquipmentLadder(focus: focus)
         let isMain: Bool
         if case .pattern(_, let main) = slot { isMain = main } else { isMain = false }
-        // The science-equivalence key: penalty class, focus standing, and
-        // equipment tier. Candidates sharing all three are interchangeable
-        // by every rule — exactly the pool the SEED may rotate within.
-        func tier(_ c: CatalogExercise) -> (Int, Int, Int) {
+        let cap = GeneratorScience.complexityCap(experience: experience)
+        let scoreKey = focusScoreKey(focus)
+        func tier(_ c: CatalogExercise) -> (Int, Int, Int, Int, Int, Int) {
             let pen = GeneratorScience.selectionPenalty(name: c.name)
+            // Unstable-surface safeguard (trainer audit: Bosu work
+            // auto-prescribed to a first-week trainee) — treated as
+            // complexity ≥4 regardless of label.
+            let lower = c.name.lowercased()
+            let effComplexity = (lower.contains("bosu") || lower.contains("stability ball"))
+                ? max(c.complexity, 4) : c.complexity
+            let gateViolation = effComplexity > cap ? 1 : 0
             let focusStanding = (focusMuscles?.contains(c.primaryMuscle) == true) ? 0 : 1
+            // Unscored rows sit at a neutral 5 — between cornerstone and
+            // filler — so a half-labeled catalog stays sane.
+            let score = c.focusScores[scoreKey] ?? 5
+            let stretch = (!isMain && focus == .hypertrophy && c.lengthenedBias) ? 0 : 1
             let lad: Int
             if isMain {
                 lad = ladder[c.equipment] ?? 5
@@ -401,7 +534,7 @@ enum ProgramGenerator {
                 let inverse = ["machine": 0, "cable": 0, "dumbbell": 1, "bodyweight": 2, "barbell": 3]
                 lad = inverse[c.equipment] ?? 4
             }
-            return (pen, focusStanding, lad)
+            return (pen, gateViolation, focusStanding, -score, stretch, lad)
         }
         let sorted = candidates.sorted { a, b in
             let ta = tier(a), tb = tier(b)
@@ -424,15 +557,33 @@ enum ProgramGenerator {
                              inputs: Inputs, setsPerExercise: Int) -> Exercise {
         let isMain: Bool
         if case .pattern(_, let main) = slot { isMain = main } else { isMain = false }
-        let repsLow = isMain ? band.mainRepsLow : band.accessoryRepsLow
+        var repsLow = isMain ? band.mainRepsLow : band.accessoryRepsLow
         var repsHigh = isMain ? band.mainRepsHigh : band.accessoryRepsHigh
         repsHigh += GeneratorScience.repRangeTopBonus(sex: inputs.sex, repsHigh: repsHigh)
+        // Rep-window clamp (labels): outside its sensible window a lift is
+        // unsafe or pointless (20-rep deadlifts, 3-rep lateral raises —
+        // trainer audit). Clamp the band into the exercise's window.
+        if let lo = ex.repMin, let hi = ex.repMax, lo > 0, hi >= lo {
+            repsLow = max(repsLow, lo)
+            repsHigh = min(repsHigh, hi)
+            if repsLow > repsHigh { repsLow = repsHigh }
+        }
         var rest = isMain ? band.mainRestSeconds : band.accessoryRestSeconds
         if !isMain { rest = max(30, rest + GeneratorScience.accessoryRestDelta(sex: inputs.sex)) }
-        // %1RM from the rep target's midpoint (reps-at-% table) — mains
-        // only; accessories run double progression without a % anchor.
-        let percent = isMain
-            ? GeneratorScience.percentFor(reps: (repsLow + repsHigh) / 2) : nil
+        // %1RM anchored to the RANGE TOP (trainer audit: the midpoint
+        // anchor printed 90% beside a 6-rep target the table itself says
+        // 90% cannot support) — the weight must carry the whole range.
+        // Then the EXPERIENCE CEILING (the audit's most-repeated critical:
+        // novices at 90% with no established max) and the unilateral
+        // derate (a balance-demanding substitute must not inherit a
+        // bilateral near-max prescription).
+        var percent: Double? = nil
+        if isMain {
+            var p = GeneratorScience.percentFor(reps: repsHigh)
+            p = min(p, GeneratorScience.mainIntensityCeiling(experience: inputs.experience))
+            if ex.unilateral { p = min(p, 80) }
+            percent = p
+        }
         return Exercise(exerciseID: ex.id, name: ex.name,
                         sets: setsPerExercise,
                         repsLow: repsLow, repsHigh: repsHigh,

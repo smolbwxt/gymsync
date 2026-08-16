@@ -361,6 +361,162 @@ final class ProgramGeneratorTests: XCTestCase {
         XCTAssertTrue(program.notes.contains { $0.contains("45-minute") })
     }
 
+    // MARK: - Trainer-audit rules (2026-08-16: 162-program corpus,
+    // 30 reviewers — every rule below traces to a repeated finding)
+
+    func testNoviceIntensityCeiling() {
+        let program = ProgramGenerator.generate(
+            inputs: inputs(focus: .strength, days: 3, experience: .new), catalog: catalog())
+        for day in program.days {
+            for ex in day.exercises where ex.isMain {
+                if let pct = ex.percentOfMax {
+                    XCTAssertLessThanOrEqual(pct, 72.5,
+                        "a new lifter is never opened near max (audit critical)")
+                }
+            }
+        }
+    }
+
+    func testPercentSupportsTheRepRangeTop() {
+        // The 90%-beside-6-reps contradiction: the anchor must carry the
+        // whole displayed range per the app's own reps-at-percent table.
+        let program = ProgramGenerator.generate(
+            inputs: inputs(focus: .strength, days: 3), catalog: catalog())
+        let main = program.days[0].exercises.first { $0.isMain }!
+        XCTAssertEqual(main.percentOfMax, GeneratorScience.percentFor(reps: main.repsHigh),
+                       "anchor = percentFor(range top), under the experience ceiling")
+    }
+
+    func testAxialStaggerWithinASession() {
+        let cat = catalog().map { c -> ProgramGenerator.CatalogExercise in
+            var c = c
+            if c.name == "Back Squat" || c.name == "Deadlift" { c.spinalLoad = 2 }
+            return c
+        }
+        let program = ProgramGenerator.generate(
+            inputs: inputs(focus: .strength, days: 4), catalog: cat)
+        let lower = program.days[1]
+        let axials = lower.exercises.filter { $0.isMain }.compactMap { $0.percentOfMax }
+        XCTAssertGreaterThanOrEqual(axials.count, 2)
+        XCTAssertEqual(axials[1], axials[0] - 10,
+                       "only one heavy-axial main keeps the session top anchor")
+    }
+
+    func testWeeklyHeavyLightWave() {
+        // 7-day strength = PPL x2 + FB: a lift third top exposure of the
+        // week drops ~10% (heavy/light waving, not daily maxing).
+        let program = ProgramGenerator.generate(
+            inputs: inputs(focus: .strength, days: 7), catalog: catalog())
+        var byLift: [UUID: [Double]] = [:]
+        for day in program.days {
+            for ex in day.exercises where ex.isMain {
+                if let pct = ex.percentOfMax { byLift[ex.exerciseID, default: []].append(pct) }
+            }
+        }
+        let tripled = byLift.values.first { $0.count >= 3 }
+        XCTAssertNotNil(tripled, "the 7-day split repeats some main 3x")
+        if let reps = tripled {
+            XCTAssertLessThan(reps[2], reps[0],
+                              "the third weekly exposure waves lighter")
+        }
+    }
+
+    func testConditioningAlwaysCarriesZoneWork() {
+        // GOAL-FAILURE class: conditioning with cardioDays=0 shipped zero
+        // zone work. Every conditioning lifting day now ends in a zone-4
+        // finisher.
+        let program = ProgramGenerator.generate(
+            inputs: inputs(focus: .conditioning, days: 3), catalog: cardioCatalog())
+        for day in program.days where day.exercises.contains(where: { $0.isMain }) {
+            XCTAssertEqual(day.exercises.last?.cardioZone, 4,
+                           "the zone work IS the conditioning goal")
+        }
+        XCTAssertTrue(program.notes.contains { $0.contains("zone-4") })
+    }
+
+    func testRepWindowClampsTheBand() {
+        let cat = catalog().map { c -> ProgramGenerator.CatalogExercise in
+            var c = c
+            if c.name == "Deadlift" { c.repMin = 1; c.repMax = 8 }
+            return c
+        }
+        // Weight-loss band is 8-15; a deadlift-like window caps it at 8.
+        let program = ProgramGenerator.generate(
+            inputs: inputs(focus: .weightLoss, days: 3), catalog: cat)
+        let deadlift = program.days.flatMap { $0.exercises }.first { $0.name == "Deadlift" }
+        XCTAssertNotNil(deadlift)
+        XCTAssertLessThanOrEqual(deadlift?.repsHigh ?? 99, 8,
+                                 "no 15-rep deadlifts — the label window clamps the band")
+    }
+
+    func testUnilateralMainDerates() {
+        var only = ProgramGenerator.CatalogExercise(
+            id: UUID(), name: "Bulgarian Split Squat", primaryMuscle: "quads",
+            secondaryMuscles: [], category: "compound", equipment: "dumbbell",
+            movementPattern: "squat", rank: 1)
+        only.unilateral = true
+        let picked = ProgramGenerator.prescription(
+            for: only, slot: .pattern("squat", main: true),
+            band: GeneratorScience.band(for: .strength),
+            inputs: ProgramGenerator.Inputs(focus: .strength, daysPerWeek: 3,
+                                            durationWeeks: 8, experience: .advanced),
+            setsPerExercise: 4)
+        XCTAssertLessThanOrEqual(picked.percentOfMax ?? 100, 80,
+            "a balance-demanding substitute never inherits a bilateral near-max anchor")
+    }
+
+    func testComplexityGatesByExperienceNeverPenalizes() {
+        var complexLift = ProgramGenerator.CatalogExercise(
+            id: UUID(uuidString: "00000000-0000-0000-0002-000000000001")!,
+            name: "Snatch-Grip Deadlift", primaryMuscle: "hamstrings",
+            secondaryMuscles: [], category: "compound", equipment: "barbell",
+            movementPattern: "hinge", rank: 1)
+        complexLift.complexity = 5
+        complexLift.focusScores = ["strength": 9]
+        var simpleLift = ProgramGenerator.CatalogExercise(
+            id: UUID(uuidString: "00000000-0000-0000-0002-000000000002")!,
+            name: "Machine Hip Hinge", primaryMuscle: "hamstrings",
+            secondaryMuscles: [], category: "compound", equipment: "machine",
+            movementPattern: "hinge", rank: 2)
+        simpleLift.complexity = 2
+        simpleLift.focusScores = ["strength": 7]
+        let pool = [complexLift, simpleLift]
+        let newbie = ProgramGenerator.select(
+            slot: .pattern("hinge", main: true), from: pool, excluding: [],
+            focus: .strength, focusMuscles: nil, experience: .new)
+        XCTAssertEqual(newbie?.name, "Machine Hip Hinge",
+                       "complexity 5 sits behind the gate for a new lifter")
+        let advanced = ProgramGenerator.select(
+            slot: .pattern("hinge", main: true), from: pool, excluding: [],
+            focus: .strength, focusMuscles: nil, experience: .advanced)
+        XCTAssertEqual(advanced?.name, "Snatch-Grip Deadlift",
+                       "complex + effective RISES for the advanced lifter (owner law)")
+        let onlyComplex = ProgramGenerator.select(
+            slot: .pattern("hinge", main: true), from: [complexLift], excluding: [],
+            focus: .strength, focusMuscles: nil, experience: .new)
+        XCTAssertNotNil(onlyComplex, "the gate is soft — it never leaves a hole")
+    }
+
+    func testFocusScoresOutrankEquipmentLadder() {
+        var scoredCable = ProgramGenerator.CatalogExercise(
+            id: UUID(uuidString: "00000000-0000-0000-0002-000000000003")!,
+            name: "Cable Pull-Through", primaryMuscle: "glutes",
+            secondaryMuscles: [], category: "compound", equipment: "cable",
+            movementPattern: "hinge", rank: 5)
+        scoredCable.focusScores = ["strength": 9]
+        var barbellLow = ProgramGenerator.CatalogExercise(
+            id: UUID(uuidString: "00000000-0000-0000-0002-000000000004")!,
+            name: "Barbell Odd Lift", primaryMuscle: "hamstrings",
+            secondaryMuscles: [], category: "compound", equipment: "barbell",
+            movementPattern: "hinge", rank: 1)
+        barbellLow.focusScores = ["strength": 3]
+        let picked = ProgramGenerator.select(
+            slot: .pattern("hinge", main: true), from: [scoredCable, barbellLow],
+            excluding: [], focus: .strength, focusMuscles: nil, experience: .advanced)
+        XCTAssertEqual(picked?.name, "Cable Pull-Through",
+                       "effectiveness score outranks the equipment ladder now")
+    }
+
     // MARK: - Selection demotions (owner field report 2026-08-15)
 
     /// The exact bug: "Assisted Pull-Up Machine" is alphabetically first
