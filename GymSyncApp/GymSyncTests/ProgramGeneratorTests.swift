@@ -403,10 +403,13 @@ final class ProgramGeneratorTests: XCTestCase {
     }
 
     func testWeeklyHeavyLightWave() {
-        // 7-day strength = PPL x2 + FB: a lift third top exposure of the
-        // week drops ~10% (heavy/light waving, not daily maxing).
+        // 3-day strength = full-body x3, mains repeating on every session
+        // (the frequency law): the THIRD top exposure of the week drops
+        // ~10% (heavy/light waving, not daily maxing). The 7-day split
+        // can't test this — its recovery ceiling converts day 7, leaving
+        // every lift at two exposures.
         let program = ProgramGenerator.generate(
-            inputs: inputs(focus: .strength, days: 7), catalog: catalog())
+            inputs: inputs(focus: .strength, days: 3), catalog: catalog())
         var byLift: [UUID: [Double]] = [:]
         for day in program.days {
             for ex in day.exercises where ex.isMain {
@@ -414,7 +417,7 @@ final class ProgramGeneratorTests: XCTestCase {
             }
         }
         let tripled = byLift.values.first { $0.count >= 3 }
-        XCTAssertNotNil(tripled, "the 7-day split repeats some main 3x")
+        XCTAssertNotNil(tripled, "full-body x3 repeats every main 3x")
         if let reps = tripled {
             XCTAssertLessThan(reps[2], reps[0],
                               "the third weekly exposure waves lighter")
