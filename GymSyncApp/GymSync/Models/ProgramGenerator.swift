@@ -559,7 +559,6 @@ enum ProgramGenerator {
         if case .pattern(_, let main) = slot { isMain = main } else { isMain = false }
         var repsLow = isMain ? band.mainRepsLow : band.accessoryRepsLow
         var repsHigh = isMain ? band.mainRepsHigh : band.accessoryRepsHigh
-        repsHigh += GeneratorScience.repRangeTopBonus(sex: inputs.sex, repsHigh: repsHigh)
         // Rep-window clamp (labels): outside its sensible window a lift is
         // unsafe or pointless (20-rep deadlifts, 3-rep lateral raises —
         // trainer audit). Clamp the band into the exercise's window.
@@ -568,6 +567,14 @@ enum ProgramGenerator {
             repsHigh = min(repsHigh, hi)
             if repsLow > repsHigh { repsLow = repsHigh }
         }
+        // The %1RM anchor derives from the SEX-NEUTRAL range top: the
+        // female rep-top bonus widens the range (fatigue-resistance
+        // physiology), and must never lighten the load zone — zones are
+        // identical by sex, the parity law (Roberts et al. 2020). CI
+        // caught exactly this drift when the anchor briefly followed the
+        // bonused top.
+        let anchorReps = repsHigh
+        repsHigh += GeneratorScience.repRangeTopBonus(sex: inputs.sex, repsHigh: repsHigh)
         var rest = isMain ? band.mainRestSeconds : band.accessoryRestSeconds
         if !isMain { rest = max(30, rest + GeneratorScience.accessoryRestDelta(sex: inputs.sex)) }
         // %1RM anchored to the RANGE TOP (trainer audit: the midpoint
@@ -579,7 +586,7 @@ enum ProgramGenerator {
         // bilateral near-max prescription).
         var percent: Double? = nil
         if isMain {
-            var p = GeneratorScience.percentFor(reps: repsHigh)
+            var p = GeneratorScience.percentFor(reps: anchorReps)
             p = min(p, GeneratorScience.mainIntensityCeiling(experience: inputs.experience))
             if ex.unilateral { p = min(p, 80) }
             percent = p
