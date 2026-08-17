@@ -1,0 +1,17 @@
+# Working material only — never committed.
+#
+# corpus/      channel catalogs (regenerate: python enumerate.py)
+# transcripts/ fetched transcripts, the swarm's raw input
+# queue.json   the ranked fetch queue (regenerate: python select.py)
+#
+# The DELIVERABLE is the distilled evidence the swarm produces from these —
+# claims, their sourcing, and what they change in the generator — which lives
+# in docs/science/ and is committed there.
+corpus/
+transcripts/
+queue.json
+claims/
+archive/
+probes/
+mentions.json
+_raw/
