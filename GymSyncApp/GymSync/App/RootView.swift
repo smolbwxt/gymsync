@@ -379,6 +379,14 @@ private struct MainTabView: View {
             // is guaranteed to be readable for the signed-in user.
             await ThemeStore.shared.load()
         }
+        .task {
+            // Coach-generated blocks live in `program_templates`, but
+            // `enrollment.template` resolves synchronously on a hot path
+            // (WorkingWeight rung 1). Load them into the registry once here so
+            // an enrolled generated block actually progresses week to week —
+            // without this it resolves nil and silently runs as a static week.
+            await ProgramTemplateStore.shared.load()
+        }
         .onPreferenceChange(GSHidesDock.self) { hides in
             withAnimation(.easeInOut(duration: 0.2)) {
                 isDockHidden = hides

@@ -367,6 +367,58 @@ struct CoachWizardView: View {
 
     // MARK: - Generate + create
 
+    /// Enroll the lifter in the block Coach just generated, so the weekly
+    /// wave actually reaches their prescriptions.
+    ///
+    /// Focus lifts are the program's MAIN lifts — supplied programmatically
+    /// (the `.generated` focus rule) rather than picked in the bundled
+    /// enrollment UI. Baselines are each lift's best qualifying set from the
+    /// last 180 days, using the same estimator the session suggestions use so
+    /// the two can never disagree. A lift with no history simply gets no
+    /// baseline: `WorkingWeight` then falls through to its other rungs rather
+    /// than inventing a number.
+    ///
+    /// Best-effort throughout — the day routines are the deliverable, and a
+    /// failed enrollment must not cost the lifter their program.
+    @MainActor
+    private func enrollGenerated(row: ProgramTemplateRow,
+                                 weeks: [ProgramWeek],
+                                 program: ProgramGenerator.Program) async {
+        guard let userID = appState.currentProfile?.id else { return }
+        let mainLiftIDs = Array(Set(program.days
+            .flatMap(\.exercises)
+            .filter { $0.isMain && $0.cardioZone == nil }
+            .map(\.exerciseID)))
+        guard !mainLiftIDs.isEmpty else { return }
+
+        var baselines: [String: Double] = [:]
+        if let since = Calendar.current.date(byAdding: .day, value: -180, to: .now),
+           let logs = try? await SessionRepository.recentSetLogs(userID: userID, since: since) {
+            let byExercise = Dictionary(grouping: logs, by: \.exerciseID)
+            for id in mainLiftIDs {
+                guard let history = byExercise[id],
+                      let best = WorkingWeight.bestQualifyingSet(in: history) else { continue }
+                let oneRM = StatMath.estimatedOneRepMax(weight: best.weight, reps: best.reps)
+                baselines[id.uuidString.lowercased()] = NSDecimalNumber(decimal: oneRM).doubleValue
+            }
+        }
+
+        // Register before enrolling so `enrollment.template` resolves on this
+        // launch — the store otherwise only loads generated blocks at startup.
+        let template = ProgramTemplate(row: row, weeks: weeks)
+        ProgramTemplateStore.shared.register([template])
+
+        // One active enrollment per lifter (partial unique index). Generating
+        // a new block is an explicit replacement, so retire the old one.
+        if let active = try? await ProgramRepository.active(), active.endedAt == nil {
+            try? await ProgramRepository.end(enrollmentID: active.id, reason: "abandoned")
+        }
+        _ = try? await ProgramRepository.enroll(
+            template: template,
+            focus: ProgramFocus(exerciseIDs: mainLiftIDs),
+            baseline: baselines)
+    }
+
     private func generatePreview() {
         let catalog = allExercises.enumerated().map { index, ex in
             ProgramGenerator.CatalogExercise(
@@ -458,13 +510,21 @@ struct CoachWizardView: View {
             // the day routines above are the deliverable; a missed row
             // just means no queue card.
             let focusKind = focus == .weightLoss ? "weight_loss" : focus.rawValue
-            _ = try? await ProgramTemplateRepository.saveGenerated(
+            let weekPlan = ProgramGenerator.weekSummaries(program)
+            let savedRow = try? await ProgramTemplateRepository.saveGenerated(
                 name: "Coach · \(label(for: focus.rawValue)) · \(days)-day",
                 summary: "Generated \(duration)-week \(label(for: focus.rawValue).lowercased()) block — \(days) lifting days a week.",
                 focusKind: focusKind,
                 sessionsPerWeek: days,
                 durationWeeks: duration,
-                weeks: ProgramGenerator.weekSummaries(program))
+                weeks: weekPlan)
+            // ENROLL the block we just generated. Without this the week-over-
+            // week machinery never engages: WorkingWeight rung 1 reads
+            // `enrollment.template.weeks[currentWeek-1]`, so an unenrolled
+            // Coach block is one static week repeated for the whole duration.
+            if let savedRow, !weekPlan.isEmpty {
+                await enrollGenerated(row: savedRow, weeks: weekPlan, program: program)
+            }
             errorText = nil
             onCreated?()
             dismiss()

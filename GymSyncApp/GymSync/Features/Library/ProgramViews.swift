@@ -508,7 +508,7 @@ struct ProgramTemplateDetailView: View {
             return [selectedMain, selectedLift2, selectedLift3].compactMap { $0 }
         case .liftPlusAccessory:
             return [selectedMain, selectedAccessory].compactMap { $0 }
-        case .muscleGroup:
+        case .muscleGroup, .generated:
             return []
         }
     }
@@ -548,6 +548,10 @@ struct ProgramTemplateDetailView: View {
                   main.id != accessory.id else { return false }
             return !isPercentBased
                 || (baseline(for: main) != nil && baseline(for: accessory) != nil)
+        case .generated:
+            // Coach supplies its own focus lifts and baselines at generation
+            // time; a generated block is never enrolled through this picker.
+            return false
         }
     }
 
@@ -670,6 +674,10 @@ struct ProgramTemplateDetailView: View {
                 exercisePickRow(label: "Accessory", selection: selectedAccessory) { pickerTarget = .accessory }
             case .muscleGroup:
                 musclePicker
+            case .generated:
+                // Unreachable in practice — a generated block carries its own
+                // focus lifts, so it never reaches the manual picker.
+                EmptyView()
             }
         }
     }
@@ -834,6 +842,8 @@ struct ProgramTemplateDetailView: View {
                 : allExercises
         case .muscleGroup:
             return allExercises
+        case .generated:
+            return []
         }
     }
 
@@ -883,6 +893,9 @@ struct ProgramTemplateDetailView: View {
                     baselineDict[exercise.id.uuidString.lowercased()] = NSDecimalNumber(decimal: est).doubleValue
                 }
             }
+        case .generated:
+            // Guarded by `canEnroll` above; Coach enrolls its own blocks.
+            return
         }
         do {
             _ = try await ProgramRepository.enroll(template: template, focus: focus, baseline: baselineDict)

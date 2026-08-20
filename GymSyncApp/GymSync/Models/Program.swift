@@ -21,6 +21,12 @@ enum ProgramFocusRule: Sendable {
     /// A muscle-group emphasis (Hypertrophy Block) — no per-lift baseline;
     /// weeks are volume-driven (`percentOfBaseline == nil`).
     case muscleGroup
+    /// A Coach-generated block. Focus lifts and baselines are supplied
+    /// PROGRAMMATICALLY at generation time (the generator already knows its
+    /// own main lifts), so this rule never appears in the manual enrollment
+    /// picker — it exists so a generated template can resolve through the
+    /// same machinery the bundled ones use.
+    case generated
 }
 
 struct ProgramWeek: Sendable {
@@ -122,7 +128,78 @@ struct ProgramTemplate: Identifiable, Sendable {
     ]
 
     static func bySlug(_ slug: String) -> ProgramTemplate? {
-        all.first { $0.slug == slug }
+        ProgramTemplateStore.shared.template(slug: slug)
+    }
+
+}
+
+extension ProgramTemplate {
+    /// A Coach-generated block, rebuilt from its persisted row + week
+    /// summaries so it can drive the SAME progression machinery the bundled
+    /// templates use (`WorkingWeight` rung 1 reads `template.weeks[week-1]`).
+    ///
+    /// Declared in an EXTENSION on purpose: a custom init inside the struct
+    /// body would suppress the memberwise initializer that
+    /// `ProgramTemplate.all` is built with.
+    init(row: ProgramTemplateRow, weeks: [ProgramWeek]) {
+        self.init(slug: row.slug, name: row.name, summary: row.summary,
+                  weeks: weeks, focusRule: .generated,
+                  sessionsPerWeek: row.sessionsPerWeek)
+    }
+}
+
+// MARK: - ProgramTemplateStore
+//
+// Templates come from two places now: the three bundled ones defined in code
+// above, and Coach-generated blocks persisted to `program_templates`
+// (20260814000009). `ProgramEnrollment.template` is a synchronous computed
+// property on a hot path (`WorkingWeight.suggest`), so DB-backed templates
+// are LOADED ONCE into this registry rather than fetched at lookup time.
+//
+// Before this existed, `bySlug` searched the code list only — which meant a
+// Coach block could be enrolled and then silently fail to progress, because
+// `enrollment.template` returned nil and the weekly-percent rung never fired.
+final class ProgramTemplateStore: @unchecked Sendable {
+    static let shared = ProgramTemplateStore()
+
+    private let lock = NSLock()
+    private var registry: [String: ProgramTemplate]
+
+    private init() {
+        registry = Dictionary(uniqueKeysWithValues:
+            ProgramTemplate.all.map { ($0.slug, $0) })
+    }
+
+    func template(slug: String) -> ProgramTemplate? {
+        lock.lock()
+        defer { lock.unlock() }
+        return registry[slug]
+    }
+
+    /// Register generated templates. Bundled slugs are never overwritten —
+    /// code is the source of truth for the curated three.
+    func register(_ templates: [ProgramTemplate]) {
+        lock.lock()
+        defer { lock.unlock() }
+        let bundled = Set(ProgramTemplate.all.map(\.slug))
+        for template in templates where !bundled.contains(template.slug) {
+            registry[template.slug] = template
+        }
+    }
+
+    /// Load the signed-in lifter's generated blocks so their enrollments
+    /// resolve. Best-effort: a failure leaves the bundled three working.
+    @discardableResult
+    func load() async -> Int {
+        guard let rows = try? await ProgramTemplateRepository.mine() else { return 0 }
+        var built: [ProgramTemplate] = []
+        for row in rows {
+            let weeks = (try? await ProgramTemplateRepository.weeks(templateID: row.id)) ?? []
+            guard !weeks.isEmpty else { continue }   // no weeks, no progression
+            built.append(ProgramTemplate(row: row, weeks: weeks))
+        }
+        register(built)
+        return built.count
     }
 }
 
