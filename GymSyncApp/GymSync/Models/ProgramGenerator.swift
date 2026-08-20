@@ -267,6 +267,27 @@ enum ProgramGenerator {
             }
         }
 
+        // Per-muscle weekly volume accounting (corpus audit 2026-08: the
+        // generator budgeted volume per SLOT and never counted what a week
+        // actually delivers to each muscle — `secondaryMuscles` was
+        // declared and never read, so a hypertrophy upper/lower handed
+        // triceps ~17 effective sets against the 12-20 band while chest
+        // got ~10). Runs before cardio/recovery days join, so only real
+        // lifting volume is counted.
+        let balanced = balanceWeeklyVolume(days: days, catalog: catalog,
+                                           low: weekly.low, high: weekly.high)
+        days = balanced.days
+        if balanced.trimmed > 0 || balanced.added > 0 {
+            var parts: [String] = []
+            if balanced.trimmed > 0 {
+                parts.append("trimmed \(balanced.trimmed) accessory set\(balanced.trimmed == 1 ? "" : "s") from over-covered muscles (indirect volume from compounds counts — half a set per secondary muscle)")
+            }
+            if balanced.added > 0 {
+                parts.append("added \(balanced.added) set\(balanced.added == 1 ? "" : "s") where a trained muscle fell under the weekly floor")
+            }
+            notes.append("Weekly volume balanced per muscle: " + parts.joined(separator: "; ") + ".")
+        }
+
         // Conditioning zone floor (trainer audit, GOAL FAILURE class: a
         // conditioning focus with cardioDays=0 shipped zero zone work —
         // the thing the session is FOR). Every conditioning lifting day
@@ -650,6 +671,91 @@ enum ProgramGenerator {
     }
 
     // MARK: Helpers
+
+    /// Effective weekly sets per muscle across lifting days. Fractional
+    /// counting — a set counts 1.0 for the primary muscle and 0.5 per
+    /// secondary — the convention the volume literature's set counts use.
+    /// Keys are lowercased muscle names; cardio entries contribute nothing.
+    static func weeklyMuscleSets(days: [Day],
+                                 catalog: [CatalogExercise]) -> [String: Double] {
+        let byID = Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, $0) })
+        var tally: [String: Double] = [:]
+        for day in days {
+            for e in day.exercises where e.cardioZone == nil {
+                guard let cat = byID[e.exerciseID] else { continue }
+                tally[cat.primaryMuscle.lowercased(), default: 0] += Double(e.sets)
+                for muscle in cat.secondaryMuscles {
+                    tally[muscle.lowercased(), default: 0] += Double(e.sets) * 0.5
+                }
+            }
+        }
+        return tally
+    }
+
+    /// Week-level volume post-pass. FLOOR first: a muscle the plan trains
+    /// as a PRIMARY somewhere but leaves under the weekly band's low end
+    /// gains accessory sets (cap 5/exercise). CEILING second — and last,
+    /// so the floor pass can never re-break it, because the ceiling is
+    /// the hard promise (the confirmed defect was overshoot): over-covered
+    /// muscles lose accessory sets (floor 2/exercise). Mains are NEVER
+    /// touched in either direction — slot logic owns them. Muscles that
+    /// appear only as secondaries get no floor: incidental volume is not
+    /// a training commitment. Deterministic: muscles alphabetical, adds to
+    /// the first qualifying accessory, trims from the last.
+    static func balanceWeeklyVolume(
+        days: [Day], catalog: [CatalogExercise], low: Int, high: Int
+    ) -> (days: [Day], trimmed: Int, added: Int) {
+        let byID = Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, $0) })
+        var days = days
+        var trimmed = 0, added = 0
+
+        func primaryOf(_ e: Exercise) -> String? {
+            guard e.cardioZone == nil else { return nil }
+            return byID[e.exerciseID]?.primaryMuscle.lowercased()
+        }
+        // (dayIndex, exIndex) of accessories whose primary is `muscle`,
+        // in program order.
+        func accessorySites(for muscle: String) -> [(Int, Int)] {
+            var sites: [(Int, Int)] = []
+            for d in days.indices {
+                for x in days[d].exercises.indices {
+                    let e = days[d].exercises[x]
+                    if !e.isMain, primaryOf(e) == muscle { sites.append((d, x)) }
+                }
+            }
+            return sites
+        }
+        let primaryTrained = Set(days.flatMap(\.exercises).compactMap(primaryOf))
+
+        // FLOOR
+        for muscle in primaryTrained.sorted() {
+            var guardRail = 32
+            while weeklyMuscleSets(days: days, catalog: catalog)[muscle, default: 0]
+                    < Double(low), guardRail > 0 {
+                guardRail -= 1
+                guard let (d, x) = accessorySites(for: muscle)
+                        .first(where: { days[$0.0].exercises[$0.1].sets < 5 })
+                else { break }
+                days[d].exercises[x].sets += 1
+                added += 1
+            }
+        }
+        // CEILING
+        let allMuscles = weeklyMuscleSets(days: days, catalog: catalog).keys.sorted()
+        for muscle in allMuscles {
+            var guardRail = 32
+            while weeklyMuscleSets(days: days, catalog: catalog)[muscle, default: 0]
+                    > Double(high), guardRail > 0 {
+                guardRail -= 1
+                guard let (d, x) = accessorySites(for: muscle)
+                        .last(where: { days[$0.0].exercises[$0.1].sets > 2 })
+                else { break }
+                days[d].exercises[x].sets -= 1
+                trimmed += 1
+            }
+        }
+        return (days, trimmed, added)
+    }
 
     private static func setsPerSlot(slot: Slot, perDayBudget: Int) -> Int {
         if case .pattern(_, true) = slot { return max(3, min(5, perDayBudget)) }
