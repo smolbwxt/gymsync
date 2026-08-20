@@ -74,10 +74,30 @@ jobs:
               | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' | head -1)
           fi
           echo "Using simulator UDID: $DEST"
-          xcodebuild test \
-            -project GymSync.xcodeproj \
-            -scheme GymSync \
-            -destination "id=$DEST"
+          # Fast-fail retry (2026-08-20): two consecutive runs died in
+          # under 3 minutes to runner infrastructure — an xcodebuild
+          # SIGSEGV at destination selection, then a corrupt SPM PIF
+          # cache — before compiling anything. Real compile/test failures
+          # take 20+ minutes here, so a failure faster than 5 minutes is
+          # near-certainly infrastructure: clear DerivedData and retry
+          # once. Slow failures propagate immediately — genuine breakage
+          # never pays a double run.
+          run_tests() {
+            xcodebuild test \
+              -project GymSync.xcodeproj \
+              -scheme GymSync \
+              -destination "id=$DEST"
+          }
+          START=$(date +%s)
+          if run_tests; then exit 0; fi
+          ELAPSED=$(( $(date +%s) - START ))
+          if [ "$ELAPSED" -lt 300 ]; then
+            echo "::warning::xcodebuild failed in ${ELAPSED}s — infra-class failure, clearing caches and retrying once"
+            rm -rf ~/Library/Developer/Xcode/DerivedData
+            run_tests
+          else
+            exit 1
+          fi
 
   # CI simulator-screenshot pipeline (infra/ci-screenshots): builds the
   # GymSyncScreenshots scheme (GymSyncUITests only — never the unit-test
