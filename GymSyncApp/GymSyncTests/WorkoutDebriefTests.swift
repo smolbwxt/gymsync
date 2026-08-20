@@ -132,7 +132,8 @@ final class WorkoutDebriefTests: XCTestCase {
         let sentence = DebriefBuilder.trendSentence(name: "Squat", logs: logs)
         XCTAssertTrue(sentence.contains("Squat: estimated 1RM"))
         XCTAssertTrue(sentence.contains("across 3 sessions"))
-        XCTAssertTrue(sentence.contains("+"), "a rising trend states its delta")
+        XCTAssertTrue(sentence.contains("+"),
+                      "a rising trend states its delta — got: \(sentence)")
         XCTAssertFalse(sentence.contains("?"), "display-ready, no placeholders")
     }
 

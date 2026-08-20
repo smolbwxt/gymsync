@@ -56,6 +56,10 @@ enum ProgramGenerator {
         /// sport_prep in season: practice and games are recovery debits —
         /// intensity capped, nothing near max.
         var inSeason: Bool = false
+        /// conservative | standard | aggressive — shifts the %1RM anchor
+        /// (audit 2026-08-20: previously a dead knob; the experience
+        /// ceiling still has the last word).
+        var intensityAppetite: String = "standard"
         /// Dedicated cardio days appended after the lifting split
         /// (owner 2026-08-14) — prescribed as zone + MINUTES. When
         /// lifting + cardio exceed 7 calendar days, the overflow PAIRS
@@ -208,9 +212,19 @@ enum ProgramGenerator {
             let name = dayName(kind: kind, index: index, split: split)
             var chosen: [Exercise] = []
             var alreadyChosen = Set<UUID>()
+            // Bounded explosive emphasis (audit 2026-08-20: the firefighter
+            // got ALL-plyometric mains and zero strength): the lens may
+            // claim at most ONE main slot per day — the explosive-first
+            // slot the session sort already honors. Accessories never
+            // take the boost.
+            var explosiveBudget = inputs.personaLens?.explosiveEmphasis == true ? 1 : 0
             for slot in slots(for: kind, focus: inputs.focus) {
                 let isMainSlot: Bool
                 if case .pattern(_, let main) = slot { isMainSlot = main } else { isMainSlot = false }
+                var slotLens = inputs.personaLens
+                if slotLens?.explosiveEmphasis == true, !isMainSlot || explosiveBudget == 0 {
+                    slotLens?.explosiveEmphasis = false
+                }
                 let exclusions = isMainSlot ? alreadyChosen : alreadyChosen.union(usedAccessories)
                 var pick = select(slot: slot, from: usable,
                                   excluding: exclusions,
@@ -221,7 +235,7 @@ enum ProgramGenerator {
                                   tilt: inputs.selectionTilt,
                                   cautionJoints: inputs.cautionJoints,
                                   axialBoost: inputs.axialBoost,
-                                  lens: inputs.personaLens,
+                                  lens: slotLens,
                                   deprioritized: inputs.deprioritizedExerciseIDs)
                 if pick == nil, !isMainSlot {
                     // Accessory pool exhausted — repeats beat holes.
@@ -234,10 +248,11 @@ enum ProgramGenerator {
                                   tilt: inputs.selectionTilt,
                                   cautionJoints: inputs.cautionJoints,
                                   axialBoost: inputs.axialBoost,
-                                  lens: inputs.personaLens,
+                                  lens: slotLens,
                                   deprioritized: inputs.deprioritizedExerciseIDs)
                 }
                 guard let pick else { continue }
+                if pick.explosive, isMainSlot { explosiveBudget = 0 }
                 alreadyChosen.insert(pick.id)
                 if !isMainSlot { usedAccessories.insert(pick.id) }
                 var sets = setsPerSlot(slot: slot, perDayBudget: perDayBudget)
@@ -294,6 +309,19 @@ enum ProgramGenerator {
                 while estimatedMinutes(chosen) > cap, chosen.count > 1,
                       let lastAccessory = chosen.lastIndex(where: { !$0.isMain }) {
                     chosen.remove(at: lastAccessory)
+                    trimmedForTime = true
+                }
+                // Accessories exhausted and STILL over: reduce main sets
+                // (floor 3) before surrendering. Audit 2026-08-20: the
+                // 40-minute parent got 75-minute sessions because three
+                // individually-correct rules composed — cap trims only
+                // accessories, minimalist had already removed them, and
+                // low-frequency added a set to every main.
+                while estimatedMinutes(chosen) > cap,
+                      let heaviest = chosen.indices
+                          .filter({ chosen[$0].isMain && chosen[$0].sets > 3 })
+                          .max(by: { chosen[$0].sets < chosen[$1].sets }) {
+                    chosen[heaviest].sets -= 1
                     trimmedForTime = true
                 }
             }
@@ -744,7 +772,17 @@ enum ProgramGenerator {
                 let inverse = ["machine": 0, "cable": 0, "dumbbell": 1, "bodyweight": 2, "barbell": 3]
                 lad = inverse[c.equipment] ?? 4
             }
-            return (pen, gates, focusStanding, -score, stretch, lad)
+            // Novice simplicity preference (audit 2026-08-20, the Pendlay
+            // finding): for a NEW lifter, simpler wins among viable
+            // candidates BEFORE the score — no boost may promote a
+            // technical lift over a simple one on day one. The axial
+            // boost still works, but only among equally simple choices.
+            // Zero for everyone else, so ordering is unchanged past novice.
+            let simplicity = experience == .new ? effComplexity : 0
+            // stretch*8+lad merges two tiebreaks into one component
+            // (Swift compares tuples only to arity 6); stretch dominates
+            // since lad <= 5 — ordering identical to the old pair.
+            return (pen, gates, focusStanding, simplicity, -score, stretch * 8 + lad)
         }
         let sorted = candidates.sorted { a, b in
             let ta = tier(a), tb = tier(b)
@@ -769,6 +807,14 @@ enum ProgramGenerator {
         if case .pattern(_, let main) = slot { isMain = main } else { isMain = false }
         var repsLow = isMain ? band.mainRepsLow : band.accessoryRepsLow
         var repsHigh = isMain ? band.mainRepsHigh : band.accessoryRepsHigh
+        // Novice on-ramp rep floor (audit 2026-08-20): triples are a
+        // SKILL — a new lifter under a strength-flavored band opens at
+        // 5-8, not 3-6. Fives teach the pattern; heavier waits for the
+        // graduation probe.
+        if inputs.experience == .new, isMain, repsLow < 5 {
+            repsLow = 5
+            repsHigh = max(repsHigh, 8)
+        }
         // Rep-window clamp (labels): outside its sensible window a lift is
         // unsafe or pointless (20-rep deadlifts, 3-rep lateral raises —
         // trainer audit). Clamp the band into the exercise's window.
@@ -796,10 +842,28 @@ enum ProgramGenerator {
         // bilateral near-max prescription).
         var percent: Double? = nil
         if isMain {
-            var p = GeneratorScience.percentFor(reps: anchorReps)
-            p = min(p, GeneratorScience.mainIntensityCeiling(experience: inputs.experience))
-            if ex.unilateral { p = min(p, 80) }
-            percent = p
+            if ex.explosive, ex.equipment != "barbell" {
+                // A cone hop has no meaningful 1RM — explosive bodyweight
+                // and implement drills carry NO percent anchor (audit
+                // 2026-08-20: "@80%" printed on hurdle hops).
+                percent = nil
+            } else {
+                var p = GeneratorScience.percentFor(reps: anchorReps)
+                // Power work lives at 30-60% 1RM — bar speed IS the
+                // stimulus; a heavy explosive lift is just a slow lift.
+                if ex.explosive { p = min(p, 60) }
+                // intensityAppetite finally consumed (audit: the dead
+                // knob): conservative eases the anchor, aggressive nudges
+                // it — the experience ceiling still has the last word.
+                switch inputs.intensityAppetite {
+                case "conservative": p -= 5
+                case "aggressive": p += 2.5
+                default: break
+                }
+                p = min(p, GeneratorScience.mainIntensityCeiling(experience: inputs.experience))
+                if ex.unilateral { p = min(p, 80) }
+                percent = max(50, p)
+            }
         }
         return Exercise(exerciseID: ex.id, name: ex.name,
                         sets: setsPerExercise,

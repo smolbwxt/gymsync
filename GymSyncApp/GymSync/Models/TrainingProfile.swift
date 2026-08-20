@@ -100,6 +100,15 @@ struct TrainingProfile: Codable, Equatable, Sendable {
         }
     }
     var trainingAge: TrainingAge = .intermediate
+    /// Sex, for the evidence-scaled adjustments the generator already
+    /// carries (female rep-top bonus, accessory rest delta, volume
+    /// ceiling nudge). Stored as the raw string so the profile's Codable
+    /// schema never depends on another type's conformances.
+    var sexRaw: String = GeneratorScience.Sex.unspecified.rawValue
+    var sex: GeneratorScience.Sex {
+        get { GeneratorScience.Sex(rawValue: sexRaw) ?? .unspecified }
+        set { sexRaw = newValue.rawValue }
+    }
     /// under18 | adult | middle | senior — age shapes defaults (a senior
     /// prior weights bone_density and cardio_health), never gates.
     var ageBand: String? = nil
@@ -269,10 +278,16 @@ struct TrainingProfile: Codable, Equatable, Sendable {
             })
         inputs.axialBoost = wantsAxialLoading
         inputs.inSeason = inSeason
+        inputs.sex = sex
+        inputs.intensityAppetite = intensityAppetite
         // The chosen coach's selection stances ride along — the persona
         // reaches the generator ONLY through profile fields and this lens;
-        // there is no persona code path.
-        inputs.personaLens = CoachPersona.bySlug(persona)?.lens
+        // there is no persona code path. A power_rfd DOMINANT goal grants
+        // the (bounded) explosive emphasis itself — the footballer gets
+        // jumps without needing the Hybrid coach (audit 2026-08-20).
+        var lens = CoachPersona.bySlug(persona)?.lens ?? CoachPersona.Lens()
+        if dominantGoal == .powerRFD { lens.explosiveEmphasis = true }
+        inputs.personaLens = lens
         return inputs
     }
 }

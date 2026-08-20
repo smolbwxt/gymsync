@@ -228,6 +228,137 @@ final class CoachAuditDumpTests: XCTestCase {
         }
     }
 
+    /// Round 2 (owner: "add 20 more cases on top — let's get wide and see
+    /// where we fail"): adversarial breadth — rule interactions, equipment
+    /// extremes, heavy exclusion loads, weight-only goals as dominants,
+    /// persona-preference conflicts, stacked constraints.
+    func testDumpTwentyMoreAthletes() throws {
+        let catalog = try loadCatalog()
+        var athletes: [Athlete] = []
+
+        func make(_ label: String, _ story: String,
+                  _ build: (inout TrainingProfile) -> Void,
+                  persona: String? = nil, weeks: Int = 8,
+                  cardioDays: Int = 0, cardioMinutes: Int = 20,
+                  fillWeek: Bool = false) {
+            var profile = TrainingProfile()
+            build(&profile)
+            if let persona, let coach = CoachPersona.bySlug(persona) {
+                profile = coach.apply(to: profile)
+            }
+            athletes.append(Athlete(label: label, story: story, profile: profile,
+                                    persona: persona, durationWeeks: weeks,
+                                    cardioDays: cardioDays,
+                                    cardioMinutes: cardioMinutes,
+                                    fillWeek: fillWeek))
+        }
+
+        make("A21-one-day-week", "can only train Saturdays, wants muscle anyway") {
+            $0.rankedGoals = [.hypertrophy]; $0.daysPerWeek = 1
+        }
+        make("A22-calendar-overflow", "6 lifting days AND 4 cardio days AND fill the week", {
+            $0.rankedGoals = [.hypertrophy, .conditioning]; $0.daysPerWeek = 6
+        }, cardioDays: 4, cardioMinutes: 25, fillWeek: true)
+        make("A23-bodyweight-only", "no equipment at all, hypertrophy, 4 days") {
+            $0.rankedGoals = [.hypertrophy]; $0.daysPerWeek = 4
+            $0.equipment = ["bodyweight"]
+        }
+        make("A24-kettlebell-only", "one kettlebell, general health, 3 days") {
+            $0.rankedGoals = [.generalHealth]; $0.daysPerWeek = 3
+            $0.equipment = ["kettlebell", "bodyweight"]
+        }
+        make("A25-conditioning-minimalist", "wants conditioning but only 3 lifts a session", {
+            $0.rankedGoals = [.conditioning]; $0.daysPerWeek = 3
+            $0.sessionStructure = .minimalist
+            $0.provenance["sessionStructure"] = .stated
+        })
+        make("A26-power-bro", "power athlete who insists on a bodypart split") {
+            $0.rankedGoals = [.powerRFD]; $0.daysPerWeek = 5
+            $0.split = .bro
+            $0.provenance["split"] = .stated
+        }
+        make("A27-eager-novice", "brand new and wants to go HARD (aggressive appetite)") {
+            $0.trainingAge = .novice
+            $0.rankedGoals = [.maxStrength]; $0.daysPerWeek = 4
+            $0.intensityAppetite = "aggressive"
+        }
+        make("A28-cautious-veteran", "advanced lifter easing back in (conservative)") {
+            $0.trainingAge = .advanced
+            $0.rankedGoals = [.maxStrength]; $0.daysPerWeek = 4
+            $0.intensityAppetite = "conservative"
+        }
+        make("A29-no-pressing", "both pressing patterns excluded, shoulder AND elbow cautioned") {
+            $0.rankedGoals = [.hypertrophy]; $0.daysPerWeek = 4
+            $0.excludedPatterns = ["push_horizontal", "push_vertical"]
+            $0.cautionJoints = ["shoulder", "elbow"]
+        }
+        make("A30-no-squat-no-hinge", "hypertrophy with squat AND hinge patterns excluded") {
+            $0.rankedGoals = [.hypertrophy]; $0.daysPerWeek = 4
+            $0.excludedPatterns = ["squat", "hinge"]
+        }
+        make("A31-elderly-2day", "70s, brand new, bones and balance, 2 short days") {
+            $0.trainingAge = .novice
+            $0.rankedGoals = [.boneDensity, .mobility]; $0.daysPerWeek = 2
+            $0.sessionMinutes = 30
+            $0.intensityAppetite = "conservative"
+        }
+        make("A32-female-novice", "woman new to lifting, fat loss focus, 3 days", {
+            $0.trainingAge = .novice
+            $0.sex = .female
+            $0.rankedGoals = [.fatLoss, .hypertrophy]; $0.daysPerWeek = 3
+        }, cardioDays: 2, cardioMinutes: 30)
+        make("A33-strength-supersets", "strength focus but wants supersets for time") {
+            $0.rankedGoals = [.maxStrength]; $0.daysPerWeek = 3
+            $0.sessionStructure = .supersets
+            $0.provenance["sessionStructure"] = .stated
+        }
+        make("A34-fatloss-bro", "weight loss, but lives for bodypart days") {
+            $0.rankedGoals = [.fatLoss]; $0.daysPerWeek = 5
+            $0.split = .bro
+            $0.provenance["split"] = .stated
+        }
+        make("A35-all-nine-goals", "ranked literally every goal we offer") {
+            $0.rankedGoals = [.hypertrophy, .maxStrength, .powerRFD,
+                              .conditioning, .fatLoss, .boneDensity,
+                              .mobility, .sportPrep, .generalHealth]
+            $0.daysPerWeek = 4
+        }
+        make("A36-mobility-only", "only wants to move better — mobility as the whole goal") {
+            $0.rankedGoals = [.mobility]; $0.daysPerWeek = 3
+        }
+        make("A37-offseason-athlete", "sport prep dominant, off season, 4 days") {
+            $0.rankedGoals = [.sportPrep, .maxStrength]; $0.daysPerWeek = 4
+            $0.inSeason = false
+        }
+        make("A38-lunch-circuits", "conditioning circuits on lunch breaks - 2 days, 30 min, intervals", {
+            $0.rankedGoals = [.conditioning]; $0.daysPerWeek = 2
+            $0.sessionMinutes = 30
+            $0.cardioStyle = .intervals
+        }, persona: "the-hybrid-athlete")
+        make("A39-stacked-constraints", "home dumbbells, bad back, brand new — everything at once") {
+            $0.trainingAge = .novice
+            $0.rankedGoals = [.generalHealth]; $0.daysPerWeek = 3
+            $0.equipment = ["dumbbell", "bodyweight"]
+            $0.excludedPatterns = ["hinge"]
+            $0.cautionJoints = ["lower_back"]
+        }
+        make("A40-golden-era-3day", "wants the Golden Era coach but only has 3 days", {
+            $0.rankedGoals = [.hypertrophy]; $0.daysPerWeek = 3
+        }, persona: "the-golden-era")
+
+        XCTAssertEqual(athletes.count, 20)
+        for athlete in athletes {
+            let inputs = athlete.profile.generatorInputs(
+                durationWeeks: athlete.durationWeeks,
+                cardioDays: athlete.cardioDays,
+                cardioMinutes: athlete.cardioMinutes,
+                fillWeekWithRecovery: athlete.fillWeek)
+            let program = ProgramGenerator.generate(inputs: inputs, catalog: catalog)
+            XCTAssertFalse(program.days.isEmpty, "\(athlete.label) must generate")
+            dump(athlete, inputs: inputs, program: program)
+        }
+    }
+
     private func dump(_ athlete: Athlete,
                       inputs: ProgramGenerator.Inputs,
                       program: ProgramGenerator.Program) {

@@ -78,6 +78,22 @@ enum DriftDetector {
         }
         return signals
     }
+
+    /// The on-ramp is a RAMP (audit 2026-08-20): a novice who completes a
+    /// block with solid adherence has EARNED the technical lifts — the
+    /// probe offers graduation, and a confirmed yes advances trainingAge,
+    /// which raises the complexity allowance, unfloors the reps, and opens
+    /// the intensity ceiling. Offered, never imposed; the athlete's answer
+    /// commits with provenance `confirmed`.
+    static func graduationSignal(profile: TrainingProfile,
+                                 blockOutcome: BlockReview.Outcome) -> Signal? {
+        guard profile.trainingAge == .novice,
+              blockOutcome.adherence >= 0.75 else { return nil }
+        return Signal(
+            kind: "graduation",
+            evidence: "Block complete at \(Int(blockOutcome.adherence * 100))% adherence — the consistency a first block is for.",
+            probe: "Solid month of showing up. Ready to graduate to the barbell versions and a bit more weight, or happy with the current groove for another block?")
+    }
 }
 
 // MARK: - SchedulePlanner

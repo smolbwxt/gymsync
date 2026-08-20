@@ -282,7 +282,10 @@ enum GeneratorScience {
     /// via linear progression instead of starting pinned near max.
     static func mainIntensityCeiling(experience: Experience) -> Double {
         switch experience {
-        case .new: return 72.5
+        // 72.5 -> 67.5 (20-athlete audit 2026-08-20: a day-one 50-year-old
+        // opened at 72% triples — legal but eager; the novice on-ramp
+        // teaches patterns at loads that forgive).
+        case .new: return 67.5
         case .intermediate: return 87.5
         case .advanced: return 92.5
         }
