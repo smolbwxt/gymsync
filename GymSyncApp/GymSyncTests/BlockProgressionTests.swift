@@ -12,19 +12,20 @@ final class BlockProgressionTests: XCTestCase {
 
     private func set(session: UUID, index: Int, reps: Int, weight: Decimal,
                      failed: Bool = false, penalty: Bool = false,
-                     daysAgo: Double = 0) -> SetLog {
+                     rpe: Decimal? = nil, daysAgo: Double = 0) -> SetLog {
         SetLog(id: UUID(), userID: user, sessionID: session, exerciseID: lift,
-               setIndex: index, reps: reps, weight: weight, rpe: nil,
+               setIndex: index, reps: reps, weight: weight, rpe: rpe,
                isFailed: failed, isPenalty: penalty, note: nil,
                loggedAt: Date(timeIntervalSinceNow: -daysAgo * 86_400))
     }
 
     private func session(reps: [Int], weight: Decimal, daysAgo: Double,
-                         failed: Bool = false) -> [SetLog] {
+                         failed: Bool = false, rpe: Decimal? = nil) -> [SetLog] {
         let id = UUID()
         return reps.enumerated().map { i, r in
             set(session: id, index: i, reps: r, weight: weight,
-                failed: failed && i == reps.count - 1, daysAgo: daysAgo)
+                failed: failed && i == reps.count - 1, rpe: rpe,
+                daysAgo: daysAgo)
         }
     }
 
@@ -138,6 +139,52 @@ final class BlockProgressionTests: XCTestCase {
             isLowerBody: false, isIsolation: false)
         if case .flagStall = decision {
             XCTFail("an e1RM best two days ago is the opposite of a stall")
+        }
+    }
+
+    // MARK: Early fatigue warning (diagnostics pass, BBM)
+
+    func testRPECreepAtMatchedLoadWarnsBeforePerformanceDrops() {
+        // Same 100 lb, same 9 reps, but RPE 7 -> 7.5 -> 8 across three
+        // sessions: fatigue is stacking up before anything fails.
+        let history = session(reps: [9, 9], weight: 100, daysAgo: 1, rpe: 8)
+                    + session(reps: [9, 9], weight: 100, daysAgo: 4, rpe: 7.5)
+                    + session(reps: [9, 9], weight: 100, daysAgo: 7, rpe: 7)
+        let decision = BlockProgression.decide(
+            history: history, repsLow: 8, repsHigh: 12,
+            isLowerBody: false, isIsolation: false)
+        guard case .warnFatigue(let note) = decision else {
+            return XCTFail("matched-load RPE creep must warn, got \(decision)")
+        }
+        XCTAssertTrue(note.reason.contains("Nothing changed"),
+                      "a warning informs; it never edits numbers")
+    }
+
+    func testRPECreepAlongsideRepProgressIsJustEffort() {
+        // Reps climbing 8 -> 9 -> 10 while RPE climbs too: that's normal
+        // effort accumulation on a progressing lift, not a fatigue signal.
+        let history = session(reps: [10, 10], weight: 100, daysAgo: 1, rpe: 8)
+                    + session(reps: [9, 9], weight: 100, daysAgo: 4, rpe: 7.5)
+                    + session(reps: [8, 8], weight: 100, daysAgo: 7, rpe: 7)
+        let decision = BlockProgression.decide(
+            history: history, repsLow: 8, repsHigh: 12,
+            isLowerBody: false, isIsolation: false)
+        if case .warnFatigue = decision {
+            XCTFail("RPE creep with rep progress must not warn")
+        }
+    }
+
+    func testRPECreepAcrossDifferentLoadsComparesNothing() {
+        // BBM's matched-comparison rule: RPE at 100 vs 110 lb is not a
+        // trend, it's two different exercises' worth of effort.
+        let history = session(reps: [9, 9], weight: 110, daysAgo: 1, rpe: 8)
+                    + session(reps: [9, 9], weight: 105, daysAgo: 4, rpe: 7.5)
+                    + session(reps: [9, 9], weight: 100, daysAgo: 7, rpe: 7)
+        let decision = BlockProgression.decide(
+            history: history, repsLow: 8, repsHigh: 12,
+            isLowerBody: false, isIsolation: false)
+        if case .warnFatigue = decision {
+            XCTFail("RPE across different loads must never read as creep")
         }
     }
 

@@ -61,6 +61,11 @@ enum BlockProgression {
         /// True stall — a load tweak won't fix it; surface programming
         /// options (exercise swap, volume change).
         case flagStall(note: CoachNote)
+        /// Early fatigue warning (diagnostics pass, BBM): the same load and
+        /// reps are costing more RPE session over session — fatigue is
+        /// accumulating BEFORE performance drops. Numbers unchanged; the
+        /// note is the whole intervention.
+        case warnFatigue(note: CoachNote)
     }
 
     /// One training session's evidence for this lift.
@@ -73,6 +78,8 @@ enum BlockProgression {
         let minRepsAtWork: Int
         let maxRepsAtWork: Int
         let bestE1RM: Decimal
+        /// Mean logged RPE across working sets — nil when none carried RPE.
+        let avgWorkRPE: Decimal?
     }
 
     /// Decide what changes for this lift next session.
@@ -155,7 +162,27 @@ enum BlockProgression {
                 reason: "Every working set hit \(repsHigh)+ reps, the top of the \(repsLow)-\(repsHigh) range. Time to add weight and build back up from \(repsLow)."))
         }
 
-        // 4 — Inside the range: chase one more rep on the weakest working
+        // 4 — Early fatigue warning (diagnostics pass, BBM): the same load
+        // costing strictly more RPE across three sessions with no rep gain
+        // means fatigue is accumulating BEFORE performance drops. Checked
+        // only after the advance gate — RPE creep alongside actual progress
+        // is just effort accumulating normally. Matched load is required
+        // (BBM again): RPE across different loads compares nothing.
+        if sessions.count >= 3 {
+            let recent3 = Array(sessions.prefix(3))       // newest first
+            let rpes = recent3.compactMap(\.avgWorkRPE)
+            if rpes.count == 3,
+               recent3.allSatisfy({ $0.topLoad == latest.topLoad }),
+               rpes[0] > rpes[1], rpes[1] > rpes[2],      // strictly rising
+               rpes[0] - rpes[2] >= 1,
+               recent3.first!.minRepsAtWork <= recent3.last!.minRepsAtWork {
+                return .warnFatigue(note: CoachNote(
+                    summary: "Same weight is costing more effort each session",
+                    reason: "Your RPE at this load has climbed \(rpes[2])→\(rpes[0]) over three sessions without the reps improving — fatigue is stacking up before it shows in performance. An easier session or an extra rest day now usually beats grinding into a stall. Nothing changed; just a heads-up."))
+            }
+        }
+
+        // 5 — Inside the range: chase one more rep on the weakest working
         // set, never past the ceiling and never below the floor.
         let target = max(repsLow, min(latest.minRepsAtWork + 1, repsHigh))
         return .advanceReps(target: target, note: CoachNote(
@@ -174,11 +201,11 @@ enum BlockProgression {
             // A prescribed to-failure finisher is the assignment fulfilled,
             // never evidence against the rep target.
             if lastSetToFailure, !logs.isEmpty { logs.removeLast() }
-            let qualifying = logs.compactMap { log -> (reps: Int, weight: Decimal, date: Date)? in
+            let qualifying = logs.compactMap { log -> (reps: Int, weight: Decimal, date: Date, rpe: Decimal?)? in
                 guard !log.isPenalty,
                       let reps = log.completedReps,
                       let weight = log.weight, weight > 0 else { return nil }
-                return (reps, weight, log.loggedAt)
+                return (reps, weight, log.loggedAt, log.rpe)
             }
             guard let top = qualifying.map(\.weight).max() else { continue }
             // Exact decimal arithmetic — Decimal(0.9) via a Double literal
@@ -188,12 +215,15 @@ enum BlockProgression {
             let e1rm = qualifying
                 .map { StatMath.estimatedOneRepMax(weight: $0.weight, reps: $0.reps) }
                 .max() ?? 0
+            let rpes = working.compactMap(\.rpe)
             out.append(SessionSummary(
                 date: qualifying.map(\.date).max()!,
                 topLoad: top,
                 minRepsAtWork: working.map(\.reps).min()!,
                 maxRepsAtWork: working.map(\.reps).max()!,
-                bestE1RM: e1rm))
+                bestE1RM: e1rm,
+                avgWorkRPE: rpes.isEmpty ? nil
+                    : rpes.reduce(0, +) / Decimal(rpes.count)))
         }
         return out.sorted { $0.date > $1.date }   // newest first
     }

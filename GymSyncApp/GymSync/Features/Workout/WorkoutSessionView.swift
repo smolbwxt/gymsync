@@ -80,6 +80,9 @@ struct WorkoutSessionView: View {
     // only a PROPOSAL until the athlete accepts it.
     @State private var soloCoachDecision: BlockProgression.Decision?
     @State private var soloCoachNoteExpanded = false
+    /// Best substitution-graph swap for a flagged stall (5-channel corpus
+    /// consensus: a stalled lift wants a variation, not another load tweak).
+    @State private var soloStallSwapName: String?
     @State private var soloReps = ""
     @State private var soloRPE: Double = 7.0
     @State private var soloFailed = false
@@ -331,6 +334,20 @@ struct WorkoutSessionView: View {
                 soloEnrollment = try? await ProgramRepository.active()
             }
             soloPrefill()
+            // Stall response (diagnostics pass, 5-channel consensus): a
+            // stalled lift wants a VARIATION, so a flagged stall fetches
+            // the graph's best swap and the note names it. Best-effort —
+            // the stall note stands on its own without one.
+            soloStallSwapName = nil
+            if case .flagStall = soloCoachDecision,
+               let slug = currentExercise?.slug, !slug.isEmpty,
+               let swap = try? await ExerciseSubstitutionRepository
+                   .forExercise(slug: slug).first {
+                soloStallSwapName = swap.toSlug
+                    .split(separator: "-")
+                    .map { $0.capitalized }
+                    .joined(separator: " ")
+            }
         }
         .onChange(of: restEndAt) { handleRestWindowChange() }
         // Solo warm-up auto-end (2026-08): the guarded-sleep shape
@@ -855,7 +872,7 @@ struct WorkoutSessionView: View {
                 soloReps = String(low)   // load up, reps reset to the floor
             case .advanceReps(let target, _):
                 soloReps = String(target)
-            case .proposeDeload, .flagStall, .hold:
+            case .proposeDeload, .flagStall, .warnFatigue, .hold:
                 break
             }
         }
@@ -868,7 +885,8 @@ struct WorkoutSessionView: View {
     private func coachNote(for decision: BlockProgression.Decision) -> BlockProgression.CoachNote? {
         switch decision {
         case .advanceLoad(_, let note), .advanceReps(_, let note),
-             .proposeDeload(_, let note), .flagStall(let note):
+             .proposeDeload(_, let note), .flagStall(let note),
+             .warnFatigue(let note):
             return note
         case .hold(let note):
             return note
@@ -1781,6 +1799,12 @@ struct WorkoutSessionView: View {
                             .font(GSFont.body(12, relativeTo: .caption))
                             .foregroundStyle(theme.neutral700)
                             .fixedSize(horizontal: false, vertical: true)
+                        if let swapName = soloStallSwapName {
+                            Text("SWAP OPTION · \(swapName.uppercased())")
+                                .font(GSFont.bold(11, relativeTo: .caption2))
+                                .tracking(0.6)
+                                .foregroundStyle(theme.accent)
+                        }
                     }
                     if let deloadPounds = soloCoachDeloadPounds {
                         HStack(spacing: 10) {
