@@ -142,6 +142,64 @@ final class BlockProgressionTests: XCTestCase {
         }
     }
 
+    // MARK: Plateau research (2026-08-20 targeted pass)
+
+    func testNoviceStallWindowIsShorterThanIntermediate() {
+        // ~16 days of flat e1RM: past the novice window (14d), inside the
+        // intermediate one (21d). BBM: novices should improve often, so
+        // their no-progress window is shorter.
+        var history = session(reps: [10, 10], weight: 100, daysAgo: 17)
+        for days in [12.0, 8, 0.5] {
+            history += session(reps: [8, 8], weight: 100, daysAgo: days)
+        }
+        let novice = BlockProgression.decide(
+            history: history, repsLow: 5, repsHigh: 12,
+            isLowerBody: false, isIsolation: false, experience: .new)
+        guard case .flagStall = novice else {
+            return XCTFail("16 flat days must flag a NOVICE, got \(novice)")
+        }
+        let intermediate = BlockProgression.decide(
+            history: history, repsLow: 5, repsHigh: 12,
+            isLowerBody: false, isIsolation: false)
+        if case .flagStall = intermediate {
+            XCTFail("16 flat days is inside the intermediate 21-day window")
+        }
+    }
+
+    func testGrindingStallPointsAtDeloadFirst() {
+        // BBM differential: stalled AND averaging RPE 9 = overreached —
+        // the remedy is a deload before any program change (RP ordering).
+        var history = session(reps: [10, 10], weight: 100, daysAgo: 30)
+        for days in [20.0, 10, 1] {
+            history += session(reps: [8, 8], weight: 100, daysAgo: days, rpe: 9)
+        }
+        let decision = BlockProgression.decide(
+            history: history, repsLow: 5, repsHigh: 12,
+            isLowerBody: false, isIsolation: false)
+        guard case .flagStall(let note) = decision else {
+            return XCTFail("expected flagStall, got \(decision)")
+        }
+        XCTAssertTrue(note.reason.contains("Deload first"),
+                      "a grinding stall is fatigue-shaped: deload before program surgery")
+    }
+
+    func testFreshStallPointsAtAddingVolume() {
+        // BBM differential: stalled while fresh (RPE 6.5) = understimulated
+        // — add a set, don't deload what isn't fatigued.
+        var history = session(reps: [10, 10], weight: 100, daysAgo: 30)
+        for days in [20.0, 10, 1] {
+            history += session(reps: [8, 8], weight: 100, daysAgo: days, rpe: 6.5)
+        }
+        let decision = BlockProgression.decide(
+            history: history, repsLow: 5, repsHigh: 12,
+            isLowerBody: false, isIsolation: false)
+        guard case .flagStall(let note) = decision else {
+            return XCTFail("expected flagStall, got \(decision)")
+        }
+        XCTAssertTrue(note.reason.contains("Adding a set"),
+                      "a fresh stall is stimulus-shaped: volume, not rest")
+    }
+
     // MARK: Early fatigue warning (diagnostics pass, BBM)
 
     func testRPECreepAtMatchedLoadWarnsBeforePerformanceDrops() {

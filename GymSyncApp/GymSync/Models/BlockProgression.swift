@@ -92,6 +92,9 @@ enum BlockProgression {
     ///   - lastSetToFailure: prescription ends in a to-failure set — that
     ///     set is the assignment fulfilled and never a stall signal, so it
     ///     is excluded from rep-target checks.
+    ///   - experience: scales the true-stall window (BBM: novices should
+    ///     stall-flag sooner, advanced lifters later). Defaults to
+    ///     intermediate until the TrainingProfile carries the real answer.
     static func decide(
         history: [SetLog],
         repsLow: Int,
@@ -99,6 +102,7 @@ enum BlockProgression {
         isLowerBody: Bool,
         isIsolation: Bool,
         lastSetToFailure: Bool = false,
+        experience: GeneratorScience.Experience = .intermediate,
         unit: WeightUnit = .lbs
     ) -> Decision {
         guard repsHigh >= repsLow, repsLow > 0 else { return .hold(note: nil) }
@@ -134,10 +138,31 @@ enum BlockProgression {
            bestSession.date < latest.date {
             let sessionsSinceBest = sessions.filter { $0.date > bestSession.date }.count
             let daysSinceBest = latest.date.timeIntervalSince(bestSession.date) / 86_400
-            if sessionsSinceBest >= 3, daysSinceBest >= Double(GeneratorScience.trueStallDays) {
+            let window = GeneratorScience.trueStallDays(for: experience)
+            if sessionsSinceBest >= 3, daysSinceBest >= Double(window) {
+                // BBM's differential (plateau research, 2026-08): the SHAPE
+                // of a stall picks its remedy. Grinding high-RPE sessions
+                // alongside no progress = overreached — deload FIRST (RP:
+                // before any program change). Fresh, low-effort sessions
+                // alongside no progress = understimulated — add volume.
+                // In between (or no RPE logged) → variation swap / volume
+                // change, the generic ladder.
+                let rpes = sessions.prefix(3).compactMap(\.avgWorkRPE)
+                let recentRPE = rpes.isEmpty ? nil : rpes.reduce(0, +) / Decimal(rpes.count)
+                let direction: String
+                let rpeText = recentRPE.map {
+                    String(format: "%.1f", NSDecimalNumber(decimal: $0).doubleValue)
+                }
+                if let rpe = recentRPE, let rpeText, rpe >= Decimal(8.5) {
+                    direction = "You're also grinding — recent sessions averaged RPE \(rpeText) — which points at accumulated fatigue, not a broken program. Deload first, then reassess before changing anything else."
+                } else if let rpe = recentRPE, let rpeText, rpe <= 7 {
+                    direction = "You're stalled but fresh — recent sessions averaged RPE \(rpeText) — which points at too little stimulus. Adding a set to this lift is the first move."
+                } else {
+                    direction = "That's past the point where a load tweak fixes it — worth considering a variation swap or a volume change for this lift."
+                }
                 return .flagStall(note: CoachNote(
                     summary: "No progress on this lift in \(Int(daysSinceBest)) days",
-                    reason: "Your estimated 1RM hasn't improved across \(sessionsSinceBest) sessions over \(Int(daysSinceBest)) days. That's past the point where a load tweak fixes it — worth considering a variation swap or a volume change for this lift."))
+                    reason: "Your estimated 1RM hasn't improved across \(sessionsSinceBest) sessions over \(Int(daysSinceBest)) days. \(direction)"))
             }
         }
 

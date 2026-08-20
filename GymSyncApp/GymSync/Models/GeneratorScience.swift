@@ -126,6 +126,19 @@ enum GeneratorScience {
     /// Consumed by `BlockProgression`.
     static let trueStallDays = 21
 
+    /// BBM's experience scaling (plateau research, 2026-08): "shorten the
+    /// no-progress window that counts as a stall for newer lifters, since
+    /// they should improve often, and lengthen it for advanced lifters."
+    /// BBM gives the direction, not the numbers — the 14/21/28 split
+    /// anchors on `trueStallDays` and is our calibration, marked as such.
+    static func trueStallDays(for experience: Experience) -> Int {
+        switch experience {
+        case .new: return 14
+        case .intermediate: return trueStallDays
+        case .advanced: return 28
+        }
+    }
+
     /// Intermediate double progression: 3-5-rep windows, +2.5-5% on
     /// topping out — already encoded in SetProgression; window widths
     /// come from the focus bands above.
