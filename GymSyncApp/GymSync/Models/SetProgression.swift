@@ -33,6 +33,20 @@ enum SetProgression {
         unit: WeightUnit = .lbs
     ) -> Decimal {
         guard !isFailed, let rpe, rpe <= 7, pounds > 0 else { return pounds }
+        return steppedPounds(fromPounds: pounds, isLowerBody: isLowerBody, unit: unit)
+    }
+
+    /// One progression step from `pounds`: the percent fraction computed in
+    /// the LIFTER'S UNIT and floored to that unit's loadable increment,
+    /// minimum one increment. Shared by the within-session prefill above
+    /// (which gates on RPE) and `BlockProgression`'s session-to-session
+    /// advance (which gates on topping the rep range) so the two can never
+    /// disagree on step math.
+    static func steppedPounds(
+        fromPounds pounds: Decimal,
+        isLowerBody: Bool,
+        unit: WeightUnit
+    ) -> Decimal {
         let fraction = isLowerBody ? lowerBodyStepFraction : upperBodyStepFraction
         let unitLoad = Units.fromPounds(pounds, to: unit)
         let increment = unit.displayIncrement

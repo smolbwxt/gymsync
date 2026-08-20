@@ -118,6 +118,14 @@ enum GeneratorScience {
     static let noviceStallSessions = 2
     static let noviceStallDeloadPercent = 10.0
 
+    /// A lift is treated as GENUINELY stalled — needing a programming
+    /// change, not just a fatigue deload — only after ~3 weeks with no
+    /// e1RM personal best despite consistent training (Barbell Medicine's
+    /// 3-4 week bar; corpus progression pass, 2026-08). Distinct from the
+    /// 2-session fatigue signal above, which fires faster and cuts load.
+    /// Consumed by `BlockProgression`.
+    static let trueStallDays = 21
+
     /// Intermediate double progression: 3-5-rep windows, +2.5-5% on
     /// topping out — already encoded in SetProgression; window widths
     /// come from the focus bands above.
