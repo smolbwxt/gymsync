@@ -147,7 +147,10 @@ enum DebriefBuilder {
         guard !report.isSkipped else { return "\(upper): prescribed \(range) → SKIPPED" }
         let sets = report.sets.map { log -> String in
             let reps = log.completedReps.map(String.init) ?? "?"
-            let weight = log.weight.map { "\(NSDecimalNumber(decimal: $0).intValue)" } ?? "-"
+            // .doubleValue, never .intValue: NSDecimalNumber.intValue
+            // returns 0 for full-precision Decimal mantissas (CI caught
+            // it printing "estimated 1RM 0 → 0 lb").
+            let weight = log.weight.map { "\(Int(NSDecimalNumber(decimal: $0).doubleValue.rounded()))" } ?? "-"
             return "\(reps)@\(weight)"
         }.joined(separator: ", ")
         var line = "\(upper): prescribed \(range) → did \(sets)"
@@ -187,8 +190,8 @@ enum DebriefBuilder {
               sessions.count >= 2 else {
             return "\(name): not enough logged history for a trend yet."
         }
-        let firstLb = NSDecimalNumber(decimal: first.e1rm).intValue
-        let lastLb = NSDecimalNumber(decimal: last.e1rm).intValue
+        let firstLb = Int(NSDecimalNumber(decimal: first.e1rm).doubleValue.rounded())
+        let lastLb = Int(NSDecimalNumber(decimal: last.e1rm).doubleValue.rounded())
         let days = Int(last.date.timeIntervalSince(first.date) / 86_400)
         let delta = lastLb - firstLb
         let direction = delta > 0 ? "+\(delta)" : "\(delta)"
