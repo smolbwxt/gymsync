@@ -126,8 +126,9 @@ final class BlockProgressionTests: XCTestCase {
         guard case .flagStall(let note) = decision else {
             return XCTFail("3+ weeks with no e1RM best must flag, got \(decision)")
         }
-        XCTAssertTrue(note.reason.contains("swap") || note.reason.contains("volume"),
-                      "a true stall points at programming, not another load tweak")
+        XCTAssertTrue(note.summary.contains("No progress"),
+                      "the flag itself is this test's contract; the branch-"
+                      + "specific direction text is covered by its own tests")
     }
 
     func testRecentPRSuppressesStallFlag() {
@@ -183,11 +184,13 @@ final class BlockProgressionTests: XCTestCase {
                       "a grinding stall is fatigue-shaped: deload before program surgery")
     }
 
-    func testFreshStallPointsAtAddingVolume() {
-        // BBM differential: stalled while fresh (RPE 6.5) = understimulated
-        // — add a set, don't deload what isn't fatigued.
+    func testFreshStallPointsAtEffortThenVolume() {
+        // BBM differential + DDS effort-first: stalled while fresh
+        // (RPE 6.5) at NORMAL frequency = understimulated — check proximity
+        // to failure, then add a set. Dense session spacing (2-day gaps)
+        // keeps the low-frequency branch out of the way.
         var history = session(reps: [10, 10], weight: 100, daysAgo: 30)
-        for days in [20.0, 10, 1] {
+        for days in [5.0, 3, 1] {
             history += session(reps: [8, 8], weight: 100, daysAgo: days, rpe: 6.5)
         }
         let decision = BlockProgression.decide(
@@ -196,8 +199,26 @@ final class BlockProgressionTests: XCTestCase {
         guard case .flagStall(let note) = decision else {
             return XCTFail("expected flagStall, got \(decision)")
         }
-        XCTAssertTrue(note.reason.contains("Adding a set"),
-                      "a fresh stall is stimulus-shaped: volume, not rest")
+        XCTAssertTrue(note.reason.contains("reps in reserve"),
+                      "a fresh stall checks effort first, then volume")
+    }
+
+    func testOnceAWeekStallPointsAtFrequency() {
+        // Plateau pass (5 channels, first-order fix): a lift stalled at
+        // ~1x/week wants MORE SESSIONS before any other change. Mid RPE
+        // keeps both the grinding and fresh branches out of the way.
+        var history = session(reps: [10, 10], weight: 100, daysAgo: 30)
+        for days in [22.0, 11, 1] {
+            history += session(reps: [8, 8], weight: 100, daysAgo: days, rpe: 7.5)
+        }
+        let decision = BlockProgression.decide(
+            history: history, repsLow: 5, repsHigh: 12,
+            isLowerBody: false, isIsolation: false)
+        guard case .flagStall(let note) = decision else {
+            return XCTFail("expected flagStall, got \(decision)")
+        }
+        XCTAssertTrue(note.reason.contains("more often"),
+                      "at weekly-or-sparser cadence, frequency is the fix")
     }
 
     // MARK: Early fatigue warning (diagnostics pass, BBM)

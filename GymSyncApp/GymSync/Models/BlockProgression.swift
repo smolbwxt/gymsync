@@ -149,16 +149,31 @@ enum BlockProgression {
                 // change, the generic ladder.
                 let rpes = sessions.prefix(3).compactMap(\.avgWorkRPE)
                 let recentRPE = rpes.isEmpty ? nil : rpes.reduce(0, +) / Decimal(rpes.count)
+                // Training cadence for THIS lift: mean gap between the most
+                // recent sessions. ~Weekly-or-sparser is the corpus's
+                // low-frequency case (plateau pass, 5 channels).
+                let recentDates = sessions.prefix(3).map(\.date)
+                let gaps = zip(recentDates, recentDates.dropFirst())
+                    .map { $0.timeIntervalSince($1) }
+                let meanGap = gaps.isEmpty ? 0 : gaps.reduce(0, +) / Double(gaps.count)
                 let direction: String
                 let rpeText = recentRPE.map {
                     String(format: "%.1f", NSDecimalNumber(decimal: $0).doubleValue)
                 }
                 if let rpe = recentRPE, let rpeText, rpe >= Decimal(8.5) {
+                    // Fatigue outranks every other read — never prescribe
+                    // MORE to someone who is grinding.
                     direction = "You're also grinding — recent sessions averaged RPE \(rpeText) — which points at accumulated fatigue, not a broken program. Deload first, then reassess before changing anything else."
+                } else if meanGap >= 6 * 86_400 {
+                    // Low frequency (plateau pass, 5 channels, first-order
+                    // fix): at ~1x/week, more sessions IS the volume fix.
+                    direction = "You're only hitting this lift about once a week. The most common first fix for a stall at low frequency is simply training it more often — two to three sessions a week."
                 } else if let rpe = recentRPE, let rpeText, rpe <= 7 {
-                    direction = "You're stalled but fresh — recent sessions averaged RPE \(rpeText) — which points at too little stimulus. Adding a set to this lift is the first move."
+                    // Effort before volume (DDS, 5-channel effort theme):
+                    // sets far from failure stall progress on their own.
+                    direction = "You're stalled but fresh — recent sessions averaged RPE \(rpeText) — which points at too little stimulus. Push working sets closer to 0-2 reps in reserve first; if they already are, add a set to this lift."
                 } else {
-                    direction = "That's past the point where a load tweak fixes it — worth considering a variation swap or a volume change for this lift."
+                    direction = "That's past the point where a load tweak fixes it. Check the basics first — sleep, food, stress — then consider a variation swap or a volume change for this lift."
                 }
                 return .flagStall(note: CoachNote(
                     summary: "No progress on this lift in \(Int(daysSinceBest)) days",
