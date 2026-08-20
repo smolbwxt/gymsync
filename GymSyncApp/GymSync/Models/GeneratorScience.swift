@@ -161,6 +161,11 @@ enum GeneratorScience {
         }
     }
 
+    /// Drift probes fire at most this often (owner: "ask some probing
+    /// questions about goals every so often, like once every two weeks").
+    /// Consumed by `DriftDetector`.
+    static let driftProbeCooldownDays = 14
+
     /// Intermediate double progression: 3-5-rep windows, +2.5-5% on
     /// topping out — already encoded in SetProgression; window widths
     /// come from the focus bands above.

@@ -49,6 +49,10 @@ enum ProgramGenerator {
         var axialBoost: Bool = false
         /// The chosen coach's selection stances (CoachPersona.Lens).
         var personaLens: CoachPersona.Lens? = nil
+        /// Block-to-block carryover (BlockReview): lifts the athlete kept
+        /// skipping last block sort LAST — deprioritized, never silently
+        /// re-prescribed, never a hole (adherence beats optimality).
+        var deprioritizedExerciseIDs: Set<UUID> = []
         /// sport_prep in season: practice and games are recovery debits —
         /// intensity capped, nothing near max.
         var inSeason: Bool = false
@@ -217,7 +221,8 @@ enum ProgramGenerator {
                                   tilt: inputs.selectionTilt,
                                   cautionJoints: inputs.cautionJoints,
                                   axialBoost: inputs.axialBoost,
-                                  lens: inputs.personaLens)
+                                  lens: inputs.personaLens,
+                                  deprioritized: inputs.deprioritizedExerciseIDs)
                 if pick == nil, !isMainSlot {
                     // Accessory pool exhausted — repeats beat holes.
                     pick = select(slot: slot, from: usable,
@@ -229,7 +234,8 @@ enum ProgramGenerator {
                                   tilt: inputs.selectionTilt,
                                   cautionJoints: inputs.cautionJoints,
                                   axialBoost: inputs.axialBoost,
-                                  lens: inputs.personaLens)
+                                  lens: inputs.personaLens,
+                                  deprioritized: inputs.deprioritizedExerciseIDs)
                 }
                 guard let pick else { continue }
                 alreadyChosen.insert(pick.id)
@@ -649,7 +655,8 @@ enum ProgramGenerator {
                        tilt: [String: Double]? = nil,
                        cautionJoints: Set<String> = [],
                        axialBoost: Bool = false,
-                       lens: CoachPersona.Lens? = nil) -> CatalogExercise? {
+                       lens: CoachPersona.Lens? = nil,
+                       deprioritized: Set<UUID> = []) -> CatalogExercise? {
         let candidates: [CatalogExercise]
         switch slot {
         case .pattern(let pattern, _):
@@ -689,7 +696,11 @@ enum ProgramGenerator {
             // to arity 6); gate dominates by weight.
             let cautionViolation = cautionJoints.isEmpty ? 0
                 : (c.jointStress.contains { cautionJoints.contains($0.lowercased()) } ? 1 : 0)
-            let gates = gateViolation * 2 + cautionViolation
+            // Weakest soft gate: the athlete kept skipping this lift last
+            // block (BlockReview) — it competes only when nothing better
+            // exists. Weights keep the three gates strictly ordered.
+            let skippedLastBlock = deprioritized.contains(c.id) ? 1 : 0
+            let gates = gateViolation * 4 + cautionViolation * 2 + skippedLastBlock
             let focusStanding = (focusMuscles?.contains(c.primaryMuscle) == true) ? 0 : 1
             // Unscored rows sit at a neutral 5 — between cornerstone and
             // filler — so a half-labeled catalog stays sane.
