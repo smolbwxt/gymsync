@@ -717,6 +717,29 @@ struct GroupSessionLiveView: View {
             .sorted { $0.loggedAt < $1.loggedAt }
     }
 
+    /// BlockProgression at the START of this exercise (nothing of mine
+    /// logged for it yet this session) — group parity with the solo coach
+    /// note (owner 2026-08-20), deliberately PARTIAL: only the topped-range
+    /// load advance joins the prefill ladder below, because the ladder is
+    /// group's established suggestion surface and a prefill is a suggestion,
+    /// not an edit. Deload proposals, stall flags, and the expandable note
+    /// need a layout slot this fixed-height turn sheet doesn't have — that
+    /// UX lands with the group design pass (tracked in the Coach ledger).
+    private var turnCoachDecision: BlockProgression.Decision? {
+        guard let ex = currentExerciseForSheet,
+              let re = currentRoutineExercise,
+              let low = re.targetRepsLow, let high = re.targetRepsHigh,
+              !myTurnSets.contains(where: { $0.exerciseID == ex.id })
+        else { return nil }
+        return BlockProgression.decide(
+            history: priorSets.filter { $0.exerciseID == ex.id },
+            repsLow: low, repsHigh: high,
+            isLowerBody: ex.isLowerBody,
+            isIsolation: false,
+            lastSetToFailure: re.targetFailure,
+            unit: turnUnit)
+    }
+
     /// The most recent completed set for the current exercise — the LAST
     /// TIME card's content. Excludes this session's own sets: "last time"
     /// means a previous outing, not the set you did four minutes ago.
@@ -1112,6 +1135,11 @@ struct GroupSessionLiveView: View {
         // it never invents a number.
         let prefill: Decimal? = {
             guard let ex = currentExerciseForSheet else { return nil }
+            // Block engine outranks the ladder when the rep range was
+            // topped last session — it IS that history's conclusion.
+            if case .advanceLoad(let pounds, _)? = turnCoachDecision {
+                return pounds
+            }
             let history = turnExerciseHistory
             return WorkingWeight.suggest(
                 exerciseID: ex.id,
