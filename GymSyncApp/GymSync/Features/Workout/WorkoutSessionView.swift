@@ -74,6 +74,12 @@ struct WorkoutSessionView: View {
     // Solo fixed page (2026-07-30) — inline entry state, replacing the
     // log sheet for routine sessions (the sheet remains for edit mode).
     @State private var soloWeight = ""
+    // Coach note (BlockProgression, owner 2026-08-20): the block engine's
+    // session-start decision for the current exercise. Advances apply to
+    // the prefill and explain themselves in a compact note; a deload is
+    // only a PROPOSAL until the athlete accepts it.
+    @State private var soloCoachDecision: BlockProgression.Decision?
+    @State private var soloCoachNoteExpanded = false
     @State private var soloReps = ""
     @State private var soloRPE: Double = 7.0
     @State private var soloFailed = false
@@ -821,8 +827,57 @@ struct WorkoutSessionView: View {
             soloWeight = ""
         }
         soloReps = currentRoutineExercise?.targetReps.flatMap { leadingInt($0).map(String.init) } ?? ""
+        // BlockProgression (owner 2026-08-20): at the START of an exercise —
+        // nothing logged for it this session — the block engine's decision
+        // shapes the prefill. Advances apply directly (load step on a topped
+        // range outranks the history ladder above, since it IS that history's
+        // conclusion); a deload or stall never touches numbers here, it only
+        // renders in the entry card for the athlete to act on.
+        soloCoachDecision = nil
+        soloCoachNoteExpanded = false
+        if soloCurrentExerciseSets.isEmpty,
+           let re = currentRoutineExercise,
+           let low = re.targetRepsLow, let high = re.targetRepsHigh {
+            let decision = BlockProgression.decide(
+                history: soloPriorSets,
+                repsLow: low, repsHigh: high,
+                isLowerBody: currentExercise?.isLowerBody ?? false,
+                // Catalog carries no isolation flag yet; false is safe — the
+                // percent step floors to one increment at isolation loads.
+                isIsolation: false,
+                lastSetToFailure: re.targetFailure,
+                unit: soloUnit)
+            soloCoachDecision = decision
+            switch decision {
+            case .advanceLoad(let pounds, _):
+                soloWeight = Units.format(pounds: pounds, unit: soloUnit,
+                                          rounded: false, includeUnit: false)
+                soloReps = String(low)   // load up, reps reset to the floor
+            case .advanceReps(let target, _):
+                soloReps = String(target)
+            case .proposeDeload, .flagStall, .hold:
+                break
+            }
+        }
         soloRPE = 7.0
         soloFailed = false
+    }
+
+    /// The engine's note for the current decision — every case explains
+    /// itself except a data-starved hold.
+    private func coachNote(for decision: BlockProgression.Decision) -> BlockProgression.CoachNote? {
+        switch decision {
+        case .advanceLoad(_, let note), .advanceReps(_, let note),
+             .proposeDeload(_, let note), .flagStall(let note):
+            return note
+        case .hold(let note):
+            return note
+        }
+    }
+
+    private var soloCoachDeloadPounds: Decimal? {
+        if case .proposeDeload(let pounds, _) = soloCoachDecision { return pounds }
+        return nil
     }
 
     // MARK: - The REST screen (2026-07-31)
@@ -1696,6 +1751,70 @@ struct WorkoutSessionView: View {
                 }
             }
             .frame(height: 30)
+
+            // Coach note (owner 2026-08-20: "compact note + reason"). One
+            // line, expandable why; a deload proposal adds accept/dismiss
+            // and changes NOTHING until accepted.
+            if let decision = soloCoachDecision, let note = coachNote(for: decision) {
+                Color.clear.frame(height: 8)
+                VStack(alignment: .leading, spacing: 6) {
+                    Button { soloCoachNoteExpanded.toggle() } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Image(systemName: "lightbulb.fill")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(theme.accent)
+                            Text("COACH · \(note.summary.uppercased())")
+                                .font(GSFont.bold(11, relativeTo: .caption2))
+                                .tracking(0.6)
+                                .foregroundStyle(theme.text.opacity(0.82))
+                                .lineLimit(soloCoachNoteExpanded ? 3 : 1)
+                                .multilineTextAlignment(.leading)
+                            Spacer(minLength: 4)
+                            Image(systemName: soloCoachNoteExpanded ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(theme.neutral500)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    if soloCoachNoteExpanded {
+                        Text(note.reason)
+                            .font(GSFont.body(12, relativeTo: .caption))
+                            .foregroundStyle(theme.neutral700)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let deloadPounds = soloCoachDeloadPounds {
+                        HStack(spacing: 10) {
+                            Button {
+                                soloWeight = Units.format(pounds: deloadPounds, unit: soloUnit,
+                                                          rounded: false, includeUnit: false)
+                                if let low = currentRoutineExercise?.targetRepsLow {
+                                    soloReps = String(low)
+                                }
+                                soloCoachDecision = nil   // proposal consumed
+                            } label: {
+                                Text("DELOAD")
+                                    .font(GSFont.bold(12, relativeTo: .caption))
+                                    .tracking(0.8)
+                                    .foregroundStyle(theme.bg)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 6)
+                                    .background(Capsule().fill(theme.accent))
+                            }
+                            .buttonStyle(.plain)
+                            Button { soloCoachDecision = nil } label: {
+                                Text("NOT TODAY")
+                                    .font(GSFont.bold(12, relativeTo: .caption))
+                                    .tracking(0.8)
+                                    .foregroundStyle(theme.neutral700)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 6)
+                                    .background(Capsule().stroke(theme.neutral500, lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
 
             Color.clear.frame(height: 12)
             HStack(spacing: 0) {
