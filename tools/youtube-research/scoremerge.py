@@ -1,0 +1,132 @@
+"""Merge corpus per-exercise verdicts into the shipped focus_scores.
+
+Owner ruling 2026-08-20: CORPUS WINS OUTRIGHT where 2+ independent
+channels agree — but "wins" is direction-aware, because verdicts and
+scores are different shapes:
+
+- endorsements set FLOORS (strong_endorse -> score >= 9, endorse -> >= 7)
+- criticisms set CEILINGS (criticize -> <= 4, avoid -> <= 2)
+- mixed verdicts move nothing
+- CONTESTED (2+ channels endorsing AND 2+ criticizing the same
+  exercise-goal pair) -> skipped entirely; a fault line is persona
+  material, not consensus
+
+Consensus is counted PER CHANNEL, never per claim — RP alone is 36% of
+the corpus. Emits a migration; never touches the DB itself.
+
+Usage:  python scoremerge.py --claims <dir> [--out merge.sql]
+"""
+import argparse
+import glob
+import json
+import os
+import sys
+from collections import defaultdict
+
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from graph import tokens, resolve, CATALOG  # noqa: E402
+
+GOAL_KEY = {"hypertrophy": "hypertrophy", "strength": "strength",
+            "fat_loss": "weight_loss", "weight_loss": "weight_loss",
+            "conditioning": "conditioning", "endurance": "conditioning"}
+FLOORS = {"strong_endorse": 9, "endorse": 7}
+CEILINGS = {"criticize": 4, "avoid": 2}
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--claims", required=True)
+    ap.add_argument("--out", default="score_merge.sql")
+    args = ap.parse_args()
+
+    raw = open(CATALOG, encoding="utf-8").read()
+    catalog = json.loads(raw[raw.find("["):raw.rfind("]") + 1])
+    catalog_tokens = {}
+    for ex in catalog:
+        h, s = tokens(ex["name"])
+        catalog_tokens[ex["slug"]] = (set(h), set(s), ex["name"])
+
+    vid_ch = {}
+    for f in glob.glob("passes/per_exercise/*.json"):
+        for rec in json.load(open(f, encoding="utf-8")):
+            vid_ch[rec["id"]] = rec["channel"]
+
+    judgments = []
+    for f in glob.glob(os.path.join(args.claims, "*.json")):
+        judgments += json.load(open(f, encoding="utf-8")).get("judgments", [])
+
+    # (slug, goal_key) -> direction -> set(channels)
+    votes = defaultdict(lambda: defaultdict(set))
+    names = {}
+    unresolved = 0
+    for j in judgments:
+        goal = GOAL_KEY.get((j.get("for_goal") or "").lower())
+        verdict = j.get("verdict")
+        if goal is None or verdict in (None, "mixed"):
+            continue
+        hit, _ = resolve(j.get("exercise", ""), catalog_tokens)
+        if not hit:
+            unresolved += 1
+            continue
+        slug, name = hit
+        names[slug] = name
+        ch = vid_ch.get(j.get("video_id"), "?")
+        if verdict in FLOORS:
+            votes[(slug, goal)]["endorse:" + verdict].add(ch)
+        elif verdict in CEILINGS:
+            votes[(slug, goal)]["criticize:" + verdict].add(ch)
+
+    floors, ceilings, contested = [], [], []
+    for (slug, goal), dirs in votes.items():
+        up = set().union(*(chs for d, chs in dirs.items() if d.startswith("endorse")))
+        down = set().union(*(chs for d, chs in dirs.items() if d.startswith("criticize")))
+        if len(up) >= 2 and len(down) >= 2:
+            contested.append((names[slug], goal, sorted(up), sorted(down)))
+            continue
+        if len(up) >= 2:
+            # Strongest consensus verdict wins the floor value.
+            strong = dirs.get("endorse:strong_endorse", set())
+            floor = FLOORS["strong_endorse"] if len(strong) >= 2 else FLOORS["endorse"]
+            floors.append((slug, names[slug], goal, floor, sorted(up)))
+        elif len(down) >= 2:
+            hard = dirs.get("criticize:avoid", set())
+            cap = CEILINGS["avoid"] if len(hard) >= 2 else CEILINGS["criticize"]
+            ceilings.append((slug, names[slug], goal, cap, sorted(down)))
+
+    print(f"judgments: {len(judgments)}  unresolved names: {unresolved}")
+    print(f"FLOORS (2+ ch endorse): {len(floors)}")
+    for _, name, goal, floor, chs in floors[:12]:
+        print(f"  {name[:34]:<36}{goal:<13}>= {floor}  {','.join(c[:10] for c in chs)}")
+    print(f"CEILINGS (2+ ch criticize): {len(ceilings)}")
+    for _, name, goal, cap, chs in ceilings[:12]:
+        print(f"  {name[:34]:<36}{goal:<13}<= {cap}  {','.join(c[:10] for c in chs)}")
+    print(f"CONTESTED (skipped, persona material): {len(contested)}")
+    for name, goal, up, down in contested[:6]:
+        print(f"  {name[:30]:<32}{goal}: +{','.join(c[:8] for c in up)} vs -{','.join(c[:8] for c in down)}")
+
+    def q(s):
+        return "'" + str(s).replace("'", "''") + "'"
+    lines = [
+        "-- Corpus verdict merge into focus_scores (owner ruling 2026-08-20:",
+        "-- corpus wins outright at 2+ independent channels; direction-aware:",
+        "-- endorsements set floors, criticisms set ceilings, contested pairs",
+        "-- skipped). Generated by tools/youtube-research/scoremerge.py.",
+        "",
+    ]
+    for slug, name, goal, floor, chs in sorted(floors):
+        lines.append(
+            f"UPDATE public.exercises SET focus_scores = jsonb_set(coalesce(focus_scores, '{{}}'::jsonb), "
+            f"'{{{goal}}}', to_jsonb(GREATEST(coalesce((focus_scores->>{q(goal)})::int, 5), {floor})))"
+            f" WHERE slug = {q(slug)};  -- {name}: {','.join(chs)}")
+    for slug, name, goal, cap, chs in sorted(ceilings):
+        lines.append(
+            f"UPDATE public.exercises SET focus_scores = jsonb_set(coalesce(focus_scores, '{{}}'::jsonb), "
+            f"'{{{goal}}}', to_jsonb(LEAST(coalesce((focus_scores->>{q(goal)})::int, 5), {cap})))"
+            f" WHERE slug = {q(slug)};  -- {name}: {','.join(chs)}")
+    open(args.out, "w", encoding="utf-8", newline="\n").write("\n".join(lines) + "\n")
+    print(f"\nwrote {args.out} ({len(floors) + len(ceilings)} updates)")
+
+
+if __name__ == "__main__":
+    main()

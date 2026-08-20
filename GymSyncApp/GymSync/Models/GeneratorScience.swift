@@ -81,21 +81,31 @@ enum GeneratorScience {
         let weeklySetsLow: Int, weeklySetsHigh: Int
     }
 
+    /// Accessory rep tops widened 2026-08-20 (corpus consensus: 5-30 reps
+    /// grow muscle similarly when effort-matched — far wider than the
+    /// 10-15 tops we shipped; higher-rep accessory work also trades axial/
+    /// joint load for effort, and the isolation class specifically favors
+    /// reps over load since one plate jump is a huge relative step, 3DMJ).
+    /// MAINS deliberately keep their strength-specific ranges — heavy
+    /// practice is the point of a main, and the corpus warns against
+    /// changing rep ranges on lifts that are progressing (HoH). The
+    /// per-exercise repMin/repMax clamp still tailors every band, so a
+    /// widened top can never reach a lift whose label forbids it.
     static func band(for focus: Focus) -> FocusBand {
         switch focus {
         case .strength:
             return FocusBand(mainRepsLow: 3, mainRepsHigh: 6,
-                             accessoryRepsLow: 6, accessoryRepsHigh: 10,
+                             accessoryRepsLow: 6, accessoryRepsHigh: 12,
                              mainRestSeconds: 180, accessoryRestSeconds: 90,
                              weeklySetsLow: 10, weeklySetsHigh: 16)
         case .hypertrophy:
             return FocusBand(mainRepsLow: 6, mainRepsHigh: 12,
-                             accessoryRepsLow: 8, accessoryRepsHigh: 15,
+                             accessoryRepsLow: 8, accessoryRepsHigh: 20,
                              mainRestSeconds: 120, accessoryRestSeconds: 90,
                              weeklySetsLow: 12, weeklySetsHigh: 20)
         case .weightLoss:
             return FocusBand(mainRepsLow: 8, mainRepsHigh: 15,
-                             accessoryRepsLow: 10, accessoryRepsHigh: 15,
+                             accessoryRepsLow: 10, accessoryRepsHigh: 20,
                              mainRestSeconds: 90, accessoryRestSeconds: 60,
                              weeklySetsLow: 10, weeklySetsHigh: 14)
         case .conditioning:
@@ -105,6 +115,18 @@ enum GeneratorScience {
                              weeklySetsLow: 8, weeklySetsHigh: 12)
         }
     }
+
+    /// Power / rate-of-force band (TrainingProfile goal `power_rfd` —
+    /// tiered support, owner 2026-08-20): heavy enough to demand force,
+    /// light enough to move FAST — submaximal work at full recovery with
+    /// explosive intent, never grinding. Delivered as a band OVERRIDE
+    /// rather than a fifth Focus: split, slots, and scoring ride the
+    /// strength tables; only the prescription shape changes.
+    static let powerBand = FocusBand(
+        mainRepsLow: 2, mainRepsHigh: 5,
+        accessoryRepsLow: 4, accessoryRepsHigh: 8,
+        mainRestSeconds: 180, accessoryRestSeconds: 120,
+        weeklySetsLow: 8, weeklySetsHigh: 14)
 
     /// Beginner override (Schoenfeld 2018: beginners grow on 5-9 weekly
     /// sets): 6-10 regardless of focus.
@@ -180,13 +202,59 @@ enum GeneratorScience {
 
     enum DayKind: String {
         case fullBody, upper, lower, push, pull, legs
+        // Bodypart-split days (TrainingProfile, owner 2026-08-20: "some
+        // people thrive in a bro split" — preference is a first-class
+        // input, not a thing the frequency law overrides).
+        case chest, back, shoulders, arms
     }
 
-    static func split(daysPerWeek: Int, focus: Focus) -> [DayKind] {
+    /// The athlete's split preference (TrainingProfile). `.auto` keeps the
+    /// science ladder; an explicit choice WINS over the focus table — the
+    /// one-time pushback card in the wizard states the 2x/week evidence,
+    /// records the decline, and never nags (owner 2026-08-20).
+    enum SplitPreference: String, Codable, CaseIterable, Sendable {
+        case auto, fullBody, upperLower, ppl, bro, hybrid
+    }
+
+    static func split(daysPerWeek: Int, focus: Focus,
+                      preference: SplitPreference = .auto) -> [DayKind] {
         let days = max(1, min(7, daysPerWeek))
+        switch preference {
+        case .auto:
+            break   // science ladder below
+        case .fullBody:
+            return Array(repeating: .fullBody, count: days)
+        case .upperLower:
+            return (0..<days).map { $0 % 2 == 0 ? .upper : .lower }
+        case .ppl:
+            let cycle: [DayKind] = [.push, .pull, .legs]
+            return (0..<days).map { cycle[$0 % 3] }
+        case .bro:
+            // The classic bodypart week. Below 4 days a bro split stops
+            // being one — fall through to the science ladder.
+            switch days {
+            case 4: return [.chest, .back, .legs, .shoulders]
+            case 5: return [.chest, .back, .legs, .shoulders, .arms]
+            case 6: return [.chest, .back, .legs, .shoulders, .arms, .fullBody]
+            case 7: return [.chest, .back, .legs, .shoulders, .arms, .fullBody, .fullBody]
+            default: break
+            }
+        case .hybrid:
+            // The pushback card's compromise: an upper/lower base gives
+            // every muscle its second weekly touch, bodypart emphasis days
+            // keep the bro feel. Below 5 days the science ladder already
+            // IS the hybrid.
+            switch days {
+            case 5: return [.upper, .lower, .chest, .back, .legs]
+            case 6: return [.upper, .lower, .chest, .back, .legs, .arms]
+            case 7: return [.upper, .lower, .chest, .back, .legs, .arms, .fullBody]
+            default: break
+            }
+        }
         // Weight Loss and Conditioning are FULL-BODY programs at any day
         // count (the focus table's own prescription: density circuits and
-        // maintenance-floor lifting, not bodypart splits).
+        // maintenance-floor lifting, not bodypart splits) — unless an
+        // explicit preference above already returned.
         if focus == .weightLoss || focus == .conditioning {
             return Array(repeating: .fullBody, count: days)
         }

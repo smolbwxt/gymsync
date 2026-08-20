@@ -437,6 +437,23 @@ final class ProgramGeneratorTests: XCTestCase {
         XCTAssertTrue(program.notes.contains { $0.contains("zone-4") })
     }
 
+    func testAccessoryBandsWidenedMainsStayStrengthSpecific() {
+        // Corpus 2026-08-20: 5-30 reps grow muscle similarly effort-matched
+        // — accessory tops widen (hypertrophy to 20), mains keep their
+        // strength-specific ranges because heavy practice is their point.
+        let hyp = GeneratorScience.band(for: .hypertrophy)
+        XCTAssertEqual(hyp.accessoryRepsHigh, 20)
+        XCTAssertEqual(hyp.mainRepsHigh, 12, "mains untouched")
+        XCTAssertEqual(GeneratorScience.band(for: .strength).mainRepsHigh, 6,
+                       "strength mains stay heavy — specificity")
+        let program = ProgramGenerator.generate(
+            inputs: inputs(focus: .hypertrophy, days: 3), catalog: catalog())
+        for e in program.days.flatMap(\.exercises) where !e.isMain && e.cardioZone == nil {
+            XCTAssertLessThanOrEqual(e.repsHigh, 21,
+                                     "widened top + female bonus is the max any accessory can carry")
+        }
+    }
+
     func testRepWindowClampsTheBand() {
         let cat = catalog().map { c -> ProgramGenerator.CatalogExercise in
             var c = c

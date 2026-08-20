@@ -17,3 +17,8 @@ mentions.json
 _raw/
 _t/
 __pycache__/
+passes/
+label_corrections.json
+score_merge.sql
+subs_data.sql
+substitutions.json

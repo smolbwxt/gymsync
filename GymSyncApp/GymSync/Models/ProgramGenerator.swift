@@ -25,6 +25,33 @@ enum ProgramGenerator {
         var focusMuscles: Set<String>? = nil
         /// Equipment classes available; nil = everything.
         var equipment: Set<String>? = nil
+        /// Split preference (TrainingProfile): an explicit choice WINS over
+        /// the focus table; `.auto` keeps the science ladder.
+        var splitPreference: GeneratorScience.SplitPreference = .auto
+        // TrainingProfile consumption (2026-08-20) — every field below
+        // changes output when flipped, provably (the no-dead-knobs law).
+        /// Session structure: supersets pair antagonists; circuit chains
+        /// the day; minimalist caps it at three lifts.
+        var sessionStructure: TrainingProfile.SessionStructure = .straight
+        /// intervals -> zone 4, steady -> zone 2 for dedicated cardio.
+        var cardioStyle: TrainingProfile.CardioStyle = .auto
+        /// Prescription-shape override (power_rfd: submaximal speed work).
+        var bandOverride: GeneratorScience.FocusBand? = nil
+        /// Weighted goal vector over the label score keys — replaces the
+        /// single-focus score in selection when present.
+        var selectionTilt: [String: Double]? = nil
+        /// Hard exclusions — these lifts do not exist for this athlete.
+        var excludedExerciseIDs: Set<UUID> = []
+        var excludedPatterns: Set<String> = []
+        /// Injury propagation (soft): joint_stress matches sort last.
+        var cautionJoints: Set<String> = []
+        /// bone_density ranked: spinal-loading lifts score up.
+        var axialBoost: Bool = false
+        /// The chosen coach's selection stances (CoachPersona.Lens).
+        var personaLens: CoachPersona.Lens? = nil
+        /// sport_prep in season: practice and games are recovery debits —
+        /// intensity capped, nothing near max.
+        var inSeason: Bool = false
         /// Dedicated cardio days appended after the lifting split
         /// (owner 2026-08-14) — prescribed as zone + MINUTES. When
         /// lifting + cardio exceed 7 calendar days, the overflow PAIRS
@@ -79,6 +106,9 @@ enum ProgramGenerator {
         var legInterference: Bool = false
         /// Power/velocity intent — the conditioning focus's consumer.
         var explosive: Bool = false
+        /// Joints this lift stresses (labels) — the caution-joint soft
+        /// sort's fuel (TrainingProfile injury propagation 2026-08-20).
+        var jointStress: [String] = []
     }
 
     // MARK: Output
@@ -99,6 +129,10 @@ enum ProgramGenerator {
         /// Cardio prescriptions: zone + MINUTES instead of sets × reps.
         var cardioZone: Int? = nil
         var cardioMinutes: Int? = nil
+        /// Antagonist-superset pairing (session structure, corpus census
+        /// 2026-08-20): exercises sharing a group number alternate sets.
+        /// nil = straight sets.
+        var supersetGroup: Int? = nil
     }
 
     struct Day: Equatable {
@@ -123,10 +157,20 @@ enum ProgramGenerator {
     // MARK: Pipeline
 
     static func generate(inputs: Inputs, catalog: [CatalogExercise]) -> Program {
-        let band = GeneratorScience.band(for: inputs.focus)
-        let split = GeneratorScience.split(daysPerWeek: inputs.daysPerWeek, focus: inputs.focus)
+        // Band override (power_rfd) beats the focus table for prescription
+        // SHAPE only — split, slots, and scoring still ride the focus.
+        let band = inputs.bandOverride ?? GeneratorScience.band(for: inputs.focus)
+        let split = GeneratorScience.split(daysPerWeek: inputs.daysPerWeek,
+                                           focus: inputs.focus,
+                                           preference: inputs.splitPreference)
         let usable = catalog.filter { ex in
-            inputs.equipment.map { $0.contains(ex.equipment) } ?? true
+            guard inputs.equipment.map({ $0.contains(ex.equipment) }) ?? true else { return false }
+            // Hard exclusions (TrainingProfile): these lifts do not exist
+            // for this athlete. The selector's next-best (and ultimately
+            // the substitution graph) fills every hole.
+            if inputs.excludedExerciseIDs.contains(ex.id) { return false }
+            if inputs.excludedPatterns.contains(ex.movementPattern) { return false }
+            return true
         }
 
         var notes: [String] = []
@@ -169,7 +213,11 @@ enum ProgramGenerator {
                                   focus: inputs.focus,
                                   focusMuscles: inputs.focusMuscles,
                                   experience: inputs.experience,
-                                  seed: inputs.seed)
+                                  seed: inputs.seed,
+                                  tilt: inputs.selectionTilt,
+                                  cautionJoints: inputs.cautionJoints,
+                                  axialBoost: inputs.axialBoost,
+                                  lens: inputs.personaLens)
                 if pick == nil, !isMainSlot {
                     // Accessory pool exhausted — repeats beat holes.
                     pick = select(slot: slot, from: usable,
@@ -177,7 +225,11 @@ enum ProgramGenerator {
                                   focus: inputs.focus,
                                   focusMuscles: inputs.focusMuscles,
                                   experience: inputs.experience,
-                                  seed: inputs.seed)
+                                  seed: inputs.seed,
+                                  tilt: inputs.selectionTilt,
+                                  cautionJoints: inputs.cautionJoints,
+                                  axialBoost: inputs.axialBoost,
+                                  lens: inputs.personaLens)
                 }
                 guard let pick else { continue }
                 alreadyChosen.insert(pick.id)
@@ -288,6 +340,53 @@ enum ProgramGenerator {
             notes.append("Weekly volume balanced per muscle: " + parts.joined(separator: "; ") + ".")
         }
 
+        // Session structure (corpus census 2026-08-20 — a separate axis
+        // from the split). Runs after the volume balance so structure
+        // reflects final set counts.
+        switch inputs.sessionStructure {
+        case .straight:
+            break
+        case .supersets:
+            days = days.map { assignSupersets(day: $0, catalog: catalog) }
+            notes.append("Antagonist supersets: paired lifts alternate sets — one side rests while the other works, cutting session time at near-zero performance cost.")
+        case .circuit:
+            // One big round: every lift shares a group, rests compress —
+            // the density structure (22 corpus videos / 10 channels).
+            for d in days.indices {
+                for x in days[d].exercises.indices where days[d].exercises[x].cardioZone == nil {
+                    days[d].exercises[x].supersetGroup = 1
+                    days[d].exercises[x].restSeconds = min(days[d].exercises[x].restSeconds, 45)
+                }
+            }
+            notes.append("Circuit structure: run the day's lifts as rounds with short transitions — density is the point; loads sit lighter than straight sets would carry.")
+        case .minimalist:
+            // Abbreviated training (30 videos / 9 channels): two or three
+            // hard lifts, nothing else. Mains keep priority.
+            for d in days.indices {
+                let exercises = days[d].exercises
+                let mains = exercises.filter { $0.isMain && $0.cardioZone == nil }
+                let accessories = exercises.filter { !$0.isMain && $0.cardioZone == nil }
+                let cardio = exercises.filter { $0.cardioZone != nil }
+                let keep = Array(mains.prefix(3))
+                    + Array(accessories.prefix(max(0, 3 - mains.count)))
+                days[d].exercises = keep + cardio
+            }
+            notes.append("Minimalist structure: three hard lifts a session — the abbreviated-training tradition. Progress lives in the log, not the exercise count.")
+        }
+
+        // In-season cap (sport_prep context): practice and games are
+        // recovery debits training must respect — nothing near max.
+        if inputs.inSeason {
+            for d in days.indices {
+                for x in days[d].exercises.indices {
+                    if let p = days[d].exercises[x].percentOfMax {
+                        days[d].exercises[x].percentOfMax = min(p, 80)
+                    }
+                }
+            }
+            notes.append("In-season: intensity capped at 80% — the field is the priority; the gym maintains what practice spends.")
+        }
+
         // Conditioning zone floor (trainer audit, GOAL FAILURE class: a
         // conditioning focus with cardioDays=0 shipped zero zone work —
         // the thing the session is FOR). Every conditioning lifting day
@@ -336,7 +435,14 @@ enum ProgramGenerator {
             let modality = usable.first { $0.category == "cardio" }
                 ?? catalog.first { $0.category == "cardio" }
             if let modality {
-                let zone = inputs.focus == .conditioning ? 4 : 2
+                // Cardio style (TrainingProfile): explicit preference wins;
+                // auto keeps the focus default.
+                let zone: Int
+                switch inputs.cardioStyle {
+                case .intervals: zone = 4
+                case .steady: zone = 2
+                case .auto: zone = inputs.focus == .conditioning ? 4 : 2
+                }
                 let cardioEntry = Exercise(
                     exerciseID: modality.id, name: modality.name,
                     sets: 1, repsLow: 0, repsHigh: 0,
@@ -464,7 +570,36 @@ enum ProgramGenerator {
             base = [.pattern("squat", main: true), .pattern("hinge", main: true),
                     .pattern("lunge", main: false),
                     .isolation("hamstrings"), .isolation("quads"), .isolation("calves")]
+        // Bodypart days (bro/hybrid splits, TrainingProfile 2026-08-20).
+        // Duplicate isolation slots pick DIFFERENT exercises — the
+        // already-chosen exclusion guarantees it.
+        case .chest:
+            base = [.pattern("push_horizontal", main: true),
+                    .pattern("push_horizontal", main: false),
+                    .isolation("chest"), .isolation("chest")]
+        case .back:
+            base = [.pattern("pull_horizontal", main: true),
+                    .pattern("pull_vertical", main: false),
+                    .isolation("back"), .isolation("lats")]
+        case .shoulders:
+            base = [.pattern("push_vertical", main: true),
+                    .isolation("shoulders"), .isolation("shoulders"),
+                    .isolation("core")]
+        case .arms:
+            // No main on purpose — the classic arms day is isolation
+            // through and through; every downstream pass tolerates a
+            // main-less day (finishers and axial staggers just skip it).
+            base = [.isolation("biceps"), .isolation("triceps"),
+                    .isolation("biceps"), .isolation("triceps"),
+                    .isolation("core")]
         }
+        // Bodypart days keep their slot templates under EVERY focus —
+        // isolation is the nature of a bro/hybrid day, and stripping it
+        // (the strength filter below) would empty an arms day entirely.
+        // The athlete chose this split knowingly; the pushback card
+        // already made the science case once.
+        let bodypartKinds: Set<GeneratorScience.DayKind> = [.chest, .back, .shoulders, .arms]
+        if bodypartKinds.contains(kind) { return base }
         switch focus {
         case .hypertrophy:
             return base
@@ -508,7 +643,13 @@ enum ProgramGenerator {
                        focus: GeneratorScience.Focus,
                        focusMuscles: Set<String>?,
                        experience: GeneratorScience.Experience = .intermediate,
-                       seed: Int = 0) -> CatalogExercise? {
+                       seed: Int = 0,
+                       // TrainingProfile tilts (2026-08-20); defaults
+                       // reproduce pre-profile behavior exactly.
+                       tilt: [String: Double]? = nil,
+                       cautionJoints: Set<String> = [],
+                       axialBoost: Bool = false,
+                       lens: CoachPersona.Lens? = nil) -> CatalogExercise? {
         let candidates: [CatalogExercise]
         switch slot {
         case .pattern(let pattern, _):
@@ -541,21 +682,58 @@ enum ProgramGenerator {
             let effComplexity = (lower.contains("bosu") || lower.contains("stability ball"))
                 ? max(c.complexity, 4) : c.complexity
             let gateViolation = effComplexity > cap ? 1 : 0
+            // Caution joints (TrainingProfile injury propagation, owner
+            // 2026-08-20): a lift stressing a cautioned joint sorts LAST —
+            // soft like the complexity gate, never leaves a hole. Merged
+            // with the gate into one component (Swift compares tuples only
+            // to arity 6); gate dominates by weight.
+            let cautionViolation = cautionJoints.isEmpty ? 0
+                : (c.jointStress.contains { cautionJoints.contains($0.lowercased()) } ? 1 : 0)
+            let gates = gateViolation * 2 + cautionViolation
             let focusStanding = (focusMuscles?.contains(c.primaryMuscle) == true) ? 0 : 1
             // Unscored rows sit at a neutral 5 — between cornerstone and
             // filler — so a half-labeled catalog stays sane.
-            let score = c.focusScores[scoreKey] ?? 5
-            let stretch = (!isMain && focus == .hypertrophy && c.lengthenedBias) ? 0 : 1
+            // With a profile tilt, the score is the WEIGHTED sum over the
+            // full goal vector (x10 for integer ordering) — this is where
+            // a 0.3-weighted secondary goal shows up in what gets picked.
+            // Axial boost (bone_density ranked): spinalLoad 0-2 joins the
+            // score at matching scale.
+            // Persona lens (CoachPersona stances, label-space only): the
+            // fatigue-averse coach docks systemic drain, the hybrid coach
+            // boosts explosive intent. Same scale as the axial boost.
+            var lensAdjust = 0
+            if let lens {
+                if lens.fatigueAverse { lensAdjust -= c.fatigueCost }
+                if lens.explosiveEmphasis, c.explosive { lensAdjust += 3 }
+            }
+            let score: Int
+            if let tilt, !tilt.isEmpty {
+                var s = 0.0
+                for (key, weight) in tilt { s += weight * Double(c.focusScores[key] ?? 5) }
+                score = Int((s * 10).rounded())
+                    + (axialBoost ? c.spinalLoad * 10 : 0) + lensAdjust * 10
+            } else {
+                score = (c.focusScores[scoreKey] ?? 5)
+                    + (axialBoost ? c.spinalLoad * 2 : 0) + lensAdjust * 2
+            }
+            // Stretch emphasis: hypertrophy's default accessory tiebreak,
+            // extended to every focus for the stretch-emphasis coaches.
+            let wantsStretch = focus == .hypertrophy || lens?.stretchEmphasis == true
+            let stretch = (!isMain && wantsStretch && c.lengthenedBias) ? 0 : 1
             let lad: Int
             if isMain {
                 lad = ladder[c.equipment] ?? 5
+            } else if lens?.barbellFirst == true {
+                // The strength-purist stance: accessories prefer the bar.
+                let barFirst = ["barbell": 0, "dumbbell": 1, "machine": 2, "cable": 2, "bodyweight": 3]
+                lad = barFirst[c.equipment] ?? 4
             } else {
                 // Rule 5: accessories favor machine/cable (low systemic
                 // fatigue, safe near failure).
                 let inverse = ["machine": 0, "cable": 0, "dumbbell": 1, "bodyweight": 2, "barbell": 3]
                 lad = inverse[c.equipment] ?? 4
             }
-            return (pen, gateViolation, focusStanding, -score, stretch, lad)
+            return (pen, gates, focusStanding, -score, stretch, lad)
         }
         let sorted = candidates.sorted { a, b in
             let ta = tier(a), tb = tier(b)
@@ -672,6 +850,55 @@ enum ProgramGenerator {
 
     // MARK: Helpers
 
+    /// Antagonist-superset pairing (session structure `supersets` — the
+    /// corpus's single most-discussed style, 173 videos / 12 channels):
+    /// opposing patterns alternate sets, halving session time with
+    /// near-zero performance cost BECAUSE the pairs are antagonists — one
+    /// side rests while the other works. Pairs are assigned greedily in
+    /// program order; anything unpaired stays straight sets. Cardio and
+    /// core never pair.
+    static func assignSupersets(day: Day, catalog: [CatalogExercise]) -> Day {
+        let byID = Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, $0) })
+        // Opposing-pattern table; isolation pairs oppose by primary muscle.
+        let opposing: [String: String] = [
+            "push_horizontal": "pull_horizontal", "pull_horizontal": "push_horizontal",
+            "push_vertical": "pull_vertical", "pull_vertical": "push_vertical",
+        ]
+        let opposingMuscle: [String: String] = [
+            "biceps": "triceps", "triceps": "biceps",
+            "quads": "hamstrings", "hamstrings": "quads",
+            "chest": "back", "back": "chest",
+        ]
+        func pairKey(_ e: Exercise) -> (want: String, offer: String)? {
+            guard e.cardioZone == nil, let cat = byID[e.exerciseID] else { return nil }
+            if let opposite = opposing[cat.movementPattern] {
+                return (opposite, cat.movementPattern)
+            }
+            if cat.category == "isolation" {
+                let muscle = cat.primaryMuscle.lowercased()
+                if let opposite = opposingMuscle[muscle] { return ("iso:" + opposite, "iso:" + muscle) }
+            }
+            return nil
+        }
+        var day = day
+        var group = 0
+        var openOffers: [String: Int] = [:]   // offered key -> exercise index
+        for index in day.exercises.indices {
+            guard day.exercises[index].supersetGroup == nil,
+                  let key = pairKey(day.exercises[index]) else { continue }
+            if let partner = openOffers[key.want],
+               day.exercises[partner].supersetGroup == nil {
+                group += 1
+                day.exercises[partner].supersetGroup = group
+                day.exercises[index].supersetGroup = group
+                openOffers[key.want] = nil
+            } else {
+                openOffers[key.offer] = index
+            }
+        }
+        return day
+    }
+
     /// Effective weekly sets per muscle across lifting days. Fractional
     /// counting — a set counts 1.0 for the primary muscle and 0.5 per
     /// secondary — the convention the volume literature's set counts use.
@@ -767,6 +994,13 @@ enum ProgramGenerator {
         // full-body = every day; UL/PPL = half the days.
         let fullBody = split.filter { $0 == .fullBody }.count
         if fullBody > 0 { return fullBody }
+        // Bodypart days: a bro muscle's one day carries its whole week
+        // (frequency 1); a hybrid's upper/lower base gives the second
+        // touch (frequency 2).
+        let bodypart: Set<GeneratorScience.DayKind> = [.chest, .back, .shoulders, .arms]
+        if split.contains(where: { bodypart.contains($0) }) {
+            return split.contains(.upper) || split.contains(.lower) ? 2 : 1
+        }
         return max(1, split.count / 2)
     }
 
@@ -782,6 +1016,10 @@ enum ProgramGenerator {
         case .push: base = "Push"
         case .pull: base = "Pull"
         case .legs: base = "Legs"
+        case .chest: base = "Chest"
+        case .back: base = "Back"
+        case .shoulders: base = "Shoulders"
+        case .arms: base = "Arms"
         }
         return sameKind.count > 1 ? "\(base) \(ordinal)" : base
     }

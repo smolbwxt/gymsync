@@ -440,7 +440,8 @@ struct CoachWizardView: View {
                 unilateral: ex.unilateral ?? false,
                 impact: ex.impact ?? "none",
                 legInterference: ex.legInterference ?? false,
-                explosive: ex.explosive ?? false)
+                explosive: ex.explosive ?? false,
+                jointStress: ex.jointStress ?? [])
         }
         let inputs = ProgramGenerator.Inputs(
             focus: focus, daysPerWeek: days, durationWeeks: duration,
@@ -497,6 +498,7 @@ struct CoachWizardView: View {
                         targetWeight: nil,
                         restSeconds: ex.restSeconds,
                         notes: nil,
+                        supersetGroup: ex.supersetGroup,
                         targetRepsLow: ex.cardioZone != nil ? nil : ex.repsLow,
                         targetRepsHigh: ex.cardioZone != nil ? nil : ex.repsHigh,
                         cardioZone: ex.cardioZone,
