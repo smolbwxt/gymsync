@@ -10,16 +10,16 @@ import XCTest
 /// ran as one static week for its whole duration.
 final class ProgramTemplateStoreTests: XCTestCase {
 
+    // Memberwise on purpose: a bare JSONDecoder can't decode the model's
+    // Date fields (production rows arrive through the SDK's configured
+    // decoder), and a test fixture shouldn't depend on decoder strategy.
     private func generatedRow(slug: String, sessions: Int = 3) -> ProgramTemplateRow {
-        let json = """
-        {"id":"\(UUID().uuidString)","slug":"\(slug)","name":"Coach · Strength",
-         "summary":"generated","kind":"takeover","focus_kind":"strength",
-         "sessions_per_week":\(sessions),"duration_weeks":8,"creator_id":null,
-         "is_premium":false,"price_tier":null,"storekit_product_id":null,
-         "owner_id":"\(UUID().uuidString)","created_at":"2026-08-17T00:00:00Z"}
-        """
-        return try! JSONDecoder().decode(ProgramTemplateRow.self,
-                                         from: json.data(using: .utf8)!)
+        ProgramTemplateRow(
+            id: UUID(), slug: slug, name: "Coach · Strength",
+            summary: "generated", kind: "takeover", focusKind: "strength",
+            sessionsPerWeek: sessions, durationWeeks: 8, creatorID: nil,
+            isPremium: false, priceTier: nil, storekitProductID: nil,
+            ownerID: UUID(), createdAt: .now)
     }
 
     func testBundledTemplatesStillResolve() {
@@ -68,21 +68,20 @@ final class ProgramTemplateStoreTests: XCTestCase {
         ProgramTemplateStore.shared.register([
             ProgramTemplate(row: generatedRow(slug: slug), weeks: weeks)])
 
-        // Enrollment started 7 days ago => currently in week 2.
-        let started = Calendar.current.date(byAdding: .day, value: -7, to: .now)!
+        // Enrollment started 8 days ago => day 9 of the program, squarely
+        // inside week 2 (day 8 exactly would sit ON the boundary and make
+        // the test flaky across timezones). Formatter pinned to the local
+        // calendar's zone because `startedOn` parses device-local.
+        let started = Calendar.current.date(byAdding: .day, value: -8, to: .now)!
         let day = ISO8601DateFormatter()
         day.formatOptions = [.withFullDate]
-        let json = """
-        {"id":"\(UUID().uuidString)","user_id":"\(UUID().uuidString)",
-         "template_slug":"\(slug)",
-         "focus":{"exercise_ids":["\(liftID.uuidString)"]},
-         "baseline":{"\(liftID.uuidString.lowercased())":200},
-         "started_on":"\(day.string(from: started))","weeks":2,
-         "ended_at":null,"ended_reason":null,
-         "created_at":"2026-08-17T00:00:00Z"}
-        """
-        let enrollment = try JSONDecoder().decode(
-            ProgramEnrollment.self, from: json.data(using: .utf8)!)
+        day.timeZone = Calendar.current.timeZone
+        let enrollment = ProgramEnrollment(
+            id: UUID(), userID: UUID(), templateSlug: slug,
+            focus: ProgramFocus(exerciseIDs: [liftID]),
+            baseline: [liftID.uuidString.lowercased(): 200],
+            startedOnString: day.string(from: started),
+            weeks: 2, endedAt: nil, endedReason: nil, createdAt: .now)
 
         XCTAssertNotNil(enrollment.template,
                         "the generated template must resolve from the enrollment")
