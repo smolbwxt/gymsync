@@ -65,8 +65,8 @@ final class ExerciseSubstitutionTests: XCTestCase {
 
     func testSituationalFilterExcludesProgrammingPreferences() {
         let index = SubstitutionGraph.index([
-            edge("bench", "floor-press", trigger: "preference", equivalence: "full"),
-            edge("bench", "db-press", trigger: "crowding", equivalence: "partial"),
+            edge("bench", "floor-press", equivalence: "full", trigger: "preference"),
+            edge("bench", "db-press", equivalence: "partial", trigger: "crowding"),
         ])
         // Reacting to a taken machine: a preference edge is not an answer.
         let swap = SubstitutionGraph.bestSwap(for: "bench", in: index,
