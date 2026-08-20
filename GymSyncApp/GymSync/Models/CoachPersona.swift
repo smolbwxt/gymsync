@@ -38,6 +38,8 @@ struct CoachPersona: Identifiable, Equatable, Sendable {
         var explosiveEmphasis = false
     }
 
+    var id: String { slug }
+
     let slug: String
     let name: String
     /// One-line pitch for the picker card.
