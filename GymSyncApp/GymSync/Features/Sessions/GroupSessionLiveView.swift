@@ -238,6 +238,37 @@ struct GroupSessionLiveView: View {
     @State private var didQueueSetOffline = false
     @State private var recapData: RecapData?          // non-nil → sheet
     @State private var penaltyLogged        = 0       // reps logged this session as penalty by me
+
+    // MARK: - Hot-swap state (owner rulings 2026-08-21)
+    //
+    // Self-scale: QUIET - the member's own remaining sets use the
+    // replacement, shown on their set when their turn comes, never
+    // announced (no overlay, no feed event). Squad swap: ANYONE proposes,
+    // UNANIMOUS consent (every present member votes yes) applies it to
+    // everyone. Session-local like the solo overrides - dies with the
+    // session; set_logs carry the replacement exercise as real data.
+    struct SwapTarget: Equatable { let id: UUID; let name: String }
+    struct SwapProposal: Equatable {
+        let id: UUID
+        let proposerID: UUID
+        let exerciseID: UUID
+        let target: SwapTarget
+        var votes: [UUID: Bool]
+    }
+    /// Per-member quiet scales: userID -> (original exerciseID -> replacement).
+    @State private var selfScales: [UUID: [UUID: SwapTarget]] = [:]
+    /// Squad-approved swaps: original exerciseID -> replacement.
+    @State private var squadSwaps: [UUID: SwapTarget] = [:]
+    @State private var swapProposal: SwapProposal? = nil
+    @State private var swapProposalExpiry: Task<Void, Never>? = nil
+    @State private var showGroupSwapSheet = false
+    @State private var groupSwapOptions: [GroupSwapOption] = []
+    @State private var swapForSquad = false
+    struct GroupSwapOption: Identifiable {
+        let id: UUID
+        let name: String
+        let detail: String
+    }
     /// Fetched lazily when this is a group session — backs the penalty
     /// banner's secondary "Crew ledger" link into BurpeeLedgerView (Canvas
     /// Completion Task 3). `nil` for ad-hoc/solo sessions (no groupID) and
@@ -423,9 +454,38 @@ struct GroupSessionLiveView: View {
         allSessionSets.filter { $0.userID == userID && $0.exerciseID == exerciseID && !$0.isPenalty }.count
     }
 
+    /// The shared routine with hot-swaps applied: squad swaps first
+    /// (everyone), then MY quiet self-scales on top (my own choice for my
+    /// body beats the squad's). Progression, logging, and display all
+    /// read THIS, so a swapped lift is what actually gets logged.
+    private var effectiveRoutineExercises: [RoutineExercise] {
+        routineExercises.map { re in
+            var target: SwapTarget? = squadSwaps[re.exerciseID]
+            if let selfID, let mine = selfScales[selfID]?[re.exerciseID] { target = mine }
+            guard let target else { return re }
+            return RoutineExercise(
+                id: re.id, routineID: re.routineID, exerciseID: target.id,
+                position: re.position, targetSets: re.targetSets,
+                targetReps: re.targetReps, targetWeight: nil,
+                restSeconds: re.restSeconds, notes: re.notes,
+                supersetGroup: re.supersetGroup,
+                targetRepsLow: re.targetRepsLow, targetRepsHigh: re.targetRepsHigh,
+                cardioZone: re.cardioZone, cardioMinutes: re.cardioMinutes)
+        }
+    }
+
+    /// The CURRENT lifter's quiet scale for the shared current exercise,
+    /// if any - what the spectate card shows "during their set" (never
+    /// announced anywhere else).
+    private var currentLifterScale: SwapTarget? {
+        guard let turnID = liveSession.currentTurnUserID, turnID != selfID,
+              let ex = currentExerciseForSheet else { return nil }
+        return selfScales[turnID]?[ex.id]
+    }
+
     private var currentRoutineExercise: RoutineExercise? {
         guard let ex = currentExerciseForSheet else { return nil }
-        return routineExercises.first(where: { $0.exerciseID == ex.id })
+        return effectiveRoutineExercises.first(where: { $0.exerciseID == ex.id })
     }
 
     private var targetSetsPerLifter: Int { currentRoutineExercise?.targetSets ?? 1 }
@@ -1272,6 +1332,20 @@ struct GroupSessionLiveView: View {
                         .lineLimit(1)
                 }
                 Spacer()
+                // Hot-swap (owner 2026-08-21): scale for yourself quietly,
+                // or put a swap to the squad - unanimous applies.
+                Button {
+                    swapForSquad = false
+                    showGroupSwapSheet = true
+                } label: {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(theme.neutral700)
+                        .frame(width: 36, height: 36)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Swap exercise")
             }
             .padding(.top, 12)
 
@@ -1778,7 +1852,9 @@ struct GroupSessionLiveView: View {
                         exerciseDetailSheet = ex
                     } label: {
                         HStack(spacing: 5) {
-                            Text(ex.name)
+                            // Quiet self-scale (owner ruling): shown on
+                            // their set, never announced anywhere else.
+                            Text(currentLifterScale.map { "\($0.name) · scaled" } ?? ex.name)
                                 .font(GSFont.bold(13, relativeTo: .footnote))
                                 .tracking(0.5)
                                 .foregroundStyle(theme.neutral700)
@@ -2369,8 +2445,10 @@ struct GroupSessionLiveView: View {
 
     var body: some View {
         arenaWithThrow
+        .overlay(alignment: .top) { swapVoteBanner }
         // Log Set sheet — penalty (burpee) logging only now; normal sets log inline.
         .sheet(isPresented: $showLogSetSheet) { logSetSheetContent }
+        .sheet(isPresented: $showGroupSwapSheet) { groupSwapSheet }
         .sheet(item: $exerciseDetailSheet) { ex in
             NavigationStack {
                 ExerciseDetailView(exercise: ex)
@@ -2844,6 +2922,108 @@ struct GroupSessionLiveView: View {
             // same confirmation; the proof's live screens never show a second
             // "End Session" affordance alongside the primary action.)
             bottomActionBar
+        }
+    }
+
+    /// Squad-swap vote banner: visible to everyone while a proposal is
+    /// open. Unanimous consent applies; one pass ends it quietly.
+    @ViewBuilder
+    private var swapVoteBanner: some View {
+        if let proposal = swapProposal {
+            let proposer = participants.first { $0.participant.userID == proposal.proposerID }?
+                .profile.username ?? "Someone"
+            let fromName = exerciseNames[proposal.exerciseID]
+                ?? allExercises.first(where: { $0.id == proposal.exerciseID })?.name
+                ?? "this exercise"
+            let present = presentRotation.count
+            let yes = proposal.votes.values.filter { $0 }.count
+            let iVoted = selfID.map { proposal.votes[$0] != nil } ?? true
+            VStack(spacing: 8) {
+                Text("\(proposer) proposes \(fromName) → \(proposal.target.name)")
+                    .font(GSFont.bold(13, relativeTo: .footnote))
+                    .foregroundStyle(theme.text)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 10) {
+                    Text("\(yes) of \(max(present, yes)) in · needs everyone")
+                        .font(GSFont.body(11, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral500)
+                    if !iVoted {
+                        Button { castVote(true) } label: {
+                            Text("I'm in")
+                                .font(GSFont.bold(12, relativeTo: .caption))
+                                .foregroundStyle(theme.bg)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 6)
+                                .background(theme.accent)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        Button { castVote(false) } label: {
+                            Text("Pass")
+                                .font(GSFont.bold(12, relativeTo: .caption))
+                                .foregroundStyle(theme.neutral700)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 6)
+                                .background(theme.surface)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(theme.surface)
+            .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusMd)
+                .strokeBorder(theme.divider, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: GSMetrics.radiusMd))
+            .padding(.horizontal, 24)
+            .padding(.top, 52)
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
+    }
+
+    /// Swap sheet: candidates from the substitution graph (coached edges
+    /// first), same-muscle/pattern neighbors as fallback - the solo swap
+    /// sheet's exact sourcing, plus the just-me / squad-vote mode switch.
+    private var groupSwapSheet: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Picker("Who is this for?", selection: $swapForSquad) {
+                        Text("Just me").tag(false)
+                        Text("Squad vote").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    Text(swapForSquad
+                         ? "Everyone votes. It only applies if the whole squad is in."
+                         : "Your remaining sets use the swap - shown on your turn, never announced.")
+                        .font(GSFont.body(12, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral500)
+                }
+                if groupSwapOptions.isEmpty {
+                    Text("Looking for swaps…")
+                        .font(GSFont.body(14, relativeTo: .body))
+                        .foregroundStyle(theme.neutral500)
+                }
+                ForEach(groupSwapOptions) { option in
+                    Button { chooseSwap(option) } label: {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(option.name)
+                                .font(GSFont.bold(15, relativeTo: .body))
+                                .foregroundStyle(theme.text)
+                            Text(option.detail)
+                                .font(GSFont.body(12, relativeTo: .caption))
+                                .foregroundStyle(theme.neutral500)
+                                .lineLimit(2)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Swap \(currentExerciseForSheet?.name ?? "exercise")")
+            .navigationBarTitleDisplayMode(.inline)
+            .task { await loadGroupSwapOptions() }
         }
     }
 
@@ -4016,7 +4196,7 @@ struct GroupSessionLiveView: View {
         // Counts come from the UNCAPPED session array — the 30-row feed
         // undercounts long sessions. See RoutineProgression's doc.
         if let re = RoutineProgression.currentExercise(
-            routine: routineExercises,
+            routine: effectiveRoutineExercises,
             completedSets: { exerciseID in mySetCount(for: exerciseID) }
         ) {
             return allExercises.first(where: { $0.id == re.exerciseID })
@@ -4031,7 +4211,7 @@ struct GroupSessionLiveView: View {
     }
 
     private func defaultReps(for exerciseID: UUID) -> String? {
-        routineExercises.first(where: { $0.exerciseID == exerciseID })?.targetReps
+        effectiveRoutineExercises.first(where: { $0.exerciseID == exerciseID })?.targetReps
     }
 
     /// Reset the inline log card to fresh defaults — called whenever it becomes my turn.
@@ -4157,15 +4337,15 @@ struct GroupSessionLiveView: View {
                 // + 1 (the just-logged set), never from live
                 // `currentExerciseForSheet` — the echo-timing race above.
                 let nextRE = RoutineProgression.currentExercise(
-                    routine: routineExercises,
+                    routine: effectiveRoutineExercises,
                     completedSets: { id in id == ex.id ? preLogSetCount + 1 : mySetCount(for: id) })
                 let exerciseChanged = nextRE != nil && nextRE?.exerciseID != ex.id
                 // Superset handoff (phase B group mirror): A→B is the same
                 // station cluster with NO rest — skip the interlude
                 // entirely and stay on my-turn for the partner's set.
-                let currentRE = routineExercises.first(where: { $0.exerciseID == ex.id })
+                let currentRE = effectiveRoutineExercises.first(where: { $0.exerciseID == ex.id })
                 if exerciseChanged,
-                   RoutineProgression.arePaired(currentRE, nextRE, in: routineExercises) {
+                   RoutineProgression.arePaired(currentRE, nextRE, in: effectiveRoutineExercises) {
                     // No interlude — the pair's whole point.
                 } else {
                     let isTransit = exerciseChanged
@@ -4446,6 +4626,9 @@ struct GroupSessionLiveView: View {
                 Task { @MainActor in
                     await showReactionOverlay(emoji)
                 }
+            },
+            onSwap: { event in
+                receiveSwap(event)
             }
         )
         // Phase W Task 5 (watch-hr design §4) — subscribes alongside the
@@ -4481,6 +4664,166 @@ struct GroupSessionLiveView: View {
                     bpm: bpm, zone: zone.rawValue
                 )
             }
+        }
+    }
+
+    // MARK: - Hot-swap wire handling
+
+    /// All swap events land here. Idempotent by design - the sender's own
+    /// local state was already set at send time, so a self-echo re-applies
+    /// the same values. UNANIMITY is evaluated by the PROPOSER's client
+    /// only (one decision point beats racy per-client tallies); everyone
+    /// else applies on the proposer's "apply".
+    @MainActor
+    private func receiveSwap(_ event: SessionBroadcastService.SwapEvent) {
+        switch event.kind {
+        case "self":
+            // Quiet: store and show on their set. Never an overlay.
+            selfScales[event.userID, default: [:]][event.exerciseID] =
+                SwapTarget(id: event.replacementID, name: event.replacementName)
+            exerciseNames[event.replacementID] = event.replacementName
+        case "propose":
+            guard let pid = event.proposalID else { return }
+            // A newer proposal replaces an older one (last write wins -
+            // one vote at a time keeps the banner comprehensible).
+            var proposal = SwapProposal(
+                id: pid, proposerID: event.userID,
+                exerciseID: event.exerciseID,
+                target: SwapTarget(id: event.replacementID, name: event.replacementName),
+                votes: [event.userID: true])
+            if let existing = swapProposal, existing.id == pid {
+                proposal.votes.merge(existing.votes) { new, _ in new }
+            }
+            swapProposal = proposal
+            armProposalExpiry(pid)
+        case "vote":
+            guard var proposal = swapProposal, proposal.id == event.proposalID else { return }
+            proposal.votes[event.userID] = event.vote ?? false
+            if event.vote == false {
+                // Unanimous means unanimous: one pass ends it, quietly.
+                clearProposal()
+                return
+            }
+            swapProposal = proposal
+            // Proposer's client is the single decision point.
+            if proposal.proposerID == selfID { evaluateUnanimity(proposal) }
+        case "apply":
+            squadSwaps[event.exerciseID] =
+                SwapTarget(id: event.replacementID, name: event.replacementName)
+            exerciseNames[event.replacementID] = event.replacementName
+            clearProposal()
+        default:
+            break
+        }
+    }
+
+    @MainActor
+    private func evaluateUnanimity(_ proposal: SwapProposal) {
+        // Everyone the server would hand a turn to must have said yes.
+        let present = Set(presentRotation.map(\.participant.userID))
+        let yes = Set(proposal.votes.filter { $0.value }.map(\.key))
+        guard !present.isEmpty, present.subtracting(yes).isEmpty else { return }
+        squadSwaps[proposal.exerciseID] = proposal.target
+        exerciseNames[proposal.target.id] = proposal.target.name
+        clearProposal()
+        Task {
+            await broadcastService.sendSwap(
+                sessionID: liveSession.id, kind: "apply", proposalID: proposal.id,
+                exerciseID: proposal.exerciseID,
+                replacementID: proposal.target.id,
+                replacementName: proposal.target.name)
+        }
+    }
+
+    @MainActor
+    private func clearProposal() {
+        swapProposalExpiry?.cancel()
+        swapProposalExpiry = nil
+        swapProposal = nil
+    }
+
+    /// A proposal nobody resolves dies quietly after two minutes.
+    @MainActor
+    private func armProposalExpiry(_ pid: UUID) {
+        swapProposalExpiry?.cancel()
+        swapProposalExpiry = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(120))
+            guard !Task.isCancelled, swapProposal?.id == pid else { return }
+            clearProposal()
+        }
+    }
+
+    // MARK: - Hot-swap actions
+
+    private func loadGroupSwapOptions() async {
+        guard let current = currentExerciseForSheet else { return }
+        var options: [GroupSwapOption] = []
+        var seen: Set<UUID> = [current.id]
+        if let edges = try? await ExerciseSubstitutionRepository.forExercise(slug: current.slug) {
+            for edge in edges {
+                guard let match = allExercises.first(where: { $0.slug == edge.toSlug }),
+                      match.aliasOf == nil, !seen.contains(match.id) else { continue }
+                seen.insert(match.id)
+                options.append(GroupSwapOption(id: match.id, name: match.name,
+                                               detail: edge.reason))
+            }
+        }
+        for ex in allExercises where ex.aliasOf == nil
+            && ex.primaryMuscle == current.primaryMuscle
+            && ex.movementPattern == current.movementPattern
+            && !seen.contains(ex.id) {
+            seen.insert(ex.id)
+            options.append(GroupSwapOption(id: ex.id, name: ex.name,
+                                           detail: "Same muscle, same pattern"))
+            if options.count >= 10 { break }
+        }
+        groupSwapOptions = options
+    }
+
+    @MainActor
+    private func chooseSwap(_ option: GroupSwapOption) {
+        guard let ex = currentExerciseForSheet, let selfID else { return }
+        showGroupSwapSheet = false
+        let target = SwapTarget(id: option.id, name: option.name)
+        if swapForSquad {
+            let pid = UUID()
+            swapProposal = SwapProposal(id: pid, proposerID: selfID,
+                                        exerciseID: ex.id, target: target,
+                                        votes: [selfID: true])
+            armProposalExpiry(pid)
+            Task {
+                await broadcastService.sendSwap(
+                    sessionID: liveSession.id, kind: "propose", proposalID: pid,
+                    exerciseID: ex.id, replacementID: target.id,
+                    replacementName: target.name)
+            }
+        } else {
+            selfScales[selfID, default: [:]][ex.id] = target
+            exerciseNames[target.id] = target.name
+            Task {
+                await broadcastService.sendSwap(
+                    sessionID: liveSession.id, kind: "self", proposalID: nil,
+                    exerciseID: ex.id, replacementID: target.id,
+                    replacementName: target.name)
+            }
+        }
+    }
+
+    @MainActor
+    private func castVote(_ yes: Bool) {
+        guard var proposal = swapProposal, let selfID else { return }
+        proposal.votes[selfID] = yes
+        if yes {
+            swapProposal = proposal
+        } else {
+            clearProposal()
+        }
+        Task {
+            await broadcastService.sendSwap(
+                sessionID: liveSession.id, kind: "vote", proposalID: proposal.id,
+                exerciseID: proposal.exerciseID,
+                replacementID: proposal.target.id,
+                replacementName: proposal.target.name, vote: yes)
         }
     }
 

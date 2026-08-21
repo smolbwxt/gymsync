@@ -43,6 +43,22 @@ final class SessionBroadcastService {
 
     private var lastSentAt: Date = .distantPast
 
+    // MARK: - Swap events (group hot-swap, owner rulings 2026-08-21)
+
+    /// One hot-swap wire event. `kind`: "self" (quiet member-local scale,
+    /// shown on their set, never announced), "propose" (opens a squad
+    /// vote), "vote" (yes/no toward UNANIMOUS), "apply" (proposer's
+    /// client observed unanimity - everyone applies).
+    struct SwapEvent: Sendable {
+        let userID: UUID
+        let kind: String
+        let proposalID: UUID?
+        let exerciseID: UUID
+        let replacementID: UUID
+        let replacementName: String
+        let vote: Bool?
+    }
+
     // MARK: - Subscribe
 
     /// Subscribe to soundboard + reaction broadcast events for a session.
@@ -54,7 +70,8 @@ final class SessionBroadcastService {
     func subscribe(
         sessionID: UUID,
         onSoundboard: @escaping @MainActor (UUID, String) -> Void,
-        onReaction:   @escaping @MainActor (UUID, String) -> Void
+        onReaction:   @escaping @MainActor (UUID, String) -> Void,
+        onSwap:       @escaping @MainActor (SwapEvent) -> Void = { _ in }
     ) async {
         await unsubscribe()
 
@@ -65,6 +82,7 @@ final class SessionBroadcastService {
         // (Same ordering rule as postgres_changes — SDK wires filters during subscribe.)
         let soundboardStream = ch.broadcastStream(event: "soundboard")
         let reactionStream   = ch.broadcastStream(event: "reaction")
+        let swapStream       = ch.broadcastStream(event: "swap")
 
         self.channel = ch
         await ch.subscribe()
@@ -85,6 +103,31 @@ final class SessionBroadcastService {
                             continue
                         }
                         onSoundboard(uid, slug)
+                    }
+                }
+
+                // ── swap (hot-swap wire) ──────────────────────────────────
+                group.addTask { @MainActor in
+                    for await payload in swapStream {
+                        guard
+                            let rawUID = payload["user_id"]?.stringValue,
+                            let uid    = UUID(uuidString: rawUID),
+                            let kind   = payload["kind"]?.stringValue,
+                            let rawEx  = payload["exercise_id"]?.stringValue,
+                            let exID   = UUID(uuidString: rawEx),
+                            let rawRep = payload["replacement_id"]?.stringValue,
+                            let repID  = UUID(uuidString: rawRep),
+                            let repName = payload["replacement_name"]?.stringValue
+                        else {
+                            AppLogger.soundboard.error("broadcast: malformed swap payload")
+                            continue
+                        }
+                        let proposalID = payload["proposal_id"]?.stringValue.flatMap(UUID.init)
+                        let vote = payload["vote"]?.boolValue
+                        onSwap(SwapEvent(userID: uid, kind: kind,
+                                         proposalID: proposalID, exerciseID: exID,
+                                         replacementID: repID, replacementName: repName,
+                                         vote: vote))
                     }
                 }
 
@@ -165,6 +208,26 @@ final class SessionBroadcastService {
                 "ts":      .double(Date().timeIntervalSince1970 * 1000)
             ]
         )
+    }
+
+    /// Broadcast a hot-swap event. Deliberately NOT behind the shared
+    /// 1/s rate limit: a vote landing inside the cooldown would be
+    /// silently dropped, and unanimity math cannot survive dropped votes.
+    func sendSwap(sessionID: UUID, kind: String, proposalID: UUID?,
+                  exerciseID: UUID, replacementID: UUID,
+                  replacementName: String, vote: Bool? = nil) async {
+        guard let me = await SupabaseService.shared.currentUserID() else { return }
+        var message: [String: AnyJSON] = [
+            "user_id":          .string(me.uuidString),
+            "kind":             .string(kind),
+            "exercise_id":      .string(exerciseID.uuidString),
+            "replacement_id":   .string(replacementID.uuidString),
+            "replacement_name": .string(replacementName),
+            "ts":               .double(Date().timeIntervalSince1970 * 1000)
+        ]
+        if let proposalID { message["proposal_id"] = .string(proposalID.uuidString) }
+        if let vote { message["vote"] = .bool(vote) }
+        await broadcastRaw(sessionID: sessionID, event: "swap", message: message)
     }
 
     // MARK: - Private helpers
