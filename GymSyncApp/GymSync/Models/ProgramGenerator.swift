@@ -905,6 +905,17 @@ enum ProgramGenerator {
                 let inverse = ["machine": 0, "cable": 0, "dumbbell": 1, "bodyweight": 2, "barbell": 3]
                 lad = inverse[c.equipment] ?? 4
             }
+            // Corpus attestation prior (mentions export 2026-08-20): a
+            // lift NO research channel teaches never outranks one the
+            // field teaches, whatever its swarm-authored score claims —
+            // score dominance only holds where the corpus vouches for the
+            // row. Soft like every gate: silent rows still fill a slot
+            // when nothing attested fits. The 2-channel consensus bar
+            // (strong vs weak) is title-mined and under-counts, so it
+            // only splits ties below the score, never the ranking.
+            let attestedChannels = CorpusAttestation.channels(name: c.name)
+            let attestSilent = attestedChannels == 0 ? 1 : 0
+            let attestWeak = attestedChannels >= 2 ? 0 : 1
             // Novice simplicity preference (audit 2026-08-20, the Pendlay
             // finding): for a NEW lifter, simpler wins among viable
             // candidates BEFORE the score — no boost may promote a
@@ -918,8 +929,15 @@ enum ProgramGenerator {
             // simplicity is 0 and the explosive tier decides alone.
             // stretch*8+lad merges two tiebreaks the same way; stretch
             // dominates since lad <= 5.
+            // attestSilent*10_000 - score in one component (tuple arity):
+            // scores are bounded well under 10_000 (tilt path peaks near
+            // ~500), so silence dominates score without a new slot.
+            // attestWeak*16 + stretch*8 + lad likewise: strong 2-channel
+            // attestation outranks the stretch bias (max 13) as the first
+            // sub-score tiebreak.
             return (pen, gates, focusStanding, simplicity * 4 + explosiveFit,
-                    -score, stretch * 8 + lad)
+                    attestSilent * 10_000 - score,
+                    attestWeak * 16 + stretch * 8 + lad)
         }
         let sorted = candidates.sorted { a, b in
             let ta = tier(a), tb = tier(b)
