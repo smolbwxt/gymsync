@@ -101,6 +101,37 @@ final class TrainingProfileTests: XCTestCase {
         XCTAssertFalse(slots.isEmpty, "bodypart days keep their template under every focus")
     }
 
+    // MARK: Carryover — the relationship's memory (Phase 4)
+
+    func testCarryoverDrivesBlockAlternation() {
+        var profile = TrainingProfile()
+        profile.rankedGoals = [.hypertrophy, .maxStrength]
+        XCTAssertEqual(profile.generatorFocus, .hypertrophy,
+                       "block one: the dominant goal leads")
+        var carryover = TrainingProfile.Carryover()
+        carryover.blockGoalHistory = [.hypertrophy]
+        profile.carryover = carryover
+        XCTAssertEqual(profile.blockGoal, .maxStrength,
+                       "block two: the 1/3-weighted goal claims its block")
+        XCTAssertEqual(profile.generatorFocus, .strength,
+                       "the whole prescription table follows the block goal")
+    }
+
+    func testCarryoverDeprioritizedAndAdvisoryReachInputs() {
+        var profile = TrainingProfile()
+        profile.rankedGoals = [.hypertrophy, .maxStrength]
+        var carryover = TrainingProfile.Carryover()
+        let skipped = UUID()
+        carryover.deprioritizedExerciseIDs = [skipped]
+        carryover.blockGoalHistory = [.hypertrophy]
+        profile.carryover = carryover
+        let inputs = profile.generatorInputs(durationWeeks: 8)
+        XCTAssertTrue(inputs.deprioritizedExerciseIDs.contains(skipped),
+                      "last block's skipped lifts sort last next block")
+        XCTAssertTrue(inputs.advisoryNotes.contains { $0.contains("Block 2") },
+                      "the alternation names itself to the athlete")
+    }
+
     // MARK: The acceptance fixture (owner 2026-08-20)
     //
     // "The day the generator can produce a genuinely different program for

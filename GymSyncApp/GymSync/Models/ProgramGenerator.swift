@@ -187,16 +187,23 @@ enum ProgramGenerator {
         }
 
         var notes: [String] = inputs.advisoryNotes
+        if inputs.daysPerWeek == 1 {
+            notes.append("One day a week means one LONG session (~75-90 minutes) - everything has to fit. A session cap trims it, and two shorter days beat one marathon when life allows.")
+        }
 
         // Weekly per-muscle set budget: focus band (beginner override),
         // sex ceiling nudge (soft, top only).
-        let weekly: (low: Int, high: Int)
+        var weekly: (low: Int, high: Int)
         if inputs.experience == .new {
             weekly = GeneratorScience.beginnerWeeklySets
         } else {
             let ceiling = Double(band.weeklySetsHigh)
                 * GeneratorScience.weeklyVolumeCeilingMultiplier(sex: inputs.sex)
             weekly = (band.weeklySetsLow, Int(ceiling.rounded()))
+            // Advanced lifters tolerate (and need) more: +2 on the weekly
+            // ceiling (audit: advanced was indistinguishable from
+            // intermediate at equal inputs).
+            if inputs.experience == .advanced { weekly.high += 2 }
         }
         let targetWeeklySets = (weekly.low + weekly.high) / 2
 
@@ -375,8 +382,11 @@ enum ProgramGenerator {
         // triceps ~17 effective sets against the 12-20 band while chest
         // got ~10). Runs before cardio/recovery days join, so only real
         // lifting volume is counted.
+        let emphasisDays: Set<String> = inputs.splitPreference == .hybrid
+            ? ["Chest", "Back", "Shoulders", "Arms", "Legs"] : []
         let balanced = balanceWeeklyVolume(days: days, catalog: catalog,
-                                           low: weekly.low, high: weekly.high)
+                                           low: weekly.low, high: weekly.high,
+                                           protectedDayNames: emphasisDays)
         days = balanced.days
         if balanced.trimmed > 0 || balanced.added > 0 {
             var parts: [String] = []
@@ -430,6 +440,18 @@ enum ProgramGenerator {
             }
             if !uncoverable.isEmpty {
                 notes.append("Tight week: no room for direct \(uncoverable.joined(separator: ", ")) — Coach rotates these in as sessions allow; the program covers them over time, not every single week.")
+            }
+        }
+
+        // A main-less lifting day (both its patterns excluded - A30)
+        // promotes its first lift to anchor the session: a day needs
+        // something to organize around, and the promoted lift keeps its
+        // accessory prescription (no invented percent).
+        for d in days.indices {
+            let lifting = days[d].exercises.filter { $0.cardioZone == nil }
+            if !lifting.isEmpty, !lifting.contains(where: \.isMain),
+               let first = days[d].exercises.firstIndex(where: { $0.cardioZone == nil }) {
+                days[d].exercises[first].isMain = true
             }
         }
 
@@ -497,6 +519,28 @@ enum ProgramGenerator {
                         slot: nil, cardioZone: 4, cardioMinutes: 12))
                 }
                 notes.append("Every conditioning session ends in a zone-4 interval finisher — the zone work IS the goal; the lifting holds muscle underneath it.")
+            }
+        }
+
+        // Secondary-goal purchase (concept 2026-08-20: "a 0.3
+        // conditioning weight buys a zone finisher, not mushy rep
+        // ranges"): a meaningful conditioning weight on a non-conditioning
+        // program with no dedicated cardio ends two sessions in intervals.
+        if inputs.focus != .conditioning, inputs.cardioDays == 0,
+           (inputs.selectionTilt?["conditioning"] ?? 0) >= 0.2,
+           let engine = usable.first(where: { $0.category == "cardio" }) {
+            var added = 0
+            for index in days.indices where added < 2
+                && days[index].exercises.contains(where: \.isMain) {
+                days[index].exercises.append(Exercise(
+                    exerciseID: engine.id, name: engine.name,
+                    sets: 1, repsLow: 0, repsHigh: 0, restSeconds: 0,
+                    percentOfMax: nil, isMain: false, slot: nil,
+                    cardioZone: 4, cardioMinutes: 10))
+                added += 1
+            }
+            if added > 0 {
+                notes.append("Your conditioning goal buys finishers: \(added) session\(added == 1 ? "" : "s") end with 10 zone-4 minutes - the engine work rides the lifting days.")
             }
         }
 
@@ -1078,7 +1122,8 @@ enum ProgramGenerator {
     /// a training commitment. Deterministic: muscles alphabetical, adds to
     /// the first qualifying accessory, trims from the last.
     static func balanceWeeklyVolume(
-        days: [Day], catalog: [CatalogExercise], low: Int, high: Int
+        days: [Day], catalog: [CatalogExercise], low: Int, high: Int,
+        protectedDayNames: Set<String> = []
     ) -> (days: [Day], trimmed: Int, added: Int) {
         let byID = Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, $0) })
         var days = days
@@ -1122,8 +1167,12 @@ enum ProgramGenerator {
             while weeklyMuscleSets(days: days, catalog: catalog)[muscle, default: 0]
                     > Double(high), guardRail > 0 {
                 guardRail -= 1
-                guard let (d, x) = accessorySites(for: muscle)
-                        .last(where: { days[$0.0].exercises[$0.1].sets > 2 })
+                // Emphasis days (hybrid split, A18) yield their sets
+                // LAST — the athlete chose this split FOR those days.
+                let sites = accessorySites(for: muscle)
+                    .filter { days[$0.0].exercises[$0.1].sets > 2 }
+                guard let (d, x) = sites.last(where: { !protectedDayNames.contains(days[$0.0].name) })
+                        ?? sites.last
                 else { break }
                 days[d].exercises[x].sets -= 1
                 trimmed += 1

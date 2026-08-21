@@ -166,6 +166,30 @@ struct TrainingProfile: Codable, Equatable, Sendable {
     // MARK: Provenance (field name -> where its value came from)
     var provenance: [String: FieldProvenance] = [:]
 
+    // MARK: Carryover — the relationship's memory (Phase 4 lifecycle)
+    //
+    // Block N's outcomes, folded here by CoachLifecycle when a block
+    // ends, seed block N+1: the goal history drives the block planner's
+    // alternation, abandoned lifts sort last next time, and attendance
+    // informs the day-count conversation. History informing the future,
+    // as data on the same profile everything else reads.
+    struct Carryover: Codable, Equatable, Sendable {
+        /// Every block's goal, in order — BlockPlanner's ledger.
+        var blockGoalHistory: [TrainingGoal] = []
+        /// Lifts the athlete kept skipping last block.
+        var deprioritizedExerciseIDs: [UUID] = []
+        /// What last block's attendance actually supported.
+        var suggestedDaysPerWeek: Int? = nil
+        var strugglingLiftIDs: [UUID] = []
+        var lastAdherence: Double? = nil
+        /// Novice finished a block at 75%+ — the graduation offer stands
+        /// until answered.
+        var pendingGraduation: Bool = false
+    }
+    var carryover: Carryover? = nil
+    /// Drift-probe cooldown ledger (DriftDetector's ~2-week cadence).
+    var lastProbeAt: Date? = nil
+
     // MARK: - Derivations (deterministic; the generator reads these)
 
     /// Ranking -> weights by linear decay, normalized to sum 1. First of
@@ -184,13 +208,22 @@ struct TrainingProfile: Codable, Equatable, Sendable {
 
     var dominantGoal: TrainingGoal { rankedGoals.first ?? .hypertrophy }
 
-    /// The dominant goal's focus for split/slots/scoring tables. Tiered
+    /// THIS block's goal: the planner's proportional alternation over the
+    /// goal history (a 70/30 profile runs hyp, str, hyp, hyp…). With no
+    /// history it reduces to the dominant goal, so every pre-carryover
+    /// behavior is unchanged.
+    var blockGoal: TrainingGoal {
+        BlockPlanner.nextBlockGoal(profile: self,
+                                   history: carryover?.blockGoalHistory ?? [])
+    }
+
+    /// The block goal's focus for split/slots/scoring tables. Tiered
     /// support: the three weight-only goals ride the closest full band —
     /// bone density's active ingredient is heavy axial loading (strength
     /// tables + spinal-load selection weight), mobility and general
     /// health ride hypertrophy's balanced template.
     var generatorFocus: GeneratorScience.Focus {
-        switch dominantGoal {
+        switch blockGoal {
         case .maxStrength, .powerRFD, .boneDensity: return .strength
         case .hypertrophy, .mobility, .generalHealth, .sportPrep: return .hypertrophy
         case .conditioning: return .conditioning
@@ -202,7 +235,7 @@ struct TrainingProfile: Codable, Equatable, Sendable {
     /// their focus table — power wants submaximal speed work, not
     /// grinding triples.
     var bandOverride: GeneratorScience.FocusBand? {
-        dominantGoal == .powerRFD ? GeneratorScience.powerBand : nil
+        blockGoal == .powerRFD ? GeneratorScience.powerBand : nil
     }
 
     /// Selection tilt over the label taxonomy's focus-score keys
@@ -271,6 +304,14 @@ struct TrainingProfile: Codable, Equatable, Sendable {
         inputs.bandOverride = bandOverride
         inputs.selectionTilt = selectionWeights
         inputs.excludedExerciseIDs = Set(exclusions.map(\.exerciseID))
+        // Carryover (Phase 4): last block's skipped lifts sort last; a
+        // multi-goal profile past block one names its alternation.
+        if let carryover {
+            inputs.deprioritizedExerciseIDs = Set(carryover.deprioritizedExerciseIDs)
+            if !carryover.blockGoalHistory.isEmpty, goalWeights.count > 1 {
+                inputs.advisoryNotes.append("Block \(carryover.blockGoalHistory.count + 1): \(blockGoal.rawValue.replacingOccurrences(of: "_", with: " ")) leads — multi-goal training runs as alternating specialization blocks (the corpus's answer to stalling both goals at once).")
+            }
+        }
         inputs.excludedPatterns = Set(excludedPatterns)
         inputs.cautionJoints = Set(cautionJoints.map { $0.lowercased() })
             .union(exclusions.compactMap { exclusion in
@@ -286,7 +327,7 @@ struct TrainingProfile: Codable, Equatable, Sendable {
         // the (bounded) explosive emphasis itself — the footballer gets
         // jumps without needing the Hybrid coach (audit 2026-08-20).
         var lens = CoachPersona.bySlug(persona)?.lens ?? CoachPersona.Lens()
-        if dominantGoal == .powerRFD { lens.explosiveEmphasis = true }
+        if blockGoal == .powerRFD { lens.explosiveEmphasis = true }
         inputs.personaLens = lens
         // Honesty lines (audit round 2): say what can't be honored.
         if split == .bro, daysPerWeek < 4 {
@@ -295,7 +336,7 @@ struct TrainingProfile: Codable, Equatable, Sendable {
         if split == .hybrid, daysPerWeek < 5 {
             inputs.advisoryNotes.append("The hybrid split needs 5+ days — below that, the science ladder already gives every muscle its second weekly touch.")
         }
-        if dominantGoal == .mobility {
+        if blockGoal == .mobility {
             inputs.advisoryNotes.append("Mobility leads your goals: today it shapes the picks and the recovery prescriptions — a dedicated mobility modality is still being built, and this lifting meanwhile moves you better than stretching alone would.")
         }
         return inputs

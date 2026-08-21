@@ -68,10 +68,32 @@ struct CoachWizardView: View {
     /// reps... percentages mean nothing to anyone other than the elite").
     @State private var calibrationAnchors: [String: Decimal] = [:]
     @State private var displayUnit: WeightUnit = .lbs
+    /// The relationship's memory rides every rebuild — dropping it would
+    /// reset block alternation and deprioritization each visit.
+    @State private var savedCarryover: TrainingProfile.Carryover?
+    @State private var savedProbeAt: Date?
+    /// A block that just finished — the banner's content.
+    @State private var blockCompletion: CoachLifecycle.BlockCompletion?
+    /// The first-contact handshake: one computed observation from the
+    /// athlete's existing log — demonstrate before you interrogate.
+    @State private var firstContact: String?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+                if let completion = blockCompletion {
+                    blockCompleteBanner(completion)
+                }
+
+                if let firstContact, blockCompletion == nil {
+                    Text(firstContact)
+                        .font(GSFont.body(13, relativeTo: .body))
+                        .foregroundStyle(theme.text)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(14)
+                        .background(RoundedRectangle(cornerRadius: 16).fill(theme.surface))
+                }
+
                 CoachPersonaStrip(selected: $personaSlug)
                     .onChange(of: personaSlug) { _, slug in
                         // The coach's method preset fills the dials the
@@ -172,6 +194,20 @@ struct CoachWizardView: View {
                 }
                 .buttonStyle(GSPrimaryButtonStyle())
 
+                // The profile is worth keeping even without a rebuild —
+                // the debrief's register and the drift probes read it.
+                Button {
+                    Task {
+                        guard let userID = appState.currentProfile?.id else { return }
+                        try? await TrainingProfileRepository.save(currentProfile(),
+                                                                  userID: userID)
+                    }
+                } label: {
+                    Text("Save profile")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(GSSecondaryButtonStyle())
+
                 if preview != nil {
                     // Deterministic variety: rotates among candidates the
                     // science rules score as interchangeable.
@@ -191,6 +227,7 @@ struct CoachWizardView: View {
 
                 if let preview {
                     previewSection(preview)
+                    scheduleHint
                     Button {
                         Task { await create(preview) }
                     } label: {
@@ -215,10 +252,15 @@ struct CoachWizardView: View {
         .task {
             allExercises = (try? await ExerciseRepository.fetchAll()) ?? []
             sex = appState.currentProfile?.sex ?? ""
+            // Phase 4 lifecycle: settle a finished block BEFORE loading
+            // the profile, so the carryover it just wrote is what loads.
+            blockCompletion = await CoachLifecycle.checkBlockEnd()
             // Returning athletes pick up where they left off: the saved
             // profile pre-fills every dial, and stated anchors show in
             // the calibration rows.
             if let saved = try? await TrainingProfileRepository.load() {
+                savedCarryover = saved.carryover
+                savedProbeAt = saved.lastProbeAt
                 personaSlug = saved.persona
                 rankedGoals = saved.rankedGoals
                 splitPref = saved.split
@@ -236,6 +278,17 @@ struct CoachWizardView: View {
                         calibrationAnchors[slug] = anchor
                     }
                 }
+            }
+            // First contact: one smart computed thing before any question.
+            if let userID = appState.currentProfile?.id,
+               let logs = try? await SessionRepository.recentSetLogs(
+                   userID: userID,
+                   since: Date(timeIntervalSinceNow: -28 * 86_400)) {
+                let muscles = Dictionary(uniqueKeysWithValues: allExercises.map {
+                    ($0.id, $0.primaryMuscle.lowercased())
+                })
+                firstContact = CoachObservations.firstContact(
+                    logs: logs, muscleByExerciseID: muscles)
             }
             if let year = appState.currentProfile?.birthYear { birthYearText = "\(year)" }
             // Hub inventory preset (owner 2026-08-14: "the hub should host
@@ -583,7 +636,86 @@ struct CoachWizardView: View {
         // All-on equipment means "everything" — nil, so a new hub class
         // never silently filters.
         profile.equipment = equipment == Set(Venue.equipmentClasses) ? nil : equipment
+        // The relationship's memory (Phase 4) — block alternation and
+        // deprioritized lifts survive the dials.
+        profile.carryover = savedCarryover
+        profile.lastProbeAt = savedProbeAt
         return profile
+    }
+
+    /// SchedulePlanner's spacing pattern as a rhythm hint (Phase 4
+    /// scheduling — the calendar writes ride the scheduling UI pass, but
+    /// the 48-hour law reaches the athlete as advice today).
+    private var scheduleHint: some View {
+        let offsets = SchedulePlanner.spacingOffsets[max(1, min(7, days))] ?? [0]
+        let dayList = offsets.map { "\($0 + 1)" }.joined(separator: ", ")
+        return Text("Rhythm: train on days \(dayList) of your week — the spacing that gives every muscle its ~48 hours.")
+            .font(GSFont.body(11, relativeTo: .caption))
+            .foregroundStyle(theme.neutral500)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func blockCompleteBanner(_ completion: CoachLifecycle.BlockCompletion) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "flag.checkered")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(theme.accent)
+                Text("BLOCK COMPLETE")
+                    .font(GSFont.bold(13, relativeTo: .footnote))
+                    .tracking(1.0)
+                    .foregroundStyle(theme.text)
+                Spacer()
+                Text("\(Int(completion.outcome.adherence * 100))% ATTENDANCE")
+                    .font(GSFont.bold(12, relativeTo: .caption).monospacedDigit())
+                    .foregroundStyle(theme.neutral700)
+            }
+            if !completion.strugglingNames.isEmpty {
+                Text("Worth a change this block: \(completion.strugglingNames.joined(separator: ", ")) — stalled or fighting fatigue at the end. The next build treats them differently.")
+                    .font(GSFont.body(12, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral700)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let suggested = completion.outcome.suggestedDaysPerWeek,
+               suggested != days {
+                Text("Your attendance supported \(suggested) day\(suggested == 1 ? "" : "s") a week — a plan you complete beats a plan you admire.")
+                    .font(GSFont.body(12, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral700)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let graduation = completion.graduation {
+                Text(graduation.probe)
+                    .font(GSFont.body(12, relativeTo: .caption))
+                    .foregroundStyle(theme.text)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    // Offered, never imposed — the tap IS the athlete's
+                    // answer, committed with provenance `confirmed`.
+                    experience = .intermediate
+                    savedCarryover?.pendingGraduation = false
+                    Task {
+                        guard let userID = appState.currentProfile?.id,
+                              var profile = try? await TrainingProfileRepository.load()
+                        else { return }
+                        profile.trainingAge = .intermediate
+                        profile.provenance["trainingAge"] = .confirmed
+                        profile.carryover?.pendingGraduation = false
+                        try? await TrainingProfileRepository.save(profile, userID: userID)
+                    }
+                    blockCompletion = nil
+                    preview = nil
+                } label: {
+                    Text("GRADUATE — BRING ON THE BARBELL")
+                        .font(GSFont.bold(12, relativeTo: .caption))
+                        .tracking(0.8)
+                }
+                .buttonStyle(GSSecondaryButtonStyle())
+            }
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 16).fill(theme.surface))
+        .overlay(RoundedRectangle(cornerRadius: 16)
+            .strokeBorder(theme.accent.opacity(0.35), lineWidth: 1))
     }
 
     /// Anchor-derived preview weight: the stated hard-for-5 weight →
@@ -667,8 +799,16 @@ struct CoachWizardView: View {
         // The profile persists on CREATE — the debrief's register, the
         // drift probes, and block planning all read this same truth.
         // Best-effort: a failed save must never cost the routines.
-        let profile = currentProfile()
+        var profile = currentProfile()
         focus = profile.generatorFocus
+        // The ledger grows at CREATE: this block's goal joins the history
+        // (the planner's alternation reads it), and any standing
+        // graduation offer is considered answered by moving on.
+        var carryover = profile.carryover ?? TrainingProfile.Carryover()
+        carryover.blockGoalHistory.append(profile.blockGoal)
+        carryover.pendingGraduation = false
+        profile.carryover = carryover
+        savedCarryover = carryover
         try? await TrainingProfileRepository.save(profile, userID: ownerID)
         // Novice calibration → lift anchors (owner 2026-08-21): stated
         // hard-for-5 weights become the seeds every suggestion reads;
@@ -735,6 +875,10 @@ struct CoachWizardView: View {
             // Coach block is one static week repeated for the whole duration.
             if let savedRow, !weekPlan.isEmpty {
                 await enrollGenerated(row: savedRow, weeks: weekPlan, program: program)
+                // The block joins the Plan queue (Phase 4 scheduling,
+                // block level) — the shelf and queue can see it; per-
+                // session calendar writes ride the scheduling UI pass.
+                _ = try? await TrainingPlanRepository.add(templateID: savedRow.id)
             }
             errorText = nil
             onCreated?()

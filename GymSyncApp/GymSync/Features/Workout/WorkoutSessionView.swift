@@ -89,6 +89,9 @@ struct WorkoutSessionView: View {
     @State private var coachProfile = TrainingProfile()
     @State private var showCoachRecap = false
     @State private var recapTrendHistory: [String: [SetLog]] = [:]
+    /// Drift probe (Phase 4): a found signal rides the debrief as its
+    /// pending question, on the ~2-week cooldown.
+    @State private var coachPendingProbe: DriftDetector.Signal?
     @State private var soloReps = ""
     @State private var soloRPE: Double = 7.0
     @State private var soloFailed = false
@@ -2676,6 +2679,7 @@ struct WorkoutSessionView: View {
            let start = session.startedAt {
             context.sessionMinutes = max(1, Int(end.timeIntervalSince(start) / 60))
         }
+        context.pendingProbe = coachPendingProbe
         return DebriefBuilder.build(reports: reports, context: context)
     }
 
@@ -2695,6 +2699,22 @@ struct WorkoutSessionView: View {
             if let history = try? await SessionRepository.exerciseHistory(
                 userID: userID, exerciseID: re.exerciseID, limit: 60) {
                 recapTrendHistory[name.lowercased()] = history
+            }
+        }
+        // Drift detection (Phase 4): the logbook vs the stated profile.
+        // A found signal becomes the debrief's pending question and
+        // stamps the cooldown ledger, so Coach asks like a coach — once,
+        // in conversation — never like a calendar.
+        if let logs = try? await SessionRepository.recentSetLogs(
+            userID: userID, since: Date(timeIntervalSinceNow: -28 * 86_400)) {
+            let signals = DriftDetector.detect(profile: coachProfile,
+                                               logs: logs,
+                                               windowWeeks: 4,
+                                               lastProbeDate: coachProfile.lastProbeAt)
+            if let first = signals.first {
+                coachPendingProbe = first
+                coachProfile.lastProbeAt = .now
+                try? await TrainingProfileRepository.save(coachProfile, userID: userID)
             }
         }
     }

@@ -276,6 +276,104 @@ final class RemediationTests: XCTestCase {
                      "the exclusion itself still holds absolutely")
     }
 
+    // MARK: Small-things pass (2026-08-21)
+
+    func testConditioningWeightBuysFinishersUnlessCardioCarriesIt() {
+        let bikeRow = ProgramGenerator.CatalogExercise(
+            id: UUID(), name: "Bike", primaryMuscle: "quads",
+            secondaryMuscles: [], category: "cardio", equipment: "machine",
+            movementPattern: "other", rank: 9)
+        var profile = TrainingProfile()
+        profile.rankedGoals = [.hypertrophy, .conditioning]   // 1/3 weight
+        profile.daysPerWeek = 3
+        let catalog = [cat(1, "Squat", "squat"), cat(2, "Hinge", "hinge"),
+                       cat(3, "Press", "push_horizontal"),
+                       cat(4, "Row", "pull_horizontal"), bikeRow]
+        let program = ProgramGenerator.generate(
+            inputs: profile.generatorInputs(durationWeeks: 8), catalog: catalog)
+        let finishers = program.days.flatMap(\.exercises).filter { $0.cardioZone == 4 }
+        XCTAssertEqual(finishers.count, 2,
+                       "a 1/3 conditioning weight buys two interval finishers")
+        XCTAssertTrue(program.notes.contains { $0.contains("buys finishers") })
+        let withCardio = ProgramGenerator.generate(
+            inputs: profile.generatorInputs(durationWeeks: 8, cardioDays: 2),
+            catalog: catalog)
+        XCTAssertTrue(withCardio.days.flatMap(\.exercises)
+            .filter { $0.cardioZone == 4 }.isEmpty,
+            "dedicated cardio already carries the load - no double-dipping")
+    }
+
+    func testOneDaySessionNamesItsCost() {
+        var profile = TrainingProfile()
+        profile.daysPerWeek = 1
+        let program = ProgramGenerator.generate(
+            inputs: profile.generatorInputs(durationWeeks: 8),
+            catalog: [cat(1, "Squat", "squat"), cat(2, "Hinge", "hinge"),
+                      cat(3, "Press", "push_horizontal"),
+                      cat(4, "Row", "pull_horizontal")])
+        XCTAssertTrue(program.notes.contains { $0.contains("LONG session") },
+                      "the 1-day athlete hears the trade up front")
+    }
+
+    func testMainlessLowerDayPromotesAnAnchor() {
+        var lunge = ProgramGenerator.CatalogExercise(
+            id: UUID(), name: "Walking Lunge", primaryMuscle: "quads",
+            secondaryMuscles: [], category: "compound", equipment: "dumbbell",
+            movementPattern: "lunge", rank: 10)
+        lunge.focusScores = ["hypertrophy": 7]
+        var profile = TrainingProfile()
+        profile.rankedGoals = [.hypertrophy]
+        profile.daysPerWeek = 4
+        profile.excludedPatterns = ["squat", "hinge"]
+        let program = ProgramGenerator.generate(
+            inputs: profile.generatorInputs(durationWeeks: 8),
+            catalog: [lunge, cat(1, "Squat", "squat"), cat(2, "Hinge", "hinge"),
+                      cat(3, "Press", "push_horizontal"),
+                      cat(4, "Row", "pull_horizontal")])
+        for day in program.days where day.name.hasPrefix("Lower") {
+            XCTAssertTrue(day.exercises.contains(where: \.isMain),
+                          "a day needs an anchor even with its patterns excluded (\(day.name))")
+        }
+    }
+
+    // MARK: First contact (demonstrate before you interrogate)
+
+    func testFirstContactReadsThePushPullLedger() {
+        let bench = UUID(), row = UUID()
+        let muscles = [bench: "chest", row: "back"]
+        func logs(pushSets: Int, pullSets: Int, sessions: Int) -> [SetLog] {
+            var out: [SetLog] = []
+            for s in 0..<sessions {
+                let sid = UUID()
+                for i in 0..<pushSets {
+                    out.append(SetLog(id: UUID(), userID: UUID(), sessionID: sid,
+                                      exerciseID: bench, setIndex: i, reps: 8,
+                                      weight: 100, rpe: nil, isFailed: false,
+                                      isPenalty: false, note: nil, loggedAt: .now))
+                }
+                for i in 0..<pullSets {
+                    out.append(SetLog(id: UUID(), userID: UUID(), sessionID: sid,
+                                      exerciseID: row, setIndex: i, reps: 8,
+                                      weight: 100, rpe: nil, isFailed: false,
+                                      isPenalty: false, note: nil, loggedAt: .now))
+                }
+            }
+            return out
+        }
+        let pressy = CoachObservations.firstContact(
+            logs: logs(pushSets: 4, pullSets: 1, sessions: 4),
+            muscleByExerciseID: muscles)
+        XCTAssertTrue(pressy?.contains("pressing volume runs well ahead") == true)
+        let balanced = CoachObservations.firstContact(
+            logs: logs(pushSets: 3, pullSets: 3, sessions: 4),
+            muscleByExerciseID: muscles)
+        XCTAssertTrue(balanced?.contains("balanced push/pull") == true)
+        XCTAssertNil(CoachObservations.firstContact(
+            logs: logs(pushSets: 3, pullSets: 3, sessions: 2),
+            muscleByExerciseID: muscles),
+            "two sessions is not a relationship yet - no observation")
+    }
+
     // MARK: The ramp
 
     func testGraduationProbeRequiresNoviceAndAdherence() {

@@ -45,6 +45,9 @@ struct CoachPersonaStrip: View {
                       isPro: Bool = false) -> some View {
         let isSelected = selected == slug
         return Button {
+            // The single paywall gate: PRO personas lock here (and only
+            // here) when the entitlement flips off.
+            guard slug == nil || !isPro || Entitlements.hasPro else { return }
             selected = slug
         } label: {
             VStack(alignment: .leading, spacing: 6) {
