@@ -42,6 +42,9 @@ struct CampaignsTabView: View {
     @State private var programEnrollment: ProgramEnrollment?
     @State private var programFocusExercises: [Exercise] = []
     @State private var programSessionsThisWeek = 0
+    // Program builder (docket #10): author a block from your own
+    // routines - writes the same rows Coach's blocks write.
+    @State private var showProgramBuilder = false
 
     #if DEBUG
     /// Debug-only: true only via the catalog fixture init below — skips
@@ -194,6 +197,39 @@ struct CampaignsTabView: View {
                 .padding(.bottom, 10)
             }
         }
+        // Program builder door (docket #10): arrange your own routines
+        // into a block - same rows, same shelf, same queue as Coach's.
+        Button {
+            showProgramBuilder = true
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "hammer")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(theme.text)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Build your own")
+                        .font(GSFont.bold(14, relativeTo: .headline))
+                        .foregroundStyle(theme.text)
+                    Text("Arrange your routines into a multi-week program")
+                        .font(GSFont.body(11, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral500)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(theme.neutral500)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
+        .padding(.horizontal, 16)
+        .padding(.bottom, 10)
+        .sheet(isPresented: $showProgramBuilder) {
+            ProgramBuilderSheet(onSaved: { Task { await load() } })
+        }
+
         // THE PLAN — the macrocycle queue (generator wave). Self-contained:
         // renders nothing until the user has generated blocks or queue
         // entries, and its fetches never disturb the campaigns content.

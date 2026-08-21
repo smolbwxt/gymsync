@@ -5315,6 +5315,16 @@ struct GroupSessionLiveView: View {
         // convention) so a retry that succeeds drops the banner immediately,
         // and a retry that fails re-sets it fresh below.
         logSetErrorText = nil
+        // Field report #20 instrumentation: failed-set sends reportedly
+        // hang for seconds with no obvious synchronous culprit. Every
+        // await on the critical path gets a millisecond stamp, tagged by
+        // failed-vs-normal, so one Console filter ("logSet timing")
+        // names the offender. Remove once the hang is caught.
+        let tTotal = Date()
+        func stamp(_ label: String, _ since: Date) {
+            let ms = Int(Date().timeIntervalSince(since) * 1000)
+            AppLogger.workout.info("logSet timing [\(isFailed ? "FAILED" : "normal", privacy: .public)] \(label, privacy: .public): \(ms, privacy: .public)ms")
+        }
         // Phase O Task 3 fix wave 1 (reviewer Finding 1) — same "clear
         // optimistically at the start of every attempt" convention as
         // `logSetErrorText` above, so a fresh attempt never shows a stale
@@ -5351,8 +5361,10 @@ struct GroupSessionLiveView: View {
                     // Rep-aware (owner 2026-08-02): compared against the best
                     // weight already done for AT LEAST these reps, so a heavy
                     // single and a hard set of ten are separate achievements.
+                    let tPrior = Date()
                     let prior = try await priorMax(exerciseID: exerciseID,
                                                    reps: completedReps, userID: userID)
+                    stamp("priorMax", tPrior)
                     priorBest = prior
                     isPR = weight > prior
                 } catch let error as GymSyncError {
@@ -5377,7 +5389,9 @@ struct GroupSessionLiveView: View {
             }
 
             do {
+                let tInsert = Date()
                 try await SessionRepository.logSet(log)
+                stamp("logSet insert", tInsert)
                 Task { await OfflineSetLogQueue.shared.replay() }   // cheap drain
             } catch let error as GymSyncError {
                 guard case .network = error else { throw error }
@@ -5435,7 +5449,9 @@ struct GroupSessionLiveView: View {
             logHapticTick += 1
 
             if isRepPR, let completedReps {
+                let tName = Date()
                 let name = await ExerciseNameCache.name(for: exerciseID)
+                stamp("nameCache repPR", tName)
                 Task { @MainActor in
                     await showPROverlay(exerciseName: name, weight: 0,
                                          reps: completedReps, priorBest: Decimal(priorBestReps))
@@ -5452,7 +5468,9 @@ struct GroupSessionLiveView: View {
             }
 
             if isPR, let weight {
+                let tName = Date()
                 let name = await ExerciseNameCache.name(for: exerciseID)
+                stamp("nameCache PR", tName)
                 let repsForOverlay = completedReps ?? 0
                 Task { @MainActor in
                     await showPROverlay(exerciseName: name, weight: weight,
@@ -5484,8 +5502,11 @@ struct GroupSessionLiveView: View {
             // permanent error, or connectivity dropping between logSet and
             // advanceTurn) still falls into the catch below and shows the
             // existing retry banner exactly as before.
-            guard !didQueueSetOffline else { return true }
+            guard !didQueueSetOffline else { stamp("TOTAL (offline)", tTotal); return true }
+            let tAdvance = Date()
             try await SessionRepository.advanceTurn(sessionID: session.id)
+            stamp("advanceTurn", tAdvance)
+            stamp("TOTAL", tTotal)
             // A live advance settles any advance this device still owed from
             // an earlier offline set — the queued one would no-op anyway
             // (version guard), but dropping it keeps the store honest rather

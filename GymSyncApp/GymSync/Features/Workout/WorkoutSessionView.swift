@@ -1174,6 +1174,9 @@ struct WorkoutSessionView: View {
         .padding(.horizontal, 16)
         Color.clear.frame(height: 12)
         soloSelfStatsLine
+        // Field report #23: the stats line sat flush on the swipe-up
+        // region and its text rode the border - give it clear air.
+        Color.clear.frame(height: 14)
     }
 
     /// YOUR RECOVERY — live HR falling while you rest, with the windowed
