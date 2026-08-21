@@ -312,9 +312,13 @@ final class ProgramGeneratorTests: XCTestCase {
         XCTAssertNotEqual(strength.days.map { $0.exercises.map(\.exerciseID) },
                           hyper.days.map { $0.exercises.map(\.exerciseID) },
                           "strength and hypertrophy are different programs now")
-        XCTAssertLessThan(strength.days[0].exercises.count,
-                          hyper.days[0].exercises.count,
-                          "strength spends its budget on the bar - fewer accessories")
+        // Corpus reversal (2026-08-21): strength days carry up to two
+        // supportive accessories now, so a single day can match
+        // hypertrophy's count - the leaner-overall law holds at the
+        // WEEK level (hypertrophy keeps its full isolation spread).
+        XCTAssertLessThan(strength.days.map(\.exercises.count).reduce(0, +),
+                          hyper.days.map(\.exercises.count).reduce(0, +),
+                          "strength stays leaner than hypertrophy across the week")
     }
 
     func testWeightLossAndConditioningDiffer() {
