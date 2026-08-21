@@ -8,9 +8,13 @@ struct GymGroup: Codable, Identifiable, Sendable, Hashable {
     let avatarURL: URL?
     let createdBy: UUID
     let createdAt: Date
+    /// crew (default) | coaching — coaching groups are the hidden
+    /// two-person backers of trainer<->client chat (20260821000007);
+    /// they never surface in the Crews tab.
+    var kind: String? = nil
 
     enum CodingKeys: String, CodingKey {
-        case id, name
+        case id, name, kind
         case avatarURL = "avatar_url"
         case createdBy = "created_by"
         case createdAt = "created_at"
@@ -123,7 +127,8 @@ enum GroupRepository {
                 .order("created_at", ascending: false)
                 .execute()
                 .value
-            return groups
+            // Coaching backers are chat plumbing, not crews.
+            return groups.filter { $0.kind != "coaching" }
         } catch {
             throw ErrorMapping.map(error)
         }

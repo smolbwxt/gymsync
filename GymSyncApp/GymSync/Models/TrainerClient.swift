@@ -17,6 +17,9 @@ struct TrainerClient: Codable, Identifiable, Sendable {
     var inviteCode: String?
     let createdAt: Date
     var respondedAt: Date?
+    /// The hidden coaching-chat backing group (20260821000007), set on
+    /// first message from either side.
+    var chatGroupID: UUID? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -26,6 +29,7 @@ struct TrainerClient: Codable, Identifiable, Sendable {
         case inviteCode = "invite_code"
         case createdAt = "created_at"
         case respondedAt = "responded_at"
+        case chatGroupID = "chat_group_id"
     }
 }
 

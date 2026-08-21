@@ -20,6 +20,10 @@ struct CoachingView: View {
     @State private var redeemScopes = TrainerScopes(history: true, stats: true,
                                                    bodyWeight: false, calendar: true)
     @State private var busy = false
+    // Trainer<->client chat (owner 2026-08-21): the athlete's door to the
+    // same hidden backing group the trainer opens from the client page.
+    @State private var chatGroup: GymGroup?
+    @State private var showChat = false
 
     private var selfID: UUID? { appState.currentProfile?.id }
 
@@ -53,6 +57,15 @@ struct CoachingView: View {
             .padding(16)
         }
         .background(theme.bg)
+        .sheet(isPresented: $showChat) {
+            if let chatGroup {
+                NavigationStack {
+                    ChatView(group: chatGroup)
+                        .navigationTitle("Your trainer")
+                        .navigationBarTitleDisplayMode(.inline)
+                }
+            }
+        }
         .navigationTitle("Coaching")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
@@ -91,6 +104,33 @@ struct CoachingView: View {
             Text("They can see exactly what's on below — change it any time.")
                 .font(GSFont.body(11, relativeTo: .caption))
                 .foregroundStyle(theme.neutral500)
+            Button {
+                Task {
+                    struct P: Encodable { let p_relationship_id: String }
+                    if let groupID: UUID = try? await SupabaseService.shared.client
+                        .rpc("ensure_coaching_chat",
+                             params: P(p_relationship_id: rel.id.uuidString))
+                        .execute()
+                        .value,
+                       let group = try? await GroupRepository.fetch(id: groupID) {
+                        chatGroup = group
+                        showChat = true
+                    }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "bubble.left.and.bubble.right")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("Message")
+                        .font(GSFont.bold(13, relativeTo: .subheadline))
+                    Spacer()
+                }
+                .foregroundStyle(theme.text)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
             scopeToggles(rel)
         }
         .padding(12)

@@ -24,6 +24,11 @@ struct ClientDetailView: View {
     // Body health statistics (owner 2026-08-21): the client's stated
     // body context via the scope-gated RPC - nil rows read as unshared.
     @State private var bodyContext: TrainingProfileRepository.ClientBodyContext?
+    // Trainer<->client chat (owner 2026-08-21): rides a hidden backing
+    // group via ensure_coaching_chat - full chat stack for free.
+    @State private var chatGroup: GymGroup?
+    @State private var showChat = false
+    @State private var openingChat = false
     @State private var notes: [TrainerNote] = []
     @State private var noteDraft = ""
     @State private var prescribeSheet = false
@@ -53,6 +58,7 @@ struct ClientDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 overviewStrip
+                messageRow
                 routinesSection
                 calendarSection
                 ledgerSection
@@ -67,6 +73,15 @@ struct ClientDetailView: View {
             .padding(16)
         }
         .background(theme.bg)
+        .sheet(isPresented: $showChat) {
+            if let chatGroup {
+                NavigationStack {
+                    ChatView(group: chatGroup)
+                        .navigationTitle(clientName)
+                        .navigationBarTitleDisplayMode(.inline)
+                }
+            }
+        }
         .contentMargins(.bottom, 110, for: .scrollContent)
         .navigationTitle(clientName)
         .navigationBarTitleDisplayMode(.inline)
@@ -97,6 +112,48 @@ struct ClientDetailView: View {
     }
 
     // MARK: - Overview
+
+    /// Opens (creating on first use) the coaching chat.
+    private func openChat() {
+        guard !openingChat else { return }
+        openingChat = true
+        Task {
+            defer { openingChat = false }
+            struct P: Encodable { let p_relationship_id: String }
+            if let groupID: UUID = try? await SupabaseService.shared.client
+                .rpc("ensure_coaching_chat",
+                     params: P(p_relationship_id: relationship.id.uuidString))
+                .execute()
+                .value,
+               let group = try? await GroupRepository.fetch(id: groupID) {
+                chatGroup = group
+                showChat = true
+            }
+        }
+    }
+
+    private var messageRow: some View {
+        Button {
+            openChat()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "bubble.left.and.bubble.right")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(theme.text)
+                Text(openingChat ? "Opening…" : "Message")
+                    .font(GSFont.bold(14, relativeTo: .headline))
+                    .foregroundStyle(theme.text)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(theme.neutral500)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
+    }
 
     private var overviewStrip: some View {
         HStack(spacing: 8) {

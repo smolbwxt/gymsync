@@ -73,6 +73,147 @@ struct StatsTabView: View {
                             .padding(.bottom, 4)
                     }
 
+                    // ── Lifetime Volume Card ───────────────────────────────────
+                    // gs3D pass (2026-08-13): the zero-radius GSCards were
+                    // this screen's whole debt — every card joins the
+                    // extruded face/lip language, and text follows the
+                    // owner's default-color law (trend line included).
+                    VStack(alignment: .leading, spacing: 4) {
+                        GSSectionHeader("Lifetime volume")
+                        Text(volumeString)
+                            .font(GSFont.heading(34, relativeTo: .largeTitle))
+                            .foregroundStyle(theme.text)
+                            .monospacedDigit()
+                        if let monthTrendPercent {
+                            Text("\(monthTrendPercent >= 0 ? "▲" : "▼") \(abs(Int(monthTrendPercent.rounded())))% vs last month")
+                                .font(GSFont.body(12, relativeTo: .caption))
+                                .foregroundStyle(theme.neutral700)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
+                    .gs3DCard(cornerRadius: GSMetrics.radiusMd)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
+                    .gsSpotlightTarget(.stats)
+
+                    // ── Weekly Volume Card ──────────────────────────────────────
+                    weeklyVolumeCardView
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 12)
+
+                    // ── LEDGER door (owner 2026-08-21: the workout list moved
+                    // a layer down; volume metrics own the top of the page.
+                    // Moving the spotlight target back above the fold is
+                    // also what fixes the tour - it anchored to a card that
+                    // a populated ledger pushed off-screen.) ──────────────
+                    NavigationLink {
+                        ledgerScreen
+                    } label: {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("LEDGER")
+                                .font(GSFont.bold(24, relativeTo: .title2))
+                                .tracking(0.5)
+                                .foregroundStyle(theme.text)
+                            Spacer(minLength: 14)
+                            Text(ledgerEntries.isEmpty
+                                 ? "Finished workouts land here"
+                                 : "Every workout, newest first — tap one for the full picture")
+                                .font(GSFont.body(13, relativeTo: .subheadline))
+                                .foregroundStyle(theme.neutral700)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, minHeight: 92, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
+
+                    // ── Personal records (→ attempted lifts → trend + history) ─
+                    NavigationLink {
+                        AttemptedExercisesView(exercises: attemptedExercises)
+                            .background(theme.bg)
+                            .navigationTitle("Personal records")
+                            .navigationBarTitleDisplayMode(.inline)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            GSSectionHeader("Personal records")
+                            Text(attemptedExercises.isEmpty
+                                 ? "Every lift you attempt builds a record page."
+                                 : "\(attemptedExercises.count) lifts — trend graphs and full history per exercise.")
+                                .font(GSFont.body(13, relativeTo: .subheadline))
+                                .foregroundStyle(theme.neutral700)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(16)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
+
+                    // ── Streak Card (Task 5, Phase S) ───────────────────────────
+                    streakCardView
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 12)
+
+                    // ── Body Weight Card (Task 3, Phase H) ──────────────────────
+                    bodyWeightCardView
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 12)
+
+                    // ── Recent Activity Row (redesign: rounded card row) ───────
+                    NavigationLink { ActivityFeedView() } label: {
+                        navRow(title: "Activity")
+                    }
+                    .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
+
+                    Spacer(minLength: 24)
+                }
+            }
+            .scrollContentBackground(.hidden)
+            .background(theme.bg)
+            .contentMargins(.bottom, 88, for: .scrollContent)   // dock clearance (user bug report)
+            .gsSpotlight(.stats)
+            .task {
+                exercises = (try? await ExerciseRepository.fetchAll()) ?? []
+                if let id = appState.currentProfile?.id {
+                    refreshedProfile = try? await ProfileRepository.refresh(userID: id)
+                }
+                await loadWeeklyVolumeAndPRs()
+                await loadLedger()
+                await loadStreak()
+                await loadBodyWeight()
+            }
+            .refreshable {
+                if let id = appState.currentProfile?.id {
+                    refreshedProfile = try? await ProfileRepository.refresh(userID: id)
+                }
+                await loadWeeklyVolumeAndPRs()
+                await loadLedger()
+                await loadStreak()
+                await loadBodyWeight()
+            }
+            .sheet(isPresented: $showingBodyWeightLogSheet) {
+                BodyWeightLogSheet(onLogged: { Task { await loadBodyWeight() } })
+            }
+            .sheet(isPresented: $showLedgerPaywall) {
+                PaywallView(highlight: .deepHistory)
+            }
+    }
+
+
+    /// The full workout list, one layer down (owner 2026-08-21). Same
+    /// state, same rolling load, same 30-day PRO line - only the address
+    /// changed.
+    private var ledgerScreen: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
                     // ── The Ledger (owner 2026-08-16: leads the page) ──────────
                     GSSectionHeader("Ledger")
                         .padding(.horizontal, 16)
@@ -140,110 +281,14 @@ struct StatsTabView: View {
                         .padding(.bottom, 12)
                     }
 
-                    // ── Personal records (→ attempted lifts → trend + history) ─
-                    NavigationLink {
-                        AttemptedExercisesView(exercises: attemptedExercises)
-                            .background(theme.bg)
-                            .navigationTitle("Personal records")
-                            .navigationBarTitleDisplayMode(.inline)
-                    } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            GSSectionHeader("Personal records")
-                            Text(attemptedExercises.isEmpty
-                                 ? "Every lift you attempt builds a record page."
-                                 : "\(attemptedExercises.count) lifts — trend graphs and full history per exercise.")
-                                .font(GSFont.body(13, relativeTo: .subheadline))
-                                .foregroundStyle(theme.neutral700)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(16)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 12)
-
-                    // ── Lifetime Volume Card ───────────────────────────────────
-                    // gs3D pass (2026-08-13): the zero-radius GSCards were
-                    // this screen's whole debt — every card joins the
-                    // extruded face/lip language, and text follows the
-                    // owner's default-color law (trend line included).
-                    VStack(alignment: .leading, spacing: 4) {
-                        GSSectionHeader("Lifetime volume")
-                        Text(volumeString)
-                            .font(GSFont.heading(34, relativeTo: .largeTitle))
-                            .foregroundStyle(theme.text)
-                            .monospacedDigit()
-                        if let monthTrendPercent {
-                            Text("\(monthTrendPercent >= 0 ? "▲" : "▼") \(abs(Int(monthTrendPercent.rounded())))% vs last month")
-                                .font(GSFont.body(12, relativeTo: .caption))
-                                .foregroundStyle(theme.neutral700)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
-                    .gs3DCard(cornerRadius: GSMetrics.radiusMd)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 12)
-                    .gsSpotlightTarget(.stats)
-
-                    // ── Weekly Volume Card ──────────────────────────────────────
-                    weeklyVolumeCardView
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 12)
-
-                    // ── Streak Card (Task 5, Phase S) ───────────────────────────
-                    streakCardView
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 12)
-
-                    // ── Body Weight Card (Task 3, Phase H) ──────────────────────
-                    bodyWeightCardView
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 12)
-
-                    // ── Recent Activity Row (redesign: rounded card row) ───────
-                    NavigationLink { ActivityFeedView() } label: {
-                        navRow(title: "Activity")
-                    }
-                    .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 12)
-
-                    Spacer(minLength: 24)
                 }
-            }
-            .scrollContentBackground(.hidden)
-            .background(theme.bg)
-            .contentMargins(.bottom, 88, for: .scrollContent)   // dock clearance (user bug report)
-            .gsSpotlight(.stats)
-            .task {
-                exercises = (try? await ExerciseRepository.fetchAll()) ?? []
-                if let id = appState.currentProfile?.id {
-                    refreshedProfile = try? await ProfileRepository.refresh(userID: id)
-                }
-                await loadWeeklyVolumeAndPRs()
-                await loadLedger()
-                await loadStreak()
-                await loadBodyWeight()
-            }
-            .refreshable {
-                if let id = appState.currentProfile?.id {
-                    refreshedProfile = try? await ProfileRepository.refresh(userID: id)
-                }
-                await loadWeeklyVolumeAndPRs()
-                await loadLedger()
-                await loadStreak()
-                await loadBodyWeight()
-            }
-            .sheet(isPresented: $showingBodyWeightLogSheet) {
-                BodyWeightLogSheet(onLogged: { Task { await loadBodyWeight() } })
-            }
-            .sheet(isPresented: $showLedgerPaywall) {
-                PaywallView(highlight: .deepHistory)
-            }
+            .padding(.top, 8)
+        }
+        .scrollContentBackground(.hidden)
+        .background(theme.bg)
+        .navigationTitle("Ledger")
+        .navigationBarTitleDisplayMode(.inline)
     }
-
 
     private var volumeString: String {
         let profile = refreshedProfile ?? appState.currentProfile
