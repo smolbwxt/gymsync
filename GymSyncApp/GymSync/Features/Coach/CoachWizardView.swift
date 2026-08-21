@@ -76,6 +76,11 @@ struct CoachWizardView: View {
     // Lifts from routines the athlete starred (field report #18) —
     // fetched once per wizard visit, alias-resolved to canonical rows.
     @State private var starredExerciseIDs: Set<UUID> = []
+    // Coach owns the calendar (longitudinal spec 3d): on create, the
+    // block's training days land as a SOLO SERIES with max-spacing
+    // weekdays, and ride the existing gated EventKit sync.
+    @State private var scheduleSessions = true
+    @State private var sessionHour = 17
     /// The relationship's memory rides every rebuild — dropping it would
     /// reset block alternation and deprioritization each visit.
     @State private var savedCarryover: TrainingProfile.Carryover?
@@ -236,6 +241,31 @@ struct CoachWizardView: View {
                 if let preview {
                     previewSection(preview)
                     scheduleHint
+                    Button {
+                        scheduleSessions.toggle()
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: scheduleSessions ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundStyle(scheduleSessions ? theme.accent : theme.neutral500)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Put my training days on the schedule")
+                                    .font(GSFont.bold(14, relativeTo: .headline))
+                                    .foregroundStyle(theme.text)
+                                Text("Coach books the rhythm above as planned sessions — edit or cancel any of them from the calendar.")
+                                    .font(GSFont.body(11, relativeTo: .caption))
+                                    .foregroundStyle(theme.neutral500)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            Spacer()
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    if scheduleSessions {
+                        dial("SESSION TIME", options: ["6 AM", "7 AM", "12 PM", "5 PM", "6 PM", "7 PM"],
+                             selected: sessionTimeLabel) { sessionHour = Self.hourByLabel[$0] ?? 17 }
+                    }
                     Button {
                         Task { await create(preview) }
                     } label: {
@@ -573,6 +603,36 @@ struct CoachWizardView: View {
     /// Best-effort throughout — the day routines are the deliverable, and a
     /// failed enrollment must not cost the lifter their program.
     @MainActor
+    /// Books the block's training days as a solo SessionSeries: anchor =
+    /// tomorrow, weekdays = SchedulePlanner's max-spacing offsets mapped
+    /// onto real days, until = block end. Materialized occurrences then
+    /// ride the same gated EventKit sync the schedule sheet uses.
+    private func bookTrainingDays() async {
+        let cal = Calendar.current
+        guard let anchor = cal.date(byAdding: .day, value: 1, to: Date()) else { return }
+        let offsets = SchedulePlanner.spacingOffsets[max(1, min(7, days))] ?? [0]
+        let dayInputs: [SeriesDayInput] = offsets.compactMap { offset in
+            guard let day = cal.date(byAdding: .day, value: offset, to: anchor) else { return nil }
+            return SeriesDayInput(weekday: cal.component(.weekday, from: day),
+                                  hour: sessionHour, minute: 0, routineID: nil)
+        }
+        guard !dayInputs.isEmpty,
+              let until = cal.date(byAdding: .day, value: duration * 7 - 1, to: anchor)
+        else { return }
+        guard let series = try? await SeriesRepository.create(
+            groupID: nil, days: dayInputs, untilDate: until, timezone: .current)
+        else { return }
+        // Calendar writes: same gate and bridge as ScheduleSessionView.
+        guard CalendarSyncPrefsStore.isEnabled(),
+              let occurrences = try? await SeriesRepository.occurrences(seriesID: series.id)
+        else { return }
+        for session in occurrences {
+            _ = await EventKitBridge.syncEvent(session: session,
+                                               routineName: "Coach session",
+                                               exerciseCount: nil)
+        }
+    }
+
     private func enrollGenerated(row: ProgramTemplateRow,
                                  weeks: [ProgramWeek],
                                  program: ProgramGenerator.Program) async {
@@ -712,6 +772,13 @@ struct CoachWizardView: View {
     /// SchedulePlanner's spacing pattern as a rhythm hint (Phase 4
     /// scheduling — the calendar writes ride the scheduling UI pass, but
     /// the 48-hour law reaches the athlete as advice today).
+    private static let hourByLabel: [String: Int] = [
+        "6 AM": 6, "7 AM": 7, "12 PM": 12, "5 PM": 17, "6 PM": 18, "7 PM": 19,
+    ]
+    private var sessionTimeLabel: String {
+        Self.hourByLabel.first { $0.value == sessionHour }?.key ?? "5 PM"
+    }
+
     private var scheduleHint: some View {
         let offsets = SchedulePlanner.spacingOffsets[max(1, min(7, days))] ?? [0]
         let dayList = offsets.map { "\($0 + 1)" }.joined(separator: ", ")
@@ -946,6 +1013,11 @@ struct CoachWizardView: View {
                 // session calendar writes ride the scheduling UI pass.
                 _ = try? await TrainingPlanRepository.add(templateID: savedRow.id)
             }
+            // Coach owns the calendar (longitudinal spec 3d): book the
+            // block's rhythm as a SOLO series anchored tomorrow, weekdays
+            // from the same max-spacing pattern scheduleHint shows. Best
+            // effort - a booking failure never blocks the block.
+            if scheduleSessions { await bookTrainingDays() }
             errorText = nil
             onCreated?()
             dismiss()
