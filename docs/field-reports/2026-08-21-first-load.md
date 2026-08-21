@@ -217,3 +217,28 @@ DIAGNOSED (cause known, fix scoped) · DESIGNED (build plan below, queued)
 - **Title-mined FAQ themes**: 4,162 question-form titles → 20 themes
   ranked by channel spread (`docs/science/title-faq-themes.md`) — feeds
   HelpSheet content and Coach's proactive-explanation list.
+
+# Third load (owner, 2026-08-21, post-TestfFlight build)
+
+24. **Prescribed volume low — 3 exercises on an uncapped leg day** —
+    ANALYSIS FIRST (owner: "let's think about it and see"). Suspect:
+    day-template slot count, not the session cap. Diagnose, report.
+25. **Coach tab is a form — the named cardinal sin** — REDESIGN.
+    Guided sequence: (1) insight into your training first, (2) what
+    Coach offers, (3) fat You-style widgets to edit targets/goals/
+    allowances, binned by similarity; accent→theme color when a
+    section is properly filled; every pressable extruded like the
+    rest of the app. DESIGN + BUILD.
+26. **Stats page** — (a) tour broken when workouts exist (BUG);
+    (b) routine ledger off the top: behind a fat LEDGER widget one
+    layer down, volume metrics take the top; (c) the You-tab stats
+    button label shows total weight moved — replace with "Stats".
+27. **Trainer client page: body health statistics** — bodyweight /
+    bodyfat / BMI (new body-context fields) surfaced under the
+    existing body_weight scope.
+28. **Trainer↔client chat on each client page.**
+29. **Numpad/keyboard won't swipe down** (BUG — dismissal gesture).
+30. **You-page widget typography** — remove bottom caps line, middle
+    text moves down, top text bigger.
+31. **"Train with Coach" → "Train with a personal trainer"** — Coach
+    (AI) must not read as the human-trainer product.

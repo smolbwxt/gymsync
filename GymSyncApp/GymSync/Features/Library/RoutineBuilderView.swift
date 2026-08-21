@@ -164,6 +164,7 @@ struct RoutineBuilderView: View {
         .gsHidesDock()
         .gsSpotlight(.builder)
         .navigationBarTitleDisplayMode(.inline)
+        .scrollDismissesKeyboard(.interactively)
         .toolbarBackground(theme.surface, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {

@@ -286,6 +286,7 @@ struct CoachWizardView: View {
         }
         .background(theme.bg)
         .navigationTitle("Coach")
+        .scrollDismissesKeyboard(.interactively)
         .navigationBarTitleDisplayMode(.inline)
         .task {
             allExercises = (try? await ExerciseRepository.fetchAll()) ?? []

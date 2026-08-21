@@ -219,39 +219,23 @@ struct YouTabView: View {
     /// static two-line widget to the tab's headline. Lifetime volume comes
     /// free from `appState.currentProfile` (server-maintained column) — no
     /// fetch on the tab root.
+    /// Owner 2026-08-21: the door says STATS; the lifetime-volume metric
+    /// moved to the top of the stats page itself (one number, one home).
     private var statsHero: some View {
         Button {
             showStats = true
         } label: {
-            VStack(alignment: .leading, spacing: 0) {
-                kLabel("LIFETIME VOLUME", color: theme.neutral700)
-                Spacer(minLength: 8)
-                HStack(alignment: .lastTextBaseline, spacing: 6) {
-                    Text(lifetimeVolumeText)
-                        .font(GSFont.heading(40, relativeTo: .largeTitle))
-                        .foregroundStyle(theme.text)
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                    Text(ThemeStore.shared.weightUnit.label.uppercased())
-                        .font(GSFont.bold(12, relativeTo: .caption))
-                        .kerning(1.0)
-                        .foregroundStyle(theme.neutral500)
-                }
-                Spacer(minLength: 8)
-                kLabel("STATS · VOLUME · PRS · BODY WEIGHT · HISTORY", color: theme.neutral500)
+            widgetCard(title: "STATS") {
+                Text("Volume · PRs · body weight · history")
+                    .font(GSFont.body(13, relativeTo: .subheadline))
+                    .foregroundStyle(theme.neutral700)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
-            .padding(12)
-            .frame(maxWidth: .infinity, minHeight: 116, alignment: .leading)
         }
         .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Stats")
-    }
-
-    private var lifetimeVolumeText: String {
-        let pounds = appState.currentProfile?.lifetimeVolumeLifted ?? 0
-        return StatMath.compactNumber(Units.fromPounds(pounds, to: ThemeStore.shared.weightUnit))
     }
 
     // MARK: - Widgets
@@ -260,8 +244,8 @@ struct YouTabView: View {
         Button {
             showRoutines = true
         } label: {
-            widgetCard(title: "ROUTINES", footer: routinesFooter) {
-                Text("Coach · the builder · your five slots · Discover")
+            widgetCard(title: "ROUTINES") {
+                Text(routinesFaceText)
                     .font(GSFont.body(13, relativeTo: .subheadline))
                     .foregroundStyle(theme.neutral700)
                     .lineLimit(1)
@@ -273,22 +257,23 @@ struct YouTabView: View {
         .accessibilityLabel("Routines")
     }
 
-    /// Slot fill-state on the widget face (owner 2026-08-13: the hub entry
-    /// shows its state from the outside). Falls back to "HUB" until the
-    /// best-effort count resolves; PRO lifters past the cap see a plain
-    /// routine count instead of a slot fraction.
-    private var routinesFooter: String {
-        guard let routineCount else { return "HUB" }
+    /// Slot fill-state rides the face line now that the caps footer is
+    /// gone (owner 2026-08-21) — the 2026-08-13 "state from the outside"
+    /// ruling survives, one line lower.
+    private var routinesFaceText: String {
+        guard let routineCount else { return "Coach · the builder · Discover" }
         let limit = Monetization.freeRoutineLimit
-        if routineCount > limit { return "\(routineCount) ROUTINES" }
-        return "\(routineCount) OF \(limit) SLOTS FILLED"
+        let state = routineCount > limit
+            ? "\(routineCount) routines"
+            : "\(routineCount) of \(limit) slots filled"
+        return "Coach · the builder · Discover · \(state)"
     }
 
     private var programsWidget: some View {
         Button {
             showPrograms = true
         } label: {
-            widgetCard(title: "PROGRAMS", footer: "GUIDED") {
+            widgetCard(title: "PROGRAMS") {
                 Text("Multi-week plans + campaigns")
                     .font(GSFont.body(13, relativeTo: .subheadline))
                     .foregroundStyle(theme.neutral700)
@@ -313,8 +298,8 @@ struct YouTabView: View {
         Button {
             showShop = true
         } label: {
-            widgetCard(title: "SHOP", footer: "PRO - THE RACK - COACHING") {
-                Text("Pro, the soundboard rack, and training with a coach")
+            widgetCard(title: "SHOP") {
+                Text("Pro, the soundboard rack, and training with a personal trainer")
                     .font(GSFont.body(13, relativeTo: .subheadline))
                     .foregroundStyle(theme.neutral700)
                     .lineLimit(1)
@@ -330,8 +315,8 @@ struct YouTabView: View {
     /// Static extrusion (no sink — nothing to tap); the whole face + lip
     /// dims to 0.6, the same treatment a disabled 3D button gets.
     private var lockerWidget: some View {
-        widgetCard(title: "LOCKER", footer: "SOON") {
-            Text("Avatar · backdrops · effects")
+        widgetCard(title: "LOCKER") {
+            Text("Avatar · backdrops · effects — soon")
                 .font(GSFont.body(13, relativeTo: .subheadline))
                 .foregroundStyle(theme.neutral700)
                 .lineLimit(1)
@@ -347,7 +332,7 @@ struct YouTabView: View {
         Button {
             showSettings = true
         } label: {
-            widgetCard(title: "SETTINGS", footer: "ACCOUNT - PREFERENCES") {
+            widgetCard(title: "SETTINGS") {
                 Text("Account, appearance, notifications, home gym")
                     .font(GSFont.body(13, relativeTo: .subheadline))
                     .foregroundStyle(theme.neutral700)
@@ -372,31 +357,23 @@ struct YouTabView: View {
     private func widgetCard<Face: View>(
         title: String,
         titleColor: Color? = nil,
-        footer: String,
         @ViewBuilder face: () -> Face
     ) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Owner 2026-08-16: the title IS the widget — big and bold; the
-            // face below it describes what the screen behind holds.
+            // Owner 2026-08-21 (typography pass): bigger title, the face
+            // sits low, and the bottom caps line is gone — two levels of
+            // text per widget, not three.
             Text(title)
-                .font(GSFont.bold(20, relativeTo: .title3))
+                .font(GSFont.bold(24, relativeTo: .title2))
                 .tracking(0.5)
                 .foregroundStyle(titleColor ?? theme.text)
-            Spacer(minLength: 8)
+            Spacer(minLength: 14)
             face()
-            Spacer(minLength: 10)
-            kLabel(footer, color: theme.neutral500)
         }
         .padding(12)
         .frame(maxWidth: .infinity, minHeight: 92, alignment: .leading)
     }
 
-    private func kLabel(_ text: String, color: Color) -> some View {
-        Text(text)
-            .font(GSFont.bold(11, relativeTo: .caption2))
-            .tracking(1.1)
-            .foregroundStyle(color)
-    }
 
     // MARK: - Data
 

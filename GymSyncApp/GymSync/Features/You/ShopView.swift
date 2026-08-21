@@ -141,14 +141,14 @@ struct ShopView: View {
                 .font(GSFont.bold(20, relativeTo: .title3))
                 .tracking(0.5)
                 .foregroundStyle(theme.text)
-            Text("Train with a coach, or coach clients of your own — free to start.")
+            Text("Train with a personal trainer, or take on clients of your own — free to start.")
                 .font(GSFont.body(13, relativeTo: .subheadline))
                 .foregroundStyle(theme.neutral700)
         }
         .padding(.top, 4)
 
         coachingDoor(icon: "person.badge.key",
-                     title: "Train with a coach",
+                     title: "Train with a personal trainer",
                      subtitle: "Redeem your trainer's invite code") {
             AnyView(CoachingView()
                 .background(theme.bg)

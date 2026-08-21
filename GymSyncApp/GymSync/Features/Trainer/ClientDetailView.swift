@@ -21,6 +21,9 @@ struct ClientDetailView: View {
     @State private var myRoutines: [Routine] = []
     @State private var sessionsThisWeek: Int?
     @State private var latestBodyWeight: Decimal?
+    // Body health statistics (owner 2026-08-21): the client's stated
+    // body context via the scope-gated RPC - nil rows read as unshared.
+    @State private var bodyContext: TrainingProfileRepository.ClientBodyContext?
     @State private var notes: [TrainerNote] = []
     @State private var noteDraft = ""
     @State private var prescribeSheet = false
@@ -103,11 +106,27 @@ struct ClientDetailView: View {
                             : "not shared")
             overviewTile("BODY WEIGHT",
                          value: relationship.scopes.bodyWeight
-                            ? latestBodyWeight.map {
-                                Units.format(pounds: $0, unit: ThemeStore.shared.weightUnit, rounded: false)
-                              } ?? "—"
+                            ? bodyWeightTileText
                             : "not shared")
+            if relationship.scopes.bodyWeight, let bf = bodyContext?.bodyFatPercent {
+                overviewTile("BODYFAT", value: String(format: "%.0f%%", bf))
+            }
+            if relationship.scopes.bodyWeight, let bmi = bodyContext?.bmi {
+                overviewTile("BMI", value: String(format: "%.1f", bmi))
+            }
         }
+    }
+
+    /// Logged body-weight entry first (fresher), stated profile weight
+    /// as the fallback.
+    private var bodyWeightTileText: String {
+        if let w = latestBodyWeight {
+            return Units.format(pounds: w, unit: ThemeStore.shared.weightUnit, rounded: false)
+        }
+        if let stated = bodyContext?.bodyweightLbs {
+            return Units.format(pounds: Decimal(stated), unit: ThemeStore.shared.weightUnit, rounded: false)
+        }
+        return "—"
     }
 
     private func overviewTile(_ kicker: String, value: String) -> some View {
@@ -473,6 +492,11 @@ struct ClientDetailView: View {
     @MainActor
     private func load() async {
         guard let clientID else { return }
+        // Body health statistics (owner 2026-08-21): scope-gated RPC,
+        // empty when body_weight is off or nothing is stated.
+        if relationship.scopes.bodyWeight {
+            bodyContext = await TrainingProfileRepository.clientBodyContext(clientID: clientID)
+        }
         // Routines: readable via the trainer-read policy; client-authored
         // rows arrive read-only (the UI disables them).
         routines = (try? await RoutineRepository.fetchAll(ownerID: clientID)) ?? []

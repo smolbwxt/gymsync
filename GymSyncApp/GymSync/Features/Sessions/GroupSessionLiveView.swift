@@ -2447,6 +2447,7 @@ struct GroupSessionLiveView: View {
         arenaWithThrow
         .overlay(alignment: .top) { swapVoteBanner }
         // Log Set sheet — penalty (burpee) logging only now; normal sets log inline.
+        .scrollDismissesKeyboard(.interactively)
         .sheet(isPresented: $showLogSetSheet) { logSetSheetContent }
         .sheet(isPresented: $showGroupSwapSheet) { groupSwapSheet }
         .sheet(item: $exerciseDetailSheet) { ex in

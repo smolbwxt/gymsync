@@ -176,6 +176,7 @@ struct ScheduleSessionView: View {
                 }
             }
             .navigationTitle("Schedule")
+            .scrollDismissesKeyboard(.interactively)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

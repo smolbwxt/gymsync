@@ -38,6 +38,33 @@ enum TrainingProfileRepository {
         let version: Int
     }
 
+    /// The three body fields of a CLIENT's profile, for the trainer tab
+    /// - served by a narrow RPC (20260821000006) so the body_weight
+    /// scope never exposes goals or injury history. Empty when the
+    /// scope is off, the relationship inactive, or nothing is stated.
+    struct ClientBodyContext: Decodable {
+        let bodyweightLbs: Double?
+        let heightInches: Double?
+        let bodyFatPercent: Double?
+        enum CodingKeys: String, CodingKey {
+            case bodyweightLbs = "bodyweight_lbs"
+            case heightInches = "height_inches"
+            case bodyFatPercent = "body_fat_percent"
+        }
+        var bmi: Double? {
+            guard let w = bodyweightLbs, let h = heightInches, w > 0, h > 0 else { return nil }
+            return w / (h * h) * 703
+        }
+    }
+
+    static func clientBodyContext(clientID: UUID) async -> ClientBodyContext? {
+        let rows: [ClientBodyContext]? = try? await SupabaseService.shared.client
+            .rpc("client_body_context", params: ["p_client_id": clientID.uuidString])
+            .execute()
+            .value
+        return rows?.first
+    }
+
     static func load() async throws -> TrainingProfile? {
         do {
             let rows: [Row] = try await SupabaseService.shared.client
