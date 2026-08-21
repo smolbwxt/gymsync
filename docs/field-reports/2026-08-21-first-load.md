@@ -243,7 +243,7 @@ DIAGNOSED (cause known, fix scoped) · DESIGNED (build plan below, queued)
 31. **"Train with Coach" → "Train with a personal trainer"** — Coach
     (AI) must not read as the human-trainer product.
 
-## #24 diagnosis (volume) — ANALYSIS, awaiting owner ruling
+## #24 diagnosis (volume) — RESOLVED by owner ruling + corpus pass (docs/science/strength-accessories.md)
 
 Not the session cap and not a bug: the STRENGTH focus filter strips
 every isolation slot ("strength sessions spend their budget on the

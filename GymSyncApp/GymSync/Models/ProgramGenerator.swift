@@ -762,11 +762,34 @@ enum ProgramGenerator {
         case .hypertrophy:
             return base
         case .strength:
-            // Compounds only, plus core on full-body days — strength
-            // sessions spend their budget on the bar.
+            // Corpus reversal (accessory pass 2026-08-21, 70 findings,
+            // strength-authoritative channels): compounds-only was a
+            // caricature. Assistance work strengthens the core lifts -
+            // better stimulus-to-fatigue than more heavy compound sets,
+            // weak-point coverage compounds anatomically CANNOT provide
+            // (hamstrings' biarticular cancellation in squats, triceps
+            // long head shortchanged by pressing, anterior core), and
+            // fatigue relief. The discipline is dose and selection, not
+            // exclusion: up to TWO supportive isolations per day from
+            // the assistance canon, after the mains - and the session-
+            // cap ladder still trims them first when time is short.
+            let supportive: Set<String>
+            switch kind {
+            case .upper: supportive = ["triceps", "back"]
+            case .push: supportive = ["triceps", "shoulders"]
+            case .pull: supportive = ["back", "shoulders"]
+            case .lower, .legs: supportive = ["hamstrings", "core"]
+            case .fullBody: supportive = ["core"]
+            default: supportive = []
+            }
+            var kept = 0
             return base.filter { slot in
                 if case .pattern = slot { return true }
-                if case .isolation("core") = slot { return kind == .fullBody }
+                if case .isolation(let muscle) = slot,
+                   supportive.contains(muscle), kept < 2 {
+                    kept += 1
+                    return true
+                }
                 return false
             }
         case .weightLoss:
