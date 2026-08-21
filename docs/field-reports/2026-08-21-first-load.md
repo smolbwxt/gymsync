@@ -71,3 +71,54 @@ DIAGNOSED (cause known, fix scoped) · DESIGNED (build plan below, queued)
     attached to sets for trainer review (not live streaming, v1).
     Capture UI + storage + trainer playback + retention policy. DESIGN
     CONVERSATION first (privacy + storage cost decisions are the owner's).
+
+
+# Second load (owner, same day)
+
+## Shipped this batch
+
+13. **Rest notifications not firing** (locked / foreground / minimized) —
+    SHIPPED. Root cause: local notifications need their own authorization
+    and the only request lived in the PUSH priming screen — decline that
+    once and every rest cue dies silently. Authorization now requested
+    lazily at the first rest window (the prompt lands in context), and an
+    in-app haptic+chime fires from the timer itself so a denied
+    permission can never silence the in-app moment.
+14. **No core from Coach** — SHIPPED. Only full-body and bro templates
+    carried a core slot; upper/lower and PPL had none. Core now rides
+    lower and legs days.
+15. **Set progression on overshoot** (8@50 → 14@70 → "8@75") — SHIPPED,
+    corpus-tuned as requested. The mined rule: "increase the load so you
+    return to training within that range." Two+ reps past the ceiling now
+    projects the range-floor load from the actual e1RM (inverse Epley)
+    instead of stepping once; and the machine-grid snap (item 3) fixes
+    the off-stack "75". The field case now lands on 80.
+16. **Cross-routine last-weight blindness** — SHIPPED (root cause:
+    duplicate catalog rows split the history; the widget read one row's
+    history, suggestions another's). History fetches now expand to the
+    ALIAS FAMILY (the dedup pass's alias_of), so face pulls are one lift
+    no matter which duplicate a routine referenced.
+
+## Docketed / diagnosed
+
+17. **Sports-specific programming + per-sport research** — corpus
+    expansion pass (sport S&C channels) + sport_prep goal deepening.
+    DESIGN + research swarm, own pass.
+18. **Coach aware of most-starred routines** — popularity signal into
+    selection/templates. Needs the starring data surface first. DOCKET.
+19. **Watch: live sessions not pushed, HR not communicated** +
+    **HR seen (recap avg/max) but live widget empty** — one WEARABLE
+    PASS: the recap proves HR reaches HealthKit while the live widget
+    only reads BLE. Source ladder (WCSession watch -> remembered BLE ->
+    pairing sheet) + live widget reading the HealthKit stream + watch
+    session push. Highest-priority next pass.
+20. **Failed-set send hangs seconds** — no obvious synchronous culprit in
+    the log path; needs timing instrumentation. Diagnose next pass.
+21. **Session cover blocks swiping to the rest of the app** — structural:
+    a live-session mini-bar (browse the app, session persists) is the
+    right shape. DESIGN CONVERSATION.
+22. **Body scan input on Coach page** — profile editor addition
+    (measurements/bodyfat feeding ageBand/context). Rides the profile
+    editor pass.
+23. **Rest-screen text on the swipe-up widget border** — cosmetic layout;
+    fix with the recovery-histogram pass (same screen).

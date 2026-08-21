@@ -694,9 +694,13 @@ enum ProgramGenerator {
                     .pattern("push_vertical", main: false), .pattern("pull_vertical", main: false),
                     .isolation("biceps"), .isolation("triceps")]
         case .lower:
+            // Core rides lower days (field report 2026-08-21: "no core
+            // routines are ever suggested" — only full-body and bro
+            // templates carried a core slot).
             base = [.pattern("squat", main: true), .pattern("hinge", main: true),
                     .pattern("lunge", main: false),
-                    .isolation("hamstrings"), .isolation("calves")]
+                    .isolation("hamstrings"), .isolation("calves"),
+                    .isolation("core")]
         case .push:
             base = [.pattern("push_horizontal", main: true), .pattern("push_vertical", main: false),
                     .isolation("shoulders"), .isolation("triceps"), .isolation("chest")]
@@ -706,7 +710,8 @@ enum ProgramGenerator {
         case .legs:
             base = [.pattern("squat", main: true), .pattern("hinge", main: true),
                     .pattern("lunge", main: false),
-                    .isolation("hamstrings"), .isolation("quads"), .isolation("calves")]
+                    .isolation("hamstrings"), .isolation("quads"), .isolation("calves"),
+                    .isolation("core")]
         // Bodypart days (bro/hybrid splits, TrainingProfile 2026-08-20).
         // Duplicate isolation slots pick DIFFERENT exercises — the
         // already-chosen exclusion guarantees it.

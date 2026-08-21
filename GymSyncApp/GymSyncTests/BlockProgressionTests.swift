@@ -69,6 +69,23 @@ final class BlockProgressionTests: XCTestCase {
         XCTAssertEqual(target, 10, "weakest set was 9 — aim one higher")
     }
 
+    func testBigOvershootProjectsBackIntoTheRange() {
+        // Owner field case 2026-08-21: 14 reps against an 8-rep target
+        // must not earn one increment. Corpus rule: "increase the load so
+        // you RETURN TO TRAINING WITHIN THAT RANGE" — the jump is sized
+        // from the actual e1RM. 14@100 -> e1RM 140 (Epley, rep-capped) ->
+        // ~110 for 8 reps; a plain step would say 105.
+        let history = session(reps: [14], weight: 100, daysAgo: 1)
+        let decision = BlockProgression.decide(
+            history: history, repsLow: 8, repsHigh: 8,
+            isLowerBody: false, isIsolation: false)
+        guard case .advanceLoad(let pounds, let note) = decision else {
+            return XCTFail("a blown-past ceiling must advance load, got \(decision)")
+        }
+        XCTAssertEqual(pounds, 110, "projected from performance, not stepped")
+        XCTAssertTrue(note.summary.contains("way past"))
+    }
+
     // MARK: Tier 1 — fatigue deload (propose, never apply)
 
     func testTwoSessionsUnderFloorProposesTenPercentDeload() {

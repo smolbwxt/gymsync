@@ -1,3 +1,4 @@
+import AudioToolbox
 import SwiftUI
 import UIKit
 import UserNotifications
@@ -330,7 +331,8 @@ struct WorkoutSessionView: View {
             if let re = currentRoutineExercise,
                let userID = appState.currentProfile?.id {
                 soloPriorSets = (try? await SessionRepository.exerciseHistory(
-                    userID: userID, exerciseID: re.exerciseID, limit: 30)) ?? []
+                    userID: userID, exerciseIDs: aliasFamilyIDs(for: re.exerciseID),
+                    limit: 30)) ?? []
                 // PR basis, fetched HERE rather than at log time — this is the
                 // latency fix: by the time the CTA is pressed the answer is
                 // already in memory, so logging is one write and nothing else.
@@ -708,6 +710,12 @@ struct WorkoutSessionView: View {
             Task { @MainActor in
                 try? await Task.sleep(for: .seconds(max(0, until.timeIntervalSinceNow) + 1))
                 if self.restEndAt == until {
+                    // In-app cue (field report: "while looking at the
+                    // app"): the haptic+chime fires from the timer itself,
+                    // so a denied notification permission can't silence
+                    // the moment that matters.
+                    UINotificationFeedbackGenerator().notificationOccurred(.success)
+                    AudioServicesPlaySystemSound(1007)
                     self.captureRestDrop()
                     self.restEndAt = nil
                     // A lapsed rest window starts the next set — same stamp as
@@ -1968,6 +1976,18 @@ struct WorkoutSessionView: View {
     /// Suggestions land on the equipment's honest loading grid (owner
     /// field report 2026-08-21: machines and stacks have no bar — a
     /// suggestion ending in 5 can't be loaded there).
+    /// The alias FAMILY for an exercise: itself, its canonical, and every
+    /// duplicate aliasing the same canonical (catalog dedup 20260821) —
+    /// so history split across duplicate names reads as one lift.
+    private func aliasFamilyIDs(for id: UUID) -> [UUID] {
+        let canonical = allExercises.first(where: { $0.id == id })?.aliasOf ?? id
+        var ids: Set<UUID> = [id, canonical]
+        for ex in allExercises where ex.aliasOf == canonical {
+            ids.insert(ex.id)
+        }
+        return Array(ids)
+    }
+
     private func snapToGrid(_ pounds: Decimal) -> Decimal {
         let step = Units.loadIncrement(forEquipment: currentExercise?.equipment,
                                        unit: soloUnit)
@@ -2304,14 +2324,26 @@ struct WorkoutSessionView: View {
         static let id = "rest-timer-done"
 
         static func schedule(at date: Date, exerciseName: String, setNumber: Int) {
-            let content = UNMutableNotificationContent()
-            content.title = "Rest over"
-            content.body = "Up next: set \(setNumber) — \(exerciseName)"
-            content.sound = .default
-            let seconds = max(1, date.timeIntervalSinceNow)
-            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: seconds, repeats: false)
-            let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
-            UNUserNotificationCenter.current().add(request)
+            // Owner field report 2026-08-21: cues fired for nobody who
+            // declined the PUSH priming — local notifications need their
+            // own authorization, requested lazily at first rest so the
+            // prompt lands in context ("may I tell you when rest is
+            // over?"), not at onboarding.
+            let center = UNUserNotificationCenter.current()
+            Task {
+                let settings = await center.notificationSettings()
+                if settings.authorizationStatus == .notDetermined {
+                    _ = try? await center.requestAuthorization(options: [.alert, .sound])
+                }
+                let content = UNMutableNotificationContent()
+                content.title = "Rest over"
+                content.body = "Up next: set \(setNumber) — \(exerciseName)"
+                content.sound = .default
+                let seconds = max(1, date.timeIntervalSinceNow)
+                let trigger = UNTimeIntervalNotificationTrigger(timeInterval: seconds, repeats: false)
+                let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
+                try? await center.add(request)
+            }
         }
 
         static func cancel() {

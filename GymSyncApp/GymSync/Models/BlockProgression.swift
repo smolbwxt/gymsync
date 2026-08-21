@@ -184,6 +184,25 @@ enum BlockProgression {
         // 3 — Double progression: every working set topped the range → add
         // load, reps reset to the floor.
         if latest.minRepsAtWork >= repsHigh {
+            // BIG overshoot (corpus: "increase the load so you RETURN TO
+            // TRAINING WITHIN THAT RANGE" — the jump is sized from the
+            // performance, not a fixed step; owner field case: 14 reps
+            // against a target of 8 must not earn one increment): two or
+            // more reps past the ceiling projects the range-floor load
+            // from the actual e1RM (inverse Epley) instead of stepping.
+            if latest.maxRepsAtWork >= repsHigh + 2 {
+                let e1rm = latest.bestE1RM
+                let floorLoad = e1rm / (1 + Decimal(repsLow) / 30)
+                let increment = unit.displayIncrement
+                let unitLoad = Units.fromPounds(floorLoad, to: unit)
+                let projected = Units.toPounds(
+                    Units.roundToIncrement(unitLoad, step: increment), from: unit)
+                if projected > latest.topLoad {
+                    return .advanceLoad(toPounds: projected, note: CoachNote(
+                        summary: "Load up — that was way past the range",
+                        reason: "You beat the \(repsHigh)-rep ceiling by \(latest.maxRepsAtWork - repsHigh) reps, so a single step would still be too light. The new load is projected from what you actually did, aiming you back at \(repsLow) reps."))
+                }
+            }
             let newLoad: Decimal
             if isIsolation {
                 // Smallest loadable step — a percent jump is too coarse

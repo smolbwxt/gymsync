@@ -164,6 +164,25 @@ enum SessionRepository {
         } catch { throw ErrorMapping.map(error) }
     }
 
+    /// Family-aware history (field report 2026-08-21: face pulls logged
+    /// under two duplicate catalog rows showed different "last time"s per
+    /// routine). Callers pass the alias FAMILY so history reads as one
+    /// lift regardless of which duplicate a routine referenced.
+    static func exerciseHistory(userID: UUID, exerciseIDs: [UUID], limit: Int) async throws -> [SetLog] {
+        do {
+            let rows: [SetLog] = try await client
+                .from("set_logs")
+                .select()
+                .eq("user_id", value: userID)
+                .in("exercise_id", values: exerciseIDs.map(\.uuidString))
+                .eq("is_penalty", value: "false")
+                .order("logged_at", ascending: false)
+                .limit(limit)
+                .execute().value
+            return rows
+        } catch { throw ErrorMapping.map(error) }
+    }
+
     static func exerciseHistory(userID: UUID, exerciseID: UUID, limit: Int) async throws -> [SetLog] {
         do {
             // Failed rows are INCLUDED (owner 2026-08-13) — history views
