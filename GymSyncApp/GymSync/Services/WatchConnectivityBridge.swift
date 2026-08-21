@@ -113,6 +113,12 @@ final class WatchConnectivityBridge {
     /// a session it was never told about) is rejected with `.failure`
     /// rather than guessed at.
     private(set) var lastPushedState: WatchSessionStatePayload?
+    /// The most recent watch HR sample, phone-side (wearable pass
+    /// 2026-08-21): SOLO sessions have no broadcast subscription to read
+    /// their own heart rate back from, so the live widget reads this tap.
+    /// In-memory only — the ephemeral law (no bpm in logs) holds.
+    private(set) var latestWatchBPM: Int?
+    private(set) var latestWatchBPMAt: Date?
 
     init(
         session: WatchSessionProviding? = nil,
@@ -539,6 +545,8 @@ final class WatchConnectivityBridge {
             return
         }
         let zone = HeartRateZone.zone(bpm: payload.bpm)
+        latestWatchBPM = payload.bpm
+        latestWatchBPMAt = Date()
         await heartRateBroadcast.publish(sessionID: state.sessionID, userID: userID, bpm: payload.bpm, zone: zone.rawValue)
         reply(.success, message: nil, to: replyHandler)
     }

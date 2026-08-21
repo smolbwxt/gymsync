@@ -140,6 +140,8 @@ struct WorkoutSessionView: View {
     /// for the decision not to invent that ordering here (badge suppressed, by design).
     @State private var prOverlayMonthlyCount: Int? = nil
     @State private var setStartedAt: Date = .now
+    /// log id -> when its set began (histogram fuel; session-scoped).
+    @State private var soloSetStarts: [UUID: Date] = [:]
     /// End of the current rest window (started right after a set is logged,
     /// using that exercise's `restSeconds`). Cleared once the lifter starts
     /// logging the next set — same "no polling Timer" pattern as the elapsed
@@ -349,6 +351,7 @@ struct WorkoutSessionView: View {
                 soloEnrollment = try? await ProgramRepository.active()
             }
             soloPrefill()
+            pushSoloWatchState(session: session, active: !completed)
             // Stall response (diagnostics pass, 5-channel consensus): a
             // stalled lift wants a VARIATION, so a flagged stall fetches
             // the graph's best swap and the note names it. Best-effort —
@@ -785,9 +788,42 @@ struct WorkoutSessionView: View {
         Units.tunerStep(unit: soloUnit, equipment: currentExercise?.equipment)
     }
 
+    /// Solo's watch session push (wearable pass): same payload shape the
+    /// group flow sends, solo-shaped — always your turn, no rotation, no
+    /// squad soundboard. Re-pushed on exercise change so the watch face
+    /// tracks the session; an inactive push at the end returns it to idle.
+    private func pushSoloWatchState(session: WorkoutSession?, active: Bool) {
+        guard let session else { return }
+        let payload = WatchSessionStatePayload(
+            sessionID: session.id,
+            groupID: nil,
+            sessionName: routine?.name ?? "Workout",
+            currentExerciseName: currentExercise?.name,
+            currentExerciseID: currentExercise?.id,
+            currentLifterName: nil,
+            isMyTurn: true,
+            burpeesOwed: 0,
+            burpeesPaid: true,
+            soundboardFavorites: [],
+            soundboardFavoriteLabels: [],
+            isActive: active,
+            shareHeartRate: ThemeStore.shared.shareHeartRate)
+        WatchConnectivityBridge.shared.updateSessionState(payload)
+    }
+
+    /// Live HR source ladder (wearable pass 2026-08-21): a connected BLE
+    /// strap first, then a FRESH watch sample relayed through the bridge
+    /// (recaps proved the data arrives; the widget just never read it).
+    /// 15s freshness — a stale watch number is worse than the dash.
     private var soloBLEBPM: Int? {
-        if case .connected = BLEHeartRateService.shared.state {
-            return BLEHeartRateService.shared.latestBPM
+        if case .connected = BLEHeartRateService.shared.state,
+           let bpm = BLEHeartRateService.shared.latestBPM {
+            return bpm
+        }
+        if let bpm = WatchConnectivityBridge.shared.latestWatchBPM,
+           let at = WatchConnectivityBridge.shared.latestWatchBPMAt,
+           Date().timeIntervalSince(at) < 15 {
+            return bpm
         }
         return nil
     }
@@ -974,7 +1010,7 @@ struct WorkoutSessionView: View {
             )],
             isOrganizer: false,
             myReady: false,
-            onReady: { soloWarmupEndsAt = nil },
+            onReady: { soloWarmupEndsAt = nil; setStartedAt = .now },
             onAdjustMinutes: { delta in adjustSoloWarmup(delta) }
         )
     }
@@ -1045,12 +1081,12 @@ struct WorkoutSessionView: View {
                         }
                         Spacer()
                         soloRecoverySparkline
-                    } else if soloSetDurations.count >= 2 {
+                    } else if !soloRestSetPairs.isEmpty {
                         // Owner item 4: no strap — set pace is the honest
                         // recovery proxy (how long each set took, last one
                         // emphasized).
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(paceText(soloSetDurations.last ?? 0))
+                            Text(paceText(soloRestSetPairs.last?.set ?? 0))
                                 .font(GSFont.boldFixed(30).monospacedDigit())
                                 .foregroundStyle(theme.text)
                             Text("LAST SET")
@@ -1059,7 +1095,7 @@ struct WorkoutSessionView: View {
                                 .foregroundStyle(theme.neutral700)
                         }
                         Spacer()
-                        soloSetPaceSparkline
+                        soloStackedHistogram
                     } else if HeartRatePrimeStore.hasBeenAsked, let startedAt = session?.startedAt {
                         Text(startedAt, style: .timer)
                             .font(GSFont.boldFixed(30).monospacedDigit())
@@ -1089,6 +1125,48 @@ struct WorkoutSessionView: View {
     /// Set-pace bars (owner item 4) — one capsule per completed set,
     /// normalized against the session's own min/max duration, latest
     /// emphasized. Same bar language as the HR sparkline beside it.
+    /// (rest-before, set-duration) per non-penalty logged set, oldest
+    /// first — the stacked histogram's fuel (owner design 2026-08-21).
+    /// Set duration reads the per-set start stamp; rest is the gap between
+    /// the previous log and this set's start. First set has no rest bar.
+    private var soloRestSetPairs: [(rest: Double, set: Double)] {
+        let logs = loggedSets.filter { !$0.isPenalty }
+            .sorted { $0.loggedAt < $1.loggedAt }
+        var pairs: [(Double, Double)] = []
+        var previousEnd: Date?
+        for log in logs {
+            let start = soloSetStarts[log.id] ?? previousEnd ?? log.loggedAt
+            let setDuration = max(0, log.loggedAt.timeIntervalSince(start))
+            let rest = previousEnd.map { max(0, start.timeIntervalSince($0)) } ?? 0
+            pairs.append((rest, min(setDuration, 600)))
+            previousEnd = log.loggedAt
+        }
+        return pairs
+    }
+
+    /// The owner's stacked histogram: per set, REST on the bottom
+    /// (neutral) and SET DURATION on top (accent) — recovery and work as
+    /// one picture, no strap required.
+    private var soloStackedHistogram: some View {
+        let pairs = Array(soloRestSetPairs.suffix(10))
+        let maxTotal = max(pairs.map { $0.rest + $0.set }.max() ?? 1, 1)
+        return HStack(alignment: .bottom, spacing: 3) {
+            ForEach(Array(pairs.enumerated()), id: \.offset) { _, pair in
+                VStack(spacing: 1) {
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(theme.accent)
+                        .frame(width: 7, height: max(2, 34 * pair.set / maxTotal))
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(theme.neutral500.opacity(0.55))
+                        .frame(width: 7, height: max(pair.rest > 0 ? 2 : 0,
+                                                     34 * pair.rest / maxTotal))
+                }
+            }
+        }
+        .frame(height: 38, alignment: .bottom)
+        .accessibilityLabel("Set and rest durations, most recent sets")
+    }
+
     private var soloSetPaceSparkline: some View {
         let ds = Array(soloSetDurations.suffix(12))
         let hi = ds.max() ?? 1
@@ -2964,6 +3042,17 @@ struct WorkoutSessionView: View {
                 soloWarmupEndsAt = (newSession.startedAt ?? Date())
                     .addingTimeInterval(TimeInterval(soloWarmupMinutes * 60))
             }
+            // Wearable pass (2026-08-21): SOLO sessions now reach the
+            // watch. Without this push the bridge rejected every watch HR
+            // sample with "No active session" and the watch app never
+            // left idle — the owner's exact field report. A remembered
+            // BLE strap also reconnects itself; no pairing sheet needed.
+            BLEHeartRateService.shared.connectRememberedIfAny()
+            pushSoloWatchState(session: newSession, active: true)
+            // Recovery-accounting fix (field report: exercise one counted
+            // from SCREEN OPEN): the set clock starts when the session
+            // actually exists, and restarts again when the warm-up ends.
+            setStartedAt = newSession.startedAt ?? .now
             // Discover "Attempt Solo" only: start the leaderboard attempt
             // AFTER the session exists (backend contract — see
             // `attemptOptIn`'s doc comment). Best-effort: a failed
@@ -3158,6 +3247,10 @@ struct WorkoutSessionView: View {
                 // perspective, the set IS saved (just not confirmed server-side yet).
                 OfflineSetLogQueue.shared.enqueue(log)
             }
+            // Stacked-histogram fuel (owner design 2026-08-21): stamp
+            // when THIS set started so the recovery card can stack rest
+            // (bottom) under set duration (top), per set.
+            soloSetStarts[log.id] = setStartedAt
             loggedSets.append(log)
             // The set is durably recorded either way (server insert or offline
             // queue) — this is the moment the success haptic fires.
@@ -3474,6 +3567,9 @@ struct WorkoutSessionView: View {
             // moment the recap becomes visible.
             recapAppearedAt = Date()
             self.completed = true
+            // Watch returns to idle — and stops accepting HR samples for
+            // a session that no longer exists.
+            pushSoloWatchState(session: session, active: false)
         } catch { errorText = ErrorMapping.map(error).errorDescription }
     }
 
