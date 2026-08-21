@@ -92,6 +92,10 @@ struct WorkoutSessionView: View {
     /// Drift probe (Phase 4): a found signal rides the debrief as its
     /// pending question, on the ~2-week cooldown.
     @State private var coachPendingProbe: DriftDetector.Signal?
+    // Manual weight entry (field report 2026-08-21: "tap on the weight
+    // recording and enter a weight manually").
+    @State private var showWeightEntry = false
+    @State private var weightEntryText = ""
     @State private var soloReps = ""
     @State private var soloRPE: Double = 7.0
     @State private var soloFailed = false
@@ -851,7 +855,7 @@ struct WorkoutSessionView: View {
             let next = SetProgression.nextWeight(afterPounds: base, rpe: last.rpe, isFailed: last.isFailed,
                                                  isLowerBody: currentExercise?.isLowerBody ?? false,
                                                  unit: soloUnit)
-            soloWeight = Units.format(pounds: next, unit: soloUnit,
+            soloWeight = Units.format(pounds: snapToGrid(next), unit: soloUnit,
                                       rounded: false, includeUnit: false)
         } else if let re = currentRoutineExercise,
                   let suggestion = WorkingWeight.suggest(
@@ -868,7 +872,7 @@ struct WorkoutSessionView: View {
                       seededPounds: LiftAnchorMath.seedPounds(
                           for: currentExercise?.slug ?? "",
                           anchors: sessionSettings?.liftAnchors)) {
-            soloWeight = Units.format(pounds: suggestion.pounds, unit: soloUnit,
+            soloWeight = Units.format(pounds: snapToGrid(suggestion.pounds), unit: soloUnit,
                                       rounded: false, includeUnit: false)
         } else {
             soloWeight = ""
@@ -897,7 +901,7 @@ struct WorkoutSessionView: View {
             soloCoachDecision = decision
             switch decision {
             case .advanceLoad(let pounds, _):
-                soloWeight = Units.format(pounds: pounds, unit: soloUnit,
+                soloWeight = Units.format(pounds: snapToGrid(pounds), unit: soloUnit,
                                           rounded: false, includeUnit: false)
                 soloReps = String(low)   // load up, reps reset to the floor
             case .advanceReps(let target, _):
@@ -1402,7 +1406,13 @@ struct WorkoutSessionView: View {
             return unit.standardPlates
         }()
         let barInUnit: Decimal = {
-            var value = Units.fromPounds(ThemeStore.shared.barWeightLbs, to: unit)
+            // EZ-bar lifts load against the lighter bar (field report
+            // 2026-08-21) — the setting when loaded, the standard 15 lb
+            // otherwise.
+            let barLbs = currentExercise?.equipment == "ez-bar"
+                ? (sessionSettings?.ezBarWeightLbs ?? 15)
+                : (sessionSettings?.barWeightLbs ?? ThemeStore.shared.barWeightLbs)
+            var value = Units.fromPounds(barLbs, to: unit)
             var rounded = Decimal()
             NSDecimalRound(&rounded, &value, 2, .plain)
             return rounded
@@ -1898,6 +1908,21 @@ struct WorkoutSessionView: View {
                     .frame(width: 96)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        weightEntryText = soloWeight
+                        showWeightEntry = true
+                    }
+                    .alert("Enter weight (\(soloUnit.label))", isPresented: $showWeightEntry) {
+                        TextField("Weight", text: $weightEntryText)
+                            .keyboardType(.decimalPad)
+                        Button("Set") {
+                            if let value = Decimal.parseUserInput(weightEntryText), value > 0 {
+                                soloWeight = "\(value)"
+                            }
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    }
                 TurnAutoRepeatButton(glyph: "plus", detail: nil, theme: theme) { soloStepWeight(1) }
                     .frame(width: 44)
 
@@ -1938,6 +1963,17 @@ struct WorkoutSessionView: View {
 
     private var soloStepperRule: some View {
         Rectangle().fill(theme.neutral700.opacity(0.55)).frame(width: 1, height: 30)
+    }
+
+    /// Suggestions land on the equipment's honest loading grid (owner
+    /// field report 2026-08-21: machines and stacks have no bar — a
+    /// suggestion ending in 5 can't be loaded there).
+    private func snapToGrid(_ pounds: Decimal) -> Decimal {
+        let step = Units.loadIncrement(forEquipment: currentExercise?.equipment,
+                                       unit: soloUnit)
+        let unitValue = Units.fromPounds(pounds, to: soloUnit)
+        return Units.toPounds(Units.roundToIncrement(unitValue, step: step),
+                              from: soloUnit)
     }
 
     private func soloStepWeight(_ direction: Int) {
@@ -2318,7 +2354,7 @@ struct WorkoutSessionView: View {
             }
             return unit.standardPlates
         }()
-        var barConverted = Units.fromPounds(sessionSettings?.barWeightLbs ?? 45, to: unit)
+        var barConverted = Units.fromPounds(sessionSettings?.barWeight(forEquipment: currentExercise?.equipment) ?? 45, to: unit)
         var barInUnit = Decimal()
         NSDecimalRound(&barInUnit, &barConverted, 2, .plain)
         let prefill = barLoaderPrefill(re: re)

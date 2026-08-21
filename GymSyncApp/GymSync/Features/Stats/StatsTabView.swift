@@ -93,6 +93,21 @@ struct StatsTabView: View {
                                     ledgerRow(entry)
                                 }
                                 .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
+                                // Owner field report 2026-08-21: workouts
+                                // are the athlete's to remove. Long-press
+                                // delete; PRs derived from the session
+                                // deliberately survive (records are
+                                // records).
+                                .contextMenu {
+                                    Button(role: .destructive) {
+                                        Task {
+                                            try? await SessionRepository.deleteSession(id: entry.session.id)
+                                            ledgerEntries.removeAll { $0.id == entry.id }
+                                        }
+                                    } label: {
+                                        Label("Delete workout", systemImage: "trash")
+                                    }
+                                }
                                 // Rolling load (owner 2026-08-16): reaching
                                 // the last row fetches the next window.
                                 .onAppear {

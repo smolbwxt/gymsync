@@ -33,7 +33,12 @@ enum SoloWarmupStore {
     static let defaultsKey = "solo.warmupMinutes.v1"
 
     static var minutes: Int {
-        UserDefaults.standard.integer(forKey: defaultsKey)
+        // Owner field report 2026-08-21 ("no warm up timer on solo"):
+        // never-configured now defaults to 5 minutes — the phase appears
+        // and its −/+ or SKIP teaches the control. An explicit 0 still
+        // means "off"; only the unset state changed.
+        guard UserDefaults.standard.object(forKey: defaultsKey) != nil else { return 5 }
+        return UserDefaults.standard.integer(forKey: defaultsKey)
     }
 
     static func set(_ minutes: Int) {

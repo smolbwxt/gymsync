@@ -118,6 +118,20 @@ enum SessionRepository {
     /// Deletes one mistyped set (owner-scoped RLS, 20260730000003). PR rows
     /// born from the deleted set are deliberately NOT touched — see the
     /// migration header.
+    /// Delete a whole workout from the ledger (owner field report
+    /// 2026-08-21): set logs first, then the session row — both behind
+    /// owner-scoped RLS delete policies. A completed workout is the
+    /// athlete's to remove; PRs derived from it are separate rows and
+    /// deliberately survive (records are records).
+    static func deleteSession(id: UUID) async throws {
+        do {
+            try await client.from("set_logs")
+                .delete().eq("session_id", value: id).execute()
+            try await client.from("sessions")
+                .delete().eq("id", value: id).execute()
+        } catch { throw ErrorMapping.map(error) }
+    }
+
     static func deleteSet(id: UUID) async throws {
         do {
             _ = try await client.from("set_logs").delete().eq("id", value: id).execute()

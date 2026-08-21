@@ -59,6 +59,18 @@ struct UserSettings: Codable, Sendable, Equatable {
     /// memberwise-init trap the properties above document.
     var liftAnchors: [String: Decimal]? = nil
 
+    /// EZ-bar weight in POUNDS (owner field report 2026-08-21: EZ bars
+    /// are lighter than straight bars and the loader math must know).
+    /// 15 lb standard-EZ default; trailing default per the memberwise
+    /// trap above.
+    var ezBarWeightLbs: Decimal = 15
+
+    /// The bar the CURRENT exercise actually uses — EZ-bar lifts load
+    /// against the lighter bar; everything else keeps the straight bar.
+    func barWeight(forEquipment equipment: String?) -> Decimal {
+        equipment == "ez-bar" ? ezBarWeightLbs : barWeightLbs
+    }
+
     /// Parsed `unitSystem`, falling back to lbs for any unexpected value —
     /// a bad string must never crash a weight display.
     var weightUnit: WeightUnit { WeightUnit(rawValue: unitSystem) ?? .lbs }
@@ -74,6 +86,7 @@ struct UserSettings: Codable, Sendable, Equatable {
         case barWeightLbs = "bar_weight_lbs"
         case plateInventory = "plate_inventory"
         case liftAnchors = "lift_anchors"
+        case ezBarWeightLbs = "ez_bar_weight_lbs"
     }
 
     /// Mirrors the table's own column defaults exactly (migrations:
@@ -130,6 +143,7 @@ private struct UserSettingsUpsert: Encodable {
     /// would make the onboarding step look like it saved while never
     /// persisting.
     let liftAnchors: [String: Decimal]?
+    let ezBarWeightLbs: Decimal
 
     enum CodingKeys: String, CodingKey {
         case userID = "user_id"
@@ -141,6 +155,7 @@ private struct UserSettingsUpsert: Encodable {
         case barWeightLbs = "bar_weight_lbs"
         case plateInventory = "plate_inventory"
         case liftAnchors = "lift_anchors"
+        case ezBarWeightLbs = "ez_bar_weight_lbs"
     }
 }
 
@@ -188,7 +203,8 @@ enum UserSettingsRepository {
                     unitSystem: settings.unitSystem,
                     barWeightLbs: settings.barWeightLbs,
                     plateInventory: settings.plateInventory,
-                    liftAnchors: settings.liftAnchors
+                    liftAnchors: settings.liftAnchors,
+                    ezBarWeightLbs: settings.ezBarWeightLbs
                 ))
                 .execute()
         } catch {

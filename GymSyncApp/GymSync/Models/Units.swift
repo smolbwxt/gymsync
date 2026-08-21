@@ -85,6 +85,19 @@ enum Units {
     }
 
     /// Rounds to the nearest loadable increment for `unit` (standard set).
+    /// Equipment-aware loading increment (owner field report 2026-08-21:
+    /// "free weight machines shouldn't end in a 5 — there is no bar").
+    /// Plate-loaded machines load plate PAIRS with no bar offset, so the
+    /// honest grid is 10 lb / 5 kg; everything else keeps the unit's
+    /// plate-pair increment.
+    static func loadIncrement(forEquipment equipment: String?,
+                              unit: WeightUnit) -> Decimal {
+        if equipment == "machine" || equipment == "cable" {
+            return unit == .kg ? 5 : 10
+        }
+        return unit.displayIncrement
+    }
+
     static func roundToIncrement(_ value: Decimal, unit: WeightUnit) -> Decimal {
         roundToIncrement(value, step: unit.displayIncrement)
     }

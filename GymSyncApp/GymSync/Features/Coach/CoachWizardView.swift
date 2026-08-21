@@ -676,8 +676,8 @@ struct CoachWizardView: View {
                     .foregroundStyle(theme.neutral700)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if let suggested = completion.outcome.suggestedDaysPerWeek,
-               suggested != days {
+            let suggested = completion.outcome.suggestedDaysPerWeek
+            if suggested != days {
                 Text("Your attendance supported \(suggested) day\(suggested == 1 ? "" : "s") a week — a plan you complete beats a plan you admire.")
                     .font(GSFont.body(12, relativeTo: .caption))
                     .foregroundStyle(theme.neutral700)
