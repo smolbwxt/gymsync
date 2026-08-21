@@ -130,7 +130,11 @@ final class ScreenshotTests: XCTestCase {
     private func openYouWidget(_ app: XCUIApplication, label: String) {
         selectTab(app, label: "You")
         settle()
-        let widget = app.buttons[label]
+        // The widgets wrap in `.accessibilityElement(children: .ignore)`,
+        // which drops the button TRAIT - `app.buttons[label]` never
+        // matches them (every "widget not found" screenshot failure was
+        // this one line). Query by identifier across all element types.
+        let widget = app.descendants(matching: .any)[label].firstMatch
         guard widget.waitForExistence(timeout: 15) else {
             XCTFail("\(label) widget not found on You tab")
             return
