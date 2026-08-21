@@ -102,8 +102,13 @@ private struct ExerciseTrendTool: Tool {
         var exerciseName: String
     }
 
-    func call(arguments: Arguments) async throws -> ToolOutput {
-        ToolOutput(lookup(arguments.exerciseName))
+    // Shipped API: `Tool.call` returns the associated Output
+    // (any PromptRepresentable); the beta-era `ToolOutput` wrapper was
+    // removed from the SDK. Archive job caught it - build-test runs an
+    // older Xcode where canImport(FoundationModels) is false, so this
+    // file had never met a compiler until the first master deploy.
+    func call(arguments: Arguments) async throws -> String {
+        lookup(arguments.exerciseName)
     }
 }
 
@@ -117,8 +122,8 @@ private struct WeeklyVolumeTool: Tool {
     @Generable
     struct Arguments {}
 
-    func call(arguments: Arguments) async throws -> ToolOutput {
-        ToolOutput(lookup())
+    func call(arguments: Arguments) async throws -> String {
+        lookup()
     }
 }
 #endif
