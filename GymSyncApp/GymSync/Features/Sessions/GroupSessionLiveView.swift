@@ -237,6 +237,13 @@ struct GroupSessionLiveView: View {
     /// `logSetAndAdvance` call, same convention as `logSetErrorText`.
     @State private var didQueueSetOffline = false
     @State private var recapData: RecapData?          // non-nil → sheet
+    // Coach debrief for MY sets (AI after-action, group mirror
+    // 2026-08-22): assembled once at completion, same builder and same
+    // conversation the solo recap uses.
+    @State private var groupDebrief: WorkoutDebrief? = nil
+    @State private var groupCoachProfile = TrainingProfile()
+    @State private var groupTrendHistory: [String: [SetLog]] = [:]
+    @State private var showGroupCoachRecap = false
     @State private var penaltyLogged        = 0       // reps logged this session as penalty by me
 
     // MARK: - Hot-swap state (owner rulings 2026-08-21)
@@ -2450,6 +2457,23 @@ struct GroupSessionLiveView: View {
         .scrollDismissesKeyboard(.interactively)
         .sheet(isPresented: $showLogSetSheet) { logSetSheetContent }
         .sheet(isPresented: $showGroupSwapSheet) { groupSwapSheet }
+        .sheet(isPresented: $showGroupCoachRecap) {
+            if let debrief = groupDebrief {
+                CoachRecapView(
+                    debrief: debrief,
+                    persona: CoachPersona.bySlug(groupCoachProfile.persona),
+                    profile: groupCoachProfile,
+                    trendLookup: { [history = groupTrendHistory] name in
+                        if let logs = history[name.lowercased()], logs.count > 1 {
+                            return DebriefBuilder.trendSentence(name: name, logs: logs)
+                        }
+                        return "\(name): not enough logged history for a trend yet — today's numbers are in the report."
+                    },
+                    volumeLookup: {
+                        "Per-muscle weekly volume lands in an upcoming update — ask about any lift's trend instead."
+                    })
+            }
+        }
         .sheet(item: $exerciseDetailSheet) { ex in
             NavigationStack {
                 ExerciseDetailView(exercise: ex)
@@ -2513,6 +2537,9 @@ struct GroupSessionLiveView: View {
                     heaviestPR: payload.heaviestPR,
                     shareSummary: payload.shareSummary,
                     sessionID: data.session.id,
+                    coachDebrief: groupDebrief,
+                    coachName: CoachPersona.bySlug(groupCoachProfile.persona)?.name ?? "Coach",
+                    onTalkToCoach: { showGroupCoachRecap = true },
                     recipientIDs: payload.recipientIDs,
                     unit: ThemeStore.shared.weightUnit,
                     pumpCheck: data.pumpCheck,
@@ -5526,6 +5553,51 @@ struct GroupSessionLiveView: View {
         }
     }
 
+    /// The AI after-action for a GROUP session: built from MY sets only
+    /// (the report is personal even when the session wasn't), against
+    /// the effective routine (hot-swaps included), with per-lift history
+    /// prefetched so the trend tool narrates real numbers. Best effort -
+    /// a failure just means no coach card on the recap.
+    @MainActor
+    private func assembleGroupDebrief(session completed: WorkoutSession,
+                                      allSets: [SetLog]) async {
+        guard let selfID else { return }
+        if let profile = try? await TrainingProfileRepository.load() {
+            groupCoachProfile = profile
+        }
+        let mySets = allSets.filter { $0.userID == selfID && !$0.isPenalty }
+        guard !mySets.isEmpty else { return }
+        let nameByID = Dictionary(uniqueKeysWithValues: allExercises.map { ($0.id, $0.name) })
+        let logsByExercise = Dictionary(grouping: mySets, by: \.exerciseID)
+        let reports = effectiveRoutineExercises
+            .filter { $0.cardioZone == nil }
+            .map { re in
+                DebriefBuilder.ExerciseReport(
+                    name: nameByID[re.exerciseID] ?? exerciseNames[re.exerciseID] ?? "Exercise",
+                    prescribedSets: re.targetSets ?? 3,
+                    repsLow: re.targetRepsLow,
+                    repsHigh: re.targetRepsHigh,
+                    sets: (logsByExercise[re.exerciseID] ?? [])
+                        .sorted { $0.setIndex < $1.setIndex },
+                    decision: nil)
+            }
+        guard reports.contains(where: { !$0.sets.isEmpty }) else { return }
+        var context = DebriefBuilder.Context()
+        context.profile = groupCoachProfile
+        if let end = completed.completedAt, let start = completed.startedAt {
+            context.sessionMinutes = max(1, Int(end.timeIntervalSince(start) / 60))
+        }
+        groupDebrief = DebriefBuilder.build(reports: reports, context: context)
+        // Trend fuel for the conversation's tool - my lifts only, capped.
+        for re in effectiveRoutineExercises.prefix(10) where re.cardioZone == nil {
+            guard let name = nameByID[re.exerciseID] else { continue }
+            if let history = try? await SessionRepository.exerciseHistory(
+                userID: selfID, exerciseID: re.exerciseID, limit: 60) {
+                groupTrendHistory[name.lowercased()] = history
+            }
+        }
+    }
+
     /// Leave ≠ end (user 2026-07-31): flip my check-in to 'left' (outside
     /// the presence trio), hand the turn on first if it's mine, and only
     /// when I'm the last present lifter does leaving complete the session
@@ -5667,6 +5739,7 @@ struct GroupSessionLiveView: View {
             await liveService.unsubscribe()
             let groupPayload = await buildGroupRecapPayload(session: completed, sets: allSets)
             let pumpCheck = await buildPumpCheckContext(session: completed, sets: allSets)
+            await assembleGroupDebrief(session: completed, allSets: allSets)
             recapData = RecapData(session: completed, sets: allSets,
                                   groupPayload: groupPayload, pumpCheck: pumpCheck)
         } catch let error as GymSyncError {

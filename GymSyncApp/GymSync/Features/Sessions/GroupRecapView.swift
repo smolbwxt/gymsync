@@ -99,6 +99,12 @@ struct GroupRecapView: View {
     /// Pump Check (spec 2026-07-27): non-nil mounts the composer at the top
     /// — nil (catalog fixtures) renders none.
     var pumpCheck: PumpCheckContext? = nil
+    // Coach debrief (AI after-action, group mirror 2026-08-22): the
+    // caller builds it from MY sets only - the report is personal even
+    // when the session wasn't. Defaulted so fixtures compile unchanged.
+    var coachDebrief: WorkoutDebrief? = nil
+    var coachName: String = "Coach"
+    var onTalkToCoach: (() -> Void)? = nil
     let onDone: () -> Void
 
     @Environment(\.gsTheme) private var theme
@@ -128,9 +134,15 @@ struct GroupRecapView: View {
         recipientIDs: [UUID],
         unit: WeightUnit = .lbs,
         pumpCheck: PumpCheckContext? = nil,
+        coachDebrief: WorkoutDebrief? = nil,
+        coachName: String = "Coach",
+        onTalkToCoach: (() -> Void)? = nil,
         onDone: @escaping () -> Void
     ) {
         self.pumpCheck = pumpCheck
+        self.coachDebrief = coachDebrief
+        self.coachName = coachName
+        self.onTalkToCoach = onTalkToCoach
         self.kicker = kicker
         self.durationText = durationText
         self.subline = subline
@@ -202,6 +214,15 @@ struct GroupRecapView: View {
                             .padding(.horizontal, 16)
                     }
                     hero
+                    // Coach card after the numbers, same placement law as
+                    // the solo recap: the computed observation is the
+                    // debrief's own advertisement, every workout.
+                    if let coachDebrief {
+                        CoachDebriefCard(debrief: coachDebrief,
+                                         coachName: coachName,
+                                         onTalk: onTalkToCoach)
+                            .padding(.horizontal, 16)
+                    }
                     leaderboardSection
                     if let heaviestPR {
                         prCard(heaviestPR)
