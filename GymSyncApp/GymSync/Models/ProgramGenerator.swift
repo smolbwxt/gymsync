@@ -60,6 +60,12 @@ enum ProgramGenerator {
         /// rows sort behind — landings, not effort, are the risk being
         /// managed. Gives the `impact` label its first consumer.
         var impactCaution: Bool = false
+        /// Lifts appearing in routines the athlete STARRED (field report
+        /// #18): aspiration as data. The weakest tiebreak above the
+        /// equipment ladder — it never beats a score, a bucket, or any
+        /// gate; it just answers "when nothing else separates them, pick
+        /// the one they've been eyeing."
+        var starredExerciseIDs: Set<UUID> = []
         /// conservative | standard | aggressive — shifts the %1RM anchor
         /// (audit 2026-08-20: previously a dead knob; the experience
         /// ceiling still has the last word).
@@ -252,6 +258,7 @@ enum ProgramGenerator {
                                   cautionJoints: inputs.cautionJoints,
                                   axialBoost: inputs.axialBoost,
                                   impactCaution: inputs.impactCaution,
+                                  starred: inputs.starredExerciseIDs,
                                   lens: slotLens,
                                   deprioritized: inputs.deprioritizedExerciseIDs)
                 if pick == nil, !isMainSlot {
@@ -266,6 +273,7 @@ enum ProgramGenerator {
                                   cautionJoints: inputs.cautionJoints,
                                   axialBoost: inputs.axialBoost,
                                   impactCaution: inputs.impactCaution,
+                                  starred: inputs.starredExerciseIDs,
                                   lens: slotLens,
                                   deprioritized: inputs.deprioritizedExerciseIDs)
                 }
@@ -432,6 +440,7 @@ enum ProgramGenerator {
                                   tilt: inputs.selectionTilt,
                                   cautionJoints: inputs.cautionJoints,
                                   impactCaution: inputs.impactCaution,
+                                  starred: inputs.starredExerciseIDs,
                                   lens: inputs.personaLens)
                 guard let pick,
                       let lightest = days.indices.min(by: {
@@ -799,6 +808,7 @@ enum ProgramGenerator {
                        cautionJoints: Set<String> = [],
                        axialBoost: Bool = false,
                        impactCaution: Bool = false,
+                       starred: Set<UUID> = [],
                        lens: CoachPersona.Lens? = nil,
                        deprioritized: Set<UUID> = []) -> CatalogExercise? {
         let candidates: [CatalogExercise]
@@ -942,15 +952,19 @@ enum ProgramGenerator {
             // simplicity is 0 and the explosive tier decides alone.
             // stretch*8+lad merges two tiebreaks the same way; stretch
             // dominates since lad <= 5.
+            // Starred-routine preference: the athlete's own aspiration,
+            // dead last among the soft signals — above only the ladder.
+            let starPref = starred.contains(c.id) ? 0 : 1
             // attestSilent*10_000 - score in one component (tuple arity):
             // scores are bounded well under 10_000 (tilt path peaks near
             // ~500), so silence dominates score without a new slot.
-            // attestWeak*16 + stretch*8 + lad likewise: strong 2-channel
-            // attestation outranks the stretch bias (max 13) as the first
-            // sub-score tiebreak.
+            // Final component, ordered by weight bounds: attestWeak*32
+            // dominates stretch*16 + starPref*8 + lad (max 29); stretch
+            // dominates starPref*8 + lad (max 13); starPref dominates
+            // lad (max 5).
             return (pen, gates, focusStanding, simplicity * 4 + explosiveFit,
                     attestSilent * 10_000 - score,
-                    attestWeak * 16 + stretch * 8 + lad)
+                    attestWeak * 32 + stretch * 16 + starPref * 8 + lad)
         }
         let sorted = candidates.sorted { a, b in
             let ta = tier(a), tb = tier(b)

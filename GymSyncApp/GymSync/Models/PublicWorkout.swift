@@ -357,6 +357,22 @@ enum PublicWorkoutRepository {
         } catch { throw ErrorMapping.map(error) }
     }
 
+    /// EVERY routine the current user has starred — the Coach's
+    /// preference signal (field report #18): lifts from routines you
+    /// starred read as aspiration, and selection breaks ties toward them.
+    static func myStarredRoutineIDs() async throws -> [UUID] {
+        guard let userID = await SupabaseService.shared.currentUserID() else { return [] }
+        do {
+            let rows: [StarRow] = try await client
+                .from("routine_stars")
+                .select("routine_id")
+                .eq("user_id", value: userID.uuidString)
+                .execute()
+                .value
+            return rows.map(\.routineID)
+        } catch { throw ErrorMapping.map(error) }
+    }
+
     /// Which of `routineIDs` the CURRENT user has starred.
     static func myStarred(routineIDs: [UUID]) async throws -> Set<UUID> {
         guard !routineIDs.isEmpty,

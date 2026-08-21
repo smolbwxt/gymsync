@@ -73,6 +73,9 @@ struct CoachWizardView: View {
     @State private var bodyweightText = ""
     @State private var heightText = ""
     @State private var bodyFatText = ""
+    // Lifts from routines the athlete starred (field report #18) —
+    // fetched once per wizard visit, alias-resolved to canonical rows.
+    @State private var starredExerciseIDs: Set<UUID> = []
     /// The relationship's memory rides every rebuild — dropping it would
     /// reset block alternation and deprioritization each visit.
     @State private var savedCarryover: TrainingProfile.Carryover?
@@ -257,6 +260,17 @@ struct CoachWizardView: View {
         .task {
             allExercises = (try? await ExerciseRepository.fetchAll()) ?? []
             sex = appState.currentProfile?.sex ?? ""
+            // Starred-routine preference: aspiration as data. Alias rows
+            // resolve to their canonical exercise so the signal survives
+            // the catalog dedup.
+            if let starredRoutines = try? await PublicWorkoutRepository.myStarredRoutineIDs(),
+               !starredRoutines.isEmpty,
+               let rows = try? await RoutineRepository.exercisesForRoutines(ids: starredRoutines) {
+                let canonical = Dictionary(uniqueKeysWithValues: allExercises.map {
+                    ($0.id, $0.aliasOf ?? $0.id)
+                })
+                starredExerciseIDs = Set(rows.map { canonical[$0.exerciseID] ?? $0.exerciseID })
+            }
             // Phase 4 lifecycle: settle a finished block BEFORE loading
             // the profile, so the carryover it just wrote is what loads.
             blockCompletion = await CoachLifecycle.checkBlockEnd()
@@ -637,6 +651,7 @@ struct CoachWizardView: View {
             fillWeekWithRecovery: fillWeek,
             seed: seed)
         inputs.sessionMinutes = sessionMinutes
+        inputs.starredExerciseIDs = starredExerciseIDs
         lastInputs = inputs
         lastCatalog = catalog
         preview = ProgramGenerator.generate(inputs: inputs, catalog: catalog)
