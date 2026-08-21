@@ -2672,8 +2672,9 @@ struct WorkoutSessionView: View {
                                       rounded: false, includeUnit: true)
             return "\(name) \(weight)×\(pr.reps) — new best"
         }
-        if let session = completedSession, let end = session.completedAt {
-            context.sessionMinutes = max(1, Int(end.timeIntervalSince(session.startedAt) / 60))
+        if let session = completedSession, let end = session.completedAt,
+           let start = session.startedAt {
+            context.sessionMinutes = max(1, Int(end.timeIntervalSince(start) / 60))
         }
         return DebriefBuilder.build(reports: reports, context: context)
     }
