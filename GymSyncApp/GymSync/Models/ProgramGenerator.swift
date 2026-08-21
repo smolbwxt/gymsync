@@ -194,7 +194,10 @@ enum ProgramGenerator {
                                            focus: inputs.focus,
                                            preference: inputs.splitPreference)
         let usable = catalog.filter { ex in
-            guard inputs.equipment.map({ $0.contains(ex.equipment) }) ?? true else { return false }
+            guard inputs.equipment.map({ allowed in
+                allowed.contains(ex.equipment)
+                    || (ex.equipment == "ez-bar" && allowed.contains("barbell"))
+            }) ?? true else { return false }
             // Hard exclusions (TrainingProfile): these lifts do not exist
             // for this athlete. The selector's next-best (and ultimately
             // the substitution graph) fills every hole.
@@ -972,12 +975,12 @@ enum ProgramGenerator {
                 lad = ladder[c.equipment] ?? 5
             } else if lens?.barbellFirst == true {
                 // The strength-purist stance: accessories prefer the bar.
-                let barFirst = ["barbell": 0, "dumbbell": 1, "machine": 2, "cable": 2, "bodyweight": 3]
+                let barFirst = ["barbell": 0, "ez-bar": 0, "dumbbell": 1, "machine": 2, "cable": 2, "bodyweight": 3]
                 lad = barFirst[c.equipment] ?? 4
             } else {
                 // Rule 5: accessories favor machine/cable (low systemic
                 // fatigue, safe near failure).
-                let inverse = ["machine": 0, "cable": 0, "dumbbell": 1, "bodyweight": 2, "barbell": 3]
+                let inverse = ["machine": 0, "cable": 0, "dumbbell": 1, "bodyweight": 2, "barbell": 3, "ez-bar": 3]
                 lad = inverse[c.equipment] ?? 4
             }
             // Corpus attestation prior (mentions export 2026-08-20): a
@@ -1172,7 +1175,10 @@ enum ProgramGenerator {
                        inputs: Inputs, catalog: [CatalogExercise]) -> Exercise? {
         guard let slot = exercise.slot else { return nil }
         let usable = catalog.filter { ex in
-            inputs.equipment.map { $0.contains(ex.equipment) } ?? true
+            inputs.equipment.map { allowed in
+                allowed.contains(ex.equipment)
+                    || (ex.equipment == "ez-bar" && allowed.contains("barbell"))
+            } ?? true
         }
         var excluded = Set(day.exercises.map(\.exerciseID))
         excluded.insert(exercise.exerciseID)

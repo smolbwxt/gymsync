@@ -285,6 +285,11 @@ struct GroupSessionLiveView: View {
     // MARK: - Inline "LOG THIS SET" card state (my-turn spotlight — replaces the old sheet)
 
     @State private var logReps: String = ""
+    // Group coach note (docket: the deferred note UX from the partial
+    // turnCoachDecision hookup) - compact line, expandable reason,
+    // per-exercise dismissal. Quiet: visible to ME only.
+    @State private var turnCoachNoteExpanded = false
+    @State private var turnCoachNoteDismissedFor: UUID? = nil
     @State private var logWeight: String = ""
     @State private var logRPE: Double = 7.0
     @State private var logIsFailed = false
@@ -786,12 +791,10 @@ struct GroupSessionLiveView: View {
 
     /// BlockProgression at the START of this exercise (nothing of mine
     /// logged for it yet this session) — group parity with the solo coach
-    /// note (owner 2026-08-20), deliberately PARTIAL: only the topped-range
-    /// load advance joins the prefill ladder below, because the ladder is
-    /// group's established suggestion surface and a prefill is a suggestion,
-    /// not an edit. Deload proposals, stall flags, and the expandable note
-    /// need a layout slot this fixed-height turn sheet doesn't have — that
-    /// UX lands with the group design pass (tracked in the Coach ledger).
+    /// note (owner 2026-08-20). The load advance joins the prefill ladder;
+    /// the compact note line below the entry header carries deloads,
+    /// stalls, and fatigue warnings (docket close 2026-08-22) — quiet,
+    /// mine only, per-exercise dismissable.
     private var turnCoachDecision: BlockProgression.Decision? {
         guard let ex = currentExerciseForSheet,
               let re = currentRoutineExercise,
@@ -805,6 +808,22 @@ struct GroupSessionLiveView: View {
             isIsolation: false,
             lastSetToFailure: re.targetFailure,
             unit: turnUnit)
+    }
+
+    private func turnCoachNote(for decision: BlockProgression.Decision) -> BlockProgression.CoachNote? {
+        switch decision {
+        case .advanceLoad(_, let note), .advanceReps(_, let note),
+             .proposeDeload(_, let note), .flagStall(let note),
+             .warnFatigue(let note):
+            return note
+        case .hold(let note):
+            return note
+        }
+    }
+
+    private var turnCoachDeloadPounds: Decimal? {
+        if case .proposeDeload(let pounds, _) = turnCoachDecision { return pounds }
+        return nil
     }
 
     /// The most recent completed set for the current exercise — the LAST
@@ -1581,6 +1600,72 @@ struct GroupSessionLiveView: View {
                     .foregroundStyle(theme.text.opacity(0.78))
             }
             .frame(height: 14)
+
+            // Group coach note (docket close 2026-08-22): the block
+            // engine's non-advance decisions finally get their line -
+            // compact, expandable, mine only, dismissable per exercise.
+            if let decision = turnCoachDecision,
+               let note = turnCoachNote(for: decision),
+               turnCoachNoteDismissedFor != currentExerciseForSheet?.id {
+                Color.clear.frame(height: 6)
+                VStack(alignment: .leading, spacing: 5) {
+                    Button { turnCoachNoteExpanded.toggle() } label: {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Image(systemName: "lightbulb.fill")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(theme.accent)
+                            Text("COACH · \(note.summary.uppercased())")
+                                .font(GSFont.bold(11, relativeTo: .caption2))
+                                .tracking(0.6)
+                                .foregroundStyle(theme.text.opacity(0.82))
+                                .lineLimit(turnCoachNoteExpanded ? 3 : 1)
+                                .multilineTextAlignment(.leading)
+                            Spacer(minLength: 4)
+                            Image(systemName: turnCoachNoteExpanded ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(theme.neutral500)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    if turnCoachNoteExpanded {
+                        Text(note.reason)
+                            .font(GSFont.body(12, relativeTo: .caption))
+                            .foregroundStyle(theme.neutral700)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let deloadPounds = turnCoachDeloadPounds {
+                        HStack(spacing: 10) {
+                            Button {
+                                logWeight = Units.format(pounds: deloadPounds, unit: turnUnit,
+                                                         rounded: false, includeUnit: false)
+                                if let low = currentRoutineExercise?.targetRepsLow {
+                                    logReps = String(low)
+                                }
+                                turnCoachNoteDismissedFor = currentExerciseForSheet?.id
+                            } label: {
+                                Text("TAKE THE DELOAD")
+                                    .font(GSFont.bold(11, relativeTo: .caption2))
+                                    .tracking(0.6)
+                                    .foregroundStyle(theme.bg)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(theme.accent)
+                                    .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            Button {
+                                turnCoachNoteDismissedFor = currentExerciseForSheet?.id
+                            } label: {
+                                Text("NOT TODAY")
+                                    .font(GSFont.bold(11, relativeTo: .caption2))
+                                    .tracking(0.6)
+                                    .foregroundStyle(theme.neutral700)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
 
             Color.clear.frame(height: 4)
             // No step labels, no inner hairlines (user, 2026-07-30): the
