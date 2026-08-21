@@ -93,6 +93,13 @@ struct SoloRecapView: View {
     /// the top of the recap — the 1-minute photo window. Nil (catalog
     /// fixtures, callers that predate the feature) renders no composer.
     let pumpCheck: PumpCheckContext?
+    /// Coach debrief (2026-08-21): non-nil mounts the coach card after the
+    /// hero — the computed headline every tier gets, with the "talk it
+    /// through" invitation. Nil (fixtures, pre-Coach callers) renders
+    /// nothing, same convention as `pumpCheck`.
+    let coachDebrief: WorkoutDebrief?
+    let coachName: String
+    let onTalkToCoach: () -> Void
     let onDone: () -> Void
 
     @Environment(\.gsTheme) private var theme
@@ -110,6 +117,9 @@ struct SoloRecapView: View {
         shareSummary: String,
         unit: WeightUnit = .lbs,
         pumpCheck: PumpCheckContext? = nil,
+        coachDebrief: WorkoutDebrief? = nil,
+        coachName: String = "Coach",
+        onTalkToCoach: @escaping () -> Void = {},
         onDone: @escaping () -> Void = {}
     ) {
         self.kicker = kicker
@@ -124,6 +134,9 @@ struct SoloRecapView: View {
         self.shareSummary = shareSummary
         self.unit = unit
         self.pumpCheck = pumpCheck
+        self.coachDebrief = coachDebrief
+        self.coachName = coachName
+        self.onTalkToCoach = onTalkToCoach
         self.onDone = onDone
     }
 
@@ -183,6 +196,15 @@ struct SoloRecapView: View {
             }
 
             hero
+
+            // Coach card after the numbers, before the PR celebration has
+            // competition — the computed observation is the debrief's own
+            // advertisement, every workout.
+            if let coachDebrief {
+                CoachDebriefCard(debrief: coachDebrief,
+                                 coachName: coachName,
+                                 onTalk: onTalkToCoach)
+            }
 
             if let heaviestPR {
                 prCard(heaviestPR)

@@ -249,6 +249,33 @@ final class RemediationTests: XCTestCase {
             "a thin modality is named, never silently substituted")
     }
 
+    // MARK: Orphaned-muscle coverage (owner: something beats nothing)
+
+    func testExcludedPatternsStillLeaveAChestDose() {
+        // A29: excluding both push patterns silently zeroed the chest.
+        var fly = ProgramGenerator.CatalogExercise(
+            id: UUID(), name: "Machine Fly", primaryMuscle: "chest",
+            secondaryMuscles: [], category: "isolation", equipment: "machine",
+            movementPattern: "isolation", rank: 50)
+        fly.focusScores = ["hypertrophy": 8]
+        var profile = TrainingProfile()
+        profile.rankedGoals = [.hypertrophy]
+        profile.daysPerWeek = 3
+        profile.excludedPatterns = ["push_horizontal", "push_vertical"]
+        let catalog = [fly,
+                       cat(1, "Squat", "squat"), cat(2, "Hinge", "hinge"),
+                       cat(3, "Bench", "push_horizontal"),
+                       cat(4, "Row", "pull_horizontal")]
+        let program = ProgramGenerator.generate(
+            inputs: profile.generatorInputs(durationWeeks: 8), catalog: catalog)
+        let flyEntry = program.days.flatMap(\.exercises).first { $0.name == "Machine Fly" }
+        XCTAssertNotNil(flyEntry, "the orphaned chest gets a small direct dose")
+        XCTAssertEqual(flyEntry?.sets, 2, "a dose, not a bodypart day")
+        XCTAssertTrue(program.notes.contains { $0.contains("Coverage dose") })
+        XCTAssertNil(program.days.flatMap(\.exercises).first { $0.name == "Bench" },
+                     "the exclusion itself still holds absolutely")
+    }
+
     // MARK: The ramp
 
     func testGraduationProbeRequiresNoviceAndAdherence() {

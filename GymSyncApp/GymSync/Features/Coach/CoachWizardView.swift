@@ -52,12 +52,41 @@ struct CoachWizardView: View {
     @State private var preview: ProgramGenerator.Program?
     @State private var busy = false
     @State private var errorText: String?
+    // TrainingProfile chain (2026-08-21): the wizard now BUILDS a profile
+    // and hands it to generatorInputs — the same door every athlete passes
+    // through. Persona picks pre-fill the method dials (provenance-gated
+    // in the profile layer); everything stays editable.
+    @State private var personaSlug: String? = nil
+    @State private var rankedGoals: [TrainingGoal] = [.hypertrophy]
+    @State private var splitPref: GeneratorScience.SplitPreference = .auto
+    @State private var structure: TrainingProfile.SessionStructure = .straight
+    @State private var appetite = "standard"
+    /// Pattern no-gos ("some people simply cannot do a clean & jerk"):
+    /// hard exclusions, absolute by construction.
+    @State private var noGoPatterns: Set<String> = []
+    /// Novice calibration (owner 2026-08-21: "ask what seems hard for 5
+    /// reps... percentages mean nothing to anyone other than the elite").
+    @State private var calibrationAnchors: [String: Decimal] = [:]
+    @State private var displayUnit: WeightUnit = .lbs
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                dial("FOCUS", options: GeneratorScience.Focus.allCases.map(\.rawValue),
-                     selected: focus.rawValue) { focus = GeneratorScience.Focus(rawValue: $0) ?? .hypertrophy }
+                CoachPersonaStrip(selected: $personaSlug)
+                    .onChange(of: personaSlug) { _, slug in
+                        // The coach's method preset fills the dials the
+                        // athlete hasn't touched conceptually — here in the
+                        // wizard, presets simply set the controls; the
+                        // athlete's later edits win because they're edits.
+                        guard let coach = CoachPersona.bySlug(slug) else { return }
+                        splitPref = coach.split
+                        structure = coach.sessionStructure
+                        appetite = coach.intensityAppetite
+                        preview = nil
+                    }
+
+                GoalRankingSection(ranked: $rankedGoals)
+                    .onChange(of: rankedGoals) { _, _ in preview = nil }
                 dial("LIFTING DAYS PER WEEK", options: ["1", "2", "3", "4", "5", "6", "7"],
                      selected: "\(days)") { days = Int($0) ?? 3 }
                 dial("PROGRAM LENGTH · WEEKS", options: ["4", "8", "12"],
@@ -100,6 +129,32 @@ struct CoachWizardView: View {
                 .buttonStyle(.plain)
                 dial("EXPERIENCE", options: GeneratorScience.Experience.allCases.map(\.rawValue),
                      selected: experience.rawValue) { experience = GeneratorScience.Experience(rawValue: $0) ?? .new }
+
+                dial("SPLIT", options: GeneratorScience.SplitPreference.allCases.map(\.rawValue),
+                     selected: splitPref.rawValue) {
+                    splitPref = GeneratorScience.SplitPreference(rawValue: $0) ?? .auto
+                }
+                if splitPref == .bro {
+                    Text("A bodypart split hits each muscle once a week; the research consensus favors twice. The hybrid keeps the bro feel and adds the second touch — your call, and Coach won't nag.")
+                        .font(GSFont.body(11, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral500)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                dial("SESSION STYLE", options: TrainingProfile.SessionStructure.allCases.map(\.rawValue),
+                     selected: structure.rawValue) {
+                    structure = TrainingProfile.SessionStructure(rawValue: $0) ?? .straight
+                }
+
+                dial("INTENSITY", options: ["conservative", "standard", "aggressive"],
+                     selected: appetite) { appetite = $0 }
+
+                noGoSection
+
+                if experience == .new {
+                    NoviceCalibrationSection(anchors: $calibrationAnchors,
+                                             unit: displayUnit)
+                }
 
                 dial("SESSION LENGTH · MINUTES", options: ["45", "60", "75", "90", "No cap"],
                      selected: sessionMinutes.map(String.init) ?? "No cap") {
@@ -160,6 +215,28 @@ struct CoachWizardView: View {
         .task {
             allExercises = (try? await ExerciseRepository.fetchAll()) ?? []
             sex = appState.currentProfile?.sex ?? ""
+            // Returning athletes pick up where they left off: the saved
+            // profile pre-fills every dial, and stated anchors show in
+            // the calibration rows.
+            if let saved = try? await TrainingProfileRepository.load() {
+                personaSlug = saved.persona
+                rankedGoals = saved.rankedGoals
+                splitPref = saved.split
+                structure = saved.sessionStructure
+                appetite = saved.intensityAppetite
+                noGoPatterns = Set(saved.excludedPatterns)
+                days = saved.daysPerWeek
+                sessionMinutes = saved.sessionMinutes
+                experience = saved.trainingAge.experience
+            }
+            if let settings = try? await UserSettingsRepository.get() {
+                displayUnit = settings.weightUnit
+                for slug in LiftAnchorMath.anchorSlugs {
+                    if let anchor = settings.liftAnchors?[slug] {
+                        calibrationAnchors[slug] = anchor
+                    }
+                }
+            }
             if let year = appState.currentProfile?.birthYear { birthYearText = "\(year)" }
             // Hub inventory preset (owner 2026-08-14: "the hub should host
             // what equipment is available, and that then should tell the
@@ -330,10 +407,28 @@ struct CoachWizardView: View {
                                     .font(GSFont.body(12, relativeTo: .caption).monospacedDigit())
                                     .foregroundStyle(theme.neutral500)
                             } else {
-                                Text("\(ex.sets)×\(ex.repsLow)-\(ex.repsHigh)"
-                                     + (ex.percentOfMax.map { String(format: " @ %.0f%%", $0) } ?? ""))
-                                    .font(GSFont.body(12, relativeTo: .caption).monospacedDigit())
-                                    .foregroundStyle(theme.neutral500)
+                                // Weights lead, percentages explain (owner
+                                // 2026-08-21: "percentages mean nothing to
+                                // anyone other than the elite"): when the
+                                // athlete's stated anchors can seed a
+                                // weight, show the NUMBER — the % becomes
+                                // the subtext for the curious.
+                                VStack(alignment: .trailing, spacing: 1) {
+                                    if let pct = ex.percentOfMax,
+                                       let pounds = previewSeedPounds(for: ex, percent: pct) {
+                                        Text("\(ex.sets)×\(ex.repsLow)-\(ex.repsHigh) · \(Units.format(pounds: pounds, unit: displayUnit, rounded: false, includeUnit: true))")
+                                            .font(GSFont.body(12, relativeTo: .caption).monospacedDigit())
+                                            .foregroundStyle(theme.neutral500)
+                                        Text(String(format: "≈%.0f%% of your starting max", pct))
+                                            .font(GSFont.body(9, relativeTo: .caption2))
+                                            .foregroundStyle(theme.neutral500.opacity(0.8))
+                                    } else {
+                                        Text("\(ex.sets)×\(ex.repsLow)-\(ex.repsHigh)"
+                                             + (ex.percentOfMax.map { String(format: " @ %.0f%%", $0) } ?? ""))
+                                            .font(GSFont.body(12, relativeTo: .caption).monospacedDigit())
+                                            .foregroundStyle(theme.neutral500)
+                                    }
+                                }
                             }
                             // Reroll (deterministic next-best, never a
                             // shuffle) — any lift can be swapped.
@@ -443,18 +538,109 @@ struct CoachWizardView: View {
                 explosive: ex.explosive ?? false,
                 jointStress: ex.jointStress ?? [])
         }
-        let inputs = ProgramGenerator.Inputs(
-            focus: focus, daysPerWeek: days, durationWeeks: duration,
-            experience: experience,
-            sex: GeneratorScience.Sex(rawValue: sex) ?? .unspecified,
-            equipment: equipment,
+        // The profile IS the input now — the wizard builds it, the
+        // generator reads it, and the same object persists on CREATE so
+        // the debrief, drift probes, and block planning read the same
+        // truth (2026-08-21).
+        let profile = currentProfile()
+        focus = profile.generatorFocus
+        var inputs = profile.generatorInputs(
+            durationWeeks: duration,
             cardioDays: cardioDays, cardioMinutes: cardioMinutes,
             fillWeekWithRecovery: fillWeek,
-            sessionMinutes: sessionMinutes,
             seed: seed)
+        inputs.sessionMinutes = sessionMinutes
         lastInputs = inputs
         lastCatalog = catalog
         preview = ProgramGenerator.generate(inputs: inputs, catalog: catalog)
+    }
+
+    /// The athlete as data — every dial lands in a profile field the
+    /// generator provably reads.
+    private func currentProfile() -> TrainingProfile {
+        var profile = TrainingProfile()
+        profile.persona = personaSlug
+        profile.rankedGoals = rankedGoals.isEmpty ? [.hypertrophy] : rankedGoals
+        profile.trainingAge = {
+            switch experience {
+            case .new: return .novice
+            case .intermediate: return .intermediate
+            case .advanced: return .advanced
+            }
+        }()
+        profile.sexRaw = GeneratorScience.Sex(rawValue: sex)?.rawValue
+            ?? GeneratorScience.Sex.unspecified.rawValue
+        profile.daysPerWeek = days
+        profile.sessionMinutes = sessionMinutes
+        profile.split = splitPref
+        profile.sessionStructure = structure
+        profile.intensityAppetite = appetite
+        profile.excludedPatterns = Array(noGoPatterns).sorted()
+        // All-on equipment means "everything" — nil, so a new hub class
+        // never silently filters.
+        profile.equipment = equipment == Set(Venue.equipmentClasses) ? nil : equipment
+        return profile
+    }
+
+    /// Anchor-derived preview weight: the stated hard-for-5 weight →
+    /// estimated 1RM (Epley at 5 reps) → this prescription's percent, on
+    /// the plate grid. nil when no anchor reaches the lift — a dash beats
+    /// fake confidence.
+    private func previewSeedPounds(for ex: ProgramGenerator.Exercise,
+                                   percent: Double) -> Decimal? {
+        guard let slug = allExercises.first(where: { $0.id == ex.exerciseID })?.slug,
+              let fiveRM = LiftAnchorMath.seedPounds(for: slug,
+                                                     anchors: calibrationAnchors),
+              fiveRM > 0
+        else { return nil }
+        let oneRM = StatMath.estimatedOneRepMax(weight: fiveRM, reps: 5)
+        let target = oneRM * Decimal(percent) / 100
+        let unitValue = Units.fromPounds(target, to: displayUnit)
+        return Units.toPounds(
+            Units.roundToIncrement(unitValue, step: displayUnit.displayIncrement),
+            from: displayUnit)
+    }
+
+    private var noGoSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("NO-GOS · MOVEMENTS THAT ARE OFF THE TABLE")
+                .font(GSFont.bold(13, relativeTo: .footnote))
+                .tracking(0.9)
+                .foregroundStyle(theme.text.opacity(0.78))
+            ForEach([("push_vertical", "Overhead pressing"),
+                     ("push_horizontal", "Bench pressing"),
+                     ("squat", "Squatting"),
+                     ("hinge", "Deadlifting / hinging")], id: \.0) { pattern, label in
+                Button {
+                    if noGoPatterns.contains(pattern) {
+                        noGoPatterns.remove(pattern)
+                    } else {
+                        noGoPatterns.insert(pattern)
+                    }
+                    preview = nil
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: noGoPatterns.contains(pattern)
+                              ? "xmark.circle.fill" : "circle")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(noGoPatterns.contains(pattern)
+                                             ? theme.accent : theme.neutral500)
+                        Text(label)
+                            .font(GSFont.bold(13, relativeTo: .body))
+                            .foregroundStyle(theme.text)
+                        Spacer()
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            if !noGoPatterns.isEmpty {
+                Text("Excluded absolutely — nothing overrides a no-go, and the substitution graph fills every hole it leaves.")
+                    .font(GSFont.body(11, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
     private func reroll(dayName: String, exerciseIndex: Int) {
@@ -474,6 +660,25 @@ struct CoachWizardView: View {
         guard let ownerID = appState.currentProfile?.id else { return }
         busy = true
         defer { busy = false }
+        // The profile persists on CREATE — the debrief's register, the
+        // drift probes, and block planning all read this same truth.
+        // Best-effort: a failed save must never cost the routines.
+        let profile = currentProfile()
+        focus = profile.generatorFocus
+        try? await TrainingProfileRepository.save(profile, userID: ownerID)
+        // Novice calibration → lift anchors (owner 2026-08-21): stated
+        // hard-for-5 weights become the seeds every suggestion reads;
+        // merged, never wholesale — an earlier anchor survives a skipped
+        // row.
+        if !calibrationAnchors.isEmpty,
+           var settings = try? await UserSettingsRepository.get() {
+            var anchors = settings.liftAnchors ?? [:]
+            for (slug, pounds) in calibrationAnchors where pounds > 0 {
+                anchors[slug] = pounds
+            }
+            settings.liftAnchors = anchors
+            try? await UserSettingsRepository.upsert(settings)
+        }
         do {
             // Persist the skippable demographics when supplied.
             let year = Int(birthYearText)

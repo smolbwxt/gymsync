@@ -83,6 +83,12 @@ struct WorkoutSessionView: View {
     /// Best substitution-graph swap for a flagged stall (5-channel corpus
     /// consensus: a stalled lift wants a variation, not another load tweak).
     @State private var soloStallSwapName: String?
+    // Coach debrief chain (2026-08-21): profile loaded best-effort for the
+    // headline's register + persona; per-lift history prefetched at
+    // completion so the recap's trend tool narrates REAL computed trends.
+    @State private var coachProfile = TrainingProfile()
+    @State private var showCoachRecap = false
+    @State private var recapTrendHistory: [String: [SetLog]] = [:]
     @State private var soloReps = ""
     @State private var soloRPE: Double = 7.0
     @State private var soloFailed = false
@@ -440,13 +446,34 @@ struct WorkoutSessionView: View {
                         shareSummary: recapShareSummary,
                         unit: sessionSettings?.weightUnit ?? .lbs,
                         pumpCheck: pumpCheckContext,
+                        coachDebrief: coachDebrief,
+                        coachName: CoachPersona.bySlug(coachProfile.persona)?.name ?? "Coach",
+                        onTalkToCoach: { showCoachRecap = true },
                         onDone: { finishSession() }
                     )
+                    .sheet(isPresented: $showCoachRecap) {
+                        if let debrief = coachDebrief {
+                            CoachRecapView(
+                                debrief: debrief,
+                                persona: CoachPersona.bySlug(coachProfile.persona),
+                                profile: coachProfile,
+                                trendLookup: { [history = recapTrendHistory] name in
+                                    if let logs = history[name.lowercased()], logs.count > 1 {
+                                        return DebriefBuilder.trendSentence(name: name, logs: logs)
+                                    }
+                                    return "\(name): not enough logged history for a trend yet — today's numbers are in the report."
+                                },
+                                volumeLookup: {
+                                    "Per-muscle weekly volume lands in an upcoming update — ask about any lift's trend instead."
+                                })
+                        }
+                    }
                     // The Duolingo-placement slot: fires AFTER the recap
                     // lands, never over the celebration. Dormant today;
                     // becomes the Pro upsell when the paywall flips (and is
                     // where ads would go if ever revisited).
                     .completionInterstitial(profile: appState.currentProfile)
+                    .task(id: completed) { await prefetchCoachContext() }
                 } else {
                     liveSessionBody
                 }
@@ -2611,6 +2638,64 @@ struct WorkoutSessionView: View {
     /// Non-penalty sets logged this session — backs the hero SETS stat.
     private var recapNonPenaltySets: [SetLog] {
         loggedSets.filter { !$0.isPenalty }
+    }
+
+    // MARK: Coach debrief assembly (2026-08-21)
+    //
+    // The deterministic payload both tiers share — built from what this
+    // view already holds: prescriptions (routineExercises), the session's
+    // logs, and the PRs the celebration already computed (reused, never
+    // re-derived).
+    private var coachDebrief: WorkoutDebrief? {
+        guard completed, !routineExercises.isEmpty else { return nil }
+        let nameByID = Dictionary(uniqueKeysWithValues: allExercises.map { ($0.id, $0.name) })
+        let logsByExercise = Dictionary(grouping: loggedSets.filter { !$0.isPenalty },
+                                        by: \.exerciseID)
+        let reports = routineExercises
+            .filter { $0.cardioZone == nil }
+            .map { re in
+                DebriefBuilder.ExerciseReport(
+                    name: nameByID[re.exerciseID] ?? "Exercise",
+                    prescribedSets: re.targetSets ?? 3,
+                    repsLow: re.targetRepsLow,
+                    repsHigh: re.targetRepsHigh,
+                    sets: (logsByExercise[re.exerciseID] ?? [])
+                        .sorted { $0.setIndex < $1.setIndex },
+                    decision: nil)
+            }
+        var context = DebriefBuilder.Context()
+        context.profile = coachProfile
+        context.personalRecords = sessionPRs.map { pr in
+            let name = nameByID[pr.exerciseID] ?? "Lift"
+            let weight = Units.format(pounds: pr.weight,
+                                      unit: sessionSettings?.weightUnit ?? .lbs,
+                                      rounded: false, includeUnit: true)
+            return "\(name) \(weight)×\(pr.reps) — new best"
+        }
+        if let session = completedSession, let end = session.completedAt {
+            context.sessionMinutes = max(1, Int(end.timeIntervalSince(session.startedAt) / 60))
+        }
+        return DebriefBuilder.build(reports: reports, context: context)
+    }
+
+    /// Best-effort context for the recap: the athlete's profile (headline
+    /// register + persona voice) and per-lift history so the trend tool
+    /// narrates real computed trends. Fires once when the session
+    /// completes; failures degrade to defaults, never block the recap.
+    private func prefetchCoachContext() async {
+        guard completed else { return }
+        if let profile = try? await TrainingProfileRepository.load() {
+            coachProfile = profile
+        }
+        guard let userID = appState.currentProfile?.id else { return }
+        let nameByID = Dictionary(uniqueKeysWithValues: allExercises.map { ($0.id, $0.name) })
+        for re in routineExercises.prefix(10) where re.cardioZone == nil {
+            guard let name = nameByID[re.exerciseID] else { continue }
+            if let history = try? await SessionRepository.exerciseHistory(
+                userID: userID, exerciseID: re.exerciseID, limit: 60) {
+                recapTrendHistory[name.lowercased()] = history
+            }
+        }
     }
 
     /// `loggedSets` grouped by exercise (excluding penalty), preserving first-logged

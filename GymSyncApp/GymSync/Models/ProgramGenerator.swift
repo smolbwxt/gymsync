@@ -389,6 +389,50 @@ enum ProgramGenerator {
             notes.append("Weekly volume balanced per muscle: " + parts.joined(separator: "; ") + ".")
         }
 
+        // Orphaned-muscle coverage (owner 2026-08-21: "not everyone gets a
+        // workout that hits every muscle every week — make sure those
+        // muscles are taken care of at some point; something is better
+        // than nothing"). A major muscle at ZERO effective weekly sets
+        // that the athlete's constraints can still train gets a small
+        // isolation dose on the lightest day (audit A29: excluding both
+        // push patterns silently zeroed the chest). Time-capped weeks
+        // skip the dose and SAY so — rotation across weeks arrives with
+        // week-at-read-time resolution.
+        let majors = ["chest", "back", "lats", "shoulders", "quads",
+                      "hamstrings", "glutes", "biceps", "triceps", "calves"]
+        let tally = weeklyMuscleSets(days: days, catalog: catalog)
+        let orphans = majors.filter { (tally[$0] ?? 0) == 0 }
+        if !orphans.isEmpty {
+            var covered: [String] = []
+            var uncoverable: [String] = []
+            for muscle in orphans.prefix(3) {
+                guard inputs.sessionMinutes == nil else { uncoverable.append(muscle); continue }
+                let pick = select(slot: .isolation(muscle), from: usable,
+                                  excluding: Set(days.flatMap(\.exercises).map(\.exerciseID)),
+                                  focus: inputs.focus,
+                                  focusMuscles: inputs.focusMuscles,
+                                  experience: inputs.experience,
+                                  seed: inputs.seed,
+                                  tilt: inputs.selectionTilt,
+                                  cautionJoints: inputs.cautionJoints,
+                                  lens: inputs.personaLens)
+                guard let pick,
+                      let lightest = days.indices.min(by: {
+                          days[$0].exercises.count < days[$1].exercises.count
+                      }) else { uncoverable.append(muscle); continue }
+                days[lightest].exercises.append(
+                    prescription(for: pick, slot: .isolation(muscle),
+                                 band: band, inputs: inputs, setsPerExercise: 2))
+                covered.append(muscle)
+            }
+            if !covered.isEmpty {
+                notes.append("Coverage dose: \(covered.joined(separator: ", ")) had no direct work this week, so a small dose rides the lightest day — something beats nothing.")
+            }
+            if !uncoverable.isEmpty {
+                notes.append("Tight week: no room for direct \(uncoverable.joined(separator: ", ")) — Coach rotates these in as sessions allow; the program covers them over time, not every single week.")
+            }
+        }
+
         // Session structure (corpus census 2026-08-20 — a separate axis
         // from the split). Runs after the volume balance so structure
         // reflects final set counts.
