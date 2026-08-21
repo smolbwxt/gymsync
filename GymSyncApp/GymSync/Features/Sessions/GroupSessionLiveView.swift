@@ -2610,35 +2610,7 @@ struct GroupSessionLiveView: View {
         // SessionRecapView. See `buildGroupRecapPayload`'s doc comment for
         // the exact before/after and why.
         .sheet(item: $recapData) { data in
-            if let payload = data.groupPayload {
-                GroupRecapView(
-                    kicker: payload.kicker,
-                    durationText: payload.durationText,
-                    subline: payload.subline,
-                    totalLbsText: payload.totalLbsText,
-                    setCount: payload.setCount,
-                    prCount: payload.prCount,
-                    leaderboard: payload.leaderboard,
-                    heaviestPR: payload.heaviestPR,
-                    shareSummary: payload.shareSummary,
-                    sessionID: data.session.id,
-                    coachDebrief: groupDebrief,
-                    coachName: CoachPersona.bySlug(groupCoachProfile.persona)?.name ?? "Coach",
-                    onTalkToCoach: { showGroupCoachRecap = true },
-                    recipientIDs: payload.recipientIDs,
-                    unit: ThemeStore.shared.weightUnit,
-                    pumpCheck: data.pumpCheck,
-                    onDone: { exitToHome() }
-                )
-            } else {
-                SessionRecapView(
-                    session: data.session,
-                    sets: data.sets,
-                    participants: participants,
-                    onDone: { exitToHome() },
-                    pumpCheck: data.pumpCheck
-                )
-            }
+            recapSheetContent(data)
         }
         // Leave / end (user 2026-07-31: leaving must never end the session
         // for everyone — the old dialog offered ONLY "end", and for
@@ -5635,6 +5607,42 @@ struct GroupSessionLiveView: View {
         } catch {
             logSetErrorText = error.localizedDescription
             return false
+        }
+    }
+
+    /// The recap sheet's content, extracted so the 20-argument init is
+    /// its own type-checked expression (the inline form blew the
+    /// compiler's budget) and the debrief args sit in declaration order.
+    @ViewBuilder
+    private func recapSheetContent(_ data: RecapData) -> some View {
+        if let payload = data.groupPayload {
+            GroupRecapView(
+                kicker: payload.kicker,
+                durationText: payload.durationText,
+                subline: payload.subline,
+                totalLbsText: payload.totalLbsText,
+                setCount: payload.setCount,
+                prCount: payload.prCount,
+                leaderboard: payload.leaderboard,
+                heaviestPR: payload.heaviestPR,
+                shareSummary: payload.shareSummary,
+                sessionID: data.session.id,
+                recipientIDs: payload.recipientIDs,
+                unit: ThemeStore.shared.weightUnit,
+                pumpCheck: data.pumpCheck,
+                coachDebrief: groupDebrief,
+                coachName: CoachPersona.bySlug(groupCoachProfile.persona)?.name ?? "Coach",
+                onTalkToCoach: { showGroupCoachRecap = true },
+                onDone: { exitToHome() }
+            )
+        } else {
+            SessionRecapView(
+                session: data.session,
+                sets: data.sets,
+                participants: participants,
+                onDone: { exitToHome() },
+                pumpCheck: data.pumpCheck
+            )
         }
     }
 

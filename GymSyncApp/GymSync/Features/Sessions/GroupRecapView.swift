@@ -220,7 +220,7 @@ struct GroupRecapView: View {
                     if let coachDebrief {
                         CoachDebriefCard(debrief: coachDebrief,
                                          coachName: coachName,
-                                         onTalk: onTalkToCoach)
+                                         onTalk: { onTalkToCoach?() })
                             .padding(.horizontal, 16)
                     }
                     leaderboardSection
