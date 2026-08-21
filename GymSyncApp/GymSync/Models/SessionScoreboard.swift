@@ -54,7 +54,7 @@ enum SessionScoreboard {
             let sets = byUser[userID] ?? []
             let load = sets.reduce(0) { sum, log in
                 guard let reps = log.reps, let rpe = log.rpe else { return sum }
-                return sum + reps * NSDecimalNumber(decimal: rpe).intValue
+                return sum + reps * Int(NSDecimalNumber(decimal: rpe).doubleValue)  // truncation preserved (scoring semantics)
             }
             var bestPct: Int? = nil
             if let ceilings = baselines[userID] {
@@ -94,6 +94,6 @@ enum SessionScoreboard {
         var raw = numerator / denominator * 100
         var rounded = Decimal()
         NSDecimalRound(&rounded, &raw, 0, .down)
-        return NSDecimalNumber(decimal: rounded).intValue
+        return Int(NSDecimalNumber(decimal: rounded).doubleValue)  // already rounded upstream; no double-round
     }
 }

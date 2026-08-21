@@ -142,7 +142,7 @@ enum StatMath {
         guard reps > 0, let rpe, rpe >= 5, rpe <= 10 else {
             return estimatedOneRepMax(weight: weight, reps: reps)
         }
-        let rir = NSDecimalNumber(decimal: 10 - rpe).intValue
+        let rir = Int(NSDecimalNumber(decimal: 10 - rpe).doubleValue)  // truncation on purpose: RPE 7.5 carries 2 RIR, not 3
         return estimatedOneRepMax(weight: weight, reps: reps + max(0, min(rir, 4)))
     }
 

@@ -1099,7 +1099,7 @@ struct GroupSessionLiveView: View {
     private func turnLastTimeMeta(_ log: SetLog) -> String {
         var parts: [String] = []
         if let rpe = log.rpe {
-            parts.append("RPE \(NSDecimalNumber(decimal: rpe).intValue)")
+            parts.append("RPE \((rpe).displayInt)")
         }
         let days = Calendar.current.dateComponents(
             [.day], from: Calendar.current.startOfDay(for: log.loggedAt),
@@ -1384,7 +1384,7 @@ struct GroupSessionLiveView: View {
                     .padding(.horizontal, 7).padding(.vertical, 2)
                     .overlay(Capsule().strokeBorder(theme.text.opacity(0.78), lineWidth: 1))
             } else if let rpe = log.rpe {
-                Text("RPE \(NSDecimalNumber(decimal: rpe).intValue)")
+                Text("RPE \((rpe).displayInt)")
                     .font(GSFont.bold(11, relativeTo: .caption2))
                     .foregroundStyle(theme.neutral500)
             }

@@ -34,7 +34,7 @@ enum PlateDelta {
         var add: [Change] = []
         for (i, plate) in plates.enumerated() {
             let diff = toStack.platesPerSide[i] - fromStack.platesPerSide[i]
-            let n = NSDecimalNumber(decimal: abs(diff)).intValue
+            let n = abs(diff).displayInt
             guard n > 0 else { continue }
             if diff < 0 {
                 strip.append(Change(plate: plate, count: n))

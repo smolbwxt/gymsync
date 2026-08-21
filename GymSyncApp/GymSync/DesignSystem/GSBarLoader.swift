@@ -38,7 +38,7 @@ struct GSBarLoader: View {
     private var loaded: [(plate: Decimal, count: Int)] {
         zip(plates, stack.platesPerSide)
             .compactMap { plate, count in
-                let n = NSDecimalNumber(decimal: count).intValue
+                let n = (count).displayInt
                 return n > 0 ? (plate, n) : nil
             }
     }
@@ -250,7 +250,7 @@ struct GSBarLoaderMini: View {
     private var loaded: [(plate: Decimal, count: Int)] {
         let stack = PlateMath.stack(for: target, barWeight: barWeight, plates: plates)
         return zip(plates, stack.platesPerSide).compactMap { plate, count in
-            let n = NSDecimalNumber(decimal: count).intValue
+            let n = (count).displayInt
             return n > 0 ? (plate, n) : nil
         }
     }

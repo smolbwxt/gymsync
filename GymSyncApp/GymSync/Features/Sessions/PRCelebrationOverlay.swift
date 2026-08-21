@@ -118,7 +118,7 @@ struct PRCelebrationOverlay: View {
                 Color.clear.frame(height: 10)
 
                 Text(weight == 0
-                     ? "▲ \(reps - NSDecimalNumber(decimal: priorBest).intValue) REPS OVER YOUR BEST"
+                     ? "▲ \(reps - (priorBest).displayInt) REPS OVER YOUR BEST"
                      : "▲ \(Units.format(pounds: weight - priorBest, unit: unit, rounded: false, includeUnit: false)) \(unit.label.uppercased()) OVER YOUR BEST")
                     .font(GSFont.bold(12, relativeTo: .caption).monospacedDigit())
                     .tracking(0.8)

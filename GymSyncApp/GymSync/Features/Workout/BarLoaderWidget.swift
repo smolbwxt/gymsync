@@ -203,7 +203,7 @@ struct BarLoaderWidget: View {
         let stack = PlateMath.stack(for: inUnit, barWeight: barInUnit, plates: plates)
         let perSide = zip(plates, stack.platesPerSide)
             .compactMap { plate, count -> String? in
-                let n = NSDecimalNumber(decimal: count).intValue
+                let n = (count).displayInt
                 return n > 0 ? "\(n)×\(GSBarLoader.plateLabel(plate))" : nil
             }
             .joined(separator: " ")

@@ -399,7 +399,7 @@ struct RoutineDetailChoice: View {
                     // rides the meta line — "drop 2×20%", "burnout",
                     // "to failure".
                     re.setType == "drop"
-                        ? "drop \(re.dropSteps ?? 2)×\(NSDecimalNumber(decimal: re.dropPercent ?? 20).intValue)%"
+                        ? "drop \(re.dropSteps ?? 2)×\((re.dropPercent ?? 20).displayInt)%"
                         : (re.setType == "burnout" ? "burnout" : nil),
                     re.targetFailure ? "to failure" : nil,
                     re.supersetGroup != nil ? "superset" : nil

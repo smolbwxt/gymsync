@@ -1859,7 +1859,7 @@ struct WorkoutSessionView: View {
                     .padding(.horizontal, 7).padding(.vertical, 2)
                     .overlay(Capsule().strokeBorder(theme.text.opacity(0.78), lineWidth: 1))
             } else if let rpe = log.rpe {
-                Text("RPE \(NSDecimalNumber(decimal: rpe).intValue)")
+                Text("RPE \((rpe).displayInt)")
                     .font(GSFont.bold(11, relativeTo: .caption2))
                     .foregroundStyle(theme.neutral500)
             }
@@ -1939,7 +1939,7 @@ struct WorkoutSessionView: View {
         if re.setType == "drop" {
             // Owner 2026-08-14 (corrected): a drop prescription fires on
             // EVERY set — each set is a top bell plus its ladder.
-            let pct = NSDecimalNumber(decimal: re.dropPercent ?? 20).intValue
+            let pct = (re.dropPercent ?? 20).displayInt
             return "REPS · TOP + DROP \(re.dropSteps ?? 2)×\(pct)%"
         }
         if isFinalSet, re.setType == "burnout" { return "REPS · MAX" }
@@ -2201,7 +2201,7 @@ struct WorkoutSessionView: View {
         if log.isFailed {
             parts.append("FAIL")
         } else if let rpe = log.rpe {
-            parts.append("RPE \(NSDecimalNumber(decimal: rpe).intValue)")
+            parts.append("RPE \((rpe).displayInt)")
         }
         let days = Calendar.current.dateComponents(
             [.day], from: Calendar.current.startOfDay(for: log.loggedAt),

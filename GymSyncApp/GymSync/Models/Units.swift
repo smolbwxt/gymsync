@@ -237,3 +237,12 @@ enum Units {
         return whole == oneDp ? "\(whole)" : "\(oneDp)"
     }
 }
+
+
+extension Decimal {
+    /// Foundation's NSDecimalNumber.intValue returns 0 for some
+    /// full-mantissa decimals (CI caught the debrief printing
+    /// "estimated 1RM 0 -> 0 lb") — every display conversion routes
+    /// through the double instead. Hardening sweep 2026-08-21.
+    var displayInt: Int { Int(NSDecimalNumber(decimal: self).doubleValue.rounded()) }
+}
