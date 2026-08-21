@@ -253,10 +253,22 @@ struct WorkoutSessionView: View {
     /// empty state used.
     private var isFreeform: Bool { routineExercises.isEmpty }
 
+    /// Hot-swap (owner 2026-08-21): session-local replacements by
+    /// routine-exercise id — the machine's taken, the shoulder says no.
+    /// Never persisted to the routine; set logs carry the SWAPPED
+    /// exercise's id, so history, PRs, and the debrief all see what was
+    /// actually done. Quiet by design: shown where the exercise shows,
+    /// announced nowhere.
+    @State private var soloSwapOverrides: [UUID: RoutineExercise] = [:]
+    @State private var showSwapSheet = false
+
     /// The exercise list driving the whole screen — the routine's when there
-    /// is one, the lifter's running freeform picks otherwise.
+    /// is one, the lifter's running freeform picks otherwise, with any
+    /// session-local hot-swaps applied on top.
     private var activeExercises: [RoutineExercise] {
-        isFreeform ? freeformExercises : routineExercises
+        let base = isFreeform ? freeformExercises : routineExercises
+        guard !soloSwapOverrides.isEmpty else { return base }
+        return base.map { soloSwapOverrides[$0.id] ?? $0 }
     }
 
     private var currentRoutineExercise: RoutineExercise? {
@@ -864,6 +876,10 @@ struct WorkoutSessionView: View {
         .task(id: "\(currentRoutineExercise?.exerciseID.uuidString ?? "")-\(currentSetIndex)") {
             soloPrefill()
         }
+        .sheet(isPresented: $showSwapSheet) {
+            swapSheet
+                .onDisappear { swapOptions = [] }
+        }
         .sheet(isPresented: $soloShowHRPairing) {
             NavigationStack { HeartRateMonitorView() }
         }
@@ -956,6 +972,86 @@ struct WorkoutSessionView: View {
         }
         soloRPE = 7.0
         soloFailed = false
+    }
+
+    /// Hot-swap options: substitution-graph edges first (provenance-
+    /// graded), then same-muscle/pattern neighbors as the fallback — the
+    /// graph is the coach's answer; the neighbors are the gym's reality.
+    private struct SwapOption: Identifiable {
+        let id: UUID
+        let name: String
+        let detail: String
+    }
+
+    @State private var swapOptions: [SwapOption] = []
+
+    private func loadSwapOptions() async {
+        guard let current = currentExercise else { return }
+        var options: [SwapOption] = []
+        var seen: Set<UUID> = [current.id]
+        if let edges = try? await ExerciseSubstitutionRepository.forExercise(slug: current.slug) {
+            for edge in edges {
+                guard let match = allExercises.first(where: { $0.slug == edge.toSlug }),
+                      match.aliasOf == nil, !seen.contains(match.id) else { continue }
+                seen.insert(match.id)
+                options.append(SwapOption(id: match.id, name: match.name,
+                                          detail: edge.reason))
+            }
+        }
+        for ex in allExercises where ex.aliasOf == nil
+            && ex.primaryMuscle == current.primaryMuscle
+            && ex.movementPattern == current.movementPattern
+            && !seen.contains(ex.id) {
+            seen.insert(ex.id)
+            options.append(SwapOption(id: ex.id, name: ex.name,
+                                      detail: "Same muscle, same pattern"))
+            if options.count >= 10 { break }
+        }
+        swapOptions = options
+    }
+
+    private func applySwap(_ option: SwapOption) {
+        guard let re = currentRoutineExercise else { return }
+        var swapped = re
+        swapped = RoutineExercise(
+            id: re.id, routineID: re.routineID, exerciseID: option.id,
+            position: re.position, targetSets: re.targetSets,
+            targetReps: re.targetReps, targetWeight: nil,
+            restSeconds: re.restSeconds, notes: re.notes,
+            supersetGroup: re.supersetGroup,
+            targetRepsLow: re.targetRepsLow, targetRepsHigh: re.targetRepsHigh,
+            cardioZone: re.cardioZone, cardioMinutes: re.cardioMinutes)
+        soloSwapOverrides[re.id] = swapped
+        showSwapSheet = false
+        soloPrefill()
+    }
+
+    private var swapSheet: some View {
+        NavigationStack {
+            List {
+                if swapOptions.isEmpty {
+                    Text("Looking for swaps…")
+                        .font(GSFont.body(14, relativeTo: .body))
+                        .foregroundStyle(theme.neutral500)
+                }
+                ForEach(swapOptions) { option in
+                    Button { applySwap(option) } label: {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(option.name)
+                                .font(GSFont.bold(15, relativeTo: .body))
+                                .foregroundStyle(theme.text)
+                            Text(option.detail)
+                                .font(GSFont.body(12, relativeTo: .caption))
+                                .foregroundStyle(theme.neutral500)
+                                .lineLimit(2)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Swap \(currentExercise?.name ?? "exercise")")
+            .navigationBarTitleDisplayMode(.inline)
+            .task { await loadSwapOptions() }
+        }
     }
 
     /// The engine's note for the current decision — every case explains
@@ -1893,6 +1989,17 @@ struct WorkoutSessionView: View {
                         .font(GSFont.bold(17, relativeTo: .body).monospacedDigit())
                         .foregroundStyle(theme.text.opacity(0.78))
                 }
+                Button {
+                    showSwapSheet = true
+                } label: {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(theme.neutral500)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Swap this exercise")
             }
             .frame(height: 30)
 
