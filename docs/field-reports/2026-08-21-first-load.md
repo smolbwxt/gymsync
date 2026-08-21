@@ -171,3 +171,49 @@ DIAGNOSED (cause known, fix scoped) · DESIGNED (build plan below, queued)
   focuses; conditioning keeps stability work. The machine-first
   accessory ladder already buries bodyweight planks.
 - PLACEMENT (thin, 2ch): end of session; our slot position stands.
+
+# Execution wave 3 (2026-08-21, autonomous "Go!" stretch)
+
+## Shipped this wave
+
+9.  **Every-other-week scheduling** — SHIPPED. `interval_weeks` (1-4) +
+    `anchor_date` on session_series; expansion keeps anchor-parity weeks
+    (edit-forward mid-cycle can never flip which weeks fire — pinned by
+    test); Weekly / Every-other-week toggle in the schedule sheet.
+8.  **Schedule from groups** — VERIFIED ALREADY SHIPPED (CrewRoomView
+    passes `preselectedGroupID` since 2026-08-13).
+11. **Hot-swap** — SHIPPED end-to-end. Solo (prior wave) + GROUP: quiet
+    self-scale (their set shows "· scaled" on the spectate card, never
+    announced) and squad swaps behind a UNANIMOUS vote banner; the
+    proposer's client is the single decision point; swap events bypass
+    the broadcast rate limit (a dropped vote breaks unanimity).
+12. **Form video v1** — SHIPPED. 60s system-camera clips attach to the
+    next logged set; retention gated to PRO/coach-linked (private bucket,
+    path-derived RLS, trainer reads via trainer_clients); non-PRO gets a
+    one-time review sheet, file deleted, never uploaded. Completed
+    sessions grow a FORM CLIPS section with signed-URL playback.
+    Phase 2 (live broadcast toggle) + coach-paid storage = own passes.
+18. **Starred routines → Coach** — SHIPPED. Lifts from starred routines
+    are the weakest selection tiebreak (above only the equipment ladder),
+    alias-resolved so the catalog dedup can't split the signal.
+22. **Body scan input** — SHIPPED. Bodyweight/height/bodyfat on the
+    profile (about-you section, display-unit entry); BMI 30+ / 30% BF
+    demotes high-impact work (the `impact` label's first-ever consumer)
+    with an advisory note; bodyweight reaches the AI debrief payload.
+
+## Also landed (not field items)
+
+- **Corpus attestation soft prior**: an exercise nobody in the 23-channel
+  corpus teaches never outranks one everybody teaches; 387 name-keyed
+  channel counts; 2-channel consensus bar splits ties only.
+- **Coach books your training days**: block create writes a solo series
+  on the max-spacing rhythm (opt-out + session-time dial) and rides the
+  gated EventKit calendar sync — longitudinal spec 3d closed.
+- **Decimal.displayInt hardening sweep**: no `.intValue` on computed
+  Decimals anywhere; math sites keep explicit truncation.
+- **RLS fix**: ledger-delete policy now requires CURRENT group
+  membership (a departed organizer could delete old group sessions —
+  pgTAP caught it on the first migration-touching push).
+- **Title-mined FAQ themes**: 4,162 question-form titles → 20 themes
+  ranked by channel spread (`docs/science/title-faq-themes.md`) — feeds
+  HelpSheet content and Coach's proactive-explanation list.
