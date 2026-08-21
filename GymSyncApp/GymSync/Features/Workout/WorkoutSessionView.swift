@@ -261,6 +261,15 @@ struct WorkoutSessionView: View {
     /// announced nowhere.
     @State private var soloSwapOverrides: [UUID: RoutineExercise] = [:]
     @State private var showSwapSheet = false
+    // Form video v1 (owner rulings 2026-08-21): record a set, attach the
+    // clip to the NEXT logged set. Retention is GATED - PRO or
+    // coach-linked persists; everyone else reviews immediately and the
+    // file is discarded (never uploaded).
+    @State private var showFormClipCapture = false
+    @State private var pendingClipURL: URL? = nil
+    @State private var canRetainClips: Bool? = nil
+    @State private var reviewClip: ReviewClip? = nil
+    struct ReviewClip: Identifiable { let url: URL; var id: URL { url } }
 
     /// The exercise list driving the whole screen — the routine's when there
     /// is one, the lifter's running freeform picks otherwise, with any
@@ -879,6 +888,30 @@ struct WorkoutSessionView: View {
         }
         .sheet(isPresented: $soloShowHRPairing) {
             NavigationStack { HeartRateMonitorView() }
+        }
+        .fullScreenCover(isPresented: $showFormClipCapture) {
+            FormClipCapture { url in
+                showFormClipCapture = false
+                guard let url else { return }
+                if canRetainClips == true {
+                    // Attaches to the next logged set - the natural flow
+                    // is film the set, then log it.
+                    pendingClipURL = url
+                } else {
+                    // No retention (owner ruling): immediate review, then
+                    // the file dies with the sheet. Never uploaded. An
+                    // unresolved gate lands here too - not-retained is the
+                    // only safe unknown.
+                    reviewClip = ReviewClip(url: url)
+                }
+            }
+            .ignoresSafeArea()
+        }
+        .sheet(item: $reviewClip) { clip in
+            FormClipReviewSheet(url: clip.url) {
+                try? FileManager.default.removeItem(at: clip.url)
+                reviewClip = nil
+            }
         }
     }
 
@@ -1997,6 +2030,23 @@ struct WorkoutSessionView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Swap this exercise")
+                Button {
+                    if canRetainClips == nil {
+                        Task {
+                            let coached = await SetLogClipRepository.hasActiveCoach()
+                            canRetainClips = Entitlements.hasPro || coached
+                        }
+                    }
+                    showFormClipCapture = true
+                } label: {
+                    Image(systemName: pendingClipURL == nil ? "video" : "video.badge.checkmark")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(pendingClipURL == nil ? theme.neutral500 : theme.accent)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Record form clip")
             }
             .frame(height: 30)
 
@@ -3356,6 +3406,22 @@ struct WorkoutSessionView: View {
             // (bottom) under set duration (top), per set.
             soloSetStarts[log.id] = setStartedAt
             loggedSets.append(log)
+            // Form clip attach (video v1): the pending recording belongs
+            // to the set just logged. Fire-and-forget - a failed upload
+            // never blocks the set; the retention gate was checked before
+            // the file was ever held.
+            if let clipURL = pendingClipURL {
+                pendingClipURL = nil
+                let logID = log.id
+                Task {
+                    defer { try? FileManager.default.removeItem(at: clipURL) }
+                    guard let userID = appState.currentProfile?.id,
+                          let data = try? Data(contentsOf: clipURL) else { return }
+                    _ = try? await SetLogClipRepository.attach(
+                        clipID: UUID(), setLogID: logID, userID: userID,
+                        data: data, durationSeconds: FormClipMath.duration(of: clipURL))
+                }
+            }
             // The set is durably recorded either way (server insert or offline
             // queue) — this is the moment the success haptic fires.
             logHapticTick += 1

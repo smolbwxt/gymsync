@@ -53,6 +53,32 @@ enum StorageService {
         }
     }
 
+    /// Form clip (video v1): path = {user_id}/{clip_id}.mov - the folder
+    /// derives ownership for the bucket RLS, same shape as chat-images.
+    static func uploadFormClip(userID: UUID, clipID: UUID,
+                               data: Data) async throws -> String {
+        let path = "\(userID.uuidString.lowercased())/\(clipID.uuidString.lowercased()).mov"
+        do {
+            try await SupabaseService.shared.client.storage
+                .from("form-clips")
+                .upload(path, data: data,
+                        options: FileOptions(contentType: "video/quicktime"))
+            return path
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
+
+    static func signedFormClipURL(path: String) async throws -> URL {
+        do {
+            return try await SupabaseService.shared.client.storage
+                .from("form-clips")
+                .createSignedURL(path: path, expiresIn: 3600)
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
+
     static func uploadGroupAvatar(groupID: UUID, jpegData: Data) async throws -> URL {
         let path = "groups/\(groupID.uuidString.lowercased()).jpg"
         do {

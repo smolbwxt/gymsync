@@ -1,4 +1,5 @@
 import SwiftUI
+import AVKit
 
 // MARK: - CompletedSessionView
 //
@@ -54,6 +55,12 @@ struct CompletedSessionView: View {
     // MARK: - Duration edit sheet
 
     @State private var showEditSheet = false
+    // Form video v1: clips attached to this session's sets. The athlete
+    // sees their own; the ACTIVE trainer reads through the same RLS
+    // relationship - one fetch, no separate trainer code path.
+    @State private var clips: [SetLogClip] = []
+    @State private var playingClip: PlayingClip? = nil
+    private struct PlayingClip: Identifiable { let url: URL; var id: URL { url } }
 
     init(session: WorkoutSession) {
         self.session = session
@@ -117,6 +124,8 @@ struct CompletedSessionView: View {
                     }
                 }
 
+                formClipsSection
+
                 Spacer(minLength: 32)
             }
         }
@@ -140,6 +149,18 @@ struct CompletedSessionView: View {
             }
         }
         .task { await load() }
+        .sheet(item: $playingClip) { clip in
+            NavigationStack {
+                VideoPlayer(player: AVPlayer(url: clip.url))
+                    .navigationTitle("Form clip")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Done") { playingClip = nil }
+                        }
+                    }
+            }
+        }
         .sheet(isPresented: $showEditSheet) {
             DurationEditSheet(session: liveSession) {
                 // Reload after a successful edit.
@@ -378,6 +399,70 @@ struct CompletedSessionView: View {
 
     // MARK: - Data load
 
+    /// FORM CLIPS - only renders when the session has any. Tapping a row
+    /// signs a short-lived URL and plays inline.
+    @ViewBuilder
+    private var formClipsSection: some View {
+        if !clips.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("FORM CLIPS")
+                    .font(GSFont.bold(10, relativeTo: .caption2))
+                    .tracking(1.2)
+                    .foregroundStyle(theme.neutral500)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 20)
+                    .padding(.bottom, 6)
+                ForEach(clips) { clip in
+                    Button {
+                        Task {
+                            if let url = try? await StorageService.signedFormClipURL(path: clip.storagePath) {
+                                playingClip = PlayingClip(url: url)
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "video.fill")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(theme.accent)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(clipTitle(clip))
+                                    .font(GSFont.bold(14, relativeTo: .body))
+                                    .foregroundStyle(theme.text)
+                                    .lineLimit(1)
+                                Text(clip.createdAt.formatted(date: .omitted, time: .shortened)
+                                     + (clip.durationSeconds.map { String(format: " · %.0fs", $0) } ?? ""))
+                                    .font(GSFont.body(11, relativeTo: .caption))
+                                    .foregroundStyle(theme.neutral500)
+                            }
+                            Spacer()
+                            Image(systemName: "play.circle")
+                                .font(.system(size: 18))
+                                .foregroundStyle(theme.neutral700)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private func clipTitle(_ clip: SetLogClip) -> String {
+        guard let set = sets.first(where: { $0.id == clip.setLogID }) else { return "Set" }
+        let lifter = participants.first { $0.participant.userID == set.userID }?.profile.username
+        let detail: String
+        if let w = set.weight, let r = set.reps {
+            detail = "\(Units.format(pounds: w, unit: .lbs, rounded: false, includeUnit: true)) × \(r)"
+        } else if let r = set.reps {
+            detail = "\(r) reps"
+        } else {
+            detail = "Set"
+        }
+        return lifter.map { "\($0) · \(detail)" } ?? detail
+    }
+
     private func load() async {
         isLoading = true
         defer { isLoading = false }
@@ -405,6 +490,7 @@ struct CompletedSessionView: View {
             }
             let prCounts = (try? await PersonalRecordRepository.countsBySession(sessionID: liveSession.id)) ?? []
             prCountByUser = prCounts.reduce(into: [:]) { acc, row in acc[row.userID] = row.prCount }
+            clips = (try? await SetLogClipRepository.forSets(sets.map(\.id))) ?? []
         } catch {
             errorText = (error as? GymSyncError)?.errorDescription ?? error.localizedDescription
         }
