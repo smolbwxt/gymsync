@@ -142,6 +142,7 @@ final class SeriesRepositoryTests: XCTestCase {
             id: UUID(), groupID: UUID(), organizerID: UUID(),
             timezone: "America/New_York",
             untilDateString: "2026-07-27",
+            intervalWeeks: 1, anchorDateString: nil,
             endedAt: nil, createdAt: Date()
         )
         XCTAssertEqual(cal.component(.year, from: series.untilDate), 2026)
@@ -153,6 +154,45 @@ final class SeriesRepositoryTests: XCTestCase {
         let lateEvening = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 7, day: 27, hour: 21)))
         XCTAssertEqual(SessionSeries.dayString(for: lateEvening, in: tz), "2026-07-27",
                        "21:00 ET must not format as the next UTC day")
+    }
+
+    // MARK: - Every-other-week (field report #9)
+
+    /// Interval 2 keeps only anchor-parity weeks; interval 1 is untouched.
+    func testBiweeklySkipsAlternateWeeks() throws {
+        let tz = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = tz
+        // Monday June 1 2026, 09:00 rule, four weeks out.
+        let start = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 6, day: 1, hour: 8)))
+        let until = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 6, day: 28)))
+        let days = [SeriesDayInput(weekday: 2, hour: 9, minute: 0, routineID: nil)]
+        let weekly = SeriesRepository.occurrenceDates(
+            days: days, from: start, until: until, timezone: tz)
+        XCTAssertEqual(weekly.count, 4, "baseline: four Mondays")
+        let biweekly = SeriesRepository.occurrenceDates(
+            days: days, from: start, until: until, timezone: tz,
+            intervalWeeks: 2, anchor: start)
+        XCTAssertEqual(biweekly.map { cal.component(.day, from: $0.date) }, [1, 15],
+                       "every other Monday from the anchor week")
+    }
+
+    /// Edit-forward re-expands from "now" mid-cycle — the anchor, not
+    /// `from`, decides parity, so the fired weeks never flip.
+    func testAnchorParitySurvivesMidCycleReExpansion() throws {
+        let tz = try XCTUnwrap(TimeZone(identifier: "America/New_York"))
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = tz
+        let anchor = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 6, day: 1, hour: 8)))
+        // "Now" is inside the OFF week (June 8th's week).
+        let midCycle = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 6, day: 9, hour: 12)))
+        let until = try XCTUnwrap(cal.date(from: DateComponents(year: 2026, month: 6, day: 28)))
+        let days = [SeriesDayInput(weekday: 2, hour: 9, minute: 0, routineID: nil)]
+        let reExpanded = SeriesRepository.occurrenceDates(
+            days: days, from: midCycle, until: until, timezone: tz,
+            intervalWeeks: 2, anchor: anchor)
+        XCTAssertEqual(reExpanded.map { cal.component(.day, from: $0.date) }, [15],
+                       "the off week stays off; June 15 keeps anchor parity")
     }
 
     // MARK: - Live DB tests

@@ -65,6 +65,8 @@ struct ScheduleSessionView: View {
 
     // MARK: - Repeat weekly (Group-only)
     @State private var repeatWeekly: Bool = false
+    /// 1 = weekly, 2 = every other week (field report #9).
+    @State private var repeatInterval: Int = 1
     @State private var selectedWeekdays: Set<Int> = []
     @State private var dayTimes: [Int: DayTime] = [:]
     @State private var dayRoutines: [Int: UUID?] = [:]
@@ -535,6 +537,30 @@ struct ScheduleSessionView: View {
                 GSDivider()
                     .padding(.horizontal, 16)
 
+                // Cadence: weekly or every other week. The anchor is the
+                // creation day, so "every other" starts counting now.
+                HStack(spacing: 6) {
+                    ForEach([(1, "Every week"), (2, "Every other week")], id: \.0) { value, label in
+                        let isOn = repeatInterval == value
+                        Button {
+                            repeatInterval = value
+                            updateOccurrenceCount()
+                        } label: {
+                            Text(label)
+                                .font(GSFont.bold(12, relativeTo: .caption))
+                                .foregroundStyle(isOn ? theme.bg : theme.neutral700)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 7)
+                                .background(isOn ? theme.accent : theme.surface)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+
                 // "On these days" kicker + chips
                 VStack(alignment: .leading, spacing: 6) {
                     Text("ON THESE DAYS")
@@ -727,7 +753,8 @@ struct ScheduleSessionView: View {
                     groupID: groupID,
                     days: days,
                     untilDate: untilDate,
-                    timezone: .current
+                    timezone: .current,
+                    intervalWeeks: repeatInterval
                 )
                 let occurrences = try await SeriesRepository.occurrences(seriesID: series.id)
                 if let first = occurrences.first {
@@ -844,7 +871,9 @@ struct ScheduleSessionView: View {
             days: days,
             from: Date(),
             until: untilDate,
-            timezone: .current
+            timezone: .current,
+            intervalWeeks: repeatInterval,
+            anchor: Date()
         )
         occurrenceCount = pairs.count
     }

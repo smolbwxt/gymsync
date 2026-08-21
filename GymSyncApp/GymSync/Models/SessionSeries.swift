@@ -16,6 +16,12 @@ struct SessionSeries: Codable, Identifiable, Sendable {
     let timezone: String
     /// Raw DATE string from PostgREST ("yyyy-MM-dd"). Use `untilDate` for Calendar math.
     let untilDateString: String
+    /// 1 = weekly (every pre-existing series), 2 = every other week
+    /// (field report #9). Bounded 1-4 by a DB check.
+    let intervalWeeks: Int
+    /// Raw DATE string pinning which weeks fire for interval > 1 — the
+    /// creation day. NULL on pre-interval rows, never consulted at 1.
+    let anchorDateString: String?
     let endedAt: Date?
     let createdAt: Date
 
@@ -35,6 +41,19 @@ struct SessionSeries: Codable, Identifiable, Sendable {
             ?? .distantFuture
     }
 
+    /// The anchor day at midnight in the series' own timezone — same
+    /// round-trip law as `untilDate`. Falls back to createdAt for
+    /// pre-interval rows (interval 1 never reads it).
+    var anchorDate: Date {
+        guard let str = anchorDateString else { return createdAt }
+        let parts = str.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return createdAt }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: timezone) ?? .current
+        return cal.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
+            ?? createdAt
+    }
+
     /// Formats `date`'s calendar day in `timezone` as the DATE-column string
     /// ("yyyy-MM-dd"). The mirror of `untilDate`: both directions of the
     /// round-trip must use the series timezone or the day shifts near
@@ -52,6 +71,8 @@ struct SessionSeries: Codable, Identifiable, Sendable {
         case organizerID = "organizer_id"
         case timezone
         case untilDateString = "until_date"
+        case intervalWeeks = "interval_weeks"
+        case anchorDateString = "anchor_date"
         case endedAt = "ended_at"
         case createdAt = "created_at"
     }
@@ -114,10 +135,20 @@ enum SeriesRepository {
         days: [SeriesDayInput],
         from: Date,
         until: Date,
-        timezone: TimeZone
+        timezone: TimeZone,
+        intervalWeeks: Int = 1,
+        anchor: Date? = nil
     ) -> [(date: Date, input: SeriesDayInput)] {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = timezone
+        // Every-other-week (field report #9): keep only weeks whose
+        // whole-week distance from the ANCHOR week divides by the
+        // interval. Anchored to creation, not to `from` — an edit-forward
+        // mid-cycle re-expands from "now" and must not flip which weeks
+        // fire. Euclidean modulo so an anchor after `from` can't skip
+        // everything.
+        let interval = max(1, intervalWeeks)
+        let anchorWeekStart = cal.dateInterval(of: .weekOfYear, for: anchor ?? from)?.start
 
         // Build a lookup: weekday → [SeriesDayInput]
         var rulesByWeekday: [Int: [SeriesDayInput]] = [:]
@@ -133,6 +164,17 @@ enum SeriesRepository {
         let lastDay = cal.startOfDay(for: until)
 
         while cursor <= lastDay {
+            if interval > 1, let anchorWeekStart,
+               let weekStart = cal.dateInterval(of: .weekOfYear, for: cursor)?.start {
+                let weeks = cal.dateComponents([.weekOfYear],
+                                               from: anchorWeekStart,
+                                               to: weekStart).weekOfYear ?? 0
+                if ((weeks % interval) + interval) % interval != 0 {
+                    guard let next = cal.date(byAdding: .day, value: 1, to: cursor) else { break }
+                    cursor = next
+                    continue
+                }
+            }
             let wd = cal.component(.weekday, from: cursor) // 1=Sun…7=Sat
             if let rules = rulesByWeekday[wd] {
                 for rule in rules {
@@ -167,7 +209,9 @@ enum SeriesRepository {
         organizerID: UUID
     ) async throws {
         let tz = TimeZone(identifier: series.timezone) ?? .current
-        let occurrences = occurrenceDates(days: days, from: from, until: until, timezone: tz)
+        let occurrences = occurrenceDates(days: days, from: from, until: until, timezone: tz,
+                                          intervalWeeks: series.intervalWeeks,
+                                          anchor: series.anchorDate)
         guard !occurrences.isEmpty else { return }
 
         // Build session rows
@@ -255,7 +299,8 @@ enum SeriesRepository {
         groupID: UUID?,
         days: [SeriesDayInput],
         untilDate: Date,
-        timezone: TimeZone = .current
+        timezone: TimeZone = .current,
+        intervalWeeks: Int = 1
     ) async throws -> SessionSeries {
         guard let organizerID = await SupabaseService.shared.currentUserID() else {
             throw GymSyncError.unauthorized
@@ -274,7 +319,11 @@ enum SeriesRepository {
                 "id": seriesID.uuidString,
                 "organizer_id": organizerID.uuidString,
                 "timezone": timezone.identifier,
-                "until_date": untilStr
+                "until_date": untilStr,
+                "interval_weeks": String(max(1, intervalWeeks)),
+                // The anchor is the creation day: "every other week"
+                // means every other week FROM NOW.
+                "anchor_date": SessionSeries.dayString(for: Date(), in: timezone)
             ]
             // Omitted entirely for a solo series — the column is nullable and
             // absent means NULL, which is what the solo RLS branch keys on.
