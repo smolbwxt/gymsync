@@ -22,6 +22,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Same Xcode the deploy job archives with (owner 2026-08-22):
+      # the default Xcode has no FoundationModels, so the Coach
+      # conversation adapter was only ever compiled at deploy time -
+      # the ToolOutput bug hid there until the first master push.
+      # One toolchain everywhere closes the blind spot; the simulator
+      # picker below is name-agnostic, so it follows the selection.
+      - name: Select Xcode 26
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+          xcodebuild -version
+
       - name: Install XcodeGen
         run: brew install xcodegen
 
@@ -114,6 +125,17 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+
+      # Same Xcode the deploy job archives with (owner 2026-08-22):
+      # the default Xcode has no FoundationModels, so the Coach
+      # conversation adapter was only ever compiled at deploy time -
+      # the ToolOutput bug hid there until the first master push.
+      # One toolchain everywhere closes the blind spot; the simulator
+      # picker below is name-agnostic, so it follows the selection.
+      - name: Select Xcode 26
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+          xcodebuild -version
 
       - name: Install XcodeGen
         run: brew install xcodegen
