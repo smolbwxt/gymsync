@@ -39,6 +39,11 @@ struct Exercise: Codable, Identifiable, Sendable, Hashable {
     var impact: String? = nil
     var legInterference: Bool? = nil
     var jointStress: [String]? = nil
+    /// Catalog dedup (20260821000001): non-nil marks this row as an alias
+    /// of another exercise — history and PRs keep resolving, but selection
+    /// pools exclude it so the same movement can't be "varied" into
+    /// itself under a second name.
+    var aliasOf: UUID? = nil
     var setupCost: Int? = nil
     var explosive: Bool? = nil
 
@@ -66,6 +71,7 @@ struct Exercise: Codable, Identifiable, Sendable, Hashable {
         case impact
         case legInterference = "leg_interference"
         case jointStress = "joint_stress"
+        case aliasOf = "alias_of"
         case setupCost = "setup_cost"
         case explosive
     }

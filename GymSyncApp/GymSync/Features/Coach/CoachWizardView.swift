@@ -515,7 +515,11 @@ struct CoachWizardView: View {
     }
 
     private func generatePreview() {
-        let catalog = allExercises.enumerated().map { index, ex in
+        // Alias rows (catalog dedup 20260821000001) never enter selection —
+        // the same movement can't be "varied" into itself under a second
+        // name. Their history still resolves everywhere else.
+        let selectable = allExercises.filter { $0.aliasOf == nil }
+        let catalog = selectable.enumerated().map { index, ex in
             ProgramGenerator.CatalogExercise(
                 id: ex.id, name: ex.name,
                 primaryMuscle: ex.primaryMuscle,
