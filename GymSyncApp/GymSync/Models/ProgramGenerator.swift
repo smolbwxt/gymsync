@@ -60,6 +60,11 @@ enum ProgramGenerator {
         /// (audit 2026-08-20: previously a dead knob; the experience
         /// ceiling still has the last word).
         var intensityAppetite: String = "standard"
+        /// Honesty lines from the profile mapping (audit round 2): when a
+        /// wish can't be fully honored — a bodypart split without the
+        /// days, a goal whose modality is still thin — Coach SAYS so
+        /// instead of silently substituting.
+        var advisoryNotes: [String] = []
         /// Dedicated cardio days appended after the lifting split
         /// (owner 2026-08-14) — prescribed as zone + MINUTES. When
         /// lifting + cardio exceed 7 calendar days, the overflow PAIRS
@@ -181,7 +186,7 @@ enum ProgramGenerator {
             return true
         }
 
-        var notes: [String] = []
+        var notes: [String] = inputs.advisoryNotes
 
         // Weekly per-muscle set budget: focus band (beginner override),
         // sex ceiling nudge (soft, top only).
@@ -322,6 +327,16 @@ enum ProgramGenerator {
                           .filter({ chosen[$0].isMain && chosen[$0].sets > 3 })
                           .max(by: { chosen[$0].sets < chosen[$1].sets }) {
                     chosen[heaviest].sets -= 1
+                    trimmedForTime = true
+                }
+                // Final lever (audit round 2: the 70-something's 30-minute
+                // cap met four 180s-rest mains — set floors alone left
+                // 68-minute sessions): drop whole mains from the END,
+                // never below two. Two lifts done beat four abandoned.
+                while estimatedMinutes(chosen) > cap,
+                      chosen.filter(\.isMain).count > 2,
+                      let lastMain = chosen.lastIndex(where: \.isMain) {
+                    chosen.remove(at: lastMain)
                     trimmedForTime = true
                 }
             }
@@ -741,9 +756,18 @@ enum ProgramGenerator {
             // fatigue-averse coach docks systemic drain, the hybrid coach
             // boosts explosive intent. Same scale as the axial boost.
             var lensAdjust = 0
-            if let lens {
-                if lens.fatigueAverse { lensAdjust -= c.fatigueCost }
-                if lens.explosiveEmphasis, c.explosive { lensAdjust += 3 }
+            if let lens, lens.fatigueAverse { lensAdjust -= c.fatigueCost }
+            // Explosive fit as a TIER, not a score bump (audit round 2):
+            // a score bump lost narrowly for the power athlete (A01) and
+            // conditioning's own scores made cone hops the desk worker's
+            // squat main (A25). Explosive work is a SPECIALIST tool: the
+            // granted slot prefers it outright; every other main slot
+            // demotes it. Accessories never favor plyo over equals.
+            let explosiveFit: Int
+            if isMain, lens?.explosiveEmphasis == true {
+                explosiveFit = c.explosive ? 0 : 1
+            } else {
+                explosiveFit = c.explosive ? 1 : 0
             }
             let score: Int
             if let tilt, !tilt.isEmpty {
@@ -779,10 +803,14 @@ enum ProgramGenerator {
             // boost still works, but only among equally simple choices.
             // Zero for everyone else, so ordering is unchanged past novice.
             let simplicity = experience == .new ? effComplexity : 0
-            // stretch*8+lad merges two tiebreaks into one component
-            // (Swift compares tuples only to arity 6); stretch dominates
-            // since lad <= 5 — ordering identical to the old pair.
-            return (pen, gates, focusStanding, simplicity, -score, stretch * 8 + lad)
+            // simplicity*4 + explosiveFit in one component (tuple arity):
+            // for a novice, SIMPLE beats explosive-preferred — the coach
+            // doesn't open a beginner with depth jumps; past novice,
+            // simplicity is 0 and the explosive tier decides alone.
+            // stretch*8+lad merges two tiebreaks the same way; stretch
+            // dominates since lad <= 5.
+            return (pen, gates, focusStanding, simplicity * 4 + explosiveFit,
+                    -score, stretch * 8 + lad)
         }
         let sorted = candidates.sorted { a, b in
             let ta = tier(a), tb = tier(b)
@@ -842,10 +870,11 @@ enum ProgramGenerator {
         // bilateral near-max prescription).
         var percent: Double? = nil
         if isMain {
-            if ex.explosive, ex.equipment != "barbell" {
-                // A cone hop has no meaningful 1RM — explosive bodyweight
-                // and implement drills carry NO percent anchor (audit
-                // 2026-08-20: "@80%" printed on hurdle hops).
+            if ex.equipment == "bodyweight" || (ex.explosive && ex.equipment != "barbell") {
+                // No meaningful %1RM exists for bodyweight mains (audit
+                // round 2: "Chest Dip @70%") or explosive implement drills
+                // ("@80%" cone hops) — the anchor stays silent rather
+                // than fictional.
                 percent = nil
             } else {
                 var p = GeneratorScience.percentFor(reps: anchorReps)

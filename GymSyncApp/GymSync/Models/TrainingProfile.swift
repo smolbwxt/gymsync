@@ -288,6 +288,16 @@ struct TrainingProfile: Codable, Equatable, Sendable {
         var lens = CoachPersona.bySlug(persona)?.lens ?? CoachPersona.Lens()
         if dominantGoal == .powerRFD { lens.explosiveEmphasis = true }
         inputs.personaLens = lens
+        // Honesty lines (audit round 2): say what can't be honored.
+        if split == .bro, daysPerWeek < 4 {
+            inputs.advisoryNotes.append("A bodypart split needs 4+ days — full-body carries the work until more days free up, and the pump pieces ride along where they fit.")
+        }
+        if split == .hybrid, daysPerWeek < 5 {
+            inputs.advisoryNotes.append("The hybrid split needs 5+ days — below that, the science ladder already gives every muscle its second weekly touch.")
+        }
+        if dominantGoal == .mobility {
+            inputs.advisoryNotes.append("Mobility leads your goals: today it shapes the picks and the recovery prescriptions — a dedicated mobility modality is still being built, and this lifting meanwhile moves you better than stretching alone would.")
+        }
         return inputs
     }
 }

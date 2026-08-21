@@ -159,6 +159,96 @@ final class RemediationTests: XCTestCase {
         }
     }
 
+    // MARK: Round 2 — explosive as a tier, both directions
+
+    func testHouseConditioningAthleteGetsRealLiftsNotPlyoMains() {
+        // A25: conditioning's own scores made cone hops the desk worker's
+        // squat main. Without the lens, explosive DEMOTES in main slots —
+        // even against a lower conditioning score.
+        let hop = cat(1, "Cone Hop", "squat", equip: "bodyweight",
+                      explosive: true, score: 9)
+        let goblet = cat(2, "Goblet Squat", "squat", equip: "dumbbell", score: 7)
+        let slot = ProgramGenerator.Slot.pattern("squat", main: true)
+        let pick = ProgramGenerator.select(
+            slot: slot, from: [hop, goblet], excluding: [],
+            focus: .conditioning, focusMuscles: nil)
+        XCTAssertEqual(pick?.name, "Goblet Squat",
+                       "plyo is a specialist tool — nobody's default squat main")
+    }
+
+    func testPowerDominantWinsExplosiveEvenAgainstHigherScore() {
+        // A01: the +3 bump lost narrowly to the strength scorer; the tier
+        // cannot lose.
+        let jump = cat(1, "Jump Squat", "squat", explosive: true, score: 5)
+        let squat = cat(2, "Back Squat", "squat", score: 9)
+        var profile = TrainingProfile()
+        profile.rankedGoals = [.powerRFD]
+        profile.daysPerWeek = 1
+        let program = ProgramGenerator.generate(
+            inputs: profile.generatorInputs(durationWeeks: 4),
+            catalog: [jump, squat,
+                      cat(3, "Hinge", "hinge"), cat(4, "Press", "push_horizontal"),
+                      cat(5, "Row", "pull_horizontal")])
+        let squatMain = program.days[0].exercises.first { $0.slot == .pattern("squat", main: true) }
+        XCTAssertEqual(squatMain?.name, "Jump Squat",
+                       "the power athlete's granted slot prefers explosive outright")
+    }
+
+    func testBodyweightMainsCarryNoPercentAnchor() {
+        let dip = cat(1, "Chest Dip", "push_horizontal", equip: "bodyweight", score: 9)
+        var inputs = ProgramGenerator.Inputs(
+            focus: .hypertrophy, daysPerWeek: 3, durationWeeks: 8,
+            experience: .intermediate)
+        inputs.equipment = ["bodyweight"]
+        let program = ProgramGenerator.generate(
+            inputs: inputs,
+            catalog: [dip, cat(2, "Inverted Row", "pull_horizontal",
+                               equip: "bodyweight", score: 8)])
+        for main in program.days.flatMap(\.exercises).filter(\.isMain) {
+            XCTAssertNil(main.percentOfMax,
+                         "no meaningful %1RM exists for a bodyweight main")
+        }
+    }
+
+    func testThirtyMinuteCapDropsWholeMainsNeverBelowTwo() {
+        // A31: four 180s-rest mains met a 30-minute cap; set floors alone
+        // left 68-minute sessions. The final lever drops mains to two.
+        var profile = TrainingProfile()
+        profile.trainingAge = .novice
+        profile.rankedGoals = [.boneDensity, .mobility]
+        profile.daysPerWeek = 2
+        profile.sessionMinutes = 30
+        let catalog = [cat(1, "Leg Press", "squat", equip: "machine", complexity: 2),
+                       cat(2, "Hip Machine", "hinge", equip: "machine", complexity: 2),
+                       cat(3, "Chest Machine", "push_horizontal", equip: "machine", complexity: 2),
+                       cat(4, "Row Machine", "pull_horizontal", equip: "machine", complexity: 2)]
+        let program = ProgramGenerator.generate(
+            inputs: profile.generatorInputs(durationWeeks: 8), catalog: catalog)
+        for day in program.days {
+            let mains = day.exercises.filter(\.isMain)
+            XCTAssertGreaterThanOrEqual(mains.count, 2, "never below two lifts")
+            let estimate = day.exercises.reduce(0) {
+                $0 + $1.sets * 2 + $1.sets * $1.restSeconds / 60 + 2
+            }
+            XCTAssertLessThanOrEqual(estimate, 36,
+                "two 180s-rest mains at floor sets ≈ 34 min — the honest best for this cap (\(day.name))")
+        }
+    }
+
+    func testUnhonorableWishesGetSaidOutLoud() {
+        var bro = TrainingProfile()
+        bro.split = .bro
+        bro.daysPerWeek = 3
+        XCTAssertTrue(bro.generatorInputs(durationWeeks: 8).advisoryNotes
+            .contains { $0.contains("bodypart split needs 4+") },
+            "the Golden Era client with 3 days hears WHY the week looks different")
+        var mobility = TrainingProfile()
+        mobility.rankedGoals = [.mobility]
+        XCTAssertTrue(mobility.generatorInputs(durationWeeks: 8).advisoryNotes
+            .contains { $0.contains("Mobility leads") },
+            "a thin modality is named, never silently substituted")
+    }
+
     // MARK: The ramp
 
     func testGraduationProbeRequiresNoviceAndAdherence() {
