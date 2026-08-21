@@ -161,6 +161,9 @@ struct TrainingProfile: Codable, Equatable, Sendable {
     }
     /// The persona whose defaults seeded this profile, if any.
     var persona: String? = nil
+    /// football | baseball | wrestling — set when sport_prep is ranked;
+    /// drives the generator's sport lens and prophylaxis dose.
+    var sportPrepSport: String? = nil
 
     // MARK: Goals (RANKED — order IS the data)
     var rankedGoals: [TrainingGoal] = [.hypertrophy]
@@ -367,6 +370,21 @@ struct TrainingProfile: Codable, Equatable, Sendable {
         inputs.axialBoost = wantsAxialLoading
         inputs.inSeason = inSeason
         inputs.impactCaution = impactCaution
+        // Sport lens rides only when the sport_prep goal is actually
+        // ranked — a stale sport choice never haunts a changed goal set.
+        if rankedGoals.contains(.sportPrep), let sport = sportPrepSport {
+            inputs.sportPrepSport = sport
+            switch sport {
+            case "football":
+                inputs.advisoryNotes.append("Football lens: unilateral lower-body work ranks up and explosive work gets a daily slot — in-season, sessions shorten and volume, not intensity, is the release valve.")
+            case "baseball":
+                inputs.advisoryNotes.append("Baseball lens: arm care is a standing dose — cuff work rides your pressing days, because velocity without cuff strength is how elbows and shoulders break.")
+            case "wrestling":
+                inputs.advisoryNotes.append("Wrestling lens: unilateral work leads (stance and shots are one-sided) and grip gets its own slot on pulling days.")
+            default:
+                break
+            }
+        }
         if impactCaution {
             inputs.advisoryNotes.append("High-impact work (jumps, bounding) sits out for now — landings are the one place current bodyweight raises joint risk. It comes back as the number moves; nothing else changes.")
         }
@@ -379,6 +397,12 @@ struct TrainingProfile: Codable, Equatable, Sendable {
         // jumps without needing the Hybrid coach (audit 2026-08-20).
         var lens = CoachPersona.bySlug(persona)?.lens ?? CoachPersona.Lens()
         if blockGoal == .powerRFD { lens.explosiveEmphasis = true }
+        // Football's corpus position: explosive work is a first-class
+        // citizen — same bounded grant the power_rfd goal carries
+        // (one main slot per day, never accessories).
+        if rankedGoals.contains(.sportPrep), sportPrepSport == "football" {
+            lens.explosiveEmphasis = true
+        }
         inputs.personaLens = lens
         // Honesty lines (audit round 2): say what can't be honored.
         if split == .bro, daysPerWeek < 4 {

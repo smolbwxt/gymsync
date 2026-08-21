@@ -76,6 +76,8 @@ struct CoachWizardView: View {
     // Lifts from routines the athlete starred (field report #18) —
     // fetched once per wizard visit, alias-resolved to canonical rows.
     @State private var starredExerciseIDs: Set<UUID> = []
+    // sport_prep's sport (corpus parameters 2026-08-21).
+    @State private var sportPrepSport: String? = nil
     // Coach owns the calendar (longitudinal spec 3d): on create, the
     // block's training days land as a SOLO SERIES with max-spacing
     // weekdays, and ride the existing gated EventKit sync.
@@ -266,6 +268,7 @@ struct CoachWizardView: View {
                 // A returning athlete's doors settle to theme - the
                 // saved profile IS the filled state.
                 visitedSections = Set(ProfileSection.allCases)
+                sportPrepSport = saved.sportPrepSport
                 if let bw = saved.bodyweightLbs {
                     let shown = displayUnit == .kg ? bw / 2.20462 : bw
                     bodyweightText = String(Int(shown.rounded()))
@@ -680,6 +683,7 @@ struct CoachWizardView: View {
         profile.equipment = equipment == Set(Venue.equipmentClasses) ? nil : equipment
         // The relationship's memory (Phase 4) — block alternation and
         // deprioritized lifts survive the dials.
+        profile.sportPrepSport = sportPrepSport
         profile.carryover = savedCarryover
         profile.lastProbeAt = savedProbeAt
         // Body context: parse in the display unit, store canonical.
@@ -827,6 +831,36 @@ struct CoachWizardView: View {
                             }
                         GoalRankingSection(ranked: $rankedGoals)
                             .onChange(of: rankedGoals) { _, _ in preview = nil }
+                        if rankedGoals.contains(.sportPrep) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("YOUR SPORT")
+                                    .font(GSFont.bold(11, relativeTo: .caption2))
+                                    .tracking(1.1)
+                                    .foregroundStyle(theme.neutral500)
+                                HStack(spacing: 6) {
+                                    ForEach(["football", "baseball", "wrestling"], id: \.self) { sport in
+                                        let isOn = sportPrepSport == sport
+                                        Button {
+                                            sportPrepSport = isOn ? nil : sport
+                                            preview = nil
+                                        } label: {
+                                            Text(sport.capitalized)
+                                                .font(GSFont.bold(13, relativeTo: .subheadline))
+                                                .foregroundStyle(isOn ? theme.bg : theme.neutral700)
+                                                .padding(.horizontal, 14)
+                                                .padding(.vertical, 9)
+                                                .background(isOn ? theme.accent : theme.surface)
+                                                .clipShape(Capsule())
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                                Text("Sets the lens: what ranks up, what rides as insurance (arm care, grip), and how in-season weeks bend.")
+                                    .font(GSFont.body(11, relativeTo: .caption))
+                                    .foregroundStyle(theme.neutral500)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
                         dial("EXPERIENCE", options: GeneratorScience.Experience.allCases.map(\.rawValue),
                              selected: experience.rawValue) { experience = GeneratorScience.Experience(rawValue: $0) ?? .new }
                     case .schedule:

@@ -66,6 +66,13 @@ enum ProgramGenerator {
         /// gate; it just answers "when nothing else separates them, pick
         /// the one they've been eyeing."
         var starredExerciseIDs: Set<UUID> = []
+        /// football | baseball | wrestling — the sport_prep goal's sport
+        /// (corpus parameters, docs/science/sport-prep-parameters.md):
+        /// wrestling ranks unilateral work up (stance and shots are
+        /// one-sided), football prefers unilateral lower-body patterns,
+        /// baseball turns every accessory shoulder slot cuff-first and
+        /// adds the arm-care standing dose.
+        var sportPrepSport: String? = nil
         /// conservative | standard | aggressive — shifts the %1RM anchor
         /// (audit 2026-08-20: previously a dead knob; the experience
         /// ceiling still has the last word).
@@ -240,7 +247,25 @@ enum ProgramGenerator {
             // slot the session sort already honors. Accessories never
             // take the boost.
             var explosiveBudget = inputs.personaLens?.explosiveEmphasis == true ? 1 : 0
-            for slot in slots(for: kind, focus: inputs.focus) {
+            // Sport prophylaxis standing dose (corpus 2026-08-21): like
+            // the core slot, a small always-there insurance policy —
+            // baseball's arm care on pressing days, wrestling's grip on
+            // pulling days. One slot, accessory volume, trimmed first by
+            // the session cap like any accessory.
+            var daySlots = slots(for: kind, focus: inputs.focus)
+            switch inputs.sportPrepSport {
+            case "baseball":
+                if [.upper, .push, .fullBody].contains(kind) {
+                    daySlots.append(.isolation("shoulders"))
+                }
+            case "wrestling":
+                if [.upper, .pull, .fullBody].contains(kind) {
+                    daySlots.append(.isolation("forearms"))
+                }
+            default:
+                break
+            }
+            for slot in daySlots {
                 let isMainSlot: Bool
                 if case .pattern(_, let main) = slot { isMainSlot = main } else { isMainSlot = false }
                 var slotLens = inputs.personaLens
@@ -259,6 +284,7 @@ enum ProgramGenerator {
                                   axialBoost: inputs.axialBoost,
                                   impactCaution: inputs.impactCaution,
                                   starred: inputs.starredExerciseIDs,
+                                  sportLens: inputs.sportPrepSport,
                                   lens: slotLens,
                                   deprioritized: inputs.deprioritizedExerciseIDs)
                 if pick == nil, !isMainSlot {
@@ -274,6 +300,7 @@ enum ProgramGenerator {
                                   axialBoost: inputs.axialBoost,
                                   impactCaution: inputs.impactCaution,
                                   starred: inputs.starredExerciseIDs,
+                                  sportLens: inputs.sportPrepSport,
                                   lens: slotLens,
                                   deprioritized: inputs.deprioritizedExerciseIDs)
                 }
@@ -441,6 +468,7 @@ enum ProgramGenerator {
                                   cautionJoints: inputs.cautionJoints,
                                   impactCaution: inputs.impactCaution,
                                   starred: inputs.starredExerciseIDs,
+                                  sportLens: inputs.sportPrepSport,
                                   lens: inputs.personaLens)
                 guard let pick,
                       let lightest = days.indices.min(by: {
@@ -832,6 +860,7 @@ enum ProgramGenerator {
                        axialBoost: Bool = false,
                        impactCaution: Bool = false,
                        starred: Set<UUID> = [],
+                       sportLens: String? = nil,
                        lens: CoachPersona.Lens? = nil,
                        deprioritized: Set<UUID> = []) -> CatalogExercise? {
         let candidates: [CatalogExercise]
@@ -975,6 +1004,30 @@ enum ProgramGenerator {
             // simplicity is 0 and the explosive tier decides alone.
             // stretch*8+lad merges two tiebreaks the same way; stretch
             // dominates since lad <= 5.
+            // Sport lens (sport-prep corpus 2026-08-21): wrestling's
+            // unilateral-first law; football's unilateral lower-body
+            // preference; baseball's cuff-first accessory shoulders
+            // (arm care outranks delt aesthetics for throwers). A TIER
+            // below novice simplicity, above the explosive preference.
+            var sportFit = 0
+            if let sportLens {
+                switch sportLens {
+                case "wrestling":
+                    sportFit = c.unilateral ? 0 : 1
+                case "football":
+                    let lowerBody = c.movementPattern == "squat" || c.movementPattern == "lunge"
+                        || ["quads", "hamstrings", "glutes"].contains(c.primaryMuscle)
+                    sportFit = (c.unilateral && lowerBody) ? 0 : 1
+                case "baseball":
+                    if case .isolation("shoulders") = slot, !isMain {
+                        let cuff = lower.contains("external rotation") || lower.contains("face pull")
+                            || lower.contains("band pull") || lower.contains("cuff")
+                        sportFit = cuff ? 0 : 1
+                    }
+                default:
+                    break
+                }
+            }
             // Starred-routine preference: the athlete's own aspiration,
             // dead last among the soft signals — above only the ladder.
             let starPref = starred.contains(c.id) ? 0 : 1
@@ -985,7 +1038,12 @@ enum ProgramGenerator {
             // dominates stretch*16 + starPref*8 + lad (max 29); stretch
             // dominates starPref*8 + lad (max 13); starPref dominates
             // lad (max 5).
-            return (pen, gates, focusStanding, simplicity * 4 + explosiveFit,
+            // simplicity*8 + sportFit*2 + explosiveFit: the novice
+            // simple-first law still dominates (8 > 2+1); the sport lens
+            // outranks the explosive preference (a wrestler's split
+            // squat beats a bilateral jump at equal score).
+            return (pen, gates, focusStanding,
+                    simplicity * 8 + sportFit * 2 + explosiveFit,
                     attestSilent * 10_000 - score,
                     attestWeak * 32 + stretch * 16 + starPref * 8 + lad)
         }
