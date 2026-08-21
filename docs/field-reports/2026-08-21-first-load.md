@@ -143,3 +143,31 @@ DIAGNOSED (cause known, fix scoped) · DESIGNED (build plan below, queued)
 - **Core placement**: corpus consulted (route_core.py) — 15 top
   transcripts inc. RP's "Do You Actually Need to Train Abs?" under
   deep-read; template placement will follow the findings.
+
+
+# Rulings round 2 + core verdict (owner, 2026-08-21)
+
+- **Hot-swap consensus: UNANIMOUS.** A pushed variant applies only when
+  every present member accepts; any decline keeps the original. Quiet
+  self-scaling unaffected.
+- **Video retention: NONE for non-PRO.** Free users' clips do not
+  persist at all; PRO stores, coach-linked extends (fee rails later).
+
+## Core programming — the corpus verdict (83 findings, 8 channels)
+
+- NECESSITY (7ch): goal-dependent but real. "Compounds are enough" is
+  REJECTED (Menno; FHP's cited EMG study: indirect activation is far
+  below direct work; Ethier cites -16% ab size in 30 days after
+  removing direct work while still squatting/deadlifting). Visibility
+  is fat loss; SIZE is training.
+- DOSE (7ch): train abs like a muscle - 2-4x/week, ~3-6 sets/session,
+  hypertrophy reps 10-15 (5-30 range), LOADED and progressed. Our core
+  slot on lower/legs days at accessory volume = corroborated.
+- SELECTION (8ch, strongest): loaded flexion (weighted/cable crunches,
+  reverse crunches, leg raises) >> unloaded planks (RP: no eccentric,
+  no growth) and >> twists/side bends for physique (Menno: oblique
+  growth thickens the waist). SHIPPED: the core slot now demotes
+  twist/rotation/side-bend/oblique/plank names for physique-flavored
+  focuses; conditioning keeps stability work. The machine-first
+  accessory ladder already buries bodyweight planks.
+- PLACEMENT (thin, 2ch): end of session; our slot position stands.

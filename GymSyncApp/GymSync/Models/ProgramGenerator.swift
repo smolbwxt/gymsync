@@ -836,7 +836,23 @@ enum ProgramGenerator {
             // block (BlockReview) — it competes only when nothing better
             // exists. Weights keep the three gates strictly ordered.
             let skippedLastBlock = deprioritized.contains(c.id) ? 1 : 0
-            let gates = gateViolation * 4 + cautionViolation * 2 + skippedLastBlock
+            // Core-slot fit (corpus pass 2026-08-21, 8 channels): for
+            // physique-flavored focuses, LOADED FLEXION (crunches, leg
+            // raises, rollouts) beats twists/side bends (oblique growth
+            // thickens the waist - Menno) and unloaded planks (no
+            // eccentric, no growth - RP). Conditioning keeps stability
+            // work un-demoted; the accessory machine-first ladder already
+            // buries bodyweight planks further.
+            var coreFit = 0
+            if case .isolation("core") = slot, focus != .conditioning {
+                if lower.contains("twist") || lower.contains("rotation")
+                    || lower.contains("side bend") || lower.contains("oblique")
+                    || lower.contains("plank") {
+                    coreFit = 1
+                }
+            }
+            let gates = gateViolation * 8 + cautionViolation * 4
+                + skippedLastBlock * 2 + coreFit
             let focusStanding = (focusMuscles?.contains(c.primaryMuscle) == true) ? 0 : 1
             // Unscored rows sit at a neutral 5 — between cornerstone and
             // filler — so a half-labeled catalog stays sane.

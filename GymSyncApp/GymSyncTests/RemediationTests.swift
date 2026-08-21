@@ -336,6 +336,36 @@ final class RemediationTests: XCTestCase {
         }
     }
 
+    // MARK: Core selection (corpus pass 2026-08-21, 8 channels)
+
+    func testCoreSlotPrefersLoadedFlexionOverTwists() {
+        // RP: planks have no eccentric, no growth. Menno: rotation work
+        // grows obliques and thickens the waist. Loaded flexion wins the
+        // physique core slot even against an equal score.
+        func core(_ rank: Int, _ name: String, equip: String) -> ProgramGenerator.CatalogExercise {
+            var c = ProgramGenerator.CatalogExercise(
+                id: UUID(uuidString: String(format: "00000000-0000-0000-0004-%012d", rank))!,
+                name: name, primaryMuscle: "core", secondaryMuscles: [],
+                category: "isolation", equipment: equip,
+                movementPattern: "isolation", rank: rank)
+            c.focusScores = ["hypertrophy": 7]
+            return c
+        }
+        let twist = core(1, "Iso-Lateral Torso Rotation", equip: "machine")
+        let crunch = core(2, "Ab Crunch Machine", equip: "machine")
+        let slot = ProgramGenerator.Slot.isolation("core")
+        let pick = ProgramGenerator.select(
+            slot: slot, from: [twist, crunch], excluding: [],
+            focus: .hypertrophy, focusMuscles: nil)
+        XCTAssertEqual(pick?.name, "Ab Crunch Machine",
+                       "loaded flexion beats rotation for the physique core slot")
+        let conditioning = ProgramGenerator.select(
+            slot: slot, from: [twist, crunch], excluding: [],
+            focus: .conditioning, focusMuscles: nil)
+        XCTAssertEqual(conditioning?.name, "Iso-Lateral Torso Rotation",
+                       "conditioning keeps stability/rotation work un-demoted (rank tiebreak)")
+    }
+
     // MARK: First contact (demonstrate before you interrogate)
 
     func testFirstContactReadsThePushPullLedger() {
