@@ -504,20 +504,23 @@ private struct LiveSessionPill: View {
                     .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true),
                                value: pulsing)
                 Text("SESSION LIVE")
-                    .font(GSFont.bold(10, relativeTo: .caption2))
+                    .font(GSFont.bold(13, relativeTo: .footnote))
                     .kerning(1.2)
                     .foregroundStyle(theme.accent)
                 Text(title)
-                    .font(GSFont.bodyMedium(12, relativeTo: .caption))
+                    .font(GSFont.bodyMedium(15, relativeTo: .body))
                     .foregroundStyle(theme.text)
                     .lineLimit(1)
                 Spacer(minLength: 8)
                 Image(systemName: "chevron.up")
-                    .font(.system(size: 11, weight: .bold))
+                    .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(theme.neutral500)
             }
+            // Owner 2026-08-21: "double its height for visibility" — the
+            // pill is the way back into a live session; it should read
+            // from across the gym.
             .padding(.horizontal, 14)
-            .padding(.vertical, 9)
+            .padding(.vertical, 18)
             .frame(maxWidth: .infinity)
         }
         .buttonStyle(.gs3DCardStyle(cornerRadius: 12, lipHeight: 4))

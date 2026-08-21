@@ -122,3 +122,24 @@ DIAGNOSED (cause known, fix scoped) · DESIGNED (build plan below, queued)
     editor pass.
 23. **Rest-screen text on the swipe-up widget border** — cosmetic layout;
     fix with the recovery-histogram pass (same screen).
+
+# Design rulings (owner, 2026-08-21)
+
+- **Hot-swap**: ANYONE can suggest a swap and push for squad consensus
+  (vote, not organizer fiat). Self-scaling is quiet-but-visible: shown on
+  the member's set when their turn comes, never announced.
+- **Form video**: storage gated to PRO or coach-linked athletes; coaches
+  can extend client storage for a fee (billing rails = own pass; v1
+  ships retention tiers without payments). LIVE broadcast during your
+  set in group workouts: optional, opt-in toggle on the logging screen —
+  live video infra is phase 2 of this feature.
+- **Mini-bar**: it exists (LiveSessionPill) and was loved — doubled its
+  height/type for visibility, and the routine-detail "Start Workout"
+  now presents as a SHEET like the resume path (the push was the trap
+  that blocked swiping down).
+- **Sports**: football, baseball, wrestling first. Channel roster added
+  to the pipeline (Garage Strength, Overtime Athletes, Westside,
+  Driveline, Cressey, Tread, Daru, PJF) — enumerate/select/fetch running.
+- **Core placement**: corpus consulted (route_core.py) — 15 top
+  transcripts inc. RP's "Do You Actually Need to Train Abs?" under
+  deep-read; template placement will follow the findings.

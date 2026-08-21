@@ -40,6 +40,17 @@ CHANNELS = [
     ("SquatUniversity", "Squat University (Horschig)", "medium"),
     ("JeremyEthier", "Built With Science (Ethier)", "medium"),
     ("athleanx", "Athlean-X (Cavaliere)", "medium"),
+    # ── Sport S&C expansion (owner 2026-08-21: football, baseball,
+    # wrestling first; plus the channels every field athlete's S&C
+    # actually draws from). resolve_handle self-heals imperfect handles.
+    ("GarageStrength", "Garage Strength (Dane Miller — football/throws)", "high"),
+    ("OvertimeAthletes", "Overtime Athletes (football/speed)", "high"),
+    ("westsidebarbellofficial", "Westside Barbell (conjugate)", "medium"),
+    ("DrivelineBaseball", "Driveline Baseball (data-driven baseball)", "high"),
+    ("EricCressey", "Eric Cressey (baseball S&C)", "high"),
+    ("TreadAthletics", "Tread Athletics (pitching development)", "medium"),
+    ("DaruStrong", "Phil Daru (combat/wrestling S&C)", "high"),
+    ("PJFPerformance", "PJF Performance (basketball/athleticism)", "medium"),
 ]
 
 

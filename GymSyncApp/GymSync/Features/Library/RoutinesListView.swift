@@ -246,6 +246,7 @@ struct RoutineDetailChoice: View {
     @Environment(AppState.self) private var appState
     @State private var exercises: [Exercise] = []
     @State private var routineExercises: [RoutineExercise] = []
+    @State private var startingWorkout = false
     /// Redesign (2026-07-23): best PR per exercise, feeding the projected
     /// working-weight line on each row. Absent PR = no estimate (honest).
     @State private var prByExercise: [UUID: PersonalRecord] = [:]
@@ -322,15 +323,24 @@ struct RoutineDetailChoice: View {
                         }
                     }
 
-                    // Canvas: Start Workout — primary CTA
-                    NavigationLink {
-                        WorkoutSessionView(routine: routine,
-                                           routineExercises: routineExercises,
-                                           allExercises: exercises)
+                    // Canvas: Start Workout — primary CTA. A SHEET, not a
+                    // push (owner field report 2026-08-21: the push trapped
+                    // the whole app behind the session) — swipe-down
+                    // orphans the session and the live pill is the way
+                    // back, matching the resume path's presentation.
+                    Button {
+                        startingWorkout = true
                     } label: {
                         Text("Start Workout")
                     }
                     .buttonStyle(GSPrimaryButtonStyle())
+                    .sheet(isPresented: $startingWorkout) {
+                        NavigationStack {
+                            WorkoutSessionView(routine: routine,
+                                               routineExercises: routineExercises,
+                                               allExercises: exercises)
+                        }
+                    }
 
                     // Canvas: Edit routine — secondary
                     NavigationLink {
