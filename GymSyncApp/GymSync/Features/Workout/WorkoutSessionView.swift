@@ -815,9 +815,6 @@ struct WorkoutSessionView: View {
             currentLifterName: nil,
             isMyTurn: true,
             burpeesOwed: 0,
-            burpeesPaid: true,
-            soundboardFavorites: [],
-            soundboardFavoriteLabels: [],
             isActive: active,
             shareHeartRate: ThemeStore.shared.shareHeartRate)
         WatchConnectivityBridge.shared.updateSessionState(payload)
