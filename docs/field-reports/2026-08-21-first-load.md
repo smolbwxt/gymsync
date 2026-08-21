@@ -242,3 +242,21 @@ DIAGNOSED (cause known, fix scoped) · DESIGNED (build plan below, queued)
     text moves down, top text bigger.
 31. **"Train with Coach" → "Train with a personal trainer"** — Coach
     (AI) must not read as the human-trainer product.
+
+## #24 diagnosis (volume) — ANALYSIS, awaiting owner ruling
+
+Not the session cap and not a bug: the STRENGTH focus filter strips
+every isolation slot ("strength sessions spend their budget on the
+bar" — ProgramGenerator.slots), so an uncapped lower day is exactly
+squat + hinge + lunge = the reported 3-exercise leg day. Hypertrophy
+lower/legs days carry 6-7 slots and are healthy; weightLoss and
+conditioning hold their compounds+core floors by explicit design.
+
+RECOMMENDATION: strength keeps its bar-first identity but stops at
+zero accessories only when TIME does (sessionMinutes). Uncapped
+strength days add up to two SUPPORTIVE accessories from the field's
+assistance canon — lower: hamstrings + core; upper: upper-back +
+triceps — at accessory volume, mains untouched. Matches our own
+corpus reads (football pass: absolute strength blocks still carry
+hypertrophy/assistance work; RP/Juggernaut program main + assistance).
+One-line change + no-dead-knobs test once ruled.

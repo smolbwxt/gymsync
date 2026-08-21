@@ -81,6 +81,17 @@ struct CoachWizardView: View {
     // weekdays, and ride the existing gated EventKit sync.
     @State private var scheduleSessions = true
     @State private var sessionHour = 17
+    // Coach page redesign (owner 2026-08-21: "a form is the cardinal
+    // sin"). The page reads top-down as insight -> offer -> five fat
+    // section doors; each door opens a FOCUSED editor sheet holding the
+    // controls that used to stack inline. A door's title renders accent
+    // until its section is properly filled, then settles to theme.
+    enum ProfileSection: String, Identifiable, CaseIterable {
+        case goals, schedule, style, bodySection, limits
+        var id: String { rawValue }
+    }
+    @State private var activeSection: ProfileSection? = nil
+    @State private var visitedSections: Set<ProfileSection> = []
     /// The relationship's memory rides every rebuild — dropping it would
     /// reset block alternation and deprioritization each visit.
     @State private var savedCarryover: TrainingProfile.Carryover?
@@ -98,107 +109,26 @@ struct CoachWizardView: View {
                     blockCompleteBanner(completion)
                 }
 
-                if let firstContact, blockCompletion == nil {
-                    Text(firstContact)
+                // The page LEADS with insight (owner: never a form
+                // first): the computed observation when Coach has data,
+                // an honest waiting line when it doesn't.
+                if blockCompletion == nil {
+                    Text(firstContact ?? "Log a few sessions and Coach starts reading your training here — patterns, gaps, and what to do about them.")
                         .font(GSFont.body(13, relativeTo: .body))
                         .foregroundStyle(theme.text)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(14)
-                        .background(RoundedRectangle(cornerRadius: 16).fill(theme.surface))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .gs3DCard(cornerRadius: 16)
                 }
 
-                CoachPersonaStrip(selected: $personaSlug)
-                    .onChange(of: personaSlug) { _, slug in
-                        // The coach's method preset fills the dials the
-                        // athlete hasn't touched conceptually — here in the
-                        // wizard, presets simply set the controls; the
-                        // athlete's later edits win because they're edits.
-                        guard let coach = CoachPersona.bySlug(slug) else { return }
-                        splitPref = coach.split
-                        structure = coach.sessionStructure
-                        appetite = coach.intensityAppetite
-                        preview = nil
-                    }
+                offerCard
 
-                GoalRankingSection(ranked: $rankedGoals)
-                    .onChange(of: rankedGoals) { _, _ in preview = nil }
-                dial("LIFTING DAYS PER WEEK", options: ["1", "2", "3", "4", "5", "6", "7"],
-                     selected: "\(days)") { days = Int($0) ?? 3 }
-                dial("PROGRAM LENGTH · WEEKS", options: ["4", "8", "12"],
-                     selected: "\(duration)") { duration = Int($0) ?? 8 }
-                dial("CARDIO DAYS PER WEEK", options: ["0", "1", "2", "3", "4", "5"],
-                     selected: "\(cardioDays)") { cardioDays = Int($0) ?? 0 }
-                if cardioDays > 0 {
-                    dial("CARDIO · MINUTES PER SESSION", options: ["15", "20", "30", "45", "60"],
-                         selected: "\(cardioMinutes)") { cardioMinutes = Int($0) ?? 30 }
-                }
-                if days + cardioDays > 7 {
-                    Text("More sessions than days — cardio rides your lifting days as PM sessions. Keep 6+ hours between when you can.")
-                        .font(GSFont.body(11, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral500)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                // Train every day: open days become ACTIVE RECOVERY.
-                Button {
-                    fillWeek.toggle()
-                    preview = nil
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: fillWeek ? "checkmark.circle.fill" : "circle")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(fillWeek ? theme.accent : theme.neutral500)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Train every day")
-                                .font(GSFont.bold(14, relativeTo: .headline))
-                                .foregroundStyle(theme.text)
-                            Text("Open days become active recovery — mobility and a zone-1 walk. In the gym daily; the easy days stay easy.")
-                                .font(GSFont.body(11, relativeTo: .caption))
-                                .foregroundStyle(theme.neutral500)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        Spacer()
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                dial("EXPERIENCE", options: GeneratorScience.Experience.allCases.map(\.rawValue),
-                     selected: experience.rawValue) { experience = GeneratorScience.Experience(rawValue: $0) ?? .new }
-
-                dial("SPLIT", options: GeneratorScience.SplitPreference.allCases.map(\.rawValue),
-                     selected: splitPref.rawValue) {
-                    splitPref = GeneratorScience.SplitPreference(rawValue: $0) ?? .auto
-                }
-                if splitPref == .bro {
-                    Text("A bodypart split hits each muscle once a week; the research consensus favors twice. The hybrid keeps the bro feel and adds the second touch — your call, and Coach won't nag.")
-                        .font(GSFont.body(11, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral500)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                dial("SESSION STYLE", options: TrainingProfile.SessionStructure.allCases.map(\.rawValue),
-                     selected: structure.rawValue) {
-                    structure = TrainingProfile.SessionStructure(rawValue: $0) ?? .straight
-                }
-
-                dial("INTENSITY", options: ["conservative", "standard", "aggressive"],
-                     selected: appetite) { appetite = $0 }
-
-                noGoSection
-
-                if experience == .new {
-                    NoviceCalibrationSection(anchors: $calibrationAnchors,
-                                             unit: displayUnit)
-                }
-
-                dial("SESSION LENGTH · MINUTES", options: ["45", "60", "75", "90", "No cap"],
-                     selected: sessionMinutes.map(String.init) ?? "No cap") {
-                    sessionMinutes = Int($0)
-                }
-
-                equipmentDial
-
-                aboutYou
+                sectionDoor(.goals)
+                sectionDoor(.schedule)
+                sectionDoor(.style)
+                sectionDoor(.bodySection)
+                sectionDoor(.limits)
 
                 Button {
                     generatePreview()
@@ -287,6 +217,9 @@ struct CoachWizardView: View {
         .background(theme.bg)
         .navigationTitle("Coach")
         .scrollDismissesKeyboard(.interactively)
+        .sheet(item: $activeSection) { section in
+            sectionSheet(section)
+        }
         .navigationBarTitleDisplayMode(.inline)
         .task {
             allExercises = (try? await ExerciseRepository.fetchAll()) ?? []
@@ -330,6 +263,9 @@ struct CoachWizardView: View {
                 days = saved.daysPerWeek
                 sessionMinutes = saved.sessionMinutes
                 experience = saved.trainingAge.experience
+                // A returning athlete's doors settle to theme - the
+                // saved profile IS the filled state.
+                visitedSections = Set(ProfileSection.allCases)
                 if let bw = saved.bodyweightLbs {
                     let shown = displayUnit == .kg ? bw / 2.20462 : bw
                     bodyweightText = String(Int(shown.rounded()))
@@ -773,6 +709,215 @@ struct CoachWizardView: View {
     /// SchedulePlanner's spacing pattern as a rhythm hint (Phase 4
     /// scheduling — the calendar writes ride the scheduling UI pass, but
     /// the 48-hour law reaches the athlete as advice today).
+    // MARK: - Redesign doors (owner 2026-08-21)
+
+    /// One line on what Coach actually does — the offer, before any ask.
+    private var offerCard: some View {
+        Text("A training block built to your goals, booked on your calendar, and debriefed with you after every session. Fill in the sections below — Coach reads all of it.")
+            .font(GSFont.body(12, relativeTo: .caption))
+            .foregroundStyle(theme.neutral700)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func sectionTitle(_ section: ProfileSection) -> String {
+        switch section {
+        case .goals: return "GOALS"
+        case .schedule: return "SCHEDULE"
+        case .style: return "STYLE"
+        case .bodySection: return "BODY"
+        case .limits: return "LIMITS"
+        }
+    }
+
+    /// The face line states the section's CURRENT values - the door shows
+    /// its state from the outside, same law as every You-tab widget.
+    private func sectionFace(_ section: ProfileSection) -> String {
+        switch section {
+        case .goals:
+            let coach = CoachPersona.bySlug(personaSlug)?.name ?? "No coach picked"
+            let goal = rankedGoals.first.map { $0.rawValue.replacingOccurrences(of: "_", with: " ") } ?? "no goal"
+            return "\(coach) · \(goal) first · \(experience.rawValue)"
+        case .schedule:
+            let cap = sessionMinutes.map { "\($0) min" } ?? "no cap"
+            let cardio = cardioDays > 0 ? " · \(cardioDays) cardio" : ""
+            return "\(days) days · \(duration) weeks · \(cap)\(cardio)"
+        case .style:
+            return "\(splitPref.rawValue) split · \(structure.rawValue) · \(appetite)"
+        case .bodySection:
+            var parts: [String] = []
+            if !bodyweightText.isEmpty { parts.append("\(bodyweightText) \(displayUnit == .kg ? "kg" : "lb")") }
+            if !bodyFatText.isEmpty { parts.append("\(bodyFatText)% bf") }
+            if !sex.isEmpty { parts.append(sex) }
+            return parts.isEmpty ? "Sex · body · lift anchors" : parts.joined(separator: " · ")
+        case .limits:
+            var parts: [String] = []
+            if !noGoPatterns.isEmpty { parts.append("\(noGoPatterns.count) no-go\(noGoPatterns.count == 1 ? "" : "s")") }
+            if equipment != Set(Venue.equipmentClasses) { parts.append("equipment limited") }
+            return parts.isEmpty ? "No-gos · equipment" : parts.joined(separator: " · ")
+        }
+    }
+
+    /// Filled = the athlete has actually engaged: real data for data
+    /// sections, a visit (or a saved profile) for preference sections.
+    private func sectionFilled(_ section: ProfileSection) -> Bool {
+        switch section {
+        case .goals:
+            return personaSlug != nil || rankedGoals != [.hypertrophy] || visitedSections.contains(.goals)
+        case .schedule:
+            return visitedSections.contains(.schedule)
+        case .style:
+            return visitedSections.contains(.style)
+        case .bodySection:
+            return !bodyweightText.isEmpty || !bodyFatText.isEmpty || !sex.isEmpty
+                || visitedSections.contains(.bodySection)
+        case .limits:
+            return !noGoPatterns.isEmpty || equipment != Set(Venue.equipmentClasses)
+                || visitedSections.contains(.limits)
+        }
+    }
+
+    /// A fat You-style door: big title (ACCENT until filled, then theme),
+    /// face line with current values, extruded like everything else.
+    private func sectionDoor(_ section: ProfileSection) -> some View {
+        Button {
+            activeSection = section
+        } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Text(sectionTitle(section))
+                        .font(GSFont.bold(24, relativeTo: .title2))
+                        .tracking(0.5)
+                        .foregroundStyle(sectionFilled(section) ? theme.text : theme.accent)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(theme.neutral500)
+                }
+                Spacer(minLength: 14)
+                Text(sectionFace(section))
+                    .font(GSFont.body(13, relativeTo: .subheadline))
+                    .foregroundStyle(theme.neutral700)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
+    }
+
+    /// The focused editor behind a door - exactly one section's controls.
+    private func sectionSheet(_ section: ProfileSection) -> some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    switch section {
+                    case .goals:
+                        CoachPersonaStrip(selected: $personaSlug)
+                            .onChange(of: personaSlug) { _, slug in
+                                // The coach's method preset fills dials the
+                                // athlete hasn't touched; later edits win
+                                // because they're edits.
+                                guard let coach = CoachPersona.bySlug(slug) else { return }
+                                splitPref = coach.split
+                                structure = coach.sessionStructure
+                                appetite = coach.intensityAppetite
+                                preview = nil
+                            }
+                        GoalRankingSection(ranked: $rankedGoals)
+                            .onChange(of: rankedGoals) { _, _ in preview = nil }
+                        dial("EXPERIENCE", options: GeneratorScience.Experience.allCases.map(\.rawValue),
+                             selected: experience.rawValue) { experience = GeneratorScience.Experience(rawValue: $0) ?? .new }
+                    case .schedule:
+                        dial("LIFTING DAYS PER WEEK", options: ["1", "2", "3", "4", "5", "6", "7"],
+                             selected: "\(days)") { days = Int($0) ?? 3 }
+                        dial("PROGRAM LENGTH · WEEKS", options: ["4", "8", "12"],
+                             selected: "\(duration)") { duration = Int($0) ?? 8 }
+                        dial("SESSION LENGTH · MINUTES", options: ["45", "60", "75", "90", "No cap"],
+                             selected: sessionMinutes.map(String.init) ?? "No cap") {
+                            sessionMinutes = Int($0)
+                        }
+                        dial("CARDIO DAYS PER WEEK", options: ["0", "1", "2", "3", "4", "5"],
+                             selected: "\(cardioDays)") { cardioDays = Int($0) ?? 0 }
+                        if cardioDays > 0 {
+                            dial("CARDIO · MINUTES PER SESSION", options: ["15", "20", "30", "45", "60"],
+                                 selected: "\(cardioMinutes)") { cardioMinutes = Int($0) ?? 30 }
+                        }
+                        if days + cardioDays > 7 {
+                            Text("More sessions than days — cardio rides your lifting days as PM sessions. Keep 6+ hours between when you can.")
+                                .font(GSFont.body(11, relativeTo: .caption))
+                                .foregroundStyle(theme.neutral500)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Button {
+                            fillWeek.toggle()
+                            preview = nil
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: fillWeek ? "checkmark.circle.fill" : "circle")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(fillWeek ? theme.accent : theme.neutral500)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Train every day")
+                                        .font(GSFont.bold(14, relativeTo: .headline))
+                                        .foregroundStyle(theme.text)
+                                    Text("Open days become active recovery — mobility and a zone-1 walk. In the gym daily; the easy days stay easy.")
+                                        .font(GSFont.body(11, relativeTo: .caption))
+                                        .foregroundStyle(theme.neutral500)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                Spacer()
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    case .style:
+                        dial("SPLIT", options: GeneratorScience.SplitPreference.allCases.map(\.rawValue),
+                             selected: splitPref.rawValue) {
+                            splitPref = GeneratorScience.SplitPreference(rawValue: $0) ?? .auto
+                        }
+                        if splitPref == .bro {
+                            Text("A bodypart split hits each muscle once a week; the research consensus favors twice. The hybrid keeps the bro feel and adds the second touch — your call, and Coach won't nag.")
+                                .font(GSFont.body(11, relativeTo: .caption))
+                                .foregroundStyle(theme.neutral500)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        dial("SESSION STYLE", options: TrainingProfile.SessionStructure.allCases.map(\.rawValue),
+                             selected: structure.rawValue) {
+                            structure = TrainingProfile.SessionStructure(rawValue: $0) ?? .straight
+                        }
+                        dial("INTENSITY", options: ["conservative", "standard", "aggressive"],
+                             selected: appetite) { appetite = $0 }
+                    case .bodySection:
+                        aboutYou
+                        if experience == .new {
+                            NoviceCalibrationSection(anchors: $calibrationAnchors,
+                                                     unit: displayUnit)
+                        }
+                    case .limits:
+                        noGoSection
+                        equipmentDial
+                    }
+                }
+                .padding(16)
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .background(theme.bg)
+            .navigationTitle(sectionTitle(section).capitalized)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") {
+                        visitedSections.insert(section)
+                        activeSection = nil
+                        preview = nil
+                    }
+                }
+            }
+        }
+    }
+
     private static let hourByLabel: [String: Int] = [
         "6 AM": 6, "7 AM": 7, "12 PM": 12, "5 PM": 17, "6 PM": 18, "7 PM": 19,
     ]
