@@ -294,8 +294,13 @@ final class ProgramGeneratorTests: XCTestCase {
                 movementPattern: "isolation", rank: rank)
         }
         return catalog() + [
+            // Seed rotation happens within FULL tier equality, and the
+            // attestation prior (2026-08-21) made the corpus bucket part
+            // of the tier — so the rotating pair must share Cable
+            // Crunch's strong (2+ channel) bucket. Rope Crunch sits in
+            // the weak bucket and stopped rotating, correctly.
             ex(17, "Cable Lateral Raise", "shoulders", "cable"),
-            ex(18, "Rope Crunch", "core", "cable"),
+            ex(18, "Cable Reverse Crunch", "core", "cable"),
         ]
     }
 
