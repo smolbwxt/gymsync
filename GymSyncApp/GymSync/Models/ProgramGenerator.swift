@@ -56,6 +56,10 @@ enum ProgramGenerator {
         /// sport_prep in season: practice and games are recovery debits —
         /// intensity capped, nothing near max.
         var inSeason: Bool = false
+        /// Body context (profile BMI 30+ / bodyfat 30%+): high-impact
+        /// rows sort behind — landings, not effort, are the risk being
+        /// managed. Gives the `impact` label its first consumer.
+        var impactCaution: Bool = false
         /// conservative | standard | aggressive — shifts the %1RM anchor
         /// (audit 2026-08-20: previously a dead knob; the experience
         /// ceiling still has the last word).
@@ -247,6 +251,7 @@ enum ProgramGenerator {
                                   tilt: inputs.selectionTilt,
                                   cautionJoints: inputs.cautionJoints,
                                   axialBoost: inputs.axialBoost,
+                                  impactCaution: inputs.impactCaution,
                                   lens: slotLens,
                                   deprioritized: inputs.deprioritizedExerciseIDs)
                 if pick == nil, !isMainSlot {
@@ -260,6 +265,7 @@ enum ProgramGenerator {
                                   tilt: inputs.selectionTilt,
                                   cautionJoints: inputs.cautionJoints,
                                   axialBoost: inputs.axialBoost,
+                                  impactCaution: inputs.impactCaution,
                                   lens: slotLens,
                                   deprioritized: inputs.deprioritizedExerciseIDs)
                 }
@@ -425,6 +431,7 @@ enum ProgramGenerator {
                                   seed: inputs.seed,
                                   tilt: inputs.selectionTilt,
                                   cautionJoints: inputs.cautionJoints,
+                                  impactCaution: inputs.impactCaution,
                                   lens: inputs.personaLens)
                 guard let pick,
                       let lightest = days.indices.min(by: {
@@ -791,6 +798,7 @@ enum ProgramGenerator {
                        tilt: [String: Double]? = nil,
                        cautionJoints: Set<String> = [],
                        axialBoost: Bool = false,
+                       impactCaution: Bool = false,
                        lens: CoachPersona.Lens? = nil,
                        deprioritized: Set<UUID> = []) -> CatalogExercise? {
         let candidates: [CatalogExercise]
@@ -851,8 +859,13 @@ enum ProgramGenerator {
                     coreFit = 1
                 }
             }
-            let gates = gateViolation * 8 + cautionViolation * 4
-                + skippedLastBlock * 2 + coreFit
+            // Impact caution (body context 2026-08-21): landings are a
+            // joint hazard at the profile's bodyweight, so high-impact
+            // rows sort behind — below the injury caution (a named joint
+            // beats a general risk), above the skipped-lift memory.
+            let impactViolation = (impactCaution && c.impact == "high") ? 1 : 0
+            let gates = gateViolation * 16 + cautionViolation * 8
+                + impactViolation * 4 + skippedLastBlock * 2 + coreFit
             let focusStanding = (focusMuscles?.contains(c.primaryMuscle) == true) ? 0 : 1
             // Unscored rows sit at a neutral 5 — between cornerstone and
             // filler — so a half-labeled catalog stays sane.

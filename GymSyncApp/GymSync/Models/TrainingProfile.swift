@@ -112,6 +112,26 @@ struct TrainingProfile: Codable, Equatable, Sendable {
     /// under18 | adult | middle | senior — age shapes defaults (a senior
     /// prior weights bone_density and cardio_health), never gates.
     var ageBand: String? = nil
+    // MARK: Body context (field report #22 — "body scan input")
+    // Athlete-reported measurements, all optional: an absent field
+    // changes nothing. Canonical units are pounds/inches (display
+    // converts) so the stored payload never depends on a settings row.
+    var bodyweightLbs: Double? = nil
+    var heightInches: Double? = nil
+    var bodyFatPercent: Double? = nil
+    var bmi: Double? {
+        guard let w = bodyweightLbs, let h = heightInches, w > 0, h > 0 else { return nil }
+        return w / (h * h) * 703
+    }
+    /// High-impact work (jumps, bounding) sits out while landings — not
+    /// effort — are the joint hazard: 30%+ bodyfat or BMI 30+, the
+    /// field-standard lines. Soft like every gate, and it reads as an
+    /// advisory note so the athlete hears WHY, never a silent edit.
+    var impactCaution: Bool {
+        if let bf = bodyFatPercent, bf >= 30 { return true }
+        if let bmi, bmi >= 30 { return true }
+        return false
+    }
     /// The persona whose defaults seeded this profile, if any.
     var persona: String? = nil
 
@@ -319,6 +339,10 @@ struct TrainingProfile: Codable, Equatable, Sendable {
             })
         inputs.axialBoost = wantsAxialLoading
         inputs.inSeason = inSeason
+        inputs.impactCaution = impactCaution
+        if impactCaution {
+            inputs.advisoryNotes.append("High-impact work (jumps, bounding) sits out for now — landings are the one place current bodyweight raises joint risk. It comes back as the number moves; nothing else changes.")
+        }
         inputs.sex = sex
         inputs.intensityAppetite = intensityAppetite
         // The chosen coach's selection stances ride along — the persona

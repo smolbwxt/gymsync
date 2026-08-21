@@ -68,6 +68,11 @@ struct CoachWizardView: View {
     /// reps... percentages mean nothing to anyone other than the elite").
     @State private var calibrationAnchors: [String: Decimal] = [:]
     @State private var displayUnit: WeightUnit = .lbs
+    // Body context (field report #22) — free-text in the display unit,
+    // parsed to canonical lbs/inches on save; blank = not stated.
+    @State private var bodyweightText = ""
+    @State private var heightText = ""
+    @State private var bodyFatText = ""
     /// The relationship's memory rides every rebuild — dropping it would
     /// reset block alternation and deprioritization each visit.
     @State private var savedCarryover: TrainingProfile.Carryover?
@@ -255,6 +260,16 @@ struct CoachWizardView: View {
             // Phase 4 lifecycle: settle a finished block BEFORE loading
             // the profile, so the carryover it just wrote is what loads.
             blockCompletion = await CoachLifecycle.checkBlockEnd()
+            // Settings first: displayUnit converts the body fields the
+            // profile hydration below writes.
+            if let settings = try? await UserSettingsRepository.get() {
+                displayUnit = settings.weightUnit
+                for slug in LiftAnchorMath.anchorSlugs {
+                    if let anchor = settings.liftAnchors?[slug] {
+                        calibrationAnchors[slug] = anchor
+                    }
+                }
+            }
             // Returning athletes pick up where they left off: the saved
             // profile pre-fills every dial, and stated anchors show in
             // the calibration rows.
@@ -270,13 +285,16 @@ struct CoachWizardView: View {
                 days = saved.daysPerWeek
                 sessionMinutes = saved.sessionMinutes
                 experience = saved.trainingAge.experience
-            }
-            if let settings = try? await UserSettingsRepository.get() {
-                displayUnit = settings.weightUnit
-                for slug in LiftAnchorMath.anchorSlugs {
-                    if let anchor = settings.liftAnchors?[slug] {
-                        calibrationAnchors[slug] = anchor
-                    }
+                if let bw = saved.bodyweightLbs {
+                    let shown = displayUnit == .kg ? bw / 2.20462 : bw
+                    bodyweightText = String(Int(shown.rounded()))
+                }
+                if let h = saved.heightInches {
+                    let shown = displayUnit == .kg ? h * 2.54 : h
+                    heightText = String(Int(shown.rounded()))
+                }
+                if let bf = saved.bodyFatPercent {
+                    bodyFatText = String(Int(bf.rounded()))
                 }
             }
             // First contact: one smart computed thing before any question.
@@ -429,6 +447,18 @@ struct CoachWizardView: View {
                     .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
                         .strokeBorder(theme.divider, lineWidth: 1))
             }
+            // Body context (field report #22): optional, athlete-stated.
+            HStack(spacing: 6) {
+                bodyField(displayUnit == .kg ? "Weight kg" : "Weight lb",
+                          text: $bodyweightText)
+                bodyField(displayUnit == .kg ? "Height cm" : "Height in",
+                          text: $heightText)
+                bodyField("Bodyfat %", text: $bodyFatText)
+            }
+            Text("Optional. Weight gives your debrief honest context; at higher bodyweights Coach parks jumps and bounding — landings, not effort, are the risk it manages.")
+                .font(GSFont.body(11, relativeTo: .caption))
+                .foregroundStyle(theme.neutral500)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -640,7 +670,28 @@ struct CoachWizardView: View {
         // deprioritized lifts survive the dials.
         profile.carryover = savedCarryover
         profile.lastProbeAt = savedProbeAt
+        // Body context: parse in the display unit, store canonical.
+        if let bw = Double(bodyweightText.replacingOccurrences(of: ",", with: ".")), bw > 0 {
+            profile.bodyweightLbs = displayUnit == .kg ? bw * 2.20462 : bw
+        }
+        if let h = Double(heightText.replacingOccurrences(of: ",", with: ".")), h > 0 {
+            profile.heightInches = displayUnit == .kg ? h / 2.54 : h
+        }
+        if let bf = Double(bodyFatText.replacingOccurrences(of: ",", with: ".")), bf > 0, bf < 75 {
+            profile.bodyFatPercent = bf
+        }
         return profile
+    }
+
+    private func bodyField(_ placeholder: String, text: Binding<String>) -> some View {
+        TextField(placeholder, text: text)
+            .keyboardType(.decimalPad)
+            .font(GSFont.body(14, relativeTo: .body))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity)
+            .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
+                .strokeBorder(theme.divider, lineWidth: 1))
     }
 
     /// SchedulePlanner's spacing pattern as a rhythm hint (Phase 4

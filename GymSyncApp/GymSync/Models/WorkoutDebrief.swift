@@ -116,6 +116,17 @@ enum DebriefBuilder {
         }
         lines.append(goalLine)
 
+        // Body context (field report #22): stated so the coach can talk
+        // relative strength honestly — the rails still forbid it doing
+        // its own arithmetic, so this reads as fact, not fuel for math.
+        if let bw = context.profile.bodyweightLbs, bw > 0 {
+            var bodyLine = "BODY: \(Int(bw.rounded())) lb"
+            if let bf = context.profile.bodyFatPercent, bf > 0 {
+                bodyLine += " · \(Int(bf.rounded()))% bodyfat"
+            }
+            lines.append(bodyLine)
+        }
+
         // Safety FIRST among the facts — instructions require it be
         // delivered first, and its position here reinforces that.
         for note in context.safetyNotes { lines.append("SAFETY: \(note)") }
