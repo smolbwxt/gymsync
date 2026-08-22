@@ -142,6 +142,21 @@ struct WorkoutSessionView: View {
     @State private var setStartedAt: Date = .now
     /// log id -> when its set began (histogram fuel; session-scoped).
     @State private var soloSetStarts: [UUID: Date] = [:]
+    /// Owner ruling (field #38): mid-session tweaks - prefilled load
+    /// steps, deload proposals, the coach note - apply ONLY to routines
+    /// Coach itself authored. A user-curated routine is never silently
+    /// altered; its suggestions arrive at the END, as a debrief blurb.
+    /// Trainer-prescribed routines are a human's prescription - also
+    /// never touched.
+    private var soloRoutineIsCoachProgram: Bool {
+        routine?.name.hasPrefix("Coach · ") == true && routine?.prescribedBy == nil
+    }
+
+    /// The JUST-ENDED set's start, preserved across the log handler's
+    /// `setStartedAt = .now` re-stamp (which is for the NEXT set's
+    /// clock). Field bug #33: capturing after the re-stamp made every
+    /// histogram set-segment ~zero.
+    @State private var soloEndedSetStart: Date?
     /// End of the current rest window (started right after a set is logged,
     /// using that exercise's `restSeconds`). Cleared once the lifter starts
     /// logging the next set — same "no polling Timer" pattern as the elapsed
@@ -976,7 +991,8 @@ struct WorkoutSessionView: View {
         // renders in the entry card for the athlete to act on.
         soloCoachDecision = nil
         soloCoachNoteExpanded = false
-        if soloCurrentExerciseSets.isEmpty,
+        if soloRoutineIsCoachProgram,
+           soloCurrentExerciseSets.isEmpty,
            let re = currentRoutineExercise,
            let low = re.targetRepsLow, let high = re.targetRepsHigh {
             let decision = BlockProgression.decide(
@@ -1320,16 +1336,32 @@ struct WorkoutSessionView: View {
 
     /// 22-bar bpm history — the same bar language as the group page.
     @ViewBuilder
+    @ViewBuilder
     private var soloRecoverySparkline: some View {
-        let bars = soloRecoveryBuffer.sparkline(barCount: 22)
-        if !bars.isEmpty {
-            HStack(alignment: .bottom, spacing: 2) {
-                ForEach(Array(bars.enumerated()), id: \.offset) { pair in
-                    Capsule().fill(theme.text.opacity(0.45))
-                        .frame(width: 3, height: max(3, CGFloat(pair.element) * 40))
+        // Field #34: the faint bars read as invisible — live HR draws as
+        // a real accent LINE over the 90s window, endpoint emphasized.
+        let samples = soloRecoveryBuffer.samples
+        if samples.count >= 2 {
+            let bpms = samples.map(\.bpm)
+            let lo = bpms.min() ?? 0
+            let span = max(1, (bpms.max() ?? 1) - lo)
+            Canvas { ctx, size in
+                var path = Path()
+                for (i, sample) in samples.enumerated() {
+                    let x = size.width * CGFloat(i) / CGFloat(samples.count - 1)
+                    let y = size.height - size.height * CGFloat(sample.bpm - lo) / CGFloat(span)
+                    if i == 0 { path.move(to: CGPoint(x: x, y: y)) }
+                    else { path.addLine(to: CGPoint(x: x, y: y)) }
+                }
+                ctx.stroke(path, with: .color(theme.accent),
+                           style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                if let last = samples.last {
+                    let y = size.height - size.height * CGFloat(last.bpm - lo) / CGFloat(span)
+                    ctx.fill(Path(ellipseIn: CGRect(x: size.width - 3, y: y - 3, width: 6, height: 6)),
+                             with: .color(theme.accent))
                 }
             }
-            .frame(height: 42, alignment: .bottom)
+            .frame(width: 96, height: 42)
             .accessibilityHidden(true)
         }
     }
@@ -2313,6 +2345,7 @@ struct WorkoutSessionView: View {
                 // still in flight must not log again or advance the set.
                 guard !isLoggingSet else { return }
                 isLoggingSet = true
+                soloEndedSetStart = setStartedAt
                 setStartedAt = .now
                 captureRestDrop()
                 restEndAt = nil
@@ -2574,6 +2607,10 @@ struct WorkoutSessionView: View {
                 content.title = "Rest over"
                 content.body = "Up next: set \(setNumber) — \(exerciseName)"
                 content.sound = .default
+                // Field #35: a Focus mode swallows .active delivery -
+                // a rest cue mid-workout is the textbook time-sensitive
+                // case (entitlement in project.yml).
+                content.interruptionLevel = .timeSensitive
                 let seconds = max(1, date.timeIntervalSinceNow)
                 let trigger = UNTimeIntervalNotificationTrigger(timeInterval: seconds, repeats: false)
                 let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
@@ -2967,7 +3004,12 @@ struct WorkoutSessionView: View {
                     repsHigh: re.targetRepsHigh,
                     sets: (logsByExercise[re.exerciseID] ?? [])
                         .sorted { $0.setIndex < $1.setIndex },
-                    decision: nil)
+                    // Owner ruling (field #38): custom routines get their
+                    // progression counsel HERE, at the end, as a blurb -
+                    // never as a mid-session prefill. Coach programs got
+                    // theirs live, so nil avoids double-speaking.
+                    decision: soloRoutineIsCoachProgram ? nil
+                        : endOfSessionDecision(for: re))
             }
         var context = DebriefBuilder.Context()
         context.profile = coachProfile
@@ -2984,6 +3026,22 @@ struct WorkoutSessionView: View {
         }
         context.pendingProbe = coachPendingProbe
         return DebriefBuilder.build(reports: reports, context: context)
+    }
+
+    /// The suppressed-mid-session counsel for a CUSTOM routine, computed
+    /// at recap time from the prefetched history (field #38).
+    private func endOfSessionDecision(for re: RoutineExercise) -> BlockProgression.Decision? {
+        guard let low = re.targetRepsLow, let high = re.targetRepsHigh,
+              let name = allExercises.first(where: { $0.id == re.exerciseID })?.name,
+              let history = recapTrendHistory[name.lowercased()], !history.isEmpty
+        else { return nil }
+        return BlockProgression.decide(
+            history: history,
+            repsLow: low, repsHigh: high,
+            isLowerBody: allExercises.first(where: { $0.id == re.exerciseID })?.isLowerBody ?? false,
+            isIsolation: false,
+            lastSetToFailure: re.targetFailure,
+            unit: soloUnit)
     }
 
     /// Best-effort context for the recap: the athlete's profile (headline
@@ -3178,10 +3236,19 @@ struct WorkoutSessionView: View {
         guard session == nil else { return }
         if let resumeSession {
             // Re-entry after a sheet dismissal: adopt the running session and
-            // rebuild local state from the durable record. Warm-up and
-            // leaderboard-attempt startup are new-session-only concerns.
+            // rebuild local state from the durable record. Leaderboard-
+            // attempt startup stays new-session-only; the WARM-UP window
+            // is not (field #32: swiping down mid-warmup landed the
+            // resume in logging) — recompute it from the durable
+            // startedAt, and re-enter the phase when it's still open and
+            // nothing has been logged yet.
             session = resumeSession
             await restoreLoggedProgress(sessionID: resumeSession.id)
+            if !isFreeform, soloWarmupMinutes > 0, loggedSets.isEmpty {
+                let ends = (resumeSession.startedAt ?? Date())
+                    .addingTimeInterval(TimeInterval(soloWarmupMinutes * 60))
+                if ends > .now { soloWarmupEndsAt = ends }
+            }
             return
         }
         do {
@@ -3407,7 +3474,8 @@ struct WorkoutSessionView: View {
             // Stacked-histogram fuel (owner design 2026-08-21): stamp
             // when THIS set started so the recovery card can stack rest
             // (bottom) under set duration (top), per set.
-            soloSetStarts[log.id] = setStartedAt
+            soloSetStarts[log.id] = soloEndedSetStart ?? setStartedAt
+            soloEndedSetStart = nil
             loggedSets.append(log)
             // Form clip attach (video v1): the pending recording belongs
             // to the set just logged. Fire-and-forget - a failed upload

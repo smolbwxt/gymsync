@@ -630,8 +630,20 @@ struct CrewRoomView: View {
         campaignLoaded = true
 
         let sessions = (try? await SessionRepository.groupSessions(groupID: group.id)) ?? []
+        // Field #46: a stale scheduled session (check-in long closed,
+        // never started, never cancelled) must not pin the commit board
+        // forever. Once a session is 2+ hours past its slot and still
+        // hasn't gone live, it stops being "next" - the board rolls to
+        // the next actually-upcoming session, which is also what makes
+        // committing to the dead one impossible.
+        let now = Date()
         nextSession = sessions
             .filter { Self.upcomingStates.contains($0.state) }
+            .filter { session in
+                if session.state == "in_progress" { return true }
+                guard let when = session.scheduledFor else { return true }
+                return when.timeIntervalSince(now) > -2 * 3600
+            }
             .sorted { ($0.scheduledFor ?? .distantFuture) < ($1.scheduledFor ?? .distantFuture) }
             .first
 

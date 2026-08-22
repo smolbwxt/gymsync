@@ -148,6 +148,12 @@ final class SoundboardPlayer {
         let player = try AVAudioPlayer(contentsOf: url)
         // AUDIO SACRED RULE: do NOT call setCategory here.
         // The ambient session is already configured by AudioSessionManager.
+        // Field #39: ...except when it ISN'T - a session that lost
+        // mixWithOthers pauses the lifter's Spotify the moment this
+        // player activates it. The manager restores its own documented
+        // baseline only when the invariant is broken (never in voice
+        // mode), so the sacred rule's intent survives.
+        AudioSessionManager.shared.ensureMixablePlayback()
         pool.append(player)
         player.play()
 

@@ -84,6 +84,20 @@ final class AudioSessionManager {
     /// category/mode/options, same best-effort swallow-and-log on failure,
     /// same per-caller log-message prefix (passed in rather than hardcoded,
     /// so `exitRecordMode`'s and `exitVoiceMode`'s log lines are unchanged).
+    /// Field #39 ("the PR sound pauses Spotify"): a mixable session is
+    /// the invariant every overlay sound depends on, and something can
+    /// leave it broken - iOS's default .soloAmbient pauses other apps'
+    /// audio the moment a player implicitly activates it. Called by
+    /// SoundboardPlayer right before play: restores the documented
+    /// baseline ONLY when mixWithOthers is missing, and never while a
+    /// voice room legitimately holds the session.
+    func ensureMixablePlayback() {
+        guard !isInVoiceMode else { return }
+        guard !session.categoryOptions.contains(.mixWithOthers) else { return }
+        AppLogger.audio.warning("AudioSession lost mixWithOthers (category \(self.session.category.rawValue, privacy: .public)) — restoring baseline before overlay sound")
+        restoreAmbientBaseline(logPrefix: "AudioSessionManager.ensureMixablePlayback")
+    }
+
     private func restoreAmbientBaseline(logPrefix: StaticString) {
         do {
             // Matches configure() exactly — .playback so the silent switch

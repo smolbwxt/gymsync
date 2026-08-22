@@ -260,3 +260,43 @@ triceps — at accessory volume, mains untouched. Matches our own
 corpus reads (football pass: absolute strength blocks still carry
 hypertrophy/assistance work; RP/Juggernaut program main + assistance).
 One-line change + no-dead-knobs test once ruled.
+
+# Fourth load (owner, 2026-08-22)
+
+32. **Swipe-down during warmup kills the warmup** — BUG. Resume path
+    lands in logging, not back into the warmup phase. Diagnose.
+33. **Recovery bar graph: top half always zero** — BUG in the stacked
+    histogram (set-duration segment empty). Diagnose stamps.
+34. **HR in recovery screen should be a line graph** — the recovery
+    card needs a visible HR sparkline/line.
+35. **Rest push notifications silent** — BUG: notification content
+    likely missing `.sound`.
+36. **Line-graph scrubbing + axes** — touch-scrub readout on trend
+    graphs; e1RM charts need x/y axes.
+37. **Edit sets/reps mid-session** — pull the routine builder up from
+    a live session. FEATURE (design the entry point).
+38. **NEVER silently alter user-curated routines** — RULING: prefill
+    tweaks (BlockProgression) only apply to Coach-prescribed programs;
+    custom routines get an end-of-session Coach suggestion at most.
+39. **PR sound pauses Spotify** — BUG: audio session category.
+40. **Equipment brands in limits** — gym lacks brand X → knock out its
+    machines. DOCKET (needs catalog brand labels — own pass).
+41. **Smith machine research** — corpus pass: how good are Smith
+    machines for strength movements? RESEARCH (running).
+42. **Adherence-first principle** — "the best diet is the one you'll
+    follow; the best exercise is the one you'll do" — bake into Coach
+    voice rails + FAQ.
+43. **Mobility prescription** — Coach suggests mobility weekly and/or
+    on deload weeks, injury-avoidance framing. FEATURE.
+44. **Experience level self-identification** — descriptions on each
+    level; DOCKET: short quiz (comfort with exercises of varying
+    complexity) as its own pass.
+45. **@Coach in crew DMs** — subscribers ask Coach questions in chat.
+    DESIGN (FoundationModels in a chat surface — own pass).
+46. **Crew commit sticks to ancient session** — BUG: after check-in
+    closes, the commit CTA must roll to the next scheduled session.
+47. **Deep pages not preloaded** — PERF pass. DOCKET.
+48. **Cold-start splash art delay** — investigate: launch-screen
+    asset vs first-frame load.
+49. **Delete routines from the ledger detail page** — add delete to
+    the completed-session view, not just the stats-row long-press.

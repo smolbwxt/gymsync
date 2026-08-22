@@ -179,6 +179,10 @@ targets:
         com.apple.developer.applesignin: [Default]
         com.apple.developer.healthkit: true
         aps-environment: development
+        # Rest cues must break through gym-time Focus modes (field #35:
+        # "rest push notifications don't play sounds" — sound was always
+        # set; a Focus swallowing .active-level delivery is the silencer).
+        com.apple.developer.usernotifications.time-sensitive: true
 
   # Phase W Task 1 (watch-hr design §1) — watchOS companion app, modern
   # single-target shape: `type: application` + `platform: watchOS`, no

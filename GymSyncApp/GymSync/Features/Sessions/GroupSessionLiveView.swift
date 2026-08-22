@@ -796,6 +796,9 @@ struct GroupSessionLiveView: View {
     /// stalls, and fatigue warnings (docket close 2026-08-22) — quiet,
     /// mine only, per-exercise dismissable.
     private var turnCoachDecision: BlockProgression.Decision? {
+        // Owner ruling (field #38): only Coach-authored routines get
+        // live tweaks; user-curated group routines are never altered.
+        guard routineName?.hasPrefix("Coach · ") == true else { return nil }
         guard let ex = currentExerciseForSheet,
               let re = currentRoutineExercise,
               let low = re.targetRepsLow, let high = re.targetRepsHigh,

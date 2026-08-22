@@ -60,6 +60,11 @@ struct CompletedSessionView: View {
     // relationship - one fetch, no separate trainer code path.
     @State private var clips: [SetLogClip] = []
     @State private var playingClip: PlayingClip? = nil
+    // Field #49: workouts are the athlete's to remove from the detail
+    // page too, not just the stats-row long-press. RLS enforces
+    // ownership; the button only shows when the delete could succeed.
+    @State private var showDeleteConfirm = false
+    @State private var selfID: UUID?
     private struct PlayingClip: Identifiable { let url: URL; var id: URL { url } }
 
     init(session: WorkoutSession) {
@@ -138,6 +143,19 @@ struct CompletedSessionView: View {
         .navigationTitle(navigationTitleText)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            if let selfID, selfID == liveSession.organizerID {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(role: .destructive) {
+                        showDeleteConfirm = true
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 15))
+                            .foregroundStyle(theme.neutral700)
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
+                    }
+                }
+            }
             ToolbarItem(placement: .topBarTrailing) {
                 ShareLink(item: shareText) {
                     Image(systemName: "square.and.arrow.up")
@@ -148,7 +166,21 @@ struct CompletedSessionView: View {
                 }
             }
         }
-        .task { await load() }
+        .confirmationDialog("Delete this workout?", isPresented: $showDeleteConfirm,
+                            titleVisibility: .visible) {
+            Button("Delete workout", role: .destructive) {
+                Task {
+                    try? await SessionRepository.deleteSession(id: liveSession.id)
+                    dismiss()
+                }
+            }
+        } message: {
+            Text("Removes the workout and its sets. Records set in it survive — records are records.")
+        }
+        .task {
+            selfID = await SupabaseService.shared.currentUserID()
+            await load()
+        }
         .sheet(item: $playingClip) { clip in
             NavigationStack {
                 VideoPlayer(player: AVPlayer(url: clip.url))
