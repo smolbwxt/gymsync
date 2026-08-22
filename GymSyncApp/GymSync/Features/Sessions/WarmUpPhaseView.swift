@@ -64,20 +64,24 @@ enum WarmupMobility {
     struct Move: Identifiable, Equatable {
         let name: String
         let detail: String
+        /// Owner 2026-08-22: rows navigate to the cataloged exercise
+        /// (video + description) - this is the fuzzy name the caller
+        /// resolves against the catalog. No match = plain row.
+        var catalogQuery: String = ""
         var id: String { name }
     }
 
     static let lowerMoves = [
-        Move(name: "90/90 hip switches", detail: "slow, both directions"),
-        Move(name: "Deep squat hold", detail: "heels down, chest tall"),
-        Move(name: "Couch stretch", detail: "each side — hip flexors"),
-        Move(name: "Leg swings", detail: "front-back, then side-side"),
+        Move(name: "90/90 hip switches", detail: "slow, both directions", catalogQuery: "90/90"),
+        Move(name: "Deep squat hold", detail: "heels down, chest tall", catalogQuery: "deep squat"),
+        Move(name: "Couch stretch", detail: "each side — hip flexors", catalogQuery: "couch"),
+        Move(name: "Leg swings", detail: "front-back, then side-side", catalogQuery: "leg swing"),
     ]
     static let upperMoves = [
-        Move(name: "Arm circles", detail: "small to big, both ways"),
-        Move(name: "Doorway pec stretch", detail: "each arm, easy lean"),
-        Move(name: "Wall slides", detail: "ribs down, slow reps"),
-        Move(name: "Thoracic rotations", detail: "on all fours, each side"),
+        Move(name: "Arm circles", detail: "small to big, both ways", catalogQuery: "arm circle"),
+        Move(name: "Doorway pec stretch", detail: "each arm, easy lean", catalogQuery: "pec stretch"),
+        Move(name: "Wall slides", detail: "ribs down, slow reps", catalogQuery: "wall slide"),
+        Move(name: "Thoracic rotations", detail: "on all fours, each side", catalogQuery: "thoracic"),
     ]
 
     /// The circuit for a session whose work hits `muscles` (lowercased
@@ -143,6 +147,9 @@ struct WarmUpPhaseView: View {
     /// The mobility circuit to run during the window (owner 2026-08-22);
     /// empty renders nothing - group callers pass none today.
     var mobilityCircuit: [WarmupMobility.Move] = []
+    /// Row tap -> the caller resolves the move against the catalog and
+    /// presents the exercise page (video + description). Nil = plain rows.
+    var onTapMove: ((WarmupMobility.Move) -> Void)? = nil
 
     @Environment(\.gsTheme) private var theme
 
@@ -216,21 +223,33 @@ struct WarmUpPhaseView: View {
                     .foregroundStyle(theme.neutral700)
                     .padding(.bottom, 8)
                 ForEach(mobilityCircuit) { move in
-                    HStack(spacing: 10) {
-                        Circle()
-                            .fill(theme.accent)
-                            .frame(width: 5, height: 5)
-                        Text(move.name)
-                            .font(GSFont.bold(14, relativeTo: .subheadline))
-                            .foregroundStyle(theme.text)
-                        Spacer()
-                        Text(move.detail)
-                            .font(GSFont.body(11, relativeTo: .caption))
-                            .foregroundStyle(theme.neutral500)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
+                    Button {
+                        onTapMove?(move)
+                    } label: {
+                        HStack(spacing: 10) {
+                            Circle()
+                                .fill(theme.accent)
+                                .frame(width: 5, height: 5)
+                            Text(move.name)
+                                .font(GSFont.bold(14, relativeTo: .subheadline))
+                                .foregroundStyle(theme.text)
+                            Spacer()
+                            Text(move.detail)
+                                .font(GSFont.body(11, relativeTo: .caption))
+                                .foregroundStyle(theme.neutral500)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                            if onTapMove != nil {
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(theme.neutral500)
+                            }
+                        }
+                        .padding(.vertical, 7)
+                        .contentShape(Rectangle())
                     }
-                    .padding(.vertical, 7)
+                    .buttonStyle(.plain)
+                    .disabled(onTapMove == nil)
                 }
                 Text("Easy effort — this is grease, not work. Skip anything that pinches.")
                     .font(GSFont.body(11, relativeTo: .caption))

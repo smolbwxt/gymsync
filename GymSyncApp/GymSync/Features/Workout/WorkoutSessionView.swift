@@ -285,6 +285,11 @@ struct WorkoutSessionView: View {
     @State private var canRetainClips: Bool? = nil
     @State private var reviewClip: ReviewClip? = nil
     struct ReviewClip: Identifiable { let url: URL; var id: URL { url } }
+    // Mobility rows navigate to the exercise page (owner 2026-08-22).
+    // Resolved lazily against the FULL catalog - routine sessions only
+    // carry the routine's own rows in `allExercises`.
+    @State private var mobilityDetail: Exercise?
+    @State private var mobilityCatalog: [Exercise] = []
 
     /// The exercise list driving the whole screen — the routine's when there
     /// is one, the lifter's running freeform picks otherwise, with any
@@ -983,6 +988,14 @@ struct WorkoutSessionView: View {
             soloWeight = ""
         }
         soloReps = currentRoutineExercise?.targetReps.flatMap { leadingInt($0).map(String.init) } ?? ""
+        // Carry diagnostics (field 2026-08-22): one Console filter
+        // ("prefill rung") names which rung produced the number and what
+        // it had to work with. Removable once the report is confirmed
+        // fixed.
+        let rung = barLoaderPounds != nil ? "bar"
+            : !soloCurrentExerciseSets.isEmpty ? "carry"
+            : soloWeight.isEmpty ? "empty" : "ladder"
+        AppLogger.workout.info("prefill rung=\(rung, privacy: .public) weight=\(self.soloWeight, privacy: .public) cur=\(self.soloCurrentExerciseSets.count) prior=\(self.soloPriorSets.count) sess=\(self.session?.id.uuidString.prefix(8) ?? "nil", privacy: .public)")
         // BlockProgression (owner 2026-08-20): at the START of an exercise —
         // nothing logged for it this session — the block engine's decision
         // shapes the prefill. Advances apply directly (load step on a topped
@@ -1156,8 +1169,34 @@ struct WorkoutSessionView: View {
             onAdjustMinutes: { delta in adjustSoloWarmup(delta) },
             // Owner 2026-08-22: the warm-up window doubles as the
             // mobility slot - the day's muscles pick the circuit.
-            mobilityCircuit: WarmupMobility.circuit(for: soloSessionMuscles)
+            mobilityCircuit: WarmupMobility.circuit(for: soloSessionMuscles),
+            onTapMove: { move in Task { await openMobilityDetail(move) } }
         )
+        .sheet(item: $mobilityDetail) { ex in
+            NavigationStack {
+                ExerciseDetailView(exercise: ex)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Done") { mobilityDetail = nil }
+                        }
+                    }
+            }
+        }
+    }
+
+    /// Resolve a circuit move against the full catalog (fetched once,
+    /// lazily) and open its exercise page - video and description like
+    /// everything else. No match = quiet no-op.
+    @MainActor
+    private func openMobilityDetail(_ move: WarmupMobility.Move) async {
+        guard !move.catalogQuery.isEmpty else { return }
+        if mobilityCatalog.isEmpty {
+            mobilityCatalog = (try? await ExerciseRepository.fetchAll()) ?? []
+        }
+        let q = move.catalogQuery.lowercased()
+        mobilityDetail = mobilityCatalog.first {
+            $0.aliasOf == nil && $0.name.lowercased().contains(q)
+        }
     }
 
     /// Lowercased primary muscles of the day's work - the mobility
@@ -3264,6 +3303,24 @@ struct WorkoutSessionView: View {
             await restoreLoggedProgress(sessionID: resumeSession.id)
             if !isFreeform, soloWarmupMinutes > 0, loggedSets.isEmpty {
                 let ends = (resumeSession.startedAt ?? Date())
+                    .addingTimeInterval(TimeInterval(soloWarmupMinutes * 60))
+                if ends > .now { soloWarmupEndsAt = ends }
+            }
+            return
+        }
+        // Field regression 2026-08-22 ("weight not carrying forward"):
+        // Start Workout became a dismissible SHEET in the third-load
+        // build, so swipe-down + Start-again minted a BRAND-NEW session
+        // - empty carry, fragmented history, the exact report. Any entry
+        // point now ADOPTS the live session for the same routine; the
+        // pill and this button converge on one session.
+        if let live = appState.liveSoloSession,
+           live.session.completedAt == nil,
+           live.routine?.id == routine?.id {
+            session = live.session
+            await restoreLoggedProgress(sessionID: live.session.id)
+            if !isFreeform, soloWarmupMinutes > 0, loggedSets.isEmpty {
+                let ends = (live.session.startedAt ?? Date())
                     .addingTimeInterval(TimeInterval(soloWarmupMinutes * 60))
                 if ends > .now { soloWarmupEndsAt = ends }
             }
