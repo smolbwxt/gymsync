@@ -37,6 +37,15 @@ struct Exercise: Codable, Identifiable, Sendable, Hashable {
     var lengthenedBias: Bool? = nil
     var unilateral: Bool? = nil
     var impact: String? = nil
+    /// Equipment brand (brand pass 2026-08-22): set ONLY on rows that
+    /// are brand-specific machines (SkiErg, Arc Trainer...) - generic
+    /// rows stay brand-less so a hub unchecking Hammer Strength never
+    /// loses its generic lat pulldown.
+    var brand: String? = nil
+    /// Lifter-facing paragraph (brand pass 2026-08-22): what it is,
+    /// what it's for, one cue. Named `details` because `description`
+    /// collides with CustomStringConvertible.
+    var details: String? = nil
     var legInterference: Bool? = nil
     var jointStress: [String]? = nil
     /// Catalog dedup (20260821000001): non-nil marks this row as an alias
@@ -69,6 +78,8 @@ struct Exercise: Codable, Identifiable, Sendable, Hashable {
         case lengthenedBias = "lengthened_bias"
         case unilateral
         case impact
+        case brand
+        case details = "description"
         case legInterference = "leg_interference"
         case jointStress = "joint_stress"
         case aliasOf = "alias_of"

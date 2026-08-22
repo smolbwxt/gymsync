@@ -1,0 +1,669 @@
+{
+  "brands": [
+    {
+      "brand": "Hammer Strength",
+      "tier": "major",
+      "machines": [
+        {
+          "machine": "Iso-Lateral Row",
+          "maps_to": "Iso-Lateral Row",
+          "new": null
+        },
+        {
+          "machine": "Iso-Lateral Chest Press",
+          "maps_to": "Iso-Lateral Chest Press",
+          "new": null
+        },
+        {
+          "machine": "Iso-Lateral Shoulder Press",
+          "maps_to": "Iso-Lateral Shoulder Press",
+          "new": null
+        },
+        {
+          "machine": "Iso-Lateral Leg Press",
+          "maps_to": "Iso-Lateral Leg Press",
+          "new": null
+        },
+        {
+          "machine": "HD Belt Squat",
+          "maps_to": "Belt Squat",
+          "new": null
+        },
+        {
+          "machine": "Ground Base Row",
+          "maps_to": "Ground Base Row",
+          "new": null
+        },
+        {
+          "machine": "Iso-Lateral Glute Drive",
+          "maps_to": "Iso-Lateral Glute Drive",
+          "new": null
+        }
+      ]
+    },
+    {
+      "brand": "Life Fitness",
+      "tier": "major",
+      "machines": [
+        {
+          "machine": "Signature Series Leg Press",
+          "maps_to": "Leg Press",
+          "new": null
+        },
+        {
+          "machine": "Signature Series Chest Press",
+          "maps_to": "Machine Bench Press",
+          "new": null
+        },
+        {
+          "machine": "Treadmill",
+          "maps_to": "Running, Treadmill",
+          "new": null
+        },
+        {
+          "machine": "Elliptical Cross-Trainer",
+          "maps_to": "Elliptical Trainer",
+          "new": null
+        },
+        {
+          "machine": "Signature Series Lat Pulldown",
+          "maps_to": "Lat Pulldown",
+          "new": null
+        },
+        {
+          "machine": "Signature Series Leg Extension",
+          "maps_to": "Leg Extension",
+          "new": null
+        },
+        {
+          "machine": "Signature Series Leg Curl",
+          "maps_to": "Leg Curl",
+          "new": null
+        }
+      ]
+    },
+    {
+      "brand": "Nautilus",
+      "tier": "major",
+      "machines": [
+        {
+          "machine": "Nautilus Pullover",
+          "maps_to": "Pullover Machine",
+          "new": null
+        },
+        {
+          "machine": "Nautilus Leg Extension",
+          "maps_to": "Leg Extension",
+          "new": null
+        },
+        {
+          "machine": "Nautilus Leg Curl",
+          "maps_to": "Prone Leg Curl",
+          "new": null
+        },
+        {
+          "machine": "Nautilus Compound Row",
+          "maps_to": "Seated Row Machine",
+          "new": null
+        },
+        {
+          "machine": "Nautilus 4-Way Neck",
+          "maps_to": "4-Way Neck Machine",
+          "new": null
+        },
+        {
+          "machine": "Nautilus Pec Deck / Arm Cross",
+          "maps_to": "Pec Deck",
+          "new": null
+        }
+      ]
+    },
+    {
+      "brand": "Cybex",
+      "tier": "major",
+      "machines": [
+        {
+          "machine": "Eagle NX Leg Press",
+          "maps_to": "45-Degree Leg Press",
+          "new": null
+        },
+        {
+          "machine": "Arc Trainer",
+          "maps_to": null,
+          "new": {
+            "name": "Arc Trainer",
+            "primary_muscle": "quads",
+            "category": "cardio",
+            "movement_pattern": "other",
+            "equipment": "machine"
+          }
+        },
+        {
+          "machine": "VR3 Chest Press",
+          "maps_to": "Seated Chest Press Machine",
+          "new": null
+        },
+        {
+          "machine": "Multi-Hip Machine",
+          "maps_to": "Multi-Hip Machine (Extension Setting)",
+          "new": null
+        },
+        {
+          "machine": "Bravo Functional Trainer",
+          "maps_to": "Cable Crossover",
+          "new": null
+        }
+      ]
+    },
+    {
+      "brand": "Precor",
+      "tier": "major",
+      "machines": [
+        {
+          "machine": "AMT (Adaptive Motion Trainer)",
+          "maps_to": null,
+          "new": {
+            "name": "Adaptive Motion Trainer (AMT)",
+            "primary_muscle": "quads",
+            "category": "cardio",
+            "movement_pattern": "other",
+            "equipment": "machine"
+          }
+        },
+        {
+          "machine": "EFX Elliptical",
+          "maps_to": "Elliptical Trainer",
+          "new": null
+        },
+        {
+          "machine": "Treadmill",
+          "maps_to": "Running, Treadmill",
+          "new": null
+        },
+        {
+          "machine": "Icarian Leg Press",
+          "maps_to": "Leg Press",
+          "new": null
+        },
+        {
+          "machine": "Recumbent Bike",
+          "maps_to": "Recumbent Bike",
+          "new": null
+        }
+      ]
+    },
+    {
+      "brand": "Matrix Fitness",
+      "tier": "major",
+      "machines": [
+        {
+          "machine": "Treadmill",
+          "maps_to": "Running, Treadmill",
+          "new": null
+        },
+        {
+          "machine": "Ascent Trainer",
+          "maps_to": "Elliptical Trainer",
+          "new": null
+        },
+        {
+          "machine": "Krankcycle",
+          "maps_to": null,
+          "new": {
+            "name": "Krankcycle (Arm Ergometer)",
+            "primary_muscle": "shoulders",
+            "category": "cardio",
+            "movement_pattern": "other",
+            "equipment": "machine"
+          }
+        },
+        {
+          "machine": "Ultra Series Leg Press",
+          "maps_to": "Leg Press",
+          "new": null
+        }
+      ]
+    },
+    {
+      "brand": "Technogym",
+      "tier": "major",
+      "machines": [
+        {
+          "machine": "Kinesis",
+          "maps_to": null,
+          "new": {
+            "name": "Kinesis Cable Station",
+            "primary_muscle": "shoulders",
+            "category": "compound",
+            "movement_pattern": "other",
+            "equipment": "machine"
+          }
+        },
+        {
+          "machine": "Skillrun",
+          "maps_to": "Running, Treadmill",
+          "new": null
+        },
+        {
+          "machine": "Selection Pro Leg Press",
+          "maps_to": "Leg Press",
+          "new": null
+        },
+        {
+          "machine": "Recline Bike",
+          "maps_to": "Recumbent Bike",
+          "new": null
+        }
+      ]
+    },
+    {
+      "brand": "Rogue Fitness",
+      "tier": "major",
+      "machines": [
+        {
+          "machine": "Echo Bike",
+          "maps_to": "Fan Bike (Air Bike Cardio)",
+          "new": null
+        },
+        {
+          "machine": "Dog Sled / Prowler",
+          "maps_to": "Sled Push",
+          "new": null
+        },
+        {
+          "machine": "Landmine",
+          "maps_to": "Landmine Press",
+          "new": null
+        }
+      ]
+    },
+    {
+      "brand": "Concept2",
+      "tier": "major",
+      "machines": [
+        {
+          "machine": "RowErg",
+          "maps_to": "Rowing, Stationary",
+          "new": null
+        },
+        {
+          "machine": "SkiErg",
+          "maps_to": null,
+          "new": {
+            "name": "SkiErg",
+            "primary_muscle": "lats",
+            "category": "cardio",
+            "movement_pattern": "pull_vertical",
+            "equipment": "machine"
+          }
+        },
+        {
+          "machine": "BikeErg",
+          "maps_to": "Bicycling, Stationary",
+          "new": null
+        }
+      ]
+    },
+    {
+      "brand": "Keiser",
+      "tier": "major",
+      "machines": [
+        {
+          "machine": "M3i Indoor Cycle",
+          "maps_to": "Bicycling, Stationary",
+          "new": null
+        },
+        {
+          "machine": "Air300 Squat",
+          "maps_to": "Smith Machine Squat",
+          "new": null
+        },
+        {
+          "machine": "Functional Trainer",
+          "maps_to": "Cable Crossover",
+          "new": null
+        },
+        {
+          "machine": "A420 Leg Press",
+          "maps_to": "Leg Press",
+          "new": null
+        }
+      ]
+    },
+    {
+      "brand": "Free Motion",
+      "tier": "specialty",
+      "machines": [
+        {
+          "machine": "Dual Cable Cross",
+          "maps_to": "Cable Crossover",
+          "new": null
+        },
+        {
+          "machine": "EXT Incline Press Station",
+          "maps_to": "Incline Cable Chest Press",
+          "new": null
+        }
+      ]
+    },
+    {
+      "brand": "Hoist Fitness",
+      "tier": "specialty",
+      "machines": [
+        {
+          "machine": "ROC-IT Functional Trainer",
+          "maps_to": "Cable Crossover",
+          "new": null
+        },
+        {
+          "machine": "Motion Cage Dip Station",
+          "maps_to": "Parallel Bar Dip",
+          "new": null
+        }
+      ]
+    },
+    {
+      "brand": "Woodway",
+      "tier": "specialty",
+      "machines": [
+        {
+          "machine": "Curve (self-powered treadmill)",
+          "maps_to": "Running, Treadmill",
+          "new": null
+        }
+      ]
+    },
+    {
+      "brand": "StairMaster",
+      "tier": "specialty",
+      "machines": [
+        {
+          "machine": "StepMill",
+          "maps_to": "Stairmaster",
+          "new": null
+        }
+      ]
+    },
+    {
+      "brand": "Jacobs Ladder",
+      "tier": "specialty",
+      "machines": [
+        {
+          "machine": "Jacobs Ladder",
+          "maps_to": null,
+          "new": {
+            "name": "Jacobs Ladder",
+            "primary_muscle": "quads",
+            "category": "cardio",
+            "movement_pattern": "other",
+            "equipment": "machine"
+          }
+        }
+      ]
+    },
+    {
+      "brand": "VersaClimber",
+      "tier": "specialty",
+      "machines": [
+        {
+          "machine": "VersaClimber",
+          "maps_to": null,
+          "new": {
+            "name": "VersaClimber",
+            "primary_muscle": "quads",
+            "category": "cardio",
+            "movement_pattern": "other",
+            "equipment": "machine"
+          }
+        }
+      ]
+    },
+    {
+      "brand": "TRX",
+      "tier": "specialty",
+      "machines": [
+        {
+          "machine": "Suspension Trainer Row",
+          "maps_to": "Suspended Row",
+          "new": null
+        },
+        {
+          "machine": "Suspension Trainer Push-Up",
+          "maps_to": "Suspended Push-Up",
+          "new": null
+        },
+        {
+          "machine": "Suspension Trainer Split Squat",
+          "maps_to": "Suspended Split Squat",
+          "new": null
+        }
+      ]
+    },
+    {
+      "brand": "Sorinex",
+      "tier": "specialty",
+      "machines": [
+        {
+          "machine": "Reverse Hyper",
+          "maps_to": "Reverse Hyperextension Machine",
+          "new": null
+        },
+        {
+          "machine": "Belt Squat",
+          "maps_to": "Belt Squat",
+          "new": null
+        }
+      ]
+    },
+    {
+      "brand": "EliteFTS",
+      "tier": "specialty",
+      "machines": [
+        {
+          "machine": "Reverse Hyper",
+          "maps_to": "Reverse Hyperextension Machine",
+          "new": null
+        },
+        {
+          "machine": "Prowler Sled",
+          "maps_to": "Sled Push",
+          "new": null
+        }
+      ]
+    },
+    {
+      "brand": "Watson Gym Equipment",
+      "tier": "specialty",
+      "machines": [
+        {
+          "machine": "Belt Squat",
+          "maps_to": "Belt Squat",
+          "new": null
+        },
+        {
+          "machine": "GHD",
+          "maps_to": "Glute-Ham Developer",
+          "new": null
+        }
+      ]
+    },
+    {
+      "brand": "Arsenal Strength",
+      "tier": "specialty",
+      "machines": [
+        {
+          "machine": "Bison Leg Press",
+          "maps_to": "Leg Press",
+          "new": null
+        },
+        {
+          "machine": "Freedom Squat",
+          "maps_to": "Barbell Squat",
+          "new": null
+        }
+      ]
+    },
+    {
+      "brand": "Panatta",
+      "tier": "specialty",
+      "machines": [
+        {
+          "machine": "Multipower",
+          "maps_to": "Smith Machine",
+          "new": null
+        },
+        {
+          "machine": "Leg Press",
+          "maps_to": "Leg Press",
+          "new": null
+        }
+      ]
+    },
+    {
+      "brand": "Gym80",
+      "tier": "specialty",
+      "machines": [
+        {
+          "machine": "Sygnum Leg Press",
+          "maps_to": "Leg Press",
+          "new": null
+        },
+        {
+          "machine": "Sygnum Chest Press",
+          "maps_to": "Machine Bench Press",
+          "new": null
+        }
+      ]
+    },
+    {
+      "brand": "MedX",
+      "tier": "specialty",
+      "machines": [
+        {
+          "machine": "Lumbar Extension Machine",
+          "maps_to": "Back Extension",
+          "new": null
+        },
+        {
+          "machine": "Cervical Extension Machine",
+          "maps_to": "Neck Extension Machine",
+          "new": null
+        }
+      ]
+    },
+    {
+      "brand": "Octane Fitness",
+      "tier": "specialty",
+      "machines": [
+        {
+          "machine": "Lateral X",
+          "maps_to": null,
+          "new": {
+            "name": "Lateral Elliptical (Side-to-Side Trainer)",
+            "primary_muscle": "abductors",
+            "category": "cardio",
+            "movement_pattern": "other",
+            "equipment": "machine"
+          }
+        },
+        {
+          "machine": "Zero Runner",
+          "maps_to": "Elliptical Trainer",
+          "new": null
+        }
+      ]
+    },
+    {
+      "brand": "NordicTrack",
+      "tier": "specialty",
+      "machines": [
+        {
+          "machine": "Incline Trainer",
+          "maps_to": "Running, Treadmill",
+          "new": null
+        },
+        {
+          "machine": "Recumbent Bike",
+          "maps_to": "Recumbent Bike",
+          "new": null
+        }
+      ]
+    },
+    {
+      "brand": "Peloton",
+      "tier": "specialty",
+      "machines": [
+        {
+          "machine": "Bike",
+          "maps_to": "Bicycling, Stationary",
+          "new": null
+        },
+        {
+          "machine": "Tread",
+          "maps_to": "Running, Treadmill",
+          "new": null
+        }
+      ]
+    },
+    {
+      "brand": "Body-Solid",
+      "tier": "specialty",
+      "machines": [
+        {
+          "machine": "Powerline Functional Trainer",
+          "maps_to": "Cable Crossover",
+          "new": null
+        },
+        {
+          "machine": "GLPH Leg Press",
+          "maps_to": "Leg Press",
+          "new": null
+        }
+      ]
+    },
+    {
+      "brand": "Torque Fitness",
+      "tier": "specialty",
+      "machines": [
+        {
+          "machine": "Tank M2",
+          "maps_to": "Sled Push",
+          "new": null
+        }
+      ]
+    },
+    {
+      "brand": "Assault Fitness",
+      "tier": "specialty",
+      "machines": [
+        {
+          "machine": "AirBike",
+          "maps_to": null,
+          "new": {
+            "name": "Fan Bike (Air Bike Cardio)",
+            "primary_muscle": "quads",
+            "category": "cardio",
+            "movement_pattern": "other",
+            "equipment": "machine"
+          }
+        },
+        {
+          "machine": "AirRunner",
+          "maps_to": "Running, Treadmill",
+          "new": null
+        }
+      ]
+    },
+    {
+      "brand": "Schwinn",
+      "tier": "specialty",
+      "machines": [
+        {
+          "machine": "AC Performance Plus Bike",
+          "maps_to": "Bicycling, Stationary",
+          "new": null
+        }
+      ]
+    }
+  ]
+}

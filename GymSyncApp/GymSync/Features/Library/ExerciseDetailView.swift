@@ -78,6 +78,15 @@ struct ExerciseDetailView: View {
                         .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
                 }
 
+                // ABOUT (brand pass 2026-08-22): the authored paragraph,
+                // when a row carries one.
+                if let details = exercise.details, !details.isEmpty {
+                    Text(details)
+                        .font(GSFont.body(14, relativeTo: .body))
+                        .foregroundStyle(theme.neutral700)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 // Canvas: Muscles worked section header + accent/neutral tags
                 VStack(alignment: .leading, spacing: 8) {
                     Text("MUSCLES WORKED")
