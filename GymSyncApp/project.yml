@@ -133,7 +133,13 @@ targets:
     info:
       path: GymSync/Info.plist
       properties:
-        UILaunchScreen: {}
+        # Field #48: the empty launch screen flashed blank/white before
+        # the black LaunchLoadingOverlay rendered - the "splash takes a
+        # second to load" report. A black system launch screen makes the
+        # handoff invisible; the animated art itself can never run
+        # pre-process (launch screens are static by platform rule).
+        UILaunchScreen:
+          UIColorName: LaunchBackground
         CFBundleDisplayName: "Gym Sync"
         # Live-session redesign (2026-07-30): the group session's my-turn page
         # is a FIXED, non-scrolling layout — fixed control heights, one

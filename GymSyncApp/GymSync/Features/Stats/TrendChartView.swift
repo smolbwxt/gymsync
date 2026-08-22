@@ -20,6 +20,9 @@ enum TrendRange: String, CaseIterable, Identifiable {
 
 struct TrendChartView: View {
     @Environment(\.gsTheme) private var theme
+    /// Field #36: finger-scrub readout - the point nearest the touch,
+    /// cleared on lift.
+    @State private var scrubbed: (Date, Double)? = nil
 
     /// Header text for the chart's own title row. Pass `""` to omit the
     /// title entirely (the row then holds just the right-aligned range
@@ -105,15 +108,68 @@ struct TrendChartView: View {
                         .foregroundStyle(theme.accent)
                     PointMark(x: .value("Date", point.0), y: .value(valueLabel, point.1))
                         .foregroundStyle(theme.accent)
-                }
-                .chartXAxis {
-                    AxisMarks(values: .stride(by: .month)) { _ in
-                        AxisGridLine()
-                        AxisValueLabel(format: .dateTime.month(.abbreviated))
+                    // Field #36: the scrub lollipop - rule + emphasized
+                    // point + value chip at the finger's nearest sample.
+                    if let scrubbed {
+                        RuleMark(x: .value("Date", scrubbed.0))
+                            .foregroundStyle(theme.neutral500.opacity(0.6))
+                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                        PointMark(x: .value("Date", scrubbed.0),
+                                  y: .value(valueLabel, scrubbed.1))
+                            .foregroundStyle(theme.text)
+                            .symbolSize(70)
+                            .annotation(position: .top, spacing: 6) {
+                                VStack(spacing: 1) {
+                                    Text("\(Int(scrubbed.1.rounded()))")
+                                        .font(GSFont.bold(13, relativeTo: .caption).monospacedDigit())
+                                        .foregroundStyle(theme.text)
+                                    Text(scrubbed.0.formatted(date: .abbreviated, time: .omitted))
+                                        .font(GSFont.body(10, relativeTo: .caption2))
+                                        .foregroundStyle(theme.neutral500)
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(theme.surface)
+                                .overlay(RoundedRectangle(cornerRadius: 6)
+                                    .strokeBorder(theme.divider, lineWidth: 1))
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
+                            }
                     }
                 }
-                .chartYAxis(.hidden)
-                .frame(height: 140)
+                // Field #36: real axes - dates below, values on the right.
+                .chartXAxis {
+                    AxisMarks(values: .automatic(desiredCount: 4)) { _ in
+                        AxisGridLine().foregroundStyle(theme.divider)
+                        AxisValueLabel(format: selectedRange == .eightWeeks
+                            ? .dateTime.month(.abbreviated).day()
+                            : .dateTime.month(.abbreviated))
+                            .foregroundStyle(theme.neutral500)
+                    }
+                }
+                .chartYAxis {
+                    AxisMarks(position: .trailing, values: .automatic(desiredCount: 3)) { _ in
+                        AxisGridLine().foregroundStyle(theme.divider)
+                        AxisValueLabel()
+                            .foregroundStyle(theme.neutral500)
+                    }
+                }
+                .chartOverlay { proxy in
+                    GeometryReader { geo in
+                        Rectangle().fill(Color.clear).contentShape(Rectangle())
+                            .gesture(
+                                DragGesture(minimumDistance: 0)
+                                    .onChanged { drag in
+                                        let plotX = drag.location.x - geo[proxy.plotAreaFrame].origin.x
+                                        guard let date: Date = proxy.value(atX: plotX) else { return }
+                                        scrubbed = filteredData.min {
+                                            abs($0.0.timeIntervalSince(date)) < abs($1.0.timeIntervalSince(date))
+                                        }
+                                    }
+                                    .onEnded { _ in scrubbed = nil }
+                            )
+                    }
+                }
+                .frame(height: 150)
             }
         }
     }

@@ -685,7 +685,11 @@ enum ProgramGenerator {
                                   volumeMultiplier: GeneratorScience.deloadVolumeMultiplier,
                                   intensityMultiplier: GeneratorScience.deloadIntensityMultiplier,
                                   isDeload: true,
-                                  note: "Deload — move fast, leave fresh."))
+                                  // Field #43: the deload week is where
+                                  // mobility lives - half the lifting
+                                  // volume frees exactly the time and
+                                  // freshness stretching needs.
+                                  note: "Deload — move fast, leave fresh. Spend the saved time on mobility: 10–15 minutes of stretching after each session this week, hips and shoulders first."))
             } else {
                 let progress = Double(n - 1) / Double(max(1, inputs.durationWeeks - 1))
                 weeks.append(Week(number: n,
@@ -895,8 +899,13 @@ enum ProgramGenerator {
             // auto-prescribed to a first-week trainee) — treated as
             // complexity ≥4 regardless of label.
             let lower = c.name.lowercased()
-            let effComplexity = (lower.contains("bosu") || lower.contains("stability ball"))
+            var effComplexity = (lower.contains("bosu") || lower.contains("stability ball"))
                 ? max(c.complexity, 4) : c.complexity
+            // Smith corpus pass (2026-08-22): the rail loads positions a
+            // free bar would refuse, and foot placement IS the skill -
+            // "keep it away from true beginners." Complexity floor 3
+            // gates NEW lifters softly; everyone else is untouched.
+            if lower.contains("smith") { effComplexity = max(effComplexity, 3) }
             let gateViolation = effComplexity > cap ? 1 : 0
             // Caution joints (TrainingProfile injury propagation, owner
             // 2026-08-20): a lift stressing a cautioned joint sorts LAST —
@@ -1017,10 +1026,13 @@ enum ProgramGenerator {
                 switch sportLens {
                 case "wrestling":
                     sportFit = c.unilateral ? 0 : 1
+                    if lower.contains("smith") { sportFit = 1 }
                 case "football":
                     let lowerBody = c.movementPattern == "squat" || c.movementPattern == "lunge"
                         || ["quads", "hamstrings", "glutes"].contains(c.primaryMuscle)
-                    sportFit = (c.unilateral && lowerBody) ? 0 : 1
+                    // Smith corpus pass: athletes need the instability
+                    // the rail removes - S&C consensus demotes it.
+                    sportFit = (c.unilateral && lowerBody && !lower.contains("smith")) ? 0 : 1
                 case "baseball":
                     if case .isolation("shoulders") = slot, !isMain {
                         let cuff = lower.contains("external rotation") || lower.contains("face pull")

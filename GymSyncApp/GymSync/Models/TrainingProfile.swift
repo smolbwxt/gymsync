@@ -411,6 +411,11 @@ struct TrainingProfile: Codable, Equatable, Sendable {
         if split == .hybrid, daysPerWeek < 5 {
             inputs.advisoryNotes.append("The hybrid split needs 5+ days — below that, the science ladder already gives every muscle its second weekly touch.")
         }
+        // Field #43: mobility as standing counsel, not just a goal -
+        // one line, once, injury-avoidance framing.
+        if !rankedGoals.contains(.mobility) {
+            inputs.advisoryNotes.append("Once a week, give 10–15 minutes to mobility — stretching after a session counts. Your deload week doubles as a mobility week; it's cheap insurance against the injuries that end programs.")
+        }
         if blockGoal == .mobility {
             inputs.advisoryNotes.append("Mobility leads your goals: today it shapes the picks and the recovery prescriptions — a dedicated mobility modality is still being built, and this lifting meanwhile moves you better than stretching alone would.")
         }

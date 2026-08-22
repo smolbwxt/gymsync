@@ -863,6 +863,14 @@ struct CoachWizardView: View {
                         }
                         dial("EXPERIENCE", options: GeneratorScience.Experience.allCases.map(\.rawValue),
                              selected: experience.rawValue) { experience = GeneratorScience.Experience(rawValue: $0) ?? .new }
+                        // Field #44: self-identification help - what each
+                        // level actually means in the gym, in behavior
+                        // terms, not years. (The comfort quiz is its own
+                        // pass; these lines are the honest floor.)
+                        Text(experienceDescription)
+                            .font(GSFont.body(12, relativeTo: .caption))
+                            .foregroundStyle(theme.neutral500)
+                            .fixedSize(horizontal: false, vertical: true)
                     case .schedule:
                         dial("LIFTING DAYS PER WEEK", options: ["1", "2", "3", "4", "5", "6", "7"],
                              selected: "\(days)") { days = Int($0) ?? 3 }
@@ -949,6 +957,19 @@ struct CoachWizardView: View {
                     }
                 }
             }
+        }
+    }
+
+    /// Field #44: behavior-based level descriptions - how you train,
+    /// not how long you've trained.
+    private var experienceDescription: String {
+        switch experience {
+        case .new:
+            return "New: you're still learning the movements — squats, hinges, and presses don't feel automatic yet, and you're not sure how much weight to put on the bar. Coach keeps choices simple and teaches as you go. When in doubt, pick this — progressing out is fast; starting too advanced isn't."
+        case .intermediate:
+            return "Intermediate: the main lifts feel natural, you know roughly what you can lift, and you've followed some kind of routine for six months or more. Progress still comes steadily when you push. Most lifters who train regularly belong here."
+        case .advanced:
+            return "Advanced: you've trained seriously for years, PRs come slowly and deliberately, and you know your working weights within a few pounds. You can grind a heavy single safely and know when not to. If you're unsure whether you're advanced, you're intermediate."
         }
     }
 

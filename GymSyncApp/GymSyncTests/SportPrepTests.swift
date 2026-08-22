@@ -110,6 +110,33 @@ final class SportPrepTests: XCTestCase {
         XCTAssertNil(profile.generatorInputs(durationWeeks: 8).sportPrepSport)
     }
 
+    // Smith corpus pass (2026-08-22): the two selection consequences.
+    func testSmithGatedFromNoviceButNotIntermediate() {
+        let smith = cat(1, "Smith Machine Squattish", score: 8)
+        let goblet = cat(2, "Goblet Squattish", score: 7)
+        let novice = ProgramGenerator.select(
+            slot: .pattern("squat", main: true), from: [smith, goblet],
+            excluding: [], focus: .strength, focusMuscles: nil, experience: .new)
+        XCTAssertEqual(novice?.name, "Goblet Squattish",
+                       "the rail loads positions a free bar refuses - not for day one")
+        let intermediate = ProgramGenerator.select(
+            slot: .pattern("squat", main: true), from: [smith, goblet],
+            excluding: [], focus: .strength, focusMuscles: nil, experience: .intermediate)
+        XCTAssertEqual(intermediate?.name, "Smith Machine Squattish",
+                       "past novice the better scorer wins - the corpus backs the tool")
+    }
+
+    func testSportLensDemotesSmith() {
+        let smithSplit = cat(1, "Smith Split Squattish", unilateral: true)
+        let freeSplit = cat(2, "Split Squattish", unilateral: true)
+        let wrestler = ProgramGenerator.select(
+            slot: .pattern("squat", main: true), from: [smithSplit, freeSplit],
+            excluding: [], focus: .strength, focusMuscles: nil,
+            experience: .intermediate, sportLens: "wrestling")
+        XCTAssertEqual(wrestler?.name, "Split Squattish",
+                       "athletes need the instability the rail removes")
+    }
+
     func testFootballGrantsBoundedExplosiveEmphasis() {
         var profile = TrainingProfile()
         profile.rankedGoals = [.sportPrep]
