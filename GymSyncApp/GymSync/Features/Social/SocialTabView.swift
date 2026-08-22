@@ -574,7 +574,9 @@ struct SocialTabView: View {
         case .image: return "Photo"
         case .audio: return "Voice message"
         case .soundboardEcho: return nil  // echoes retired 2026-08-11 (hidden, not deleted)
-        case .text, .systemPR, .systemSession, .systemLate, .systemLeaderboard:
+        case .coachReply: return "Coach answered"
+        case .text, .systemPR, .systemSession, .systemLate, .systemLeaderboard,
+             .systemStreak, .systemCampaign:
             return message.body
         }
     }
