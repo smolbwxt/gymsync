@@ -306,15 +306,18 @@ struct CoachRecapView: View {
         defer { thinking = false }
         #if canImport(FoundationModels)
         if #available(iOS 26.0, *) {
+            // Explicitly typed: the bare ternary-of-closure was ambiguous
+            // to infer, and the iOS 26 SDK's named-Task initializer made
+            // a Task { @MainActor } hop ambiguous too - plain main-queue
+            // dispatch does the one job needed.
+            let proposeHook: (@Sendable (RoutineEditProposal) -> Void)? =
+                applyRoutineEdit == nil ? nil : { proposal in
+                    DispatchQueue.main.async { pendingEdit = proposal }
+                }
             let session = CoachDebriefSession(
                 debrief: debrief, persona: persona, profile: profile,
                 trendLookup: trendLookup, volumeLookup: volumeLookup,
-                onProposeEdit: applyRoutineEdit == nil ? nil : { proposal in
-                    // Plain main-queue hop: the iOS 26 SDK's named-Task
-                    // initializer makes a bare Task { @MainActor } call
-                    // ambiguous inside a @Sendable closure.
-                    DispatchQueue.main.async { pendingEdit = proposal }
-                })
+                onProposeEdit: proposeHook)
             activeSession = session
             if let opening = try? await session.open() {
                 turns.append(Turn(isCoach: true, text: opening))

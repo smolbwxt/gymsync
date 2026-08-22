@@ -3213,7 +3213,10 @@ struct WorkoutSessionView: View {
         do {
             try await RoutineRepository.save(routine, exercises: rows)
         } catch { return nil }
-        routineExercises = rows
+        // routineExercises is an immutable init param - the session-local
+        // overlay (the mid-session editor's own channel) carries the
+        // update for the rest of this view's lifetime.
+        soloEditedList = rows
         let name = allExercises.first(where: { $0.id == rows[index].exerciseID })?.name
             ?? proposal.exerciseName
         return "Done — \(name) is now \(summary.joined(separator: " × ")). It'll load that way next session."
