@@ -310,7 +310,10 @@ struct CoachRecapView: View {
                 debrief: debrief, persona: persona, profile: profile,
                 trendLookup: trendLookup, volumeLookup: volumeLookup,
                 onProposeEdit: applyRoutineEdit == nil ? nil : { proposal in
-                    Task { @MainActor in pendingEdit = proposal }
+                    // Plain main-queue hop: the iOS 26 SDK's named-Task
+                    // initializer makes a bare Task { @MainActor } call
+                    // ambiguous inside a @Sendable closure.
+                    DispatchQueue.main.async { pendingEdit = proposal }
                 })
             activeSession = session
             if let opening = try? await session.open() {
