@@ -412,9 +412,16 @@ struct TrainingProfile: Codable, Equatable, Sendable {
             inputs.advisoryNotes.append("The hybrid split needs 5+ days — below that, the science ladder already gives every muscle its second weekly touch.")
         }
         // Field #43: mobility as standing counsel, not just a goal -
-        // one line, once, injury-avoidance framing.
+        // one line, once, injury-avoidance framing. Owner refinement
+        // 2026-08-22: when the session cap leaves no room for it, never
+        // pretend it fits - route it OUTSIDE the gym (named at-home
+        // stretches) or offer the extra day Coach can book.
         if !rankedGoals.contains(.mobility) {
-            inputs.advisoryNotes.append("Once a week, give 10–15 minutes to mobility — stretching after a session counts. Your deload week doubles as a mobility week; it's cheap insurance against the injuries that end programs.")
+            if sessionMinutes != nil {
+                inputs.advisoryNotes.append("Your sessions are time-capped, so mobility lives outside the gym: 10–15 minutes at home once a week — couch stretch and 90/90 for hips, doorway pec stretch and wall slides for shoulders. Or add a recovery day and Coach will put it on the schedule. Cheap insurance against the injuries that end programs.")
+            } else {
+                inputs.advisoryNotes.append("Once a week, give 10–15 minutes to mobility — stretching after a session counts. Your deload week doubles as a mobility week; it's cheap insurance against the injuries that end programs.")
+            }
         }
         if blockGoal == .mobility {
             inputs.advisoryNotes.append("Mobility leads your goals: today it shapes the picks and the recovery prescriptions — a dedicated mobility modality is still being built, and this lifting meanwhile moves you better than stretching alone would.")
