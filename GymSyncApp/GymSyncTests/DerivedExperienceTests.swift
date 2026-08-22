@@ -65,6 +65,40 @@ final class DerivedExperienceTests: XCTestCase {
                        "the derived cap is finer than the label")
     }
 
+    // Exhaustion stagger (owner 2026-08-22): accessories alternate
+    // high/low systemic drain; mains keep their block.
+    func testFatigueStaggerWeavesAccessories() {
+        func cat(_ rank: Int, _ name: String, fatigue: Int)
+            -> ProgramGenerator.CatalogExercise {
+            var c = ProgramGenerator.CatalogExercise(
+                id: UUID(uuidString: String(format: "00000000-0000-0000-0009-%012d", rank))!,
+                name: name, primaryMuscle: "quads", secondaryMuscles: [],
+                category: "isolation", equipment: "machine", movementPattern: "isolation",
+                rank: rank)
+            c.fatigueCost = fatigue
+            return c
+        }
+        func ex(_ c: ProgramGenerator.CatalogExercise, isMain: Bool = false)
+            -> ProgramGenerator.Exercise {
+            ProgramGenerator.Exercise(
+                exerciseID: c.id, name: c.name, sets: 3, repsLow: 8, repsHigh: 12,
+                restSeconds: 90, percentOfMax: nil, isMain: isMain,
+                cardioZone: nil, cardioMinutes: nil)
+        }
+        let heavy1 = cat(1, "Drainer A", fatigue: 5)
+        let heavy2 = cat(2, "Drainer B", fatigue: 4)
+        let light1 = cat(3, "Easy A", fatigue: 1)
+        let light2 = cat(4, "Easy B", fatigue: 2)
+        let main = cat(5, "Main Lift", fatigue: 5)
+        let catalog = [heavy1, heavy2, light1, light2, main]
+        let day = [ex(main, isMain: true), ex(heavy1), ex(heavy2), ex(light1), ex(light2)]
+        let staggered = ProgramGenerator.staggerFatigue(day, catalog: catalog)
+        XCTAssertEqual(staggered.first?.name, "Main Lift", "mains keep their block")
+        XCTAssertEqual(staggered.dropFirst().map(\.name),
+                       ["Drainer A", "Easy A", "Drainer B", "Easy B"],
+                       "high and low drain interleave - never two drainers back to back")
+    }
+
     func testProfileFlowsCapIntoInputs() {
         var p = TrainingProfile()
         p.comfortAnswers = ["goblet-squat": true, "back-squat-heavy": true]

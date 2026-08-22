@@ -397,7 +397,13 @@ enum ProgramGenerator {
                     trimmedForTime = true
                 }
             }
-            days.append(Day(name: name, exercises: chosen))
+            // Exhaustion stagger (owner 2026-08-22): exercises that use
+            // more muscle groups tire athletes more - never stack the
+            // heavy-drain accessories back to back. Mains keep their
+            // block and order (mains-first is the law); the accessory
+            // tail interleaves high- and low-fatigue picks.
+            days.append(Day(name: name,
+                            exercises: staggerFatigue(chosen, catalog: catalog)))
         }
         if trimmedForTime, let cap = inputs.sessionMinutes {
             notes.append("Accessories trimmed to fit \(cap)-minute sessions — the main lifts keep their place. More time brings them back.")
@@ -1222,6 +1228,38 @@ enum ProgramGenerator {
     /// side rests while the other works. Pairs are assigned greedily in
     /// program order; anything unpaired stays straight sets. Cardio and
     /// core never pair.
+    /// The accessory tail reordered so systemic drain alternates: sort
+    /// accessories by fatigue_cost descending, then weave
+    /// highest/lowest/2nd-highest/2nd-lowest. A day with fewer than
+    /// three accessories has nothing to stagger. Runs BEFORE superset
+    /// assignment, which pairs by muscle over the staggered order.
+    static func staggerFatigue(_ exercises: [Exercise],
+                               catalog: [CatalogExercise]) -> [Exercise] {
+        let mains = exercises.filter(\.isMain)
+        let accessories = exercises.filter { !$0.isMain }
+        guard accessories.count >= 3 else { return exercises }
+        let fatigueByID = Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, $0.fatigueCost) })
+        let sorted = accessories.sorted {
+            let fa = fatigueByID[$0.exerciseID] ?? 3
+            let fb = fatigueByID[$1.exerciseID] ?? 3
+            if fa != fb { return fa > fb }
+            // Stable within a fatigue tier: keep selection order.
+            return accessories.firstIndex(of: $0)! < accessories.firstIndex(of: $1)!
+        }
+        var woven: [Exercise] = []
+        var lo = 0, hi = sorted.count - 1
+        var takeHigh = true
+        while lo <= hi {
+            if takeHigh {
+                woven.append(sorted[lo]); lo += 1
+            } else {
+                woven.append(sorted[hi]); hi -= 1
+            }
+            takeHigh.toggle()
+        }
+        return mains + woven
+    }
+
     static func assignSupersets(day: Day, catalog: [CatalogExercise]) -> Day {
         let byID = Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, $0) })
         // Opposing-pattern table; isolation pairs oppose by primary muscle.
