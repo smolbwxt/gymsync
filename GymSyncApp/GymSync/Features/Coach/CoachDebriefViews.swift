@@ -252,9 +252,21 @@ struct CoachRecapView: View {
             defer { thinking = false }
             #if canImport(FoundationModels)
             if #available(iOS 26.0, *),
-               let session = activeSession as? CoachDebriefSession,
-               let reply = try? await session.reply(to: message) {
-                turns.append(Turn(isCoach: true, text: reply))
+               let session = activeSession as? CoachDebriefSession {
+                // Field screenshot 2026-08-22: `try?` here conflated a
+                // thrown generation error (guardrail trip, transient
+                // failure) with a device that can't run the model - the
+                // "can't chat on this device" line was a lie mid-chat.
+                // A throw is a RETRYABLE moment, and the real error goes
+                // to the log so repeat offenders get named.
+                do {
+                    let reply = try await session.reply(to: message)
+                    turns.append(Turn(isCoach: true, text: reply))
+                } catch {
+                    AppLogger.workout.error("coach reply failed: \(error.localizedDescription, privacy: .public)")
+                    turns.append(Turn(isCoach: true,
+                                      text: "That one didn't come through — give me the question once more."))
+                }
                 return
             }
             #endif

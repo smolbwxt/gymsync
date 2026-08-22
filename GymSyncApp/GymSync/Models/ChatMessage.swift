@@ -33,6 +33,11 @@ struct ChatMessage: Codable, Identifiable, Sendable, Equatable {
         case systemLate = "system_late"
         case systemLeaderboard = "system_leaderboard"
         case soundboardEcho = "soundboard_echo"
+        case systemStreak = "system_streak"
+        case systemCampaign = "system_campaign"
+        /// @Coach's answer in a crew chat (spec 2026-08-22 §3) -
+        /// inserted by the ASKER's device, rendered as Coach.
+        case coachReply = "coach_reply"
     }
 
     /// Flexible JSON value type for the payload column (jsonb).
@@ -93,7 +98,7 @@ struct ChatMessage: Codable, Identifiable, Sendable, Equatable {
         groupID      = try? c.decodeIfPresent(UUID.self,   forKey: .groupID)
         sessionID    = try? c.decodeIfPresent(UUID.self,   forKey: .sessionID)
         authorID     = try? c.decodeIfPresent(UUID.self,   forKey: .authorID)
-        kind         = try  c.decode(Kind.self,   forKey: .kind)
+        kind         = (try? c.decode(Kind.self,   forKey: .kind)) ?? .text
         body         = try? c.decodeIfPresent(String.self, forKey: .body)
         storagePath  = try? c.decodeIfPresent(String.self, forKey: .storagePath)
         replyToID    = try? c.decodeIfPresent(UUID.self,   forKey: .replyToID)
@@ -150,6 +155,40 @@ enum ChatRepository {
                          "author_id": me.uuidString,
                          "kind": "text",
                          "body": body])
+                .select()
+                .single()
+                .execute()
+                .value
+            return row
+        } catch {
+            throw ErrorMapping.map(error)
+        }
+    }
+
+    /// @Coach's answer (spec 2026-08-22 §3): inserted by the asker's
+    /// device (the model ran there), question in the payload.
+    static func sendCoachReply(groupID: UUID, question: String,
+                               body: String) async throws -> ChatMessage {
+        guard let me = await SupabaseService.shared.currentUserID() else {
+            throw GymSyncError.unauthorized
+        }
+        struct Insert: Encodable {
+            let id: String
+            let group_id: String
+            let author_id: String
+            let kind: String
+            let body: String
+            let payload: [String: String]
+        }
+        do {
+            let row: ChatMessage = try await SupabaseService.shared.client
+                .from("chat_messages")
+                .insert(Insert(id: UUID().uuidString,
+                               group_id: groupID.uuidString,
+                               author_id: me.uuidString,
+                               kind: "coach_reply",
+                               body: body,
+                               payload: ["question": question]))
                 .select()
                 .single()
                 .execute()

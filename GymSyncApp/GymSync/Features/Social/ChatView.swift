@@ -213,6 +213,12 @@ struct ChatView: View {
     @State private var soundNames: [String: String] = [:]
     private static let soundReactionPrefix = "snd:"
 
+    // @Coach in crew chats (spec 2026-08-22 §3): a message starting
+    // "@coach" runs the asker-scoped pipeline and posts the answer as a
+    // coach_reply row. Exercises fetched lazily for name resolution.
+    @State private var coachThinking = false
+    @State private var coachExercises: [Exercise] = []
+
     var body: some View {
         VStack(spacing: 0) {
             ScrollViewReader { proxy in
@@ -565,6 +571,29 @@ struct ChatView: View {
         if message.isSystem {
             // System messages: centered, inline-block, 1px divider border per canvas
             systemMessageView(message)
+        } else if message.kind == .coachReply {
+            // @Coach's answer (spec 2026-08-22 §3): rendered as Coach,
+            // whoever's device inserted it.
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 5) {
+                    Image(systemName: "lightbulb.fill")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(theme.accent)
+                    Text("COACH")
+                        .font(GSFont.bold(10, relativeTo: .caption2))
+                        .tracking(1.1)
+                        .foregroundStyle(theme.neutral500)
+                }
+                Text(message.body ?? "")
+                    .font(GSFont.body(14, relativeTo: .body))
+                    .foregroundStyle(theme.text)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 13).padding(.vertical, 10)
+            .background(RoundedRectangle(cornerRadius: 14).fill(theme.surface))
+            .overlay(RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(theme.accent.opacity(0.35), lineWidth: 1))
+            .frame(maxWidth: .infinity, alignment: .leading)
         } else if message.kind == .soundboardEcho {
             // Owner decision 2026-08-11: the per-play echo log is retired —
             // sounds live as reactions now. Historical echo rows stay in the
@@ -920,6 +949,34 @@ struct ChatView: View {
             }
             if !messages.contains(where: { $0.id == sent.id }) {
                 messages.append(sent)
+            }
+            // @Coach (spec 2026-08-22 §3): the question posts normally
+            // above - public by the act of asking - then the asker's
+            // device answers. Crew scope only; the gate (one Pro member
+            // lights the whole crew) is structural while the paywall is
+            // dormant.
+            if case .group(let groupID) = scope,
+               body.lowercased().hasPrefix("@coach"),
+               !coachThinking {
+                coachThinking = true
+                Task {
+                    defer { coachThinking = false }
+                    guard let me = appState.currentProfile?.id else { return }
+                    if coachExercises.isEmpty {
+                        coachExercises = (try? await ExerciseRepository.fetchAll()) ?? []
+                    }
+                    let question = String(body.dropFirst("@coach".count))
+                        .trimmingCharacters(in: .whitespaces)
+                    let reply = await CrewCoachEngine.answer(
+                        question: question.isEmpty ? "How is my training going?" : question,
+                        askerID: me, groupID: groupID,
+                        exercises: coachExercises)
+                    if let posted = try? await ChatRepository.sendCoachReply(
+                        groupID: groupID, question: question, body: reply),
+                       !messages.contains(where: { $0.id == posted.id }) {
+                        messages.append(posted)
+                    }
+                }
             }
         } catch let error as GymSyncError {
             errorText = error.errorDescription
