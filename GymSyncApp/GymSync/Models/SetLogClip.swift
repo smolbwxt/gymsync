@@ -17,6 +17,11 @@ struct SetLogClip: Codable, Identifiable, Sendable {
     let storagePath: String
     let durationSeconds: Double?
     let createdAt: Date
+    /// Storage v1.5 flat windows: 90 days PRO, 30 days coach-linked -
+    /// stamped at insert; the hourly sweeper enforces it. Paid
+    /// extensions later just move this date.
+    let retainUntil: Date?
+    let byteSize: Int64?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -25,6 +30,8 @@ struct SetLogClip: Codable, Identifiable, Sendable {
         case storagePath = "storage_path"
         case durationSeconds = "duration_seconds"
         case createdAt = "created_at"
+        case retainUntil = "retain_until"
+        case byteSize = "byte_size"
     }
 }
 
@@ -37,12 +44,16 @@ enum SetLogClipRepository {
         let userID: String
         let storagePath: String
         let durationSeconds: Double?
+        let retainUntil: Date
+        let byteSize: Int
         enum CodingKeys: String, CodingKey {
             case id
             case setLogID = "set_log_id"
             case userID = "user_id"
             case storagePath = "storage_path"
             case durationSeconds = "duration_seconds"
+            case retainUntil = "retain_until"
+            case byteSize = "byte_size"
         }
     }
 
@@ -52,6 +63,11 @@ enum SetLogClipRepository {
                        data: Data, durationSeconds: Double?) async throws -> SetLogClip {
         let path = try await StorageService.uploadFormClip(
             userID: userID, clipID: clipID, data: data)
+        // Flat retention windows (storage v1.5): PRO keeps 90 days,
+        // coach-linked 30. The caller already passed the retention gate
+        // (PRO or coached) before any upload happened.
+        let retainDays = Entitlements.hasPro ? 90 : 30
+        let retainUntil = Date().addingTimeInterval(TimeInterval(retainDays) * 86_400)
         do {
             return try await client
                 .from("set_log_clips")
@@ -59,7 +75,9 @@ enum SetLogClipRepository {
                                   setLogID: setLogID.uuidString,
                                   userID: userID.uuidString,
                                   storagePath: path,
-                                  durationSeconds: durationSeconds))
+                                  durationSeconds: durationSeconds,
+                                  retainUntil: retainUntil,
+                                  byteSize: data.count))
                 .select()
                 .single()
                 .execute()
@@ -81,6 +99,24 @@ enum SetLogClipRepository {
                 .execute()
                 .value
         } catch { throw ErrorMapping.map(error) }
+    }
+
+    /// The athlete's own clip footprint - the Settings usage meter's
+    /// one fetch.
+    static func usage() async -> (count: Int, bytes: Int64) {
+        struct Row: Decodable {
+            let byteSize: Int64?
+            enum CodingKeys: String, CodingKey { case byteSize = "byte_size" }
+        }
+        guard let me = await SupabaseService.shared.currentUserID() else { return (0, 0) }
+        let rows: [Row]? = try? await client
+            .from("set_log_clips")
+            .select("byte_size")
+            .eq("user_id", value: me.uuidString)
+            .execute()
+            .value
+        let all = rows ?? []
+        return (all.count, all.reduce(0) { $0 + ($1.byteSize ?? 0) })
     }
 
     /// Whether the signed-in athlete has an ACTIVE coach - one half of

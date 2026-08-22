@@ -430,7 +430,8 @@ struct CompletedSessionView: View {
                                     .foregroundStyle(theme.text)
                                     .lineLimit(1)
                                 Text(clip.createdAt.formatted(date: .omitted, time: .shortened)
-                                     + (clip.durationSeconds.map { String(format: " · %.0fs", $0) } ?? ""))
+                                     + (clip.durationSeconds.map { String(format: " · %.0fs", $0) } ?? "")
+                                     + (clip.retainUntil.map { " · keeps until \($0.formatted(date: .abbreviated, time: .omitted))" } ?? ""))
                                     .font(GSFont.body(11, relativeTo: .caption))
                                     .foregroundStyle(theme.neutral500)
                             }

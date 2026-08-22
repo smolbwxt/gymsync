@@ -42,6 +42,16 @@ struct SettingsView: View {
     @State private var showLiftAnchors = false
     @State private var showHeartRateMonitor = false
     @State private var showCoaching = false
+    // Storage v1.5: the athlete's clip footprint, fetched lazily.
+    @State private var clipUsage: (count: Int, bytes: Int64)? = nil
+
+    private var clipUsageText: String {
+        guard let clipUsage else { return "…" }
+        guard clipUsage.count > 0 else { return "None" }
+        let mb = Double(clipUsage.bytes) / 1_048_576
+        let keep = Entitlements.hasPro ? 90 : 30
+        return String(format: "%d · %.0f MB · kept %dd", clipUsage.count, mb, keep)
+    }
     @State private var showEditProfile = false
     // Phase M Task 2 (moderation/compliance): You-tab Blocked Users list.
     @State private var showBlockedUsers = false
@@ -557,6 +567,16 @@ struct SettingsView: View {
             GSSettingsRow(title: "Coaching", icon: "figure.strengthtraining.traditional") {
                 showCoaching = true
             }
+            // Form-clip storage meter (storage v1.5): what you're
+            // holding and the honest retention window. Read-only - the
+            // hourly sweeper does the deleting.
+            GSSettingsRow(title: "Form clips", icon: "video",
+                          value: clipUsageText) { }
+                .task {
+                    if clipUsage == nil {
+                        clipUsage = await SetLogClipRepository.usage()
+                    }
+                }
             showTipsRow
             soloPrivacyRow
             heartRateShareRow

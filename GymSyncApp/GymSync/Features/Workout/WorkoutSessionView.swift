@@ -3417,12 +3417,15 @@ struct WorkoutSessionView: View {
                 pendingClipURL = nil
                 let logID = log.id
                 Task {
-                    defer { try? FileManager.default.removeItem(at: clipURL) }
+                    // Medium-preset re-encode first: about half the bytes
+                    // at form-check quality (storage v1.5).
+                    let uploadURL = await FormClipMath.compressed(clipURL)
+                    defer { try? FileManager.default.removeItem(at: uploadURL) }
                     guard let userID = appState.currentProfile?.id,
-                          let data = try? Data(contentsOf: clipURL) else { return }
+                          let data = try? Data(contentsOf: uploadURL) else { return }
                     _ = try? await SetLogClipRepository.attach(
                         clipID: UUID(), setLogID: logID, userID: userID,
-                        data: data, durationSeconds: FormClipMath.duration(of: clipURL))
+                        data: data, durationSeconds: FormClipMath.duration(of: uploadURL))
                 }
             }
             // The set is durably recorded either way (server insert or offline

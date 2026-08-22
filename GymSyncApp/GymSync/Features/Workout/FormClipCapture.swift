@@ -49,4 +49,22 @@ enum FormClipMath {
         let seconds = CMTimeGetSeconds(AVURLAsset(url: url).duration)
         return seconds.isFinite && seconds > 0 ? seconds : nil
     }
+
+    /// Re-encode before upload (storage v1.5): medium preset roughly
+    /// halves file size at form-check quality. Returns the original URL
+    /// when the export can't run - upload proceeds either way.
+    static func compressed(_ url: URL) async -> URL {
+        guard let export = AVAssetExportSession(
+            asset: AVURLAsset(url: url),
+            presetName: AVAssetExportPresetMediumQuality) else { return url }
+        let out = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("mov")
+        export.outputURL = out
+        export.outputFileType = .mov
+        await export.export()
+        guard export.status == .completed else { return url }
+        try? FileManager.default.removeItem(at: url)
+        return out
+    }
 }
