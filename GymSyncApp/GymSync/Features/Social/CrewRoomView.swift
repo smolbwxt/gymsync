@@ -636,13 +636,12 @@ struct CrewRoomView: View {
         // hasn't gone live, it stops being "next" - the board rolls to
         // the next actually-upcoming session, which is also what makes
         // committing to the dead one impossible.
-        let now = Date()
         nextSession = sessions
             .filter { Self.upcomingStates.contains($0.state) }
             .filter { session in
                 if session.state == "in_progress" { return true }
                 guard let when = session.scheduledFor else { return true }
-                return when.timeIntervalSince(now) > -2 * 3600
+                return when.timeIntervalSince(Date()) > -2 * 3600
             }
             .sorted { ($0.scheduledFor ?? .distantFuture) < ($1.scheduledFor ?? .distantFuture) }
             .first
