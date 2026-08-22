@@ -59,7 +59,11 @@ final class CoachDebriefSession {
         self.debrief = debrief
         self.session = LanguageModelSession(
             tools: [ExerciseTrendTool(lookup: trendLookup),
-                    WeeklyVolumeTool(lookup: volumeLookup)],
+                    WeeklyVolumeTool(lookup: volumeLookup),
+                    // The research library (owner 2026-08-22): general
+                    // training questions consult the corpus; misses
+                    // queue the next swarm pass.
+                    CorpusResearchTool()],
             instructions: DebriefInstructions.build(persona: persona,
                                                     profile: profile))
     }

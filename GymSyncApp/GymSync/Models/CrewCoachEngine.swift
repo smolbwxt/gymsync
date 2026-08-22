@@ -127,7 +127,9 @@ enum CrewCoachEngine {
         let instructions = [DebriefInstructions.build(
             persona: CoachPersona.bySlug(context.profile.persona),
             profile: context.profile), crewRail].joined(separator: "\n\n")
-        let session = LanguageModelSession(instructions: instructions)
+        let session = LanguageModelSession(
+            tools: [CorpusResearchTool()],
+            instructions: instructions)
         return try? await session.respond(
             to: corePayload(question: question, context: context)).content
     }
