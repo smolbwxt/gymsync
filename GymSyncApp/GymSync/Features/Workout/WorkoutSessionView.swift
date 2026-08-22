@@ -290,12 +290,20 @@ struct WorkoutSessionView: View {
     // carry the routine's own rows in `allExercises`.
     @State private var mobilityDetail: Exercise?
     @State private var mobilityCatalog: [Exercise] = []
+    // Mid-session full builder (spec 2026-08-22 §2): a session-local
+    // edited list that supersedes the routine's rows; the stored
+    // routine is untouched until the end-of-workout three-way.
+    @State private var soloEditedList: [RoutineExercise]?
+    @State private var showSessionEditor = false
+    @State private var showKeepEditsDialog = false
 
     /// The exercise list driving the whole screen — the routine's when there
     /// is one, the lifter's running freeform picks otherwise, with any
     /// session-local hot-swaps applied on top.
     private var activeExercises: [RoutineExercise] {
-        let base = isFreeform ? freeformExercises : routineExercises
+        // Mid-session edits supersede the routine's rows; swap overrides
+        // still layer on top (a swap made before an edit survives it).
+        let base = isFreeform ? freeformExercises : (soloEditedList ?? routineExercises)
         guard !soloSwapOverrides.isEmpty else { return base }
         return base.map { soloSwapOverrides[$0.id] ?? $0 }
     }
@@ -526,7 +534,26 @@ struct WorkoutSessionView: View {
                     // becomes the Pro upsell when the paywall flips (and is
                     // where ads would go if ever revisited).
                     .completionInterstitial(profile: appState.currentProfile)
-                    .task(id: completed) { await prefetchCoachContext() }
+                    .task(id: completed) {
+                        await prefetchCoachContext()
+                        if completed, soloEditedList != nil,
+                           soloEditedList != routineExercises {
+                            showKeepEditsDialog = true
+                        }
+                    }
+                    .confirmationDialog("Keep your mid-session edits?",
+                                        isPresented: $showKeepEditsDialog,
+                                        titleVisibility: .visible) {
+                        Button("Update this routine") {
+                            Task { await persistSessionEdits(asNew: false) }
+                        }
+                        Button("Save as a new routine") {
+                            Task { await persistSessionEdits(asNew: true) }
+                        }
+                        Button("Discard", role: .cancel) {}
+                    } message: {
+                        Text("You reshaped this workout on the fly. The stored routine hasn't changed yet — your call.")
+                    }
                 } else {
                     liveSessionBody
                 }
@@ -905,6 +932,22 @@ struct WorkoutSessionView: View {
         .sheet(isPresented: $showSwapSheet) {
             swapSheet
                 .onDisappear { swapOptions = [] }
+        }
+        .sheet(isPresented: $showSessionEditor) {
+            if let routineID = routine?.id ?? routineExercises.first?.routineID {
+                SessionRoutineEditor(
+                    exercises: soloEditedList ?? routineExercises,
+                    nameByID: Dictionary(uniqueKeysWithValues: allExercises.map { ($0.id, $0.name) }),
+                    routineID: routineID,
+                    onDone: { edited in
+                        soloEditedList = edited
+                        // The cursor may now point past the list or at a
+                        // moved row - clamp and re-prefill.
+                        currentExerciseIndex = min(currentExerciseIndex,
+                                                   max(0, edited.count - 1))
+                        soloPrefill()
+                    })
+            }
         }
         .sheet(isPresented: $soloShowHRPairing) {
             NavigationStack { HeartRateMonitorView() }
@@ -2123,6 +2166,17 @@ struct WorkoutSessionView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Swap this exercise")
                 Button {
+                    showSessionEditor = true
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(soloEditedList == nil ? theme.neutral500 : theme.accent)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Edit this session's routine")
+                Button {
                     if canRetainClips == nil {
                         Task {
                             let coached = await SetLogClipRepository.hasActiveCoach()
@@ -3083,6 +3137,42 @@ struct WorkoutSessionView: View {
         }
         context.pendingProbe = coachPendingProbe
         return DebriefBuilder.build(reports: reports, context: context)
+    }
+
+    /// The end-of-workout three-way's write half (spec 2026-08-22 §2):
+    /// update-in-place rewrites the stored rows; save-as-new clones the
+    /// routine with fresh ids. Best effort - a failed write leaves the
+    /// stored routine exactly as it was.
+    @MainActor
+    private func persistSessionEdits(asNew: Bool) async {
+        guard let edited = soloEditedList, let routine else { return }
+        if asNew {
+            let newRoutineID = UUID()
+            let clone = Routine(
+                id: newRoutineID, ownerID: routine.ownerID,
+                name: "\(routine.name) (edited)",
+                description: routine.description,
+                visibility: "private",
+                createdAt: Date(), updatedAt: Date())
+            let rows = edited.enumerated().map { index, re in
+                RoutineExercise(
+                    id: UUID(), routineID: newRoutineID, exerciseID: re.exerciseID,
+                    position: index + 1, targetSets: re.targetSets,
+                    targetReps: re.targetReps, targetWeight: re.targetWeight,
+                    restSeconds: re.restSeconds, notes: re.notes,
+                    supersetGroup: re.supersetGroup,
+                    targetRepsLow: re.targetRepsLow, targetRepsHigh: re.targetRepsHigh,
+                    cardioZone: re.cardioZone, cardioMinutes: re.cardioMinutes)
+            }
+            try? await RoutineRepository.save(clone, exercises: rows)
+        } else {
+            let rows = edited.enumerated().map { index, re in
+                var r = re
+                r.position = index + 1
+                return r
+            }
+            try? await RoutineRepository.save(routine, exercises: rows)
+        }
     }
 
     /// The suppressed-mid-session counsel for a CUSTOM routine, computed
