@@ -310,10 +310,12 @@ struct CoachRecapView: View {
             // to infer, and the iOS 26 SDK's named-Task initializer made
             // a Task { @MainActor } hop ambiguous too - plain main-queue
             // dispatch does the one job needed.
-            let proposeHook: (@Sendable (RoutineEditProposal) -> Void)? =
-                applyRoutineEdit == nil ? nil : { proposal in
+            var proposeHook: (@Sendable (RoutineEditProposal) -> Void)? = nil
+            if applyRoutineEdit != nil {
+                proposeHook = { proposal in
                     DispatchQueue.main.async { pendingEdit = proposal }
                 }
+            }
             let session = CoachDebriefSession(
                 debrief: debrief, persona: persona, profile: profile,
                 trendLookup: trendLookup, volumeLookup: volumeLookup,
