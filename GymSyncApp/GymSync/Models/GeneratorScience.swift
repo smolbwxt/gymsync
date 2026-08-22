@@ -296,6 +296,64 @@ enum GeneratorScience {
     /// demand — a soft gate: violating candidates sort behind clean ones
     /// but can still fill a slot nothing else can. Rerolls and manual
     /// picks reach everything.
+    // MARK: - Comfort probes (derived experience, spec 2026-08-22)
+    //
+    // Experience level is DERIVED, never picked: five probes spanning
+    // the complexity ladder with recognizable lifts. The cap is the
+    // highest complexity with a COHERENT PREFIX - comfortable at 4 but
+    // not at 3 reads as 3-below (bravado doesn't skip rungs).
+    struct ComfortProbe: Identifiable {
+        let slug: String
+        let name: String
+        let detail: String
+        let complexity: Int
+        var id: String { slug }
+    }
+
+    static let comfortProbes: [ComfortProbe] = [
+        ComfortProbe(slug: "goblet-squat", name: "Goblet squat",
+                     detail: "A squat holding one dumbbell at your chest",
+                     complexity: 1),
+        ComfortProbe(slug: "back-squat-heavy", name: "Heavy barbell back squat",
+                     detail: "Bar on your back, at a weight that feels genuinely heavy",
+                     complexity: 3),
+        ComfortProbe(slug: "deadlift", name: "Conventional deadlift",
+                     detail: "A loaded barbell from the floor to standing",
+                     complexity: 3),
+        ComfortProbe(slug: "weighted-pullup", name: "Weighted pull-up",
+                     detail: "Pull-ups with extra weight hanging from a belt",
+                     complexity: 4),
+        ComfortProbe(slug: "power-clean", name: "Power clean",
+                     detail: "An explosive barbell pull caught at the shoulders",
+                     complexity: 5),
+    ]
+
+    /// The derived complexity cap: walk the ladder's levels ascending;
+    /// the cap advances only while every level so far has at least one
+    /// comfortable answer. Nothing comfortable = cap 2 (the honest
+    /// floor - simple movements only). Nil until any probe is answered.
+    static func derivedComplexityCap(from answers: [String: Bool]) -> Int? {
+        guard !answers.isEmpty else { return nil }
+        let bySlug = Dictionary(uniqueKeysWithValues: comfortProbes.map { ($0.slug, $0.complexity) })
+        let comfortableLevels = Set(answers.compactMap { slug, ok in ok ? bySlug[slug] : nil })
+        var cap = 2
+        for level in [1, 3, 4, 5] {
+            guard comfortableLevels.contains(level) else { break }
+            cap = max(cap, level)
+        }
+        return cap
+    }
+
+    /// The register tier a cap implies - the debrief voice, rep floors,
+    /// and calibration anchors still key off this; no user ever sees it.
+    static func experience(forCap cap: Int) -> Experience {
+        switch cap {
+        case ..<3: return .new
+        case 3: return .intermediate
+        default: return .advanced
+        }
+    }
+
     static func complexityCap(experience: Experience) -> Int {
         switch experience {
         case .new: return 3

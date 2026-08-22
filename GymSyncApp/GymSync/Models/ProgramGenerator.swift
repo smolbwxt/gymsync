@@ -60,6 +60,10 @@ enum ProgramGenerator {
         /// rows sort behind — landings, not effort, are the risk being
         /// managed. Gives the `impact` label its first consumer.
         var impactCaution: Bool = false
+        /// Derived experience (spec 2026-08-22): the comfort-probe cap,
+        /// finer than the three experience buckets - a lifter easy under
+        /// a heavy squat but never cleaned gets cap 3-4, not a label.
+        var complexityCapOverride: Int? = nil
         /// Lifts appearing in routines the athlete STARRED (field report
         /// #18): aspiration as data. The weakest tiebreak above the
         /// equipment ladder — it never beats a score, a bucket, or any
@@ -286,6 +290,7 @@ enum ProgramGenerator {
                                   cautionJoints: inputs.cautionJoints,
                                   axialBoost: inputs.axialBoost,
                                   impactCaution: inputs.impactCaution,
+                                  complexityCapOverride: inputs.complexityCapOverride,
                                   starred: inputs.starredExerciseIDs,
                                   sportLens: inputs.sportPrepSport,
                                   lens: slotLens,
@@ -302,6 +307,7 @@ enum ProgramGenerator {
                                   cautionJoints: inputs.cautionJoints,
                                   axialBoost: inputs.axialBoost,
                                   impactCaution: inputs.impactCaution,
+                                  complexityCapOverride: inputs.complexityCapOverride,
                                   starred: inputs.starredExerciseIDs,
                                   sportLens: inputs.sportPrepSport,
                                   lens: slotLens,
@@ -470,6 +476,7 @@ enum ProgramGenerator {
                                   tilt: inputs.selectionTilt,
                                   cautionJoints: inputs.cautionJoints,
                                   impactCaution: inputs.impactCaution,
+                                  complexityCapOverride: inputs.complexityCapOverride,
                                   starred: inputs.starredExerciseIDs,
                                   sportLens: inputs.sportPrepSport,
                                   lens: inputs.personaLens)
@@ -866,6 +873,7 @@ enum ProgramGenerator {
                        cautionJoints: Set<String> = [],
                        axialBoost: Bool = false,
                        impactCaution: Bool = false,
+                       complexityCapOverride: Int? = nil,
                        starred: Set<UUID> = [],
                        sportLens: String? = nil,
                        lens: CoachPersona.Lens? = nil,
@@ -891,7 +899,7 @@ enum ProgramGenerator {
         let ladder = GeneratorScience.mainEquipmentLadder(focus: focus)
         let isMain: Bool
         if case .pattern(_, let main) = slot { isMain = main } else { isMain = false }
-        let cap = GeneratorScience.complexityCap(experience: experience)
+        let cap = complexityCapOverride ?? GeneratorScience.complexityCap(experience: experience)
         let scoreKey = focusScoreKey(focus)
         func tier(_ c: CatalogExercise) -> (Int, Int, Int, Int, Int, Int) {
             let pen = GeneratorScience.selectionPenalty(name: c.name)

@@ -127,6 +127,13 @@ struct TrainingProfile: Codable, Equatable, Sendable {
         }
     }
     var trainingAge: TrainingAge = .intermediate
+    /// Derived experience (spec 2026-08-22): the comfort-probe answers
+    /// (slug -> comfortable) and the cap they derive. When present, the
+    /// cap feeds the selection gate DIRECTLY (finer than three buckets)
+    /// and trainingAge is derived, never picked. Legacy profiles keep
+    /// their stored trainingAge until they answer.
+    var comfortAnswers: [String: Bool]? = nil
+    var derivedComplexityCap: Int? = nil
     /// Sex, for the evidence-scaled adjustments the generator already
     /// carries (female rep-top bonus, accessory rest delta, volume
     /// ceiling nudge). Stored as the raw string so the profile's Codable
@@ -370,6 +377,7 @@ struct TrainingProfile: Codable, Equatable, Sendable {
         inputs.axialBoost = wantsAxialLoading
         inputs.inSeason = inSeason
         inputs.impactCaution = impactCaution
+        inputs.complexityCapOverride = derivedComplexityCap
         // Sport lens rides only when the sport_prep goal is actually
         // ranked — a stale sport choice never haunts a changed goal set.
         if rankedGoals.contains(.sportPrep), let sport = sportPrepSport {

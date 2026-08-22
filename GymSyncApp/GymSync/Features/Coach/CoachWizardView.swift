@@ -78,6 +78,10 @@ struct CoachWizardView: View {
     @State private var starredExerciseIDs: Set<UUID> = []
     // sport_prep's sport (corpus parameters 2026-08-21).
     @State private var sportPrepSport: String? = nil
+    // Derived experience (spec 2026-08-22): comfort answers replace the
+    // EXPERIENCE dial; `experience` is DERIVED from them and never
+    // shown as a label.
+    @State private var comfortAnswers: [String: Bool] = [:]
     // Coach owns the calendar (longitudinal spec 3d): on create, the
     // block's training days land as a SOLO SERIES with max-spacing
     // weekdays, and ride the existing gated EventKit sync.
@@ -269,6 +273,7 @@ struct CoachWizardView: View {
                 // saved profile IS the filled state.
                 visitedSections = Set(ProfileSection.allCases)
                 sportPrepSport = saved.sportPrepSport
+                comfortAnswers = saved.comfortAnswers ?? [:]
                 if let bw = saved.bodyweightLbs {
                     let shown = displayUnit == .kg ? bw / 2.20462 : bw
                     bodyweightText = String(Int(shown.rounded()))
@@ -684,6 +689,10 @@ struct CoachWizardView: View {
         // The relationship's memory (Phase 4) — block alternation and
         // deprioritized lifts survive the dials.
         profile.sportPrepSport = sportPrepSport
+        if !comfortAnswers.isEmpty {
+            profile.comfortAnswers = comfortAnswers
+            profile.derivedComplexityCap = GeneratorScience.derivedComplexityCap(from: comfortAnswers)
+        }
         profile.carryover = savedCarryover
         profile.lastProbeAt = savedProbeAt
         // Body context: parse in the display unit, store canonical.
@@ -740,7 +749,11 @@ struct CoachWizardView: View {
         case .goals:
             let coach = CoachPersona.bySlug(personaSlug)?.name ?? "No coach picked"
             let goal = rankedGoals.first.map { $0.rawValue.replacingOccurrences(of: "_", with: " ") } ?? "no goal"
-            return "\(coach) · \(goal) first · \(experience.rawValue)"
+            // Derived experience: the face shows progress on the probes,
+            // never a level label (spec 2026-08-22).
+            let comfort = comfortAnswers.isEmpty ? "comfort unanswered"
+                : "\(comfortAnswers.count) of \(GeneratorScience.comfortProbes.count) comfort answers"
+            return "\(coach) · \(goal) first · \(comfort)"
         case .schedule:
             let cap = sessionMinutes.map { "\($0) min" } ?? "no cap"
             let cardio = cardioDays > 0 ? " · \(cardioDays) cardio" : ""
@@ -861,16 +874,23 @@ struct CoachWizardView: View {
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                         }
-                        dial("EXPERIENCE", options: GeneratorScience.Experience.allCases.map(\.rawValue),
-                             selected: experience.rawValue) { experience = GeneratorScience.Experience(rawValue: $0) ?? .new }
-                        // Field #44: self-identification help - what each
-                        // level actually means in the gym, in behavior
-                        // terms, not years. (The comfort quiz is its own
-                        // pass; these lines are the honest floor.)
-                        Text(experienceDescription)
-                            .font(GSFont.body(12, relativeTo: .caption))
-                            .foregroundStyle(theme.neutral500)
-                            .fixedSize(horizontal: false, vertical: true)
+                        // Derived experience (spec 2026-08-22): nobody
+                        // picks a label. Five comfort probes spanning the
+                        // complexity ladder derive the cap that gates
+                        // selection - finer than any label could be.
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("WHAT FEELS COMFORTABLE?")
+                                .font(GSFont.bold(11, relativeTo: .caption2))
+                                .tracking(1.1)
+                                .foregroundStyle(theme.neutral500)
+                            Text("Honest answers shape what Coach suggests — nothing here is a test, and it adjusts as you train.")
+                                .font(GSFont.body(12, relativeTo: .caption))
+                                .foregroundStyle(theme.neutral500)
+                                .fixedSize(horizontal: false, vertical: true)
+                            ForEach(GeneratorScience.comfortProbes) { probe in
+                                comfortRow(probe)
+                            }
+                        }
                     case .schedule:
                         dial("LIFTING DAYS PER WEEK", options: ["1", "2", "3", "4", "5", "6", "7"],
                              selected: "\(days)") { days = Int($0) ?? 3 }
@@ -960,17 +980,45 @@ struct CoachWizardView: View {
         }
     }
 
-    /// Field #44: behavior-based level descriptions - how you train,
-    /// not how long you've trained.
-    private var experienceDescription: String {
-        switch experience {
-        case .new:
-            return "New: you're still learning the movements — squats, hinges, and presses don't feel automatic yet, and you're not sure how much weight to put on the bar. Coach keeps choices simple and teaches as you go. When in doubt, pick this — progressing out is fast; starting too advanced isn't."
-        case .intermediate:
-            return "Intermediate: the main lifts feel natural, you know roughly what you can lift, and you've followed some kind of routine for six months or more. Progress still comes steadily when you push. Most lifters who train regularly belong here."
-        case .advanced:
-            return "Advanced: you've trained seriously for years, PRs come slowly and deliberately, and you know your working weights within a few pounds. You can grind a heavy single safely and know when not to. If you're unsure whether you're advanced, you're intermediate."
+    private func comfortRow(_ probe: GeneratorScience.ComfortProbe) -> some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(probe.name)
+                    .font(GSFont.bold(14, relativeTo: .subheadline))
+                    .foregroundStyle(theme.text)
+                Text(probe.detail)
+                    .font(GSFont.body(11, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+            ForEach([(true, "Yes"), (false, "Not yet")], id: \.1) { value, label in
+                let isOn = comfortAnswers[probe.slug] == value
+                Button {
+                    comfortAnswers[probe.slug] = value
+                    applyDerivedExperience()
+                    preview = nil
+                } label: {
+                    Text(label)
+                        .font(GSFont.bold(12, relativeTo: .caption))
+                        .foregroundStyle(isOn ? theme.bg : theme.neutral700)
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 7)
+                        .background(isOn ? theme.accent : theme.surface)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
         }
+        .padding(.vertical, 5)
+    }
+
+    /// The derivation: answers -> cap -> register tier. `experience`
+    /// stays the wizard's internal working value (calibration anchors,
+    /// rep floors) but is never shown as a label.
+    private func applyDerivedExperience() {
+        guard let cap = GeneratorScience.derivedComplexityCap(from: comfortAnswers) else { return }
+        experience = GeneratorScience.experience(forCap: cap)
     }
 
     private static let hourByLabel: [String: Int] = [
