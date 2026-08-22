@@ -1353,8 +1353,7 @@ struct WorkoutSessionView: View {
         return String(format: "%d:%02d", s / 60, s % 60)
     }
 
-    /// 22-bar bpm history — the same bar language as the group page.
-    @ViewBuilder
+    /// Live HR as an accent line over the 90s window (field #34).
     @ViewBuilder
     private var soloRecoverySparkline: some View {
         // Field #34: the faint bars read as invisible — live HR draws as
