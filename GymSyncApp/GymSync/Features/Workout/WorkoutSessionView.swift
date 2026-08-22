@@ -515,6 +515,9 @@ struct WorkoutSessionView: View {
                     .sheet(isPresented: $showCoachRecap) {
                         if let debrief = coachDebrief {
                             CoachRecapView(
+                                applyRoutineEdit: { proposal in
+                                    await applyCoachRoutineEdit(proposal)
+                                },
                                 debrief: debrief,
                                 persona: CoachPersona.bySlug(coachProfile.persona),
                                 profile: coachProfile,
@@ -3173,6 +3176,47 @@ struct WorkoutSessionView: View {
             }
             try? await RoutineRepository.save(routine, exercises: rows)
         }
+    }
+
+    /// The Apply card's writer (owner 2026-08-22: "want me to edit your
+    /// routine to reflect this?" - and then it actually does). Fuzzy
+    /// name match, display-unit -> pounds conversion, full-list save.
+    /// Trainer prescriptions are never edited - a human wrote those.
+    @MainActor
+    private func applyCoachRoutineEdit(_ proposal: RoutineEditProposal) async -> String? {
+        guard let routine, routine.prescribedBy == nil else { return nil }
+        let nameByID = Dictionary(uniqueKeysWithValues: allExercises.map { ($0.id, $0.name.lowercased()) })
+        let target = proposal.exerciseName.lowercased()
+        guard let index = routineExercises.firstIndex(where: { re in
+            guard let name = nameByID[re.exerciseID] else { return false }
+            return name == target || name.contains(target) || target.contains(name)
+        }) else { return nil }
+        var rows = routineExercises
+        var summary: [String] = []
+        if let weight = proposal.weight {
+            let pounds = Units.toPounds(Decimal(weight), from: sessionSettings?.weightUnit ?? .lbs)
+            rows[index].targetWeight = "\(pounds)"
+            summary.append(Units.format(pounds: pounds,
+                                        unit: sessionSettings?.weightUnit ?? .lbs,
+                                        rounded: false, includeUnit: true))
+        }
+        if let lo = proposal.repsLow {
+            rows[index].targetRepsLow = lo
+            rows[index].targetRepsHigh = proposal.repsHigh ?? max(lo, rows[index].targetRepsHigh ?? lo)
+            rows[index].targetReps = "\(lo)"
+            summary.append("\(lo)–\(rows[index].targetRepsHigh ?? lo) reps")
+        } else if let hi = proposal.repsHigh {
+            rows[index].targetRepsHigh = hi
+            summary.append("up to \(hi) reps")
+        }
+        guard !summary.isEmpty else { return nil }
+        do {
+            try await RoutineRepository.save(routine, exercises: rows)
+        } catch { return nil }
+        routineExercises = rows
+        let name = allExercises.first(where: { $0.id == rows[index].exerciseID })?.name
+            ?? proposal.exerciseName
+        return "Done — \(name) is now \(summary.joined(separator: " × ")). It'll load that way next session."
     }
 
     /// The suppressed-mid-session counsel for a CUSTOM routine, computed

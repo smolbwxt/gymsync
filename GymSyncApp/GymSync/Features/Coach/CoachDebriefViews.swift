@@ -70,6 +70,13 @@ struct CoachDebriefCard: View {
 /// subscription sells the RELATIONSHIP, and the conversation is one
 /// expression of it where hardware allows.
 struct CoachRecapView: View {
+    /// The apply writer (owner 2026-08-22): fuzzy-matches the exercise,
+    /// writes the routine, returns a confirmation line - or nil when
+    /// nothing matched / the write failed. Nil closure = no edit tool
+    /// (group recaps, trainer prescriptions).
+    var applyRoutineEdit: ((RoutineEditProposal) async -> String?)? = nil
+    @State private var pendingEdit: RoutineEditProposal?
+    @State private var applyingEdit = false
     let debrief: WorkoutDebrief
     let persona: CoachPersona?
     let profile: TrainingProfile
@@ -191,6 +198,68 @@ struct CoachRecapView: View {
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            if let proposal = pendingEdit {
+                // The Apply card (owner 2026-08-22): Coach proposed, the
+                // athlete decides - #38's no-silent-tweaks, kept even
+                // for Coach's own suggestions.
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("COACH PROPOSES · \(proposal.exerciseName.uppercased())")
+                        .font(GSFont.bold(10, relativeTo: .caption2))
+                        .tracking(1.1)
+                        .foregroundStyle(theme.accent)
+                    Text(proposalSummary(proposal))
+                        .font(GSFont.bold(14, relativeTo: .subheadline))
+                        .foregroundStyle(theme.text)
+                    Text(proposal.reason)
+                        .font(GSFont.body(12, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral700)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 10) {
+                        Button {
+                            guard !applyingEdit, let apply = applyRoutineEdit else { return }
+                            applyingEdit = true
+                            Task {
+                                defer { applyingEdit = false }
+                                if let confirmation = await apply(proposal) {
+                                    turns.append(Turn(isCoach: true, text: confirmation))
+                                } else {
+                                    turns.append(Turn(isCoach: true,
+                                        text: "I couldn't find that exercise in the routine to edit — the numbers stand as they were."))
+                                }
+                                pendingEdit = nil
+                            }
+                        } label: {
+                            Text(applyingEdit ? "APPLYING…" : "APPLY")
+                                .font(GSFont.bold(11, relativeTo: .caption2))
+                                .tracking(0.6)
+                                .foregroundStyle(theme.bg)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 7)
+                                .background(theme.accent)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        Button {
+                            pendingEdit = nil
+                            turns.append(Turn(isCoach: true,
+                                text: "No problem — the routine stays as written."))
+                        } label: {
+                            Text("NOT NOW")
+                                .font(GSFont.bold(11, relativeTo: .caption2))
+                                .tracking(0.6)
+                                .foregroundStyle(theme.neutral700)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(theme.surface)
+                .overlay(RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(theme.accent.opacity(0.4), lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .padding(.horizontal, 12)
+            }
             HStack(spacing: 8) {
                 TextField("Ask your coach…", text: $draft, axis: .vertical)
                     .font(GSFont.body(14, relativeTo: .body))
@@ -207,6 +276,14 @@ struct CoachRecapView: View {
             .padding(12)
         }
         .task { await open() }
+    }
+
+    private func proposalSummary(_ p: RoutineEditProposal) -> String {
+        var parts: [String] = []
+        if let w = p.weight { parts.append("\(Int(w.rounded())) \(ThemeStore.shared.weightUnit.label)") }
+        if let lo = p.repsLow, let hi = p.repsHigh { parts.append("\(lo)–\(hi) reps") }
+        else if let lo = p.repsLow { parts.append("\(lo)+ reps") }
+        return parts.isEmpty ? "Adjustment" : parts.joined(separator: " × ")
     }
 
     private func bubble(_ turn: Turn) -> some View {
@@ -231,7 +308,10 @@ struct CoachRecapView: View {
         if #available(iOS 26.0, *) {
             let session = CoachDebriefSession(
                 debrief: debrief, persona: persona, profile: profile,
-                trendLookup: trendLookup, volumeLookup: volumeLookup)
+                trendLookup: trendLookup, volumeLookup: volumeLookup,
+                onProposeEdit: applyRoutineEdit == nil ? nil : { proposal in
+                    Task { @MainActor in pendingEdit = proposal }
+                })
             activeSession = session
             if let opening = try? await session.open() {
                 turns.append(Turn(isCoach: true, text: opening))

@@ -15,6 +15,20 @@ import Foundation
 // it?" invitation; devices without it render the structured report card
 // from the same WorkoutDebrief — one pipeline, two presentations.
 
+/// A routine change Coach proposes mid-conversation (owner
+/// 2026-08-22: "Yes — want me to edit your routine to reflect this?"
+/// and then it actually does). The tool never writes; it surfaces THIS
+/// for the athlete's explicit Apply tap — the #38 no-silent-tweaks
+/// ruling holds even for Coach's own suggestions.
+struct RoutineEditProposal: Equatable {
+    let exerciseName: String
+    /// In the athlete's display unit; nil = leave load untouched.
+    let weight: Double?
+    let repsLow: Int?
+    let repsHigh: Int?
+    let reason: String
+}
+
 enum CoachDebrief {
 
     /// Whether this device can host the conversational tier at all.
@@ -55,15 +69,20 @@ final class CoachDebriefSession {
          persona: CoachPersona?,
          profile: TrainingProfile,
          trendLookup: @escaping @Sendable (String) -> String,
-         volumeLookup: @escaping @Sendable () -> String) {
+         volumeLookup: @escaping @Sendable () -> String,
+         onProposeEdit: (@Sendable (RoutineEditProposal) -> Void)? = nil) {
         self.debrief = debrief
+        var tools: [any Tool] = [ExerciseTrendTool(lookup: trendLookup),
+                                 WeeklyVolumeTool(lookup: volumeLookup),
+                                 // The research library (owner 2026-08-22):
+                                 // general training questions consult the
+                                 // corpus; misses queue the next pass.
+                                 CorpusResearchTool()]
+        if let onProposeEdit {
+            tools.append(ProposeRoutineEditTool(onPropose: onProposeEdit))
+        }
         self.session = LanguageModelSession(
-            tools: [ExerciseTrendTool(lookup: trendLookup),
-                    WeeklyVolumeTool(lookup: volumeLookup),
-                    // The research library (owner 2026-08-22): general
-                    // training questions consult the corpus; misses
-                    // queue the next swarm pass.
-                    CorpusResearchTool()],
+            tools: tools,
             instructions: DebriefInstructions.build(persona: persona,
                                                     profile: profile))
     }
@@ -113,6 +132,41 @@ private struct ExerciseTrendTool: Tool {
     // file had never met a compiler until the first master deploy.
     func call(arguments: Arguments) async throws -> String {
         lookup(arguments.exerciseName)
+    }
+}
+
+/// Tool: propose a concrete routine change for the athlete to APPLY.
+/// The tool records the proposal for an on-screen consent card and
+/// tells the model the ball is in the athlete's court - the model must
+/// never claim the change was made.
+@available(iOS 26.0, *)
+private struct ProposeRoutineEditTool: Tool {
+    let name = "proposeRoutineEdit"
+    let description = "When the athlete AGREES a prescription change is right (a different starting weight, a new rep range), propose the concrete edit. The athlete sees an Apply card and decides. Use only after the athlete has said yes to the idea in conversation."
+    let onPropose: @Sendable (RoutineEditProposal) -> Void
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "The exercise name exactly as it appears in the workout data")
+        var exerciseName: String
+        @Guide(description: "New working weight in the athlete's display unit, omit to keep current")
+        var weight: Double?
+        @Guide(description: "New rep range low, omit to keep current")
+        var repsLow: Int?
+        @Guide(description: "New rep range high, omit to keep current")
+        var repsHigh: Int?
+        @Guide(description: "One plain sentence on why, citing the session's numbers")
+        var reason: String
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        onPropose(RoutineEditProposal(
+            exerciseName: arguments.exerciseName,
+            weight: arguments.weight,
+            repsLow: arguments.repsLow,
+            repsHigh: arguments.repsHigh,
+            reason: arguments.reason))
+        return "Proposal is on the athlete's screen with an Apply button. Tell them it's ready to apply - do NOT claim the routine has been changed; they decide."
     }
 }
 

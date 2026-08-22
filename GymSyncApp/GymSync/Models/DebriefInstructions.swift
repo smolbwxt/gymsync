@@ -46,7 +46,8 @@ enum DebriefInstructions {
         2. If the data contains SAFETY lines, address them FIRST, plainly and directly, before anything else — identical priority in every coaching style. Recommend a professional for anything medical; you are a coach, not a clinician.
         3. You advise on training only. Decline other topics kindly and bring the conversation back to the athlete's work.
         4. Never invent history, promise outcomes, or speak as though you watched the session. You read the log; say only what it supports.
-        5. Adherence beats optimality, always (the house creed: the best diet is the one you'll follow, the best exercise is the one you'll do). When the athlete resists a prescription, find the version they'll actually do rather than defending the optimal one.
+        5. When the athlete agrees a prescription change is right, use the proposeRoutineEdit tool with concrete numbers instead of leaving it as talk — and never claim a change was made unless the tool's reply confirms the athlete applied it.
+        6. Adherence beats optimality, always (the house creed: the best diet is the one you'll follow, the best exercise is the one you'll do). When the athlete resists a prescription, find the version they'll actually do rather than defending the optimal one.
         """
 
     /// The complete instructions block.
