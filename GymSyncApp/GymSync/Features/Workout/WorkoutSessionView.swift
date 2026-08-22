@@ -1153,8 +1153,27 @@ struct WorkoutSessionView: View {
             isOrganizer: false,
             myReady: false,
             onReady: { soloWarmupEndsAt = nil; setStartedAt = .now },
-            onAdjustMinutes: { delta in adjustSoloWarmup(delta) }
+            onAdjustMinutes: { delta in adjustSoloWarmup(delta) },
+            // Owner 2026-08-22: the warm-up window doubles as the
+            // mobility slot - the day's muscles pick the circuit.
+            mobilityCircuit: WarmupMobility.circuit(for: soloSessionMuscles)
         )
+    }
+
+    /// Lowercased primary muscles of the day's work - the mobility
+    /// circuit's selector.
+    private var soloSessionMuscles: [String] {
+        let ids = Set(routineExercises.map(\.exerciseID))
+        return allExercises.filter { ids.contains($0.id) }
+            .map { $0.primaryMuscle.lowercased() }
+    }
+
+    /// Whether the day's routine already carries mobility work - if it
+    /// does, the routine IS the mobility slot and the warm-up stays at
+    /// its configured length.
+    private var soloRoutineHasMobility: Bool {
+        let ids = Set(routineExercises.map(\.exerciseID))
+        return allExercises.contains { ids.contains($0.id) && $0.category == "mobility" }
     }
 
     /// ± the persisted duration from the page itself (step 5, clamp 0–30,
@@ -3263,6 +3282,14 @@ struct WorkoutSessionView: View {
             // only: freeform uses the scroll body, which has no fixed-page
             // slot for the phase.
             if !isFreeform, soloWarmupMinutes > 0 {
+                // Owner 2026-08-22: no mobility in the routine and the
+                // duration never configured -> the default warm-up grows
+                // 5 -> 10 so the guided circuit actually fits. An
+                // explicit choice is always respected.
+                if !SoloWarmupStore.isConfigured, !soloRoutineHasMobility,
+                   soloWarmupMinutes == 5 {
+                    soloWarmupMinutes = 10
+                }
                 soloWarmupEndsAt = (newSession.startedAt ?? Date())
                     .addingTimeInterval(TimeInterval(soloWarmupMinutes * 60))
             }

@@ -44,6 +44,58 @@ enum SoloWarmupStore {
     static func set(_ minutes: Int) {
         UserDefaults.standard.set(minutes, forKey: defaultsKey)
     }
+
+    /// Whether the athlete has ever touched the duration control - the
+    /// mobility bump (owner 2026-08-22) only applies to the UNSET state;
+    /// an explicit choice is always respected.
+    static var isConfigured: Bool {
+        UserDefaults.standard.object(forKey: defaultsKey) != nil
+    }
+}
+
+// MARK: - WarmupMobility
+//
+// Owner 2026-08-22: the warm-up window doubles as the mobility slot -
+// "display a mobility circuit for them to do during the warm-up." Pure
+// selection: the day's muscles pick the region, the window divides
+// across the moves. Names are coach-speak, not catalog rows - this is
+// guided time, not logged sets.
+enum WarmupMobility {
+    struct Move: Identifiable, Equatable {
+        let name: String
+        let detail: String
+        var id: String { name }
+    }
+
+    static let lowerMoves = [
+        Move(name: "90/90 hip switches", detail: "slow, both directions"),
+        Move(name: "Deep squat hold", detail: "heels down, chest tall"),
+        Move(name: "Couch stretch", detail: "each side — hip flexors"),
+        Move(name: "Leg swings", detail: "front-back, then side-side"),
+    ]
+    static let upperMoves = [
+        Move(name: "Arm circles", detail: "small to big, both ways"),
+        Move(name: "Doorway pec stretch", detail: "each arm, easy lean"),
+        Move(name: "Wall slides", detail: "ribs down, slow reps"),
+        Move(name: "Thoracic rotations", detail: "on all fours, each side"),
+    ]
+
+    /// The circuit for a session whose work hits `muscles` (lowercased
+    /// primary muscles of the day's exercises). Mixed days interleave.
+    static func circuit(for muscles: [String]) -> [Move] {
+        let lowerSet: Set<String> = ["quads", "hamstrings", "glutes", "calves",
+                                     "adductors", "lower_back"]
+        let hitsLower = muscles.contains { lowerSet.contains($0) }
+        let upperSet: Set<String> = ["chest", "shoulders", "back", "lats",
+                                     "triceps", "biceps", "traps", "forearms"]
+        let hitsUpper = muscles.contains { upperSet.contains($0) }
+        switch (hitsLower, hitsUpper) {
+        case (true, false): return lowerMoves
+        case (false, true): return upperMoves
+        default:
+            return [lowerMoves[0], upperMoves[0], lowerMoves[1], upperMoves[2]]
+        }
+    }
 }
 
 /// The warm-up phase page. Plain values + closures only — no session
@@ -88,6 +140,9 @@ struct WarmUpPhaseView: View {
     var onForceStart: (() -> Void)? = nil
     /// Solo only: ± minutes (the caller clamps and persists).
     var onAdjustMinutes: ((Int) -> Void)? = nil
+    /// The mobility circuit to run during the window (owner 2026-08-22);
+    /// empty renders nothing - group callers pass none today.
+    var mobilityCircuit: [WarmupMobility.Move] = []
 
     @Environment(\.gsTheme) private var theme
 
@@ -105,6 +160,8 @@ struct WarmUpPhaseView: View {
                 soloAdjustRow(minutes: minutes)
             }
             Spacer(minLength: 16)
+            mobilityBlock
+            if !mobilityCircuit.isEmpty { Spacer(minLength: 16) }
             if !members.isEmpty {
                 memberRow
                 Spacer(minLength: 16)
@@ -144,6 +201,46 @@ struct WarmUpPhaseView: View {
             .accessibilityLabel("Warm-up time remaining")
         }
         .frame(maxWidth: .infinity)
+    }
+
+    /// The guided mobility circuit under the countdown — what the window
+    /// is FOR, not a second to-do list. Divide the moves across the
+    /// clock; no logging, no checkboxes.
+    @ViewBuilder
+    private var mobilityBlock: some View {
+        if !mobilityCircuit.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("WHILE YOU WARM UP")
+                    .font(GSFont.bold(10, relativeTo: .caption2))
+                    .tracking(1.3)
+                    .foregroundStyle(theme.neutral700)
+                    .padding(.bottom, 8)
+                ForEach(mobilityCircuit) { move in
+                    HStack(spacing: 10) {
+                        Circle()
+                            .fill(theme.accent)
+                            .frame(width: 5, height: 5)
+                        Text(move.name)
+                            .font(GSFont.bold(14, relativeTo: .subheadline))
+                            .foregroundStyle(theme.text)
+                        Spacer()
+                        Text(move.detail)
+                            .font(GSFont.body(11, relativeTo: .caption))
+                            .foregroundStyle(theme.neutral500)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                    .padding(.vertical, 7)
+                }
+                Text("Easy effort — this is grease, not work. Skip anything that pinches.")
+                    .font(GSFont.body(11, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+                    .padding(.top, 6)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .gs3DCard(cornerRadius: GSMetrics.radiusMd)
+        }
     }
 
     /// "12:34" — clamped at 0:00 once the window lapses (the parent's own
