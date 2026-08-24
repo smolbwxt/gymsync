@@ -7,6 +7,11 @@ final class FriendRepositoryTests: XCTestCase {
         // Clean slate: remove any leftover request to the counterpart account
         if let other = try await ProfileRepository.fetchByUsername("ci_test_user_2") {
             try? await FriendRepository.removeFriendship(with: other.id)
+            // A leftover BLOCK from ModerationRepositoryTests fails the
+            // friendships INSERT policy (NOT is_blocked either way) - seen
+            // in CI 2026-08-24 when the lifecycle test's detached-Task
+            // cleanup raced process exit. Unblock defensively.
+            try? await ModerationRepository.unblock(userID: other.id)
         }
     }
 

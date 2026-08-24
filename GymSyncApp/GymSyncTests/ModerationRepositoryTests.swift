@@ -17,7 +17,14 @@ final class ModerationRepositoryTests: XCTestCase {
             XCTFail("seeded counterpart account must exist (run scripts/create_second_test_user.js)")
             return
         }
-        defer { Task { try? await ModerationRepository.unblock(userID: other.id) } }
+        // addTeardownBlock is awaited by XCTest; the previous
+        // `defer { Task { ... } }` spawned a detached task the test
+        // process could exit before running, leaking the block row into
+        // the next CI run (where FriendRepositoryTests hit it as an RLS
+        // rejection on friendships).
+        addTeardownBlock {
+            try? await ModerationRepository.unblock(userID: other.id)
+        }
 
         try await ModerationRepository.block(userID: other.id)
 
