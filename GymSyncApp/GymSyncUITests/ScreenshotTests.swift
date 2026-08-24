@@ -124,7 +124,7 @@ final class ScreenshotTests: XCTestCase {
 
     /// Three-tab restructure (2026-08-12): the old Library/Stats/Shop tab
     /// destinations live behind You-grid widgets now — open one by its
-    /// accessibility label ("Stats", "Routines", "Exercises", "Programs",
+    /// accessibility label ("Stats", "Routines and programming", "Coach",
     /// "Discover", "The Rack", "Settings"). Scrolls once if the widget sits
     /// below the fold.
     private func openYouWidget(_ app: XCUIApplication, label: String) {
@@ -159,7 +159,7 @@ final class ScreenshotTests: XCTestCase {
     func testLibraryTab() {
         let app = launchApp()
         guard waitForTabBar(app) else { return }
-        openYouWidget(app, label: "Routines")
+        openYouWidget(app, label: "Routines and programming")
         attachScreenshot(app, named: "app-tab-library.png")
     }
 
@@ -171,7 +171,7 @@ final class ScreenshotTests: XCTestCase {
         let app = launchApp()
         guard waitForTabBar(app) else { return }
         // EXERCISES moved into the Routines hub (owner 2026-08-16).
-        openYouWidget(app, label: "Routines")
+        openYouWidget(app, label: "Routines and programming")
         let exercisesRow = app.buttons["Exercises"]
         if exercisesRow.waitForExistence(timeout: 10) { exercisesRow.tap() }
         settle()
@@ -471,7 +471,7 @@ final class ScreenshotTests: XCTestCase {
     func testRoutineDetail() {
         let app = launchApp()
         guard waitForTabBar(app) else { return }
-        openYouWidget(app, label: "Routines")
+        openYouWidget(app, label: "Routines and programming")
 
         // The seeded "[QA] Push Day" routine card's name Text is the FIRST
         // element in its VStack (no avatar ahead of it, unlike the group
@@ -490,7 +490,7 @@ final class ScreenshotTests: XCTestCase {
         let app = launchApp()
         guard waitForTabBar(app) else { return }
         // EXERCISES moved into the Routines hub (owner 2026-08-16).
-        openYouWidget(app, label: "Routines")
+        openYouWidget(app, label: "Routines and programming")
         let exercisesRow = app.buttons["Exercises"]
         if exercisesRow.waitForExistence(timeout: 10) { exercisesRow.tap() }
 
