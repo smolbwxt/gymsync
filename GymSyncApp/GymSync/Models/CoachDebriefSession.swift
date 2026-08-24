@@ -77,7 +77,9 @@ final class CoachDebriefSession {
                                  // The research library (owner 2026-08-22):
                                  // general training questions consult the
                                  // corpus; misses queue the next pass.
-                                 CorpusResearchTool()]
+                                 CorpusResearchTool(),
+                                 // Diet via Apple Health (owner 2026-08-24).
+                                 NutritionTool()]
         if let onProposeEdit {
             tools.append(ProposeRoutineEditTool(onPropose: onProposeEdit))
         }
@@ -114,7 +116,7 @@ final class CoachDebriefSession {
 
 /// Tool: e1RM trend for a named lift — returns a computed sentence.
 @available(iOS 26.0, *)
-private struct ExerciseTrendTool: Tool {
+struct ExerciseTrendTool: Tool {
     let name = "exerciseTrend"
     let description = "Get the athlete's strength trend for one exercise, by name."
     let lookup: @Sendable (String) -> String
@@ -170,9 +172,25 @@ private struct ProposeRoutineEditTool: Tool {
     }
 }
 
+/// Tool: the athlete's recent diet from Apple Health — every major
+/// tracker (MyFitnessPal, MyNetDiary, Cronometer, Lose It) syncs there,
+/// so one read integrates them all. Returns a computed sentence.
+@available(iOS 26.0, *)
+struct NutritionTool: Tool {
+    let name = "nutritionSummary"
+    let description = "Get the athlete's average daily calories and macros (protein, carbs, fat) over the last week, from their diet tracker via Apple Health. Use when the conversation touches diet, protein intake, cutting, bulking, or recovery fuel."
+
+    @Generable
+    struct Arguments {}
+
+    func call(arguments: Arguments) async throws -> String {
+        await HealthKitBridge.nutritionSummaryLine()
+    }
+}
+
 /// Tool: this week's per-muscle volume — returns a computed sentence.
 @available(iOS 26.0, *)
-private struct WeeklyVolumeTool: Tool {
+struct WeeklyVolumeTool: Tool {
     let name = "weeklyVolume"
     let description = "Get the athlete's per-muscle training volume for this week."
     let lookup: @Sendable () -> String

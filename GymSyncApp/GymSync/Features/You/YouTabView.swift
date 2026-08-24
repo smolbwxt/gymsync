@@ -9,7 +9,7 @@ import SwiftUI
 ///
 /// Three-tab restructure (owner-approved proposal, 2026-08-12): You absorbed
 /// the Shop tab. The grid now reads: STATS hero (live lifetime volume — the
-/// "Get Stronger" pillar promoted) → ROUTINES | EXERCISES → PROGRAMS |
+/// "Get Stronger" pillar promoted) → ROUTINES & PROGRAMMING | COACH |
 /// DISCOVER (the community-workouts browse, resurrected from the orphaned
 /// LibraryTabView) → THE RACK (dock + weekly-rotation countdown, one
 /// soundboard home) → LOCKER | PRO → SETTINGS. The header avatar became
@@ -27,7 +27,7 @@ struct YouTabView: View {
     @State private var showShop = false
     @State private var showStats = false
     @State private var showRoutines = false
-    @State private var showPrograms = false
+    @State private var showCoach = false
     @State private var showSettings = false
     @State private var showEditProfile = false
 
@@ -64,7 +64,7 @@ struct YouTabView: View {
                             .padding(.top, 12)
                             .gsSpotlightTarget(key: "tour.you.routines")
 
-                        programsWidget
+                        coachWidget
                             .padding(.horizontal, 16)
                             .padding(.top, 12)
 
@@ -121,18 +121,17 @@ struct YouTabView: View {
                 // things. The first-visit tip (`.library`) rides along.
                 RoutinesHubView()
                     .background(theme.bg)
-                    .navigationTitle("Routines")
+                    .navigationTitle("Routines & Programming")
                     .navigationBarTitleDisplayMode(.inline)
                     .gsSpotlight(.library)
             }
-            .navigationDestination(isPresented: $showPrograms) {
-                // Programs (né Campaigns — owner 2026-08-12: "Programs" is
-                // the word the industry uses). The browse screen keeps its
-                // internal structure: active program on top, structured
-                // plans, community campaigns as a program type.
-                CampaignsTabView()
+            .navigationDestination(isPresented: $showCoach) {
+                // Coach's home (owner 2026-08-24): the dedicated chat +
+                // MY PROGRAM (the generator, one layer down) + research
+                // deliveries. Programs browse moved into the Routines hub.
+                CoachHomeView()
                     .background(theme.bg)
-                    .navigationTitle("Programs")
+                    .navigationTitle("Coach")
                     .navigationBarTitleDisplayMode(.inline)
             }
             .navigationDestination(isPresented: $showSettings) {
@@ -244,7 +243,7 @@ struct YouTabView: View {
         Button {
             showRoutines = true
         } label: {
-            widgetCard(title: "ROUTINES") {
+            widgetCard(title: "ROUTINES & PROGRAMMING") {
                 Text(routinesFaceText)
                     .font(GSFont.body(13, relativeTo: .subheadline))
                     .foregroundStyle(theme.neutral700)
@@ -254,39 +253,40 @@ struct YouTabView: View {
         }
         .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Routines")
+        .accessibilityLabel("Routines and programming")
     }
 
     /// Slot fill-state rides the face line now that the caps footer is
     /// gone (owner 2026-08-21) — the 2026-08-13 "state from the outside"
     /// ruling survives, one line lower.
     private var routinesFaceText: String {
-        guard let routineCount else { return "Coach · the builder · Discover" }
+        guard let routineCount else { return "Programs · the builder · Discover" }
         let limit = Monetization.freeRoutineLimit
         let state = routineCount > limit
             ? "\(routineCount) routines"
             : "\(routineCount) of \(limit) slots filled"
-        return "Coach · the builder · Discover · \(state)"
+        return "Programs · the builder · Discover · \(state)"
     }
 
-    private var programsWidget: some View {
+    /// Coach's T1 slot (owner 2026-08-24: "the coach should replace
+    /// the programs widget on the T1 of the You tab"). Programs browse
+    /// moved into the Routines hub; the generator lives one layer down
+    /// inside Coach.
+    private var coachWidget: some View {
         Button {
-            showPrograms = true
+            showCoach = true
         } label: {
-            widgetCard(title: "PROGRAMS") {
-                Text("Multi-week plans + campaigns")
+            widgetCard(title: "COACH") {
+                Text("Your ongoing chat, your program, the research")
                     .font(GSFont.body(13, relativeTo: .subheadline))
                     .foregroundStyle(theme.neutral700)
-                    .lineLimit(2)
+                    .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
         }
         .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
-        // The campaigns discovery dot followed the move from Shop
-        // (same target, same storage key — pressed stays pressed).
-        .gsDiscovery(.libraryCampaigns, cornerRadius: GSMetrics.radiusSm)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Programs")
+        .accessibilityLabel("Coach")
     }
 
     // MARK: - Shop (owner 2026-08-16: the storefront leads the page)

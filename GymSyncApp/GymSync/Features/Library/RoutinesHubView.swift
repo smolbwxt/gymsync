@@ -6,7 +6,8 @@ import SwiftUI
 // separately from the builder") — the single home for everything
 // routine-shaped, entered from the You tab's ROUTINES widget:
 //
-//   COACH — the generator's front door, wide + tall + extruded, top.
+//   PROGRAMS — multi-week plans + campaigns, wide + tall + extruded,
+//     top (owner 2026-08-24; Coach moved to its own page off the You tab).
 //   BUILDER — build-your-own, THE create path (the old duplicate
 //     "new routine" rows are gone; empty slots are quiet shortcuts).
 //   YOUR ROUTINES — one card housing exactly five slots (the free
@@ -47,7 +48,7 @@ struct RoutinesHubView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                coachCard
+                programsCard
 
                 builderButton
 
@@ -90,31 +91,36 @@ struct RoutinesHubView: View {
         .task { await load() }
     }
 
-    // MARK: - COACH (wide, tall, extruded — the top of the hub)
+    // MARK: - PROGRAMS (wide, tall, extruded — the top of the hub;
+    // owner 2026-08-24: "the programs widget replaces the Coach widget
+    // in the routines page". Coach's generator now lives inside the
+    // Coach page on the You tab.)
 
-    private var coachCard: some View {
+    private var programsCard: some View {
         NavigationLink {
-            CoachWizardView(onCreated: { Task { await load() } })
+            CampaignsTabView()
                 .background(theme.bg)
+                .navigationTitle("Programs")
+                .navigationBarTitleDisplayMode(.inline)
         } label: {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("COACH")
+                    Text("PROGRAMS")
                         .font(GSFont.bold(22, relativeTo: .title3))
                         .tracking(0.5)
                         .foregroundStyle(theme.text)
                     Spacer()
-                    Image(systemName: "wand.and.stars")
+                    Image(systemName: "calendar.badge.clock")
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(theme.accent)
                 }
-                Text("Tell me your goal, days, equipment, and experience — I'll build your week from the evidence.")
+                Text("Multi-week plans and community campaigns — structured training with a finish line.")
                     .font(GSFont.body(13, relativeTo: .subheadline))
                     .foregroundStyle(theme.neutral700)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
                 HStack {
-                    Text("THE PROGRAM GENERATOR")
+                    Text("MULTI-WEEK PLANS + CAMPAIGNS")
                         .font(GSFont.bold(10, relativeTo: .caption2))
                         .tracking(1.1)
                         .foregroundStyle(theme.neutral500)
@@ -129,8 +135,11 @@ struct RoutinesHubView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
+        // The campaigns discovery dot rode Programs here from the You
+        // tab (same storage key — pressed stays pressed).
+        .gsDiscovery(.libraryCampaigns, cornerRadius: GSMetrics.radiusMd)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Coach — the program generator")
+        .accessibilityLabel("Programs — multi-week plans and campaigns")
     }
 
     // MARK: - BUILDER (the one create path)

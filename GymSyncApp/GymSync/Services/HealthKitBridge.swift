@@ -12,9 +12,17 @@ enum HealthKitBridge {
         // Fitbit, Whoop all sync into Health) become recap data for every
         // watch brand — the non-live half of "everyone has the option to
         // have live HR".
+        // Dietary reads added 2026-08-24: MyFitnessPal, MyNetDiary,
+        // Cronometer, and Lose It all sync these into Apple Health, so
+        // reading Health integrates every tracker at once — no partner
+        // APIs. Coach's nutrition tool consumes the summary.
         try await store.requestAuthorization(
             toShare: [workoutType],
-            read: [HKQuantityType(.heartRate)]
+            read: [HKQuantityType(.heartRate),
+                   HKQuantityType(.dietaryEnergyConsumed),
+                   HKQuantityType(.dietaryProtein),
+                   HKQuantityType(.dietaryCarbohydrates),
+                   HKQuantityType(.dietaryFatTotal)]
         )
     }
 
@@ -93,6 +101,67 @@ enum HealthKitBridge {
             }
             store.execute(query)
         }
+    }
+
+    // MARK: - Nutrition (owner 2026-08-24: MFP/MyNetDiary via Health)
+
+    /// Per-day totals for one dietary type over a window; only days that
+    /// actually have data count (a tracker skipped on Sunday must not
+    /// drag the average down). Best-effort: empty on no permission, no
+    /// data, or any error — Coach must never block on Health.
+    private static func dailyTotals(_ id: HKQuantityTypeIdentifier,
+                                    unit: HKUnit,
+                                    start: Date, end: Date) async -> [Double] {
+        guard HKHealthStore.isHealthDataAvailable() else { return [] }
+        let type = HKQuantityType(id)
+        let anchor = Calendar.current.startOfDay(for: start)
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end)
+        return await withCheckedContinuation { continuation in
+            let query = HKStatisticsCollectionQuery(
+                quantityType: type, quantitySamplePredicate: predicate,
+                options: .cumulativeSum, anchorDate: anchor,
+                intervalComponents: DateComponents(day: 1))
+            query.initialResultsHandler = { _, results, _ in
+                var totals: [Double] = []
+                results?.enumerateStatistics(from: start, to: end) { stats, _ in
+                    if let sum = stats.sumQuantity()?.doubleValue(for: unit), sum > 0 {
+                        totals.append(sum)
+                    }
+                }
+                continuation.resume(returning: totals)
+            }
+            store.execute(query)
+        }
+    }
+
+    /// The computed nutrition sentence for Coach's tool belt — averages
+    /// over the last 7 logged days from Apple Health (which every major
+    /// diet tracker syncs into). The model narrates this arithmetic; it
+    /// never computes its own.
+    static func nutritionSummaryLine() async -> String {
+        let end = Date()
+        guard let start = Calendar.current.date(byAdding: .day, value: -7, to: end) else {
+            return "No nutrition data available."
+        }
+        let kcal = await dailyTotals(.dietaryEnergyConsumed, unit: .kilocalorie(),
+                                     start: start, end: end)
+        guard !kcal.isEmpty else {
+            return "No nutrition data synced to Apple Health in the last 7 days. If the athlete tracks with MyFitnessPal, MyNetDiary, Cronometer, or Lose It, turning on Apple Health sync in that app brings their diet into this conversation."
+        }
+        let protein = await dailyTotals(.dietaryProtein, unit: .gram(),
+                                        start: start, end: end)
+        let carbs = await dailyTotals(.dietaryCarbohydrates, unit: .gram(),
+                                      start: start, end: end)
+        let fat = await dailyTotals(.dietaryFatTotal, unit: .gram(),
+                                    start: start, end: end)
+        func avg(_ xs: [Double]) -> Int? {
+            xs.isEmpty ? nil : Int((xs.reduce(0, +) / Double(xs.count)).rounded())
+        }
+        var parts = ["NUTRITION (Apple Health, \(kcal.count) logged day\(kcal.count == 1 ? "" : "s") of the last 7): ~\(avg(kcal) ?? 0) kcal/day"]
+        if let p = avg(protein) { parts.append("protein ~\(p) g/day") }
+        if let c = avg(carbs) { parts.append("carbs ~\(c) g/day") }
+        if let f = avg(fat) { parts.append("fat ~\(f) g/day") }
+        return parts.joined(separator: ", ") + "."
     }
 
     static func exportWorkout(session: WorkoutSession, setLogs: [SetLog]) async throws {

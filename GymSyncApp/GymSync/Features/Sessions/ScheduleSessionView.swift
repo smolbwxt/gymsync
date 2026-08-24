@@ -65,6 +65,14 @@ struct ScheduleSessionView: View {
 
     // MARK: - Repeat weekly (Group-only)
     @State private var repeatWeekly: Bool = false
+    // Weekly target (owner 2026-08-24: "it's just another way to
+    // schedule workouts week to week") — for opportunistic gym-goers:
+    // instead of a fixed-day series, commit to N days a week. Writes
+    // the standing weekly goal the Home slots widget already tracks
+    // (Profile.weeklySessionGoal); auto-checks from completed sessions.
+    // Solo-only — a crew schedules real days, not a personal quota.
+    @State private var useWeeklyTarget: Bool = false
+    @State private var weeklyTarget: Int = 3
     /// 1 = weekly, 2 = every other week (field report #9).
     @State private var repeatInterval: Int = 1
     @State private var selectedWeekdays: Set<Int> = []
@@ -522,6 +530,7 @@ struct ScheduleSessionView: View {
                     .labelsHidden()
                     .tint(theme.accent)
                     .onChange(of: repeatWeekly) {
+                        if repeatWeekly { useWeeklyTarget = false }
                         if repeatWeekly && selectedWeekdays.isEmpty {
                             let wd = Calendar.current.component(.weekday, from: scheduledFor)
                             selectedWeekdays.insert(wd)
@@ -533,6 +542,47 @@ struct ScheduleSessionView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
+
+            if whoMode == .solo && !repeatWeekly {
+                GSDivider()
+                    .padding(.horizontal, 16)
+
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Weekly target")
+                            .font(GSFont.bold(15, relativeTo: .body))
+                            .foregroundStyle(theme.text)
+                        Text("No fixed days — commit to a number, train when you can")
+                            .font(GSFont.body(11, relativeTo: .caption))
+                            .foregroundStyle(theme.neutral500)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $useWeeklyTarget)
+                        .labelsHidden()
+                        .tint(theme.accent)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+
+                if useWeeklyTarget {
+                    HStack(spacing: 12) {
+                        Text("\(weeklyTarget) day\(weeklyTarget == 1 ? "" : "s") a week")
+                            .font(GSFont.bold(14, relativeTo: .subheadline))
+                            .foregroundStyle(theme.text)
+                            .monospacedDigit()
+                        Spacer()
+                        Stepper("", value: $weeklyTarget, in: 1...7)
+                            .labelsHidden()
+                    }
+                    .padding(.horizontal, 16)
+                    Text("The Home streak card tracks it — any day you finish a workout fills a slot.")
+                        .font(GSFont.body(11, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral500)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 4)
+                        .padding(.bottom, 12)
+                }
+            }
 
             if repeatWeekly {
                 GSDivider()
@@ -738,6 +788,13 @@ struct ScheduleSessionView: View {
             groupID = nil
             inviteeIDs = []
             generateRoomCode = true
+        }
+
+        // Weekly-target path (solo): the standing commitment is a goal,
+        // not a series. Best-effort — the session booking below is the
+        // primary action and proceeds regardless.
+        if whoMode == .solo, useWeeklyTarget {
+            _ = try? await ProfileRepository.updateWeeklySessionGoal(weeklyTarget)
         }
 
         // Repeating series path (Group only)
