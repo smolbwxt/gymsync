@@ -415,11 +415,19 @@ SELECT results_eq(
   $$VALUES ('leaderboard_passed'::text)$$,
   'push_event_category maps leaderboard_passed -> leaderboard_passed (reserved since 3d, unchanged)'
 );
+-- Name-agnostic since 20260824000003 dropped the stale original
+-- chat_messages_kind_check (it predated coach_reply and, coexisting
+-- with _v3, double-constrained the column): whatever kind CHECK
+-- constraint(s) live on chat_messages, every one must allow
+-- system_leaderboard.
 SELECT results_eq(
-  $$SELECT pg_get_constraintdef(oid) LIKE '%system_leaderboard%' FROM pg_constraint
-    WHERE conname = 'chat_messages_kind_check'$$,
+  $$SELECT bool_and(pg_get_constraintdef(oid) LIKE '%system_leaderboard%')
+    FROM pg_constraint
+    WHERE conrelid = 'public.chat_messages'::regclass
+      AND contype = 'c'
+      AND pg_get_constraintdef(oid) LIKE '%kind%'$$,
   ARRAY[true],
-  'chat_messages_kind_check (the LIVE constraint) already includes system_leaderboard (reserved since chat''s original CREATE TABLE, unchanged by this migration)'
+  'every live kind CHECK constraint on chat_messages includes system_leaderboard (reserved since chat''s original CREATE TABLE)'
 );
 
 SELECT * FROM finish();
