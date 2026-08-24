@@ -223,6 +223,7 @@ struct CoachWizardView: View {
         .background(theme.bg)
         .navigationTitle("Coach")
         .scrollDismissesKeyboard(.interactively)
+        .onDisappear { persistProfile() }
         .sheet(item: $activeSection) { section in
             sectionSheet(section)
         }
@@ -974,6 +975,7 @@ struct CoachWizardView: View {
                         visitedSections.insert(section)
                         activeSection = nil
                         preview = nil
+                        persistProfile()
                     }
                 }
             }
@@ -1016,6 +1018,17 @@ struct CoachWizardView: View {
     /// The derivation: answers -> cap -> register tier. `experience`
     /// stays the wizard's internal working value (calibration anchors,
     /// rep floors) but is never shown as a label.
+    /// Field #1 2026-08-24 ("the coach tab resets your goals every
+    /// time"): the profile only persisted on the explicit save button,
+    /// so every visit rehydrated stale state. Persist automatically -
+    /// on every section Done and on leaving the tab - so the wizard
+    /// always reopens exactly where the athlete left it.
+    private func persistProfile() {
+        guard let userID = appState.currentProfile?.id else { return }
+        let profile = currentProfile()
+        Task { try? await TrainingProfileRepository.save(profile, userID: userID) }
+    }
+
     private func applyDerivedExperience() {
         guard let cap = GeneratorScience.derivedComplexityCap(from: comfortAnswers) else { return }
         experience = GeneratorScience.experience(forCap: cap)

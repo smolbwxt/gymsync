@@ -18,6 +18,11 @@ struct HeartRateMonitorView: View {
                     .font(GSFont.body(13, relativeTo: .subheadline))
                     .foregroundStyle(theme.neutral500)
 
+                // Field #2 2026-08-24: the paired Apple Watch's honest
+                // status - the diagnosable states, named. A paired watch
+                // WITHOUT the GymSync watch app is the common trap.
+                appleWatchRow
+
                 statusCard
 
                 if case .connected = ble.state {} else {
@@ -87,6 +92,45 @@ struct HeartRateMonitorView: View {
         .padding(16)
         .background(theme.surface)
         .cornerRadius(GSMetrics.radiusMd)
+    }
+
+    @ViewBuilder
+    private var appleWatchRow: some View {
+        let status = WatchConnectivityBridge.shared.pairingStatus
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                Image(systemName: "applewatch")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(status.paired && status.appInstalled
+                                     ? theme.accent : theme.neutral500)
+                Text("APPLE WATCH")
+                    .font(GSFont.bold(11, relativeTo: .caption2))
+                    .tracking(1.1)
+                    .foregroundStyle(theme.neutral700)
+                Spacer()
+                Text(!status.active ? "CHECKING…"
+                     : !status.paired ? "NOT PAIRED"
+                     : !status.appInstalled ? "APP NOT ON WATCH"
+                     : "READY")
+                    .font(GSFont.bold(11, relativeTo: .caption2))
+                    .tracking(0.8)
+                    .foregroundStyle(status.paired && status.appInstalled
+                                     ? theme.accent : theme.neutral500)
+            }
+            Text(!status.active
+                 ? "Talking to the watch — give it a second."
+                 : !status.paired
+                 ? "No Apple Watch is paired with this iPhone."
+                 : !status.appInstalled
+                 ? "Your watch is paired, but GymSync isn't installed on it. Open the Watch app on this iPhone → available apps → install GymSync, and heart rate flows automatically — no pairing needed here."
+                 : "Paired with GymSync installed — heart rate flows automatically during workouts, no pairing needed here. This screen is for chest straps and broadcast-mode watches.")
+                .font(GSFont.body(12, relativeTo: .caption))
+                .foregroundStyle(theme.neutral500)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd)
     }
 
     private var scanSection: some View {

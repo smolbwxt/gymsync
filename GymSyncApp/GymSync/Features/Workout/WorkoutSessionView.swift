@@ -865,6 +865,9 @@ struct WorkoutSessionView: View {
     /// tracks the session; an inactive push at the end returns it to idle.
     private func pushSoloWatchState(session: WorkoutSession?, active: Bool) {
         guard let session else { return }
+        // Field #2: solo never activated the bridge - the push landed in
+        // an inactive WCSession. Idempotent; launch also activates.
+        WatchConnectivityBridge.shared.activateIfNeeded()
         let payload = WatchSessionStatePayload(
             sessionID: session.id,
             groupID: nil,

@@ -22,6 +22,12 @@ struct GymSyncApp: App {
             release: Self.buildNumber
         )
         try? AudioSessionManager.shared.configure()
+        // Field #2 2026-08-24: the old "activate on session start only"
+        // rule left solo starts pushing into an INACTIVE WCSession and
+        // the pairing screen unable to even read isPaired. Activation is
+        // cheap and Apple-recommended at launch; the field overruled the
+        // old brief twice.
+        WatchConnectivityBridge.shared.activateIfNeeded()
         GSAppearance.apply()
     }
 

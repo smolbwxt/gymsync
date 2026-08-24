@@ -156,6 +156,14 @@ final class WatchConnectivityBridge {
     /// `WCSession.activate()` itself is ALSO safe to call repeatedly per
     /// Apple's own docs, so the guard here is purely "don't do redundant
     /// work," not a correctness requirement.
+    /// Field #2 2026-08-24 ("app still not detecting my paired watch"):
+    /// the diagnosable truth, surfaced to the pairing screen. Only
+    /// meaningful after activation.
+    var pairingStatus: (paired: Bool, appInstalled: Bool, active: Bool) {
+        (session.isPaired, session.isWatchAppInstalled,
+         session.activationState == .activated)
+    }
+
     func activateIfNeeded() {
         guard !didActivate else { return }
         didActivate = true
