@@ -160,8 +160,12 @@ final class WatchConnectivityBridge {
     /// the diagnosable truth, surfaced to the pairing screen. Only
     /// meaningful after activation.
     var pairingStatus: (paired: Bool, appInstalled: Bool, active: Bool) {
-        (session.isPaired, session.isWatchAppInstalled,
-         session.activationState == .activated)
+        // Read the REAL session, not the testability protocol - these
+        // members exist only on WCSession itself.
+        guard WCSession.isSupported() else { return (false, false, false) }
+        let real = WCSession.default
+        return (real.isPaired, real.isWatchAppInstalled,
+                real.activationState == .activated)
     }
 
     func activateIfNeeded() {
