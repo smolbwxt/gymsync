@@ -623,6 +623,10 @@ struct CoachThreadView: View {
             if let seededOpener {
                 railLines.append("THIS THREAD WAS OPENED FROM: \(seededOpener)")
             }
+            // The athlete's own standing rules, so Coach can CITE one
+            // rather than silently obeying it — the difference between a
+            // coach who listened and a setting that took effect.
+            let rules = (try? await TrainingRulesRepository.active()) ?? []
             engine = CoachChatEngine(
                 thread: thread,
                 profile: profile,
@@ -647,6 +651,7 @@ struct CoachThreadView: View {
                     return DebriefBuilder.progressionSentence(
                         name: name, targetReps: targetReps, logs: logs, unit: unit)
                 },
+                standingRules: rules.map(\.rule),
                 onProposeEdit: { proposal in
                     DispatchQueue.main.async { pendingEdit = proposal }
                 })

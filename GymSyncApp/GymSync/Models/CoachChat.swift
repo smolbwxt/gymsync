@@ -185,6 +185,11 @@ final class CoachChatEngine {
     /// The Apply loop in threads (owner 2026-08-25: "a huge hook that I
     /// want enabled") — nil omits the tool (e.g. unavailable devices).
     private let onProposeEdit: (@Sendable (RoutineEditProposal) -> Void)?
+    /// Durable constraints the athlete authored (public.training_rules).
+    /// Passed in rather than fetched here for the same reason the
+    /// generator takes them as a parameter: this type stays deterministic
+    /// and testable, and the network stays at the edges.
+    private let standingRules: [String]
 
     init(thread: CoachChatThread,
          profile: TrainingProfile, persona: CoachPersona?,
@@ -192,6 +197,7 @@ final class CoachChatEngine {
          trendLookup: @escaping @Sendable (String) -> String,
          volumeLookup: @escaping @Sendable () -> String,
          progressionLookup: (@Sendable (String, Int?) -> String)? = nil,
+         standingRules: [String] = [],
          onProposeEdit: (@Sendable (RoutineEditProposal) -> Void)? = nil) {
         self.thread = thread
         self.profile = profile
@@ -201,6 +207,7 @@ final class CoachChatEngine {
         self.volumeLookup = volumeLookup
         self.progressionLookup = progressionLookup
         self.onProposeEdit = onProposeEdit
+        self.standingRules = standingRules
     }
 
     private func seedSession(summary: String, tail: [CoachChatMessage]) {
@@ -208,6 +215,14 @@ final class CoachChatEngine {
         instructions += "\n\nThis is an ONGOING conversation thread, not a one-off debrief. Keep replies chat-length (2-5 sentences) unless asked to go deep."
         if !routinesRail.isEmpty {
             instructions += "\n\nTHE ATHLETE'S ROUTINES AND SCHEDULE (computed — cite, don't invent):\n" + routinesRail
+        }
+        if !standingRules.isEmpty {
+            // The athlete's OWN words, held across blocks. Coach must be
+            // able to cite one ("you asked me to keep pulls before arms")
+            // rather than silently obeying it, which is the difference
+            // between a coach who listened and a setting that took effect.
+            instructions += "\n\nSTANDING RULES THE ATHLETE GAVE YOU (honor these; say so when one shapes your answer):\n"
+                + standingRules.map { "- \($0)" }.joined(separator: "\n")
         }
         if !summary.isEmpty {
             instructions += "\n\nWHAT HAS HAPPENED SO FAR IN THIS THREAD (your own memory — trust it):\n" + summary
