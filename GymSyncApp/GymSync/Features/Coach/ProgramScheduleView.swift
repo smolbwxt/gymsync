@@ -11,9 +11,15 @@ import SwiftUI
 // week from `ProgramMath.currentWeek`, the per-week prescription from
 // `ProgramMath.prescriptionText` against the frozen enrollment baseline,
 // and the day rows from the `Coach · <day>` routines the generator
-// wrote. Where the data carries no phase taxonomy, none is displayed —
-// a BASE/BUILD/PEAK label the block does not actually encode would be
-// exactly the improvised number the spec forbids.
+// wrote.
+//
+// The phase strip (2026-08-25 periodization pass) is GOAL-CONDITIONAL,
+// not omitted: `BlockPhaseMap` derives accumulation / intensification /
+// peak / deload from the block's OWN prescribed percentages for
+// performance blocks, and returns nil for volume-driven ones — because
+// the field holds that the taxonomy exists to peak a performance on a
+// date and does not transfer to hypertrophy. A block with no arc shows
+// its mesocycle structure instead, which IS universal.
 struct ProgramScheduleView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.gsTheme) private var theme
@@ -27,6 +33,11 @@ struct ProgramScheduleView: View {
     @State private var catalog: [Exercise] = []
     @State private var loading = true
     @State private var pushedRoutineID: UUID?
+    /// nil when this block carries no phase taxonomy — a hypertrophy /
+    /// volume-driven block, where the periodization evidence says an
+    /// accumulation-peak arc asserts something untrue. Those blocks show
+    /// their mesocycle structure instead. See BlockPhase.
+    @State private var phases: [BlockPhase]?
 
     var body: some View {
         ScrollView {
@@ -80,6 +91,7 @@ struct ProgramScheduleView: View {
                     .foregroundStyle(theme.neutral700)
             }
             weekChips
+            phaseLine
             // The selected week's OWN prescription, computed by
             // ProgramMath against the frozen baseline.
             if weeks.indices.contains(selectedWeek - 1) {
@@ -100,6 +112,45 @@ struct ProgramScheduleView: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .gs3DCard(cornerRadius: GSMetrics.radiusSm)
+    }
+
+    /// The phase strip when the block has one, the mesocycle readback
+    /// when it does not. Never both, never invented.
+    @ViewBuilder
+    private var phaseLine: some View {
+        if let phases, phases.indices.contains(selectedWeek - 1) {
+            let phase = phases[selectedWeek - 1]
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(phase.rawValue)
+                        .font(GSFont.bold(11, relativeTo: .caption))
+                        .tracking(1.2)
+                        .foregroundStyle(phase == .deload ? theme.accent : theme.text)
+                    Text(phaseSpan(phase))
+                        .font(GSFont.bold(9, relativeTo: .caption2))
+                        .tracking(1.1)
+                        .foregroundStyle(theme.neutral500)
+                }
+                Text(phase.blurb)
+                    .font(GSFont.body(11, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral700)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } else if let label = BlockPhaseMap.mesocycleLabel(for: weeks, week: selectedWeek) {
+            Text(label)
+                .font(GSFont.bold(11, relativeTo: .caption))
+                .tracking(1.2)
+                .foregroundStyle(theme.neutral700)
+        }
+    }
+
+    /// "WK 3-5" — which weeks of this block share the selected phase, so
+    /// the label reads as an arc rather than a one-week tag.
+    private func phaseSpan(_ phase: BlockPhase) -> String {
+        guard let phases else { return "" }
+        let indices = phases.enumerated().filter { $0.element == phase }.map { $0.offset + 1 }
+        guard let first = indices.first, let last = indices.last else { return "" }
+        return first == last ? "WK \(first)" : "WK \(first)-\(last)"
     }
 
     private var weekChips: some View {
@@ -126,6 +177,9 @@ struct ProgramScheduleView: View {
     private func chipFace(_ number: Int, isDeload: Bool) -> Color {
         if number == selectedWeek { return theme.accent }
         if number < currentWeek { return theme.text.opacity(0.85) }
+        // A deload reads differently from an overload week even before
+        // it is selected — it is the one week whose job is less work.
+        if isDeload { return theme.raised3DFace.opacity(0.55) }
         return theme.raised3DFace
     }
 
@@ -277,6 +331,7 @@ struct ProgramScheduleView: View {
             currentWeek = ProgramMath.currentWeek(startedOn: active.startedOn,
                                                   weeks: template.weeks.count)
             selectedWeek = currentWeek
+            phases = BlockPhaseMap.phases(for: template.weeks)
         }
         catalog = (try? await ExerciseRepository.fetchAll()) ?? []
         guard let ownerID = appState.currentProfile?.id,
