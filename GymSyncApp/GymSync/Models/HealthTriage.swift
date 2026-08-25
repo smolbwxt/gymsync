@@ -77,11 +77,11 @@ enum HealthTriage {
     /// paternalistic — the practitioner conversation is a companion to
     /// training, not a gate in front of it.
     static let pregnancyAdvisory = """
-        Training through pregnancy is well supported — the guidance encourages both lifting and cardio,         and if you were already training hard you can generally keep going. Two things I'd ask: loop in         your own practitioner, since they know things I can't, and tell me anything they want changed         so I can build around it.
+        Training through pregnancy is well supported — the guidance encourages both lifting and cardio, and if you were already training hard you can generally keep going. Two things I'd ask: loop in your own practitioner, since they know things I can't, and tell me anything they want changed so I can build around it.
         """
 
     static let postpartumAdvisory = """
-        Welcome back. Light work is fine as soon as you're cleared, and we'll rebuild from where you         actually are rather than where you left off — same as any return.
+        Welcome back. Light work is fine as soon as you're cleared, and we'll rebuild from where you actually are rather than where you left off — same as any return.
         """
 
     enum Outcome: Equatable, Sendable {

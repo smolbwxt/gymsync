@@ -143,6 +143,7 @@ struct CoachHomeView: View {
                 loggedDaysPerWeek: loggedCadence
                     ?? profile.carryover?.suggestedDaysPerWeek.map(Double.init),
                 recommendedDaysPerWeek: profile.daysPerWeek,
+                userID: appState.currentProfile?.id,
                 onFinish: { answers in
                     Task { await applyConsult(answers) }
                 })

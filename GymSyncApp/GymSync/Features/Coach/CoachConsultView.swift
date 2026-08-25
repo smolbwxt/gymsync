@@ -33,6 +33,11 @@ struct CoachConsultView: View {
     /// Days the program needs — fills the commitment question's number.
     let recommendedDaysPerWeek: Int?
 
+    /// Needed to persist the health screening. Optional because a signed
+    /// -out state must still be able to READ the consult; it just cannot
+    /// record anything.
+    let userID: UUID?
+
     var onFinish: (ConsultAnswers) -> Void
 
     @State private var context = ConsultProbe.Context()
@@ -45,6 +50,24 @@ struct CoachConsultView: View {
     @State private var history: [Step] = []
     @State private var started = false
 
+    // The health gate. HealthTriage could already refuse to program;
+    // until now nothing called it, so a post-cardiac-event athlete walked
+    // straight into a loading prescription. It runs BEFORE the opener,
+    // because "what is this block chasing" is the wrong first question
+    // for someone who should be seeing a doctor.
+    @State private var phase: Phase = .loading
+    @State private var screening = HealthScreening()
+    @State private var screeningIndex = 0
+    @State private var advisory: String?
+
+    private enum Phase: Equatable {
+        case loading
+        case screening
+        /// Coach does not program, and says why.
+        case declined(HealthTriage.Outcome)
+        case probing
+    }
+
     private struct Step {
         let context: ConsultProbe.Context
         let answers: ConsultAnswers
@@ -55,14 +78,27 @@ struct CoachConsultView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
-            if let probe {
-                questionCard(probe)
-                answerArea(probe)
+            switch phase {
+            case .loading:
                 Spacer(minLength: 0)
-                footer(probe)
-            } else {
-                finishedCard
+            case .screening:
+                screeningPhase
+            case .declined(let outcome):
+                declinedCard(outcome)
                 Spacer(minLength: 0)
+            case .probing:
+                if let advisory {
+                    advisoryCard(advisory)
+                }
+                if let probe {
+                    questionCard(probe)
+                    answerArea(probe)
+                    Spacer(minLength: 0)
+                    footer(probe)
+                } else {
+                    finishedCard
+                    Spacer(minLength: 0)
+                }
             }
         }
         .padding(.horizontal, 16)
@@ -95,7 +131,7 @@ struct CoachConsultView: View {
             Spacer()
             // Honest progress: what is LEFT, not a fraction of a budget
             // the consult does not have.
-            if probe != nil {
+            if phase == .probing, probe != nil {
                 Text(remainingText)
                     .font(GSFont.bold(10, relativeTo: .caption2))
                     .tracking(1.1)
@@ -272,6 +308,151 @@ struct CoachConsultView: View {
         .gs3DCard(cornerRadius: 18)
     }
 
+    // MARK: The health gate
+
+    @ViewBuilder
+    private var screeningPhase: some View {
+        if screeningIndex < HealthTriage.questions.count {
+            let question = HealthTriage.questions[screeningIndex]
+            VStack(alignment: .leading, spacing: 8) {
+                Text("BEFORE WE START")
+                    .font(GSFont.bold(10, relativeTo: .caption2))
+                    .tracking(1.1)
+                    .foregroundStyle(theme.accent)
+                Text(question.prompt)
+                    .font(GSFont.bold(20, relativeTo: .title3))
+                    .foregroundStyle(theme.text)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let clarifier = question.clarifier {
+                    Text(clarifier)
+                        .font(GSFont.body(12, relativeTo: .footnote))
+                        .foregroundStyle(theme.neutral700)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .gs3DCard(cornerRadius: 18)
+
+            HStack(spacing: 10) {
+                healthChip("NO", answer: false, question: question)
+                healthChip("YES", answer: true, question: question)
+            }
+            Text("\(screeningIndex + 1) OF \(HealthTriage.questions.count)")
+                .font(GSFont.bold(10, relativeTo: .caption2))
+                .tracking(1.1)
+                .foregroundStyle(theme.neutral700)
+            Spacer(minLength: 0)
+        } else {
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func healthChip(_ label: String, answer: Bool,
+                            question: HealthTriage.Question) -> some View {
+        Button { answerHealth(question, answer) } label: {
+            Text(label)
+                .font(GSFont.bold(15, relativeTo: .headline))
+                .tracking(1.0)
+                .foregroundStyle(answer ? theme.text : theme.bg)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+        }
+        .buttonStyle(GS3DButtonStyle(
+            face: answer ? theme.raised3DFace : theme.accent,
+            lip: answer ? theme.raised3DLip : nil,
+            cornerRadius: 15))
+    }
+
+    /// Coach declining to program. Names the boundary, never implies a
+    /// diagnosis, and never leaves the athlete with nothing.
+    private func declinedCard(_ outcome: HealthTriage.Outcome) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(copy(for: outcome))
+                .font(GSFont.body(14, relativeTo: .body))
+                .foregroundStyle(theme.text)
+                .fixedSize(horizontal: false, vertical: true)
+            // The way back in. A refer-out is not a dead end; it is a
+            // conversation Coach asked them to have.
+            if case .referOut = outcome {
+                Button { clinicianCleared() } label: {
+                    Text("MY DOCTOR CLEARED ME")
+                        .font(GSFont.bold(14, relativeTo: .headline))
+                        .tracking(0.9)
+                        .foregroundStyle(theme.bg)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 15)
+                }
+                .buttonStyle(GS3DButtonStyle(face: theme.accent, cornerRadius: 15))
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .gs3DCard(cornerRadius: 18)
+    }
+
+    private func copy(for outcome: HealthTriage.Outcome) -> String {
+        switch outcome {
+        case .referOut(let flagged): return HealthTriage.referralCopy(flagged: flagged)
+        case .delay(let reason):     return reason.copy
+        default:                     return ""
+        }
+    }
+
+    /// Pregnancy and postpartum land here: Coach programs AND says
+    /// something, rather than withdrawing the program.
+    private func advisoryCard(_ text: String) -> some View {
+        Text(text)
+            .font(GSFont.body(12, relativeTo: .footnote))
+            .foregroundStyle(theme.text)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(theme.surface)
+            .overlay(RoundedRectangle(cornerRadius: 14)
+                .strokeBorder(theme.accent.opacity(0.4), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+
+    private func answerHealth(_ question: HealthTriage.Question, _ answer: Bool) {
+        screening.answers[question.id] = answer
+        withAnimation(.easeOut(duration: 0.18)) {
+            screeningIndex += 1
+            if screeningIndex >= HealthTriage.questions.count { settleScreening() }
+        }
+    }
+
+    private func settleScreening() {
+        let outcome = screening.outcome()
+        switch outcome {
+        case .cleared:
+            screening.clearedAt = Date()
+            phase = .probing
+        case .clearedWithAdvisory(let text):
+            screening.clearedAt = Date()
+            advisory = text
+            phase = .probing
+        case .referOut, .delay:
+            phase = .declined(outcome)
+        }
+        persistScreening()
+    }
+
+    private func clinicianCleared() {
+        screening.clinicianCleared = true
+        screening.clearedAt = Date()
+        withAnimation(.easeOut(duration: 0.18)) { phase = .probing }
+        persistScreening()
+    }
+
+    private func persistScreening() {
+        let snapshot = screening
+        Task {
+            guard let userID else { return }
+            try? await HealthScreeningRepository.save(snapshot, userID: userID)
+        }
+    }
+
     // MARK: Flow
 
     /// Seed the context from what is already known. Everything here is
@@ -280,6 +461,28 @@ struct CoachConsultView: View {
     private func start() {
         guard !started else { return }
         started = true
+        Task {
+            let stored = (try? await HealthScreeningRepository.load()) ?? HealthScreening()
+            screening = stored
+            let outcome = stored.outcome()
+            withAnimation(.easeOut(duration: 0.18)) {
+                if stored.needsScreening {
+                    phase = .screening
+                } else {
+                    switch outcome {
+                    case .cleared:
+                        phase = .probing
+                    case .clearedWithAdvisory(let text):
+                        advisory = text
+                        phase = .probing
+                    case .referOut, .delay:
+                        // A standing flag survives a relaunch: Coach does
+                        // not forget what it was told.
+                        phase = .declined(outcome)
+                    }
+                }
+            }
+        }
         var seeded = ConsultProbe.Context()
         seeded.hasLog = hasLog
         seeded.loggedDaysPerWeek = loggedDaysPerWeek
