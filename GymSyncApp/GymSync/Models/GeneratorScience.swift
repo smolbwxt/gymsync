@@ -48,6 +48,19 @@ enum GeneratorScience {
         return 70
     }
 
+    // MARK: Muscle vocabulary
+
+    /// The major muscles the generator guarantees coverage of, and the
+    /// ONLY list any surface may offer as a focus choice.
+    ///
+    /// This was a `let` inside balanceWeeklyVolume's coverage check. The
+    /// consult needs the same vocabulary to ask "which two areas do you
+    /// want to look different?", and a second hand-written copy is how
+    /// two lists drift until a surface offers a focus the coverage check
+    /// has never heard of. One list, two readers.
+    static let majorMuscles = ["chest", "back", "lats", "shoulders", "quads",
+                               "hamstrings", "glutes", "biceps", "triceps", "calves"]
+
     // MARK: Sex deltas (physiology only)
 
     /// +1 rep on rep-range tops in sub-75% zones for women (conservative

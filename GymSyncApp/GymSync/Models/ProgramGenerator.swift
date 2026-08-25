@@ -487,8 +487,7 @@ enum ProgramGenerator {
         // push patterns silently zeroed the chest). Time-capped weeks
         // skip the dose and SAY so — rotation across weeks arrives with
         // week-at-read-time resolution.
-        let majors = ["chest", "back", "lats", "shoulders", "quads",
-                      "hamstrings", "glutes", "biceps", "triceps", "calves"]
+        let majors = GeneratorScience.majorMuscles
         let tally = weeklyMuscleSets(days: days, catalog: catalog)
         let orphans = majors.filter { (tally[$0] ?? 0) == 0 }
         if !orphans.isEmpty {

@@ -74,6 +74,9 @@ enum ConsultProbe {
         /// Set once the athlete has given at least one standing rule, so
         /// the free-text prompt is offered rather than repeated.
         var offeredRuleCapture: Bool = false
+        /// Days per week the PROGRAM needs to do what the athlete asked
+        /// for. Fills the {days} token — see the commitment probe.
+        var recommendedDaysPerWeek: Int? = nil
 
         /// The commitment gap. Positive means they intend more than they
         /// have been doing.
@@ -168,8 +171,13 @@ enum ConsultProbe {
               tunes: ["daysPerWeek", "split"],
               gain: 10, family: .path,
               clarifier: "Not the aspirational number. The one you'll hit in a bad week."),
+        // The number is a TOKEN, not a word. This probe originally read
+        // "the work will take four days a week" no matter what the
+        // program actually needed — an improvised number in the one
+        // question whose entire weight rests on the number being true.
+        // ConsultProbe.ask(_:in:) substitutes from context.
         Probe(id: "commitment",
-              ask: "The work will take four days a week. Can you commit to that? Or I can build for your current cadence and the same block just takes longer.",
+              ask: "The work will take {days} days a week. Can you commit to that? Or keep your current {current} and the same block just takes longer.",
               options: [
                 Option(id: "commit", label: "I'LL COMMIT"),
                 Option(id: "current", label: "KEEP MY CADENCE",
@@ -275,6 +283,35 @@ enum ConsultProbe {
         // → public.training_rules, read back through advisoryNotes
         "trainingRules",
     ]
+
+    // MARK: Rendering
+
+    /// The question as the athlete reads it, with every number
+    /// substituted from context rather than baked into the string.
+    ///
+    /// A token left unfilled is not printed raw — the sentence falls back
+    /// to a form that stays true without the number, because "{days} days
+    /// a week" reaching a real screen is worse than a vaguer sentence.
+    static func ask(_ probe: Probe, in context: Context) -> String {
+        var text = probe.ask
+        if text.contains("{days}") {
+            guard let days = context.recommendedDaysPerWeek else {
+                return "This block asks for more days than you have been training. Can you commit to that, or should I build for your current cadence and let the block take longer?"
+            }
+            text = text.replacingOccurrences(of: "{days}", with: "\(days)")
+        }
+        if text.contains("{current}") {
+            let logged = context.loggedDaysPerWeek.map { logged -> String in
+                let rounded = (logged * 10).rounded() / 10
+                let whole = rounded.rounded()
+                let formatted = abs(rounded - whole) < 0.05
+                    ? String(Int(whole)) : String(format: "%.1f", rounded)
+                return "\(formatted) a week"
+            } ?? "current cadence"
+            text = text.replacingOccurrences(of: "{current}", with: logged)
+        }
+        return text
+    }
 
     // MARK: Selection
 
