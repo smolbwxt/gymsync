@@ -284,6 +284,27 @@ enum ConsultProbe {
         "trainingRules",
     ]
 
+    // MARK: Reading the log
+
+    /// Sessions per week the log actually shows, over a trailing window.
+    ///
+    /// Counts DISTINCT DAYS, not set logs: forty sets on Tuesday is one
+    /// training day, and dividing raw log rows by weeks would tell an
+    /// athlete they train thirty times a week. The commitment probe fires
+    /// off this number, so an inflated one would confront someone who is
+    /// already showing up.
+    ///
+    /// Returns nil for an empty log — "no evidence" is not "zero", and the
+    /// difference decides whether the athlete goes down the cold-start
+    /// branch or gets asked about their bench.
+    static func loggedCadence(sessionDates: [Date],
+                              over windowDays: Int = 56,
+                              calendar: Calendar = .current) -> Double? {
+        guard !sessionDates.isEmpty, windowDays >= 7 else { return nil }
+        let days = Set(sessionDates.map { calendar.startOfDay(for: $0) })
+        return Double(days.count) / (Double(windowDays) / 7.0)
+    }
+
     // MARK: Rendering
 
     /// The question as the athlete reads it, with every number

@@ -13,10 +13,18 @@ import SwiftUI
 //   RESEARCH — when a question the corpus couldn't answer comes back
 //     researched, the delivery notice lands here.
 struct CoachHomeView: View {
+    @Environment(AppState.self) private var appState
     @Environment(\.gsTheme) private var theme
 
     @State private var profile = TrainingProfile()
     @State private var researched: [String] = []
+    /// Loaded for the consult, whose constraint chips must offer labels
+    /// selection recognises — see ConsultVocabulary.
+    @State private var catalog: [Exercise] = []
+    /// Sessions per week the LOG shows, over the trailing 8 weeks. nil
+    /// means no evidence, which is not the same as zero — it decides
+    /// whether the consult diagnoses or cold-starts.
+    @State private var loggedCadence: Double?
 
     private var persona: CoachPersona? { CoachPersona.bySlug(profile.persona) }
 
@@ -26,6 +34,8 @@ struct CoachHomeView: View {
                 personaHeader
 
                 chatDoor
+
+                consultDoor
 
                 programDoor
 
@@ -43,6 +53,8 @@ struct CoachHomeView: View {
                 profile = loaded
             }
             researched = await CoachChatRepository.researchedQuestions()
+            catalog = (try? await ExerciseRepository.fetchAll()) ?? []
+            await readCadence()
         }
     }
 
@@ -109,6 +121,92 @@ struct CoachHomeView: View {
         .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Chat with your coach")
+    }
+
+    // MARK: THE CONSULT (the guided way in)
+    //
+    // Sits above MY PROGRAM because it LEADS there: the five doors are
+    // coarse adjustment, the consult confirms and fine-tunes, and both
+    // end at the same generator.
+    private var consultDoor: some View {
+        NavigationLink {
+            CoachConsultView(
+                profile: profile,
+                catalog: catalog,
+                // Everything below is READ. A consult that opens already
+                // knowing the athlete is the difference between a consult
+                // and a form.
+                // A block finished OR sets logged. Carryover alone would
+                // cold-start someone mid-way through their first block —
+                // they have a log, they just have not finished anything.
+                hasLog: profile.carryover != nil || loggedCadence != nil,
+                loggedDaysPerWeek: loggedCadence
+                    ?? profile.carryover?.suggestedDaysPerWeek.map(Double.init),
+                recommendedDaysPerWeek: profile.daysPerWeek,
+                onFinish: { answers in
+                    Task { await applyConsult(answers) }
+                })
+            .background(theme.bg)
+            .navigationBarBackButtonHidden(true)
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "text.bubble")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(theme.text)
+                    .frame(width: 24)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("THE CONSULT")
+                        .font(GSFont.bold(16, relativeTo: .headline))
+                        .tracking(0.5)
+                        .foregroundStyle(theme.text)
+                    Text(consultSubtitle)
+                        .font(GSFont.body(11, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral500)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(theme.neutral500)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("The consult — a few questions, then a program")
+    }
+
+    /// A returning athlete is not starting over, and the door should not
+    /// say they are.
+    private var consultSubtitle: String {
+        profile.carryover == nil
+            ? "A few questions, then I build your first block"
+            : "Tell me what changed and I'll retune the block"
+    }
+
+    /// Fold the consult's answers into the profile and save. The generator
+    /// is not run from here — the athlete lands on MY PROGRAM with every
+    /// field already set, which is the point of the split: the consult
+    /// TUNES, the wizard BUILDS, and both read the same profile.
+    private func applyConsult(_ answers: ConsultAnswers) async {
+        guard let userID = appState.currentProfile?.id else { return }
+        let tuned = answers.apply(to: profile)
+        profile = tuned
+        try? await TrainingProfileRepository.save(tuned, userID: userID)
+        for rule in answers.standingRules {
+            try? await TrainingRulesRepository.add(rule, source: "consult")
+        }
+    }
+
+    /// The trailing-8-week cadence, from set logs. Distinct DAYS, not log
+    /// rows — see ConsultProbe.loggedCadence.
+    private func readCadence() async {
+        guard let userID = appState.currentProfile?.id else { return }
+        let since = Calendar.current.date(byAdding: .day, value: -56, to: Date()) ?? Date()
+        guard let logs = try? await SessionRepository.recentSetLogs(userID: userID,
+                                                                   since: since) else { return }
+        loggedCadence = ConsultProbe.loggedCadence(sessionDates: logs.map(\.loggedAt))
     }
 
     // MARK: MY PROGRAM (the generator, one layer down)

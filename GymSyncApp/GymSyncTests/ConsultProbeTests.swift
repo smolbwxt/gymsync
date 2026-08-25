@@ -274,14 +274,67 @@ final class ConsultProbeTests: XCTestCase {
         XCTAssertLessThanOrEqual(short, 5, "a fully-known athlete is being over-asked")
     }
 
-    func testRemainingCountsDownAsTheConsultProgresses() {
+    func testRemainingIsAReadoutNotACountdown() {
+        // Documented behaviour, not a defect — and it cost a CI round to
+        // learn, so it is written down here rather than in a commit
+        // message. Answering the opener CLOSES one question and OPENS the
+        // refinement for the branch chosen, so the remaining count can sit
+        // still or rise. Same for cautions, which unlocks wont_do.
+        //
+        // This is why the header hedges: CoachConsultView says "A FEW
+        // LEFT" above four and only commits to an exact number once the
+        // branching is behind it. A screen that promised "8 LEFT" and then
+        // asked nine would be a number we did not keep.
         var context = ConsultProbe.Context(hasLog: true)
-        let before = ConsultProbe.remaining(in: context)
+        let atStart = ConsultProbe.remaining(in: context)
         context.answered.insert("opener")
         context.goalBranch = "size"
         context.answered.insert("equipment")
         context.equipmentKnown = true
-        XCTAssertLessThan(ConsultProbe.remaining(in: context), before)
+        XCTAssertLessThanOrEqual(ConsultProbe.remaining(in: context), atStart + 1,
+                                 "a branch may reveal a refinement, but not a wave of them")
+    }
+
+    func testAFollowUpMayReplaceTheQuestionItClosed() {
+        // The specific case: naming a caution earns the right to ask what
+        // the athlete flat-out will not do.
+        var context = ConsultProbe.Context(hasLog: true)
+        context.goalBranch = "size"
+        context.answered = ["opener"]
+        let before = ConsultProbe.remaining(in: context)
+        context.answered.insert("cautions")
+        context.cautionsKnown = true
+        XCTAssertEqual(ConsultProbe.remaining(in: context), before,
+                       "cautions closes itself and opens wont_do — net zero")
+    }
+
+    func testRemainingReachesZeroWhenThereIsNothingLeftToAsk() {
+        // The property that actually matters: the readout must land on
+        // zero at the same moment next() returns nil, or the last screen
+        // would say there are questions left while offering none.
+        var context = ConsultProbe.Context(hasLog: true)
+        var guardRail = 30
+        while let probe = ConsultProbe.next(in: context), guardRail > 0 {
+            guardRail -= 1
+            context.answered.insert(probe.id)
+            switch probe.id {
+            case "opener":         context.goalBranch = "size"
+            case "equipment":      context.equipmentKnown = true
+            case "session_length": context.sessionMinutesKnown = true
+            case "cautions":       context.cautionsKnown = true
+            case "standing_rule":  context.offeredRuleCapture = true
+            case "days":           context.statedDaysPerWeek = 4
+            default: break
+            }
+            for key in probe.tunes { context.provenance[key] = .stated }
+        }
+        XCTAssertNil(ConsultProbe.next(in: context))
+        XCTAssertEqual(ConsultProbe.remaining(in: context), 0)
+    }
+
+    func testRemainingNeverExceedsTheBank() {
+        XCTAssertLessThanOrEqual(ConsultProbe.remaining(in: ConsultProbe.Context()),
+                                 ConsultProbe.bank.count)
     }
 
     func testTheConsultEndsRatherThanPaddingItself() {
@@ -291,6 +344,47 @@ final class ConsultProbeTests: XCTestCase {
         var context = ConsultProbe.Context(hasLog: true)
         context.answered = Set(([ConsultProbe.opener] + ConsultProbe.bank).map(\.id))
         XCTAssertNil(ConsultProbe.next(in: context))
+    }
+
+    // MARK: - Reading the log
+
+    private func dates(_ dayOffsets: [Int], perDay: Int = 1) -> [Date] {
+        let base = Date(timeIntervalSince1970: 1_700_000_000)
+        return dayOffsets.flatMap { offset in
+            (0..<perDay).map { i in
+                // Minutes apart, so 40 sets stay inside one calendar day
+                // whatever timezone the CI runner is in.
+                base.addingTimeInterval(TimeInterval(-offset * 86_400 + i * 60))
+            }
+        }
+    }
+
+    func testCadenceCountsTrainingDaysNotSetLogs() {
+        // The defect this exists to prevent: forty sets on Tuesday is ONE
+        // training day. Dividing raw rows by weeks would tell an athlete
+        // they train thirty times a week, and the commitment probe fires
+        // off this number.
+        let manySetsOverEightDays = dates(Array(stride(from: 0, to: 56, by: 7)), perDay: 40)
+        let cadence = ConsultProbe.loggedCadence(sessionDates: manySetsOverEightDays)
+        XCTAssertEqual(cadence ?? 0, 1.0, accuracy: 0.01)
+    }
+
+    func testCadenceIsSessionsPerWeekOverTheWindow() {
+        // 16 distinct days across 8 weeks = 2 a week.
+        let twiceWeekly = dates(Array(stride(from: 0, to: 56, by: 7))
+                                + Array(stride(from: 3, to: 56, by: 7)))
+        XCTAssertEqual(ConsultProbe.loggedCadence(sessionDates: twiceWeekly) ?? 0,
+                       2.0, accuracy: 0.05)
+    }
+
+    func testAnEmptyLogIsNoEvidenceRatherThanZero() {
+        // nil and 0.0 route differently: nil sends the athlete down the
+        // cold-start branch, 0.0 would claim we watched them train nothing.
+        XCTAssertNil(ConsultProbe.loggedCadence(sessionDates: []))
+    }
+
+    func testARidiculousWindowIsRefused() {
+        XCTAssertNil(ConsultProbe.loggedCadence(sessionDates: dates([0, 1]), over: 3))
     }
 
     // MARK: - Stories
