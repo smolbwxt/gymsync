@@ -127,6 +127,31 @@ final class ConsultFocusTests: XCTestCase {
         XCTAssertEqual(answers.focusMuscles(in: catalog), ["chest"])
     }
 
+    // MARK: - Old payloads
+
+    func testAProfileSavedBeforeFocusExistedStillDecodes() throws {
+        // Verifying the claim rather than asserting it in a comment:
+        // TrainingProfile is stored as a JSON payload, and Swift's
+        // synthesized decoder throws on a missing key for a NON-optional
+        // property even when it has a default. focusMuscles is optional
+        // for exactly this reason — strip the key and it must still load.
+        let encoded = try JSONEncoder().encode(TrainingProfile())
+        var object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        // Give the profile a focus so the key is definitely present, then
+        // prove its absence is survivable.
+        var withFocus = TrainingProfile()
+        withFocus.focusMuscles = ["chest"]
+        let full = try JSONSerialization.jsonObject(
+            with: try JSONEncoder().encode(withFocus)) as? [String: Any]
+        XCTAssertNotNil(full?["focusMuscles"], "the key name changed; this test is now vacuous")
+
+        object.removeValue(forKey: "focusMuscles")
+        let stripped = try JSONSerialization.data(withJSONObject: object)
+        let decoded = try JSONDecoder().decode(TrainingProfile.self, from: stripped)
+        XCTAssertNil(decoded.focusMuscles)
+    }
+
     // MARK: - Truthful tunes
 
     func testNoProbeClaimsToWriteAFieldTheApplierIgnores() {

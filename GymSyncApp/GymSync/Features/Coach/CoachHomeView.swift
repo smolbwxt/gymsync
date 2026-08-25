@@ -25,6 +25,11 @@ struct CoachHomeView: View {
     /// means no evidence, which is not the same as zero — it decides
     /// whether the consult diagnoses or cold-starts.
     @State private var loggedCadence: Double?
+    /// The consult ends on "BUILD IT", so it has to actually build.
+    /// Saving a profile and dropping the athlete back here with
+    /// instructions to go press generate somewhere else is not what that
+    /// button says.
+    @State private var pushWizard = false
 
     private var persona: CoachPersona? { CoachPersona.bySlug(profile.persona) }
 
@@ -48,6 +53,10 @@ struct CoachHomeView: View {
         }
         .background(theme.bg)
         .contentMargins(.bottom, 88, for: .scrollContent)
+        .navigationDestination(isPresented: $pushWizard) {
+            CoachWizardView(onCreated: {})
+                .background(theme.bg)
+        }
         .task {
             if let loaded = try? await TrainingProfileRepository.load() {
                 profile = loaded
@@ -145,7 +154,10 @@ struct CoachHomeView: View {
                 recommendedDaysPerWeek: profile.daysPerWeek,
                 userID: appState.currentProfile?.id,
                 onFinish: { answers in
-                    Task { await applyConsult(answers) }
+                    Task {
+                        await applyConsult(answers)
+                        pushWizard = true
+                    }
                 })
             .background(theme.bg)
             .navigationBarBackButtonHidden(true)

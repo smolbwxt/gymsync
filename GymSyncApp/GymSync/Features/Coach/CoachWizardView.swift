@@ -108,6 +108,12 @@ struct CoachWizardView: View {
     @State private var visitedSections: Set<ProfileSection> = []
     /// The relationship's memory rides every rebuild — dropping it would
     /// reset block alternation and deprioritization each visit.
+    /// The profile as LOADED, kept whole so currentProfile() can start
+    /// from it. Without this the wizard rebuilt a profile from its dials
+    /// alone, which silently reset every field it has no dial for — the
+    /// consult set cardioStyle, repAppetite and focusMuscles, and pressing
+    /// generate threw all three away without a word.
+    @State private var loadedProfile: TrainingProfile?
     @State private var savedCarryover: TrainingProfile.Carryover?
     @State private var savedProbeAt: Date?
     /// A block that just finished — the banner's content.
@@ -270,6 +276,7 @@ struct CoachWizardView: View {
             // profile pre-fills every dial, and stated anchors show in
             // the calibration rows.
             if let saved = try? await TrainingProfileRepository.load() {
+                loadedProfile = saved
                 savedCarryover = saved.carryover
                 savedProbeAt = saved.lastProbeAt
                 personaSlug = saved.persona
@@ -708,7 +715,12 @@ struct CoachWizardView: View {
     /// The athlete as data — every dial lands in a profile field the
     /// generator provably reads.
     private func currentProfile() -> TrainingProfile {
-        var profile = TrainingProfile()
+        // Start from what was LOADED, not from a blank profile. Every line
+        // below overwrites a field this screen owns a dial for; anything
+        // it does not own — the consult's cardioStyle, repAppetite and
+        // focusMuscles, and whatever gets added next — rides through
+        // instead of being silently reset to a default.
+        var profile = loadedProfile ?? TrainingProfile()
         profile.persona = personaSlug
         profile.rankedGoals = rankedGoals.isEmpty ? [.hypertrophy] : rankedGoals
         profile.trainingAge = {
