@@ -302,6 +302,11 @@ struct CoachChatView: View {
 // model's window.
 struct CoachThreadView: View {
     let thread: CoachChatThread
+    /// Context the caller wants Coach to open the thread with (a routine,
+    /// a block week). Shown as Coach's first line on an empty thread in
+    /// place of the generic greeting; not persisted, so it never becomes
+    /// a message the model has to account for later.
+    var seededOpener: String? = nil
 
     @Environment(AppState.self) private var appState
     @Environment(\.gsTheme) private var theme
@@ -474,7 +479,8 @@ struct CoachThreadView: View {
         // Coach opens it, unprompted and unpersisted.
         if messages.isEmpty {
             messages = [CoachChatMessage(id: UUID(), role: "coach",
-                body: "Fresh thread — what's on your mind? A lift, the week's plan, something from the research. Each thread here stays on its topic.",
+                body: seededOpener
+                    ?? "Fresh thread — what's on your mind? A lift, the week's plan, something from the research. Each thread here stays on its topic.",
                 createdAt: .now)]
         }
         #if canImport(FoundationModels)
@@ -514,6 +520,9 @@ struct CoachThreadView: View {
                 if !recent.isEmpty {
                     railLines.append("RECENT SESSIONS: \(recent.count) in the log, latest \(recent.first ?? "")")
                 }
+            }
+            if let seededOpener {
+                railLines.append("THIS THREAD WAS OPENED FROM: \(seededOpener)")
             }
             engine = CoachChatEngine(
                 thread: thread,

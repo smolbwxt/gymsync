@@ -136,6 +136,8 @@ struct CoachWizardView: View {
                 sectionDoor(.bodySection)
                 sectionDoor(.limits)
 
+                programScheduleDoor
+
                 Button {
                     generatePreview()
                 } label: {
@@ -723,6 +725,41 @@ struct CoachWizardView: View {
     /// SchedulePlanner's spacing pattern as a rhythm hint (Phase 4
     /// scheduling — the calendar writes ride the scheduling UI pass, but
     /// the 48-hour law reaches the athlete as advice today).
+    /// PROGRAM SCHEDULE (owner 2026-08-25) — the block's weeks, its
+    /// routines and its calendar, one layer down from My Program. The
+    /// destination reads the live enrollment, so this door is honest
+    /// even before a block exists: it opens and says so.
+    private var programScheduleDoor: some View {
+        NavigationLink {
+            ProgramScheduleView()
+                .background(theme.bg)
+                .navigationTitle("Program Schedule")
+                .navigationBarTitleDisplayMode(.inline)
+        } label: {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("PROGRAM SCHEDULE")
+                        .font(GSFont.bold(20, relativeTo: .title3))
+                        .tracking(0.3)
+                        .foregroundStyle(theme.text)
+                    Text("The weeks, the routines, the calendar")
+                        .font(GSFont.body(12, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral700)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(theme.neutral500)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Program schedule — the weeks, the routines, the calendar")
+    }
+
     // MARK: - Redesign doors (owner 2026-08-21)
 
     /// One line on what Coach actually does — the offer, before any ask.
