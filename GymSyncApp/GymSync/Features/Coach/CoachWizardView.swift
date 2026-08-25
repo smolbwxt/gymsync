@@ -684,24 +684,24 @@ struct CoachWizardView: View {
     /// Reads the two things about training HISTORY that change what is
     /// safe to prescribe, plus the athlete's standing rules.
     ///
-    /// A 12-month window on purpose: it has to be long enough to contain
-    /// the layoff we are looking for. A 60-day window would show an empty
-    /// log for someone six months away and report no history at all,
-    /// which reads as a brand-new lifter rather than a returning one —
-    /// same ceilings by accident, but for the wrong reason, and it would
-    /// break the moment the window moved.
+    /// Deliberately reads session history rather than a DATE-WINDOWED set
+    /// log, because a window has a hole exactly where this is needed. Ask
+    /// for the last 12 months and someone two years away returns nothing;
+    /// `daysSinceLastSession` stays nil; `decayedExperience` reads nil as
+    /// "no evidence of a layoff" and hands back their STATED training age.
+    /// The longer the layoff, the more dangerous the answer — the precise
+    /// inversion of what the rule is for. Bounding by COUNT instead means
+    /// the query still answers "when did you last train" however long ago
+    /// that was.
     private func readTrainingHistory() async {
         guard let userID = appState.currentProfile?.id else { return }
         standingRules = ((try? await TrainingRulesRepository.active()) ?? []).map(\.rule)
-        guard let since = Calendar.current.date(byAdding: .day, value: -365, to: .now),
-              let logs = try? await SessionRepository.recentSetLogs(userID: userID,
-                                                                    since: since)
+        guard let sessions = try? await SessionRepository.history(userID: userID, limit: 200)
         else { return }
-        let dates = logs.map(\.loggedAt)
-        if let latest = dates.max() {
-            daysSinceLastSession = Calendar.current
-                .dateComponents([.day], from: latest, to: .now).day
-        }
+        let dates = sessions.compactMap(\.completedAt)
+        guard let latest = dates.max() else { return }
+        daysSinceLastSession = Calendar.current
+            .dateComponents([.day], from: latest, to: .now).day
         daysSinceReturn = GeneratorScience.daysSinceReturn(sessionDates: dates)
     }
 
