@@ -861,23 +861,29 @@ enum ProgramGenerator {
             // horizontal pulling from every day of the block — a
             // conditioning program with no rowing in it at all. A push and
             // a pull are now reserved before anything else fills a seat.
-            var trimmed: [Slot] = []
-            func take(_ matches: (String) -> Bool) {
-                guard trimmed.count < 3,
+            // WHICH three patterns survive is decided by coverage; the
+            // ORDER they are emitted in stays the template's own, so a
+            // conditioning day still opens on its lead compound (the
+            // machine-first squat pattern) rather than on whatever the
+            // reservation happened to claim first.
+            var chosen: [Slot] = []
+            func reserve(_ matches: (String) -> Bool) {
+                guard chosen.count < 3,
                       let slot = base.first(where: { candidate in
                           if case .pattern(let name, _) = candidate {
-                              return matches(name) && !trimmed.contains(candidate)
+                              return matches(name) && !chosen.contains(candidate)
                           }
                           return false
                       }) else { return }
-                trimmed.append(slot)
+                chosen.append(slot)
             }
-            take { $0.hasPrefix("push") }
-            take { $0.hasPrefix("pull") }
+            reserve { $0.hasPrefix("push") }
+            reserve { $0.hasPrefix("pull") }
             for slot in base {
-                guard trimmed.count < 3 else { break }
-                if case .pattern = slot, !trimmed.contains(slot) { trimmed.append(slot) }
+                guard chosen.count < 3 else { break }
+                if case .pattern = slot, !chosen.contains(slot) { chosen.append(slot) }
             }
+            var trimmed = base.filter { chosen.contains($0) }
             trimmed.append(.isolation("core"))
             return trimmed
         }
