@@ -181,6 +181,20 @@ struct TrainingProfile: Codable, Equatable, Sendable {
     var sessionMinutes: Int? = nil
     /// heavy_low | moderate | high_rep_pump
     var repAppetite: String? = nil
+    /// Muscles to give the volume to, from the consult's focus probes.
+    ///
+    /// On the PROFILE rather than passed per-generation because it has to
+    /// outlive the screen that collected it: the consult tunes and the
+    /// wizard builds, and without somewhere durable to sit, "pick two and
+    /// I'll give them the volume" was a promise nothing could keep.
+    ///
+    /// OPTIONAL, not a defaulted array, and that is load-bearing: this
+    /// type is stored as a JSON payload, and Swift's synthesized decoder
+    /// throws on a missing key for a non-optional property even when it
+    /// has a default. An optional decodes absent as nil, so every profile
+    /// written before this field existed still loads. Same reason
+    /// `equipment` next door is optional.
+    var focusMuscles: [String]? = nil
     /// conservative | standard | aggressive — feeds progression.
     var intensityAppetite: String = "standard"
     /// SESSION STRUCTURE — a separate axis from the split (corpus census
@@ -377,7 +391,15 @@ struct TrainingProfile: Codable, Equatable, Sendable {
         //
         // Prefixed so the athlete recognises their own words coming back.
         inputs.advisoryNotes.append(contentsOf: standingRules.map { "Your rule: \($0)" })
-        inputs.focusMuscles = focusMuscles
+        // An explicit argument wins; otherwise the profile's own focus
+        // stands, so a focus set once in the consult keeps applying. Left
+        // nil when there is none — nil means "no preference", while an
+        // empty set would zero the standing bonus for every exercise.
+        if let explicit = focusMuscles {
+            inputs.focusMuscles = explicit
+        } else if let stored = self.focusMuscles, !stored.isEmpty {
+            inputs.focusMuscles = Set(stored)
+        }
         inputs.equipment = equipment
         inputs.cardioDays = cardioDays
         inputs.cardioMinutes = cardioMinutes

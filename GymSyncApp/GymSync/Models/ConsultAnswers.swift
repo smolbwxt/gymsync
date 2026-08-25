@@ -79,10 +79,50 @@ struct ConsultAnswers: Equatable, Sendable {
     /// them the volume", and honoring more than two would make that
     /// sentence false. Filtered to the vocabulary the coverage check uses.
     var focusMuscles: Set<String>? {
-        let picked = values("focus_areas")
+        focusMuscles(in: [])
+    }
+
+    /// Focus areas, plus the muscle behind a named focus lift.
+    ///
+    /// The catalog is needed because "bench press" has to become "chest"
+    /// before the generator can do anything with it — focusMuscles is a
+    /// muscle set, and the coverage check only speaks
+    /// GeneratorScience.majorMuscles.
+    func focusMuscles(in catalog: [Exercise]) -> Set<String>? {
+        var picked = values("focus_areas")
             .filter { GeneratorScience.majorMuscles.contains($0) }
             .prefix(2)
+            .map { $0 }
+        if let lift = focusLift(in: catalog),
+           GeneratorScience.majorMuscles.contains(lift.primaryMuscle),
+           !picked.contains(lift.primaryMuscle) {
+            picked.append(lift.primaryMuscle)
+        }
         return picked.isEmpty ? nil : Set(picked)
+    }
+
+    /// The catalog exercise behind the athlete's answer to "which lift is
+    /// the number on?".
+    ///
+    /// Forgiving on purpose — people type "bench", not "Barbell Bench
+    /// Press". An exact match wins, then a containment match, and an
+    /// answer that matches nothing resolves to nothing rather than to the
+    /// first plausible row: silently focusing the wrong lift is worse
+    /// than focusing none, because the athlete would never see it happen.
+    func focusLift(in catalog: [Exercise]) -> Exercise? {
+        let typed = (first("focus_lift") ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        guard typed.count >= 3 else { return nil }
+        if let exact = catalog.first(where: { $0.name.lowercased() == typed }) { return exact }
+        let matches = catalog.filter { $0.name.lowercased().contains(typed) }
+        if matches.count == 1 { return matches.first }
+        // Several rows contain what they typed — "bench" hits incline,
+        // decline and close-grip too. The shortest name is the plainest
+        // variant, and it wins only when it is unambiguously the shortest.
+        guard let shortest = matches.map(\.name.count).min() else { return nil }
+        let plainest = matches.filter { $0.name.count == shortest }
+        return plainest.count == 1 ? plainest.first : nil
     }
 
     /// Weeks to the date. Free text; a date the athlete cannot state
@@ -123,11 +163,16 @@ struct ConsultAnswers: Equatable, Sendable {
     /// Fold every answer into the profile. Unanswered probes leave their
     /// fields exactly as they were — the consult refines what the five
     /// doors set and never resets it.
-    func apply(to profile: TrainingProfile) -> TrainingProfile {
+    func apply(to profile: TrainingProfile,
+               catalog: [Exercise] = []) -> TrainingProfile {
         var p = profile
 
         func state(_ key: String) { p.provenance[key] = .stated }
 
+        if let focus = focusMuscles(in: catalog) {
+            p.focusMuscles = focus.sorted()
+            state("focusMuscles")
+        }
         if let opener = first("opener") {
             p.rankedGoals = Self.goals(forOpener: opener)
             state("rankedGoals")

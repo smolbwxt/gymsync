@@ -192,7 +192,7 @@ struct CoachHomeView: View {
     /// TUNES, the wizard BUILDS, and both read the same profile.
     private func applyConsult(_ answers: ConsultAnswers) async {
         guard let userID = appState.currentProfile?.id else { return }
-        let tuned = answers.apply(to: profile)
+        let tuned = answers.apply(to: profile, catalog: catalog)
         profile = tuned
         try? await TrainingProfileRepository.save(tuned, userID: userID)
         for rule in answers.standingRules {

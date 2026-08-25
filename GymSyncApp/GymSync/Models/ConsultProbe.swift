@@ -39,8 +39,15 @@ enum ConsultProbe {
         let ask: String
         /// Empty means free text.
         var options: [Option] = []
-        /// Which knobs an answer writes. Documentation AND the basis for
-        /// gain — a probe that tunes nothing has no business being asked.
+        /// The fields an answer WRITES — not the fields it influences.
+        ///
+        /// The distinction is the whole value of this list. Downstream
+        /// derivations follow on their own (generatorFocus falls out of
+        /// rankedGoals, the split ladder falls out of daysPerWeek), and
+        /// listing them here would inflate every probe into looking like
+        /// it does more than it does. A probe that tunes nothing has no
+        /// business being asked; a probe that CLAIMS to tune something it
+        /// never writes is the same fiction wearing a better suit.
         let tunes: [String]
         /// How much the answer moves the program, 1-10.
         let gain: Int
@@ -99,7 +106,10 @@ enum ConsultProbe {
             Option(id: "engine", label: "BUILD THE ENGINE"),
             Option(id: "running", label: "KEEP IT RUNNING"),
         ],
-        tunes: ["rankedGoals", "generatorFocus", "bandOverride"],
+        // generatorFocus and bandOverride are COMPUTED from rankedGoals
+        // and were listed here until an audit asked what actually gets
+        // written. They follow; they are not tuned.
+        tunes: ["rankedGoals"],
         gain: 10,
         family: .goal)
 
@@ -108,9 +118,15 @@ enum ConsultProbe {
     /// pass.
     static let bank: [Probe] = [
         // ── Goal refinement, branched ────────────────────────────────
+        // Claimed starredExerciseIDs and selectionTilt for a while and
+        // wrote neither — the answer was recorded and dropped, so an
+        // athlete named the lift their number is on and nothing moved.
+        // It now resolves against the catalog and gives that lift's
+        // primary muscle the focus volume, which is the effect the
+        // question was always promising.
         Probe(id: "focus_lift",
               ask: "Which lift is the number on?",
-              tunes: ["focusMuscles", "starredExerciseIDs", "selectionTilt"],
+              tunes: ["focusMuscles"],
               gain: 9, family: .goal),
         Probe(id: "focus_areas",
               ask: "Which two areas do you want to look different?",
@@ -168,7 +184,7 @@ enum ConsultProbe {
         // ── Path ─────────────────────────────────────────────────────
         Probe(id: "days",
               ask: "How many days a week can you actually train?",
-              tunes: ["daysPerWeek", "split"],
+              tunes: ["daysPerWeek"],
               gain: 10, family: .path,
               clarifier: "Not the aspirational number. The one you'll hit in a bad week."),
         // The number is a TOKEN, not a word. This probe originally read
@@ -241,11 +257,11 @@ enum ConsultProbe {
         // ── Constraints ──────────────────────────────────────────────
         Probe(id: "cautions",
               ask: "Anything that hurts, or that you're working around?",
-              tunes: ["cautionJoints", "exclusions"],
+              tunes: ["cautionJoints"],
               gain: 9, family: .constraint),
         Probe(id: "wont_do",
               ask: "Anything you flat-out won't do?",
-              tunes: ["excludedPatterns", "exclusions"],
+              tunes: ["excludedPatterns"],
               gain: 7, family: .constraint,
               clarifier: "No justification needed. A lift you skip is worth less than one you'll actually do."),
 
@@ -268,16 +284,20 @@ enum ConsultProbe {
     /// no probe at all: it costs the athlete a question and buys them
     /// nothing. This set is the tripwire. Adding a key here is cheap but
     /// deliberate — you have to name the reader.
+    /// Trimmed by the 2026-08-25 audit: `split`, `exclusions`,
+    /// `starredExerciseIDs`, `selectionTilt`, `generatorFocus` and
+    /// `bandOverride` were all in here and none of them were ever written
+    /// by the applier. They are real fields — that is why they passed —
+    /// which is exactly what made the claims hard to see. A destination
+    /// belongs here only once something writes it.
     static let knownTunables: Set<String> = [
         // → TrainingProfile
-        "rankedGoals", "sportPrepSport", "split", "daysPerWeek",
-        "sessionMinutes", "repAppetite", "intensityAppetite",
-        "sessionStructure", "cardioStyle", "comfortAnswers",
-        "derivedComplexityCap", "exclusions", "excludedPatterns",
-        "cautionJoints", "equipment", "generatorFocus", "bandOverride",
+        "rankedGoals", "sportPrepSport", "daysPerWeek", "sessionMinutes",
+        "repAppetite", "intensityAppetite", "sessionStructure",
+        "cardioStyle", "comfortAnswers", "derivedComplexityCap",
+        "excludedPatterns", "cautionJoints", "equipment", "focusMuscles",
         // → ProgramGenerator.Inputs (assembled by generatorInputs)
-        "focusMuscles", "starredExerciseIDs", "durationWeeks", "effort",
-        "selectionTilt",
+        "durationWeeks", "effort",
         // → UserSettings
         "liftAnchors",
         // → public.training_rules, read back through advisoryNotes
