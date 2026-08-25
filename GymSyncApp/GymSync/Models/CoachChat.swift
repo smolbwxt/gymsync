@@ -6,13 +6,26 @@ import FoundationModels
 
 // MARK: - CoachChat
 //
-// The dedicated Coach thread (owner 2026-08-24): one persistent
-// conversation per athlete, Claude-style. The on-device model's ~4k
-// window can't hold a long relationship, so the thread COMPACTS: when
-// the live tail grows past the turn budget, the model writes a short
-// summary of everything so far, the summary is stored, and the next
-// exchange runs on a fresh session seeded with it. The athlete never
-// sees a seam.
+// Coach conversations, Claude-style (owner 2026-08-24: "threads, not
+// one long persistent chat" — go to a thread, continue it, back out,
+// jump into a different one). Each thread carries its own compaction
+// state: when its live tail outgrows the model's window, the model
+// writes a memory note onto the THREAD row and the session reseeds
+// from it. The athlete never sees a seam.
+
+struct CoachChatThread: Codable, Identifiable, Hashable, Sendable {
+    let id: UUID
+    var title: String
+    var summary: String
+    var summarizedThrough: Date?
+    var updatedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, summary
+        case summarizedThrough = "summarized_through"
+        case updatedAt = "updated_at"
+    }
+}
 
 struct CoachChatMessage: Codable, Identifiable, Sendable {
     let id: UUID
@@ -31,12 +44,64 @@ struct CoachChatMessage: Codable, Identifiable, Sendable {
 enum CoachChatRepository {
     private static var client: SupabaseClient { SupabaseService.shared.client }
 
-    static func recent(limit: Int = 40) async -> [CoachChatMessage] {
+    // MARK: Threads
+
+    static func threads() async -> [CoachChatThread] {
         guard let me = await SupabaseService.shared.currentUserID() else { return [] }
+        let rows: [CoachChatThread]? = try? await client
+            .from("coach_chat_threads")
+            .select("id, title, summary, summarized_through, updated_at")
+            .eq("user_id", value: me.uuidString)
+            .order("updated_at", ascending: false)
+            .execute()
+            .value
+        return rows ?? []
+    }
+
+    static func createThread(title: String = "New thread") async -> CoachChatThread? {
+        guard let me = await SupabaseService.shared.currentUserID() else { return nil }
+        struct Insert: Encodable {
+            let user_id: String
+            let title: String
+        }
+        return try? await client
+            .from("coach_chat_threads")
+            .insert(Insert(user_id: me.uuidString, title: title))
+            .select("id, title, summary, summarized_through, updated_at")
+            .single()
+            .execute()
+            .value
+    }
+
+    /// First athlete message names a default-titled thread — the Claude
+    /// idiom: the opening line IS the title until someone renames it.
+    static func autoTitle(threadID: UUID, from firstMessage: String) async {
+        let title = String(firstMessage.prefix(48))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty else { return }
+        _ = try? await client
+            .from("coach_chat_threads")
+            .update(["title": title])
+            .eq("id", value: threadID.uuidString)
+            .eq("title", value: "New thread")
+            .execute()
+    }
+
+    static func deleteThread(id: UUID) async {
+        _ = try? await client
+            .from("coach_chat_threads")
+            .delete()
+            .eq("id", value: id.uuidString)
+            .execute()
+    }
+
+    // MARK: Messages
+
+    static func recent(threadID: UUID, limit: Int = 60) async -> [CoachChatMessage] {
         let rows: [CoachChatMessage]? = try? await client
             .from("coach_chat_messages")
             .select("id, role, body, created_at")
-            .eq("user_id", value: me.uuidString)
+            .eq("thread_id", value: threadID.uuidString)
             .order("created_at", ascending: false)
             .limit(limit)
             .execute()
@@ -45,53 +110,35 @@ enum CoachChatRepository {
     }
 
     @discardableResult
-    static func append(role: String, body: String) async -> CoachChatMessage? {
+    static func append(threadID: UUID, role: String, body: String) async -> CoachChatMessage? {
         guard let me = await SupabaseService.shared.currentUserID() else { return nil }
         struct Insert: Encodable {
             let user_id: String
+            let thread_id: String
             let role: String
             let body: String
         }
         return try? await client
             .from("coach_chat_messages")
-            .insert(Insert(user_id: me.uuidString, role: role, body: body))
+            .insert(Insert(user_id: me.uuidString, thread_id: threadID.uuidString,
+                           role: role, body: body))
             .select("id, role, body, created_at")
             .single()
             .execute()
             .value
     }
 
-    struct ChatState: Codable {
-        let summary: String
-        let summarizedThrough: Date?
-        enum CodingKeys: String, CodingKey {
-            case summary
-            case summarizedThrough = "summarized_through"
-        }
-    }
+    // MARK: Compaction state (lives on the thread row)
 
-    static func state() async -> ChatState? {
-        guard let me = await SupabaseService.shared.currentUserID() else { return nil }
-        let rows: [ChatState]? = try? await client
-            .from("coach_chat_state")
-            .select("summary, summarized_through")
-            .eq("user_id", value: me.uuidString)
-            .execute()
-            .value
-        return rows?.first
-    }
-
-    static func saveState(summary: String, through: Date) async {
-        guard let me = await SupabaseService.shared.currentUserID() else { return }
-        struct Upsert: Encodable {
-            let user_id: String
+    static func saveState(threadID: UUID, summary: String, through: Date) async {
+        struct Update: Encodable {
             let summary: String
             let summarized_through: Date
         }
         _ = try? await client
-            .from("coach_chat_state")
-            .upsert(Upsert(user_id: me.uuidString, summary: summary,
-                           summarized_through: through))
+            .from("coach_chat_threads")
+            .update(Update(summary: summary, summarized_through: through))
+            .eq("id", value: threadID.uuidString)
             .execute()
     }
 
@@ -112,9 +159,9 @@ enum CoachChatRepository {
 }
 
 #if canImport(FoundationModels)
-/// The live thread engine: seeds a session from the stored summary plus
-/// the recent tail, answers with the full tool belt, and compacts when
-/// the tail outgrows the budget.
+/// One thread's live engine: seeds a session from the thread's stored
+/// summary plus its recent tail, answers with the full tool belt, and
+/// compacts onto the thread row when the tail outgrows the budget.
 @available(iOS 26.0, *)
 @MainActor
 final class CoachChatEngine {
@@ -124,19 +171,22 @@ final class CoachChatEngine {
     /// background compaction. Chosen well inside the ~4k window.
     private let compactionBudget = 12
 
+    private let thread: CoachChatThread
     private let profile: TrainingProfile
     private let persona: CoachPersona?
-    private let trendLookup: @Sendable (String) -> String
-    private let volumeLookup: @Sendable () -> String
     /// Field 2026-08-24: "let coach see all of your past routines,
     /// saved routines, and scheduled routines" — computed lines the
     /// view assembles from the repositories; empty string = no data.
     private let routinesRail: String
+    private let trendLookup: @Sendable (String) -> String
+    private let volumeLookup: @Sendable () -> String
 
-    init(profile: TrainingProfile, persona: CoachPersona?,
+    init(thread: CoachChatThread,
+         profile: TrainingProfile, persona: CoachPersona?,
          routinesRail: String = "",
          trendLookup: @escaping @Sendable (String) -> String,
          volumeLookup: @escaping @Sendable () -> String) {
+        self.thread = thread
         self.profile = profile
         self.persona = persona
         self.routinesRail = routinesRail
@@ -146,12 +196,12 @@ final class CoachChatEngine {
 
     private func seedSession(summary: String, tail: [CoachChatMessage]) {
         var instructions = DebriefInstructions.build(persona: persona, profile: profile)
-        instructions += "\n\nThis is an ONGOING relationship thread, not a one-off debrief. Keep replies chat-length (2-5 sentences) unless asked to go deep."
+        instructions += "\n\nThis is an ONGOING conversation thread, not a one-off debrief. Keep replies chat-length (2-5 sentences) unless asked to go deep."
         if !routinesRail.isEmpty {
             instructions += "\n\nTHE ATHLETE'S ROUTINES AND SCHEDULE (computed — cite, don't invent):\n" + routinesRail
         }
         if !summary.isEmpty {
-            instructions += "\n\nWHAT HAS HAPPENED SO FAR (your own memory of this conversation — trust it):\n" + summary
+            instructions += "\n\nWHAT HAS HAPPENED SO FAR IN THIS THREAD (your own memory — trust it):\n" + summary
         }
         if !tail.isEmpty {
             let rendered = tail.suffix(8).map { "\($0.isCoach ? "You" : "Athlete"): \($0.body)" }
@@ -167,13 +217,12 @@ final class CoachChatEngine {
         turnsSinceSeed = 0
     }
 
-    /// Answer one athlete message; persists both sides and compacts in
-    /// the background when the tail is long.
+    /// Answer one athlete message; compacts in the background when the
+    /// tail is long. Persistence belongs to the caller.
     func reply(to message: String) async throws -> String {
         if session == nil {
-            let state = await CoachChatRepository.state()
-            let tail = await CoachChatRepository.recent(limit: 10)
-            seedSession(summary: state?.summary ?? "", tail: tail)
+            let tail = await CoachChatRepository.recent(threadID: thread.id, limit: 10)
+            seedSession(summary: thread.summary, tail: tail)
         }
         guard let session else { throw GymSyncError.unknown("Coach chat session unavailable") }
         let reply = try await session.respond(to: message).content
@@ -185,12 +234,12 @@ final class CoachChatEngine {
     }
 
     /// Claude-style compaction: the model summarizes the thread so far;
-    /// the summary is stored and the session resets seeded with it.
+    /// the summary lands on the thread row and the session reseeds.
     private func compact() async {
         guard let session else { return }
         let prompt = "Write a compact memory note (under 150 words) of this conversation so far: the athlete's situation, decisions made, advice given, and anything you promised to follow up on. Plain prose, no preamble — this note becomes your memory when the conversation continues."
         guard let summary = try? await session.respond(to: prompt).content else { return }
-        await CoachChatRepository.saveState(summary: summary, through: Date())
+        await CoachChatRepository.saveState(threadID: thread.id, summary: summary, through: Date())
         seedSession(summary: summary, tail: [])
     }
 }

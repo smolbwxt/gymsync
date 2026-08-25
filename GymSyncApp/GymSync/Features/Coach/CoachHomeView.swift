@@ -72,7 +72,7 @@ struct CoachHomeView: View {
         NavigationLink {
             CoachChatView()
                 .background(theme.bg)
-                .navigationTitle(persona?.name ?? "Coach")
+                .navigationTitle("Threads")
                 .navigationBarTitleDisplayMode(.inline)
         } label: {
             VStack(alignment: .leading, spacing: 8) {
@@ -86,13 +86,13 @@ struct CoachHomeView: View {
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(theme.accent)
                 }
-                Text("One ongoing conversation — your training, your numbers, the research. It remembers where you left off.")
+                Text("Threads with your coach — one per topic. Pick any back up where it left off, or start fresh.")
                     .font(GSFont.body(13, relativeTo: .subheadline))
                     .foregroundStyle(theme.neutral700)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
                 HStack {
-                    Text("YOUR COACH, ON CALL")
+                    Text("EVERY THREAD REMEMBERS")
                         .font(GSFont.bold(10, relativeTo: .caption2))
                         .tracking(1.1)
                         .foregroundStyle(theme.neutral500)
@@ -173,12 +173,136 @@ struct CoachHomeView: View {
     }
 }
 
-// MARK: - CoachChatView
+// MARK: - CoachChatView (the thread list)
 //
-// The persistent thread. History loads from coach_chat_messages; every
-// exchange persists both sides; the engine compacts behind the scenes
-// (CoachChatEngine) so the conversation never hits the model's window.
+// Claude-style threads (owner 2026-08-24: "go to a thread, continue
+// the conversation, then back out and jump into a different one about
+// a different topic. Not one long chat."). This screen is the list;
+// CoachThreadView below is one conversation. Each thread carries its
+// own compaction state on its row.
 struct CoachChatView: View {
+    @Environment(\.gsTheme) private var theme
+
+    @State private var threads: [CoachChatThread] = []
+    @State private var loading = true
+    @State private var pushedThread: CoachChatThread?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                newThreadButton
+
+                if threads.isEmpty && !loading {
+                    Text("No conversations yet. Start one — a lift that feels off, a programming question, what the research says. Each thread keeps its own history.")
+                        .font(GSFont.body(13, relativeTo: .subheadline))
+                        .foregroundStyle(theme.neutral500)
+                        .padding(.horizontal, 2)
+                }
+
+                ForEach(threads) { thread in
+                    threadRow(thread)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+        }
+        .background(theme.bg)
+        .contentMargins(.bottom, 88, for: .scrollContent)
+        .task {
+            threads = await CoachChatRepository.threads()
+            loading = false
+        }
+        .navigationDestination(item: $pushedThread) { thread in
+            CoachThreadView(thread: thread)
+                .background(theme.bg)
+                .navigationTitle(thread.title == "New thread" ? "Coach" : thread.title)
+                .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    private var newThreadButton: some View {
+        Button {
+            Task {
+                if let created = await CoachChatRepository.createThread() {
+                    threads.insert(created, at: 0)
+                    pushedThread = created
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "plus")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(theme.accent)
+                Text("NEW THREAD")
+                    .font(GSFont.bold(13, relativeTo: .subheadline))
+                    .tracking(0.6)
+                    .foregroundStyle(theme.text)
+                Spacer()
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
+        .accessibilityLabel("New thread")
+    }
+
+    private func threadRow(_ thread: CoachChatThread) -> some View {
+        Button {
+            pushedThread = thread
+        } label: {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(thread.title)
+                        .font(GSFont.bold(14, relativeTo: .subheadline))
+                        .foregroundStyle(theme.text)
+                        .lineLimit(1)
+                    Text(relativeAge(thread.updatedAt))
+                        .font(GSFont.body(11, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral500)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(theme.neutral500)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
+        // Deletion rides the long-press context menu (the crew-member
+        // removal precedent) — no swipe gestures in a ScrollView.
+        .contextMenu {
+            Button(role: .destructive) {
+                Task {
+                    await CoachChatRepository.deleteThread(id: thread.id)
+                    threads.removeAll { $0.id == thread.id }
+                }
+            } label: {
+                Label("Delete thread", systemImage: "trash")
+            }
+        }
+    }
+
+    private func relativeAge(_ date: Date) -> String {
+        let seconds = Date().timeIntervalSince(date)
+        if seconds < 3600 { return "Just now" }
+        if seconds < 86_400 { return "\(Int(seconds / 3600))h ago" }
+        let days = Int(seconds / 86_400)
+        return days == 1 ? "Yesterday" : "\(days)d ago"
+    }
+}
+
+// MARK: - CoachThreadView (one conversation)
+//
+// History loads from coach_chat_messages by thread; every exchange
+// persists both sides; the engine compacts onto the thread row behind
+// the scenes (CoachChatEngine) so the conversation never hits the
+// model's window.
+struct CoachThreadView: View {
+    let thread: CoachChatThread
+
     @Environment(AppState.self) private var appState
     @Environment(\.gsTheme) private var theme
 
@@ -186,6 +310,7 @@ struct CoachChatView: View {
     @State private var draft = ""
     @State private var thinking = false
     @State private var loading = true
+    @State private var titled = false
     /// Held as Any so this view compiles on every SDK; only the gated
     /// paths below cast it (the CoachRecapView precedent).
     @State private var engine: Any?
@@ -207,12 +332,6 @@ struct CoachChatView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 10) {
-                        if messages.isEmpty && !loading {
-                            Text("This thread is yours — training questions, a gut-check on a lift, what the research says. I keep the history.")
-                                .font(GSFont.body(13, relativeTo: .subheadline))
-                                .foregroundStyle(theme.neutral500)
-                                .padding(.horizontal, 14)
-                        }
                         ForEach(messages) { message in
                             bubble(message)
                         }
@@ -282,14 +401,15 @@ struct CoachChatView: View {
     private func open() async {
         guard loading else { return }
         defer { loading = false }
-        AppLogger.workout.info("coach chat open: available=\(CoachDebrief.isConversationAvailable, privacy: .public)")
-        messages = await CoachChatRepository.recent()
+        AppLogger.workout.info("coach thread open: available=\(CoachDebrief.isConversationAvailable, privacy: .public)")
+        messages = await CoachChatRepository.recent(threadID: thread.id)
+        titled = thread.title != "New thread" || !messages.isEmpty
         // Field 2026-08-24 ("the coach chat page doesn't have anything
-        // on it"): a first visit must never read as a dead screen —
-        // Coach opens the relationship, unprompted and unpersisted.
+        // on it"): a fresh thread must never read as a dead screen —
+        // Coach opens it, unprompted and unpersisted.
         if messages.isEmpty {
             messages = [CoachChatMessage(id: UUID(), role: "coach",
-                body: "This thread is ours — it keeps the history. Ask me anything: your numbers, a lift that feels off, what the research says. Where do you want to start?",
+                body: "Fresh thread — what's on your mind? A lift, the week's plan, something from the research. Each thread here stays on its topic.",
                 createdAt: .now)]
         }
         #if canImport(FoundationModels)
@@ -331,6 +451,7 @@ struct CoachChatView: View {
                 }
             }
             engine = CoachChatEngine(
+                thread: thread,
                 profile: profile,
                 persona: CoachPersona.bySlug(profile.persona),
                 routinesRail: railLines.joined(separator: "\n"),
@@ -359,19 +480,25 @@ struct CoachChatView: View {
             // question must not appear there AND in the prompt.
             messages.append(CoachChatMessage(id: UUID(), role: "athlete",
                                              body: question, createdAt: .now))
+            if !titled {
+                titled = true
+                await CoachChatRepository.autoTitle(threadID: thread.id, from: question)
+            }
             #if canImport(FoundationModels)
             if #available(iOS 26.0, *), let engine = engine as? CoachChatEngine {
                 do {
                     let reply = try await engine.reply(to: question)
-                    await CoachChatRepository.append(role: "athlete", body: question)
-                    if let saved = await CoachChatRepository.append(role: "coach", body: reply) {
+                    await CoachChatRepository.append(threadID: thread.id,
+                                                     role: "athlete", body: question)
+                    if let saved = await CoachChatRepository.append(threadID: thread.id,
+                                                                    role: "coach", body: reply) {
                         messages.append(saved)
                     } else {
                         messages.append(CoachChatMessage(id: UUID(), role: "coach",
                                                          body: reply, createdAt: .now))
                     }
                 } catch {
-                    AppLogger.workout.error("coach chat reply failed: \(error.localizedDescription, privacy: .public)")
+                    AppLogger.workout.error("coach thread reply failed: \(error.localizedDescription, privacy: .public)")
                     messages.append(CoachChatMessage(id: UUID(), role: "coach",
                         body: "That one didn't come through — give me the question once more.",
                         createdAt: .now))
@@ -382,7 +509,7 @@ struct CoachChatView: View {
             // Engine missing where the model is available = a wiring
             // failure worth naming, not a silent dead composer (the
             // 2026-08-24 field report's failure shape).
-            AppLogger.workout.error("coach chat send: no engine (available=\(CoachDebrief.isConversationAvailable, privacy: .public))")
+            AppLogger.workout.error("coach thread send: no engine (available=\(CoachDebrief.isConversationAvailable, privacy: .public))")
             messages.append(CoachChatMessage(id: UUID(), role: "coach",
                 body: "I couldn't reach the on-device model just now — give me that once more in a moment.",
                 createdAt: .now))
