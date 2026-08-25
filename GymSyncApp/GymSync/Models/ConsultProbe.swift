@@ -114,10 +114,31 @@ enum ConsultProbe {
               tunes: ["focusMuscles"],
               gain: 9, family: .goal,
               clarifier: "Pick two and I'll give them the volume, and pull it back everywhere else."),
+        // Note this tunes DURATION, not a phase model. Phase structure is
+        // DERIVED — BlockPhase.phases(for:) reads each week's
+        // percentOfBaseline and names what it finds. Listing a
+        // "phaseModel" knob here would have been fiction: a probe claiming
+        // to write something nothing reads, which is the dead-knob bug
+        // repAppetite spent months being.
         Probe(id: "the_date",
               ask: "What's on the date, and when is it?",
-              tunes: ["durationWeeks", "sportPrepSport", "phaseModel"],
+              tunes: ["durationWeeks", "sportPrepSport"],
               gain: 10, family: .goal),
+        // Writing the story tests exposed this hole: five of the six
+        // opener doors branched into a refinement and "BUILD THE ENGINE"
+        // branched into nothing, so an endurance athlete answered the
+        // opener and was handed straight to the generic probes. The
+        // meaningful fork for a conditioning goal is which ENGINE — the
+        // one that holds a pace, or the one that repeats hard efforts —
+        // and cardioStyle already carries it.
+        Probe(id: "engine_kind",
+              ask: "Which engine — one that holds a pace, or one that repeats hard efforts?",
+              options: [
+                Option(id: "steady", label: "HOLDS A PACE"),
+                Option(id: "intervals", label: "REPEATS HARD EFFORTS"),
+              ],
+              tunes: ["cardioStyle"],
+              gain: 9, family: .goal),
         Probe(id: "whats_off",
               ask: "What feels off right now — energy, breath, stiffness, or the mirror?",
               options: [
@@ -228,6 +249,33 @@ enum ConsultProbe {
               clarifier: "Things like \"pulls before arms\" or \"keep Saturdays light\" — I'll hold them across blocks."),
     ]
 
+    // MARK: Tunables
+
+    /// Every destination a probe is allowed to claim, with the type that
+    /// actually holds it. A probe whose `tunes` names something outside
+    /// this set fails `ConsultProbeTests` — which is the point.
+    ///
+    /// The consult's whole justification is that each question changes the
+    /// program, so a probe writing to a field nothing reads is worse than
+    /// no probe at all: it costs the athlete a question and buys them
+    /// nothing. This set is the tripwire. Adding a key here is cheap but
+    /// deliberate — you have to name the reader.
+    static let knownTunables: Set<String> = [
+        // → TrainingProfile
+        "rankedGoals", "sportPrepSport", "split", "daysPerWeek",
+        "sessionMinutes", "repAppetite", "intensityAppetite",
+        "sessionStructure", "cardioStyle", "comfortAnswers",
+        "derivedComplexityCap", "exclusions", "excludedPatterns",
+        "cautionJoints", "equipment", "generatorFocus", "bandOverride",
+        // → ProgramGenerator.Inputs (assembled by generatorInputs)
+        "focusMuscles", "starredExerciseIDs", "durationWeeks", "effort",
+        "selectionTilt",
+        // → UserSettings
+        "liftAnchors",
+        // → public.training_rules, read back through advisoryNotes
+        "trainingRules",
+    ]
+
     // MARK: Selection
 
     /// Whether a probe is worth asking given what we already know. This
@@ -242,6 +290,7 @@ enum ConsultProbe {
             return context.goalBranch == "numbers" && context.hasLog
         case "focus_areas":   return context.goalBranch == "size"
         case "the_date":      return context.goalBranch == "date"
+        case "engine_kind":   return context.goalBranch == "engine"
         case "whats_off":     return context.goalBranch == "running" || context.goalBranch == "forge"
 
         // Cold start replaces diagnosis when there is nothing to diagnose.
