@@ -362,12 +362,22 @@ enum GeneratorScience {
         // this, a 16-year-old with a year of training inherited the adult
         // number. The owner's ruling was no minimum age, which makes these
         // ceilings the thing that keeps that safe.
+        // Where the two sources disagree, the STRICTER wins. Our own
+        // trainer audit had already pulled the adult novice ceiling to
+        // 67.5 ("a day-one 50-year-old opened at 72% triples — legal but
+        // eager"), which is below the NSCA youth novice band's 70. Taking
+        // the NSCA number verbatim would have prescribed a 14-year-old
+        // beginner MORE than a 40-year-old beginner — caught by the
+        // invariant test, not by reading. The rule is therefore a floor,
+        // not a substitution: a youth ceiling can only ever be lower.
         if isYouth {
+            let nsca: Double
             switch experience {
-            case .new: return 70          // NSCA novice band tops at 70%
-            case .intermediate: return 80 // NSCA intermediate tops at 80%
-            case .advanced: return 85     // NSCA advanced tops at 85%
+            case .new: nsca = 70            // NSCA novice band tops at 70%
+            case .intermediate: nsca = 80   // NSCA intermediate tops at 80%
+            case .advanced: nsca = 85       // NSCA advanced tops at 85%
             }
+            return min(nsca, mainIntensityCeiling(experience: experience))
         }
         switch experience {
         // 72.5 -> 67.5 (20-athlete audit 2026-08-20: a day-one 50-year-old

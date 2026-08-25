@@ -19,13 +19,17 @@ final class GuidelineRulesTests: XCTestCase {
         }
     }
 
-    func testYouthCeilingsMatchTheNSCATable() {
-        // NSCA Youth Resistance Training position stand, Table 2:
-        // novice 50-70%, intermediate 60-80%, advanced 70-85% 1RM.
-        // We clamp at each band's TOP.
-        XCTAssertEqual(GeneratorScience.mainIntensityCeiling(experience: .new, isYouth: true), 70)
-        XCTAssertEqual(GeneratorScience.mainIntensityCeiling(experience: .intermediate, isYouth: true), 80)
-        XCTAssertEqual(GeneratorScience.mainIntensityCeiling(experience: .advanced, isYouth: true), 85)
+    func testYouthCeilingsTakeTheStricterOfTheTwoSources() {
+        // NSCA Table 2 tops each youth band at 70 / 80 / 85% 1RM. Our own
+        // trainer audit had already pulled the ADULT novice ceiling to
+        // 67.5, which is stricter than NSCA's youth novice number — so the
+        // youth rule is a floor, not a substitution.
+        XCTAssertEqual(GeneratorScience.mainIntensityCeiling(experience: .new, isYouth: true), 67.5,
+                       "our stricter novice ceiling wins over NSCA's 70")
+        XCTAssertEqual(GeneratorScience.mainIntensityCeiling(experience: .intermediate, isYouth: true), 80,
+                       "NSCA binds here — 80 is below our adult 87.5")
+        XCTAssertEqual(GeneratorScience.mainIntensityCeiling(experience: .advanced, isYouth: true), 85,
+                       "NSCA binds here — 85 is well below our adult 92.5")
     }
 
     func testAdvancedYouthIsCappedWellBelowAdvancedAdult() {
