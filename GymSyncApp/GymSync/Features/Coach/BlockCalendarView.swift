@@ -22,6 +22,13 @@ struct BlockCalendarView: View {
 
     @State private var completedDays: Set<Date> = []
     @State private var scheduledDays: Set<Date> = []
+    /// Per-week overrides (owner 2026-08-25). A week absent from this map
+    /// simply inherits the block's default rhythm.
+    @State private var weekSchedules: [Int: BlockWeekSchedule] = [:]
+    /// Cached because `fill(for:)` runs once per calendar cell — a
+    /// computed property here would rebuild the whole set ~90 times per
+    /// render.
+    @State private var plannedDays: Set<Date> = []
     @State private var selectedWeek = 1
     @State private var sheetWeek: WeekRef?
     @State private var loading = true
@@ -29,6 +36,11 @@ struct BlockCalendarView: View {
     private struct WeekRef: Identifiable { let id: Int }
 
     private var calendar: Calendar { .current }
+
+    /// The design system's `--onyx-gold` (goals, streaks, finish lines).
+    /// Not a GSTheme token — semantic colors outside the ramp follow the
+    /// HomeView precedent of a local `Color.gsHex` constant.
+    private let blockGold = Color.gsHex(0xE8C33A)
 
     var body: some View {
         ScrollView {
@@ -51,9 +63,12 @@ struct BlockCalendarView: View {
         .sheet(item: $sheetWeek) { ref in
             WeekScheduleSheet(weekNumber: ref.id,
                               window: window(for: ref.id),
+                              enrollmentID: enrollment?.id,
+                              existing: weekSchedules[ref.id],
                               completed: completedDays,
-                              scheduled: scheduledDays)
-                .presentationDetents([.height(280)])
+                              scheduled: scheduledDays,
+                              onChanged: { await reloadSchedules() })
+                .presentationDetents([.height(400)])
         }
     }
 
@@ -92,7 +107,15 @@ struct BlockCalendarView: View {
                 .buttonStyle(.gs3D(face: number == selectedWeek ? theme.accent : theme.raised3DFace,
                                    lip: theme.raised3DLip,
                                    cornerRadius: 8, lipHeight: 3))
-                .accessibilityLabel("Week \(number)\(week.isDeload ? ", deload" : ""), edit its schedule")
+                .accessibilityLabel("Week \(number)\(week.isDeload ? ", deload" : "")\(weekSchedules[number] != nil ? ", custom schedule" : ""), edit its schedule")
+                .overlay(alignment: .topTrailing) {
+                    if weekSchedules[number] != nil {
+                        Circle()
+                            .fill(theme.accent)
+                            .frame(width: 5, height: 5)
+                            .padding(3)
+                    }
+                }
             }
         }
     }
@@ -172,6 +195,7 @@ struct BlockCalendarView: View {
         if let last = blockEnd, calendar.isDate(key, inSameDayAs: last) { return blockGold }
         if completedDays.contains(key) { return theme.text }
         if scheduledDays.contains(key) { return theme.accent }
+        if plannedDays.contains(key) { return theme.accent.opacity(0.55) }
         if inSelectedWeek(key) { return theme.accent.opacity(0.22) }
         if inBlock(key) { return theme.neutral500.opacity(0.35) }
         return theme.neutral500.opacity(0.12)
@@ -181,6 +205,7 @@ struct BlockCalendarView: View {
         HStack(spacing: 12) {
             legendDot(theme.text, "DONE")
             legendDot(theme.accent, "BOOKED")
+            legendDot(theme.accent.opacity(0.55), "PLANNED")
             legendDot(blockGold, "BLOCK ENDS")
         }
     }
@@ -339,68 +364,165 @@ struct BlockCalendarView: View {
             scheduledDays = Set(upcoming.compactMap { $0.scheduledFor }
                 .map { calendar.startOfDay(for: $0) })
         }
+        await reloadSchedules()
+    }
+
+    private func reloadSchedules() async {
+        guard let enrollment else { return }
+        weekSchedules = await BlockWeekScheduleRepository.forEnrollment(enrollment.id)
+        plannedDays = computePlannedDays()
+    }
+
+    /// Days a per-week override PLANS — distinct from days with a real
+    /// session on them. Planned is intent; booked is a session row.
+    private func computePlannedDays() -> Set<Date> {
+        guard enrollment != nil else { return [] }
+        var days: Set<Date> = []
+        for (weekNumber, schedule) in weekSchedules where !schedule.weekdays.isEmpty {
+            let start = calendar.startOfDay(for: window(for: weekNumber).start)
+            for offset in 0..<7 {
+                guard let day = calendar.date(byAdding: .day, value: offset, to: start) else { continue }
+                if schedule.weekdays.contains(calendar.component(.weekday, from: day)) {
+                    days.insert(day)
+                }
+            }
+        }
+        return days
     }
 }
 
 // MARK: - WeekScheduleSheet
 //
-// The blocking line that slides up when a week chip is tapped. It shows
-// that week's REAL days — what is booked, what is done — because a
-// per-week distinct schedule has no storage model yet (SessionSeries
-// carries one recurring pattern for the whole block, not one per week).
-// Rather than fake an editor that cannot persist, this states the week
-// honestly and hands off to the scheduler that does persist.
+// The blocking line that slides up when a week chip is tapped, and — as
+// of the block_week_schedules table — a REAL editor. Toggling days
+// upserts that week's override; "same as the block" deletes it so the
+// week falls back to the block's default rhythm rather than storing an
+// empty day list, which would mean "rest all week" instead of "no
+// opinion".
+//
+// Weekday values are Calendar's own (1 = Sunday ... 7 = Saturday); the
+// chips merely DISPLAY Monday-first.
 struct WeekScheduleSheet: View {
     let weekNumber: Int
     let window: (start: Date, end: Date)
+    let enrollmentID: UUID?
+    let existing: BlockWeekSchedule?
     let completed: Set<Date>
     let scheduled: Set<Date>
+    let onChanged: () async -> Void
 
     @Environment(\.gsTheme) private var theme
     @Environment(\.dismiss) private var dismiss
-    @State private var showScheduler = false
+
+    @State private var selectedDays: Set<Int> = []
+    @State private var time = Date()
+    @State private var saving = false
+    @State private var loaded = false
 
     private var calendar: Calendar { .current }
+    /// Display order, Monday-first, in Calendar weekday values.
+    private let displayOrder = [2, 3, 4, 5, 6, 7, 1]
+    private let letters = ["", "S", "M", "T", "W", "T", "F", "S"]
 
     private var days: [Date] {
-        (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: calendar.startOfDay(for: window.start)) }
+        (0..<7).compactMap {
+            calendar.date(byAdding: .day, value: $0,
+                          to: calendar.startOfDay(for: window.start))
+        }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("WEEK \(weekNumber)")
-                    .font(GSFont.bold(20, relativeTo: .title3))
-                    .tracking(0.3)
-                    .foregroundStyle(theme.text)
-                Spacer()
-                Text(rangeText.uppercased())
-                    .font(GSFont.bold(10, relativeTo: .caption2))
-                    .tracking(1.1)
-                    .foregroundStyle(theme.neutral700)
-            }
-            HStack(spacing: 6) {
-                ForEach(Array(days.enumerated()), id: \.offset) { _, day in
-                    VStack(spacing: 4) {
-                        Text(letter(day))
-                            .font(GSFont.bold(9, relativeTo: .caption2))
-                            .foregroundStyle(theme.neutral500)
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(fill(day))
-                            .frame(height: 34)
-                            .overlay {
-                                Text("\(calendar.component(.day, from: day))")
-                                    .font(GSFont.bold(11, relativeTo: .caption))
-                                    .foregroundStyle(ink(day))
-                            }
+        VStack(alignment: .leading, spacing: 14) {
+            header
+            dayToggles
+            timeRow
+            actions
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.bg)
+        .task {
+            guard !loaded else { return }
+            loaded = true
+            selectedDays = Set(existing?.weekdays ?? [])
+            var components = DateComponents()
+            components.hour = existing?.hour ?? 18
+            components.minute = existing?.minute ?? 0
+            time = calendar.date(from: components) ?? Date()
+        }
+    }
+
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text("WEEK \(weekNumber)")
+                .font(GSFont.bold(20, relativeTo: .title3))
+                .tracking(0.3)
+                .foregroundStyle(theme.text)
+            Spacer()
+            Text(rangeText.uppercased())
+                .font(GSFont.bold(10, relativeTo: .caption2))
+                .tracking(1.1)
+                .foregroundStyle(theme.neutral700)
+        }
+    }
+
+    private var dayToggles: some View {
+        HStack(spacing: 6) {
+            ForEach(displayOrder, id: \.self) { weekday in
+                Button {
+                    if selectedDays.contains(weekday) { selectedDays.remove(weekday) }
+                    else { selectedDays.insert(weekday) }
+                } label: {
+                    VStack(spacing: 3) {
+                        Text(letters[weekday])
+                            .font(GSFont.bold(11, relativeTo: .caption))
+                            .foregroundStyle(selectedDays.contains(weekday) ? theme.bg : theme.neutral700)
+                        if let day = date(for: weekday) {
+                            Text("\(calendar.component(.day, from: day))")
+                                .font(GSFont.bold(9, relativeTo: .caption2).monospacedDigit())
+                                .foregroundStyle(selectedDays.contains(weekday) ? theme.bg.opacity(0.8) : theme.neutral500)
+                        }
                     }
                     .frame(maxWidth: .infinity)
+                    .frame(height: 44)
                 }
+                .buttonStyle(.gs3D(face: selectedDays.contains(weekday) ? theme.accent : theme.raised3DFace,
+                                   lip: theme.raised3DLip,
+                                   cornerRadius: 8, lipHeight: 3))
+                .overlay(alignment: .bottom) {
+                    // A day that already carries a real session is marked,
+                    // so toggling never hides what is actually booked.
+                    if let day = date(for: weekday), marked(day) {
+                        Circle()
+                            .fill(completed.contains(calendar.startOfDay(for: day)) ? theme.text : theme.accent)
+                            .frame(width: 4, height: 4)
+                            .padding(.bottom, 6)
+                    }
+                }
+                .accessibilityLabel(label(for: weekday))
             }
+        }
+    }
+
+    private var timeRow: some View {
+        HStack(spacing: 10) {
+            Text("AT")
+                .font(GSFont.bold(12, relativeTo: .caption))
+                .tracking(1.1)
+                .foregroundStyle(theme.neutral700)
+            DatePicker("", selection: $time, displayedComponents: .hourAndMinute)
+                .labelsHidden()
+            Spacer()
+        }
+    }
+
+    private var actions: some View {
+        VStack(spacing: 9) {
             Button {
-                showScheduler = true
+                save()
             } label: {
-                Text("SCHEDULE A SESSION")
+                Text(saving ? "SAVING..." : "SET WEEK \(weekNumber)")
                     .font(GSFont.bold(14, relativeTo: .subheadline))
                     .tracking(0.5)
                     .foregroundStyle(theme.bg)
@@ -410,42 +532,74 @@ struct WeekScheduleSheet: View {
             }
             .buttonStyle(.gs3D(face: theme.accent, lip: theme.raised3DLip,
                                cornerRadius: GSMetrics.radiusSm, lipHeight: 4))
-            Spacer(minLength: 0)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.bg)
-        .sheet(isPresented: $showScheduler) {
-            ScheduleSessionView { _ in
-                showScheduler = false
-                dismiss()
+            .disabled(saving || enrollmentID == nil)
+
+            if existing != nil {
+                Button {
+                    clear()
+                } label: {
+                    Text("SAME AS THE BLOCK")
+                        .font(GSFont.bold(13, relativeTo: .subheadline))
+                        .tracking(0.5)
+                        .foregroundStyle(theme.text)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 42)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
+                .disabled(saving)
             }
         }
+    }
+
+    private func save() {
+        guard let enrollmentID, !saving else { return }
+        saving = true
+        let components = calendar.dateComponents([.hour, .minute], from: time)
+        Task {
+            defer { saving = false }
+            await BlockWeekScheduleRepository.save(
+                enrollmentID: enrollmentID, weekNumber: weekNumber,
+                weekdays: Array(selectedDays),
+                hour: components.hour ?? 18, minute: components.minute ?? 0)
+            await onChanged()
+            dismiss()
+        }
+    }
+
+    private func clear() {
+        guard let enrollmentID, !saving else { return }
+        saving = true
+        Task {
+            defer { saving = false }
+            await BlockWeekScheduleRepository.clear(enrollmentID: enrollmentID,
+                                                    weekNumber: weekNumber)
+            await onChanged()
+            dismiss()
+        }
+    }
+
+    private func date(for weekday: Int) -> Date? {
+        days.first { calendar.component(.weekday, from: $0) == weekday }
+    }
+
+    private func marked(_ day: Date) -> Bool {
+        let key = calendar.startOfDay(for: day)
+        return completed.contains(key) || scheduled.contains(key)
+    }
+
+    private func label(for weekday: Int) -> String {
+        let names = ["", "Sunday", "Monday", "Tuesday", "Wednesday",
+                     "Thursday", "Friday", "Saturday"]
+        let name = names.indices.contains(weekday) ? names[weekday] : ""
+        return selectedDays.contains(weekday) ? "\(name), training day" : name
     }
 
     private var rangeText: String {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d"
-        let last = calendar.date(byAdding: .day, value: 6, to: calendar.startOfDay(for: window.start))
-            ?? window.start
-        return "\(formatter.string(from: window.start)) – \(formatter.string(from: last))"
-    }
-
-    private func letter(_ day: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEEE"
-        return formatter.string(from: day).uppercased()
-    }
-
-    private func fill(_ day: Date) -> Color {
-        let key = calendar.startOfDay(for: day)
-        if completed.contains(key) { return theme.text }
-        if scheduled.contains(key) { return theme.accent }
-        return theme.surface
-    }
-
-    private func ink(_ day: Date) -> Color {
-        let key = calendar.startOfDay(for: day)
-        return (completed.contains(key) || scheduled.contains(key)) ? theme.bg : theme.neutral500
+        let last = calendar.date(byAdding: .day, value: 6,
+                                 to: calendar.startOfDay(for: window.start)) ?? window.start
+        return "\(formatter.string(from: window.start)) - \(formatter.string(from: last))"
     }
 }
