@@ -47,6 +47,14 @@ struct CoachWizardView: View {
     // About you (prefilled from profile; skippable)
     @State private var sex: String = ""
     @State private var birthYearText = ""
+    // Log-derived safety inputs. These existed in GeneratorScience and in
+    // generatorInputs and were never passed by the one caller, so the
+    // youth ceilings and the layoff reset were switched off in the actual
+    // app — a rule with no call site, which is the same failure the
+    // consult work has been closing all day.
+    @State private var daysSinceLastSession: Int?
+    @State private var daysSinceReturn: Int?
+    @State private var standingRules: [String] = []
     // Data
     @State private var allExercises: [Exercise] = []
     @State private var preview: ProgramGenerator.Program?
@@ -247,6 +255,7 @@ struct CoachWizardView: View {
             // Phase 4 lifecycle: settle a finished block BEFORE loading
             // the profile, so the carryover it just wrote is what loads.
             blockCompletion = await CoachLifecycle.checkBlockEnd()
+            await readTrainingHistory()
             // Settings first: displayUnit converts the body fields the
             // profile hydration below writes.
             if let settings = try? await UserSettingsRepository.get() {
@@ -657,12 +666,43 @@ struct CoachWizardView: View {
             durationWeeks: duration,
             cardioDays: cardioDays, cardioMinutes: cardioMinutes,
             fillWeekWithRecovery: fillWeek,
-            seed: seed)
+            seed: seed,
+            // The safety inputs. Youth ceilings come from the birth year
+            // the athlete already gave; the layoff reset and its
+            // re-acquisition window come from the log.
+            birthYear: Int(birthYearText),
+            daysSinceLastSession: daysSinceLastSession,
+            daysSinceReturn: daysSinceReturn,
+            standingRules: standingRules)
         inputs.sessionMinutes = sessionMinutes
         inputs.starredExerciseIDs = starredExerciseIDs
         lastInputs = inputs
         lastCatalog = catalog
         preview = ProgramGenerator.generate(inputs: inputs, catalog: catalog)
+    }
+
+    /// Reads the two things about training HISTORY that change what is
+    /// safe to prescribe, plus the athlete's standing rules.
+    ///
+    /// A 12-month window on purpose: it has to be long enough to contain
+    /// the layoff we are looking for. A 60-day window would show an empty
+    /// log for someone six months away and report no history at all,
+    /// which reads as a brand-new lifter rather than a returning one —
+    /// same ceilings by accident, but for the wrong reason, and it would
+    /// break the moment the window moved.
+    private func readTrainingHistory() async {
+        guard let userID = appState.currentProfile?.id else { return }
+        standingRules = ((try? await TrainingRulesRepository.active()) ?? []).map(\.rule)
+        guard let since = Calendar.current.date(byAdding: .day, value: -365, to: .now),
+              let logs = try? await SessionRepository.recentSetLogs(userID: userID,
+                                                                    since: since)
+        else { return }
+        let dates = logs.map(\.loggedAt)
+        if let latest = dates.max() {
+            daysSinceLastSession = Calendar.current
+                .dateComponents([.day], from: latest, to: .now).day
+        }
+        daysSinceReturn = GeneratorScience.daysSinceReturn(sessionDates: dates)
     }
 
     /// The athlete as data — every dial lands in a profile field the

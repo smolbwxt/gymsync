@@ -349,12 +349,14 @@ struct TrainingProfile: Codable, Equatable, Sendable {
                          seed: Int = 0,
                          birthYear: Int? = nil,
                          daysSinceLastSession: Int? = nil,
+                         daysSinceReturn: Int? = nil,
                          standingRules: [String] = []) -> ProgramGenerator.Inputs {
         // Training age DECAYS (NSCA): a lifter several months away is a
         // novice again, whatever they once were and whatever they typed.
         let effectiveExperience = GeneratorScience.decayedExperience(
             stated: trainingAge.experience,
-            daysSinceLastSession: daysSinceLastSession)
+            daysSinceLastSession: daysSinceLastSession,
+            daysSinceReturn: daysSinceReturn)
         var inputs = ProgramGenerator.Inputs(
             focus: generatorFocus,
             daysPerWeek: daysPerWeek,

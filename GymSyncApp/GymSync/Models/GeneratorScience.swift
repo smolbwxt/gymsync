@@ -422,11 +422,55 @@ enum GeneratorScience {
     static let layoffResetDays = 120
 
     static func decayedExperience(stated: Experience,
-                                  daysSinceLastSession: Int?) -> Experience {
-        guard let days = daysSinceLastSession, days >= layoffResetDays else {
-            return stated
+                                  daysSinceLastSession: Int?,
+                                  daysSinceReturn: Int? = nil) -> Experience {
+        // Still away.
+        if let days = daysSinceLastSession, days >= layoffResetDays { return .new }
+        // Back, but not yet re-acquired. Without this the safety rule
+        // lasted exactly ONE SESSION: the guard above reads days since the
+        // last session, so the moment a two-years-off lifter trained once,
+        // that number fell to zero and they were handed advanced ceilings
+        // in week one — the "sudden workload spike" the detraining corpus
+        // rates a strong injury risk.
+        if let back = daysSinceReturn, back < reacquisitionWeeks * 7 { return .new }
+        return stated
+    }
+
+    /// How long a returning lifter keeps novice ceilings AFTER their first
+    /// session back.
+    ///
+    /// The corpus is emphatic about the DIRECTION — "undershoot rather
+    /// than overshoot volume and load on return", and return progression
+    /// should be governed by objective performance criteria rather than
+    /// calendar time. It does not give a number of weeks, because the
+    /// honest answer is not a number. Four weeks is OUR calibration,
+    /// marked as such, standing in for criteria we cannot yet check.
+    ///
+    /// Note what this does NOT do: it does not slow them down. Muscle
+    /// memory is real (retained myonuclei; one study saw quad size exceed
+    /// its prior peak within five weeks of retraining), so a returner
+    /// climbs fast on their own. The window governs where they START, not
+    /// how quickly they rise.
+    static let reacquisitionWeeks = 4
+
+    /// Days since the session that ended a layoff, or nil if the log shows
+    /// no layoff to have returned from.
+    ///
+    /// Reads the LOG rather than asking, because "when did you come back"
+    /// is a question the app can answer for itself — and an athlete
+    /// mid-comeback is the least likely person to answer it accurately.
+    static func daysSinceReturn(sessionDates: [Date],
+                                now: Date = .now,
+                                calendar: Calendar = .current) -> Int? {
+        let days = Set(sessionDates.map { calendar.startOfDay(for: $0) }).sorted()
+        guard days.count >= 2 else { return nil }
+        var returnDate: Date?
+        for (previous, next) in zip(days, days.dropFirst()) {
+            let gap = calendar.dateComponents([.day], from: previous, to: next).day ?? 0
+            if gap >= layoffResetDays { returnDate = next }
         }
-        return .new
+        guard let returnDate else { return nil }
+        return calendar.dateComponents([.day], from: returnDate, to: now).day
     }
 
     /// Complexity gate (catalog labels; owner law: complexity GATES by
