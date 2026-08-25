@@ -3,10 +3,17 @@ import SwiftUI
 // MARK: - BlockCalendarView
 //
 // "The block, in time" (owner 2026-08-25: "it's hard to grasp where in
-// time we are"). A real three-month grid anchored on the block's own
-// start month — current month LEFT, because a block spans weeks and
-// reads forward — with the week chips above it and a per-week sheet
-// that slides up on tap.
+// time we are"). A real month grid anchored on the block's own start
+// month — current month LEFT, because a block spans weeks and reads
+// forward — with the week chips above it and a per-week sheet that
+// slides up on tap.
+//
+// The grid spans exactly the months the block TOUCHES (owner 2026-08-25:
+// "blocks can be anywhere from 2 weeks to a few months, so lets not
+// constrict ourselves"). A fortnight shows one month; a sixteen-week
+// block shows four or five and wraps. Months lay out three to a row and
+// short rows are padded, so a day cell is the same size whatever the
+// block's length — the calendar never rescales itself under you.
 //
 // Every mark is read, not assumed (design-spec §1.5). In-block days come
 // from the enrollment's start date and week count; filled days are
@@ -135,9 +142,17 @@ struct BlockCalendarView: View {
                         .foregroundStyle(blockGold)
                 }
             }
-            HStack(alignment: .top, spacing: 10) {
-                ForEach(months, id: \.self) { month in
-                    monthColumn(month)
+            VStack(spacing: 12) {
+                ForEach(Array(monthGrid.enumerated()), id: \.offset) { _, row in
+                    HStack(alignment: .top, spacing: 10) {
+                        ForEach(row, id: \.self) { month in
+                            monthColumn(month)
+                        }
+                        // Pad the final row so months keep a constant width.
+                        ForEach(Array(0..<(3 - row.count)), id: \.self) { _ in
+                            Color.clear.frame(maxWidth: .infinity)
+                        }
+                    }
                 }
             }
             legend
@@ -306,13 +321,34 @@ struct BlockCalendarView: View {
         return formatter.string(from: date)
     }
 
-    /// Three months from the block's start month — current month LEFT
-    /// (owner 2026-08-25), because a block reads forward in time.
+    /// Every month the block touches, start month first — current month
+    /// LEFT (owner 2026-08-25), because a block reads forward in time.
+    /// A 2-week block yields one month; a 5-month block yields five.
     private var months: [Date] {
-        guard let startDate else { return [] }
-        let comps = calendar.dateComponents([.year, .month], from: startDate)
-        guard let first = calendar.date(from: comps) else { return [] }
-        return (0..<3).compactMap { calendar.date(byAdding: .month, value: $0, to: first) }
+        guard let startDate, let end = blockEnd else { return [] }
+        guard let first = firstOfMonth(startDate), let last = firstOfMonth(end) else { return [] }
+        var out: [Date] = []
+        var cursor = first
+        // The 24 cap is a runaway guard, not a product limit: a block
+        // longer than two years is a data error, not a training plan.
+        while cursor <= last, out.count < 24 {
+            out.append(cursor)
+            guard let next = calendar.date(byAdding: .month, value: 1, to: cursor) else { break }
+            cursor = next
+        }
+        return out
+    }
+
+    private func firstOfMonth(_ date: Date) -> Date? {
+        calendar.date(from: calendar.dateComponents([.year, .month], from: date))
+    }
+
+    /// Months three to a row. Rows are padded to three so a day cell keeps
+    /// the same width whether the block spans one month or six.
+    private var monthGrid: [[Date]] {
+        stride(from: 0, to: months.count, by: 3).map {
+            Array(months[$0..<min($0 + 3, months.count)])
+        }
     }
 
     /// Monday-first rows of a month, nil-padded at both ends.
