@@ -311,6 +311,11 @@ struct CoachThreadView: View {
     @State private var thinking = false
     @State private var loading = true
     @State private var titled = false
+    /// The Apply loop in threads (owner 2026-08-25): Coach proposed, the
+    /// athlete decides — #38's no-silent-tweaks holds here too.
+    @State private var pendingEdit: RoutineEditProposal?
+    @State private var applyingEdit = false
+    @State private var allExercises: [Exercise] = []
     /// Held as Any so this view compiles on every SDK; only the gated
     /// paths below cast it (the CoachRecapView precedent).
     @State private var engine: Any?
@@ -349,6 +354,66 @@ struct CoachThreadView: View {
                 .onChange(of: messages.count) {
                     withAnimation { proxy.scrollTo("chat-tail", anchor: .bottom) }
                 }
+            }
+            if let proposal = pendingEdit {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("COACH PROPOSES · \(proposal.exerciseName.uppercased())")
+                        .font(GSFont.bold(10, relativeTo: .caption2))
+                        .tracking(1.1)
+                        .foregroundStyle(theme.accent)
+                    Text(threadProposalSummary(proposal))
+                        .font(GSFont.bold(14, relativeTo: .subheadline))
+                        .foregroundStyle(theme.text)
+                    Text(proposal.reason)
+                        .font(GSFont.body(12, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral700)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 10) {
+                        Button {
+                            guard !applyingEdit else { return }
+                            applyingEdit = true
+                            Task {
+                                defer { applyingEdit = false }
+                                let confirmation = await applyThreadRoutineEdit(proposal)
+                                    ?? "I couldn't find that one in your routines to edit — the numbers stand as they were."
+                                if let saved = await CoachChatRepository.append(
+                                    threadID: thread.id, role: "coach", body: confirmation) {
+                                    messages.append(saved)
+                                } else {
+                                    messages.append(CoachChatMessage(id: UUID(), role: "coach",
+                                                                     body: confirmation, createdAt: .now))
+                                }
+                                pendingEdit = nil
+                            }
+                        } label: {
+                            Text(applyingEdit ? "APPLYING…" : "APPLY")
+                                .font(GSFont.bold(11, relativeTo: .caption2))
+                                .tracking(0.6)
+                                .foregroundStyle(theme.bg)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 7)
+                                .background(theme.accent)
+                                .clipShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        Button {
+                            pendingEdit = nil
+                        } label: {
+                            Text("NOT NOW")
+                                .font(GSFont.bold(11, relativeTo: .caption2))
+                                .tracking(0.6)
+                                .foregroundStyle(theme.neutral700)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(theme.surface)
+                .overlay(RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(theme.accent.opacity(0.4), lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .padding(.horizontal, 12)
             }
             HStack(spacing: 8) {
                 TextField("Ask your coach…", text: $draft, axis: .vertical)
@@ -416,11 +481,11 @@ struct CoachThreadView: View {
         if #available(iOS 26.0, *), CoachDebrief.isConversationAvailable {
             let profile = (try? await TrainingProfileRepository.load()) ?? TrainingProfile()
             var logsByName: [String: [SetLog]] = [:]
+            allExercises = (try? await ExerciseRepository.fetchAll()) ?? []
             if let userID = appState.currentProfile?.id,
-               let exercises = try? await ExerciseRepository.fetchAll(),
                let logs = try? await SessionRepository.recentSetLogs(
                    userID: userID, since: Date(timeIntervalSinceNow: -42 * 86_400)) {
-                let nameByID = Dictionary(uniqueKeysWithValues: exercises.map { ($0.id, $0.name) })
+                let nameByID = Dictionary(uniqueKeysWithValues: allExercises.map { ($0.id, $0.name) })
                 for log in logs where !log.isPenalty {
                     guard let name = nameByID[log.exerciseID]?.lowercased() else { continue }
                     logsByName[name, default: []].append(log)
@@ -463,9 +528,86 @@ struct CoachThreadView: View {
                 },
                 volumeLookup: {
                     "Per-muscle weekly volume lands in an upcoming update — ask about any lift's trend instead."
+                },
+                // The app's math as a tool (owner 2026-08-25) — the same
+                // qualifying-set filter and Epley the live session uses.
+                progressionLookup: { [logsByName] name, targetReps in
+                    let unit = ThemeStore.shared.weightUnit
+                    let logs = logsByName[name.lowercased()] ?? logsByName.first(where: {
+                        $0.key.contains(name.lowercased()) || name.lowercased().contains($0.key)
+                    })?.value ?? []
+                    return DebriefBuilder.progressionSentence(
+                        name: name, targetReps: targetReps, logs: logs, unit: unit)
+                },
+                onProposeEdit: { proposal in
+                    DispatchQueue.main.async { pendingEdit = proposal }
                 })
         }
         #endif
+    }
+
+    private func threadProposalSummary(_ p: RoutineEditProposal) -> String {
+        var parts: [String] = []
+        if let w = p.weight { parts.append("\(Int(w.rounded())) \(ThemeStore.shared.weightUnit.label)") }
+        if let lo = p.repsLow, let hi = p.repsHigh { parts.append("\(lo)–\(hi) reps") }
+        else if let lo = p.repsLow { parts.append("\(lo)+ reps") }
+        if let r = p.routineName { parts.append("in \(r)") }
+        return parts.isEmpty ? "Adjustment" : parts.joined(separator: " · ")
+    }
+
+    /// The standalone apply writer (owner 2026-08-25: the Apply loop
+    /// works on custom-built routines too, outside any session). Picks
+    /// the routine by the proposal's name when given, else the athlete's
+    /// own routine that contains the exercise; trainer prescriptions are
+    /// never touched. Returns the confirmation line, nil on any miss.
+    private func applyThreadRoutineEdit(_ proposal: RoutineEditProposal) async -> String? {
+        guard let ownerID = appState.currentProfile?.id,
+              let routines = try? await RoutineRepository.fetchAll(ownerID: ownerID)
+        else { return nil }
+        let own = routines.filter { $0.prescribedBy == nil }
+        guard !own.isEmpty else { return nil }
+        let nameByID = Dictionary(uniqueKeysWithValues: allExercises.map { ($0.id, $0.name.lowercased()) })
+        let target = proposal.exerciseName.lowercased()
+        func matches(_ re: RoutineExercise) -> Bool {
+            guard let name = nameByID[re.exerciseID] else { return false }
+            return name == target || name.contains(target) || target.contains(name)
+        }
+        let allRows = (try? await RoutineRepository.exercisesForRoutines(ids: own.map(\.id))) ?? []
+        let rowsByRoutine = Dictionary(grouping: allRows, by: \.routineID)
+        var routine: Routine?
+        if let wanted = proposal.routineName?.lowercased() {
+            routine = own.first { $0.name.lowercased() == wanted }
+                ?? own.first { $0.name.lowercased().contains(wanted) || wanted.contains($0.name.lowercased()) }
+        }
+        if routine == nil {
+            routine = own.first { rowsByRoutine[$0.id]?.contains(where: matches) == true }
+        }
+        guard let routine, var rows = rowsByRoutine[routine.id],
+              let index = rows.firstIndex(where: matches) else { return nil }
+        var summary: [String] = []
+        let unit = ThemeStore.shared.weightUnit
+        if let weight = proposal.weight {
+            let pounds = Units.toPounds(Decimal(weight), from: unit)
+            rows[index].targetWeight = "\(pounds)"
+            summary.append(Units.format(pounds: pounds, unit: unit,
+                                        rounded: false, includeUnit: true))
+        }
+        if let lo = proposal.repsLow {
+            rows[index].targetRepsLow = lo
+            rows[index].targetRepsHigh = proposal.repsHigh ?? max(lo, rows[index].targetRepsHigh ?? lo)
+            rows[index].targetReps = "\(lo)"
+            summary.append("\(lo)–\(rows[index].targetRepsHigh ?? lo) reps")
+        } else if let hi = proposal.repsHigh {
+            rows[index].targetRepsHigh = hi
+            summary.append("up to \(hi) reps")
+        }
+        guard !summary.isEmpty else { return nil }
+        do {
+            try await RoutineRepository.save(routine, exercises: rows)
+        } catch { return nil }
+        let exerciseName = allExercises.first(where: { $0.id == rows[index].exerciseID })?.name
+            ?? proposal.exerciseName
+        return "Done — \(exerciseName) in \(routine.name) is now \(summary.joined(separator: " × ")). It'll load that way next session."
     }
 
     private func send() {

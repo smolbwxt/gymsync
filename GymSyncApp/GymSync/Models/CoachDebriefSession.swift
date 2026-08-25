@@ -21,6 +21,12 @@ import Foundation
 /// for the athlete's explicit Apply tap — the #38 no-silent-tweaks
 /// ruling holds even for Coach's own suggestions.
 struct RoutineEditProposal: Equatable {
+    /// Which routine to edit, when the conversation names one. nil in
+    /// the debrief (today's routine is implied); chat threads use it to
+    /// pick among the athlete's own routines — custom-built included
+    /// (owner 2026-08-25: the Apply loop serves coach-advice-without-
+    /// coach-programming too).
+    var routineName: String? = nil
     let exerciseName: String
     /// In the athlete's display unit; nil = leave load untouched.
     let weight: Double?
@@ -142,13 +148,15 @@ struct ExerciseTrendTool: Tool {
 /// tells the model the ball is in the athlete's court - the model must
 /// never claim the change was made.
 @available(iOS 26.0, *)
-private struct ProposeRoutineEditTool: Tool {
+struct ProposeRoutineEditTool: Tool {
     let name = "proposeRoutineEdit"
     let description = "When the athlete AGREES a prescription change is right (a different starting weight, a new rep range), propose the concrete edit. The athlete sees an Apply card and decides. Use only after the athlete has said yes to the idea in conversation."
     let onPropose: @Sendable (RoutineEditProposal) -> Void
 
     @Generable
     struct Arguments {
+        @Guide(description: "The routine to edit, by name, when the athlete named one — omit for today's routine")
+        var routineName: String?
         @Guide(description: "The exercise name exactly as it appears in the workout data")
         var exerciseName: String
         @Guide(description: "New working weight in the athlete's display unit, omit to keep current")
@@ -163,12 +171,36 @@ private struct ProposeRoutineEditTool: Tool {
 
     func call(arguments: Arguments) async throws -> String {
         onPropose(RoutineEditProposal(
+            routineName: arguments.routineName,
             exerciseName: arguments.exerciseName,
             weight: arguments.weight,
             repsLow: arguments.repsLow,
             repsHigh: arguments.repsHigh,
             reason: arguments.reason))
         return "Proposal is on the athlete's screen with an Apply button. Tell them it's ready to apply - do NOT claim the routine has been changed; they decide."
+    }
+}
+
+/// Tool: the app's own progression math — estimated 1RM from logged
+/// history and the projected working weight for a rep target, via the
+/// same WorkingWeight/StatMath ladder the live session uses. The model
+/// narrates these numbers; it never computes its own (owner 2026-08-25).
+@available(iOS 26.0, *)
+struct ProgressionCheckTool: Tool {
+    let name = "progressionCheck"
+    let description = "Compute the app's own progression math for one exercise: estimated 1RM from the athlete's logged sets and the projected working weight for a target rep count. ALWAYS call this before discussing or proposing a specific weight — never calculate your own numbers."
+    let lookup: @Sendable (String, Int?) -> String
+
+    @Generable
+    struct Arguments {
+        @Guide(description: "The exercise name")
+        var exerciseName: String
+        @Guide(description: "Target rep count to project a working weight for, omit for just the 1RM estimate")
+        var targetReps: Int?
+    }
+
+    func call(arguments: Arguments) async throws -> String {
+        lookup(arguments.exerciseName, arguments.targetReps)
     }
 }
 

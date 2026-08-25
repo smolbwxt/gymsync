@@ -180,18 +180,27 @@ final class CoachChatEngine {
     private let routinesRail: String
     private let trendLookup: @Sendable (String) -> String
     private let volumeLookup: @Sendable () -> String
+    /// The app's math as a tool (owner 2026-08-25) — nil omits the tool.
+    private let progressionLookup: (@Sendable (String, Int?) -> String)?
+    /// The Apply loop in threads (owner 2026-08-25: "a huge hook that I
+    /// want enabled") — nil omits the tool (e.g. unavailable devices).
+    private let onProposeEdit: (@Sendable (RoutineEditProposal) -> Void)?
 
     init(thread: CoachChatThread,
          profile: TrainingProfile, persona: CoachPersona?,
          routinesRail: String = "",
          trendLookup: @escaping @Sendable (String) -> String,
-         volumeLookup: @escaping @Sendable () -> String) {
+         volumeLookup: @escaping @Sendable () -> String,
+         progressionLookup: (@Sendable (String, Int?) -> String)? = nil,
+         onProposeEdit: (@Sendable (RoutineEditProposal) -> Void)? = nil) {
         self.thread = thread
         self.profile = profile
         self.persona = persona
         self.routinesRail = routinesRail
         self.trendLookup = trendLookup
         self.volumeLookup = volumeLookup
+        self.progressionLookup = progressionLookup
+        self.onProposeEdit = onProposeEdit
     }
 
     private func seedSession(summary: String, tail: [CoachChatMessage]) {
@@ -208,11 +217,20 @@ final class CoachChatEngine {
                 .joined(separator: "\n")
             instructions += "\n\nRECENT MESSAGES:\n" + rendered
         }
+        var tools: [any Tool] = [ExerciseTrendTool(lookup: trendLookup),
+                                 WeeklyVolumeTool(lookup: volumeLookup),
+                                 CorpusResearchTool(),
+                                 NutritionTool()]
+        if let progressionLookup {
+            tools.append(ProgressionCheckTool(lookup: progressionLookup))
+            instructions += "\n\nBefore discussing or proposing any specific weight, call progressionCheck — never compute your own numbers."
+        }
+        if let onProposeEdit {
+            tools.append(ProposeRoutineEditTool(onPropose: onProposeEdit))
+            instructions += "\nWhen the athlete agrees a concrete change is right, use proposeRoutineEdit with the numbers progressionCheck gave you. Never claim a change was made unless the tool's reply confirms the athlete applied it."
+        }
         session = LanguageModelSession(
-            tools: [ExerciseTrendTool(lookup: trendLookup),
-                    WeeklyVolumeTool(lookup: volumeLookup),
-                    CorpusResearchTool(),
-                    NutritionTool()],
+            tools: tools,
             instructions: instructions)
         turnsSinceSeed = 0
     }

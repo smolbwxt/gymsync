@@ -189,6 +189,25 @@ enum DebriefBuilder {
     // compute; it narrates.
 
     /// e1RM trend for one lift over its recent history, as a sentence.
+    /// The progressionCheck tool's computed sentence: WorkingWeight's
+    /// own qualifying-set filter and StatMath's Epley, narrated. Never
+    /// lets the model near the arithmetic (owner 2026-08-25).
+    static func progressionSentence(name: String, targetReps: Int?,
+                                    logs: [SetLog], unit: WeightUnit) -> String {
+        guard let best = WorkingWeight.bestQualifyingSet(in: logs) else {
+            return "\(name): no qualifying logged sets yet — nothing honest to project from. Say so instead of estimating."
+        }
+        let oneRM = StatMath.estimatedOneRepMax(weight: best.weight, reps: best.reps)
+        let bestLine = "\(name): best qualifying set \(Units.format(pounds: best.weight, unit: unit, rounded: false, includeUnit: true)) × \(best.reps) → estimated 1RM \(Units.format(pounds: oneRM, unit: unit, rounded: true, includeUnit: true))."
+        guard let targetReps, targetReps > 0,
+              let projected = StatMath.projectedWeight(prWeight: best.weight,
+                                                       prReps: best.reps,
+                                                       targetReps: targetReps) else {
+            return bestLine + " Cite these numbers verbatim."
+        }
+        return bestLine + " A set of \(targetReps) projects to \(Units.format(pounds: Decimal(projected), unit: unit, rounded: true, includeUnit: true)) (the ladder's rep-goal rung). Cite these numbers verbatim."
+    }
+
     static func trendSentence(name: String, logs: [SetLog]) -> String {
         let bySession = Dictionary(grouping: logs.filter { !$0.isPenalty },
                                    by: \.sessionID)
