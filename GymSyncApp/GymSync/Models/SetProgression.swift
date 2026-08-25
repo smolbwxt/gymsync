@@ -36,6 +36,35 @@ enum SetProgression {
         return steppedPounds(fromPounds: pounds, isLowerBody: isLowerBody, unit: unit)
     }
 
+    /// The rep-scaling base for the next-set prefill: project the last
+    /// set's load onto today's rep target — with a strain asymmetry
+    /// (owner 2026-08-25: "if strength is the target and I'm low on
+    /// reps, I don't want the weight lighter — lower the reps, keep the
+    /// weight"). Scaling UP always fires (a rep blowout raises the next
+    /// set). Scaling DOWN fires only when the low-rep set was NOT a
+    /// strain (RPE <= 8 or unlogged): that's a deliberate heavy single
+    /// or a prescription change — the original 405x1 -> set-of-5
+    /// hazard. A grind (RPE >= 9) under target is fatigue, and fatigue
+    /// HOLDS the load; volunteering a lighter bar mid-fatigue is the
+    /// same volunteered deload the failed-set rule already refuses.
+    static func rescaledBase(
+        lastPounds: Decimal,
+        lastReps: Int?,
+        lastRPE: Decimal?,
+        targetReps: Int?
+    ) -> Decimal {
+        guard let targetReps, targetReps > 0,
+              let lastReps, lastReps > 0, lastReps != targetReps,
+              let scaled = StatMath.projectedWeight(prWeight: lastPounds,
+                                                    prReps: lastReps,
+                                                    targetReps: targetReps)
+        else { return lastPounds }
+        let scaledPounds = Decimal(scaled)
+        if scaledPounds >= lastPounds { return scaledPounds }
+        let strained = lastRPE.map { $0 >= 9 } ?? false
+        return strained ? lastPounds : scaledPounds
+    }
+
     /// One progression step from `pounds`: the percent fraction computed in
     /// the LIFTER'S UNIT and floored to that unit's loadable increment,
     /// minimum one increment. Shared by the within-session prefill above

@@ -1003,14 +1003,14 @@ struct WorkoutSessionView: View {
             // 405 × 1 → "set of 5" hazard. Scale to today's target, THEN apply
             // the RPE progression step, so the +5 lands on a weight that
             // actually fits the reps.
+            // Strain asymmetry (owner 2026-08-25): up-scaling always;
+            // down-scaling only when the low-rep set wasn't a grind —
+            // SetProgression.rescaledBase carries the full rule.
             let targetReps = currentRoutineExercise?.targetReps.flatMap { leadingInt($0) }
-            var base = w
-            if let targetReps, let lastReps = last.reps, lastReps != targetReps,
-               let scaled = StatMath.projectedWeight(prWeight: w,
-                                                     prReps: lastReps,
-                                                     targetReps: targetReps) {
-                base = Decimal(scaled)
-            }
+            let base = SetProgression.rescaledBase(lastPounds: w,
+                                                   lastReps: last.reps,
+                                                   lastRPE: last.rpe,
+                                                   targetReps: targetReps)
             let next = SetProgression.nextWeight(afterPounds: base, rpe: last.rpe, isFailed: last.isFailed,
                                                  isLowerBody: currentExercise?.isLowerBody ?? false,
                                                  unit: soloUnit)

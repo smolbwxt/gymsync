@@ -1174,14 +1174,31 @@ struct CoachWizardView: View {
         }
     }
 
+    /// Per-slot roll history — "dayName#index" -> ids already shown.
+    @State private var rerollSeen: [String: Set<UUID>] = [:]
+
     private func reroll(dayName: String, exerciseIndex: Int) {
         guard var program = preview, let inputs = lastInputs,
               let dayIndex = program.days.firstIndex(where: { $0.name == dayName }),
-              program.days[dayIndex].exercises.indices.contains(exerciseIndex),
-              let replacement = ProgramGenerator.reroll(
-                program.days[dayIndex].exercises[exerciseIndex],
-                in: program.days[dayIndex],
-                inputs: inputs, catalog: lastCatalog) else { return }
+              program.days[dayIndex].exercises.indices.contains(exerciseIndex) else { return }
+        let current = program.days[dayIndex].exercises[exerciseIndex]
+        // Roll history per slot (field 2026-08-25): consecutive rolls walk
+        // the whole ranked pool instead of ping-ponging between two lifts;
+        // an exhausted pool clears and the cycle restarts.
+        let key = "\(dayName)#\(exerciseIndex)"
+        var seen = rerollSeen[key] ?? []
+        seen.insert(current.exerciseID)
+        var replacement = ProgramGenerator.reroll(
+            current, in: program.days[dayIndex],
+            inputs: inputs, catalog: lastCatalog, alsoExcluding: seen)
+        if replacement == nil {
+            seen = [current.exerciseID]
+            replacement = ProgramGenerator.reroll(
+                current, in: program.days[dayIndex],
+                inputs: inputs, catalog: lastCatalog, alsoExcluding: seen)
+        }
+        guard let replacement else { return }
+        rerollSeen[key] = seen
         program.days[dayIndex].exercises[exerciseIndex] = replacement
         preview = program
     }

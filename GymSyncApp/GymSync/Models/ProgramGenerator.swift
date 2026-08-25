@@ -1197,8 +1197,16 @@ enum ProgramGenerator {
     // Deterministic next-best, never a shuffle: the SAME slot selection
     // re-runs with everything already in the day PLUS the rejected pick
     // excluded — reroll twice and you walk the ranked candidate list.
+    /// `alsoExcluding` (field 2026-08-25: "each exercise only has 1
+    /// alternate"): selection is deterministic, and excluding only the
+    /// day's CURRENT lifts made roll #2 hand the original straight back —
+    /// a two-exercise ping-pong. The caller passes every id this slot has
+    /// already shown so consecutive rolls walk DOWN the ranked pool; when
+    /// the pool runs dry the caller clears its history and the cycle
+    /// restarts.
     static func reroll(_ exercise: Exercise, in day: Day,
-                       inputs: Inputs, catalog: [CatalogExercise]) -> Exercise? {
+                       inputs: Inputs, catalog: [CatalogExercise],
+                       alsoExcluding: Set<UUID> = []) -> Exercise? {
         guard let slot = exercise.slot else { return nil }
         let usable = catalog.filter { ex in
             inputs.equipment.map { allowed in
@@ -1207,6 +1215,7 @@ enum ProgramGenerator {
             } ?? true
         }
         var excluded = Set(day.exercises.map(\.exerciseID))
+        excluded.formUnion(alsoExcluding)
         excluded.insert(exercise.exerciseID)
         guard let next = select(slot: slot, from: usable, excluding: excluded,
                                 focus: inputs.focus,
