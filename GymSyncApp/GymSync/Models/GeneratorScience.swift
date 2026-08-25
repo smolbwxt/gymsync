@@ -91,6 +91,79 @@ enum GeneratorScience {
     /// changing rep ranges on lifts that are progressing (HoH). The
     /// per-exercise repMin/repMax clamp still tailors every band, so a
     /// widened top can never reach a lift whose label forbids it.
+    /// How close to failure the athlete wants to work. The corpus records
+    /// a real split here — Helms treats volume and proximity-to-failure as
+    /// substitutable, Nippard treats near-failure effort as required
+    /// regardless of set count — which is exactly why this is the
+    /// ATHLETE'S call rather than a number we pick for them.
+    ///
+    /// Values are reps-in-reserve on the last set of a working exercise.
+    /// The corpus's strongest finding on the topic (a 2021 meta of seven
+    /// studies) is that 0-3 RIR and true failure grow muscle comparably,
+    /// so every option here is defensible — they differ in fatigue cost,
+    /// not in whether they work.
+    enum EffortAppetite: String, CaseIterable, Sendable {
+        /// Leave 2-3 in the tank. Lowest fatigue cost, most repeatable.
+        case reserved
+        /// Last set close to failure. The default.
+        case standard
+        /// Take the last set to failure.
+        case toFailure
+
+        var rirRange: (low: Int, high: Int) {
+            switch self {
+            case .reserved:  return (2, 3)
+            case .standard:  return (1, 2)
+            case .toFailure: return (0, 1)
+            }
+        }
+
+        /// Accessories may run closer to failure than mains at any
+        /// appetite: the corpus is consistent that single-joint work
+        /// tolerates it, and that grinding a heavy compound costs far
+        /// more recovery than grinding a curl.
+        var accessoryRIR: (low: Int, high: Int) {
+            switch self {
+            case .reserved:  return (1, 2)
+            case .standard:  return (0, 2)
+            case .toFailure: return (0, 1)
+            }
+        }
+    }
+
+    /// Rep-range preference (`TrainingProfile.repAppetite`). Personas have
+    /// been seeding this since 2026-08 and the generator never read it —
+    /// a genuinely dead knob until now. It SHIFTS the focus band rather
+    /// than replacing it, so a strength block stays a strength block.
+    static func applyRepAppetite(_ band: FocusBand, appetite: String?) -> FocusBand {
+        guard let appetite else { return band }
+        switch appetite {
+        case "heavy_low":
+            // Heavier and fewer: pull both ends down, floor at 1 rep.
+            return FocusBand(mainRepsLow: max(1, band.mainRepsLow - 2),
+                             mainRepsHigh: max(3, band.mainRepsHigh - 3),
+                             accessoryRepsLow: max(4, band.accessoryRepsLow - 2),
+                             accessoryRepsHigh: max(6, band.accessoryRepsHigh - 4),
+                             mainRestSeconds: band.mainRestSeconds + 30,
+                             accessoryRestSeconds: band.accessoryRestSeconds,
+                             weeklySetsLow: band.weeklySetsLow,
+                             weeklySetsHigh: band.weeklySetsHigh)
+        case "high_rep_pump":
+            // Lighter and more. Accessory tops stay inside the corpus's
+            // 5-30 effort-matched window.
+            return FocusBand(mainRepsLow: band.mainRepsLow + 2,
+                             mainRepsHigh: band.mainRepsHigh + 4,
+                             accessoryRepsLow: band.accessoryRepsLow + 4,
+                             accessoryRepsHigh: min(30, band.accessoryRepsHigh + 8),
+                             mainRestSeconds: max(60, band.mainRestSeconds - 30),
+                             accessoryRestSeconds: max(45, band.accessoryRestSeconds - 30),
+                             weeklySetsLow: band.weeklySetsLow,
+                             weeklySetsHigh: band.weeklySetsHigh)
+        default:
+            return band   // "moderate" and anything unrecognised
+        }
+    }
+
     static func band(for focus: Focus) -> FocusBand {
         switch focus {
         case .strength:

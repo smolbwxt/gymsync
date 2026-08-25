@@ -337,17 +337,34 @@ struct TrainingProfile: Codable, Equatable, Sendable {
     /// HERE (owner 2026-08-20: lift out + joint cautioned): an injury_pain
     /// exclusion's joint joins the caution set; pattern-wide exclusion
     /// stays an explicit athlete choice, never a silent escalation.
+    /// `birthYear` and `daysSinceLastSession` are passed IN rather than
+    /// stored: neither belongs to the training profile (one lives on the
+    /// account profile, the other is a fact about the log), and keeping
+    /// them as parameters leaves this function pure and testable.
     func generatorInputs(durationWeeks: Int,
                          cardioDays: Int = 0,
                          cardioMinutes: Int = 20,
                          fillWeekWithRecovery: Bool = false,
                          focusMuscles: Set<String>? = nil,
-                         seed: Int = 0) -> ProgramGenerator.Inputs {
+                         seed: Int = 0,
+                         birthYear: Int? = nil,
+                         daysSinceLastSession: Int? = nil) -> ProgramGenerator.Inputs {
+        // Training age DECAYS (NSCA): a lifter several months away is a
+        // novice again, whatever they once were and whatever they typed.
+        let effectiveExperience = GeneratorScience.decayedExperience(
+            stated: trainingAge.experience,
+            daysSinceLastSession: daysSinceLastSession)
         var inputs = ProgramGenerator.Inputs(
             focus: generatorFocus,
             daysPerWeek: daysPerWeek,
             durationWeeks: durationWeeks,
-            experience: trainingAge.experience)
+            experience: effectiveExperience)
+        // Youth ceilings (NSCA). Derived from birth year, never asked.
+        if let birthYear {
+            let year = Calendar.current.component(.year, from: Date())
+            inputs.isYouth = (year - birthYear) < 18
+        }
+        inputs.repAppetite = repAppetite
         inputs.focusMuscles = focusMuscles
         inputs.equipment = equipment
         inputs.cardioDays = cardioDays

@@ -110,6 +110,13 @@ enum ProgramGenerator {
         /// site, never asked as a question). Selects the NSCA youth
         /// intensity ceilings — see GeneratorScience.mainIntensityCeiling.
         var isYouth: Bool = false
+        /// How close to failure this athlete wants to work. Prescribed as
+        /// RIR on every exercise; the corpus is split on whether effort or
+        /// volume leads, so this is the athlete's call.
+        var effort: GeneratorScience.EffortAppetite = .standard
+        /// Rep-range preference — heavy_low | moderate | high_rep_pump.
+        /// Shifts the focus band without changing the focus.
+        var repAppetite: String? = nil
     }
 
     struct CatalogExercise {
@@ -159,6 +166,13 @@ enum ProgramGenerator {
         var repsHigh: Int
         var restSeconds: Int
         var percentOfMax: Double?
+        /// Reps in reserve for this exercise's working sets. "Hard sets"
+        /// was an unenforced ASSUMPTION everywhere in this generator until
+        /// now — every weekly-volume landmark in the corpus is stated in
+        /// hard sets, and we prescribed set counts without ever saying how
+        /// hard. These two numbers close that gap.
+        var rirLow: Int = 1
+        var rirHigh: Int = 2
         var isMain: Bool
         /// The slot that placed this exercise — carried so a reroll can
         /// re-run the SAME selection with the current pick excluded
@@ -197,7 +211,9 @@ enum ProgramGenerator {
     static func generate(inputs: Inputs, catalog: [CatalogExercise]) -> Program {
         // Band override (power_rfd) beats the focus table for prescription
         // SHAPE only — split, slots, and scoring still ride the focus.
-        let band = inputs.bandOverride ?? GeneratorScience.band(for: inputs.focus)
+        let band = GeneratorScience.applyRepAppetite(
+            inputs.bandOverride ?? GeneratorScience.band(for: inputs.focus),
+            appetite: inputs.repAppetite)
         let split = GeneratorScience.split(daysPerWeek: inputs.daysPerWeek,
                                            focus: inputs.focus,
                                            preference: inputs.splitPreference)
@@ -1192,11 +1208,17 @@ enum ProgramGenerator {
                 percent = max(50, p)
             }
         }
+        // Effort is prescribed, not assumed. Mains carry the athlete's
+        // chosen appetite; accessories may run closer to failure at any
+        // appetite, because grinding a curl costs a fraction of what
+        // grinding a heavy compound costs in recovery.
+        let rir = isMain ? inputs.effort.rirRange : inputs.effort.accessoryRIR
         return Exercise(exerciseID: ex.id, name: ex.name,
                         sets: setsPerExercise,
                         repsLow: repsLow, repsHigh: repsHigh,
                         restSeconds: rest,
                         percentOfMax: percent,
+                        rirLow: rir.low, rirHigh: rir.high,
                         isMain: isMain,
                         slot: slot)
     }
@@ -1290,7 +1312,9 @@ enum ProgramGenerator {
                                 lens: inputs.personaLens,
                                 deprioritized: inputs.deprioritizedExerciseIDs) else { return nil }
         var replacement = prescription(for: next, slot: slot,
-                                       band: GeneratorScience.band(for: inputs.focus),
+                                       band: GeneratorScience.applyRepAppetite(
+                                           GeneratorScience.band(for: inputs.focus),
+                                           appetite: inputs.repAppetite),
                                        inputs: inputs,
                                        setsPerExercise: exercise.sets)
         replacement.sets = exercise.sets
