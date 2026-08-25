@@ -35,17 +35,40 @@ final class HealthTriageTests: XCTestCase {
     func testDelayOutranksEverything() {
         let answers = Dictionary(uniqueKeysWithValues:
             HealthTriage.questions.map { ($0.id, false) })
-        XCTAssertEqual(HealthTriage.evaluate(answers: answers, delay: .pregnancy),
-                       .delay(.pregnancy))
+        XCTAssertEqual(HealthTriage.evaluate(answers: answers, delay: .acuteIllness),
+                       .delay(.acuteIllness))
     }
 
-    func testPregnancyRoutesToTheClinicianNotToAProgram() {
-        // Both PAR-Q+ and ACOG put pregnancy in the practitioner's hands.
-        // We must never self-clear it.
-        guard case .delay(let reason) = HealthTriage.evaluate(answers: [:], delay: .pregnancy) else {
-            return XCTFail("pregnancy must delay")
+    func testPregnancyStillGetsAProgram() {
+        // Corrected 2026-08-25. ACOG ENCOURAGES lifting and cardio during
+        // pregnancy; blocking it was both wrong and paternalistic. The
+        // practitioner conversation rides along with the program, it does
+        // not stand in front of it.
+        let answers = Dictionary(uniqueKeysWithValues:
+            HealthTriage.questions.map { ($0.id, false) })
+        guard case .clearedWithAdvisory(let copy) =
+                HealthTriage.evaluate(answers: answers, stage: .pregnant) else {
+            return XCTFail("pregnancy must still be programmed for")
         }
-        XCTAssertFalse(reason.copy.isEmpty)
+        XCTAssertTrue(copy.lowercased().contains("practitioner"))
+    }
+
+    func testPostpartumIsANormalReturn() {
+        let answers = Dictionary(uniqueKeysWithValues:
+            HealthTriage.questions.map { ($0.id, false) })
+        guard case .clearedWithAdvisory = HealthTriage.evaluate(answers: answers,
+                                                                stage: .postpartum) else {
+            return XCTFail("postpartum must still be programmed for")
+        }
+    }
+
+    func testARealFlagStillOutranksLifeStage() {
+        // Pregnant AND reporting chest pain must still refer out.
+        var answers = Dictionary(uniqueKeysWithValues:
+            HealthTriage.questions.map { ($0.id, false) })
+        answers["chest_pain"] = true
+        XCTAssertEqual(HealthTriage.evaluate(answers: answers, stage: .pregnant),
+                       .referOut(flagged: ["chest_pain"]))
     }
 
     func testCardiacFlagShapesTheCopy() {

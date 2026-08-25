@@ -55,39 +55,70 @@ enum HealthTriage {
                  clarifier: nil),
     ]
 
-    /// PAR-Q+ also names conditions that mean DELAY rather than decline.
-    /// These are asked as state, not history.
+    /// The one genuinely blocking temporary state PAR-Q+ names: be ill,
+    /// wait until you are not.
     enum DelayReason: String, Equatable, Sendable {
         case acuteIllness
-        case pregnancy
 
         var copy: String {
             switch self {
             case .acuteIllness:
                 return "Let's wait until you're over this. Training through a fever isn't toughness — it's a longer layoff."
-            case .pregnancy:
-                return "Pregnancy is a conversation with your own practitioner, not with me. Bring me what they say and I'll build around it."
             }
         }
     }
 
+    /// Pregnancy is NOT a delay (corrected 2026-08-25). The first pass
+    /// read PAR-Q+'s "talk to your practitioner before becoming MORE
+    /// physically active" as a stop sign. It is not: ACOG Committee
+    /// Opinion 804 encourages aerobic AND strength work before, during and
+    /// after pregnancy, and says those already training vigorously may
+    /// continue. Blocking here would have been both wrong and
+    /// paternalistic — the practitioner conversation is a companion to
+    /// training, not a gate in front of it.
+    static let pregnancyAdvisory = """
+        Training through pregnancy is well supported — the guidance encourages both lifting and cardio,         and if you were already training hard you can generally keep going. Two things I'd ask: loop in         your own practitioner, since they know things I can't, and tell me anything they want changed         so I can build around it.
+        """
+
+    static let postpartumAdvisory = """
+        Welcome back. Light work is fine as soon as you're cleared, and we'll rebuild from where you         actually are rather than where you left off — same as any return.
+        """
+
     enum Outcome: Equatable, Sendable {
         /// Nothing flagged. Coach may program.
         case cleared
+        /// Coach programs AND says something — pregnancy and postpartum
+        /// live here, not in `delay`.
+        case clearedWithAdvisory(String)
         /// Flagged. Coach does NOT program and says why.
         case referOut(flagged: [String])
-        /// Temporary. Coach does not program YET.
+        /// Temporary and genuinely blocking. Acute illness only.
         case delay(DelayReason)
+    }
+
+    /// States that change the ADVICE without withdrawing the program.
+    enum LifeStage: Equatable, Sendable {
+        case pregnant, postpartum
+
+        var advisory: String {
+            switch self {
+            case .pregnant: return HealthTriage.pregnancyAdvisory
+            case .postpartum: return HealthTriage.postpartumAdvisory
+            }
+        }
     }
 
     /// The decision rule, straight from the instrument: all-NO clears;
     /// any-YES routes onward. Delay conditions outrank clearance, because
     /// someone can be perfectly healthy AND currently feverish.
     static func evaluate(answers: [String: Bool],
-                         delay: DelayReason? = nil) -> Outcome {
+                         delay: DelayReason? = nil,
+                         stage: LifeStage? = nil) -> Outcome {
         if let delay { return .delay(delay) }
         let flagged = questions.map(\.id).filter { answers[$0] == true }
-        return flagged.isEmpty ? .cleared : .referOut(flagged: flagged)
+        if !flagged.isEmpty { return .referOut(flagged: flagged) }
+        if let stage { return .clearedWithAdvisory(stage.advisory) }
+        return .cleared
     }
 
     /// What Coach says on a refer-out. Names the boundary honestly rather
