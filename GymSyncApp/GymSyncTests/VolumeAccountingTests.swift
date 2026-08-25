@@ -94,4 +94,63 @@ final class VolumeAccountingTests: XCTestCase {
         let tally = ProgramGenerator.weeklyMuscleSets(days: days, catalog: [bike])
         XCTAssertTrue(tally.isEmpty, "zone minutes are not sets")
     }
+
+    // MARK: - Audit 2026-08-25: the reroll gate leak
+
+    /// The shipped variation control must honour the same hard exclusions
+    /// the generated program did. Before the audit, `reroll` built its own
+    /// equipment-only candidate pool, so the roll button could hand back a
+    /// lift the athlete had explicitly excluded — an injury exclusion
+    /// silently outranked by a UI affordance.
+    func testRerollNeverReturnsAnExcludedExercise() {
+        // cat defaults to "isolation" so the `.isolation("back")` slot
+        // actually has candidates — a vacuous pool would pass this test
+        // for the wrong reason.
+        let a = ex(1, "Row A", "back")
+        let b = ex(2, "Row B", "back")
+        let c = ex(3, "Row C", "back")
+        let catalog = [a, b, c]
+        var inputs = ProgramGenerator.Inputs(focus: .hypertrophy, daysPerWeek: 3,
+                                             durationWeeks: 8, experience: .intermediate)
+        inputs.excludedExerciseIDs = [b.id]
+
+        var current = entry(a, sets: 3, isMain: true)
+        current.slot = .isolation("back")
+        let day = ProgramGenerator.Day(name: "Pull", exercises: [current])
+
+        // Walk the whole pool; b must never appear at any roll depth.
+        var seen: Set<UUID> = []
+        var cursor = current
+        for _ in 0..<5 {
+            guard let next = ProgramGenerator.reroll(cursor, in: day, inputs: inputs,
+                                                     catalog: catalog,
+                                                     alsoExcluding: seen) else { break }
+            XCTAssertNotEqual(next.exerciseID, b.id,
+                              "reroll handed back an excluded exercise")
+            seen.insert(next.exerciseID)
+            cursor = next
+        }
+        XCTAssertFalse(seen.contains(b.id))
+        // Non-vacuity: the pool must actually have produced alternates,
+        // otherwise the assertion above proves nothing.
+        XCTAssertTrue(seen.contains(c.id),
+                      "reroll produced no alternates at all — test is vacuous")
+    }
+
+    /// Conditioning days pick their three compounds by COVERAGE, not by
+    /// template order. A full-body base used to yield squat + hinge +
+    /// horizontal push, deleting horizontal pulling from every day of the
+    /// block — a conditioning program with no rowing in it.
+    func testConditioningFullBodyKeepsAPullPattern() {
+        let slots = ProgramGenerator.slots(for: .fullBody, focus: .conditioning)
+        let patterns: [String] = slots.compactMap { slot in
+            if case .pattern(let name, _) = slot { return name }
+            return nil
+        }
+        XCTAssertTrue(patterns.contains(where: { $0.hasPrefix("pull") }),
+                      "conditioning full-body day dropped all pulling: \(patterns)")
+        XCTAssertTrue(patterns.contains(where: { $0.hasPrefix("push") }),
+                      "conditioning full-body day dropped all pushing: \(patterns)")
+        XCTAssertEqual(patterns.count, 3, "the maintenance floor is three compounds")
+    }
 }

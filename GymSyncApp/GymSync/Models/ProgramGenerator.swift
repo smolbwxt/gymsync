@@ -197,18 +197,7 @@ enum ProgramGenerator {
         let split = GeneratorScience.split(daysPerWeek: inputs.daysPerWeek,
                                            focus: inputs.focus,
                                            preference: inputs.splitPreference)
-        let usable = catalog.filter { ex in
-            guard inputs.equipment.map({ allowed in
-                allowed.contains(ex.equipment)
-                    || (ex.equipment == "ez-bar" && allowed.contains("barbell"))
-            }) ?? true else { return false }
-            // Hard exclusions (TrainingProfile): these lifts do not exist
-            // for this athlete. The selector's next-best (and ultimately
-            // the substitution graph) fills every hole.
-            if inputs.excludedExerciseIDs.contains(ex.id) { return false }
-            if inputs.excludedPatterns.contains(ex.movementPattern) { return false }
-            return true
-        }
+        let usable = usableCatalog(catalog, inputs: inputs)
 
         var notes: [String] = inputs.advisoryNotes
         if inputs.daysPerWeek == 1 {
@@ -360,13 +349,27 @@ enum ProgramGenerator {
             }
             // Session-length cap (owner 2026-08-15: "no option for workout
             // duration"): trim accessories — never mains — until the day
-            // fits. Estimate mirrors the session-time doctrine: ~2 min a
-            // set + rests + a transition window per exercise.
+            // fits.
+            //
+            // The estimate now mirrors `StatMath.estimatedMinutes` exactly
+            // (audit 2026-08-25). The old inline formula charged a full
+            // rest after the LAST set of every exercise and a transition
+            // after the last exercise, inflating a 5x120s main from 15 to
+            // 22 minutes — roughly 45% over. The generator was therefore
+            // trimming against a budget the routine card then displayed as
+            // comfortably shorter, which is what surfaced as "our routines
+            // are pretty short. 4 exercises?": a 60-minute cap deleted
+            // accessories until only three lifts survived. One formula,
+            // one source of truth, so the two can never disagree again.
             if let cap = inputs.sessionMinutes {
                 func estimatedMinutes(_ list: [Exercise]) -> Int {
-                    list.reduce(0) { acc, ex in
-                        acc + ex.sets * 2 + ex.sets * ex.restSeconds / 60 + 2
+                    guard !list.isEmpty else { return 0 }
+                    var seconds = list.reduce(0) { acc, ex in
+                        acc + ex.sets * StatMath.secondsPerSet
+                            + max(0, ex.sets - 1) * ex.restSeconds
                     }
+                    seconds += (list.count - 1) * TransitWindow.seconds
+                    return max(1, Int((Double(seconds) / 60).rounded()))
                 }
                 while estimatedMinutes(chosen) > cap, chosen.count > 1,
                       let lastAccessory = chosen.lastIndex(where: { !$0.isMain }) {
@@ -851,9 +854,29 @@ enum ProgramGenerator {
         case .conditioning:
             // The maintenance floor: three compounds + core. Lifting
             // holds muscle; the zone work is the training.
+            //
+            // Selected by COVERAGE, not template order (audit 2026-08-25).
+            // Taking the first three patterns off a `.fullBody` base
+            // yielded squat + hinge + horizontal push and silently deleted
+            // horizontal pulling from every day of the block — a
+            // conditioning program with no rowing in it at all. A push and
+            // a pull are now reserved before anything else fills a seat.
             var trimmed: [Slot] = []
+            func take(_ matches: (String) -> Bool) {
+                guard trimmed.count < 3,
+                      let slot = base.first(where: { candidate in
+                          if case .pattern(let name, _) = candidate {
+                              return matches(name) && !trimmed.contains(candidate)
+                          }
+                          return false
+                      }) else { return }
+                trimmed.append(slot)
+            }
+            take { $0.hasPrefix("push") }
+            take { $0.hasPrefix("pull") }
             for slot in base {
-                if case .pattern = slot, trimmed.count < 3 { trimmed.append(slot) }
+                guard trimmed.count < 3 else { break }
+                if case .pattern = slot, !trimmed.contains(slot) { trimmed.append(slot) }
             }
             trimmed.append(.isolation("core"))
             return trimmed
@@ -1204,22 +1227,57 @@ enum ProgramGenerator {
     /// already shown so consecutive rolls walk DOWN the ranked pool; when
     /// the pool runs dry the caller clears its history and the cycle
     /// restarts.
+    /// The candidate pool for an athlete: equipment they have, minus the
+    /// lifts that do not exist for them. Factored out (audit 2026-08-25)
+    /// because `reroll` had its own equipment-only copy and therefore
+    /// handed back exercises the athlete had explicitly excluded — the
+    /// roll button silently outranked an injury exclusion.
+    static func usableCatalog(_ catalog: [CatalogExercise],
+                              inputs: Inputs) -> [CatalogExercise] {
+        catalog.filter { ex in
+            guard inputs.equipment.map({ allowed in
+                allowed.contains(ex.equipment)
+                    || (ex.equipment == "ez-bar" && allowed.contains("barbell"))
+            }) ?? true else { return false }
+            // Hard exclusions (TrainingProfile): these lifts do not exist
+            // for this athlete. The selector's next-best (and ultimately
+            // the substitution graph) fills every hole.
+            if inputs.excludedExerciseIDs.contains(ex.id) { return false }
+            if inputs.excludedPatterns.contains(ex.movementPattern) { return false }
+            return true
+        }
+    }
+
     static func reroll(_ exercise: Exercise, in day: Day,
                        inputs: Inputs, catalog: [CatalogExercise],
                        alsoExcluding: Set<UUID> = []) -> Exercise? {
         guard let slot = exercise.slot else { return nil }
-        let usable = catalog.filter { ex in
-            inputs.equipment.map { allowed in
-                allowed.contains(ex.equipment)
-                    || (ex.equipment == "ez-bar" && allowed.contains("barbell"))
-            } ?? true
-        }
+        let usable = usableCatalog(catalog, inputs: inputs)
         var excluded = Set(day.exercises.map(\.exerciseID))
         excluded.formUnion(alsoExcluding)
         excluded.insert(exercise.exerciseID)
+        // Audit 2026-08-25: reroll passed only focus + focusMuscles, so the
+        // shipped variation control discarded every gate the generated
+        // program had honored — the derived complexity cap, injury joint
+        // cautions, impact caution, the sport and persona lenses, the
+        // starred tiebreak and the block-carryover deprioritization. A roll
+        // could therefore hand a novice a lift above their comfort ceiling.
+        // `seed: 0` on purpose: reroll is a ranked walk down the pool
+        // (`alsoExcluding` carries the history), never a shuffle.
         guard let next = select(slot: slot, from: usable, excluding: excluded,
                                 focus: inputs.focus,
-                                focusMuscles: inputs.focusMuscles) else { return nil }
+                                focusMuscles: inputs.focusMuscles,
+                                experience: inputs.experience,
+                                seed: 0,
+                                tilt: inputs.selectionTilt,
+                                cautionJoints: inputs.cautionJoints,
+                                axialBoost: inputs.axialBoost,
+                                impactCaution: inputs.impactCaution,
+                                complexityCapOverride: inputs.complexityCapOverride,
+                                starred: inputs.starredExerciseIDs,
+                                sportLens: inputs.sportPrepSport,
+                                lens: inputs.personaLens,
+                                deprioritized: inputs.deprioritizedExerciseIDs) else { return nil }
         var replacement = prescription(for: next, slot: slot,
                                        band: GeneratorScience.band(for: inputs.focus),
                                        inputs: inputs,
