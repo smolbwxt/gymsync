@@ -106,6 +106,10 @@ enum ProgramGenerator {
         /// tier). Same seed = same program, byte for byte — variety
         /// without giving up the testable pure function.
         var seed: Int = 0
+        /// Under ~18 (derived from the profile's birth year at the call
+        /// site, never asked as a question). Selects the NSCA youth
+        /// intensity ceilings — see GeneratorScience.mainIntensityCeiling.
+        var isYouth: Bool = false
     }
 
     struct CatalogExercise {
@@ -1182,7 +1186,8 @@ enum ProgramGenerator {
                 case "aggressive": p += 2.5
                 default: break
                 }
-                p = min(p, GeneratorScience.mainIntensityCeiling(experience: inputs.experience))
+                p = min(p, GeneratorScience.mainIntensityCeiling(experience: inputs.experience,
+                                                                 isYouth: inputs.isYouth))
                 if ex.unilateral { p = min(p, 80) }
                 percent = max(50, p)
             }

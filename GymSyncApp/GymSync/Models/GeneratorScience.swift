@@ -280,7 +280,22 @@ enum GeneratorScience {
     /// neural-adaptation basis of novice progression the evidence file
     /// itself cites). The ceiling clamps the %1RM anchor; novices climb
     /// via linear progression instead of starting pinned near max.
-    static func mainIntensityCeiling(experience: Experience) -> Double {
+    static func mainIntensityCeiling(experience: Experience,
+                                     isYouth: Bool = false) -> Double {
+        // YOUTH CEILINGS (NSCA Youth Resistance Training position stand,
+        // Faigenbaum et al. 2009 — corpus area 'guideline'). The stand's
+        // progression table tops out at 70-85% 1RM for an ADVANCED youth
+        // lifter, well under our adult advanced ceiling of 92.5. Before
+        // this, a 16-year-old with a year of training inherited the adult
+        // number. The owner's ruling was no minimum age, which makes these
+        // ceilings the thing that keeps that safe.
+        if isYouth {
+            switch experience {
+            case .new: return 70          // NSCA novice band tops at 70%
+            case .intermediate: return 80 // NSCA intermediate tops at 80%
+            case .advanced: return 85     // NSCA advanced tops at 85%
+            }
+        }
         switch experience {
         // 72.5 -> 67.5 (20-athlete audit 2026-08-20: a day-one 50-year-old
         // opened at 72% triples — legal but eager; the novice on-ramp
@@ -289,6 +304,33 @@ enum GeneratorScience {
         case .intermediate: return 87.5
         case .advanced: return 92.5
         }
+    }
+
+    /// Training age DECAYS (NSCA position stand, corpus area 'guideline':
+    /// novice means up to about 2-3 months of consistent training OR an
+    /// individual who has not trained for several months).
+    ///
+    /// This closes a live defect. `trainingAge` is a value the athlete
+    /// STATES and it never decayed, so someone who lifted seriously five
+    /// years ago and stopped was still handed advanced ceilings and
+    /// advanced volume on their first session back — the single most
+    /// named failure mode in the detraining evidence ("chasing pre-layoff
+    /// numbers... the resulting injury costs far more long-term").
+    ///
+    /// Deliberately encodes ONLY the documented boundary. A shorter layoff
+    /// is not demoted here, because the same evidence says shorter returns
+    /// are governed by LOAD (return at RPE 5-6, letting current capacity
+    /// rather than history pick the weight) rather than by re-labelling
+    /// the lifter. Inventing an intermediate tier would be interpolation
+    /// dressed as a guideline.
+    static let layoffResetDays = 120
+
+    static func decayedExperience(stated: Experience,
+                                  daysSinceLastSession: Int?) -> Experience {
+        guard let days = daysSinceLastSession, days >= layoffResetDays else {
+            return stated
+        }
+        return .new
     }
 
     /// Complexity gate (catalog labels; owner law: complexity GATES by
