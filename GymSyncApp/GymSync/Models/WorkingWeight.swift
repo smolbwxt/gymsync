@@ -16,9 +16,9 @@ import Foundation
 //   1. .campaign     enrolled + this exercise is a focus lift + the current
 //                    program week prescribes a percentage
 //                    → percent × the frozen enrollment baseline
-//   2. .routine      an explicit target typed into the routine
-//   3. .repGoal      inverse Epley from the user's best qualifying set,
+//   2. .repGoal      inverse Epley from the user's best qualifying set,
 //                    solved for the routine's target rep count
+//   3. .routine      an explicit target typed into the routine
 //   4. .lastSet      what they actually lifted last on this exercise
 //   5. nil           NOTHING. The bar loader falls back to bar weight.
 //
@@ -90,13 +90,19 @@ enum WorkingWeight {
             // rather than inventing one.
         }
 
-        // 2 — ROUTINE. An explicit number the user typed into the routine.
-        if let routineTargetPounds, routineTargetPounds > 0 {
-            return Suggestion(pounds: routineTargetPounds, source: .routine)
-        }
-
-        // 3 — REP GOAL. Inverse Epley off their best qualifying set: the
+        // 2 — REP GOAL. Inverse Epley off their best qualifying set: the
         // weight that should yield `targetReps` given demonstrated strength.
+        //
+        // ABOVE the routine's typed number since 2026-08-24 (field: "a
+        // seeded weight when establishing a routine for the first time
+        // overrides the felt experience of performing that movement" —
+        // JM press written at 135, performed at 155 × 8, still prescribed
+        // 135 forever). Demonstrated strength outranks a static seed; the
+        // routine's number now fires only until the first qualifying set
+        // exists, exactly like the onboarding anchor one rung further
+        // down. Deliberate light prescriptions still have homes that
+        // outrank this: campaign percentages (rung 1) and BlockProgression
+        // decisions at the call site.
         if let targetReps, targetReps > 0,
            let best = bestQualifyingSet(in: history),
            let projected = StatMath.projectedWeight(prWeight: best.weight,
@@ -104,6 +110,12 @@ enum WorkingWeight {
                                                     targetReps: targetReps) {
             return Suggestion(pounds: Decimal(projected),
                               source: .repGoal(targetReps: targetReps))
+        }
+
+        // 3 — ROUTINE. An explicit number typed into the routine — the
+        // starting prescription while no performance evidence exists yet.
+        if let routineTargetPounds, routineTargetPounds > 0 {
+            return Suggestion(pounds: routineTargetPounds, source: .routine)
         }
 
         // 4 — LAST SET. What they actually did last time.

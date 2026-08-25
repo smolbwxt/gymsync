@@ -97,12 +97,26 @@ final class WorkingWeightTests: XCTestCase {
 
     // MARK: - Rung 2/3/4 ordering
 
-    func testRoutineTargetBeatsRepGoalAndLastSet() {
+    // Field 2026-08-24 (the JM-press report): demonstrated strength
+    // outranks the routine's typed seed — 5×225 in the log projects the
+    // set of 8 regardless of the 185 written into the routine.
+    func testRepGoalBeatsRoutineTargetOnceHistoryExists() {
         let result = WorkingWeight.suggest(
             exerciseID: exerciseID, targetReps: 8,
             routineTargetPounds: 185,
             history: [log(reps: 5, weight: 225)],
             lastSetPounds: 200, enrollment: nil
+        )
+        XCTAssertEqual(result?.pounds, 205)
+        XCTAssertEqual(result?.source, .repGoal(targetReps: 8))
+    }
+
+    func testRoutineTargetHoldsUntilFirstQualifyingSet() {
+        let result = WorkingWeight.suggest(
+            exerciseID: exerciseID, targetReps: 8,
+            routineTargetPounds: 185,
+            history: [],
+            lastSetPounds: nil, enrollment: nil
         )
         XCTAssertEqual(result?.pounds, 185)
         XCTAssertEqual(result?.source, .routine)

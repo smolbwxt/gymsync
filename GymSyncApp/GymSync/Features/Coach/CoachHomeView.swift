@@ -282,7 +282,16 @@ struct CoachChatView: View {
     private func open() async {
         guard loading else { return }
         defer { loading = false }
+        AppLogger.workout.info("coach chat open: available=\(CoachDebrief.isConversationAvailable, privacy: .public)")
         messages = await CoachChatRepository.recent()
+        // Field 2026-08-24 ("the coach chat page doesn't have anything
+        // on it"): a first visit must never read as a dead screen —
+        // Coach opens the relationship, unprompted and unpersisted.
+        if messages.isEmpty {
+            messages = [CoachChatMessage(id: UUID(), role: "coach",
+                body: "This thread is ours — it keeps the history. Ask me anything: your numbers, a lift that feels off, what the research says. Where do you want to start?",
+                createdAt: .now)]
+        }
         #if canImport(FoundationModels)
         if #available(iOS 26.0, *), CoachDebrief.isConversationAvailable {
             let profile = (try? await TrainingProfileRepository.load()) ?? TrainingProfile()
@@ -297,9 +306,34 @@ struct CoachChatView: View {
                     logsByName[name, default: []].append(log)
                 }
             }
+            // Field #3: routines + schedule context for the thread.
+            var railLines: [String] = []
+            if let ownerID = appState.currentProfile?.id,
+               let routines = try? await RoutineRepository.fetchAll(ownerID: ownerID) {
+                let own = routines.filter { $0.prescribedBy == nil }.prefix(12)
+                if !own.isEmpty {
+                    railLines.append("SAVED ROUTINES: " + own.map(\.name).joined(separator: " · "))
+                }
+                let prescribed = routines.filter { $0.prescribedBy != nil }
+                if !prescribed.isEmpty {
+                    railLines.append("TRAINER-PRESCRIBED: " + prescribed.map(\.name).joined(separator: " · "))
+                }
+            }
+            if let userID = appState.currentProfile?.id,
+               let history = try? await SessionRepository.history(userID: userID, limit: 12) {
+                let recent = history.compactMap { session -> String? in
+                    guard let done = session.completedAt else { return nil }
+                    let days = max(0, Int(Date().timeIntervalSince(done) / 86_400))
+                    return days == 0 ? "today" : "\(days)d ago"
+                }
+                if !recent.isEmpty {
+                    railLines.append("RECENT SESSIONS: \(recent.count) in the log, latest \(recent.first ?? "")")
+                }
+            }
             engine = CoachChatEngine(
                 profile: profile,
                 persona: CoachPersona.bySlug(profile.persona),
+                routinesRail: railLines.joined(separator: "\n"),
                 trendLookup: { [logsByName] name in
                     if let logs = logsByName[name.lowercased()], logs.count > 1 {
                         return DebriefBuilder.trendSentence(name: name, logs: logs)
@@ -345,6 +379,13 @@ struct CoachChatView: View {
                 return
             }
             #endif
+            // Engine missing where the model is available = a wiring
+            // failure worth naming, not a silent dead composer (the
+            // 2026-08-24 field report's failure shape).
+            AppLogger.workout.error("coach chat send: no engine (available=\(CoachDebrief.isConversationAvailable, privacy: .public))")
+            messages.append(CoachChatMessage(id: UUID(), role: "coach",
+                body: "I couldn't reach the on-device model just now — give me that once more in a moment.",
+                createdAt: .now))
         }
     }
 }

@@ -128,12 +128,18 @@ final class CoachChatEngine {
     private let persona: CoachPersona?
     private let trendLookup: @Sendable (String) -> String
     private let volumeLookup: @Sendable () -> String
+    /// Field 2026-08-24: "let coach see all of your past routines,
+    /// saved routines, and scheduled routines" — computed lines the
+    /// view assembles from the repositories; empty string = no data.
+    private let routinesRail: String
 
     init(profile: TrainingProfile, persona: CoachPersona?,
+         routinesRail: String = "",
          trendLookup: @escaping @Sendable (String) -> String,
          volumeLookup: @escaping @Sendable () -> String) {
         self.profile = profile
         self.persona = persona
+        self.routinesRail = routinesRail
         self.trendLookup = trendLookup
         self.volumeLookup = volumeLookup
     }
@@ -141,6 +147,9 @@ final class CoachChatEngine {
     private func seedSession(summary: String, tail: [CoachChatMessage]) {
         var instructions = DebriefInstructions.build(persona: persona, profile: profile)
         instructions += "\n\nThis is an ONGOING relationship thread, not a one-off debrief. Keep replies chat-length (2-5 sentences) unless asked to go deep."
+        if !routinesRail.isEmpty {
+            instructions += "\n\nTHE ATHLETE'S ROUTINES AND SCHEDULE (computed — cite, don't invent):\n" + routinesRail
+        }
         if !summary.isEmpty {
             instructions += "\n\nWHAT HAS HAPPENED SO FAR (your own memory of this conversation — trust it):\n" + summary
         }

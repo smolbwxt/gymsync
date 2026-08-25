@@ -1590,10 +1590,33 @@ struct WorkoutSessionView: View {
                         .foregroundStyle(theme.text)
                         .lineLimit(1)
                 }
-                Text(soloUpNextReadback)
-                    .font(GSFont.bold(13, relativeTo: .footnote).monospacedDigit())
-                    .tracking(0.5)
-                    .foregroundStyle(theme.text.opacity(0.78))
+                // Field 2026-08-24: "can't load weight on a machine
+                // during rest" — the readback gains the entry card's
+                // − / + steps so the station gets set to the RIGHT number
+                // while resting, not after. Writes the same soloWeight
+                // the entry card is prefilled with.
+                HStack(spacing: 10) {
+                    Button { soloStepWeight(-1) } label: {
+                        Image(systemName: "minus")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(theme.text)
+                            .frame(width: 30, height: 26)
+                    }
+                    .buttonStyle(.gs3D(face: theme.raised3DFace, lip: theme.raised3DLip,
+                                       cornerRadius: 8, lipHeight: 3))
+                    Text(soloUpNextReadback)
+                        .font(GSFont.bold(13, relativeTo: .footnote).monospacedDigit())
+                        .tracking(0.5)
+                        .foregroundStyle(theme.text.opacity(0.78))
+                    Button { soloStepWeight(1) } label: {
+                        Image(systemName: "plus")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(theme.text)
+                            .frame(width: 30, height: 26)
+                    }
+                    .buttonStyle(.gs3D(face: theme.raised3DFace, lip: theme.raised3DLip,
+                                       cornerRadius: 8, lipHeight: 3))
+                }
                 // Owner 2026-08-13: "can't see routine during rest" — the
                 // ROUTINE pager lives on the exercise card the rest page
                 // replaces, so the rest page gets its own door to the same
