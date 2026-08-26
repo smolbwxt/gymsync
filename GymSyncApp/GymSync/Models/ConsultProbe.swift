@@ -124,10 +124,16 @@ enum ConsultProbe {
         // It now resolves against the catalog and gives that lift's
         // primary muscle the focus volume, which is the effect the
         // question was always promising.
+        // Owner 2026-08-26, on being shown this screen: "I don't know what
+        // you're asking there." Fair - "which lift is the number on?" only
+        // parses if you are already holding the opener's answer in your
+        // head, and by this point they have tapped three other things. The
+        // question now carries its own context instead of borrowing it.
         Probe(id: "focus_lift",
-              ask: "Which lift is the number on?",
+              ask: "Which lift do you most want to add weight to?",
               tunes: ["focusMuscles"],
-              gain: 9, family: .goal),
+              gain: 9, family: .goal,
+              clarifier: "Name the one you care about. I'll give the muscles behind it more of the work."),
         Probe(id: "focus_areas",
               ask: "Which two areas do you want to look different?",
               tunes: ["focusMuscles"],

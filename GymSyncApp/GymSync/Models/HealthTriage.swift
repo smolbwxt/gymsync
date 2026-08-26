@@ -29,6 +29,31 @@ enum HealthTriage {
         let clarifier: String?
     }
 
+    /// The PRE-SCREEN: one question standing in front of the seven.
+    ///
+    /// Owner 2026-08-26: "the first 7 questions could be handled by a 'Do
+    /// you have any health conditions that may affect your ability to work
+    /// out effectively?', and if someone answers yes, then we take them
+    /// through the gauntlet."
+    ///
+    /// THE CLARIFIER IS NOT DECORATION, and this is the whole risk of a
+    /// pre-screen. PAR-Q+ works precisely because it asks about SPECIFIC
+    /// things people do not file under "a health condition" - exertional
+    /// chest pain that has never been diagnosed, dizziness written off as
+    /// standing up too fast, a medication so routine it stopped counting
+    /// as one. Ask "any health conditions?" bare and a fair number of the
+    /// people the instrument exists to catch will honestly answer no.
+    ///
+    /// So the clarifier enumerates every one of the seven. The athlete
+    /// sees one question and one tap; what they are actually scanning is
+    /// still the full instrument. That is the trade this makes: the same
+    /// reach, in one screen instead of seven, at the cost of relying on
+    /// them to read a list rather than answer it item by item.
+    static let preScreen = Question(
+        id: "any_conditions",
+        prompt: "Anything about your health I should know before I write you a program?",
+        clarifier: "Heart condition or high blood pressure · chest pain, at rest or when you move · dizziness or fainting in the last year · any other ongoing condition · a prescribed medication for one · a bone, joint or muscle problem · a doctor telling you to only train supervised.")
+
     /// PAR-Q+ Step 1 — the seven general health questions. Order matches
     /// the instrument.
     static let questions: [Question] = [
@@ -186,6 +211,17 @@ enum HealthTriage {
                     FollowUp.Option(id: "ankle", label: "ANKLE", escalates: false),
                  ]),
     ]
+
+    /// A clean pre-screen answer, expanded into the seven all-NO answers
+    /// it stands for.
+    ///
+    /// Recorded as the seven rather than as a single flag on purpose: the
+    /// stored screening then has exactly the same shape whichever route
+    /// the athlete took, so evaluate(), clearsTheGate and every test read
+    /// one thing instead of two.
+    static func clearedByPreScreen() -> [String: Bool] {
+        Dictionary(uniqueKeysWithValues: questions.map { ($0.id, false) })
+    }
 
     /// Every follow-up this athlete still owes an answer to, in order.
     static func pendingFollowUps(answers: [String: Bool],

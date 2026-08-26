@@ -29,7 +29,21 @@ struct CoachHomeView: View {
     /// Saving a profile and dropping the athlete back here with
     /// instructions to go press generate somewhere else is not what that
     /// button says.
-    @State private var pushWizard = false
+    /// One destination at a time.
+    ///
+    /// The consult used to be a NavigationLink and the wizard a separate
+    /// navigationDestination, both anchored on this screen - so finishing
+    /// the consult PUSHED the wizard on top of it, leaving the consult
+    /// mounted underneath. Popping out of the builder landed the athlete
+    /// back in the consult, which restarted at its health gate and asked
+    /// the medical questions a second time.
+    ///
+    /// navigationDestination(item:) REPLACES rather than stacks: moving
+    /// route from .consult to .wizard swaps the pushed view, so the
+    /// consult is gone and the builder pops back to here.
+    @State private var route: Route?
+
+    private enum Route: Hashable { case consult, wizard }
 
     private var persona: CoachPersona? { CoachPersona.bySlug(profile.persona) }
 
@@ -53,9 +67,14 @@ struct CoachHomeView: View {
         }
         .background(theme.bg)
         .contentMargins(.bottom, 88, for: .scrollContent)
-        .navigationDestination(isPresented: $pushWizard) {
-            CoachWizardView(onCreated: {})
-                .background(theme.bg)
+        .navigationDestination(item: $route) { destination in
+            switch destination {
+            case .consult:
+                consultDestination
+            case .wizard:
+                CoachWizardView(onCreated: {})
+                    .background(theme.bg)
+            }
         }
         .task {
             if let loaded = try? await TrainingProfileRepository.load() {
@@ -138,56 +157,66 @@ struct CoachHomeView: View {
     // coarse adjustment, the consult confirms and fine-tunes, and both
     // end at the same generator.
     private var consultDoor: some View {
-        NavigationLink {
-            CoachConsultView(
-                profile: profile,
-                catalog: catalog,
-                // Everything below is READ. A consult that opens already
-                // knowing the athlete is the difference between a consult
-                // and a form.
-                // A block finished OR sets logged. Carryover alone would
-                // cold-start someone mid-way through their first block —
-                // they have a log, they just have not finished anything.
-                hasLog: profile.carryover != nil || loggedCadence != nil,
-                loggedDaysPerWeek: loggedCadence
-                    ?? profile.carryover?.suggestedDaysPerWeek.map(Double.init),
-                recommendedDaysPerWeek: profile.daysPerWeek,
-                userID: appState.currentProfile?.id,
-                onFinish: { answers in
-                    Task {
-                        await applyConsult(answers)
-                        pushWizard = true
-                    }
-                })
-            .background(theme.bg)
-            .navigationBarBackButtonHidden(true)
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "text.bubble")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(theme.text)
-                    .frame(width: 24)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("THE CONSULT")
-                        .font(GSFont.bold(16, relativeTo: .headline))
-                        .tracking(0.5)
-                        .foregroundStyle(theme.text)
-                    Text(consultSubtitle)
-                        .font(GSFont.body(11, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral500)
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(theme.neutral500)
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
+        Button { route = .consult } label: {
+            consultDoorLabel
         }
         .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("The consult — a few questions, then a program")
+    }
+
+    private var consultDestination: some View {
+        CoachConsultView(
+            profile: profile,
+            catalog: catalog,
+            // Everything below is READ. A consult that opens already
+            // knowing the athlete is the difference between a consult and
+            // a form.
+            //
+            // A block finished OR sets logged. Carryover alone would
+            // cold-start someone midway through their first block - they
+            // have a log, they just have not finished anything.
+            hasLog: profile.carryover != nil || loggedCadence != nil,
+            loggedDaysPerWeek: loggedCadence
+                ?? profile.carryover?.suggestedDaysPerWeek.map(Double.init),
+            recommendedDaysPerWeek: profile.daysPerWeek,
+            userID: appState.currentProfile?.id,
+            onFinish: { answers in
+                Task {
+                    await applyConsult(answers)
+                    // REPLACES the consult rather than pushing on top of
+                    // it. Stacking was the bug: the builder popped back
+                    // into a consult that then re-ran its health gate.
+                    route = .wizard
+                }
+            })
+        .background(theme.bg)
+        .navigationBarBackButtonHidden(true)
+    }
+
+    private var consultDoorLabel: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "text.bubble")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(theme.text)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("THE CONSULT")
+                    .font(GSFont.bold(16, relativeTo: .headline))
+                    .tracking(0.5)
+                    .foregroundStyle(theme.text)
+                Text(consultSubtitle)
+                    .font(GSFont.body(11, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+            }
+            Spacer()
+            Image(systemName: "chevron.right")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(theme.neutral500)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
     }
 
     /// A returning athlete is not starting over, and the door should not
@@ -225,10 +254,10 @@ struct CoachHomeView: View {
     // MARK: MY PROGRAM (the generator, one layer down)
 
     private var programDoor: some View {
-        NavigationLink {
-            CoachWizardView(onCreated: {})
-                .background(theme.bg)
-        } label: {
+        // Same route as the consult, so there is exactly one way the
+        // builder gets onto the stack and exactly one thing that can pop
+        // off it.
+        Button { route = .wizard } label: {
             HStack(spacing: 10) {
                 Image(systemName: "wand.and.stars")
                     .font(.system(size: 16, weight: .semibold))

@@ -41,6 +41,9 @@ struct HealthGateView: View {
 
     private enum Phase: Equatable {
         case loading
+        /// One question in front of the seven. A NO clears; a YES opens
+        /// the full instrument.
+        case preScreen
         case screening
         /// Step 2. A YES in Step 1 opens a follow-up rather than ending
         /// the conversation — see HealthTriage.pendingFollowUps.
@@ -54,6 +57,8 @@ struct HealthGateView: View {
             switch phase {
             case .loading:
                 Spacer(minLength: 0)
+            case .preScreen:
+                preScreenPhase
             case .screening:
                 screeningPhase
             case .followUp(let followUp):
@@ -65,6 +70,66 @@ struct HealthGateView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onAppear(perform: start)
+    }
+
+    // MARK: The pre-screen
+
+    @ViewBuilder
+    private var preScreenPhase: some View {
+        let question = HealthTriage.preScreen
+        VStack(alignment: .leading, spacing: 8) {
+            Text("BEFORE WE START")
+                .font(GSFont.bold(10, relativeTo: .caption2))
+                .tracking(1.1)
+                .foregroundStyle(theme.accent)
+            Text(question.prompt)
+                .font(GSFont.bold(20, relativeTo: .title3))
+                .foregroundStyle(theme.text)
+                .fixedSize(horizontal: false, vertical: true)
+            if let clarifier = question.clarifier {
+                Text(clarifier)
+                    .font(GSFont.body(12, relativeTo: .footnote))
+                    .foregroundStyle(theme.neutral700)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .gs3DCard(cornerRadius: 18)
+
+        HStack(spacing: 10) {
+            Button { clearByPreScreen() } label: {
+                Text("NOTHING TO FLAG")
+                    .font(GSFont.bold(14, relativeTo: .headline))
+                    .tracking(0.8)
+                    .foregroundStyle(theme.bg)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+            }
+            .buttonStyle(GS3DButtonStyle(face: theme.accent, cornerRadius: 15))
+
+            Button {
+                withAnimation(.easeOut(duration: 0.18)) { phase = .screening }
+            } label: {
+                Text("YES, SOMETHING")
+                    .font(GSFont.bold(14, relativeTo: .headline))
+                    .tracking(0.8)
+                    .foregroundStyle(theme.text)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+            }
+            .buttonStyle(GS3DButtonStyle(face: theme.raised3DFace,
+                                         lip: theme.raised3DLip,
+                                         cornerRadius: 15))
+        }
+        Spacer(minLength: 0)
+    }
+
+    /// A clean pre-screen records the seven all-NO answers it stands for,
+    /// so the stored screening has the same shape either way.
+    private func clearByPreScreen() {
+        screening.answers = HealthTriage.clearedByPreScreen()
+        withAnimation(.easeOut(duration: 0.18)) { settle() }
     }
 
     // MARK: Questions
@@ -228,7 +293,7 @@ struct HealthGateView: View {
                 return
             }
             if stored.answers.isEmpty || stored.needsScreening {
-                withAnimation(.easeOut(duration: 0.18)) { phase = .screening }
+                withAnimation(.easeOut(duration: 0.18)) { phase = .preScreen }
                 return
             }
             switch outcome {

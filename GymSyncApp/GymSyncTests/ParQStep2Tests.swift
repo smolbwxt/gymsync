@@ -200,6 +200,43 @@ final class ParQStep2Tests: XCTestCase {
         XCTAssertEqual(next.id, "symptoms", "resumed at the wrong question")
     }
 
+    // MARK: - The pre-screen
+
+    func testACleanPreScreenRecordsTheSevenItStandsFor() {
+        // Recorded as the seven all-NO answers rather than as a single
+        // flag, so the stored screening has the same shape whichever route
+        // the athlete took and evaluate() reads one thing, not two.
+        let answers = HealthTriage.clearedByPreScreen()
+        XCTAssertEqual(answers.count, HealthTriage.questions.count)
+        XCTAssertTrue(answers.values.allSatisfy { $0 == false })
+        XCTAssertEqual(HealthTriage.evaluate(answers: answers), .cleared)
+        XCTAssertTrue(HealthScreening(answers: answers).clearsTheGate)
+    }
+
+    func testThePreScreenNamesEverySpecificTheSevenAskAbout() {
+        // The whole risk of collapsing seven questions into one: PAR-Q+
+        // works because it asks about things people do not file under "a
+        // health condition" - undiagnosed exertional chest pain, dizziness
+        // written off as standing up too fast, a medication so routine it
+        // stopped counting. Ask it bare and the people the instrument
+        // exists to catch answer no in good faith.
+        //
+        // So the clarifier has to carry every one of them. If a future
+        // edit trims it for brevity, this fails.
+        let clarifier = (HealthTriage.preScreen.clarifier ?? "").lowercased()
+        for term in ["heart", "chest pain", "dizziness", "medication",
+                     "joint", "supervised"] {
+            XCTAssertTrue(clarifier.contains(term),
+                          "the pre-screen must still name '\(term)'")
+        }
+    }
+
+    func testThePreScreenIsNotOneOfTheSeven() {
+        // It stands in FRONT of the instrument; it is not part of it.
+        XCTAssertFalse(HealthTriage.questions.map(\.id)
+                        .contains(HealthTriage.preScreen.id))
+    }
+
     // MARK: - The manual clear (owner request)
 
     func testAClinicianClearanceIsRecordedAsItselfNotAsAnAnswer() {
