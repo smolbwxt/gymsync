@@ -338,23 +338,34 @@ struct WorkoutSessionView: View {
     // expression grew past what the type checker will attempt. The
     // completed/live switch and the PR overlay each get their own named
     // sub-view; body stays a small ZStack + modifier chain.
+    // Body split, part two (compiler type-check timeout, CI 2026-08-26).
+    // The chain reached 26 modifiers and the type checker gave up again at
+    // the same line the 2026-07-27 note above already split once. Sub-views
+    // were not enough on their own: the MODIFIER CHAIN is what grew. So the
+    // chrome (background, nav bar, toolbar, spotlight) is applied here and
+    // the behaviour (sheets, tasks, onChange, onDisappear) is applied in
+    // body, giving the checker two expressions of roughly half the size.
+    private var sessionChrome: some View {
+            ZStack {
+                sessionContent
+                prOverlayLayer
+            }
+            .background(theme.bg)
+            .sensoryFeedback(.success, trigger: logHapticTick)
+            .gsSpotlight(.workout)   // fires on arrival — never mid-lift
+            .overlay(alignment: .top) { attemptOptInNotice }
+            .animation(.easeInOut(duration: 0.25), value: attemptOptInFailedText)
+            .gsHidesDock()
+            .navigationTitle(routine?.name ?? "Freeform Workout")
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationBarBackButtonHidden(!completed)
+            .toolbarBackground(theme.surface, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbar { sessionToolbar }
+    }
+
     var body: some View {
-        ZStack {
-            sessionContent
-            prOverlayLayer
-        }
-        .background(theme.bg)
-        .sensoryFeedback(.success, trigger: logHapticTick)
-        .gsSpotlight(.workout)   // fires on arrival — never mid-lift
-        .overlay(alignment: .top) { attemptOptInNotice }
-        .animation(.easeInOut(duration: 0.25), value: attemptOptInFailedText)
-        .gsHidesDock()
-        .navigationTitle(routine?.name ?? "Freeform Workout")
-        .navigationBarTitleDisplayMode(.inline)
-        .navigationBarBackButtonHidden(!completed)
-        .toolbarBackground(theme.surface, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .toolbar { sessionToolbar }
+        sessionChrome
         .sheet(item: $exerciseDetailSheet) { ex in
             NavigationStack {
                 ExerciseDetailView(exercise: ex)
