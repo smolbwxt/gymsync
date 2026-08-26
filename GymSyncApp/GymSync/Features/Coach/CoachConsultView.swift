@@ -91,7 +91,6 @@ struct CoachConsultView: View {
                     questionCard(probe)
                     answerArea(probe)
                     Spacer(minLength: 0)
-                    footer(probe)
                 } else {
                     finishedCard
                     Spacer(minLength: 0)
@@ -100,9 +99,30 @@ struct CoachConsultView: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 12)
-        .padding(.bottom, 20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.bg)
+        // The footer is a SAFE-AREA INSET, not the last row of the column.
+        // As a row it sat under two things at once: the 86pt tab dock, and
+        // — on the free-text probes — the keyboard. An inset is measured
+        // against both, so the buttons stay reachable while someone is
+        // typing an answer into the field right above them.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if phase == .probing, let probe {
+                footer(probe)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 10)
+                    .padding(.bottom, 12)
+                    .background(theme.bg)
+            }
+        }
+        // Dock clearance, the same call CampaignDetailView documents from
+        // the 2026-07-29 UI audit: a screen pushed inside a tab needs
+        // either this or a bottom inset, or the dock draws over its last
+        // row. The consult wants it hidden outright rather than merely
+        // cleared — tab-switching mid-question is not a thing to support,
+        // and the back button already owns the way out.
+        .gsHidesDock()
+        .scrollDismissesKeyboard(.interactively)
         .onAppear(perform: start)
     }
 

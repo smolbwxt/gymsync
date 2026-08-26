@@ -255,6 +255,11 @@ struct CoachWizardView: View {
             .padding(16)
         }
         .background(theme.bg)
+        // Dock clearance (UI audit 2026-07-29, and again 2026-08-26): a
+        // screen pushed inside a tab needs this or .gsHidesDock(), or the
+        // 86pt dock draws over its last row - here the "Create these
+        // routines" button, which is the entire point of the screen.
+        .contentMargins(.bottom, 88, for: .scrollContent)
         .navigationTitle("Coach")
         .scrollDismissesKeyboard(.interactively)
         .onDisappear { persistProfile() }
