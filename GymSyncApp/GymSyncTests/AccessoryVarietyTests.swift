@@ -130,7 +130,7 @@ final class AccessoryVarietyTests: XCTestCase {
         let dupMain = cat(1, "Bench", "chest", secondaries: ["triceps"],
                           equipment: "barbell")
         let pick = ProgramGenerator.select(
-            slot: .pattern("push_horizontal"), from: [dupMain],
+            slot: .pattern("push_horizontal", main: true), from: [dupMain],
             excluding: [], coveredSecondaries: ["triceps"],
             preferComplementary: true,
             focus: .hypertrophy, focusMuscles: nil)
