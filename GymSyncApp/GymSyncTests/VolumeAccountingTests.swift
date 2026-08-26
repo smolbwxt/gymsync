@@ -112,21 +112,28 @@ final class VolumeAccountingTests: XCTestCase {
         // The wire without which the whole volume search would be a knob
         // that records what it learned and is never read - this repo's
         // dominant defect, and one I have spent two days removing.
-        let curl = ex(1, "Curl", "biceps")
-        let raise = ex(2, "Raise", "shoulders")
-        let days = [ProgramGenerator.Day(name: "Upper", exercises: [
-            entry(curl, sets: 4),
-            entry(raise, sets: 4),
-        ])]
+        // THREE accessories per muscle, not one. Balance adds at most to 5
+        // sets PER EXERCISE (pinned by
+        // testFloorRaisesPrimaryTrainedMuscleCappedAtFive), so a single
+        // accessory tops out at 5 and both muscles would land there
+        // regardless of any target - a fixture that cannot tell the two
+        // apart, which is exactly what an earlier version of this test did.
+        let curls = (1...3).map { ex($0, "Curl \($0)", "biceps") }
+        let raises = (4...6).map { ex($0, "Raise \($0)", "shoulders") }
+        let catalog = curls + raises
+        let days = [ProgramGenerator.Day(name: "Upper",
+                                         exercises: (curls + raises).map { entry($0, sets: 4) })]
         let result = ProgramGenerator.balanceWeeklyVolume(
-            days: days, catalog: [curl, raise], low: 12, high: 20,
+            days: days, catalog: catalog, low: 12, high: 20,
             targets: ["biceps": 8])
         let tally = ProgramGenerator.weeklyMuscleSets(days: result.days,
-                                                      catalog: [curl, raise])
+                                                      catalog: catalog)
         XCTAssertLessThanOrEqual(tally["biceps"] ?? 0, 9,
                                  "biceps is balanced toward ITS target, not the band")
         XCTAssertGreaterThanOrEqual(tally["shoulders"] ?? 0, 12,
                                     "shoulders has no target and keeps the band")
+        XCTAssertGreaterThan(tally["shoulders"] ?? 0, tally["biceps"] ?? 0,
+                             "and the two must actually diverge")
     }
 
     func testNoTargetsIsAStraightPassThrough() {
