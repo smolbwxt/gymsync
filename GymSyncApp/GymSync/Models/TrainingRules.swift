@@ -22,6 +22,20 @@ struct TrainingRule: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
+/// Why a rule could not be stored. Exists so the consult can SAY so
+/// rather than dropping the athlete's words on the floor.
+enum TrainingRuleRejection: LocalizedError, Equatable {
+    case tooLong(Int)
+
+    var errorDescription: String? {
+        switch self {
+        case .tooLong(let n):
+            return "That rule is \(n) characters and I can only keep 280. "
+                 + "Shorten it and I'll hold on to it."
+        }
+    }
+}
+
 enum TrainingRulesRepository {
 
     /// Active rules, newest first. RLS scopes to the caller.
@@ -36,20 +50,47 @@ enum TrainingRulesRepository {
         } catch { throw ErrorMapping.map(error) }
     }
 
-    static func add(_ rule: String, source: String = "consult") async throws {
+    /// Store one rule.
+    ///
+    /// `userID` is a parameter and not a convenience, and this is the
+    /// whole reason the table sat empty from the day it shipped until
+    /// 2026-08-26.
+    ///
+    /// `training_rules.user_id` is `uuid NOT NULL REFERENCES profiles(id)`
+    /// with NO DEFAULT (migration 20260825000007:44). The Insert payload
+    /// carried only `rule` and `source`, so every single call threw
+    /// Postgres 23502 not-null-violation - and the one call site swallowed
+    /// it with `try?`. The athlete typed a rule, the consult said nothing,
+    /// and `public.training_rules` returned 0 rows forever.
+    ///
+    /// The house pattern was right there: HealthScreeningRepository.save
+    /// takes userID explicitly and puts it in the payload. This repository
+    /// was the only one in Models/ that did not.
+    ///
+    /// Owner 2026-08-26: "I asked if I could have each one of my sets,
+    /// super set with push-ups and that request was silently ignored."
+    static func add(_ rule: String, source: String = "consult",
+                    userID: UUID) async throws {
         let trimmed = rule.trimmingCharacters(in: .whitespacesAndNewlines)
         // The column's CHECK is 1...280. Refusing here rather than letting
         // Postgres reject it keeps a long paste from failing the whole
         // consult save.
-        guard (1...280).contains(trimmed.count) else { return }
+        // Refusing here rather than letting Postgres reject it keeps a
+        // long paste from failing the whole consult save. The caller is
+        // told, so it can say so - a silent length drop is the same defect
+        // as the silent insert failure above, one layer up.
+        guard (1...280).contains(trimmed.count) else {
+            throw TrainingRuleRejection.tooLong(trimmed.count)
+        }
         struct Insert: Encodable {
+            let user_id: UUID
             let rule: String
             let source: String
         }
         do {
             try await SupabaseService.shared.client
                 .from("training_rules")
-                .insert(Insert(rule: trimmed, source: source))
+                .insert(Insert(user_id: userID, rule: trimmed, source: source))
                 .execute()
         } catch { throw ErrorMapping.map(error) }
     }

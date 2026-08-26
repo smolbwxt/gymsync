@@ -86,6 +86,25 @@ enum ProgramGenerator {
         /// days, a goal whose modality is still thin — Coach SAYS so
         /// instead of silently substituting.
         var advisoryNotes: [String] = []
+        /// Rules the athlete gave in their own words that this build could
+        /// NOT act on.
+        ///
+        /// Separate from advisoryNotes on purpose, and the separation is
+        /// the entire point. Standing rules used to be appended straight
+        /// into advisoryNotes as "Your rule: <text>", where they rendered
+        /// in the same grey as notes describing things Coach genuinely
+        /// DID - so a rule that was silently dropped was typographically
+        /// indistinguishable from a decision that was made.
+        ///
+        /// Owner 2026-08-26: "I asked if I could have each one of my sets,
+        /// super set with push-ups and that request was silently ignored."
+        /// Nothing in the generator ever read advisoryNotes - grep returns
+        /// writers only - so every rule was in that category.
+        ///
+        /// A rule lands here when the generator has no lever for it. The
+        /// UI renders these differently, so "I heard you and could not do
+        /// it" stops looking like "I did it".
+        var unhonoredRules: [String] = []
         /// Dedicated cardio days appended after the lifting split
         /// (owner 2026-08-14) — prescribed as zone + MINUTES. When
         /// lifting + cardio exceed 7 calendar days, the overflow PAIRS
@@ -193,6 +212,22 @@ enum ProgramGenerator {
         /// Cardio prescriptions: zone + MINUTES instead of sets × reps.
         var cardioZone: Int? = nil
         var cardioMinutes: Int? = nil
+        /// Set STRUCTURE. Owner 2026-08-26 asked whether Coach can
+        /// prescribe drop sets; it could not, and not because of a bug.
+        ///
+        /// RoutineExercise has carried setType / dropSteps / dropPercent /
+        /// targetFailure since migration 20260814000003, and the manual
+        /// builder writes them - but this struct had no set-structure
+        /// field at all, so every generated row took the default
+        /// "straight". The schema shipped ahead of the generator and the
+        /// generator never caught up. Trailing defaults, so every existing
+        /// construction site keeps compiling.
+        var setType: String = "straight"
+        var dropSteps: Int? = nil
+        var dropPercent: Decimal? = nil
+        /// Final set taken to failure. Per the failure doctrine a
+        /// PRESCRIBED failure is the assignment fulfilled, never a stall.
+        var targetFailure: Bool = false
         /// Antagonist-superset pairing (session structure, corpus census
         /// 2026-08-20): exercises sharing a group number alternate sets.
         /// nil = straight sets.
@@ -216,6 +251,9 @@ enum ProgramGenerator {
         var days: [Day]
         var weeks: [Week]
         var notes: [String]
+        /// Rules the athlete gave that this block could not honour. Shown
+        /// apart from `notes` so silence is never mistaken for action.
+        var unhonoredRules: [String] = []
     }
 
     // MARK: Pipeline
@@ -599,11 +637,25 @@ enum ProgramGenerator {
             days = days.map { assignSupersets(day: $0, catalog: catalog) }
             notes.append("Antagonist supersets: paired lifts alternate sets — one side rests while the other works, cutting session time at near-zero performance cost.")
         case .circuit:
-            // One big round: every lift shares a group, rests compress —
-            // the density structure (22 corpus videos / 10 channels).
+            // Density via COMPRESSED REST, not via a shared group.
+            //
+            // This used to stamp `supersetGroup = 1` on every non-cardio
+            // lift in the day. But supersetGroup is a PAIR primitive
+            // everywhere else in the app - the live session resolves a
+            // partner by probing one slot forward and one back. Given N
+            // lifts all carrying group 1, that probe pairs only the last
+            // two: the athlete walked exercises 0..N-3 at one set each,
+            // then ping-ponged the final pair until the session ended.
+            //
+            // A circuit day therefore delivered a fraction of its
+            // prescribed volume, silently. Compressing rest is the part
+            // that was always real; a genuine N-way circuit primitive is
+            // its own feature, not an overload of this one.
+            //
+            // Reachable today by answering "out of breath" to session_feel,
+            // and via the Hybrid Athlete persona.
             for d in days.indices {
                 for x in days[d].exercises.indices where days[d].exercises[x].cardioZone == nil {
-                    days[d].exercises[x].supersetGroup = 1
                     days[d].exercises[x].restSeconds = min(days[d].exercises[x].restSeconds, 45)
                 }
             }
@@ -799,7 +851,36 @@ enum ProgramGenerator {
             notes.append("Beginner volume (6–10 weekly sets per muscle) grows you just as fast — extra sets are cost without benefit in year one (Schoenfeld 2018).")
         }
 
-        return Program(days: days, weeks: weeks, notes: notes)
+        // INTENSITY TECHNIQUE: one drop set, on the last isolation lift
+        // of a hypertrophy day.
+        //
+        // Deliberately narrow. The corpus carries drop sets at moderate
+        // confidence for isolation work and nothing stronger, and the
+        // practitioner wave is split on them, so this prescribes the one
+        // placement the evidence and the practice agree on: the final
+        // accessory, where the fatigue cost lands after everything that
+        // needs a fresh athlete is done.
+        //
+        // Not applied to mains (a drop set on a heavy compound is a
+        // different risk profile), not to cardio, and not when the athlete
+        // asked for circuit or minimalist structure - both of those are
+        // already density or economy choices that this would fight.
+        if inputs.focus == .hypertrophy,
+           inputs.sessionStructure != .circuit,
+           inputs.sessionStructure != .minimalist {
+            for d in days.indices {
+                guard let last = days[d].exercises.lastIndex(where: {
+                    !$0.isMain && $0.cardioZone == nil && $0.supersetGroup == nil
+                }) else { continue }
+                days[d].exercises[last].setType = "drop"
+                days[d].exercises[last].dropSteps = 2
+                days[d].exercises[last].dropPercent = 20
+            }
+            notes.append("Last accessory of each day runs as a drop set \u2014 two drops of about 20%, taken past the point a straight set would stop. It is the cheapest extra stimulus available once the heavy work is done.")
+        }
+
+        return Program(days: days, weeks: weeks, notes: notes,
+                       unhonoredRules: inputs.unhonoredRules)
     }
 
     // MARK: Slots (day templates — methodology doc)
@@ -1472,6 +1553,44 @@ enum ProgramGenerator {
                 openOffers[key.offer] = index
             }
         }
+
+        // ADJACENCY, and it is not cosmetic.
+        //
+        // The pairing above marks a partner stored at an EARLIER index and
+        // never moves anything, so a bench at 0 paired with a row at 2
+        // leaves groups [1, nil, 1]. The live session resolves a pair by
+        // probing one slot forward and one back, and says so:
+        //
+        //   WorkoutSessionView.swift - "Pairs are adjacency-guaranteed by
+        //   the builder's save normalization, so one next/prev probe is
+        //   the whole lookup."
+        //
+        // That guarantee holds for the MANUAL builder and never held for
+        // the generator - there is no save-time normalization anywhere.
+        // So every generated superset quietly degraded to straight sets
+        // the moment the athlete trained it: prescribed as a pair, run as
+        // two singles, with nothing anywhere reporting the difference.
+        //
+        // Fixed here rather than by widening the session lookup on
+        // purpose. Adjacency IS the pair's definition in this app
+        // (RoutineProgression), and three other files depend on it;
+        // relaxing the probe would legitimise non-adjacent pairs
+        // everywhere to paper over one producer's bug.
+        var ordered: [Exercise] = []
+        var placed = Set<Int>()
+        for i in day.exercises.indices where !placed.contains(i) {
+            placed.insert(i)
+            ordered.append(day.exercises[i])
+            guard let g = day.exercises[i].supersetGroup else { continue }
+            for j in day.exercises.indices
+            where j != i && !placed.contains(j)
+                  && day.exercises[j].supersetGroup == g {
+                placed.insert(j)
+                ordered.append(day.exercises[j])
+                break
+            }
+        }
+        day.exercises = ordered
         return day
     }
 

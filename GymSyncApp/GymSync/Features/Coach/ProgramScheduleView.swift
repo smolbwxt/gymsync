@@ -38,6 +38,10 @@ struct ProgramScheduleView: View {
     /// accumulation-peak arc asserts something untrue. Those blocks show
     /// their mesocycle structure instead. See BlockPhase.
     @State private var phases: [BlockPhase]?
+    /// What Coach said when it built this block. Read from the profile,
+    /// because the wizard screen that used to show it no longer exists -
+    /// building now commits and lands here (owner 2026-08-26).
+    @State private var lastBuild: TrainingProfile.BuiltBlock?
 
     var body: some View {
         ScrollView {
@@ -66,9 +70,13 @@ struct ProgramScheduleView: View {
                     ForEach(routines) { routine in
                         dayRow(routine)
                     }
+                    reasoningCard
                     calendarDoor
                     askDoor
                 } else if !routines.isEmpty {
+                    // (reasoningCard renders inside this branch too, below
+                    // the rows, so an un-enrolled block still explains
+                    // itself.)
                     // The days exist, the arc does not. Real, and not
                     // rare: enrollGenerated returns early when a block has
                     // no main lifts, and both the template row and the
@@ -79,6 +87,7 @@ struct ProgramScheduleView: View {
                     ForEach(routines) { routine in
                         dayRow(routine)
                     }
+                    reasoningCard
                     calendarDoor
                     askDoor
                 } else {
@@ -337,6 +346,64 @@ struct ProgramScheduleView: View {
         .gs3DCard(cornerRadius: GSMetrics.radiusSm)
     }
 
+    /// WHY the block looks like this, plus anything Coach was told and
+    /// could not build.
+    ///
+    /// Two visually distinct groups, and the distinction is load-bearing.
+    /// The notes describe decisions Coach MADE. The un-honoured rules are
+    /// things the athlete ASKED FOR that did not happen - previously
+    /// appended into the same grey list as the notes, where a dropped
+    /// request was indistinguishable from a fulfilled one. That was the
+    /// silent-ignore the owner reported on 2026-08-26.
+    @ViewBuilder
+    private var reasoningCard: some View {
+        if let lastBuild, !(lastBuild.notes.isEmpty && lastBuild.unhonoredRules.isEmpty) {
+            VStack(alignment: .leading, spacing: 10) {
+                if !lastBuild.unhonoredRules.isEmpty {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("YOU ASKED, I COULDN'T BUILD IT")
+                            .font(GSFont.bold(10, relativeTo: .caption2))
+                            .tracking(1.1)
+                            .foregroundStyle(theme.accent)
+                        ForEach(lastBuild.unhonoredRules, id: \.self) { rule in
+                            Text("\u201c\(rule)\u201d")
+                                .font(GSFont.body(12.5, relativeTo: .caption))
+                                .foregroundStyle(theme.text)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Text("I kept these, and Coach can talk them through with you \u2014 but this block does not act on them yet.")
+                            .font(GSFont.body(11, relativeTo: .caption))
+                            .foregroundStyle(theme.neutral700)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .overlay(RoundedRectangle(cornerRadius: 12)
+                        .strokeBorder(theme.accent, lineWidth: 1.5))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+
+                if !lastBuild.notes.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("WHY THIS BLOCK")
+                            .font(GSFont.bold(10, relativeTo: .caption2))
+                            .tracking(1.1)
+                            .foregroundStyle(theme.neutral500)
+                        ForEach(lastBuild.notes, id: \.self) { note in
+                            Text(note)
+                                .font(GSFont.body(12.5, relativeTo: .caption))
+                                .foregroundStyle(theme.neutral700)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .gs3DCard(cornerRadius: GSMetrics.radiusSm)
+        }
+    }
+
     private var emptyCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("NO BLOCK ON THE BAR")
@@ -401,6 +468,10 @@ struct ProgramScheduleView: View {
             selectedWeek = currentWeek
             phases = BlockPhaseMap.phases(for: template.weeks)
         }
+        // `try?` does not add a nesting level here: load() already returns
+        // an Optional, and Swift 5 flattens. Same shape as the call in
+        // CoachHomeView.task.
+        lastBuild = (try? await TrainingProfileRepository.load())?.lastBuild
         catalog = (try? await ExerciseRepository.fetchAll()) ?? []
         guard let ownerID = appState.currentProfile?.id,
               let all = try? await RoutineRepository.fetchAll(ownerID: ownerID) else { return }
@@ -454,15 +525,27 @@ struct ProgramRoutineDetailView: View {
                     .foregroundStyle(theme.neutral700)
             }
             ForEach(exercises) { row in
-                HStack(spacing: 10) {
-                    Text(name(for: row).uppercased())
-                        .font(GSFont.bold(13, relativeTo: .subheadline))
-                        .foregroundStyle(theme.text)
-                        .lineLimit(1)
-                    Spacer()
-                    Text(scheme(for: row))
-                        .font(GSFont.bold(12, relativeTo: .caption).monospacedDigit())
-                        .foregroundStyle(theme.neutral700)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 10) {
+                        Text(name(for: row).uppercased())
+                            .font(GSFont.bold(13, relativeTo: .subheadline))
+                            .foregroundStyle(theme.text)
+                            .lineLimit(1)
+                        Spacer()
+                        Text(scheme(for: row))
+                            .font(GSFont.bold(12, relativeTo: .caption).monospacedDigit())
+                            .foregroundStyle(theme.neutral700)
+                    }
+                    // The structure, if this lift has one. Accent-coloured
+                    // because a superset or a drop set changes HOW the set
+                    // is run, not just how many - it should not read as
+                    // more grey metadata.
+                    if let badge = structureBadge(for: row) {
+                        Text(badge)
+                            .font(GSFont.bold(10, relativeTo: .caption2))
+                            .tracking(0.8)
+                            .foregroundStyle(theme.accent)
+                    }
                 }
                 .padding(.vertical, 2)
             }
@@ -560,6 +643,33 @@ struct ProgramRoutineDetailView: View {
         }
         if let reps = row.targetReps { return "\(sets) × \(reps)" }
         return "\(sets) sets"
+    }
+
+    /// The set STRUCTURE, said out loud.
+    ///
+    /// Owner 2026-08-26: "I am not able to see that they are prescribed
+    /// from the routine report." Supersets were prescribed and rendered
+    /// nowhere on the way in - the only signal was one prose paragraph
+    /// about the day as a whole, which cannot tell you WHICH two lifts
+    /// are paired. Drop sets could not be prescribed at all until this
+    /// same change, so there was nothing to show.
+    ///
+    /// Same vocabulary as RoutinesListView so the three surfaces agree.
+    private func structureBadge(for row: RoutineExercise) -> String? {
+        var parts: [String] = []
+        if let group = row.supersetGroup { parts.append("SS\(group)") }
+        switch row.setType {
+        case "drop":
+            if let steps = row.dropSteps, let pct = row.dropPercent {
+                parts.append("DROP ×\(steps) −\(NSDecimalNumber(decimal: pct).intValue)%")
+            } else {
+                parts.append("DROP")
+            }
+        case "burnout": parts.append("BURNOUT")
+        default: break
+        }
+        if row.targetFailure { parts.append("TO FAILURE") }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 }
 

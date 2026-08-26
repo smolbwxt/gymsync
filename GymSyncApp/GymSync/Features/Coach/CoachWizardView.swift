@@ -202,12 +202,71 @@ struct CoachWizardView: View {
 
                 programScheduleDoor
 
+                // THE SCHEDULE CONTROLS, now above the button instead of
+                // inside a preview that no longer exists. They are inputs
+                // to the build, so they belong before it.
                 Button {
-                    generatePreview()
+                    scheduleSessions.toggle()
                 } label: {
-                    Text(preview == nil ? "Build my week" : "Rebuild")
+                    HStack(spacing: 8) {
+                        Image(systemName: scheduleSessions ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(scheduleSessions ? theme.accent : theme.neutral500)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Put my training days on the schedule")
+                                .font(GSFont.bold(14, relativeTo: .headline))
+                                .foregroundStyle(theme.text)
+                            Text("Coach books your rhythm as planned sessions \u2014 edit or cancel any of them from the calendar.")
+                                .font(GSFont.body(11, relativeTo: .caption))
+                                .foregroundStyle(theme.neutral500)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer()
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                if scheduleSessions {
+                    dial("SESSION TIME", options: ["6 AM", "7 AM", "12 PM", "5 PM", "6 PM", "7 PM"],
+                         selected: sessionTimeLabel) { sessionHour = Self.hourByLabel[$0] ?? 17 }
+                }
+
+                // ONE BUTTON. It builds the program, writes it, and takes
+                // the athlete to it.
+                //
+                // Owner 2026-08-26, on the second report of the same
+                // defect: "Hitting that button still just extend the
+                // screen which we have to scroll down to view the routines
+                // that are built instead of taking us to the next page
+                // that shows our routines gives us an option to talk to
+                // coach about it and then schedule it."
+                //
+                // The first fix scrolled the inline preview into view,
+                // which was the wrong reading: even landing at the top of
+                // the preview, the athlete still scrolled past every day
+                // card and nine paragraphs of reasoning to reach a second
+                // button. The two-step WAS the defect. Owner chose commit-
+                // then-land over a preview page, so building now writes.
+                //
+                // The reasoning is not lost - it is saved onto the block
+                // and rendered at the destination, where it belongs.
+                Button {
+                    Task { await buildProgram() }
+                } label: {
+                    Text(busy ? "Building\u2026" : "Build my program")
                 }
                 .buttonStyle(GSPrimaryButtonStyle())
+                // Guard 8d: a build with an empty catalog writes EMPTY
+                // routines. Under preview-first that was merely visible
+                // and wrong; under commit-first it persists. allExercises
+                // loads in .task, so this is reachable on a cold open.
+                .disabled(busy || allExercises.isEmpty)
+
+                if allExercises.isEmpty {
+                    Text("Still loading the exercise library\u2026")
+                        .font(GSFont.body(11, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral500)
+                }
 
                 // The profile is worth keeping even without a rebuild —
                 // the debrief's register and the drift probes read it.
@@ -223,80 +282,10 @@ struct CoachWizardView: View {
                 }
                 .buttonStyle(GSSecondaryButtonStyle())
 
-                // The scroll target, and the reason it lives HERE rather
-                // than on the "Your week" header inside the preview.
-                //
-                // Owner 2026-08-26: "the routines populate below, and we
-                // have to intuit to scroll down." Building wrote a full
-                // week off the bottom of the screen and gave no sign it
-                // had happened.
-                //
-                // An anchor inside `if let preview` does not exist when
-                // onChange fires — scrollTo would aim at a view that is
-                // not laid out yet. This one is UNCONDITIONAL and
-                // zero-height, matching the chat-tail pattern in
-                // CoachHomeView, so it is always a valid target. It also
-                // sits ABOVE the shuffle button: everything between it
-                // and the preview is conditional, so anchoring here means
-                // the target's own position never shifts under the
-                // animation.
-                Color.clear
-                    .frame(height: 0)
-                    .id(Self.previewAnchor)
-
-                if preview != nil {
-                    // Deterministic variety: rotates among candidates the
-                    // science rules score as interchangeable.
-                    Button {
-                        seed += 1
-                        generatePreview()
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "shuffle")
-                                .font(.system(size: 13, weight: .semibold))
-                            Text("Shuffle the picks")
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(GSSecondaryButtonStyle())
-                }
-
-                if let preview {
-                    previewSection(preview)
-                    scheduleHint
-                    Button {
-                        scheduleSessions.toggle()
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: scheduleSessions ? "checkmark.circle.fill" : "circle")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(scheduleSessions ? theme.accent : theme.neutral500)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Put my training days on the schedule")
-                                    .font(GSFont.bold(14, relativeTo: .headline))
-                                    .foregroundStyle(theme.text)
-                                Text("Coach books the rhythm above as planned sessions — edit or cancel any of them from the calendar.")
-                                    .font(GSFont.body(11, relativeTo: .caption))
-                                    .foregroundStyle(theme.neutral500)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                            Spacer()
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    if scheduleSessions {
-                        dial("SESSION TIME", options: ["6 AM", "7 AM", "12 PM", "5 PM", "6 PM", "7 PM"],
-                             selected: sessionTimeLabel) { sessionHour = Self.hourByLabel[$0] ?? 17 }
-                    }
-                    Button {
-                        Task { await create(preview) }
-                    } label: {
-                        Text(busy ? "Creating…" : "Create these routines")
-                    }
-                    .buttonStyle(GSPrimaryButtonStyle())
-                    .disabled(busy)
-                }
+                // (The inline preview, its scroll anchor, the shuffle
+                // button and the second "Create these routines" button all
+                // lived here until 2026-08-26. Building now commits and
+                // navigates, so there is nothing to preview in place.)
 
                 if let errorText {
                     Text(errorText)
@@ -325,7 +314,10 @@ struct CoachWizardView: View {
                 healthAdvisory = advisory
                 healthCleared = true
                 showHealthGate = false
-                generatePreview()
+                // Re-enter the BUILD, not the preview. The screening is a
+                // precondition of prescribing, so clearing it resumes the
+                // thing the athlete actually asked for.
+                Task { await buildProgram() }
             }
         }
         .sheet(item: $activeSection) { section in
@@ -711,6 +703,21 @@ struct CoachWizardView: View {
                                  weeks: [ProgramWeek],
                                  program: ProgramGenerator.Program) async {
         guard let userID = appState.currentProfile?.id else { return }
+
+        // RETIRE FIRST. This used to sit at the bottom, AFTER the
+        // mainLiftIDs guard below - so a block with no main lifts (an
+        // all-cardio week) returned early and left the previous
+        // enrollment active. ProgramScheduleView then drew the OLD
+        // block's week arc over the NEW block's day rows.
+        //
+        // That was three taps away when the schedule page was hard to
+        // reach. Now it is the first screen after every build, so the
+        // ordering matters: building a program ends the one before it,
+        // whether or not the new one enrolls.
+        if let active = try? await ProgramRepository.active(), active.endedAt == nil {
+            try? await ProgramRepository.end(enrollmentID: active.id, reason: "abandoned")
+        }
+
         let mainLiftIDs = Array(Set(program.days
             .flatMap(\.exercises)
             .filter { $0.isMain && $0.cardioZone == nil }
@@ -741,15 +748,43 @@ struct CoachWizardView: View {
         let template = ProgramTemplate(row: row, weeks: weeks)
         ProgramTemplateStore.shared.register([template])
 
-        // One active enrollment per lifter (partial unique index). Generating
-        // a new block is an explicit replacement, so retire the old one.
-        if let active = try? await ProgramRepository.active(), active.endedAt == nil {
-            try? await ProgramRepository.end(enrollmentID: active.id, reason: "abandoned")
-        }
+        // (The old enrollment was already retired at the top of this
+        // function - one active enrollment per lifter, partial unique
+        // index, and building is an explicit replacement.)
         _ = try? await ProgramRepository.enroll(
             template: template,
             focus: ProgramFocus(exerciseIDs: mainLiftIDs),
             baseline: baselines)
+    }
+
+    /// Build the program and put the athlete in front of it.
+    ///
+    /// The single action behind "Build my program". Generating and
+    /// committing are one step now (owner 2026-08-26), so everything that
+    /// can refuse has to refuse BEFORE anything is written.
+    private func buildProgram() async {
+        busy = true
+        defer { busy = false }
+        // Clear first: generatePreview returns early when the health gate
+        // is required, and a stale program from an earlier tap would
+        // otherwise be committed as if it were the new one.
+        preview = nil
+        generatePreview()
+        guard let program = preview else {
+            // The gate is up. HealthGateSheet's callback re-enters here
+            // once it clears, so this is a pause and not a failure.
+            return
+        }
+        // Guard 8d, the hazard commit-first introduces: with an empty
+        // catalog the generator still emits days, just with no exercises
+        // in them. Preview-first made that visibly silly; commit-first
+        // would write empty routines and enroll the athlete in nothing.
+        guard program.days.contains(where: { !$0.exercises.isEmpty }) else {
+            errorText = "I could not put any lifts in that week. "
+                      + "Give the exercise library a moment and try again."
+            return
+        }
+        await create(program)
     }
 
     private func generatePreview() {
@@ -1563,7 +1598,35 @@ struct CoachWizardView: View {
         carryover.pendingGraduation = false
         profile.carryover = carryover
         savedCarryover = carryover
+        // Coach's reasoning about THIS block, kept where the athlete will
+        // be looking at it. It used to render only in the wizard's inline
+        // preview and die when they left; the schedule page reads it now.
+        profile.lastBuild = TrainingProfile.BuiltBlock(
+            notes: program.notes,
+            unhonoredRules: program.unhonoredRules,
+            builtAt: .now)
         try? await TrainingProfileRepository.save(profile, userID: ownerID)
+
+        // SNAPSHOT WHAT THIS BUILD REPLACES (blocker 8a).
+        //
+        // create() writes N routines with fresh UUIDs every time, and
+        // ProgramScheduleView lists EVERY routine whose name starts
+        // "Coach \u00b7 ". Building twice therefore showed six day rows for
+        // a three-day program - on the exact page the owner asked to land
+        // on, which is why this had to be solved in the same change that
+        // made building land there.
+        //
+        // Snapshot first, write second, delete third. A failure midway
+        // leaves duplicates, which the athlete can see and recover from,
+        // rather than leaving nothing, which they cannot. The "Coach \u00b7 "
+        // name predicate IS the app's definition of "the block"
+        // (ProgramScheduleView filters on it), so reusing it here is
+        // consistent by construction - and a routine the athlete renamed
+        // survives the replace, which is the right outcome.
+        let supersededRoutineIDs: [UUID] = ((try? await RoutineRepository
+            .fetchAll(ownerID: ownerID)) ?? [])
+            .filter { $0.name.hasPrefix("Coach \u00b7 ") && $0.prescribedBy == nil }
+            .map(\.id)
         // Novice calibration → lift anchors (owner 2026-08-21): stated
         // hard-for-5 weights become the seeds every suggestion reads;
         // merged, never wholesale — an earlier anchor survives a skipped
@@ -1601,13 +1664,28 @@ struct CoachWizardView: View {
                         targetWeight: nil,
                         restSeconds: ex.restSeconds,
                         notes: nil,
+                        // Set structure now survives the boundary. These
+                        // four were the missing half of "can Coach
+                        // prescribe a drop set" - the columns existed, the
+                        // wizard just never filled them.
+                        setType: ex.setType,
                         supersetGroup: ex.supersetGroup,
+                        dropSteps: ex.dropSteps,
+                        dropPercent: ex.dropPercent,
+                        targetFailure: ex.targetFailure,
                         targetRepsLow: ex.cardioZone != nil ? nil : ex.repsLow,
                         targetRepsHigh: ex.cardioZone != nil ? nil : ex.repsHigh,
                         cardioZone: ex.cardioZone,
                         cardioMinutes: ex.cardioMinutes)
                 }
                 try await RoutineRepository.save(routine, exercises: exercises)
+            }
+            // The new week is on disk, so the one it replaces can go.
+            // Deleting does not destroy history: sessions.routine_id is
+            // ON DELETE SET NULL (migration 20260709000006), so past
+            // workouts keep their sets and lose only the pointer.
+            for id in supersededRoutineIDs {
+                try? await RoutineRepository.delete(id: id)
             }
             // Data bridge (generator wave): the block also persists as a
             // user-owned template row (kind 'takeover') so it has identity

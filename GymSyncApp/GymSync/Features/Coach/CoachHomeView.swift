@@ -18,6 +18,10 @@ struct CoachHomeView: View {
 
     @State private var profile = TrainingProfile()
     @State private var researched: [String] = []
+    /// Set when a rule the athlete just gave could not be stored. The
+    /// whole point of the 2026-08-26 fix is that this is never nil in
+    /// silence: if their words did not stick, they are told.
+    @State private var ruleTrouble: String?
     /// Loaded for the consult, whose constraint chips must offer labels
     /// selection recognises — see ConsultVocabulary.
     @State private var catalog: [Exercise] = []
@@ -57,6 +61,10 @@ struct CoachHomeView: View {
                 consultDoor
 
                 programDoor
+
+                if let ruleTrouble {
+                    ruleTroubleNotice(ruleTrouble)
+                }
 
                 if !researched.isEmpty {
                     researchNotice
@@ -253,8 +261,17 @@ struct CoachHomeView: View {
         let tuned = answers.apply(to: profile, catalog: catalog)
         profile = tuned
         try? await TrainingProfileRepository.save(tuned, userID: userID)
+        // NOT `try?`. The swallowed error here is what made the original
+        // defect invisible: every add() threw 23502 and nobody heard it.
+        // A rule that cannot be stored is reported, because the athlete
+        // just told us something and deserves to know it did not stick.
         for rule in answers.standingRules {
-            try? await TrainingRulesRepository.add(rule, source: "consult")
+            do {
+                try await TrainingRulesRepository.add(
+                    rule, source: "consult", userID: userID)
+            } catch {
+                ruleTrouble = ErrorMapping.map(error).errorDescription
+            }
         }
     }
 
@@ -304,6 +321,43 @@ struct CoachHomeView: View {
     }
 
     // MARK: Research deliveries
+
+    /// The athlete told Coach a rule and it did not stick.
+    ///
+    /// Deliberately loud rather than a grey line, and deliberately says
+    /// what to do next. The failure this replaces was invisible: from the
+    /// consult's side the rule was accepted, and the table stayed empty.
+    private func ruleTroubleNotice(_ message: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("A RULE DID NOT STICK")
+                .font(GSFont.bold(10, relativeTo: .caption2))
+                .tracking(1.1)
+                .foregroundStyle(theme.accent)
+            Text(message)
+                .font(GSFont.body(12, relativeTo: .caption))
+                .foregroundStyle(theme.text)
+                .fixedSize(horizontal: false, vertical: true)
+            // A NavigationLink rather than a Route case, matching
+            // chatDoor - chat is a push, not one of the three destinations
+            // this screen swaps between.
+            NavigationLink {
+                CoachChatView()
+                    .background(theme.bg)
+                    .navigationTitle("Threads")
+                    .navigationBarTitleDisplayMode(.inline)
+            } label: {
+                Text("Tell Coach again in chat")
+                    .font(GSFont.bold(12, relativeTo: .caption))
+                    .foregroundStyle(theme.accent)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.surface)
+        .overlay(RoundedRectangle(cornerRadius: 12)
+            .strokeBorder(theme.accent, lineWidth: 1.5))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
 
     private var researchNotice: some View {
         VStack(alignment: .leading, spacing: 6) {

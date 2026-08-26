@@ -284,6 +284,29 @@ struct TrainingProfile: Codable, Equatable, Sendable {
         var pendingGraduation: Bool = false
     }
     var carryover: Carryover? = nil
+
+    /// What Coach said about the block it last built.
+    ///
+    /// These notes used to live only in the wizard's inline preview, which
+    /// meant they died the moment the athlete left that screen - and the
+    /// 2026-08-26 flow change deletes that screen. They are the most
+    /// valuable text the generator produces ("under the weekly floor and I
+    /// could not add to it: back, shoulders - the shortfall is structural"),
+    /// so they move onto the block itself and are shown where the athlete
+    /// actually looks at their program.
+    ///
+    /// Optional, and on the JSON payload column, so every profile row
+    /// already in the table decodes unchanged.
+    struct BuiltBlock: Codable, Equatable, Sendable {
+        var notes: [String] = []
+        /// Rules the athlete gave that this block could NOT honour. Kept
+        /// apart from `notes` so the UI can show them differently - a rule
+        /// that was ignored must not read like a decision that was made.
+        var unhonoredRules: [String] = []
+        var builtAt: Date = .now
+    }
+
+    var lastBuild: BuiltBlock? = nil
     /// Drift-probe cooldown ledger (DriftDetector's ~2-week cadence).
     var lastProbeAt: Date? = nil
 
@@ -419,7 +442,21 @@ struct TrainingProfile: Codable, Equatable, Sendable {
         // would end that.
         //
         // Prefixed so the athlete recognises their own words coming back.
-        inputs.advisoryNotes.append(contentsOf: standingRules.map { "Your rule: \($0)" })
+        // STANDING RULES, sorted by whether the generator can actually act
+        // on them.
+        //
+        // This line used to read:
+        //     inputs.advisoryNotes.append(contentsOf:
+        //         standingRules.map { "Your rule: \($0)" })
+        // which put the athlete's own words in the same grey body text as
+        // notes describing things Coach had really done - and nothing in
+        // generate() ever read advisoryNotes, so EVERY rule was decoration.
+        //
+        // Until the generator grows structured levers for rules (a named
+        // pairing, an avoided day, an ordering preference), the honest
+        // answer for all of them is "heard, not built". Saying that out
+        // loud is the fix; pretending otherwise was the defect.
+        inputs.unhonoredRules.append(contentsOf: standingRules)
         // An explicit argument wins; otherwise the profile's own focus
         // stands, so a focus set once in the consult keeps applying. Left
         // nil when there is none — nil means "no preference", while an
