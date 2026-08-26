@@ -181,6 +181,32 @@ struct TrainingProfile: Codable, Equatable, Sendable {
     var sessionMinutes: Int? = nil
     /// heavy_low | moderate | high_rep_pump
     var repAppetite: String? = nil
+    /// How much the ACCESSORY work should vary.
+    ///
+    /// Owner 2026-08-26: "variation in accessories is good. Some hit the
+    /// same secondary in different complimentary ways. Make it so. Some
+    /// people like static routines, some like it when it varies. Let it be
+    /// a flavor call that we probe for."
+    ///
+    /// A preference rather than a prescription, and that resolves a real
+    /// objection: the corpus row on rotation reads "accessories rotate
+    /// roughly every 3-4 weeks OR WHEN PROGRESS STALLS; rotating too often
+    /// is flagged as a common beginner error." An unconditional rotation
+    /// cadence contradicts that row. An athlete CHOOSING variety does not.
+    ///
+    /// Mains are never affected either way - they have to stay put long
+    /// enough to be progressed, which is the same row's other half.
+    enum AccessoryVariety: String, Codable, CaseIterable, Sendable {
+        /// The same accessories every session. Easiest to progress and to
+        /// remember; the default because it is what the app already did,
+        /// and changing everyone's program silently is not a flavour call.
+        case steady
+        /// Accessories prefer COMPLEMENTARY picks - a second lift for a
+        /// muscle is chosen to hit different secondaries than the first,
+        /// rather than duplicating it.
+        case varied
+    }
+    var accessoryVariety: AccessoryVariety = .steady
     /// Muscles to give the volume to, from the consult's focus probes.
     ///
     /// On the PROFILE rather than passed per-generation because it has to
@@ -382,6 +408,7 @@ struct TrainingProfile: Codable, Equatable, Sendable {
             inputs.isYouth = (year - birthYear) < 18
         }
         inputs.repAppetite = repAppetite
+        inputs.preferVariedAccessories = accessoryVariety == .varied
         // Standing rules (public.training_rules) reach the generator the
         // same way every other constraint does — as advisory notes. They
         // are passed IN rather than fetched here because this function is

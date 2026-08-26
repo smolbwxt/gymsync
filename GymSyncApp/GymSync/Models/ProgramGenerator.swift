@@ -117,6 +117,9 @@ enum ProgramGenerator {
         /// Rep-range preference — heavy_low | moderate | high_rep_pump.
         /// Shifts the focus band without changing the focus.
         var repAppetite: String? = nil
+        /// Whether accessories should prefer COMPLEMENTARY picks over
+        /// duplicating a secondary this day already covers. Mains never.
+        var preferVariedAccessories = false
     }
 
     struct CatalogExercise {
@@ -257,6 +260,7 @@ enum ProgramGenerator {
             let name = dayName(kind: kind, index: index, split: split)
             var chosen: [Exercise] = []
             var alreadyChosen = Set<UUID>()
+            var coveredSecondaries: Set<String> = []
             // Bounded explosive emphasis (audit 2026-08-20: the firefighter
             // got ALL-plyometric mains and zero strength): the lens may
             // claim at most ONE main slot per day — the explosive-first
@@ -290,6 +294,8 @@ enum ProgramGenerator {
                 }
                 let exclusions = isMainSlot ? alreadyChosen : alreadyChosen.union(usedAccessories)
                 var pick = select(slot: slot, from: usable,
+                                  coveredSecondaries: coveredSecondaries,
+                                  preferComplementary: inputs.preferVariedAccessories,
                                   excluding: exclusions,
                                   focus: inputs.focus,
                                   focusMuscles: inputs.focusMuscles,
@@ -307,6 +313,8 @@ enum ProgramGenerator {
                 if pick == nil, !isMainSlot {
                     // Accessory pool exhausted — repeats beat holes.
                     pick = select(slot: slot, from: usable,
+                                  coveredSecondaries: coveredSecondaries,
+                                  preferComplementary: inputs.preferVariedAccessories,
                                   excluding: alreadyChosen,
                                   focus: inputs.focus,
                                   focusMuscles: inputs.focusMuscles,
@@ -325,6 +333,11 @@ enum ProgramGenerator {
                 guard let pick else { continue }
                 if pick.explosive, isMainSlot { explosiveBudget = 0 }
                 alreadyChosen.insert(pick.id)
+                // Feed the variety tilt: what this day already trains
+                // indirectly. Accumulated as the day is built, so the
+                // SECOND accessory for a muscle is the first one that can
+                // be asked to complement rather than duplicate.
+                coveredSecondaries.formUnion(pick.secondaryMuscles.map { $0.lowercased() })
                 if !isMainSlot { usedAccessories.insert(pick.id) }
                 var sets = setsPerSlot(slot: slot, perDayBudget: perDayBudget)
                 // Low-frequency density (trainer audit: 1-2 day weeks
@@ -941,8 +954,16 @@ enum ProgramGenerator {
         focus == .weightLoss ? "weight_loss" : focus.rawValue
     }
 
+    /// `coveredSecondaries` + `preferComplementary` implement the owner's
+    /// accessory-variety flavour: when an athlete has asked for variety, an
+    /// accessory whose secondary muscles are ALREADY fully covered by this
+    /// day's picks scores lower than one bringing something new. A soft
+    /// tilt on the score, never a filter - it reorders equals and can never
+    /// leave a slot empty, the same discipline every other tilt here keeps.
     static func select(slot: Slot, from catalog: [CatalogExercise],
                        excluding: Set<UUID>,
+                       coveredSecondaries: Set<String> = [],
+                       preferComplementary: Bool = false,
                        focus: GeneratorScience.Focus,
                        focusMuscles: Set<String>?,
                        experience: GeneratorScience.Experience = .intermediate,
@@ -1041,6 +1062,18 @@ enum ProgramGenerator {
             // boosts explosive intent. Same scale as the axial boost.
             var lensAdjust = 0
             if let lens, lens.fatigueAverse { lensAdjust -= c.fatigueCost }
+            // Accessory variety (owner 2026-08-26). Docked only when the
+            // candidate brings NOTHING new: every secondary it trains is
+            // already covered by this day's picks. A lift with even one
+            // fresh secondary is untouched, so "complementary" means what
+            // the owner meant - different ways into the same muscle -
+            // rather than merely "different".
+            if preferComplementary, !isMain, !c.secondaryMuscles.isEmpty {
+                let fresh = c.secondaryMuscles.contains {
+                    !coveredSecondaries.contains($0.lowercased())
+                }
+                if !fresh { lensAdjust -= 2 }
+            }
             // Explosive fit as a TIER, not a score bump (audit round 2):
             // a score bump lost narrowly for the power athlete (A01) and
             // conditioning's own scores made cone hops the desk worker's

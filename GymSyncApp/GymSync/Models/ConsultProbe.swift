@@ -244,6 +244,24 @@ enum ConsultProbe {
               ],
               tunes: ["sessionStructure", "cardioStyle"],
               gain: 6, family: .challenge),
+        // Owner 2026-08-26: "some people like static routines, some like
+        // it when it varies. Let it be a flavor call that we probe for."
+        // Asked as a preference, which is also what makes it defensible:
+        // the corpus row says accessories rotate every 3-4 weeks OR WHEN
+        // PROGRESS STALLS and warns that rotating too often is a common
+        // beginner error, so an unconditional cadence would contradict it.
+        // An athlete choosing variety does not.
+        Probe(id: "accessory_variety",
+              ask: "Same accessories every week, or mix them up?",
+              options: [
+                Option(id: "steady", label: "KEEP THEM THE SAME",
+                       detail: "Easier to see the numbers move."),
+                Option(id: "varied", label: "MIX THEM UP",
+                       detail: "Different ways into the same muscles."),
+              ],
+              tunes: ["accessoryVariety"],
+              gain: 5, family: .challenge,
+              clarifier: "Your main lifts stay put either way — those need to sit still long enough to progress."),
         Probe(id: "climb_rate",
               ask: "Should the weight climb steady and safe, or push it?",
               options: [
@@ -296,6 +314,7 @@ enum ConsultProbe {
         "repAppetite", "intensityAppetite", "sessionStructure",
         "cardioStyle", "comfortAnswers", "derivedComplexityCap",
         "excludedPatterns", "cautionJoints", "equipment", "focusMuscles",
+        "accessoryVariety",
         // → ProgramGenerator.Inputs (assembled by generatorInputs)
         "durationWeeks", "effort",
         // → UserSettings
@@ -395,7 +414,8 @@ enum ConsultProbe {
 
         // Challenge probes: a persona default is cheap to challenge, a
         // stated value is not.
-        case "effort", "rep_appetite", "session_feel", "climb_rate":
+        case "effort", "rep_appetite", "session_feel", "climb_rate",
+             "accessory_variety":
             let key = probe.tunes.first ?? probe.id
             switch context.provenance[key] {
             case .stated, .confirmed: return false

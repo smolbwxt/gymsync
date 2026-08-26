@@ -218,6 +218,11 @@ struct ConsultAnswers: Equatable, Sendable {
             p.repAppetite = appetite
             state("repAppetite")
         }
+        if let variety = first("accessory_variety").flatMap(
+                TrainingProfile.AccessoryVariety.init(rawValue:)) {
+            p.accessoryVariety = variety
+            state("accessoryVariety")
+        }
         if let climb = first("climb_rate") {
             p.intensityAppetite = climb
             state("intensityAppetite")
