@@ -206,16 +206,61 @@ final class VolumeTitrationTests: XCTestCase {
         XCTAssertEqual(move.delta, 0)
     }
 
-    func testNoRecoveryHistoryDoesNotReadAsRecovered() {
-        // Absence of a probe answer must not be treated as "recovered
-        // fine" - that would let the search climb on no evidence.
+    func testTheClimbWaitsForTheProbe() {
+        // Owner 2026-08-26: "let's hold the volume until the probe has
+        // data." Clean reps are not enough on their own - adding volume
+        // because someone hit their reps is a guess that they are
+        // recovering, made without asking, and recovery is the entire
+        // thing this search is supposed to be measuring.
         XCTAssertFalse(VolumeTitration.openTooLong([], gap: 3))
         let move = VolumeTitration.decide(
             muscle: "chest", current: 16,
             outcomes: [outcome(3, reps: 1.0), outcome(7, reps: 1.0)],
             recovery: [], sessionGapDays: 4)
-        XCTAssertEqual(move.delta, 1,
-                       "with no recovery data the reps decide, and they are clean")
+        XCTAssertEqual(move.delta, 0, "no probe data, no climb")
+    }
+
+    func testTheCUTDoesNotWaitForTheProbe() {
+        // The asymmetry, and it is deliberate. Silence blocks the climb,
+        // never the retreat: a lifter whose reps are going backwards two
+        // sessions running is the corpus's own MRV signal, and making them
+        // wait for a probe to confirm what their performance already says
+        // would be the wrong direction to be cautious in.
+        let move = VolumeTitration.decide(
+            muscle: "chest", current: 20,
+            outcomes: [outcome(3, reps: 0.7), outcome(7, reps: 0.85)],
+            recovery: [], sessionGapDays: 4)
+        XCTAssertLessThan(move.delta, 0, "declining reps cut without needing a probe")
+    }
+
+    func testOneClosedProbeIsNotEnoughToStartClimbing() {
+        // The same bar openTooLong uses: two closed observations. One
+        // recovery tells you about one session, not about a dose.
+        let move = VolumeTitration.decide(
+            muscle: "chest", current: 16,
+            outcomes: [outcome(3, reps: 1.0), outcome(7, reps: 1.0)],
+            recovery: [recovered(3, inDays: 1)], sessionGapDays: 4)
+        XCTAssertEqual(move.delta, 0)
+    }
+
+    func testAnOpenProbeIsNotAnAnswer() {
+        // "Still recovering" says nothing about how long recovery took,
+        // so it cannot license a climb.
+        let stillOpen = VolumeTitration.RecoveryObservation(
+            muscle: "chest", trainedAt: daysAgo(2), recoveredAt: nil, lastState: .sore)
+        XCTAssertFalse(VolumeTitration.hasRecoveryEvidence([stillOpen, stillOpen]))
+    }
+
+    func testTheHoldSaysWhatWouldUnblockIt() {
+        // A hold the athlete cannot act on is just a stall. This one has
+        // to tell them the probe is what moves it.
+        let move = VolumeTitration.decide(
+            muscle: "chest", current: 16,
+            outcomes: [outcome(3, reps: 1.0), outcome(7, reps: 1.0)],
+            recovery: [], sessionGapDays: 4)
+        guard case .hold(let reason) = move else { return XCTFail("expected a hold") }
+        XCTAssertTrue(reason.lowercased().contains("recover"),
+                      "the hold must name what unblocks it: \(reason)")
     }
 
     // MARK: - Every move explains itself

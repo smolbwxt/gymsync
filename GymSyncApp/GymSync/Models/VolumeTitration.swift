@@ -183,6 +183,24 @@ enum VolumeTitration {
             return .hold(reason: "Holding \(muscle) — you're hitting the reps, but you're still carrying the last session when the next one comes round.")
         }
 
+        // NEVER CLIMB ON REPS ALONE (owner 2026-08-26: "let's hold the
+        // volume until the probe has data").
+        //
+        // Note the ASYMMETRY, which is deliberate. The two directions are
+        // not the same bet. Adding volume on reps alone is a guess that
+        // the athlete is recovering, made without asking them - and the
+        // whole point of the search is that recovery is the thing being
+        // measured. Cutting, above, does NOT wait: a lifter whose reps are
+        // going backwards two sessions running is the corpus's own MRV
+        // signal, and making them wait for a probe to confirm what their
+        // performance is already saying would be the wrong direction to be
+        // cautious in.
+        //
+        // So: silence blocks the climb, never the retreat.
+        guard hasRecoveryEvidence(recovery) else {
+            return .hold(reason: "Holding \(muscle) where it is until I know how you're recovering. Tell me how the last session left you and I'll start moving it.")
+        }
+
         // Room to add: the reps are landing AND the muscle is back before
         // the next session for it.
         if latest.repCompletion >= 1.0 && !latest.anyFailure {
@@ -192,6 +210,16 @@ enum VolumeTitration {
             return .add(sets: 1, reason: "You're finishing every rep on \(muscle) and recovering in time. Adding a set to see if there's more there.")
         }
         return .hold(reason: "Holding \(muscle) — close, but not clean enough yet to add.")
+    }
+
+    /// Whether the probe has said enough to justify moving volume UP.
+    ///
+    /// Two closed observations, the same bar `openTooLong` uses, so the
+    /// evidence needed to add is the same evidence needed to hold back.
+    /// An open probe does not count: "still recovering" is not an answer
+    /// about how long recovery took.
+    static func hasRecoveryEvidence(_ recovery: [RecoveryObservation]) -> Bool {
+        recovery.filter { $0.recoveredAt != nil }.count >= 2
     }
 
     /// Whether recovery is running into the next session for this muscle.
