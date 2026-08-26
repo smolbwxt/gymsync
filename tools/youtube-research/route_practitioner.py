@@ -62,7 +62,11 @@ CONTEXT = re.compile(
 WINDOW = 160
 PASS = "practitioner"
 MIN_HITS = 15
-BATCH_WORDS = 15_000
+# Wave 2 runs bigger batches than wave 1 because its transcripts are
+# bigger: Sulek posts 33-minute training sessions where Ethier posts
+# 8-minute explainers. A budget tuned for the short ones fragments the
+# long ones into batches of two.
+BATCH_WORDS = 26_000
 
 
 def contextual_hits(text: str) -> int:
@@ -77,7 +81,23 @@ def contextual_hits(text: str) -> int:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--top", type=int, default=120)
+    ap.add_argument("--pass-name", default=PASS)
+    # Wave 2 (2026-08-26) exists because wave 1 read the wrong channels
+    # for Bumstead and Sulek. The transcripts wave 1 DID read correctly
+    # are already in the corpus, so they must be excluded here or the
+    # swarm pays to read them a second time and the corpus gets doubles.
+    ap.add_argument("--exclude-pass", nargs="*", default=[],
+                    help="pass directories whose batched ids to skip")
     args = ap.parse_args()
+
+    already = set()
+    for d in args.exclude_pass:
+        for bf in glob.glob(os.path.join("passes", d, "b-*.json")):
+            for rec in json.load(open(bf, encoding="utf-8")):
+                already.add(rec["id"])
+    if already:
+        print("excluding %d transcripts already batched in %s"
+              % (len(already), ", ".join(args.exclude_pass)))
 
     scored, skipped = [], 0
     for f in glob.glob("transcripts/*.json"):
@@ -88,6 +108,8 @@ def main() -> None:
         if not isinstance(t, dict) or "id" not in t:
             continue
         if t.get("channel") not in PRACTITIONER:
+            continue
+        if t["id"] in already:
             continue
         words = int(t.get("words", 0) or 0)
         if words < 400:
@@ -113,8 +135,9 @@ def main() -> None:
         print(f"  {sc:6.1f}  h={hits:<4} d={dens:5.1f}  "
               f"[{t['channel'][:13]:<13}] {t['title'][:64]}")
 
-    os.makedirs(f"passes/{PASS}", exist_ok=True)
-    for old in glob.glob(f"passes/{PASS}/b-*.json"):
+    out_dir = f"passes/{args.pass_name}"
+    os.makedirs(out_dir, exist_ok=True)
+    for old in glob.glob(f"{out_dir}/b-*.json"):
         os.remove(old)
 
     batch, used, n = [], 0, 0
@@ -123,7 +146,7 @@ def main() -> None:
         if not batch:
             return
         n += 1
-        json.dump(batch, open(f"passes/{PASS}/b-{n:02d}.json", "w",
+        json.dump(batch, open(f"{out_dir}/b-{n:02d}.json", "w",
                               encoding="utf-8"))
         batch, used = [], 0
 
@@ -137,7 +160,7 @@ def main() -> None:
                       "words": w, "text": t["text"]})
         used += w
     flush()
-    print(f"\nwrote {n} word-budgeted batches -> passes/{PASS}/")
+    print(f"\nwrote {n} word-budgeted batches -> {out_dir}/")
 
 
 if __name__ == "__main__":
