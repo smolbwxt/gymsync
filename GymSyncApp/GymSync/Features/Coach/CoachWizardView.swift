@@ -892,6 +892,110 @@ struct CoachWizardView: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 
+    // MARK: Health (LIMITS door)
+    //
+    // Owner 2026-08-26: "there should be a manual way to clear the medical
+    // flag in the 5 doors."
+    //
+    // This is the HONEST version of a thing that used to happen by
+    // accident. The gate had a bypass — a refused athlete was handed the
+    // questions straight back, and answering differently walked through
+    // it. That is closed. But an athlete must still be able to say "I saw
+    // my doctor and they cleared me", because Coach ASKED them to have
+    // that conversation and has to honour the answer.
+    //
+    // The difference is attribution. A silent re-answer records a lie as
+    // though it were a screening; this records a clinician's clearance AS
+    // a clinician's clearance, in its own field, visible here forever.
+    @ViewBuilder
+    private var healthSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("HEALTH SCREENING")
+                .font(GSFont.bold(11, relativeTo: .caption))
+                .tracking(1.1)
+                .foregroundStyle(theme.neutral500)
+            Text(healthStatusLine)
+                .font(GSFont.body(12, relativeTo: .footnote))
+                .foregroundStyle(theme.neutral700)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 10) {
+                if healthCleared != true {
+                    Button { markClinicianCleared() } label: {
+                        Text("MY DOCTOR CLEARED ME")
+                            .font(GSFont.bold(12, relativeTo: .caption))
+                            .tracking(0.6)
+                            .foregroundStyle(theme.bg)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                    }
+                    .buttonStyle(GS3DButtonStyle(face: theme.accent, cornerRadius: 13))
+                }
+                Button { retakeScreening() } label: {
+                    Text("RETAKE")
+                        .font(GSFont.bold(12, relativeTo: .caption))
+                        .tracking(0.8)
+                        .foregroundStyle(theme.text)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(GS3DButtonStyle(face: theme.raised3DFace,
+                                             lip: theme.raised3DLip, cornerRadius: 13))
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .gs3DCard(cornerRadius: GSMetrics.radiusSm)
+    }
+
+    private var healthStatusLine: String {
+        switch healthCleared {
+        case .some(true):
+            return healthAdvisory ?? "Cleared. I'll re-ask once a year, or any time your health changes."
+        case .some(false):
+            return "Not cleared yet — I won't write you a program until this is answered. If a doctor has already cleared you, say so and we'll carry on."
+        case .none:
+            return "Checking…"
+        }
+    }
+
+    /// Records a clinician's clearance in its OWN field. Never fakes a
+    /// screening answer — what the athlete told us stays exactly as they
+    /// told it, and the clearance sits beside it.
+    private func markClinicianCleared() {
+        Task {
+            guard let userID = appState.currentProfile?.id else { return }
+            var stored = (try? await HealthScreeningRepository.load()) ?? HealthScreening()
+            stored.clinicianCleared = true
+            stored.clearedAt = Date()
+            try? await HealthScreeningRepository.save(stored, userID: userID)
+            healthCleared = true
+        }
+    }
+
+    /// Clears the ANSWERS so the gate asks again from the top.
+    ///
+    /// Deliberately different from the bypass this replaces: that one
+    /// re-asked automatically, the instant after refusing, with no act of
+    /// will from the athlete and nothing recorded. This is a button in a
+    /// settings screen that a person has to find and press, and the old
+    /// answers are replaced rather than quietly overwritten by a second
+    /// attempt at the same sitting.
+    private func retakeScreening() {
+        Task {
+            guard let userID = appState.currentProfile?.id else { return }
+            var stored = (try? await HealthScreeningRepository.load()) ?? HealthScreening()
+            stored.answers = [:]
+            stored.followUps = [:]
+            stored.clearedAt = nil
+            stored.clinicianCleared = false
+            try? await HealthScreeningRepository.save(stored, userID: userID)
+            healthCleared = false
+            healthAdvisory = nil
+            showHealthGate = true
+        }
+    }
+
     private func sectionTitle(_ section: ProfileSection) -> String {
         switch section {
         case .goals: return "GOALS"
@@ -1118,6 +1222,7 @@ struct CoachWizardView: View {
                                                      unit: displayUnit)
                         }
                     case .limits:
+                        healthSection
                         noGoSection
                         equipmentDial
                     }

@@ -14,6 +14,10 @@ struct HealthScreening: Codable, Equatable, Sendable {
     /// PAR-Q+ question id → answered yes. Open shape on purpose: the
     /// instrument gets revised and our schema should not have to.
     var answers: [String: Bool] = [:]
+    /// Step-2 answers: follow-up id -> chosen option id. Open shape for
+    /// the same reason `answers` is — the instrument gets revised and our
+    /// schema should not have to.
+    var followUps: [String: String] = [:]
     var clearedAt: Date?
     /// pregnant | postpartum | nil. Advisory, never a block (ACOG 804).
     var lifeStage: String?
@@ -21,6 +25,7 @@ struct HealthScreening: Codable, Equatable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case answers
+        case followUps = "follow_ups"
         case clearedAt = "cleared_at"
         case lifeStage = "life_stage"
         case clinicianCleared = "clinician_cleared"
@@ -53,7 +58,25 @@ struct HealthScreening: Codable, Equatable, Sendable {
     var clearsTheGate: Bool {
         switch outcome() {
         case .cleared, .clearedWithAdvisory: return true
-        case .referOut, .delay:              return false
+        // .incomplete is NOT a clearance. An athlete part-way through the
+        // follow-ups has not been cleared and must not be programmed for.
+        case .referOut, .delay, .incomplete:  return false
+        }
+    }
+
+    /// A standing refusal that no amount of re-answering should erase.
+    ///
+    /// This exists because the gate had a bypass: `needsScreening` is true
+    /// for a referred-out athlete (nothing stamped cleared_at), and the
+    /// gate checked it FIRST — so a refusal handed the questions straight
+    /// back, and answering differently the second time walked through it.
+    /// The comment in that code claimed a standing flag survived a
+    /// relaunch. It did not.
+    var hasStandingRefusal: Bool {
+        guard !answers.isEmpty, !clinicianCleared else { return false }
+        switch outcome() {
+        case .referOut, .delay: return true
+        default:                return false
         }
     }
 
@@ -63,7 +86,8 @@ struct HealthScreening: Codable, Equatable, Sendable {
             return .clearedWithAdvisory(stage.advisory)
         }
         if clinicianCleared { return .cleared }
-        return HealthTriage.evaluate(answers: answers, delay: delay, stage: stage)
+        return HealthTriage.evaluate(answers: answers, followUps: followUps,
+                                     delay: delay, stage: stage)
     }
 }
 

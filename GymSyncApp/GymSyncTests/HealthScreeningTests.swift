@@ -59,6 +59,17 @@ final class HealthScreeningTests: XCTestCase {
         XCTAssertEqual(s.outcome(), .referOut(flagged: ["heart_or_bp"]))
     }
 
+    func testASoftFlagOpensAFollowUpAndStillDoesNotClear() {
+        // PAR-Q+ Step 1 routes; it does not decide. A chronic condition
+        // now opens a follow-up instead of refusing forever — but an
+        // unfinished screening must never read as a clearance.
+        let s = HealthScreening(answers: allClear.merging(["medication": true]) { _, b in b })
+        guard case .incomplete = s.outcome() else {
+            return XCTFail("a controlled condition was refused outright")
+        }
+        XCTAssertFalse(s.clearsTheGate)
+    }
+
     func testAReferOutNeverStampsAClearanceClock() {
         // The rule this whole property exists for: if a flagged screening
         // stamped cleared_at, the athlete's NEXT visit would find a valid

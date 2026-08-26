@@ -42,6 +42,9 @@ struct HealthGateView: View {
     private enum Phase: Equatable {
         case loading
         case screening
+        /// Step 2. A YES in Step 1 opens a follow-up rather than ending
+        /// the conversation — see HealthTriage.pendingFollowUps.
+        case followUp(HealthTriage.FollowUp)
         /// Coach does not program, and says why.
         case declined(HealthTriage.Outcome)
     }
@@ -53,6 +56,8 @@ struct HealthGateView: View {
                 Spacer(minLength: 0)
             case .screening:
                 screeningPhase
+            case .followUp(let followUp):
+                followUpPhase(followUp)
             case .declined(let outcome):
                 declinedCard(outcome)
                 Spacer(minLength: 0)
@@ -118,6 +123,48 @@ struct HealthGateView: View {
             cornerRadius: 15))
     }
 
+    /// Step 2. Same grammar as Step 1 deliberately — this is the same
+    /// conversation continuing, not a new interrogation because they
+    /// answered "yes" to something.
+    @ViewBuilder
+    private func followUpPhase(_ followUp: HealthTriage.FollowUp) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("ONE MORE THING")
+                .font(GSFont.bold(10, relativeTo: .caption2))
+                .tracking(1.1)
+                .foregroundStyle(theme.accent)
+            Text(followUp.prompt)
+                .font(GSFont.bold(20, relativeTo: .title3))
+                .foregroundStyle(theme.text)
+                .fixedSize(horizontal: false, vertical: true)
+            if let clarifier = followUp.clarifier {
+                Text(clarifier)
+                    .font(GSFont.body(12, relativeTo: .footnote))
+                    .foregroundStyle(theme.neutral700)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .gs3DCard(cornerRadius: 18)
+
+        VStack(spacing: 10) {
+            ForEach(followUp.options) { option in
+                Button { recordFollowUp(followUp, option) } label: {
+                    Text(option.label)
+                        .font(GSFont.bold(14, relativeTo: .headline))
+                        .tracking(0.6)
+                        .foregroundStyle(theme.text)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 15)
+                        .padding(.vertical, 14)
+                }
+                .buttonStyle(.gs3DCardStyle(cornerRadius: 15))
+            }
+        }
+        Spacer(minLength: 0)
+    }
+
     /// Coach declining to program. Names the boundary, never implies a
     /// diagnosis, and never leaves the athlete with nothing.
     private func declinedCard(_ outcome: HealthTriage.Outcome) -> some View {
@@ -162,7 +209,25 @@ struct HealthGateView: View {
             let stored = (try? await HealthScreeningRepository.load()) ?? HealthScreening()
             screening = stored
             let outcome = stored.outcome()
-            if stored.needsScreening {
+
+            // ORDER MATTERS, and getting it wrong was a live bypass. A
+            // refused athlete has no cleared_at, so `needsScreening` is
+            // true for them forever — and this check used to come FIRST,
+            // which handed the questions straight back to someone who had
+            // just been refused. Answering differently the second time
+            // walked through the gate. The comment here claimed a standing
+            // flag survived a relaunch; it did not.
+            if stored.hasStandingRefusal {
+                withAnimation(.easeOut(duration: 0.18)) { phase = .declined(outcome) }
+                return
+            }
+            // Resume a part-finished screening at the question they owe,
+            // rather than restarting or refusing.
+            if case .incomplete(let next) = outcome {
+                withAnimation(.easeOut(duration: 0.18)) { phase = .followUp(next) }
+                return
+            }
+            if stored.answers.isEmpty || stored.needsScreening {
                 withAnimation(.easeOut(duration: 0.18)) { phase = .screening }
                 return
             }
@@ -171,9 +236,7 @@ struct HealthGateView: View {
                 onCleared(nil)
             case .clearedWithAdvisory(let text):
                 onCleared(text)
-            case .referOut, .delay:
-                // A standing flag survives a relaunch: Coach does not
-                // forget what it was told.
+            case .referOut, .delay, .incomplete:
                 withAnimation(.easeOut(duration: 0.18)) { phase = .declined(outcome) }
             }
         }
@@ -187,9 +250,21 @@ struct HealthGateView: View {
         }
     }
 
+    private func recordFollowUp(_ followUp: HealthTriage.FollowUp,
+                                _ option: HealthTriage.FollowUp.Option) {
+        screening.followUps[followUp.id] = option.id
+        withAnimation(.easeOut(duration: 0.18)) { settle() }
+    }
+
     private func settle() {
         let outcome = screening.outcome()
         switch outcome {
+        case .incomplete(let next):
+            // More to ask before we know anything. Persist so a kill
+            // mid-screening resumes rather than restarting.
+            phase = .followUp(next)
+            persist()
+            return
         case .cleared:
             screening.clearedAt = Date()
             persist()
