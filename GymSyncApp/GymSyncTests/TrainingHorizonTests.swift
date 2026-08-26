@@ -51,9 +51,28 @@ final class TrainingHorizonTests: XCTestCase {
     }
 
     func testAGapJustUnderTheThresholdIsNotALayoff() {
-        let logs = [log(300, weight: 225, reps: 5),
-                    log(300 - GeneratorScience.layoffResetDays + 1, weight: 225, reps: 5)]
-        XCTAssertNil(TrainingHorizon.returnDate(in: logs))
+        // Both sessions must be RECENT, or the idle rule below fires
+        // instead and the test measures the wrong thing — which is exactly
+        // what an earlier version of it did: its second session was 181
+        // days old, so "returning now" fired and the assertion failed for
+        // an entirely correct reason.
+        let logs = [log(GeneratorScience.layoffResetDays, weight: 225, reps: 5),
+                    log(1, weight: 225, reps: 5)]
+        XCTAssertNil(TrainingHorizon.returnDate(in: logs, now: now))
+    }
+
+    func testAGapExactlyAtTheThresholdIsALayoff() {
+        let logs = [log(GeneratorScience.layoffResetDays + 1, weight: 225, reps: 5),
+                    log(1, weight: 225, reps: 5)]
+        XCTAssertNotNil(TrainingHorizon.returnDate(in: logs, now: now))
+    }
+
+    func testALongIdleSinceTheLastSessionIsAReturnEvenWithNoGapBetweenSets() {
+        // The complement of the boundary above, stated separately so the
+        // two rules cannot be confused again: consecutive sessions with no
+        // gap between them, but the whole log is old.
+        let logs = [log(200, weight: 225, reps: 5), log(197, weight: 225, reps: 5)]
+        XCTAssertNotNil(TrainingHorizon.returnDate(in: logs, now: now))
     }
 
     func testTheMostRecentReturnWins() {

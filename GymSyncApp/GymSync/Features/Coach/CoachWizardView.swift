@@ -55,6 +55,20 @@ struct CoachWizardView: View {
     @State private var daysSinceLastSession: Int?
     @State private var daysSinceReturn: Int?
     @State private var standingRules: [String] = []
+    /// The health gate, in front of GENERATION rather than in front of the
+    /// screen. These five doors are also how an athlete edits their
+    /// profile, and editing is not prescribing — they may browse freely.
+    /// What they may not do is have loads written for them unscreened.
+    ///
+    /// Gated HERE, at the one function that produces a program, rather
+    /// than at the four places CoachWizardView is presented from
+    /// (RootView, two on the Coach home, the block calendar). Four call
+    /// sites to remember is how the gate came to guard one door out of
+    /// four in the first place.
+    @State private var showHealthGate = false
+    @State private var healthAdvisory: String?
+    /// nil until the screening has been read. See healthGateRequired.
+    @State private var healthCleared: Bool?
     // Data
     @State private var allExercises: [Exercise] = []
     @State private var preview: ProgramGenerator.Program?
@@ -240,6 +254,18 @@ struct CoachWizardView: View {
         .navigationTitle("Coach")
         .scrollDismissesKeyboard(.interactively)
         .onDisappear { persistProfile() }
+        // The gate, presented from the wizard's own root so all four doors
+        // into this screen inherit it. On clearing, the generation the
+        // athlete asked for runs immediately — the screening is a
+        // precondition, not a detour that loses their place.
+        .sheet(isPresented: $showHealthGate) {
+            HealthGateSheet(userID: appState.currentProfile?.id) { advisory in
+                healthAdvisory = advisory
+                healthCleared = true
+                showHealthGate = false
+                generatePreview()
+            }
+        }
         .sheet(item: $activeSection) { section in
             sectionSheet(section)
         }
@@ -262,6 +288,7 @@ struct CoachWizardView: View {
             // the profile, so the carryover it just wrote is what loads.
             blockCompletion = await CoachLifecycle.checkBlockEnd()
             await readTrainingHistory()
+            await readHealthScreening()
             // Settings first: displayUnit converts the body fields the
             // profile hydration below writes.
             if let settings = try? await UserSettingsRepository.get() {
@@ -643,6 +670,15 @@ struct CoachWizardView: View {
     }
 
     private func generatePreview() {
+        // THE HEALTH GATE. Screening is a precondition of PRESCRIBING, and
+        // this is the only function in the app that prescribes — every one
+        // of the four doors into this screen funnels through here. Putting
+        // it at the doors instead is what left three of the four
+        // unscreened.
+        if healthGateRequired {
+            showHealthGate = true
+            return
+        }
         // Alias rows (catalog dedup 20260821000001) never enter selection —
         // the same movement can't be "varied" into itself under a second
         // name. Their history still resolves everywhere else.
@@ -693,6 +729,19 @@ struct CoachWizardView: View {
         lastInputs = inputs
         lastCatalog = catalog
         preview = ProgramGenerator.generate(inputs: inputs, catalog: catalog)
+    }
+
+    /// Whether the athlete must clear the PAR-Q+ before a program is
+    /// written for them. nil means "not looked yet" and counts as
+    /// REQUIRED — failing closed is the only safe direction for a medical
+    /// gate, and a slow network must never be a way past it.
+    private var healthGateRequired: Bool { healthCleared != true }
+
+    private func readHealthScreening() async {
+        let stored = try? await HealthScreeningRepository.load()
+        guard let stored else { healthCleared = false; return }
+        healthCleared = !stored.needsScreening && stored.clearsTheGate
+        if case .clearedWithAdvisory(let text) = stored.outcome() { healthAdvisory = text }
     }
 
     /// Reads the two things about training HISTORY that change what is
