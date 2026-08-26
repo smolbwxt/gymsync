@@ -467,6 +467,12 @@ enum ProgramGenerator {
                                            low: weekly.low, high: weekly.high,
                                            protectedDayNames: emphasisDays)
         days = balanced.days
+        // The note is GENERATED from what the pass actually did, including
+        // what it could not do. It used to be written here from the trim and
+        // add COUNTS alone, independently of the outcome - which is the
+        // mechanical reason it could claim a week was "balanced per muscle"
+        // while a ceiling it had no lever to fix was still broken. A note
+        // that reports only its successes is not a report.
         if balanced.trimmed > 0 || balanced.added > 0 {
             var parts: [String] = []
             if balanced.trimmed > 0 {
@@ -476,6 +482,14 @@ enum ProgramGenerator {
                 parts.append("added \(balanced.added) set\(balanced.added == 1 ? "" : "s") where a trained muscle fell under the weekly floor")
             }
             notes.append("Weekly volume balanced per muscle: " + parts.joined(separator: "; ") + ".")
+        }
+        if !balanced.unresolvedHigh.isEmpty {
+            let named = Array(Set(balanced.unresolvedHigh)).sorted().joined(separator: ", ")
+            notes.append("Above the weekly ceiling and I could not trim it: \(named). This split gives those muscles no accessory set to take back — the volume is coming from compounds, which the slot logic owns. Worth knowing rather than worth panicking about.")
+        }
+        if !balanced.unresolvedLow.isEmpty {
+            let named = Array(Set(balanced.unresolvedLow)).sorted().joined(separator: ", ")
+            notes.append("Under the weekly floor and I could not add to it: \(named). No accessory in this split targets them directly, so the shortfall is structural — a different split or another training day is the real fix.")
         }
 
         // Orphaned-muscle coverage (owner 2026-08-21: "not everyone gets a
@@ -488,7 +502,19 @@ enum ProgramGenerator {
         // skip the dose and SAY so — rotation across weeks arrives with
         // week-at-read-time resolution.
         let majors = GeneratorScience.majorMuscles
-        let tally = weeklyMuscleSets(days: days, catalog: catalog)
+        // DIRECT sets, not effective. The gate used the effective tally -
+        // which counts half a set per secondary muscle - while the note it
+        // prints says the dosed muscles "had no direct work this week". The
+        // test and the sentence disagreed, and the test was the weaker of
+        // the two: a 3-day full body gives biceps 4.5 effective sets from
+        // rows and chins and zero direct work, so biceps was not an orphan
+        // and a novice shipped a week with no direct arm work at all, while
+        // the note congratulated itself about muscles chosen by a rule that
+        // could not see the problem.
+        //
+        // Counting direct here does not lower anyone's volume: it can only
+        // ADD a dose that was previously skipped.
+        let tally = weeklyMuscleSets(days: days, catalog: catalog, directOnly: true)
         let orphans = majors.filter { (tally[$0] ?? 0) == 0 }
         if !orphans.isEmpty {
             var covered: [String] = []
@@ -1408,13 +1434,15 @@ enum ProgramGenerator {
     /// secondary — the convention the volume literature's set counts use.
     /// Keys are lowercased muscle names; cardio entries contribute nothing.
     static func weeklyMuscleSets(days: [Day],
-                                 catalog: [CatalogExercise]) -> [String: Double] {
+                                 catalog: [CatalogExercise],
+                                 directOnly: Bool = false) -> [String: Double] {
         let byID = Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, $0) })
         var tally: [String: Double] = [:]
         for day in days {
             for e in day.exercises where e.cardioZone == nil {
                 guard let cat = byID[e.exerciseID] else { continue }
                 tally[cat.primaryMuscle.lowercased(), default: 0] += Double(e.sets)
+                guard !directOnly else { continue }
                 for muscle in cat.secondaryMuscles {
                     tally[muscle.lowercased(), default: 0] += Double(e.sets) * 0.5
                 }
@@ -1436,10 +1464,19 @@ enum ProgramGenerator {
     static func balanceWeeklyVolume(
         days: [Day], catalog: [CatalogExercise], low: Int, high: Int,
         protectedDayNames: Set<String> = []
-    ) -> (days: [Day], trimmed: Int, added: Int) {
+    ) -> (days: [Day], trimmed: Int, added: Int,
+          unresolvedLow: [String], unresolvedHigh: [String]) {
         let byID = Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, $0) })
         var days = days
         var trimmed = 0, added = 0
+        // What this pass could not fix. Both loops below can exhaust their
+        // levers and `break` - there may be no accessory for that muscle in
+        // this split, or every accessory may already sit at its per-exercise
+        // floor - and until now that exit was silent. The caller then
+        // announced "Weekly volume balanced per muscle" on the strength of
+        // the trim/add COUNTS alone, so a week that broke a ceiling it
+        // could not repair still reported itself balanced.
+        var unresolvedLow: [String] = [], unresolvedHigh: [String] = []
 
         func primaryOf(_ e: Exercise) -> String? {
             guard e.cardioZone == nil else { return nil }
@@ -1467,7 +1504,10 @@ enum ProgramGenerator {
                 guardRail -= 1
                 guard let (d, x) = accessorySites(for: muscle)
                         .first(where: { days[$0.0].exercises[$0.1].sets < 5 })
-                else { break }
+                else {
+                    unresolvedLow.append(muscle)
+                    break
+                }
                 days[d].exercises[x].sets += 1
                 added += 1
             }
@@ -1485,12 +1525,16 @@ enum ProgramGenerator {
                     .filter { days[$0.0].exercises[$0.1].sets > 2 }
                 guard let (d, x) = sites.last(where: { !protectedDayNames.contains(days[$0.0].name) })
                         ?? sites.last
-                else { break }
+                else {
+                    unresolvedHigh.append(muscle)
+                    break
+                }
                 days[d].exercises[x].sets -= 1
                 trimmed += 1
             }
         }
-        return (days, trimmed, added)
+        return (days, trimmed, added,
+                unresolvedLow: unresolvedLow, unresolvedHigh: unresolvedHigh)
     }
 
     private static func setsPerSlot(slot: Slot, perDayBudget: Int) -> Int {

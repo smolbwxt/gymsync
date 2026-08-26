@@ -428,12 +428,11 @@ struct WorkoutSessionView: View {
         // The existing solo pushes fire on session start, completion and
         // scene change - not when the exercise or the set count moves,
         // which is what nextSetIndex and the exercise name depend on.
-        .onChange(of: currentExerciseIndex) {
-            pushSoloWatchState(session: session, active: session?.completedAt == nil)
-        }
-        .onChange(of: soloCurrentExerciseSets.count) {
-            pushSoloWatchState(session: session, active: session?.completedAt == nil)
-        }
+        //
+        // ONE modifier over a composite key rather than two: this body
+        // already blew the type checker once (see the split note above it)
+        // and two more closures in the chain put it back over.
+        .onChange(of: soloWatchStateKey) { refreshSoloWatchState() }
         // Solo warm-up auto-end (2026-08): the guarded-sleep shape
         // `handleRestWindowChange` uses — only the still-current window
         // clears itself, so a skip (or a − adjustment that already ended
@@ -872,6 +871,17 @@ struct WorkoutSessionView: View {
     @State private var pendingDropRestIsTransit = false
 
     private var soloUnit: WeightUnit { sessionSettings?.weightUnit ?? .lbs }
+
+    /// Changes exactly when the Watch's picture of this session goes stale:
+    /// a different exercise, or another set logged (which moves the index
+    /// the wrist's next set should take).
+    private var soloWatchStateKey: String {
+        "\(currentExerciseIndex)-\(soloCurrentExerciseSets.count)"
+    }
+
+    private func refreshSoloWatchState() {
+        pushSoloWatchState(session: session, active: session?.completedAt == nil)
+    }
 
     private var soloWeightStep: Decimal {
         Units.tunerStep(unit: soloUnit, equipment: currentExercise?.equipment)
@@ -1570,6 +1580,40 @@ struct WorkoutSessionView: View {
         }
     }
 
+    /// Swap during transit (field report). The swap affordance lived only
+    /// on the live set card, so it was there while you stood at the station
+    /// and gone during the one window you need it: walking toward a station
+    /// and finding somebody on it. The flag for that window already
+    /// existed; nothing offered a way out of it.
+    ///
+    /// Transit only. A swap between sets of the SAME exercise strands the
+    /// set you just logged against a lift you are no longer doing, and the
+    /// set card already owns that case.
+    ///
+    /// Extracted rather than inlined: this hero shares a body that has
+    /// already blown the Swift type checker once.
+    @ViewBuilder
+    private var transitSwapButton: some View {
+        if soloRestIsTransit, currentExercise != nil {
+            Color.clear.frame(height: 10)
+            Button { showSwapSheet = true } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 11, weight: .bold))
+                    Text("STATION TAKEN? SWAP IT")
+                        .font(GSFont.bold(11, relativeTo: .caption2))
+                        .tracking(0.7)
+                }
+                .foregroundStyle(theme.text)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+            }
+            .buttonStyle(GS3DButtonStyle(face: theme.raised3DFace,
+                                         lip: theme.raised3DLip,
+                                         cornerRadius: 12, lipHeight: 4))
+        }
+    }
+
     /// The countdown, big, over UP NEXT — the entry page is already
     /// prefilled for exactly this set, so the readback echoes it.
     private var soloRestHero: some View {
@@ -1598,34 +1642,7 @@ struct WorkoutSessionView: View {
                     restRecoveryPill(now: context.date, start: restStart, end: restEndAt)
                 }
             }
-            // SWAP DURING TRANSIT (field report). The swap affordance
-            // lived only on the live set card — so it was available while
-            // you were standing at the station, and gone during the one
-            // window where you actually need it: walking toward a station
-            // and finding it taken. The flag for that window already
-            // existed; nothing offered a way out of it.
-            //
-            // Transit only. A swap between sets of the SAME exercise is a
-            // different act with different consequences for the set you
-            // just logged, and the set card already owns it.
-            if soloRestIsTransit, currentExercise != nil {
-                Color.clear.frame(height: 10)
-                Button { showSwapSheet = true } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                            .font(.system(size: 11, weight: .bold))
-                        Text("STATION TAKEN? SWAP IT")
-                            .font(GSFont.bold(11, relativeTo: .caption2))
-                            .tracking(0.7)
-                    }
-                    .foregroundStyle(theme.text)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                }
-                .buttonStyle(GS3DButtonStyle(face: theme.raised3DFace,
-                                             lip: theme.raised3DLip,
-                                             cornerRadius: 12, lipHeight: 4))
-            }
+            transitSwapButton
             Spacer(minLength: 12)
             VStack(spacing: 7) {
                 Text("UP NEXT")

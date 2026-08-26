@@ -60,6 +60,86 @@ final class VolumeAccountingTests: XCTestCase {
                        "trims come from the LAST accessory first")
     }
 
+    // MARK: - The note has to be true
+
+    func testACeilingItCannotFixIsReportedRatherThanIgnored() {
+        // The defect: both loops can exhaust their levers and `break`, and
+        // that exit was silent - so a week that broke a ceiling it had no
+        // accessory to trim still reported itself "balanced per muscle",
+        // because the caller wrote that sentence from the trim/add COUNTS
+        // rather than from the outcome.
+        //
+        // Chest here is over the ceiling and every chest set comes from a
+        // MAIN, which balance may never touch. Nothing can be trimmed.
+        let bench = ex(1, "Bench", "chest")
+        let days = [ProgramGenerator.Day(name: "Push", exercises: [
+            entry(bench, sets: 15, isMain: true),
+        ])]
+        let result = ProgramGenerator.balanceWeeklyVolume(
+            days: days, catalog: [bench], low: 0, high: 10)
+        XCTAssertEqual(result.trimmed, 0, "there was nothing it could trim")
+        XCTAssertTrue(result.unresolvedHigh.contains("chest"),
+                      "and it must say so instead of exiting quietly")
+    }
+
+    func testAFloorItCannotReachIsReportedToo() {
+        // Biceps is trained as a primary but its only accessory already
+        // sits at the per-exercise cap, so the floor cannot be met.
+        let curl = ex(1, "Curl", "biceps")
+        let days = [ProgramGenerator.Day(name: "Arms",
+                                         exercises: [entry(curl, sets: 5)])]
+        let result = ProgramGenerator.balanceWeeklyVolume(
+            days: days, catalog: [curl], low: 12, high: 20)
+        XCTAssertEqual(result.added, 0)
+        XCTAssertTrue(result.unresolvedLow.contains("biceps"))
+    }
+
+    func testAGenuinelyBalancedWeekReportsNothingUnresolved() {
+        // The guard against crying wolf: if everything fits, both lists
+        // must be empty, or every program would carry a false warning.
+        let curl = ex(1, "Curl", "biceps")
+        let days = [ProgramGenerator.Day(name: "Arms",
+                                         exercises: [entry(curl, sets: 8)])]
+        let result = ProgramGenerator.balanceWeeklyVolume(
+            days: days, catalog: [curl], low: 6, high: 12)
+        XCTAssertTrue(result.unresolvedHigh.isEmpty)
+        XCTAssertTrue(result.unresolvedLow.isEmpty)
+    }
+
+    // MARK: - Direct vs effective
+
+    func testTheCoverageTallyCanAnswerDirectOnly() {
+        // A muscle with heavy INDIRECT volume and zero direct work used to
+        // pass the orphan gate, because the gate asked the effective tally
+        // while the note it printed claimed the dosed muscles "had no
+        // direct work this week". The test and the sentence disagreed.
+        let row = ex(1, "Row", "back", secondaries: ["biceps"])
+        let days = [ProgramGenerator.Day(name: "Pull",
+                                         exercises: [entry(row, sets: 9, isMain: true)])]
+        let effective = ProgramGenerator.weeklyMuscleSets(days: days, catalog: [row])
+        let direct = ProgramGenerator.weeklyMuscleSets(days: days, catalog: [row],
+                                                       directOnly: true)
+        XCTAssertEqual(effective["biceps"], 4.5, "rows carry biceps indirectly")
+        XCTAssertNil(direct["biceps"], "but nothing trains them directly")
+        XCTAssertEqual(direct["back"], 9, "the primary is unaffected either way")
+    }
+
+    func testDirectOnlyNeverInflatesAnyMuscle() {
+        // Counting direct can only ever REMOVE incidental volume, so it can
+        // only ever cause a dose to be ADDED - never a trim. That asymmetry
+        // is why this was safe to change without re-deciding any number.
+        let row = ex(1, "Row", "back", secondaries: ["biceps", "forearms"])
+        let days = [ProgramGenerator.Day(name: "Pull",
+                                         exercises: [entry(row, sets: 4, isMain: true)])]
+        let effective = ProgramGenerator.weeklyMuscleSets(days: days, catalog: [row])
+        let direct = ProgramGenerator.weeklyMuscleSets(days: days, catalog: [row],
+                                                       directOnly: true)
+        for muscle in Set(effective.keys).union(direct.keys) {
+            XCTAssertLessThanOrEqual(direct[muscle] ?? 0, effective[muscle] ?? 0,
+                                     "direct must never exceed effective")
+        }
+    }
+
     func testFloorRaisesPrimaryTrainedMuscleCappedAtFive() {
         let curl = ex(1, "Curl", "biceps")
         let days = [ProgramGenerator.Day(name: "Arms",
