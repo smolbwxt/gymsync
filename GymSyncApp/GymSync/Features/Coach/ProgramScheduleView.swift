@@ -42,15 +42,47 @@ struct ProgramScheduleView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                if weeks.isEmpty && !loading {
-                    emptyCard
-                } else {
+                // FOUR states, not two, and the split is keyed on the
+                // ENROLLMENT rather than on `weeks`.
+                //
+                // The old guard read `weeks.isEmpty && !loading`, which
+                // sent every other case to arcCard — including the one
+                // that is true on entry, when loading is still true and
+                // weeks is still empty. arcCard then drew "WK 1 OF 0"
+                // over "0 WEEKS, ONE ARC": real-looking numbers for a
+                // block it had not read yet. That was survivable while
+                // the only way in was a deliberate tap. It is not
+                // survivable now that finishing a build lands here
+                // directly, because it is the first thing the athlete
+                // sees of the week they just commissioned.
+                //
+                // `weeks` is derived (`active.template?.weeks`), so it
+                // cannot distinguish "no block" from "block whose
+                // template did not resolve". `enrollment` can.
+                if loading {
+                    loadingCard
+                } else if enrollment != nil && !weeks.isEmpty {
                     arcCard
                     ForEach(routines) { routine in
                         dayRow(routine)
                     }
                     calendarDoor
                     askDoor
+                } else if !routines.isEmpty {
+                    // The days exist, the arc does not. Real, and not
+                    // rare: enrollGenerated returns early when a block has
+                    // no main lifts, and both the template row and the
+                    // enrollment are best-effort `try?`. Showing the
+                    // routines the athlete actually has beats an empty
+                    // screen that says they have nothing.
+                    unenrolledCard
+                    ForEach(routines) { routine in
+                        dayRow(routine)
+                    }
+                    calendarDoor
+                    askDoor
+                } else {
+                    emptyCard
                 }
             }
             .padding(.horizontal, 16)
@@ -267,6 +299,42 @@ struct ProgramScheduleView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
+    }
+
+    /// Says one true thing and no numbers. The rule this screen runs on
+    /// is that every number is READ, never invented — a placeholder arc
+    /// would break it in the one moment the athlete is least equipped to
+    /// notice.
+    private var loadingCard: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+                .tint(theme.accent)
+            Text("READING YOUR BLOCK")
+                .font(GSFont.bold(13, relativeTo: .headline))
+                .tracking(0.9)
+                .foregroundStyle(theme.neutral700)
+            Spacer()
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .gs3DCard(cornerRadius: GSMetrics.radiusSm)
+    }
+
+    /// Days on the bar, no arc over them.
+    private var unenrolledCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("YOUR DAYS, NO ARC YET")
+                .font(GSFont.bold(16, relativeTo: .headline))
+                .tracking(0.5)
+                .foregroundStyle(theme.text)
+            Text("These routines are yours to train today. They are not carrying a week-over-week progression — forge a block from My Program and the weeks land here.")
+                .font(GSFont.body(12, relativeTo: .caption))
+                .foregroundStyle(theme.neutral700)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .gs3DCard(cornerRadius: GSMetrics.radiusSm)
     }
 
     private var emptyCard: some View {

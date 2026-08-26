@@ -43,7 +43,7 @@ struct CoachHomeView: View {
     /// consult is gone and the builder pops back to here.
     @State private var route: Route?
 
-    private enum Route: Hashable { case consult, wizard }
+    private enum Route: Hashable { case consult, wizard, schedule }
 
     private var persona: CoachPersona? { CoachPersona.bySlug(profile.persona) }
 
@@ -72,7 +72,24 @@ struct CoachHomeView: View {
             case .consult:
                 consultDestination
             case .wizard:
-                CoachWizardView(onCreated: {})
+                // Owner 2026-08-26: "When I built my week, it should take
+                // us to our scheduling stack." It did the opposite —
+                // dismiss() popped the athlete OUT of the builder, which
+                // is the only screen in the app that instantiates
+                // ProgramScheduleView. The week they had just commissioned
+                // was three taps back the way they came.
+                //
+                // The same REPLACE that fixed the consult loop carries
+                // this: moving route to .schedule swaps the pushed view,
+                // so the builder unmounts and the schedule takes its place
+                // — no wizard underneath to fall back into.
+                CoachWizardView(onCreated: {
+                    route = .schedule
+                    return .handled
+                })
+                .background(theme.bg)
+            case .schedule:
+                ProgramScheduleView()
                     .background(theme.bg)
             }
         }

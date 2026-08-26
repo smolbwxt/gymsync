@@ -12,12 +12,38 @@ import SwiftUI
 // V1 output = the WEEK OF ROUTINES (the thing you train tomorrow).
 // Enrollment overlays, the Plan queue, and week-by-week waves ride the
 // template-as-data integration next.
+/// What the HOST does once a block is built.
+///
+/// The wizard cannot decide this, and the reason is exact: `dismiss()`
+/// and a route push are the same operation approached from opposite
+/// ends. Inside a `navigationDestination(item:)` push, dismiss() nils
+/// the host's binding — so a host that sets its route to the schedule
+/// and then lets the wizard dismiss would silently undo itself. Only
+/// the host knows whether it is going to move the athlete somewhere.
+///
+/// `.dismiss` is the DEFAULT, and deliberately so. Two of the three
+/// hosts cannot navigate anywhere useful: the post-walkthrough sheet
+/// (RootView) has no stack to push onto, and the calendar's own
+/// enrollment is a `let` captured before the build, so popping back to
+/// it would draw the block the athlete just replaced. Both keep today's
+/// behaviour exactly, which is the point — this change cannot regress a
+/// path it does not touch.
+enum CoachBuildLanding {
+    /// Close the builder and go back where you came from.
+    case dismiss
+    /// The host is moving the athlete itself. The wizard must NOT
+    /// dismiss, or it will cancel the navigation the host just started.
+    case handled
+}
+
 struct CoachWizardView: View {
     @Environment(\.gsTheme) private var theme
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
 
-    var onCreated: (() -> Void)? = nil
+    /// Called once the block is on disk. The host answers with what it
+    /// intends to do next; nil hosts get `.dismiss`. See CoachBuildLanding.
+    var onCreated: (() -> CoachBuildLanding)? = nil
 
     // Dials
     @State private var focus: GeneratorScience.Focus = .hypertrophy
@@ -140,7 +166,13 @@ struct CoachWizardView: View {
     /// athlete's existing log — demonstrate before you interrogate.
     @State private var firstContact: String?
 
+    /// Bumped on every generate. Drives both the scroll and the haptic.
+    @State private var previewTick = 0
+
+    private static let previewAnchor = "preview-head"
+
     var body: some View {
+        ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 if let completion = blockCompletion {
@@ -190,6 +222,27 @@ struct CoachWizardView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(GSSecondaryButtonStyle())
+
+                // The scroll target, and the reason it lives HERE rather
+                // than on the "Your week" header inside the preview.
+                //
+                // Owner 2026-08-26: "the routines populate below, and we
+                // have to intuit to scroll down." Building wrote a full
+                // week off the bottom of the screen and gave no sign it
+                // had happened.
+                //
+                // An anchor inside `if let preview` does not exist when
+                // onChange fires — scrollTo would aim at a view that is
+                // not laid out yet. This one is UNCONDITIONAL and
+                // zero-height, matching the chat-tail pattern in
+                // CoachHomeView, so it is always a valid target. It also
+                // sits ABOVE the shuffle button: everything between it
+                // and the preview is conditional, so anchoring here means
+                // the target's own position never shifts under the
+                // animation.
+                Color.clear
+                    .frame(height: 0)
+                    .id(Self.previewAnchor)
 
                 if preview != nil {
                     // Deterministic variety: rotates among candidates the
@@ -382,6 +435,13 @@ struct CoachWizardView: View {
                     presetHubName = hub.name
                 }
             }
+        }
+        .onChange(of: previewTick) { _, _ in
+            withAnimation(.easeOut(duration: 0.28)) {
+                proxy.scrollTo(Self.previewAnchor, anchor: .top)
+            }
+        }
+        .sensoryFeedback(.success, trigger: previewTick)
         }
     }
 
@@ -753,6 +813,11 @@ struct CoachWizardView: View {
         lastInputs = inputs
         lastCatalog = catalog
         preview = ProgramGenerator.generate(inputs: inputs, catalog: catalog)
+        // Monotonic rather than a bool, so REBUILD and "Shuffle the
+        // picks" scroll too. Regenerating into an already-visible preview
+        // is today's other silent moment: the week changes, nothing
+        // moves, and the athlete cannot tell the tap registered.
+        previewTick += 1
     }
 
     /// Whether the athlete must clear the PAR-Q+ before a program is
@@ -1575,8 +1640,9 @@ struct CoachWizardView: View {
             // effort - a booking failure never blocks the block.
             if scheduleSessions { await bookTrainingDays() }
             errorText = nil
-            onCreated?()
-            dismiss()
+            // The build landed. Where the athlete goes next is the
+            // host's call, and dismissing anyway would cancel it.
+            if onCreated?() != .handled { dismiss() }
         } catch { errorText = ErrorMapping.map(error).errorDescription }
     }
 }

@@ -253,7 +253,14 @@ struct BlockCalendarView: View {
                     .foregroundStyle(theme.neutral700)
             }
             NavigationLink {
-                CoachWizardView(onCreated: {})
+                // .dismiss on purpose: this view's `enrollment` and
+                // `weeks` are `let` values captured before the build, so
+                // it cannot render a block created after it appeared.
+                // Popping back to a calendar drawing the OLD block is
+                // today's behaviour and stays today's behaviour; sending
+                // the athlete to a screen showing the wrong week would be
+                // worse than sending them nowhere. Tracked separately.
+                CoachWizardView(onCreated: { .dismiss })
                     .background(theme.bg)
                     .navigationTitle("Plan the next block")
                     .navigationBarTitleDisplayMode(.inline)

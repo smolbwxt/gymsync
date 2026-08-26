@@ -68,6 +68,32 @@ CHANNELS = [
     ("drstacysims", "Dr Stacy Sims (female physiology, cycle)", "high"),
     ("DrAndyGalpin", "Dr Andy Galpin (exercise physiology, testing)", "high"),
     ("FoundMyFitness", "FoundMyFitness (Rhonda Patrick -- recovery)", "medium"),
+    # -- Practitioner / physique wave (owner 2026-08-26: "Chris Bumstead,
+    # Sam Sulek, Jeremy Ethier, Greg Doucette, and anyone else in that
+    # vein").
+    #
+    # A deliberately DIFFERENT kind of source from the two waves above, and
+    # the difference has to survive into the corpus. These are elite
+    # practitioners and high-reach coaches, not researchers: the signal is
+    # what people at the top of the sport actually DO and how they talk
+    # about it, which the science channels rarely show. The cost is rigor -
+    # very little here is cited, and some of it contradicts the evidence
+    # rows we already hold.
+    #
+    # So they carry weight "low", and every router's RIGOR map scores them
+    # at the bottom. A claim from here should reach the corpus graded
+    # `practice` or `opinion`, never `study`, and where it CONTRADICTS an
+    # existing strong row the contradiction is the finding.
+    #
+    # Jeremy Ethier was already enumerated in the first wave; the owner
+    # named him again, and re-listing is a no-op (enumerate.py skips
+    # channels already on disk).
+    ("cbum", "Chris Bumstead (5x Classic Physique Olympia)", "low"),
+    ("SamSulek", "Sam Sulek (high-volume physique training)", "low"),
+    ("GregDoucette", "Greg Doucette (IFBB pro, coaching content)", "low"),
+    ("RyanHumiston", "Ryan Humiston (physique, exercise selection)", "low"),
+    ("WillTennyson", "Will Tennyson (experiments, self-testing)", "low"),
+    ("NoelDeyzel", "Noel Deyzel (physique, technique cues)", "low"),
 ]
 
 
