@@ -294,9 +294,9 @@ enum ProgramGenerator {
                 }
                 let exclusions = isMainSlot ? alreadyChosen : alreadyChosen.union(usedAccessories)
                 var pick = select(slot: slot, from: usable,
+                                  excluding: exclusions,
                                   coveredSecondaries: coveredSecondaries,
                                   preferComplementary: inputs.preferVariedAccessories,
-                                  excluding: exclusions,
                                   focus: inputs.focus,
                                   focusMuscles: inputs.focusMuscles,
                                   experience: inputs.experience,
@@ -312,9 +312,12 @@ enum ProgramGenerator {
                                   deprioritized: inputs.deprioritizedExerciseIDs)
                 if pick == nil, !isMainSlot {
                     // Accessory pool exhausted — repeats beat holes.
+                    //
+                    // No variety tilt here on purpose: this is the last
+                    // resort where we have already accepted a repeat, so
+                    // asking it to prefer something complementary is asking
+                    // a question the pool has just answered "nothing left".
                     pick = select(slot: slot, from: usable,
-                                  coveredSecondaries: coveredSecondaries,
-                                  preferComplementary: inputs.preferVariedAccessories,
                                   excluding: alreadyChosen,
                                   focus: inputs.focus,
                                   focusMuscles: inputs.focusMuscles,
