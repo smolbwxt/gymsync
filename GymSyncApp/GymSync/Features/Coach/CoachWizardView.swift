@@ -612,8 +612,15 @@ struct CoachWizardView: View {
            let logs = try? await SessionRepository.recentSetLogs(userID: userID, since: since) {
             let byExercise = Dictionary(grouping: logs, by: \.exerciseID)
             for id in mainLiftIDs {
+                // Freeze the baseline from the CURRENT training
+                // era only. A layoff inside this window would
+                // otherwise freeze a pre-layoff max into the
+                // enrollment, and the campaign rung outranks every
+                // other source — so week one would prescribe a
+                // percentage of who they used to be.
                 guard let history = byExercise[id],
-                      let best = WorkingWeight.bestQualifyingSet(in: history) else { continue }
+                      let best = WorkingWeight.bestQualifyingSet(
+                                  in: TrainingHorizon.sinceReturn(history)) else { continue }
                 let oneRM = StatMath.estimatedOneRepMax(weight: best.weight, reps: best.reps)
                 baselines[id.uuidString.lowercased()] = NSDecimalNumber(decimal: oneRM).doubleValue
             }

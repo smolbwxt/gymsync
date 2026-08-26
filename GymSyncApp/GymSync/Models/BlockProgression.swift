@@ -253,6 +253,20 @@ enum BlockProgression {
 
     private static func summarize(_ history: [SetLog],
                                   lastSetToFailure: Bool) -> [SessionSummary] {
+        // Sessions from before a layoff are a different athlete's. Applied
+        // HERE, at the one choke point every rule reads, rather than as a
+        // parameter on `decide` — which has four call sites, two of which
+        // an earlier design missed, and where a fifth added later would
+        // silently reintroduce the defect.
+        //
+        // Without this, rule 2's `sessions.max(by: bestE1RM)` finds a
+        // two-year-old personal best and tells someone three sessions into
+        // a comeback that they have made no progress in 730 days — then
+        // picks its remedy from a logged RPE that was written from a 7.0
+        // default, landing on "push closer to failure, add a set". The
+        // return prescription, exactly inverted, delivered to the one
+        // athlete the corpus rates STRONG on undershooting.
+        let history = TrainingHorizon.sinceReturn(history)
         let bySession = Dictionary(grouping: history, by: \.sessionID)
         var out: [SessionSummary] = []
         for (_, rawLogs) in bySession {

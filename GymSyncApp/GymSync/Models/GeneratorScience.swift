@@ -462,15 +462,33 @@ enum GeneratorScience {
     static func daysSinceReturn(sessionDates: [Date],
                                 now: Date = .now,
                                 calendar: Calendar = .current) -> Int? {
+        guard let resumed = returnDate(sessionDates: sessionDates,
+                                       calendar: calendar) else { return nil }
+        return calendar.dateComponents([.day], from: resumed, to: now).day
+    }
+
+    /// The DAY training resumed after the most recent layoff.
+    ///
+    /// Extracted so there is exactly one gap-walk in the codebase: this
+    /// answers "when did they come back", `daysSinceReturn` answers "how
+    /// long ago", and `TrainingHorizon` answers "which sets count". Three
+    /// questions, one algorithm — two copies of a rule like this drift,
+    /// and the drift would be invisible because both halves would still
+    /// look correct on their own.
+    ///
+    /// The LAST qualifying gap wins: someone who has come back twice is
+    /// judged on their latest return, not their first.
+    static func returnDate(sessionDates: [Date],
+                           layoffDays: Int = layoffResetDays,
+                           calendar: Calendar = .current) -> Date? {
         let days = Set(sessionDates.map { calendar.startOfDay(for: $0) }).sorted()
         guard days.count >= 2 else { return nil }
-        var returnDate: Date?
+        var resumed: Date?
         for (previous, next) in zip(days, days.dropFirst()) {
             let gap = calendar.dateComponents([.day], from: previous, to: next).day ?? 0
-            if gap >= layoffResetDays { returnDate = next }
+            if gap >= layoffDays { resumed = next }
         }
-        guard let returnDate else { return nil }
-        return calendar.dateComponents([.day], from: returnDate, to: now).day
+        return resumed
     }
 
     /// Complexity gate (catalog labels; owner law: complexity GATES by

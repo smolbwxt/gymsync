@@ -81,6 +81,14 @@ struct WorkoutSessionView: View {
     // only a PROPOSAL until the athlete accepts it.
     @State private var soloCoachDecision: BlockProgression.Decision?
     @State private var soloCoachNoteExpanded = false
+    /// Set when the return horizon left nothing to prescribe from, so the
+    /// empty weight field arrives with a reason instead of reading as a
+    /// bug. Deliberately NOT routed through BlockProgression.Decision:
+    /// that surface is gated on `soloRoutineIsCoachProgram` plus a rep
+    /// range, so a returner on their own routine — the likeliest person to
+    /// come back to something familiar — would get the blank field and no
+    /// explanation at all.
+    @State private var soloReturnNote: String?
     /// Best substitution-graph swap for a flagged stall (5-channel corpus
     /// consensus: a stalled lift wants a variation, not another load tweak).
     @State private var soloStallSwapName: String?
@@ -1036,6 +1044,12 @@ struct WorkoutSessionView: View {
         } else {
             soloWeight = ""
         }
+        // Explain an empty field when the reason is a layoff. Only when it
+        // is ACTUALLY empty — a returner whose post-return sets already
+        // support a projection gets a number and needs no note.
+        soloReturnNote = (soloWeight.isEmpty
+                          && TrainingHorizon.isReturning(soloPriorSets + soloCurrentExerciseSets))
+            ? TrainingHorizon.emptyBarNote : nil
         soloReps = currentRoutineExercise?.targetReps.flatMap { leadingInt($0).map(String.init) } ?? ""
         // Carry diagnostics (field 2026-08-22): one Console filter
         // ("prefill rung") names which rung produced the number and what
@@ -2225,6 +2239,21 @@ struct WorkoutSessionView: View {
             }
             .frame(height: 30)
 
+            // Return note. Above the coach note and ungated — see
+            // soloReturnNote.
+            if let returnNote = soloReturnNote {
+                Color.clear.frame(height: 8)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: "arrow.uturn.backward.circle.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(theme.accent)
+                    Text(returnNote)
+                        .font(GSFont.body(12, relativeTo: .footnote))
+                        .foregroundStyle(theme.neutral700)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
             // Coach note (owner 2026-08-20: "compact note + reason"). One
             // line, expandable why; a deload proposal adds accept/dismiss
             // and changes NOTHING until accepted.

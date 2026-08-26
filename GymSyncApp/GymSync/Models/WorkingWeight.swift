@@ -68,11 +68,36 @@ enum WorkingWeight {
         now: Date = .now
     ) -> Suggestion? {
 
+        // THE RETURN HORIZON. Derived from the history we were already
+        // handed, never passed in — see TrainingHorizon for why this is
+        // not a parameter. When it is nil (nobody has had a layoff) every
+        // rung below behaves exactly as it did before.
+        //
+        // What it suppresses, and why each rung carries pre-layoff data:
+        //   1 campaign — a baseline frozen at an enrollment that predates
+        //     the layoff IS a pre-layoff max, wearing a percentage.
+        //   2 repGoal  — the unbounded best-ever set. THE defect: an
+        //     inverse-Epley projection of a two-year-old PR, on the bar,
+        //     on session one back.
+        //   5 seeded   — the onboarding anchor. A layoff detectable in
+        //     this log means signup precedes it, so the anchor is from a
+        //     different era of this lifter.
+        // Rung 4 (lastSet) needs no guard: callers derive it from this
+        // same `history`, so it is post-return by construction whenever a
+        // return exists at all.
+        let resumedOn = TrainingHorizon.returnDate(in: history, now: now)
+
         // 1 — CAMPAIGN. Outranks the routine's own number because it IS the
         // rep goal plus this week's modifier, already computed against a
         // baseline frozen at enrollment.
         if let enrollment,
            enrollment.endedAt == nil,
+           // A block enrolled before the layoff is prescribing percentages
+           // of who they used to be. Note `endedAt == nil` alone does NOT
+           // cover this: an abandoned block is never explicitly ended, so
+           // a stale enrollment stays "active" indefinitely and its
+           // clamped-forward week prescribes a PEAK percentage.
+           resumedOn.map({ enrollment.startedOn >= $0 }) ?? true,
            let template = enrollment.template,
            enrollment.focus.exerciseIDs?.contains(exerciseID) == true,
            let baseline = enrollment.baselineValue(for: exerciseID) {
@@ -104,7 +129,7 @@ enum WorkingWeight {
         // outrank this: campaign percentages (rung 1) and BlockProgression
         // decisions at the call site.
         if let targetReps, targetReps > 0,
-           let best = bestQualifyingSet(in: history),
+           let best = bestQualifyingSet(in: TrainingHorizon.sinceReturn(history, now: now)),
            let projected = StatMath.projectedWeight(prWeight: best.weight,
                                                     prReps: best.reps,
                                                     targetReps: targetReps) {
@@ -136,7 +161,7 @@ enum WorkingWeight {
         // DESIGN: the first real logged set (rung 3/4) permanently outranks
         // the seed, and a seed placed higher could override a lighter real
         // first session.
-        if let seededPounds, seededPounds > 0 {
+        if let seededPounds, seededPounds > 0, resumedOn == nil {
             return Suggestion(pounds: seededPounds, source: .seeded)
         }
 
