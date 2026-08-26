@@ -203,6 +203,19 @@ enum HealthTriage {
         return due.filter { followUps[$0.id] == nil }
     }
 
+    /// The Step-1 flags whose follow-ups carry an escalating answer.
+    static func escalating(flagged: [String],
+                           followUps: [String: String]) -> [String] {
+        flagged.flatMap { flag -> [String] in
+            let set = conditionFlags.contains(flag) ? conditionFollowUps
+                    : constraintFlags.contains(flag) ? constraintFollowUps : []
+            let didEscalate = set.contains { followUp in
+                followUp.options.contains { $0.id == followUps[followUp.id] && $0.escalates }
+            }
+            return didEscalate ? [flag] : []
+        }
+    }
+
     /// The joint an athlete named, for TrainingProfile.cautionJoints.
     static func cautionJoint(from followUps: [String: String]) -> String? {
         followUps["msk_area"]
@@ -283,24 +296,19 @@ enum HealthTriage {
         let hard = flagged.filter(hardFlags.contains)
         if !hard.isEmpty { return .referOut(flagged: hard) }
 
-        // Soft flags: unanswered follow-ups mean we do not KNOW yet, which
+        // An ESCALATING answer already given ends it, before anything
+        // else is asked. Someone who has just said a doctor told them not
+        // to train that joint must not then be asked WHICH joint before
+        // being refused - the same "no more theatre" rule the hard flags
+        // follow, applied to an answer rather than to a question.
+        let escalatedNow = escalating(flagged: flagged, followUps: followUps)
+        if !escalatedNow.isEmpty { return .referOut(flagged: escalatedNow) }
+
+        // Otherwise, unanswered follow-ups mean we do not KNOW yet, which
         // is neither cleared nor refused. Returning .referOut here is what
         // made a single YES a permanent refusal.
         let pending = pendingFollowUps(answers: answers, followUps: followUps)
         if let next = pending.first { return .incomplete(next: next) }
-
-        // Answered. Any escalating answer refers; otherwise the condition
-        // is controlled, asymptomatic and the athlete is already training,
-        // which is the profile the follow-up pages exist to wave through.
-        let escalated = flagged.flatMap { flag -> [String] in
-            let set = conditionFlags.contains(flag) ? conditionFollowUps
-                    : constraintFlags.contains(flag) ? constraintFollowUps : []
-            let didEscalate = set.contains { followUp in
-                followUp.options.contains { $0.id == followUps[followUp.id] && $0.escalates }
-            }
-            return didEscalate ? [flag] : []
-        }
-        if !escalated.isEmpty { return .referOut(flagged: escalated) }
         if let stage { return .clearedWithAdvisory(stage.advisory) }
         return .cleared
     }

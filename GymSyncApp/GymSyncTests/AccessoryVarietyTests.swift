@@ -18,12 +18,13 @@ final class AccessoryVarietyTests: XCTestCase {
 
     private func cat(_ n: Int, _ name: String, _ primary: String,
                      secondaries: [String] = [],
-                     equipment: String = "machine") -> ProgramGenerator.CatalogExercise {
+                     equipment: String = "machine",
+                     pattern: String = "isolation") -> ProgramGenerator.CatalogExercise {
         ProgramGenerator.CatalogExercise(
             id: UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", n))!,
             name: name, primaryMuscle: primary, secondaryMuscles: secondaries,
             category: "isolation", equipment: equipment,
-            movementPattern: "isolation", rank: n)
+            movementPattern: pattern, rank: n)
     }
 
     // MARK: - The preference reaches the generator
@@ -127,8 +128,10 @@ final class AccessoryVarietyTests: XCTestCase {
     func testMainsAreNeverAffected() {
         // The other half of the same corpus row: a main has to sit still
         // long enough to be progressed. Variety is an ACCESSORY flavour.
+        // The movement pattern has to MATCH the slot, or selection returns
+        // nil for a reason that has nothing to do with variety.
         let dupMain = cat(1, "Bench", "chest", secondaries: ["triceps"],
-                          equipment: "barbell")
+                          equipment: "barbell", pattern: "push_horizontal")
         let pick = ProgramGenerator.select(
             slot: .pattern("push_horizontal", main: true), from: [dupMain],
             excluding: [], coveredSecondaries: ["triceps"],

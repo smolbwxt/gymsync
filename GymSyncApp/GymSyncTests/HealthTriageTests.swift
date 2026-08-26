@@ -13,16 +13,42 @@ final class HealthTriageTests: XCTestCase {
         XCTAssertEqual(HealthTriage.evaluate(answers: answers), .cleared)
     }
 
-    func testAnySingleYesRefersOut() {
-        // PAR-Q+ decision rule: one YES is enough. Test every question so
-        // no future edit can quietly make one of them non-blocking.
+    func testAnySingleYesStopsTheClearance() {
+        // UPDATED 2026-08-26, deliberately, and this is not a stale test
+        // being waved through. It used to assert that any YES produced
+        // .referOut - and making three of them non-blocking was the POINT
+        // of the Step-2 work. PAR-Q+ Step 1 ROUTES, it does not decide:
+        // its own rule sends a YES to the follow-up condition pages OR to
+        // a clinician, and we had shipped only the second branch, refusing
+        // a levothyroxine taker forever.
+        //
+        // What must still hold, and what this now guards: a YES on ANY
+        // question stops the CLEARANCE. It may route to a follow-up, but
+        // it can never come back cleared without answering one.
         for question in HealthTriage.questions {
             var answers = Dictionary(uniqueKeysWithValues:
                 HealthTriage.questions.map { ($0.id, false) })
             answers[question.id] = true
+            switch HealthTriage.evaluate(answers: answers) {
+            case .cleared, .clearedWithAdvisory:
+                XCTFail("a YES on \(question.id) cleared without a follow-up")
+            case .referOut, .incomplete, .delay:
+                break
+            }
+        }
+    }
+
+    func testEveryHardFlagStillRefusesOutright() {
+        // The half of the old assertion that must NOT soften: no
+        // self-reported follow-up can overturn chest pain, syncope, a
+        // supervision instruction, or a cardiac diagnosis.
+        for id in HealthTriage.hardFlags {
+            var answers = Dictionary(uniqueKeysWithValues:
+                HealthTriage.questions.map { ($0.id, false) })
+            answers[id] = true
             XCTAssertEqual(HealthTriage.evaluate(answers: answers),
-                           .referOut(flagged: [question.id]),
-                           "a YES on \(question.id) must stop programming")
+                           .referOut(flagged: [id]),
+                           "\(id) must refer with no follow-up offered")
         }
     }
 
