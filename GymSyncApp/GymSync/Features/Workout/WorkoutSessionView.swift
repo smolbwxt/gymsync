@@ -1598,6 +1598,34 @@ struct WorkoutSessionView: View {
                     restRecoveryPill(now: context.date, start: restStart, end: restEndAt)
                 }
             }
+            // SWAP DURING TRANSIT (field report). The swap affordance
+            // lived only on the live set card — so it was available while
+            // you were standing at the station, and gone during the one
+            // window where you actually need it: walking toward a station
+            // and finding it taken. The flag for that window already
+            // existed; nothing offered a way out of it.
+            //
+            // Transit only. A swap between sets of the SAME exercise is a
+            // different act with different consequences for the set you
+            // just logged, and the set card already owns it.
+            if soloRestIsTransit, currentExercise != nil {
+                Color.clear.frame(height: 10)
+                Button { showSwapSheet = true } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.system(size: 11, weight: .bold))
+                        Text("STATION TAKEN? SWAP IT")
+                            .font(GSFont.bold(11, relativeTo: .caption2))
+                            .tracking(0.7)
+                    }
+                    .foregroundStyle(theme.text)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(GS3DButtonStyle(face: theme.raised3DFace,
+                                             lip: theme.raised3DLip,
+                                             cornerRadius: 12, lipHeight: 4))
+            }
             Spacer(minLength: 12)
             VStack(spacing: 7) {
                 Text("UP NEXT")
