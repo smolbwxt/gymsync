@@ -80,7 +80,10 @@ struct CoachWizardView: View {
     // consult work has been closing all day.
     @State private var daysSinceLastSession: Int?
     @State private var daysSinceReturn: Int?
-    @State private var standingRules: [String] = []
+    /// The whole rule, not just its text. The structured reading is what
+    /// lets the generator act on one; dropping to `.map(\.rule)` here is
+    /// what made every rule decoration for as long as the feature existed.
+    @State private var standingRules: [TrainingRule] = []
     /// What the volume search has settled on per muscle. Empty until the
     /// recovery probe has told it something, which is the normal case for
     /// a new athlete and a straight pass-through in the generator.
@@ -882,7 +885,7 @@ struct CoachWizardView: View {
     /// that was.
     private func readTrainingHistory() async {
         guard let userID = appState.currentProfile?.id else { return }
-        standingRules = ((try? await TrainingRulesRepository.active()) ?? []).map(\.rule)
+        standingRules = (try? await TrainingRulesRepository.active()) ?? []
         volumeTargets = Dictionary(
             uniqueKeysWithValues: ((try? await VolumeTargetRepository.all()) ?? [])
                 .map { ($0.muscle, $0.weeklySets) })
@@ -1717,6 +1720,12 @@ struct CoachWizardView: View {
             // from the same max-spacing pattern scheduleHint shows. Best
             // effort - a booking failure never blocks the block.
             if scheduleSessions { await bookTrainingDays() }
+            // Stamp the rules this build actually acted on. Until a rule
+            // is stamped it reads as waiting, which is what lets Coach say
+            // "I can build this now" when a lever ships for something the
+            // athlete asked for long ago.
+            await TrainingRulesRepository.markApplied(
+                standingRules.filter(\.isWaitingToBeBuilt).map(\.id))
             errorText = nil
             // The build landed. Where the athlete goes next is the
             // host's call, and dismissing anyway would cancel it.

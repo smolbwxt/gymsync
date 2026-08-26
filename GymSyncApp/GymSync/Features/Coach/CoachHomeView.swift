@@ -22,6 +22,12 @@ struct CoachHomeView: View {
     /// whole point of the 2026-08-26 fix is that this is never nil in
     /// silence: if their words did not stick, they are told.
     @State private var ruleTrouble: String?
+    /// Rules Coach has a reading for and has not been told whether it got
+    /// them right. A lever never fires from an unconfirmed reading.
+    @State private var toConfirm: [TrainingRule] = []
+    /// Rules Coach CAN now build and has not built yet - the mirror of
+    /// "the research came back", for capability instead of knowledge.
+    @State private var nowBuildable: [TrainingRule] = []
     /// Loaded for the consult, whose constraint chips must offer labels
     /// selection recognises — see ConsultVocabulary.
     @State private var catalog: [Exercise] = []
@@ -66,6 +72,14 @@ struct CoachHomeView: View {
                     ruleTroubleNotice(ruleTrouble)
                 }
 
+                ForEach(toConfirm) { rule in
+                    confirmReadingCard(rule)
+                }
+
+                if !nowBuildable.isEmpty {
+                    nowBuildableNotice
+                }
+
                 if !researched.isEmpty {
                     researchNotice
                 }
@@ -106,6 +120,7 @@ struct CoachHomeView: View {
                 profile = loaded
             }
             researched = await CoachChatRepository.researchedQuestions()
+            await readRules()
             catalog = (try? await ExerciseRepository.fetchAll()) ?? []
             await readCadence()
         }
@@ -266,13 +281,23 @@ struct CoachHomeView: View {
         // A rule that cannot be stored is reported, because the athlete
         // just told us something and deserves to know it did not stick.
         for rule in answers.standingRules {
+            // Read it into a structured intent before storing. Failure
+            // here is not an error: RuleClassifier returns .unknown when
+            // it cannot do better, which stores the rule verbatim, reports
+            // it as heard-not-built, and counts it in the queue of levers
+            // worth building next.
+            let reading = await RuleClassifier.read(rule, catalog: catalog)
             do {
                 try await TrainingRulesRepository.add(
-                    rule, source: "consult", userID: userID)
+                    rule, source: "consult",
+                    intent: reading.intent,
+                    slots: reading.slots.isEmpty ? nil : reading.slots,
+                    userID: userID)
             } catch {
                 ruleTrouble = ErrorMapping.map(error).errorDescription
             }
         }
+        await readRules()
     }
 
     /// The trailing-8-week cadence, from set logs. Distinct DAYS, not log
@@ -357,6 +382,103 @@ struct CoachHomeView: View {
         .overlay(RoundedRectangle(cornerRadius: 12)
             .strokeBorder(theme.accent, lineWidth: 1.5))
         .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    /// "Here is what I think you meant. Right?"
+    ///
+    /// The gate between a model's reading and the athlete's training. It
+    /// exists because the failure it prevents is invisible: a rule read
+    /// wrongly would quietly reshape their program, and they would have
+    /// no reason to suspect the rule was why.
+    private func confirmReadingCard(_ rule: TrainingRule) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("DID I GET THIS RIGHT?")
+                .font(GSFont.bold(10, relativeTo: .caption2))
+                .tracking(1.1)
+                .foregroundStyle(theme.accent)
+            Text("\u201c\(rule.rule)\u201d")
+                .font(GSFont.body(12, relativeTo: .caption))
+                .foregroundStyle(theme.neutral700)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(rule.intent.reading(slots: rule.slots ?? [:]))
+                .font(GSFont.bold(15, relativeTo: .headline))
+                .foregroundStyle(theme.text)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 10) {
+                Button {
+                    Task {
+                        await TrainingRulesRepository.setConfirmed(rule.id, true)
+                        await readRules()
+                    }
+                } label: {
+                    Text("YES, BUILD IT")
+                        .font(GSFont.bold(13, relativeTo: .headline))
+                        .tracking(0.6)
+                        .foregroundStyle(theme.bg)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(GS3DButtonStyle(face: theme.accent, cornerRadius: 13))
+
+                Button {
+                    Task {
+                        await TrainingRulesRepository.setConfirmed(rule.id, false)
+                        await readRules()
+                    }
+                } label: {
+                    Text("NOT QUITE")
+                        .font(GSFont.bold(13, relativeTo: .headline))
+                        .tracking(0.6)
+                        .foregroundStyle(theme.text)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                }
+                .buttonStyle(GS3DButtonStyle(face: theme.raised3DFace,
+                                             lip: theme.raised3DLip,
+                                             cornerRadius: 13))
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .gs3DCard(cornerRadius: 12)
+    }
+
+    /// The capability mirror of "the research came back".
+    ///
+    /// Owner 2026-08-26: "we should have unfulfilled request log that we
+    /// then accumulate parts and upgrade the generator to account for in
+    /// the future." Because buildability is derived from this build's
+    /// lever registry rather than stored per row, shipping a lever makes
+    /// every rule ever recorded with that intent light up here at once -
+    /// including ones typed long before it existed.
+    private var nowBuildableNotice: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("I CAN BUILD THIS NOW")
+                .font(GSFont.bold(10, relativeTo: .caption2))
+                .tracking(1.1)
+                .foregroundStyle(theme.accent)
+            ForEach(nowBuildable) { rule in
+                Text("\u201c\(rule.rule)\u201d")
+                    .font(GSFont.body(12, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral700)
+                    .lineLimit(2)
+            }
+            Text("Build your program again and it goes in.")
+                .font(GSFont.body(11, relativeTo: .caption))
+                .foregroundStyle(theme.neutral500)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.surface)
+        .overlay(RoundedRectangle(cornerRadius: 12)
+            .strokeBorder(theme.accent.opacity(0.4), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func readRules() async {
+        let all = (try? await TrainingRulesRepository.active()) ?? []
+        toConfirm = all.filter(\.needsConfirmation)
+        nowBuildable = all.filter(\.isWaitingToBeBuilt)
     }
 
     private var researchNotice: some View {

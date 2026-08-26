@@ -105,6 +105,18 @@ enum ProgramGenerator {
         /// UI renders these differently, so "I heard you and could not do
         /// it" stops looking like "I did it".
         var unhonoredRules: [String] = []
+        /// Pair this lift onto EVERY working slot (RuleIntent.pairWith).
+        ///
+        /// The first standing rule the generator can actually act on.
+        /// Owner 2026-08-26: "I asked if I could have each one of my sets,
+        /// super set with push-ups".
+        ///
+        /// There is no matching field for RuleIntent.avoid, because none
+        /// is needed - that rule routes into `excludedExerciseIDs`, which
+        /// usableCatalog has always filtered on. Worth noting: it is the
+        /// difference between a lever that costs a day and one that costs
+        /// a line, and the substrate decided that, not the feature.
+        var supersetEveryWith: UUID? = nil
         /// Dedicated cardio days appended after the lifting split
         /// (owner 2026-08-14) — prescribed as zone + MINUTES. When
         /// lifting + cardio exceed 7 calendar days, the overflow PAIRS
@@ -849,6 +861,46 @@ enum ProgramGenerator {
         }
         if inputs.experience == .new {
             notes.append("Beginner volume (6–10 weekly sets per muscle) grows you just as fast — extra sets are cost without benefit in year one (Schoenfeld 2018).")
+        }
+
+        // STANDING RULE: pair one lift onto every working slot.
+        //
+        // Runs AFTER the structure switch so it composes with whatever
+        // the athlete chose, and after the volume balance so it cannot be
+        // trimmed away by it - this is an explicit instruction, not a
+        // suggestion the balancer gets to overrule.
+        //
+        // The volume cost is real and deliberate: a five-lift day becomes
+        // ten entries. They asked for it on every set, so the note says
+        // plainly what that means rather than quietly pairing only some.
+        if let pairID = inputs.supersetEveryWith,
+           let paired = catalog.first(where: { $0.id == pairID }) {
+            var added = 0
+            for d in days.indices {
+                var rebuilt: [Exercise] = []
+                var group = days[d].exercises.compactMap(\.supersetGroup).max() ?? 0
+                for ex in days[d].exercises {
+                    rebuilt.append(ex)
+                    guard ex.cardioZone == nil, ex.exerciseID != pairID else { continue }
+                    group += 1
+                    // Host and partner share a fresh group and sit
+                    // adjacent - the live session resolves a pair by
+                    // probing one slot forward and one back, so anything
+                    // else degrades silently to straight sets.
+                    rebuilt[rebuilt.count - 1].supersetGroup = group
+                    rebuilt.append(Exercise(
+                        exerciseID: paired.id, name: paired.name,
+                        sets: ex.sets, repsLow: 8, repsHigh: 15,
+                        restSeconds: 0, percentOfMax: nil,
+                        isMain: false, slot: nil,
+                        supersetGroup: group))
+                    added += 1
+                }
+                days[d].exercises = rebuilt
+            }
+            if added > 0 {
+                notes.append("Your rule, built: \(paired.name) is paired with every lift \u{2014} \(added) added sets across the week. It alternates with the lift it is paired to, so a session runs longer than the set count alone suggests.")
+            }
         }
 
         // INTENSITY TECHNIQUE: one drop set, on the last isolation lift

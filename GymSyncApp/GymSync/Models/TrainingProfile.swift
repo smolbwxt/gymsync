@@ -413,7 +413,7 @@ struct TrainingProfile: Codable, Equatable, Sendable {
                          birthYear: Int? = nil,
                          daysSinceLastSession: Int? = nil,
                          daysSinceReturn: Int? = nil,
-                         standingRules: [String] = [],
+                         standingRules: [TrainingRule] = [],
                          volumeTargets: [String: Int] = [:]) -> ProgramGenerator.Inputs {
         // Training age DECAYS (NSCA): a lifter several months away is a
         // novice again, whatever they once were and whatever they typed.
@@ -456,7 +456,34 @@ struct TrainingProfile: Codable, Equatable, Sendable {
         // pairing, an avoided day, an ordering preference), the honest
         // answer for all of them is "heard, not built". Saying that out
         // loud is the fix; pretending otherwise was the defect.
-        inputs.unhonoredRules.append(contentsOf: standingRules)
+        // Each rule goes to a LEVER or to the honest-miss list. Nothing
+        // is dropped and nothing is dressed up as a decision Coach made.
+        //
+        // `RuleIntent.isBuildable` is the single registry of what this
+        // build can do, so shipping a lever moves rules out of the miss
+        // list automatically - including rules typed long before it
+        // existed. That is the point of classifying the intent and
+        // deriving buildability rather than storing a verdict.
+        for rule in standingRules {
+            switch rule.intent {
+            case .pairWith:
+                if let raw = rule.slots?["exercise_id"], let id = UUID(uuidString: raw) {
+                    inputs.supersetEveryWith = id
+                } else {
+                    inputs.unhonoredRules.append(rule.rule)
+                }
+            case .avoid:
+                // No new generator code: usableCatalog has always
+                // filtered excludedExerciseIDs.
+                if let raw = rule.slots?["exercise_id"], let id = UUID(uuidString: raw) {
+                    inputs.excludedExerciseIDs.insert(id)
+                } else {
+                    inputs.unhonoredRules.append(rule.rule)
+                }
+            case .orderBefore, .lightDay, .unknown:
+                inputs.unhonoredRules.append(rule.rule)
+            }
+        }
         // An explicit argument wins; otherwise the profile's own focus
         // stands, so a focus set once in the consult keeps applying. Left
         // nil when there is none — nil means "no preference", while an
