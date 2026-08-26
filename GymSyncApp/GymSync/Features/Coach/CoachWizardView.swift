@@ -312,6 +312,20 @@ struct CoachWizardView: View {
                 structure = saved.sessionStructure
                 appetite = saved.intensityAppetite
                 noGoPatterns = Set(saved.excludedPatterns)
+                // Equipment was the one field this block forgot, and it
+                // is the one with the loudest failure: an athlete answers
+                // "dumbbells only" in the consult, presses BUILD IT, and
+                // gets a full-gym program. The dial defaults to all-on, so
+                // a missing hydration does not merely fail to restore the
+                // answer — currentProfile() then writes nil back over it
+                // (all-on means "no constraint"), erasing it for good.
+                //
+                // That is the credibility failure the consult's own doc
+                // names as the thing it exists to avoid: proposing lifts
+                // the athlete has no way to perform.
+                if let savedEquipment = saved.equipment, !savedEquipment.isEmpty {
+                    equipment = savedEquipment
+                }
                 days = saved.daysPerWeek
                 sessionMinutes = saved.sessionMinutes
                 experience = saved.trainingAge.experience

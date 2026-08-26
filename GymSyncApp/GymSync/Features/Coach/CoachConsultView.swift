@@ -386,7 +386,17 @@ struct CoachConsultView: View {
         case "commitment":
             // Store the number the athlete was SHOWN alongside their
             // choice, so what we write is what they agreed to.
-            if values.first == "commit", let days = recommendedDaysPerWeek {
+            //
+            // From CONTEXT, not from the view's stored property. The
+            // question was rendered by ConsultProbe.ask(_:in: context),
+            // and the days answer immediately above updates
+            // context.recommendedDaysPerWeek — so reading the view's
+            // property here recorded a different number than the sentence
+            // the athlete actually read. Someone logging 2/week who asked
+            // for 5 read "the work will take 5 days a week", tapped I'LL
+            // COMMIT, and had 3 written down. The comment two lines up
+            // asserted the opposite of what the code did.
+            if values.first == "commit", let days = context.recommendedDaysPerWeek {
                 recorded = ["commit", "\(days)"]
                 next.statedDaysPerWeek = days
             }
