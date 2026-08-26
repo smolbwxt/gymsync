@@ -43,9 +43,17 @@ import XCTest
 /// a required parameter, so a call site that forgets it does not build.
 final class StandingRulesTests: XCTestCase {
 
+    /// A rule as it arrives from the repository. Unclassified and
+    /// unconfirmed, which is the state every rule is in before the
+    /// on-device model has read it - and therefore the state these tests
+    /// care about, since an unconfirmed reading must never fire a lever.
+    private func rule(_ text: String) -> TrainingRule {
+        TrainingRule(id: UUID(), rule: text)
+    }
+
     func testARuleReachesTheGeneratorAsAnUnhonoredRule() {
         let inputs = TrainingProfile().generatorInputs(
-            durationWeeks: 8, standingRules: ["pulls before arms"])
+            durationWeeks: 8, standingRules: [rule("pulls before arms")])
         XCTAssertTrue(inputs.unhonoredRules.contains("pulls before arms"),
                       "the rule never reached the program")
     }
@@ -55,7 +63,7 @@ final class StandingRulesTests: XCTestCase {
         // the generator DID; a rule it cannot act on must not sit there,
         // because the UI renders that list as decisions.
         let inputs = TrainingProfile().generatorInputs(
-            durationWeeks: 8, standingRules: ["keep Saturdays light"])
+            durationWeeks: 8, standingRules: [rule("keep Saturdays light")])
         XCTAssertFalse(
             inputs.advisoryNotes.contains { $0.contains("keep Saturdays light") },
             "a rule Coach cannot act on is being displayed as a decision it made")
@@ -66,15 +74,16 @@ final class StandingRulesTests: XCTestCase {
         // under a heading that already says who said it, so a prefix
         // would only get in the way of recognising their own sentence.
         let inputs = TrainingProfile().generatorInputs(
-            durationWeeks: 8, standingRules: ["keep Saturdays light"])
+            durationWeeks: 8, standingRules: [rule("keep Saturdays light")])
         XCTAssertEqual(inputs.unhonoredRules, ["keep Saturdays light"])
     }
 
     func testEveryRuleSurvives() {
         let rules = ["pulls before arms", "keep Saturdays light", "no overhead barbell"]
-        let inputs = TrainingProfile().generatorInputs(durationWeeks: 8, standingRules: rules)
-        for rule in rules {
-            XCTAssertTrue(inputs.unhonoredRules.contains(rule), "dropped: \(rule)")
+        let inputs = TrainingProfile().generatorInputs(
+            durationWeeks: 8, standingRules: rules.map(rule))
+        for text in rules {
+            XCTAssertTrue(inputs.unhonoredRules.contains(text), "dropped: \(text)")
         }
     }
 
@@ -93,7 +102,7 @@ final class StandingRulesTests: XCTestCase {
         profile.daysPerWeek = 2
         let baseline = profile.generatorInputs(durationWeeks: 8).advisoryNotes
         let withRule = profile.generatorInputs(durationWeeks: 8,
-                                               standingRules: ["pulls before arms"])
+                                               standingRules: [rule("pulls before arms")])
         XCTAssertEqual(withRule.advisoryNotes, baseline,
                        "a standing rule changed the notes the generator wrote")
     }
@@ -103,7 +112,7 @@ final class StandingRulesTests: XCTestCase {
         // act on has to survive onto the Program, or the destination has
         // nothing to show and the athlete is back to silence.
         let inputs = TrainingProfile().generatorInputs(
-            durationWeeks: 8, standingRules: ["superset every set with push-ups"])
+            durationWeeks: 8, standingRules: [rule("superset every set with push-ups")])
         let program = ProgramGenerator.generate(inputs: inputs, catalog: [])
         XCTAssertEqual(program.unhonoredRules, ["superset every set with push-ups"])
     }
