@@ -13,6 +13,7 @@ Usage:  python enumerate.py [--channel HANDLE] [--out DIR]
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -93,14 +94,110 @@ CHANNELS = [
     ("GregDoucette", "Greg Doucette (IFBB pro, coaching content)", "low"),
     ("RyanHumiston", "Ryan Humiston (physique, exercise selection)", "low"),
     ("WillTennyson", "Will Tennyson (experiments, self-testing)", "low"),
+    # Arrived by accident (a dead @EricCressey handle searched into
+    # his channel) and kept on purpose: 1037 episodes of a real S&C
+    # podcast, now under his own name and his own weight.
+    ("MikeRobertson", "Mike Robertson (Physical Preparation Podcast)", "medium"),
     ("NoelDeyzel", "Noel Deyzel (physique, technique cues)", "low"),
 ]
 
 
+# Channels whose real URL is not youtube.com/@<handle>. The keys stay the
+# handle strings because they are also the corpus filenames and the
+# `channel` field on every stored transcript; only the URL is overridden.
+#
+# Added 2026-08-26 after the search fallback below was caught adopting the
+# WRONG CHANNEL in silence. @cbum, @SamSulek and @EricCressey were all
+# dead handles, so each fell through to a video search that returned,
+# respectively, a motivation-reupload channel called CHAMPION MENTALITY,
+# Jeff Nippard, and Mike Robertson. Nothing downstream could tell the
+# difference: the corpus recorded our own intended label and never what
+# was actually fetched, so the mistake could only be found by reading
+# video titles and noticing they belonged to someone else.
+CHANNEL_URL = {
+    "cbum": "https://www.youtube.com/@ChrisBumstead/videos",
+    "SamSulek": "https://www.youtube.com/@sam_sulek/videos",
+    "EricCressey":
+        "https://www.youtube.com/channel/UCNkYtGj3dwmJB3KW4G-cRrg/videos",
+}
+
+
+# Words that describe what a channel is ABOUT rather than who it is. They
+# have to be stripped or two unrelated baseball coaches would "match".
+_GLOSS = {"the", "and", "dr", "coach", "coaching", "training", "fitness",
+          "official", "channel", "performance", "strength", "team", "tv",
+          "baseball", "football", "wrestling", "combat", "physique",
+          "classic", "olympia", "exercise", "science", "based", "high",
+          "volume", "technique", "cues", "self", "testing", "experiments",
+          "recovery", "medicine", "pro", "ifbb", "natural", "lifting",
+          "gym", "health", "sports", "sport", "powerlifting", "hypertrophy",
+          "physiology", "nutrition", "content"}
+
+
+def _tokens(text: str):
+    """Identity words from the WHOLE label, gloss removed.
+
+    The parenthetical is kept rather than discarded, because for several
+    of these channels it holds the actual person: "Biolayne (Layne
+    Norton)" resolves to a channel called "Dr. Layne Norton", and only the
+    parenthetical connects them.
+    """
+    return {w for w in re.findall(r"[a-z0-9]+", text.lower())
+            if len(w) > 2 and w not in _GLOSS}
+
+
+def _acronym(text: str) -> str:
+    """First letters of the head, digits kept whole: "3D Muscle Journey"
+    becomes "3dmj", which is how Team3DMJ names itself."""
+    words = [w for w in re.findall(r"[a-z0-9]+", text.split("(")[0].lower())
+             if w not in _GLOSS]
+    return "".join(w if w[0].isdigit() else w[0] for w in words)
+
+
+def looks_like(intended: str, resolved: str) -> bool:
+    """Does the channel we landed on plausibly BELONG to who we asked for?
+
+    Deliberately generous about formatting and strict about identity.
+    Team3DMJ really is 3D Muscle Journey and "Dr. Layne Norton" really is
+    Biolayne, so an exact string match would throw away good data. But
+    CHAMPION MENTALITY shares no identity token with Chris Bumstead, and
+    Jeff Nippard shares none with Sam Sulek - which is the entire class of
+    failure this exists to stop.
+    """
+    a, b = _tokens(intended), _tokens(resolved)
+    if not a or not b:
+        return False
+    # A shared identity word. Covers the ordinary case and, thanks to
+    # _tokens keeping the parenthetical, "Biolayne (Layne Norton)" against
+    # "Dr. Layne Norton".
+    if a & b:
+        return True
+    # One name nested in another: "layne" inside "biolayne". Long tokens
+    # only - short ones collide by accident.
+    if any(x in y or y in x
+           for x in a if len(x) >= 5
+           for y in b if len(y) >= 5):
+        return True
+    # An acronym the channel uses as its name. Three characters minimum,
+    # because two-letter initials match far too much: "Chris Bumstead"
+    # would otherwise be "cb", and cb appears inside ordinary words.
+    for full, other in ((intended, b), (resolved, a)):
+        acr = _acronym(full)
+        if len(acr) >= 3 and any(acr in tok for tok in other):
+            return True
+    return False
+
+
 def resolve_handle(name: str, timeout: int = 240):
-    """Find a channel's canonical URL by searching for its content — the
-    fallback when a guessed @handle 404s (several of these channels use
-    handles that don't match their display name)."""
+    """Search for a channel by name - and REFUSE the result unless the
+    channel found is plausibly the one asked for.
+
+    The verification is the entire point. Without it this function is a
+    machine for fabricating corpora: every dead handle silently becomes
+    somebody else's channel, and that channel then inherits the rigor
+    weight assigned to the person we thought we were reading. Returning
+    None and failing loudly is strictly better than returning a stranger.
+    """
     cmd = [sys.executable, "-m", "yt_dlp", "--flat-playlist", "-J",
            "--playlist-end", "1", f"ytsearch1:{name}"]
     try:
@@ -108,6 +205,11 @@ def resolve_handle(name: str, timeout: int = 240):
         data = json.loads(proc.stdout)
         entry = (data.get("entries") or [None])[0]
         if entry and entry.get("channel_id"):
+            got = entry.get("channel") or ""
+            if not looks_like(name, got):
+                print("  REFUSED fallback for %r: search returned %r, "
+                      "which is a different channel" % (name, got), flush=True)
+                return None
             return f"https://www.youtube.com/channel/{entry['channel_id']}/videos"
     except Exception:
         pass
@@ -138,7 +240,8 @@ def enumerate_channel(handle: str, name: str, timeout: int = 900):
     upload dates (the extractor arg that makes date filtering possible without
     a per-video metadata fetch)."""
     started = time.time()
-    data, err = _run_enum(f"https://www.youtube.com/@{handle}/videos", timeout)
+    data, err = _run_enum(CHANNEL_URL.get(
+        handle, f"https://www.youtube.com/@{handle}/videos"), timeout)
     if data is None:
         url = resolve_handle(name)
         if url:
@@ -146,6 +249,13 @@ def enumerate_channel(handle: str, name: str, timeout: int = 900):
     elapsed = time.time() - started
     if data is None:
         return None, elapsed, err
+    # The second gate, and the one that would have caught this on day one:
+    # check what came back even when the URL was taken at face value, so a
+    # hijacked or renamed handle cannot pass either.
+    resolved = data.get("channel") or data.get("title") or ""
+    if resolved and not looks_like(name, resolved):
+        return None, elapsed, ("resolved to %r, which is not %r - refusing "
+                               "to store it" % (resolved, name))
     rows = []
     for entry in data.get("entries", []) or []:
         if not entry or not entry.get("id"):
@@ -157,7 +267,7 @@ def enumerate_channel(handle: str, name: str, timeout: int = 900):
             "timestamp": entry.get("timestamp"),
             "view_count": entry.get("view_count"),
         })
-    return rows, elapsed, None
+    return {"rows": rows, "resolved": resolved}, elapsed, None
 
 
 def main() -> None:
@@ -188,8 +298,13 @@ def main() -> None:
         if rows is None:
             print(f"  FAIL {handle}: {err}", flush=True)
             continue
-        json.dump({"handle": handle, "name": name, "weight": weight, "videos": rows},
+        resolved, rows = rows["resolved"], rows["rows"]
+        # Store what was ACTUALLY fetched. The old file recorded only our
+        # own intended label, which is why a wrong channel was invisible.
+        json.dump({"handle": handle, "name": name, "weight": weight,
+                   "resolved_channel": resolved, "videos": rows},
                   open(path, "w", encoding="utf-8"), separators=(",", ":"))
+        print(f"  resolved_channel={resolved!r}", flush=True)
         dated = sum(1 for r in rows if r.get("timestamp"))
         print(f"  {handle}: {len(rows)} videos ({dated} dated) in {elapsed:.0f}s",
               flush=True)
