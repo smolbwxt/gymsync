@@ -396,7 +396,7 @@ struct CoachHomeView: View {
                 .font(GSFont.bold(10, relativeTo: .caption2))
                 .tracking(1.1)
                 .foregroundStyle(theme.accent)
-            Text("\u201c\(rule.rule)\u201d")
+            Text("“\(rule.rule)”")
                 .font(GSFont.body(12, relativeTo: .caption))
                 .foregroundStyle(theme.neutral700)
                 .fixedSize(horizontal: false, vertical: true)
@@ -458,7 +458,7 @@ struct CoachHomeView: View {
                 .tracking(1.1)
                 .foregroundStyle(theme.accent)
             ForEach(nowBuildable) { rule in
-                Text("\u201c\(rule.rule)\u201d")
+                Text("“\(rule.rule)”")
                     .font(GSFont.body(12, relativeTo: .caption))
                     .foregroundStyle(theme.neutral700)
                     .lineLimit(2)
