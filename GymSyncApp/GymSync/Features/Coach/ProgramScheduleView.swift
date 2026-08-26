@@ -366,12 +366,12 @@ struct ProgramScheduleView: View {
                             .tracking(1.1)
                             .foregroundStyle(theme.accent)
                         ForEach(lastBuild.unhonoredRules, id: \.self) { rule in
-                            Text("\u201c\(rule)\u201d")
+                            Text("“\(rule)”")
                                 .font(GSFont.body(12.5, relativeTo: .caption))
                                 .foregroundStyle(theme.text)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
-                        Text("I kept these, and Coach can talk them through with you \u2014 but this block does not act on them yet.")
+                        Text("I kept these, and Coach can talk them through with you — but this block does not act on them yet.")
                             .font(GSFont.body(11, relativeTo: .caption))
                             .foregroundStyle(theme.neutral700)
                             .fixedSize(horizontal: false, vertical: true)

@@ -876,7 +876,7 @@ enum ProgramGenerator {
                 days[d].exercises[last].dropSteps = 2
                 days[d].exercises[last].dropPercent = 20
             }
-            notes.append("Last accessory of each day runs as a drop set \u2014 two drops of about 20%, taken past the point a straight set would stop. It is the cheapest extra stimulus available once the heavy work is done.")
+            notes.append("Last accessory of each day runs as a drop set — two drops of about 20%, taken past the point a straight set would stop. It is the cheapest extra stimulus available once the heavy work is done.")
         }
 
         return Program(days: days, weeks: weeks, notes: notes,

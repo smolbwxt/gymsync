@@ -216,7 +216,7 @@ struct CoachWizardView: View {
                             Text("Put my training days on the schedule")
                                 .font(GSFont.bold(14, relativeTo: .headline))
                                 .foregroundStyle(theme.text)
-                            Text("Coach books your rhythm as planned sessions \u2014 edit or cancel any of them from the calendar.")
+                            Text("Coach books your rhythm as planned sessions — edit or cancel any of them from the calendar.")
                                 .font(GSFont.body(11, relativeTo: .caption))
                                 .foregroundStyle(theme.neutral500)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -253,7 +253,7 @@ struct CoachWizardView: View {
                 Button {
                     Task { await buildProgram() }
                 } label: {
-                    Text(busy ? "Building\u2026" : "Build my program")
+                    Text(busy ? "Building…" : "Build my program")
                 }
                 .buttonStyle(GSPrimaryButtonStyle())
                 // Guard 8d: a build with an empty catalog writes EMPTY
@@ -263,7 +263,7 @@ struct CoachWizardView: View {
                 .disabled(busy || allExercises.isEmpty)
 
                 if allExercises.isEmpty {
-                    Text("Still loading the exercise library\u2026")
+                    Text("Still loading the exercise library…")
                         .font(GSFont.body(11, relativeTo: .caption))
                         .foregroundStyle(theme.neutral500)
                 }
@@ -1611,21 +1611,21 @@ struct CoachWizardView: View {
         //
         // create() writes N routines with fresh UUIDs every time, and
         // ProgramScheduleView lists EVERY routine whose name starts
-        // "Coach \u00b7 ". Building twice therefore showed six day rows for
+        // "Coach · ". Building twice therefore showed six day rows for
         // a three-day program - on the exact page the owner asked to land
         // on, which is why this had to be solved in the same change that
         // made building land there.
         //
         // Snapshot first, write second, delete third. A failure midway
         // leaves duplicates, which the athlete can see and recover from,
-        // rather than leaving nothing, which they cannot. The "Coach \u00b7 "
+        // rather than leaving nothing, which they cannot. The "Coach · "
         // name predicate IS the app's definition of "the block"
         // (ProgramScheduleView filters on it), so reusing it here is
         // consistent by construction - and a routine the athlete renamed
         // survives the replace, which is the right outcome.
         let supersededRoutineIDs: [UUID] = ((try? await RoutineRepository
             .fetchAll(ownerID: ownerID)) ?? [])
-            .filter { $0.name.hasPrefix("Coach \u00b7 ") && $0.prescribedBy == nil }
+            .filter { $0.name.hasPrefix("Coach · ") && $0.prescribedBy == nil }
             .map(\.id)
         // Novice calibration → lift anchors (owner 2026-08-21): stated
         // hard-for-5 weights become the seeds every suggestion reads;
