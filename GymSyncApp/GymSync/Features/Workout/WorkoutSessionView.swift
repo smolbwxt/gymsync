@@ -897,6 +897,10 @@ struct WorkoutSessionView: View {
             burpeesOwed: 0,
             isActive: active,
             shareHeartRate: ThemeStore.shared.shareHeartRate,
+            // Always sample: it is the athlete's own number on their own
+            // screen. Whether it is BROADCAST is still shareHeartRate's
+            // decision, made phone-side.
+            sampleHeartRate: true,
             // The phone is the only side that can count sets. Without this
             // the bridge hardcoded setIndex: 1, so a session logged from
             // the wrist collapsed every set onto index 1 - and

@@ -199,7 +199,13 @@ extension WatchSessionStore {
     /// "should be running right now" predicate rather than two separate
     /// start/stop call sites that could drift out of sync with each other.
     func syncHeartRateSampler() {
-        guard let sessionState, sessionState.isActive, sessionState.shareHeartRate else {
+        // Sampling is gated on sampleHeartRate, NOT on shareHeartRate.
+        // The latter is a privacy control for broadcasting to other people;
+        // gating the sampler on it meant declining to broadcast also meant
+        // never seeing your own heart rate in a solo workout. Falls back to
+        // the old field so a phone build predating the split still works.
+        let shouldSample = sessionState?.sampleHeartRate ?? sessionState?.shareHeartRate ?? false
+        guard let sessionState, sessionState.isActive, shouldSample else {
             HeartRateSampler.shared.stop()
             return
         }

@@ -289,6 +289,22 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
     /// through. The phone is the only side that knows how many sets exist,
     /// so it says. Optional and defaulted, like every additive field here,
     /// so a watch build that predates it still decodes.
+    /// Whether the Watch should SAMPLE heart rate for this session.
+    ///
+    /// Split from `shareHeartRate` because the two are different acts and
+    /// were sharing one switch. `shareHeartRate` is a privacy control — it
+    /// is labelled "Share heart rate in live sessions ... visible to
+    /// session participants" — but the Watch's sampler was gated on it,
+    /// so an athlete who declined to broadcast their heart rate to a crew
+    /// also could not see their OWN heart rate in a solo workout, where
+    /// there is nobody to share it with and nothing is broadcast.
+    ///
+    /// Sampling your own heart rate onto your own screen is not a sharing
+    /// act. HealthKit still asks its own permission. Broadcast stays gated
+    /// on `shareHeartRate`, phone-side, exactly as before.
+    ///
+    /// Optional so a Watch build predating this keeps its old behaviour.
+    let sampleHeartRate: Bool?
     let nextSetIndex: Int?
     /// The lifter's body weight in CANONICAL POUNDS, for bodyweight-
     /// equipment exercises. Dropped entirely on the wrist path, so a set
@@ -312,6 +328,7 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
         soundboardFavoriteLabels: [String] = [],
         isActive: Bool = true,
         shareHeartRate: Bool = false,
+        sampleHeartRate: Bool? = nil,
         nextSetIndex: Int? = nil,
         bodyWeightLbs: Decimal? = nil,
         updatedAt: Date = Date()
@@ -329,6 +346,7 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
         self.soundboardFavoriteLabels = soundboardFavoriteLabels
         self.isActive = isActive
         self.shareHeartRate = shareHeartRate
+        self.sampleHeartRate = sampleHeartRate
         self.nextSetIndex = nextSetIndex
         self.bodyWeightLbs = bodyWeightLbs
         self.updatedAt = updatedAt
@@ -338,7 +356,7 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
         case sessionID, groupID, sessionName, currentExerciseName, currentExerciseID
         case currentLifterName, isMyTurn, burpeesOwed, burpeesPaid, soundboardFavorites
         case soundboardFavoriteLabels, isActive, shareHeartRate, updatedAt
-        case nextSetIndex, bodyWeightLbs
+        case nextSetIndex, bodyWeightLbs, sampleHeartRate
     }
 
     /// Custom decode (Task 3, extended fix wave 1) — same "schema-lag" shape

@@ -686,7 +686,7 @@ struct SettingsView: View {
                 Text("Share heart rate in live sessions")
                     .font(GSFont.bodyMedium(14, relativeTo: .subheadline))
                     .foregroundColor(theme.text)
-                Text("Broadcast only while you're in a live session, visible to session participants, never stored")
+                Text("Lets other people in a live session see your heart rate. Your own readout, in your own workouts, doesn't depend on this — it shows either way.")
                     .font(GSFont.body(12, relativeTo: .caption))
                     .foregroundColor(theme.neutral700)
             }

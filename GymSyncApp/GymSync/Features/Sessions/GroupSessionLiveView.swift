@@ -4581,7 +4581,11 @@ struct GroupSessionLiveView: View {
             // already-open live session). `ThemeStore` is the live,
             // cross-view cache of `user_settings` this app already
             // maintains for exactly this purpose.
-            shareHeartRate: ThemeStore.shared.shareHeartRate
+            shareHeartRate: ThemeStore.shared.shareHeartRate,
+            // Always sample: it is the athlete's own number on their own
+            // screen. Whether it is BROADCAST is still shareHeartRate's
+            // decision, made phone-side.
+            sampleHeartRate: true
         )
         WatchConnectivityBridge.shared.updateSessionState(payload)
     }
