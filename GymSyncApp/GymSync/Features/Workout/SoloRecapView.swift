@@ -127,8 +127,16 @@ struct SoloRecapView: View {
         coachDebrief: WorkoutDebrief? = nil,
         coachName: String = "Coach",
         onTalkToCoach: @escaping () -> Void = {},
-        onDone: @escaping () -> Void = {}
+        onDone: @escaping () -> Void = {},
+        // Trailing and defaulted, so every existing construction site and
+        // catalog fixture compiles unchanged.
+        recoveryProbe: RecoveryProbe? = nil,
+        onRecoveryAnswer: ((VolumeTitration.RecoveryState) -> Void)? = nil,
+        onRecoverySkip: (() -> Void)? = nil
     ) {
+        self.recoveryProbe = recoveryProbe
+        self.onRecoveryAnswer = onRecoveryAnswer
+        self.onRecoverySkip = onRecoverySkip
         self.kicker = kicker
         self.durationText = durationText
         self.subline = subline

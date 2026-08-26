@@ -527,11 +527,6 @@ struct WorkoutSessionView: View {
                     // the full layout. Every value below is derived from state
                     // this view already holds (§B.10) — no new queries.
                     SoloRecapView(
-                        recoveryProbe: recoveryProbe,
-                        onRecoveryAnswer: { state in
-                            answerRecoveryProbe(state)
-                        },
-                        onRecoverySkip: { recoveryProbe = nil },
                         kicker: recapKicker,
                         durationText: recapDurationText,
                         subline: recapSubline,
@@ -547,7 +542,10 @@ struct WorkoutSessionView: View {
                         coachDebrief: coachDebrief,
                         coachName: CoachPersona.bySlug(coachProfile.persona)?.name ?? "Coach",
                         onTalkToCoach: { showCoachRecap = true },
-                        onDone: { finishSession() }
+                        onDone: { finishSession() },
+                        recoveryProbe: recoveryProbe,
+                        onRecoveryAnswer: { answerRecoveryProbe($0) },
+                        onRecoverySkip: { recoveryProbe = nil }
                     )
                     .sheet(isPresented: $showCoachRecap) {
                         if let debrief = coachDebrief {
