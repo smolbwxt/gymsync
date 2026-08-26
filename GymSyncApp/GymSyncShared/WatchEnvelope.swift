@@ -404,6 +404,15 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
         soundboardFavoriteLabels = (try? c.decodeIfPresent([String].self, forKey: .soundboardFavoriteLabels)) ?? soundboardFavorites
         isActive = (try? c.decodeIfPresent(Bool.self, forKey: .isActive)) ?? true
         shareHeartRate = (try? c.decodeIfPresent(Bool.self, forKey: .shareHeartRate)) ?? false
+        // 2026-08-26 additions. Same decodeIfPresent shape as everything
+        // above, and all three stay OPTIONAL rather than falling back to a
+        // value: nil means "the sender predates this field", which each
+        // reader handles for itself — the watch falls back to
+        // shareHeartRate for sampling, and the bridge falls back to
+        // setIndex 1. A default here would erase that distinction.
+        sampleHeartRate = try? c.decodeIfPresent(Bool.self, forKey: .sampleHeartRate)
+        nextSetIndex = try? c.decodeIfPresent(Int.self, forKey: .nextSetIndex)
+        bodyWeightLbs = try? c.decodeIfPresent(Decimal.self, forKey: .bodyWeightLbs)
         updatedAt = try c.decode(Date.self, forKey: .updatedAt)
     }
 }
