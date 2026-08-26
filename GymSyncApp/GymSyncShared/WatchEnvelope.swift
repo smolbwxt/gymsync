@@ -281,6 +281,22 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
     /// (`supabase/migrations/20260727000001_user_settings_share_heart_rate.sql`,
     /// `DEFAULT false`).
     let shareHeartRate: Bool
+    /// The set index the NEXT wrist-logged set should take.
+    ///
+    /// The bridge hardcoded `setIndex: 1` on every set the watch sent, so
+    /// a whole session logged from the wrist collapsed onto index 1 —
+    /// which BlockProgression.summarize sorts by and WorkingWeight reads
+    /// through. The phone is the only side that knows how many sets exist,
+    /// so it says. Optional and defaulted, like every additive field here,
+    /// so a watch build that predates it still decodes.
+    let nextSetIndex: Int?
+    /// The lifter's body weight in CANONICAL POUNDS, for bodyweight-
+    /// equipment exercises. Dropped entirely on the wrist path, so a set
+    /// of pull-ups logged from the watch contributed no tonnage while the
+    /// identical set logged on the phone did — see SetLog.bodyWeightLbs,
+    /// which exists precisely because "last month's pull-ups were done at
+    /// last month's body weight".
+    let bodyWeightLbs: Decimal?
 
     init(
         sessionID: UUID,
@@ -296,6 +312,8 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
         soundboardFavoriteLabels: [String] = [],
         isActive: Bool = true,
         shareHeartRate: Bool = false,
+        nextSetIndex: Int? = nil,
+        bodyWeightLbs: Decimal? = nil,
         updatedAt: Date = Date()
     ) {
         self.sessionID = sessionID
@@ -311,6 +329,8 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
         self.soundboardFavoriteLabels = soundboardFavoriteLabels
         self.isActive = isActive
         self.shareHeartRate = shareHeartRate
+        self.nextSetIndex = nextSetIndex
+        self.bodyWeightLbs = bodyWeightLbs
         self.updatedAt = updatedAt
     }
 
@@ -318,6 +338,7 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
         case sessionID, groupID, sessionName, currentExerciseName, currentExerciseID
         case currentLifterName, isMyTurn, burpeesOwed, burpeesPaid, soundboardFavorites
         case soundboardFavoriteLabels, isActive, shareHeartRate, updatedAt
+        case nextSetIndex, bodyWeightLbs
     }
 
     /// Custom decode (Task 3, extended fix wave 1) — same "schema-lag" shape

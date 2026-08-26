@@ -398,10 +398,19 @@ final class WatchConnectivityBridge {
         let log = SetLog(
             id: UUID(), userID: userID, sessionID: sessionID,
             exerciseID: payload.exerciseID,
-            setIndex: 1,
+            // The phone counts the sets; the wrist does not know. This was
+            // hardcoded to 1, so a session logged from the watch collapsed
+            // every set onto index 1 — and BlockProgression.summarize sorts
+            // by setIndex to decide which set is the last one, so a
+            // prescribed to-failure finisher was dropped from the wrong end.
+            setIndex: lastPushedState?.nextSetIndex ?? 1,
             reps: payload.reps, weight: payload.weight, rpe: payload.rpe,
             isFailed: payload.isFailed, isPenalty: false,
-            note: payload.note, loggedAt: Date()
+            note: payload.note, loggedAt: Date(),
+            // Dropped entirely before this: a set of pull-ups logged from
+            // the wrist contributed no tonnage while the identical set
+            // logged on the phone did.
+            bodyWeightLbs: lastPushedState?.bodyWeightLbs
         )
         do {
             try await submitter.submit(log)

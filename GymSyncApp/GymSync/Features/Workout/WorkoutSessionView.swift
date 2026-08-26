@@ -381,6 +381,14 @@ struct WorkoutSessionView: View {
             .presentationDetents([.medium, .large])
         }
         .task { await startIfNeeded() }
+        // Keep the Watch's picture of a SOLO session current. Every one of
+        // these changes something the wrist renders or something a
+        // wrist-logged set depends on — the session it attaches to, the
+        // exercise it names, and the set index it takes.
+        .onChange(of: session?.id) { pushWatchSessionState() }
+        .onChange(of: session?.completedAt) { pushWatchSessionState() }
+        .onChange(of: currentExerciseIndex) { pushWatchSessionState() }
+        .onChange(of: soloCurrentExerciseSets.count) { pushWatchSessionState() }
         .task { await loadDefaultRestSeconds() }
         .task { await loadPickerCatalogIfFreeform() }
         .task(id: currentRoutineExercise?.exerciseID) {
@@ -863,6 +871,42 @@ struct WorkoutSessionView: View {
     @State private var pendingDropRestIsTransit = false
 
     private var soloUnit: WeightUnit { sessionSettings?.weightUnit ?? .lbs }
+
+    /// Tell the Watch a SOLO session is live.
+    ///
+    /// This function did not exist. `pushWatchSessionState()` was defined
+    /// only in GroupSessionLiveView, and `WatchConnectivityBridge
+    /// .handleLogSet` gates on `lastPushedState?.sessionID` — so the wrist
+    /// LOG SET button answered "No active session" for every solo workout
+    /// the app has ever run. The payload was always shaped for this:
+    /// `groupID` is documented as "nil for a solo/ad-hoc session".
+    ///
+    /// Solo collapses most of the group fields honestly rather than
+    /// faking them: there is no rotation, so it is always your turn; no
+    /// participants, so no current lifter; no lateness ledger, so no
+    /// burpees. What matters is sessionID, the current exercise, and the
+    /// two fields a correct SetLog needs.
+    private func pushWatchSessionState() {
+        guard let session else { return }
+        let payload = WatchSessionStatePayload(
+            sessionID: session.id,
+            groupID: nil,
+            sessionName: soloRoutine?.name ?? "Workout",
+            currentExerciseName: currentExercise?.name,
+            currentExerciseID: currentExercise?.id,
+            currentLifterName: nil,
+            isMyTurn: true,
+            burpeesOwed: 0,
+            soundboardFavorites: [],
+            soundboardFavoriteLabels: [],
+            isActive: session.completedAt == nil,
+            shareHeartRate: ThemeStore.shared.shareHeartRate,
+            // The phone is the only side that can count these.
+            nextSetIndex: (soloCurrentExerciseSets.map(\.setIndex).max() ?? 0) + 1,
+            bodyWeightLbs: currentExercise?.equipment == "bodyweight"
+                ? soloLatestBodyWeightLbs : nil)
+        WatchConnectivityBridge.shared.updateSessionState(payload)
+    }
     private var soloWeightStep: Decimal {
         Units.tunerStep(unit: soloUnit, equipment: currentExercise?.equipment)
     }
