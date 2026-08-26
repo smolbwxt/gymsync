@@ -37,8 +37,32 @@ a single session beat a volume-matched split.
 and measures growth. Every per-session number is an acute proxy, an
 uncontrolled meta-regression, or a retracted paper.
 
-**What it recommends instead**, in priority order — specified, not built,
-because each is a policy choice:
+> **RESOLVED 2026-08-26, and not by any of the options below.** The owner's
+> answer was better than the four: *"Everyone responds to volume stimulus
+> differently. Let's prescribe middle of the road, and perturb the volume
+> every couple of weeks to see how performance improves. The data or the
+> client will tell us how it feels."*
+>
+> So the app no longer picks a number at all — it **searches for each
+> athlete's own**, per muscle, inside 12–25. See `VolumeTitration.swift`
+> and the recovery probe. Recommendation 1 was already true; 2 and 3 are
+> subsumed by the search (which redistributes and holds rather than
+> truncating); 4 remains genuinely open.
+>
+> Two owner corrections shaped it, both now pinned by tests:
+> - **0–1 RIR is not a fatigue signal.** Someone who chose
+>   `EffortAppetite.toFailure` is *prescribed* 0–1 RIR. My first draft
+>   would have permanently deloaded the most committed lifters for
+>   training as instructed.
+> - **A logged RPE of 7 is not noise.** Discarding every 7 throws away
+>   real answers to keep out defaults.
+>
+> And one design consequence worth knowing: the search **holds** when the
+> probe is silent and only **cuts** without it. Silence blocks the climb
+> everywhere and the retreat nowhere.
+
+**What the sweep recommended instead**, for the record — the four options
+that were on the table before the search replaced them:
 
 1. **Recount before reacting.** Fractional set counting (direct 1.0,
    indirect 0.5) was the best-fitting model. This is *already* what
@@ -145,7 +169,12 @@ fetched, 2.35M words.
 
 ## Still open
 
-- The four volume recommendations above (your call).
+- Session SHAPE (recommendation 4): a whole-session set ceiling, and a
+  rule requiring 2-4 distinct exercises rather than 17 sets of two
+  movements. This is what a 17-set chest day actually violates, and the
+  search does not address it. Note the app already trims by
+  `sessionMinutes`, and the audit's rule 5 says respect the clock before
+  the science — so this may be partly redundant.
 - Home ignores the program entirely — `loadTodaysRoutine` hands back the
   last routine used, so the hero repeats one day forever while the block
   advances. Design exists; it was rejected by review on a false invariant
