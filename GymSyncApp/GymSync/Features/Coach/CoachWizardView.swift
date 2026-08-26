@@ -55,6 +55,10 @@ struct CoachWizardView: View {
     @State private var daysSinceLastSession: Int?
     @State private var daysSinceReturn: Int?
     @State private var standingRules: [String] = []
+    /// What the volume search has settled on per muscle. Empty until the
+    /// recovery probe has told it something, which is the normal case for
+    /// a new athlete and a straight pass-through in the generator.
+    @State private var volumeTargets: [String: Int] = [:]
     /// The health gate, in front of GENERATION rather than in front of the
     /// screen. These five doors are also how an athlete edits their
     /// profile, and editing is not prescribing — they may browse freely.
@@ -737,7 +741,8 @@ struct CoachWizardView: View {
             birthYear: Int(birthYearText),
             daysSinceLastSession: daysSinceLastSession,
             daysSinceReturn: daysSinceReturn,
-            standingRules: standingRules)
+            standingRules: standingRules,
+            volumeTargets: volumeTargets)
         inputs.sessionMinutes = sessionMinutes
         inputs.starredExerciseIDs = starredExerciseIDs
         lastInputs = inputs
@@ -773,6 +778,9 @@ struct CoachWizardView: View {
     private func readTrainingHistory() async {
         guard let userID = appState.currentProfile?.id else { return }
         standingRules = ((try? await TrainingRulesRepository.active()) ?? []).map(\.rule)
+        volumeTargets = Dictionary(
+            uniqueKeysWithValues: ((try? await VolumeTargetRepository.all()) ?? [])
+                .map { ($0.muscle, $0.weeklySets) })
         guard let sessions = try? await SessionRepository.history(userID: userID, limit: 200)
         else { return }
         let dates = sessions.compactMap(\.completedAt)

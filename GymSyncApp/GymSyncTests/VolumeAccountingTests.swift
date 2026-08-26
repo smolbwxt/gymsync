@@ -106,6 +106,65 @@ final class VolumeAccountingTests: XCTestCase {
         XCTAssertTrue(result.unresolvedLow.isEmpty)
     }
 
+    // MARK: - The searched target actually reaches the program
+
+    func testASearchedTargetOverridesTheGoalBandForThatMuscleOnly() {
+        // The wire without which the whole volume search would be a knob
+        // that records what it learned and is never read - this repo's
+        // dominant defect, and one I have spent two days removing.
+        let curl = ex(1, "Curl", "biceps")
+        let raise = ex(2, "Raise", "shoulders")
+        let days = [ProgramGenerator.Day(name: "Upper", exercises: [
+            entry(curl, sets: 4),
+            entry(raise, sets: 4),
+        ])]
+        let result = ProgramGenerator.balanceWeeklyVolume(
+            days: days, catalog: [curl, raise], low: 12, high: 20,
+            targets: ["biceps": 8])
+        let tally = ProgramGenerator.weeklyMuscleSets(days: result.days,
+                                                      catalog: [curl, raise])
+        XCTAssertLessThanOrEqual(tally["biceps"] ?? 0, 9,
+                                 "biceps is balanced toward ITS target, not the band")
+        XCTAssertGreaterThanOrEqual(tally["shoulders"] ?? 0, 12,
+                                    "shoulders has no target and keeps the band")
+    }
+
+    func testNoTargetsIsAStraightPassThrough() {
+        // The normal case - nobody has a target until the recovery probe
+        // has told the search something - must behave exactly as before.
+        let curl = ex(1, "Curl", "biceps")
+        let days = [ProgramGenerator.Day(name: "Arms",
+                                         exercises: [entry(curl, sets: 3)])]
+        let withoutTargets = ProgramGenerator.balanceWeeklyVolume(
+            days: days, catalog: [curl], low: 12, high: 20)
+        let withEmpty = ProgramGenerator.balanceWeeklyVolume(
+            days: days, catalog: [curl], low: 12, high: 20, targets: [:])
+        XCTAssertEqual(withoutTargets.added, withEmpty.added)
+        XCTAssertEqual(withoutTargets.days[0].exercises[0].sets,
+                       withEmpty.days[0].exercises[0].sets)
+    }
+
+    func testATargetIsATightBandNotAnExactEquality() {
+        // Balance moves in whole sets, and indirect volume lands in halves,
+        // so demanding an exact number would oscillate forever against the
+        // guard rail. +/-1 is the tolerance.
+        let curl = ex(1, "Curl", "biceps")
+        let days = [ProgramGenerator.Day(name: "Arms",
+                                         exercises: [entry(curl, sets: 9)])]
+        let result = ProgramGenerator.balanceWeeklyVolume(
+            days: days, catalog: [curl], low: 12, high: 20, targets: ["biceps": 9])
+        XCTAssertEqual(result.trimmed, 0, "already at target - nothing to do")
+        XCTAssertEqual(result.added, 0)
+    }
+
+    func testATargetReachesTheGeneratorThroughTheProfile() {
+        var profile = TrainingProfile()
+        profile.rankedGoals = [.hypertrophy]
+        let inputs = profile.generatorInputs(durationWeeks: 8,
+                                             volumeTargets: ["chest": 18])
+        XCTAssertEqual(inputs.volumeTargets["chest"], 18)
+    }
+
     // MARK: - Direct vs effective
 
     func testTheCoverageTallyCanAnswerDirectOnly() {

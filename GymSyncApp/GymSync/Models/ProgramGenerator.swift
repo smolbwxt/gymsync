@@ -120,6 +120,15 @@ enum ProgramGenerator {
         /// Whether accessories should prefer COMPLEMENTARY picks over
         /// duplicating a secondary this day already covers. Mains never.
         var preferVariedAccessories = false
+        /// Per-muscle weekly set targets the volume search has settled on,
+        /// lowercased muscle -> weekly sets. Overrides the goal band for
+        /// exactly those muscles and leaves every other one alone.
+        ///
+        /// Passed in rather than fetched, like standingRules, so this stays
+        /// synchronous and deterministic. Empty is the normal case and is a
+        /// straight pass-through: nobody has a target until the recovery
+        /// probe has told the search something.
+        var volumeTargets: [String: Int] = [:]
     }
 
     struct CatalogExercise {
@@ -481,7 +490,8 @@ enum ProgramGenerator {
             ? ["Chest", "Back", "Shoulders", "Arms", "Legs"] : []
         let balanced = balanceWeeklyVolume(days: days, catalog: catalog,
                                            low: weekly.low, high: weekly.high,
-                                           protectedDayNames: emphasisDays)
+                                           protectedDayNames: emphasisDays,
+                                           targets: inputs.volumeTargets)
         days = balanced.days
         // The note is GENERATED from what the pass actually did, including
         // what it could not do. It used to be written here from the trim and
@@ -1499,7 +1509,13 @@ enum ProgramGenerator {
     /// the first qualifying accessory, trims from the last.
     static func balanceWeeklyVolume(
         days: [Day], catalog: [CatalogExercise], low: Int, high: Int,
-        protectedDayNames: Set<String> = []
+        protectedDayNames: Set<String> = [],
+        /// Per-muscle overrides from the volume search. A muscle with a
+        /// target is balancedToward THAT number instead of the goal band -
+        /// which is the entire point of the search, and the wire without
+        /// which it would be a knob that records what it learned and is
+        /// never read.
+        targets: [String: Int] = [:]
     ) -> (days: [Day], trimmed: Int, added: Int,
           unresolvedLow: [String], unresolvedHigh: [String]) {
         let byID = Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, $0) })
@@ -1532,8 +1548,19 @@ enum ProgramGenerator {
         }
         let primaryTrained = Set(days.flatMap(\.exercises).compactMap(primaryOf))
 
+        // The band this muscle is balanced against: its own searched
+        // target when it has one, otherwise the goal band. A target is a
+        // POINT, so it becomes a tight band around itself rather than a
+        // single value - balance moves in whole sets and an exact equality
+        // would oscillate.
+        func bounds(for muscle: String) -> (low: Int, high: Int) {
+            guard let target = targets[muscle] else { return (low, high) }
+            return (max(1, target - 1), target + 1)
+        }
+
         // FLOOR
         for muscle in primaryTrained.sorted() {
+            let low = bounds(for: muscle).low
             var guardRail = 32
             while weeklyMuscleSets(days: days, catalog: catalog)[muscle, default: 0]
                     < Double(low), guardRail > 0 {
@@ -1551,6 +1578,7 @@ enum ProgramGenerator {
         // CEILING
         let allMuscles = weeklyMuscleSets(days: days, catalog: catalog).keys.sorted()
         for muscle in allMuscles {
+            let high = bounds(for: muscle).high
             var guardRail = 32
             while weeklyMuscleSets(days: days, catalog: catalog)[muscle, default: 0]
                     > Double(high), guardRail > 0 {

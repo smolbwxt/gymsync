@@ -390,7 +390,8 @@ struct TrainingProfile: Codable, Equatable, Sendable {
                          birthYear: Int? = nil,
                          daysSinceLastSession: Int? = nil,
                          daysSinceReturn: Int? = nil,
-                         standingRules: [String] = []) -> ProgramGenerator.Inputs {
+                         standingRules: [String] = [],
+                         volumeTargets: [String: Int] = [:]) -> ProgramGenerator.Inputs {
         // Training age DECAYS (NSCA): a lifter several months away is a
         // novice again, whatever they once were and whatever they typed.
         let effectiveExperience = GeneratorScience.decayedExperience(
@@ -409,6 +410,7 @@ struct TrainingProfile: Codable, Equatable, Sendable {
         }
         inputs.repAppetite = repAppetite
         inputs.preferVariedAccessories = accessoryVariety == .varied
+        inputs.volumeTargets = volumeTargets
         // Standing rules (public.training_rules) reach the generator the
         // same way every other constraint does — as advisory notes. They
         // are passed IN rather than fetched here because this function is
