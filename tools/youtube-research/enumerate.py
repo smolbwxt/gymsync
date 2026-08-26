@@ -51,6 +51,23 @@ CHANNELS = [
     ("TreadAthletics", "Tread Athletics (pitching development)", "medium"),
     ("DaruStrong", "Phil Daru (combat/wrestling S&C)", "high"),
     ("PJFPerformance", "PJF Performance (basketball/athleticism)", "medium"),
+    # -- Researcher-led / long-form expansion (owner 2026-08-26: "are there
+    # other research professionals we can pull from? Think Andrew Huberman,
+    # who has fitness researchers like Stacy Sims on").
+    #
+    # The gap this closes is real and measurable: all 23 channels above are
+    # COACH-led. Not one is a researcher or a long-form interview show, and
+    # the thinnest area in the whole corpus is `female` at 28 findings --
+    # exactly the subject Stacy Sims is the authority on. These are the
+    # academic-adjacent sources, not more coaches.
+    #
+    # resolve_handle self-heals imperfect handles, which matters more here:
+    # several of these publish under a show name rather than a person.
+    ("hubermanlab", "Huberman Lab (Stanford; hosts Galpin, Sims)", "high"),
+    ("PeterAttiaMD", "The Drive (Attia -- zone 2, VO2max, stability)", "high"),
+    ("drstacysims", "Dr Stacy Sims (female physiology, cycle)", "high"),
+    ("DrAndyGalpin", "Dr Andy Galpin (exercise physiology, testing)", "high"),
+    ("FoundMyFitness", "FoundMyFitness (Rhonda Patrick -- recovery)", "medium"),
 ]
 
 
