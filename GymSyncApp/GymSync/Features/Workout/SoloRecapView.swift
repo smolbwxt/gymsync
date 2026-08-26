@@ -23,6 +23,13 @@ import SwiftUI
 // succeeded (`healthSummary == nil` otherwise; see
 // `WorkoutSessionView.recapHealthSummary`).
 struct SoloRecapView: View {
+    /// The oldest still-open recovery probe, if there is one. Supplied by
+    /// the caller, like every other field here — this view renders, it does
+    /// not fetch. Nil means nothing to ask, which is the common case.
+    var recoveryProbe: RecoveryProbe? = nil
+    var onRecoveryAnswer: ((VolumeTitration.RecoveryState) -> Void)? = nil
+    var onRecoverySkip: (() -> Void)? = nil
+
     /// One row of the "By exercise" breakdown: name, set count, top set, PR flag.
     /// Moved here (was a private nested type on `WorkoutSessionView`) since the
     /// catalog needs to construct fixture rows from outside that view.
@@ -193,6 +200,15 @@ struct SoloRecapView: View {
             // lifter reads their numbers.
             if let pumpCheck {
                 PumpCheckComposerCard(context: pumpCheck)
+            }
+            // Recovery probe SECOND: about the LAST session, not this one,
+            // and the only place in the app that asks. It sits above the
+            // numbers because it is a question rather than a readout, and a
+            // question below a scroll gets answered by nobody.
+            if let recoveryProbe, let onRecoveryAnswer, let onRecoverySkip {
+                RecoveryProbeCard(probe: recoveryProbe,
+                                  onAnswer: onRecoveryAnswer,
+                                  onSkip: onRecoverySkip)
             }
 
             hero

@@ -89,6 +89,11 @@ struct WorkoutSessionView: View {
     /// come back to something familiar — would get the blank field and no
     /// explanation at all.
     @State private var soloReturnNote: String?
+    /// The oldest open recovery probe, shown once at the recap. Loaded when
+    /// the session ends rather than on appear: asking mid-lift about a
+    /// muscle from four days ago is an interruption, and the recap is the
+    /// one moment the athlete is already reflecting.
+    @State private var recoveryProbe: RecoveryProbe?
     /// Best substitution-graph swap for a flagged stall (5-channel corpus
     /// consensus: a stalled lift wants a variation, not another load tweak).
     @State private var soloStallSwapName: String?
@@ -522,6 +527,11 @@ struct WorkoutSessionView: View {
                     // the full layout. Every value below is derived from state
                     // this view already holds (§B.10) — no new queries.
                     SoloRecapView(
+                        recoveryProbe: recoveryProbe,
+                        onRecoveryAnswer: { state in
+                            answerRecoveryProbe(state)
+                        },
+                        onRecoverySkip: { recoveryProbe = nil },
                         kicker: recapKicker,
                         durationText: recapDurationText,
                         subline: recapSubline,
@@ -4143,6 +4153,12 @@ struct WorkoutSessionView: View {
                 appState.liveSoloSession = nil
             }
 
+            // Open a recovery probe per muscle this session trained, and
+            // pick up the oldest one still waiting for an answer. Both are
+            // best-effort: a probe that fails to open costs a data point,
+            // and must never cost the athlete their completed session.
+            await syncRecoveryProbes(sessionID: completedResult.id, logs: logs)
+
             // Permission failure must never block completion — `try?` stays here.
             try? await HealthKitBridge.requestPermission()
 
@@ -4184,6 +4200,35 @@ struct WorkoutSessionView: View {
     /// presentation down; otherwise this pops the push. The tab switch runs
     /// either way, so every entry point — Home's picker sheet, a routine
     /// detail push, a Discover attempt — ends in the same place.
+    /// Opens a probe for each muscle this session actually trained, then
+    /// loads the OLDEST open one to ask about at the recap.
+    ///
+    /// The one asked is never about the session just finished — it will
+    /// almost always be a muscle from a previous day, which is the whole
+    /// point: "a probe after every session talking about recovery from the
+    /// PREVIOUS routine".
+    private func syncRecoveryProbes(sessionID: UUID, logs: [SetLog]) async {
+        guard let userID = appState.currentProfile?.id else { return }
+        let byID = Dictionary(uniqueKeysWithValues: allExercises.map { ($0.id, $0) })
+        let trained = Set(logs.compactMap { log -> String? in
+            guard !log.isPenalty, let ex = byID[log.exerciseID] else { return nil }
+            let muscle = ex.primaryMuscle.lowercased()
+            return GeneratorScience.majorMuscles.contains(muscle) ? muscle : nil
+        })
+        try? await RecoveryProbeRepository.openProbes(
+            sessionID: sessionID, userID: userID,
+            muscles: trained, trainedAt: Date())
+        // Oldest first, and never the one just created for today.
+        let open = (try? await RecoveryProbeRepository.open()) ?? []
+        recoveryProbe = open.first { !Calendar.current.isDateInToday($0.trainedAt) }
+    }
+
+    private func answerRecoveryProbe(_ state: VolumeTitration.RecoveryState) {
+        guard let probe = recoveryProbe else { return }
+        recoveryProbe = nil
+        Task { try? await RecoveryProbeRepository.answer(id: probe.id, state: state) }
+    }
+
     private func finishSession() {
         if let onFinished {
             onFinished()
