@@ -225,6 +225,16 @@ struct CoachConsultView: View {
                     .padding(.bottom, 6)
             }
             .scrollIndicators(.hidden)
+        } else if probe.id == "focus_lift" {
+            // Curated compounds + a door to the whole catalog, multiple
+            // picks (owner 2026-08-27). Values are exercise ids and ride
+            // the ordinary multi-select commit.
+            ScrollView {
+                FocusLiftPickerView(catalog: catalog, selection: $selection)
+                    .padding(.top, 2)
+                    .padding(.bottom, 6)
+            }
+            .scrollIndicators(.hidden)
         } else if probe.id == "gym_comfort" {
             // The adaptive ladder. It commits ITSELF (its stop button is
             // the answer), and it is fed the joints named one question
@@ -317,7 +327,9 @@ struct CoachConsultView: View {
         let options = ConsultVocabulary.options(for: probe, catalog: catalog)
         let multi = ConsultVocabulary.isMultiSelect(probe.id)
         let ladder = probe.id == "gym_comfort"
-        let anchors = probe.id == "anchor_lifts"
+        // Probes whose controls carry their own answer: NEXT is always
+        // live for them (an empty pick is a real "no preference").
+        let anchors = probe.id == "anchor_lifts" || probe.id == "focus_lift"
         // A single-choice chip IS the commit, so it needs no button. Only
         // free text, multi-select and the anchor rows do; the ladder
         // commits itself and gets SKIP alone.
@@ -432,15 +444,17 @@ struct CoachConsultView: View {
         seeded.loggedDaysPerWeek = loggedDaysPerWeek
         seeded.provenance = profile.provenance
         seeded.equipmentKnown = profile.equipment?.isEmpty == false
-        seeded.sessionMinutesKnown = profile.sessionMinutes != nil
+        // Availability is ASKED every consult (owner 2026-08-27: "Coach
+        // just assumed number of days and gym time cap"). What the
+        // profile holds is offered back in the question, not used to
+        // skip it - a value from a block ago is a guess about this one.
+        seeded.sessionMinutesKnown = false
+        seeded.knownSessionMinutes = profile.sessionMinutes
         seeded.cautionsKnown = !profile.cautionJoints.isEmpty
         seeded.recommendedDaysPerWeek = recommendedDaysPerWeek
-        // daysPerWeek always carries a value (it defaults), so only a
-        // STATED one counts as known — otherwise the consult would never
-        // ask the single highest-gain question in the bank.
         if profile.provenance["daysPerWeek"] == .stated
             || profile.provenance["daysPerWeek"] == .confirmed {
-            seeded.statedDaysPerWeek = profile.daysPerWeek
+            seeded.knownDaysPerWeek = profile.daysPerWeek
         }
         context = seeded
     }

@@ -221,6 +221,10 @@ struct TrainingProfile: Codable, Equatable, Sendable {
     /// written before this field existed still loads. Same reason
     /// `equipment` next door is optional.
     var focusMuscles: [String]? = nil
+    /// The lifts the athlete wants to add weight to (consult focus_lift,
+    /// 2026-08-27). Each one leads a day: ProgramGenerator gives it the
+    /// main slot for its pattern outright.
+    var focusExerciseIDs: [UUID]? = nil
     /// conservative | standard | aggressive — feeds progression.
     var intensityAppetite: String = "standard"
     /// SESSION STRUCTURE — a separate axis from the split (corpus census
@@ -550,6 +554,7 @@ struct TrainingProfile: Codable, Equatable, Sendable {
         } else if let stored = self.focusMuscles, !stored.isEmpty {
             inputs.focusMuscles = Set(stored)
         }
+        inputs.focusExerciseIDs = Set(focusExerciseIDs ?? [])
         inputs.equipment = equipment
         inputs.cardioDays = cardioDays
         inputs.cardioMinutes = cardioMinutes

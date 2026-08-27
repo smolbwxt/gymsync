@@ -207,7 +207,8 @@ enum ProgramBuilder {
                          userID: userID,
                          config: configSnapshot(profile: profile,
                                                 duration: duration,
-                                                standingRules: standingRules))
+                                                standingRules: standingRules,
+                                                catalog: all))
             _ = try? await TrainingPlanRepository.add(templateID: savedRow.id)
         }
 
@@ -270,9 +271,14 @@ enum ProgramBuilder {
     /// the AAR payload render these lines verbatim.
     private static func configSnapshot(profile: TrainingProfile,
                                        duration: Int,
-                                       standingRules: [TrainingRule]) -> [String: String] {
+                                       standingRules: [TrainingRule],
+                                       catalog: [Exercise]) -> [String: String] {
         var config: [String: String] = [:]
         config["goal"] = label(for: profile.generatorFocus.rawValue)
+        if let ids = profile.focusExerciseIDs, !ids.isEmpty {
+            let names = ids.compactMap { id in catalog.first { $0.id == id }?.name }
+            if !names.isEmpty { config["focus lifts"] = names.joined(separator: ", ") }
+        }
         config["days per week"] = "\(profile.daysPerWeek)"
         config["duration"] = "\(duration) weeks"
         config["experience"] = profile.trainingAge.rawValue.capitalized

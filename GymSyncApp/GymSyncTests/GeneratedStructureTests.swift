@@ -117,4 +117,29 @@ final class GeneratedStructureTests: XCTestCase {
 
         XCTAssertEqual(paired.exercises.map(\.name), ["Bench", "Row", "Squat"])
     }
+
+    // MARK: The focus lift wins its main slot (consult picker, 2026-08-27)
+
+    func testANamedFocusLiftLeadsItsPatternOutright() {
+        // Two horizontal pushes; the lower-ranked, lower-scored one is the
+        // athlete's focus lift. Scoring would pick the other. The promise
+        // "which lift do you want to add weight to" means it MUST be in
+        // the program, so priority beats the score.
+        let favourite = cat(9, "Floor Press", "chest", "compound", "push_horizontal")
+        let better = cat(1, "Bench", "chest", "compound", "push_horizontal")
+        let row = cat(2, "Row", "back", "compound", "pull_horizontal")
+        let squat = cat(3, "Squat", "quads", "compound", "squat")
+        let hinge = cat(4, "Deadlift", "hamstrings", "compound", "hinge")
+        let catalog = [better, favourite, row, squat, hinge]
+        var inputs = ProgramGenerator.Inputs(
+            focus: .strength, daysPerWeek: 3, durationWeeks: 4,
+            experience: .intermediate)
+        inputs.focusExerciseIDs = [favourite.id]
+
+        let program = ProgramGenerator.generate(inputs: inputs, catalog: catalog)
+
+        let mains = program.days.flatMap(\.exercises).filter(\.isMain).map(\.exerciseID)
+        XCTAssertTrue(mains.contains(favourite.id),
+                      "the named focus lift is not a main lift anywhere in the week")
+    }
 }

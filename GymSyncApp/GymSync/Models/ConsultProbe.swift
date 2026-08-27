@@ -73,6 +73,14 @@ enum ConsultProbe {
         var statedDaysPerWeek: Int? = nil
         var equipmentKnown: Bool = false
         var sessionMinutesKnown: Bool = false
+        /// What the profile already holds for days and session length.
+        /// Owner 2026-08-27: "Coach just assumed number of days and gym
+        /// time cap" - the consult used to skip both questions whenever
+        /// a value existed from any earlier run. It asks every time now,
+        /// and these let the question say what it heard last time so the
+        /// athlete confirms rather than re-guesses.
+        var knownDaysPerWeek: Int? = nil
+        var knownSessionMinutes: Int? = nil
         var cautionsKnown: Bool = false
         // (isYouth lived here 2026-08 -> 2026-08-27: declared, set only
         // by tests, read by nothing. The youth ceiling is delivered by
@@ -137,10 +145,10 @@ enum ConsultProbe {
         // head, and by this point they have tapped three other things. The
         // question now carries its own context instead of borrowing it.
         Probe(id: "focus_lift",
-              ask: "Which lift do you most want to add weight to?",
-              tunes: ["focusMuscles"],
+              ask: "Which lifts do you most want to add weight to?",
+              tunes: ["focusMuscles", "focusExerciseIDs"],
               gain: 9, family: .goal,
-              clarifier: "Name the one you care about. I'll give the muscles behind it more of the work."),
+              clarifier: "Pick as many as you like. Each one leads a day, and the muscles behind it get more of the work."),
         Probe(id: "focus_areas",
               ask: "Which two areas do you want to look different?",
               tunes: ["focusMuscles"],
@@ -383,6 +391,12 @@ enum ConsultProbe {
                 return "\(formatted) a week"
             } ?? "current cadence"
             text = text.replacingOccurrences(of: "{current}", with: logged)
+        }
+        if probe.id == "days", let known = context.knownDaysPerWeek {
+            text += " Last time you said \(known)."
+        }
+        if probe.id == "session_length", let known = context.knownSessionMinutes {
+            text += " Last time you said \(known) minutes."
         }
         return text
     }

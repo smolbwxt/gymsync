@@ -70,6 +70,14 @@ enum ProgramGenerator {
         /// gate; it just answers "when nothing else separates them, pick
         /// the one they've been eyeing."
         var starredExerciseIDs: Set<UUID> = []
+        /// The lifts the athlete named as the ones they want to add
+        /// weight to (consult focus_lift, 2026-08-27). Not a tiebreak: a
+        /// focus lift WINS its main pattern slot outright, because "which
+        /// lift do you most want to add weight to" is a promise that the
+        /// lift will be in the program - the strongest lever the athlete
+        /// has, and it beats every soft signal. Still subject to the
+        /// exclusion and equipment filters upstream of select().
+        var focusExerciseIDs: Set<UUID> = []
         /// football | baseball | wrestling — the sport_prep goal's sport
         /// (corpus parameters, docs/science/sport-prep-parameters.md):
         /// wrestling ranks unilateral work up (stance and shots are
@@ -394,7 +402,8 @@ enum ProgramGenerator {
                                   starred: inputs.starredExerciseIDs,
                                   sportLens: inputs.sportPrepSport,
                                   lens: slotLens,
-                                  deprioritized: inputs.deprioritizedExerciseIDs)
+                                  deprioritized: inputs.deprioritizedExerciseIDs,
+                                  priority: inputs.focusExerciseIDs)
                 if pick == nil, !isMainSlot {
                     // Accessory pool exhausted — repeats beat holes.
                     //
@@ -1238,7 +1247,8 @@ enum ProgramGenerator {
                        starred: Set<UUID> = [],
                        sportLens: String? = nil,
                        lens: CoachPersona.Lens? = nil,
-                       deprioritized: Set<UUID> = []) -> CatalogExercise? {
+                       deprioritized: Set<UUID> = [],
+                       priority: Set<UUID> = []) -> CatalogExercise? {
         let candidates: [CatalogExercise]
         switch slot {
         case .pattern(let pattern, _):
@@ -1260,6 +1270,12 @@ enum ProgramGenerator {
         let ladder = GeneratorScience.mainEquipmentLadder(focus: focus)
         let isMain: Bool
         if case .pattern(_, let main) = slot { isMain = main } else { isMain = false }
+        // A named focus lift takes its main slot before any scoring -
+        // see Inputs.focusExerciseIDs. Accessory slots are untouched so
+        // the lift is not also spent as an accessory elsewhere.
+        if isMain, let forced = candidates.first(where: { priority.contains($0.id) }) {
+            return forced
+        }
         let cap = complexityCapOverride ?? GeneratorScience.complexityCap(experience: experience)
         let scoreKey = focusScoreKey(focus)
         func tier(_ c: CatalogExercise) -> (Int, Int, Int, Int, Int, Int) {

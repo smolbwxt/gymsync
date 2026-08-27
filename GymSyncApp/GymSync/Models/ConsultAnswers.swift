@@ -93,12 +93,36 @@ struct ConsultAnswers: Equatable, Sendable {
             .filter { GeneratorScience.majorMuscles.contains($0) }
             .prefix(2)
             .map { $0 }
-        if let lift = focusLift(in: catalog),
-           GeneratorScience.majorMuscles.contains(lift.primaryMuscle),
-           !picked.contains(lift.primaryMuscle) {
+        // Every focus lift's muscle, not just the first - the athlete can
+        // name several now (owner 2026-08-27).
+        for lift in focusLifts(in: catalog)
+        where GeneratorScience.majorMuscles.contains(lift.primaryMuscle)
+            && !picked.contains(lift.primaryMuscle) {
             picked.append(lift.primaryMuscle)
         }
         return picked.isEmpty ? nil : Set(picked)
+    }
+
+    /// Every focus lift the athlete named, resolved. The picker records
+    /// exercise ids; a legacy free-text answer resolves by name through
+    /// the same forgiving-but-unambiguous matcher as focusLift(in:).
+    /// Order preserved, duplicates dropped.
+    func focusLifts(in catalog: [Exercise]) -> [Exercise] {
+        var seen: Set<UUID> = []
+        var lifts: [Exercise] = []
+        for raw in values("focus_lift") {
+            let resolved: Exercise?
+            if let id = UUID(uuidString: raw) {
+                resolved = catalog.first { $0.id == id }
+            } else {
+                resolved = Self.resolveByName(raw, in: catalog)
+            }
+            if let lift = resolved, !seen.contains(lift.id) {
+                seen.insert(lift.id)
+                lifts.append(lift)
+            }
+        }
+        return lifts
     }
 
     /// The catalog exercise behind the athlete's answer to "which lift is
@@ -110,7 +134,11 @@ struct ConsultAnswers: Equatable, Sendable {
     /// first plausible row: silently focusing the wrong lift is worse
     /// than focusing none, because the athlete would never see it happen.
     func focusLift(in catalog: [Exercise]) -> Exercise? {
-        let typed = (first("focus_lift") ?? "")
+        focusLifts(in: catalog).first
+    }
+
+    private static func resolveByName(_ raw: String, in catalog: [Exercise]) -> Exercise? {
+        let typed = raw
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
         guard typed.count >= 3 else { return nil }
@@ -172,6 +200,11 @@ struct ConsultAnswers: Equatable, Sendable {
         if let focus = focusMuscles(in: catalog) {
             p.focusMuscles = focus.sorted()
             state("focusMuscles")
+        }
+        let lifts = focusLifts(in: catalog)
+        if !lifts.isEmpty {
+            p.focusExerciseIDs = lifts.map(\.id)
+            state("focusExerciseIDs")
         }
         if let opener = first("opener") {
             p.rankedGoals = Self.goals(forOpener: opener)

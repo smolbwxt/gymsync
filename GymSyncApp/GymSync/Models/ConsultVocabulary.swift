@@ -20,6 +20,9 @@ enum ConsultVocabulary {
     /// Probes where more than one answer is true at once.
     static let multiSelect: Set<String> = [
         "equipment", "focus_areas", "gym_comfort", "cautions", "wont_do",
+        // The focus-lift picker (2026-08-27) shares the multi-select
+        // commit path; its values are exercise ids.
+        "focus_lift",
     ]
 
     static func isMultiSelect(_ probeID: String) -> Bool {

@@ -167,4 +167,31 @@ final class ConsultFocusTests: XCTestCase {
                           "\(probe.id) claims \(claimed.sorted()), which nothing writes")
         }
     }
+
+    // MARK: - Multiple focus lifts by id (picker, 2026-08-27)
+
+    func testFocusLiftsResolveByIDAndKeepOrder() {
+        let squat = catalog.first { $0.name == "Back Squat" }!
+        let bench = catalog.first { $0.name == "Bench Press" }!
+        let answers = ConsultAnswers(["focus_lift": [squat.id.uuidString, bench.id.uuidString]])
+        XCTAssertEqual(answers.focusLifts(in: catalog).map(\.name), ["Back Squat", "Bench Press"])
+        XCTAssertEqual(answers.focusLift(in: catalog)?.name, "Back Squat")
+    }
+
+    func testFocusLiftsLandOnTheProfileAsExerciseIDs() {
+        let squat = catalog.first { $0.name == "Back Squat" }!
+        let bench = catalog.first { $0.name == "Bench Press" }!
+        let answers = ConsultAnswers(["focus_lift": [squat.id.uuidString, bench.id.uuidString]])
+        let profile = answers.apply(to: TrainingProfile(), catalog: catalog)
+        XCTAssertEqual(profile.focusExerciseIDs, [squat.id, bench.id])
+        XCTAssertEqual(profile.provenance["focusExerciseIDs"], .stated)
+        // Both muscles feed the focus set, not just the first lift's.
+        XCTAssertEqual(Set(profile.focusMuscles ?? []),
+                       Set([squat.primaryMuscle, bench.primaryMuscle]))
+    }
+
+    func testAnUnknownIDResolvesToNothingNotToAGuess() {
+        let answers = ConsultAnswers(["focus_lift": [UUID().uuidString]])
+        XCTAssertTrue(answers.focusLifts(in: catalog).isEmpty)
+    }
 }
