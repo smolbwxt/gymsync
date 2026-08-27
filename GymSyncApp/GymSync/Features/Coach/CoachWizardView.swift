@@ -702,6 +702,39 @@ struct CoachWizardView: View {
         }
     }
 
+    /// The five doors' state at the moment of the build, frozen onto the
+    /// enrollment. Human-readable values on purpose - the provenance view
+    /// and the AAR payload both render these lines verbatim, and the
+    /// athlete (or the model) should never need a decoder ring.
+    private func buildConfigSnapshot() -> [String: String] {
+        var config: [String: String] = [:]
+        config["goal"] = label(for: focus.rawValue)
+        config["days per week"] = "\(days)"
+        config["duration"] = "\(duration) weeks"
+        config["experience"] = label(for: experience.rawValue)
+        config["session length"] = sessionMinutes.map { "\($0) min" } ?? "uncapped"
+        config["structure"] = structure.rawValue
+        config["intensity appetite"] = appetite
+        if let equipment = equipmentSummary() { config["equipment"] = equipment }
+        if !noGoPatterns.isEmpty {
+            config["won't do"] = noGoPatterns.sorted().joined(separator: ", ")
+        }
+        if !standingRules.isEmpty {
+            config["standing rules"] = "\(standingRules.count) held"
+        }
+        config["scheduled"] = scheduleSessions
+            ? "yes, \(sessionTimeLabel)" : "no"
+        return config
+    }
+
+    /// One line for the equipment dial, or nil when it is all-on (all-on
+    /// means "no constraint" and is not worth recording).
+    private func equipmentSummary() -> String? {
+        let all = Set(Venue.equipmentClasses)
+        guard equipment != all else { return nil }
+        return equipment.sorted().joined(separator: ", ")
+    }
+
     private func enrollGenerated(row: ProgramTemplateRow,
                                  weeks: [ProgramWeek],
                                  program: ProgramGenerator.Program) async {
@@ -757,7 +790,8 @@ struct CoachWizardView: View {
         _ = try? await ProgramRepository.enroll(
             template: template,
             focus: ProgramFocus(exerciseIDs: mainLiftIDs),
-            baseline: baselines)
+            baseline: baselines,
+            config: buildConfigSnapshot())
     }
 
     /// Build the program and put the athlete in front of it.

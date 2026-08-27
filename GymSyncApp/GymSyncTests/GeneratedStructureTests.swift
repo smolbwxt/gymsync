@@ -71,6 +71,34 @@ final class GeneratedStructureTests: XCTestCase {
                        "the reorder changed WHICH lifts are in the day")
     }
 
+    // MARK: The day ceiling (owner 2026-08-27: "Max volume: 25 sets per day")
+
+    func testNoGeneratedDayExceedsTheDayCap() {
+        // A stacked bro-split request is the reachable worst case the
+        // audit measured (~17 direct chest sets); the cap holds the whole
+        // SESSION at 25 working sets whatever the split does.
+        var inputs = ProgramGenerator.Inputs(focus: .hypertrophy)
+        inputs.daysPerWeek = 2
+        inputs.experience = .advanced
+        let catalog = (1...30).map { i in
+            ProgramGenerator.CatalogExercise(
+                id: UUID(), name: "Lift \(i)",
+                primaryMuscle: ["chest", "back", "quads", "shoulders"][i % 4],
+                secondaryMuscles: [], category: i % 3 == 0 ? "compound" : "isolation",
+                equipment: "barbell",
+                movementPattern: ["push_horizontal", "pull_horizontal",
+                                  "squat", "push_vertical"][i % 4],
+                rank: i)
+        }
+        let program = ProgramGenerator.generate(inputs: inputs, catalog: catalog)
+        for day in program.days {
+            let working = day.exercises.filter { $0.cardioZone == nil }
+                .map(\.sets).reduce(0, +)
+            XCTAssertLessThanOrEqual(working, 25,
+                "\(day.name) carries \(working) working sets - the day cap is 25")
+        }
+    }
+
     /// An already-adjacent pair must not be shuffled — the reorder is a
     /// repair, not a re-sort.
     func testAnAlreadyAdjacentPairIsLeftAlone() {

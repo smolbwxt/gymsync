@@ -1000,6 +1000,51 @@ enum ProgramGenerator {
             notes.append("Last accessory of each day runs as a drop set — two drops of about 20%, taken past the point a straight set would stop. It is the cheapest extra stimulus available once the heavy work is done.")
         }
 
+        // THE DAY CEILING - the last pass, deliberately. Owner
+        // 2026-08-27, closing the session-volume question the corpus
+        // could not settle: "Max volume: 25 sets per day."
+        //
+        // It runs after EVERY other pass because several of them add
+        // work: the weekly balancer adds accessory sets, the pairWith
+        // lever can double a day's entries, the drop-set pass rides the
+        // last accessory. A cap enforced earlier would be un-enforced by
+        // the time the program ships.
+        //
+        // Trim discipline mirrors the weekly balancer: mains are NEVER
+        // touched (slot logic owns them), accessories give sets back
+        // last-first, one at a time, and no exercise goes below one set
+        // - losing a set is a smaller lie than losing a movement the
+        // athlete was told they would do. The note reports exactly what
+        // was trimmed, because a silent trim is this codebase's named
+        // defect.
+        let dayCap = 25
+        var trimmedDays: [String] = []
+        for d in days.indices {
+            func working() -> Int {
+                days[d].exercises.filter { $0.cardioZone == nil }.map(\.sets).reduce(0, +)
+            }
+            var total = working()
+            guard total > dayCap else { continue }
+            let before = total
+            var index = days[d].exercises.count - 1
+            while total > dayCap, index >= 0 {
+                let ex = days[d].exercises[index]
+                if !ex.isMain, ex.cardioZone == nil, ex.sets > 1 {
+                    days[d].exercises[index].sets -= 1
+                    total -= 1
+                    // Keep trimming the same exercise only after the rest
+                    // have given one back - restart the sweep.
+                    index = days[d].exercises.count - 1
+                } else {
+                    index -= 1
+                }
+            }
+            trimmedDays.append("\(days[d].name) (\(before) \u{2192} \(total))")
+        }
+        if !trimmedDays.isEmpty {
+            notes.append("Day cap: no session carries more than \(dayCap) working sets \u{2014} trimmed \(trimmedDays.joined(separator: ", ")). The weekly total stays inside the band; the ceiling protects the single session.")
+        }
+
         return Program(days: days, weeks: weeks, notes: notes,
                        unhonoredRules: inputs.unhonoredRules)
     }

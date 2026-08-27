@@ -42,6 +42,15 @@ struct ProgramScheduleView: View {
     /// because the wizard screen that used to show it no longer exists -
     /// building now commits and lands here (owner 2026-08-26).
     @State private var lastBuild: TrainingProfile.BuiltBlock?
+    /// The provenance drawer. Closed by default on purpose - owner
+    /// 2026-08-27: the options that led to the build "isn't necessarily
+    /// something that a user is going to want to look at every single
+    /// time". They want where-am-I and what's-coming first; the why is
+    /// one tap away.
+    @State private var showProvenance = false
+    /// What has MOVED since the block started: rules that went live,
+    /// volume targets the titration adjusted.
+    @State private var changes: [String] = []
 
     var body: some View {
         ScrollView {
@@ -71,6 +80,10 @@ struct ProgramScheduleView: View {
                         dayRow(routine)
                     }
                     reasoningCard
+                    if !changes.isEmpty {
+                        changesCard
+                    }
+                    provenanceCard
                     calendarDoor
                     askDoor
                 } else if !routines.isEmpty {
@@ -295,29 +308,14 @@ struct ProgramScheduleView: View {
     }
 
     private var askDoor: some View {
-        NavigationLink {
-            CoachThreadLauncher(
-                title: "Block — week \(selectedWeek)",
-                opener: "I'm looking at week \(selectedWeek) of my block. Ask me what you want changed and I'll propose it.")
-                .background(theme.bg)
-                .navigationTitle("Coach")
-                .navigationBarTitleDisplayMode(.inline)
-        } label: {
-            HStack(spacing: 10) {
-                Text("ASK COACH FOR A CHANGE")
-                    .font(GSFont.bold(16, relativeTo: .headline))
-                    .tracking(0.5)
-                    .foregroundStyle(theme.text)
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(theme.neutral500)
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
+        // The program-specific payload (owner 2026-08-27: "clicking on a
+        // coach chat from the programming page on a specific program
+        // should load up a payload that is program specific with the
+        // goal, intent of the program, along with all of the information
+        // that led to it"). Built by the SAME engine the ledger's
+        // after-action uses, so a mid-block chat and a post-block AAR
+        // can never tell two different stories.
+        BlockThreadDoor(enrollment: enrollment, selectedWeek: selectedWeek)
     }
 
     /// Says one true thing and no numbers. The rule this screen runs on
@@ -414,6 +412,77 @@ struct ProgramScheduleView: View {
         }
     }
 
+    /// "HOW THIS WAS BUILT" - the five doors' frozen state, behind a
+    /// disclosure. Blocks that predate the snapshot say so instead of
+    /// inventing a past.
+    private var provenanceCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button {
+                withAnimation(.easeOut(duration: 0.18)) {
+                    showProvenance.toggle()
+                }
+            } label: {
+                HStack(spacing: 10) {
+                    Text("HOW THIS WAS BUILT")
+                        .font(GSFont.bold(13, relativeTo: .subheadline))
+                        .tracking(0.8)
+                        .foregroundStyle(theme.text)
+                    Spacer()
+                    Image(systemName: showProvenance ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(theme.neutral500)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if showProvenance {
+                if let config = enrollment?.config, !config.isEmpty {
+                    ForEach(config.sorted(by: { $0.key < $1.key }), id: \.key) { key, value in
+                        HStack(alignment: .top, spacing: 8) {
+                            Text(key.uppercased())
+                                .font(GSFont.bold(10, relativeTo: .caption2))
+                                .tracking(0.8)
+                                .foregroundStyle(theme.neutral500)
+                                .frame(width: 118, alignment: .leading)
+                            Text(value)
+                                .font(GSFont.body(12, relativeTo: .caption))
+                                .foregroundStyle(theme.text)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                } else {
+                    Text("This block was built before Coach started keeping the build options. Every block from now on carries them.")
+                        .font(GSFont.body(12, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral700)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .gs3DCard(cornerRadius: GSMetrics.radiusSm)
+    }
+
+    /// What has moved since the start - the block is not a stone tablet,
+    /// and the athlete should see its history without asking.
+    private var changesCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("SINCE THE START")
+                .font(GSFont.bold(10, relativeTo: .caption2))
+                .tracking(1.1)
+                .foregroundStyle(theme.accent)
+            ForEach(changes, id: \.self) { line in
+                Text(line)
+                    .font(GSFont.body(12, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral700)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .gs3DCard(cornerRadius: GSMetrics.radiusSm)
+    }
+
     private var emptyCard: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("NO BLOCK ON THE BAR")
@@ -482,12 +551,92 @@ struct ProgramScheduleView: View {
         // an Optional, and Swift 5 flattens. Same shape as the call in
         // CoachHomeView.task.
         lastBuild = (try? await TrainingProfileRepository.load())?.lastBuild
+        await loadChanges()
         catalog = (try? await ExerciseRepository.fetchAll()) ?? []
         guard let ownerID = appState.currentProfile?.id,
               let all = try? await RoutineRepository.fetchAll(ownerID: ownerID) else { return }
         routines = all.filter { $0.name.hasPrefix("Coach · ") && $0.prescribedBy == nil }
         let rows = (try? await RoutineRepository.exercisesForRoutines(ids: routines.map(\.id))) ?? []
         exercisesByRoutine = Dictionary(grouping: rows, by: \.routineID)
+    }
+
+    /// The block's movement history: rules that went live during it and
+    /// volume the titration moved. Compact lines, computed - never prose
+    /// the model wrote.
+    private func loadChanges() async {
+        guard let started = enrollment?.startedOn else { return }
+        var lines: [String] = []
+        for rule in (try? await TrainingRulesRepository.active()) ?? [] {
+            if let applied = rule.appliedAt, applied >= started {
+                lines.append("Your rule went in: \u{201c}\(rule.rule)\u{201d}")
+            }
+        }
+        for target in (try? await VolumeTargetRepository.all()) ?? [] {
+            if let reason = target.reason, !reason.isEmpty {
+                lines.append("\(target.muscle.capitalized) \u{2192} \(target.weeklySets) sets/week \u{2014} \(reason)")
+            }
+        }
+        changes = Array(lines.prefix(6))
+    }
+}
+
+/// The ask-door with the block's computed payload attached. A separate
+/// tiny view because the payload is async - it assembles on tap, with a
+/// spinner in the row, and the thread opens already knowing the block.
+private struct BlockThreadDoor: View {
+    let enrollment: ProgramEnrollment?
+    let selectedWeek: Int
+
+    @Environment(AppState.self) private var appState
+    @Environment(\.gsTheme) private var theme
+    private struct OpenerPayload: Identifiable {
+        let id = UUID()
+        let text: String
+    }
+
+    @State private var opener: OpenerPayload?
+    @State private var building = false
+
+    var body: some View {
+        Button {
+            guard !building else { return }
+            building = true
+            Task {
+                defer { building = false }
+                if let enrollment, let userID = appState.currentProfile?.id {
+                    opener = OpenerPayload(text: await BlockAAR.payload(
+                        enrollment: enrollment, userID: userID))
+                } else {
+                    opener = OpenerPayload(text: "I'm looking at week \(selectedWeek) of my block. Ask me what you want changed and I'll propose it.")
+                }
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Text("ASK COACH FOR A CHANGE")
+                    .font(GSFont.bold(16, relativeTo: .headline))
+                    .tracking(0.5)
+                    .foregroundStyle(theme.text)
+                Spacer()
+                if building {
+                    ProgressView().tint(theme.accent)
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(theme.neutral500)
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
+        .navigationDestination(item: $opener) { payload in
+            CoachThreadLauncher(title: "Block \u{2014} week \(selectedWeek)",
+                                opener: payload.text)
+                .background(theme.bg)
+                .navigationTitle("Coach")
+                .navigationBarTitleDisplayMode(.inline)
+        }
     }
 }
 

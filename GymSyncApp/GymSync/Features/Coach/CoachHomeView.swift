@@ -57,7 +57,7 @@ struct CoachHomeView: View {
     /// consult is gone and the builder pops back to here.
     @State private var route: Route?
 
-    private enum Route: Hashable { case consult, wizard, schedule }
+    private enum Route: Hashable { case consult, wizard, schedule, ledger }
 
     private var persona: CoachPersona? { CoachPersona.bySlug(profile.persona) }
 
@@ -121,6 +121,11 @@ struct CoachHomeView: View {
             case .schedule:
                 ProgramScheduleView()
                     .background(theme.bg)
+            case .ledger:
+                ProgramLedgerView()
+                    .background(theme.bg)
+                    .navigationTitle("My Program")
+                    .navigationBarTitleDisplayMode(.inline)
             }
         }
         .task {
@@ -307,11 +312,16 @@ struct CoachHomeView: View {
         // Same route as the consult, so there is exactly one way the
         // builder gets onto the stack and exactly one thing that can pop
         // off it.
-        Button { route = .wizard } label: {
+        // Owner 2026-08-27: "I can't actually access the scheduling of my
+        // program after it's been set." This door opened the BUILDER - the
+        // one screen a returning athlete needs least. It opens the ledger
+        // now: current block pinned on top, every past block below it,
+        // the builder one deliberate tap inside.
+        Button { route = .ledger } label: {
             doorLabel(title: "MY PROGRAM",
                       icon: "wand.and.stars",
-                      description: "Goals, schedule, style, body, limits — the generator builds your week.",
-                      footer: "GOALS · DAYS · STYLE → YOUR WEEK")
+                      description: "Your current block and every block before it — open one to see it, schedule it, or talk it over.",
+                      footer: "CURRENT · LEDGER · AFTER-ACTION")
         }
         .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
         .accessibilityElement(children: .ignore)

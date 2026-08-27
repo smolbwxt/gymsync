@@ -39,6 +39,11 @@ struct ProgramEnrollment: Decodable, Identifiable, Sendable {
     let endedAt: Date?
     let endedReason: String?
     let createdAt: Date
+    /// The build-time snapshot of the options that made this block - the
+    /// five doors' state at create(). nil for blocks that predate the
+    /// snapshot (2026-08-27); the ledger and the AAR say so honestly
+    /// rather than inventing a past.
+    var config: [String: String]? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -51,6 +56,7 @@ struct ProgramEnrollment: Decodable, Identifiable, Sendable {
         case endedAt = "ended_at"
         case endedReason = "ended_reason"
         case createdAt = "created_at"
+        case config
     }
 
     /// Midnight of the start day in the device's calendar. A program week
@@ -81,6 +87,24 @@ enum ProgramRepository {
     /// span weeks) and filters client-side rather than using PostgREST's
     /// `is.null` filter; the partial unique index guarantees at most one
     /// active row either way.
+    /// Every enrollment the athlete has ever had, newest first - the
+    /// ledger's spine. Same fetch active() has always run; active() just
+    /// discarded the ended rows client-side. History retention is by
+    /// design (migration comment: "history rows accumulate without
+    /// limit") - this is the first reader of it.
+    static func history() async throws -> [ProgramEnrollment] {
+        guard let userID = await SupabaseService.shared.currentUserID() else { return [] }
+        do {
+            return try await client
+                .from("program_enrollments")
+                .select()
+                .eq("user_id", value: userID)
+                .order("created_at", ascending: false)
+                .execute()
+                .value
+        } catch { throw ErrorMapping.map(error) }
+    }
+
     static func active() async throws -> ProgramEnrollment? {
         guard let userID = await SupabaseService.shared.currentUserID() else { return nil }
         do {
@@ -102,6 +126,7 @@ enum ProgramRepository {
         let baseline: [String: Double]
         let startedOn: String
         let weeks: Int
+        let config: [String: String]?
         enum CodingKeys: String, CodingKey {
             case userID = "user_id"
             case templateSlug = "template_slug"
@@ -109,6 +134,7 @@ enum ProgramRepository {
             case baseline
             case startedOn = "started_on"
             case weeks
+            case config
         }
     }
 
@@ -116,7 +142,8 @@ enum ProgramRepository {
     /// (lowercased); pass `[:]` for volume-driven templates — always an
     /// explicit value, never a server default (migration header).
     static func enroll(template: ProgramTemplate, focus: ProgramFocus,
-                       baseline: [String: Double]) async throws -> ProgramEnrollment {
+                       baseline: [String: Double],
+                       config: [String: String]? = nil) async throws -> ProgramEnrollment {
         guard let userID = await SupabaseService.shared.currentUserID() else {
             throw GymSyncError.unauthorized
         }
@@ -129,7 +156,8 @@ enum ProgramRepository {
                     focus: focus,
                     baseline: baseline,
                     startedOn: SessionSeries.dayString(for: .now, in: .current),
-                    weeks: template.weeks.count
+                    weeks: template.weeks.count,
+                    config: config
                 ))
                 .select()
                 .single()
