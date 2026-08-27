@@ -483,11 +483,30 @@ struct CoachHomeView: View {
     /// consult would shape Coach indefinitely with no way to take it back.
     private var standingRulesSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("YOUR STANDING RULES")
-                .font(GSFont.bold(10, relativeTo: .caption2))
-                .tracking(1.1)
-                .foregroundStyle(theme.neutral500)
-            ForEach(standingRulesAll) { rule in
+            HStack {
+                Text("YOUR STANDING RULES")
+                    .font(GSFont.bold(10, relativeTo: .caption2))
+                    .tracking(1.1)
+                    .foregroundStyle(theme.neutral500)
+                Spacer()
+                NavigationLink {
+                    CoachRulesView()
+                        .background(theme.bg)
+                        .navigationTitle("Standing Rules")
+                        .navigationBarTitleDisplayMode(.inline)
+                } label: {
+                    HStack(spacing: 3) {
+                        Text("MANAGE")
+                            .font(GSFont.bold(10, relativeTo: .caption2))
+                            .tracking(1.1)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 9, weight: .semibold))
+                    }
+                    .foregroundStyle(theme.accent)
+                }
+                .buttonStyle(.plain)
+            }
+            ForEach(standingRulesAll.prefix(3)) { rule in
                 VStack(alignment: .leading, spacing: 3) {
                     Text("\u{201c}\(rule.rule)\u{201d}")
                         .font(GSFont.body(13, relativeTo: .subheadline))
@@ -516,9 +535,11 @@ struct CoachHomeView: View {
                     }
                 }
             }
-            Text("Hold a rule to drop it. Dropped rules stop shaping your programs and Coach's advice.")
-                .font(GSFont.body(10, relativeTo: .caption2))
-                .foregroundStyle(theme.neutral500)
+            if standingRulesAll.count > 3 {
+                Text("+ \(standingRulesAll.count - 3) more \u{2014} MANAGE has them all")
+                    .font(GSFont.body(10, relativeTo: .caption2))
+                    .foregroundStyle(theme.neutral500)
+            }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
