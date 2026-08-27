@@ -600,3 +600,31 @@ time cap".
   when known; owner only named days + time. The reroll path
   (`select` call at ~:1628) does not pass priority — rerolling a focus
   lift's slot can replace it; probably correct (reroll = "not this one").
+
+## F8 - Program page = calendar on top + housed routines; injury severity; routine threads — DONE (`2a561d8`, `2e4a376`, `6d6e0b0`)
+- `BlockCalendarView(embedded:)` renders the block-in-time card inside
+  ProgramScheduleView (one grid, no copy); ON THE CALENDAR door removed;
+  `refreshToken`/`onScheduleChanged` keep grid and week buttons in step.
+  Day rows housed in YOUR ROUTINE · BUILT FOR YOU.
+- Injury severity (owner: "I'm not squatting or deadlifting if my hip is
+  severely injured"): `cautions` asked every consult, pre-selected from
+  the profile, REPLACES on answer; `injury_severity` follows (WORKING
+  AROUND IT = caution/sort-last, INJURED = exclusion).
+  `TrainingProfile.injuredJoints` → `Inputs.injuredJoints` →
+  `usableCatalog` drops every lift labeled with the joint (upstream of
+  every sort key, the focus-lift lever, the last-resort fill); the block
+  notes say what is out. Digest renders it in plain words.
+- Routine threads: `RoutineThreadDoor` computes prescription + rationale
+  + build notes + unhonored rules + constraints as `seededContext`
+  (instructions only). `send()` waits for `open()`; `reply()` waits out
+  `isResponding` and retries once; instructions forbid answering with an
+  announcement.
+- **Left open:** healing path — a joint is un-injured only by unticking
+  it in the next consult; "my hip is healed" in chat should propose the
+  same (mid-block applier join). A focus lift that loads a CAUTIONED
+  joint is still forced; injured now wins over it. The two dead runs
+  (`85757c8` red on a fixture bug + missing tunables registry entries)
+  cost nothing but time. Hypertrophy focus-areas cap of 2: see the
+  owner note in the session — the generator only PREFERS focus muscles
+  in selection; nothing adds sets; the probe's "I'll give them the
+  volume" is unfulfilled. Decision pending.
