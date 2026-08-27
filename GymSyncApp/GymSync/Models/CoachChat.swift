@@ -219,6 +219,10 @@ final class CoachChatEngine {
     private func seedSession(summary: String, tail: [CoachChatMessage]) {
         var instructions = DebriefInstructions.build(persona: persona, profile: profile)
         instructions += "\n\nThis is an ONGOING conversation thread, not a one-off debrief. Keep replies chat-length (2-5 sentences) unless asked to go deep."
+        // Field 2026-08-27: "I'll check your hamstring trend for you." was
+        // the whole reply - the tool ran, its result came back, and the
+        // model had already spent its turn on the announcement.
+        instructions += "\n\nYour tools run INSIDE your turn and their results come back to you before you answer. Never reply with only an announcement like 'I'll check that' or 'let me look' - call the tool, then answer with what it returned, in the same reply. If a tool has nothing, say so and answer from what you know."
         if !routinesRail.isEmpty {
             instructions += "\n\nTHE ATHLETE'S ROUTINES AND SCHEDULE (computed — cite, don't invent):\n" + routinesRail
         }
@@ -275,7 +279,25 @@ final class CoachChatEngine {
             seedSession(summary: thread.summary, tail: tail)
         }
         guard let session else { throw GymSyncError.unknown("Coach chat session unavailable") }
-        let reply = try await session.respond(to: message).content
+        // A session answers one prompt at a time; a second respond while
+        // one is in flight throws. Wait it out rather than fail.
+        var waited = 0
+        while session.isResponding, waited < 300 {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            waited += 1
+        }
+        let reply: String
+        do {
+            reply = try await session.respond(to: message).content
+        } catch {
+            // One retry. Field 2026-08-27: a thread showed "didn't come
+            // through" and then answered the same question on the next
+            // tap - a transient throw, not a dead session. Log the real
+            // error so the next one is diagnosable.
+            AppLogger.workout.error("coach thread respond threw: \(String(describing: error), privacy: .public)")
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            reply = try await session.respond(to: message).content
+        }
         turnsSinceSeed += 2
         if turnsSinceSeed >= compactionBudget {
             await compact()

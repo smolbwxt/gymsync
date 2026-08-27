@@ -823,14 +823,10 @@ struct ProgramRoutineDetailView: View {
     }
 
     private var talkDoor: some View {
-        NavigationLink {
-            CoachThreadLauncher(
-                title: displayName,
-                opener: "I'm looking at \(displayName) in week \(weekNumber): \(exercises.count) exercises, leading with \(exercises.first.map { name(for: $0) } ?? "the main lift"). Ask me anything about how it's built, or tell me what to change.")
-                .background(theme.bg)
-                .navigationTitle("Coach")
-                .navigationBarTitleDisplayMode(.inline)
-        } label: {
+        RoutineThreadDoor(
+            title: displayName,
+            opener: "I'm looking at \(displayName) in week \(weekNumber): \(exercises.count) exercises, leading with \(exercises.first.map { name(for: $0) } ?? "the main lift"). Ask me anything about how it's built, or tell me what to change.",
+            context: { await routineContext() }) {
             Text("TALK THIS ROUTINE OVER")
                 .font(GSFont.bold(15, relativeTo: .headline))
                 .tracking(0.5)
@@ -847,6 +843,52 @@ struct ProgramRoutineDetailView: View {
         routine.name.hasPrefix("Coach · ")
             ? String(routine.name.dropFirst("Coach · ".count))
             : routine.name
+    }
+
+    /// What Coach needs to answer "why is X in here" and "why isn't Y":
+    /// the prescription as written, the rationale the page shows, the
+    /// build's own notes, and the constraints that shaped it. Field
+    /// 2026-08-27: asked "why aren't there any hamstring movements", a
+    /// thread opened with only "2 exercises, leading with Nordic
+    /// Hamstring Curl" had nothing to answer from and reached for the
+    /// trend tool instead.
+    private func routineContext() async -> String {
+        var lines: [String] = []
+        lines.append("ROUTINE: \(displayName), week \(weekNumber) of the block.")
+        lines.append("PRESCRIPTION, in order:")
+        var muscles: [String] = []
+        for row in exercises {
+            let ex = catalog.first { $0.id == row.exerciseID }
+            let muscle = ex?.primaryMuscle ?? "?"
+            let pattern = ex?.movementPattern ?? "?"
+            if !muscles.contains(muscle) { muscles.append(muscle) }
+            lines.append("- \(name(for: row)) - \(scheme(for: row)) (\(muscle), \(pattern))")
+        }
+        lines.append("MUSCLES WITH DIRECT WORK IN THIS ROUTINE: \(muscles.joined(separator: ", ")). A muscle not listed has no direct work on this day; another day of the block may carry it.")
+        let rationale = rationaleLines
+        if !rationale.isEmpty {
+            lines.append("WHY THIS ROUTINE IS BUILT THIS WAY (the page shows the athlete these lines):")
+            lines.append(contentsOf: rationale.map { "- " + $0 })
+        }
+        if let profile = try? await TrainingProfileRepository.load() {
+            if let build = profile.lastBuild, !build.notes.isEmpty {
+                lines.append("COACH'S NOTES FROM THE BUILD (why the block looks like it does):")
+                lines.append(contentsOf: build.notes.map { "- " + $0 })
+            }
+            if let build = profile.lastBuild, !build.unhonoredRules.isEmpty {
+                lines.append("RULES THE ATHLETE GAVE THAT THE BUILD COULD NOT HONOR: " + build.unhonoredRules.joined(separator: "; "))
+            }
+            var constraints: [String] = []
+            constraints.append("\(profile.daysPerWeek) days a week")
+            if let minutes = profile.sessionMinutes { constraints.append("sessions capped at \(minutes) min (the cap trims accessories, last first)") }
+            if !profile.injuredJoints.isEmpty { constraints.append("INJURED, every lift that loads it is out: " + profile.injuredJoints.joined(separator: ", ")) }
+            if !profile.cautionJoints.isEmpty { constraints.append("working around (lifts that load it sort last): " + profile.cautionJoints.joined(separator: ", ")) }
+            if !profile.excludedPatterns.isEmpty { constraints.append("won't do these patterns: " + profile.excludedPatterns.joined(separator: ", ")) }
+            if let cap = profile.derivedComplexityCap { constraints.append("movement complexity capped at level \(cap) of 5") }
+            lines.append("THE ATHLETE'S CONSTRAINTS THAT SHAPED THE BLOCK: " + constraints.joined(separator: "; "))
+        }
+        lines.append("When asked why a lift or muscle is missing, answer from the notes and constraints above - name the cap, the exclusion, the injury or the day that carries it. Never guess, and never answer with only a promise to look.")
+        return lines.joined(separator: "\n")
     }
 
     private func name(for row: RoutineExercise) -> String {
@@ -894,6 +936,47 @@ struct ProgramRoutineDetailView: View {
     }
 }
 
+// MARK: - RoutineThreadDoor
+//
+// The routine page's ask-door. Like BlockThreadDoor: the context is
+// computed on tap (it reads the profile), a spinner sits in the row, and
+// the thread opens already knowing the routine.
+private struct RoutineThreadDoor<Label: View>: View {
+    let title: String
+    let opener: String
+    let context: () async -> String
+    @ViewBuilder let label: () -> Label
+
+    @Environment(\.gsTheme) private var theme
+    private struct Payload: Identifiable, Hashable {
+        let id = UUID()
+        let text: String
+    }
+    @State private var payload: Payload?
+    @State private var building = false
+
+    var body: some View {
+        Button {
+            guard !building else { return }
+            building = true
+            Task {
+                defer { building = false }
+                payload = Payload(text: await context())
+            }
+        } label: {
+            label()
+        }
+        .buttonStyle(.gs3D(face: theme.accent, lip: theme.raised3DLip,
+                           cornerRadius: GSMetrics.radiusSm, lipHeight: 4))
+        .navigationDestination(item: $payload) { payload in
+            CoachThreadLauncher(title: title, opener: opener, context: payload.text)
+                .background(theme.bg)
+                .navigationTitle("Coach")
+                .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+}
+
 // MARK: - CoachThreadLauncher
 //
 // Opens a NEW Coach thread carrying the caller's context, then hands off
@@ -903,6 +986,8 @@ struct ProgramRoutineDetailView: View {
 struct CoachThreadLauncher: View {
     let title: String
     let opener: String
+    /// Instructions-only context (see CoachThreadView.seededContext).
+    var context: String? = nil
 
     @Environment(\.gsTheme) private var theme
     @State private var thread: CoachChatThread?
@@ -911,7 +996,8 @@ struct CoachThreadLauncher: View {
     var body: some View {
         Group {
             if let thread {
-                CoachThreadView(thread: thread, seededOpener: opener)
+                CoachThreadView(thread: thread, seededOpener: opener,
+                                seededContext: context)
             } else if failed {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Couldn't open a thread just now.")

@@ -742,6 +742,11 @@ struct CoachThreadView: View {
     /// place of the generic greeting; not persisted, so it never becomes
     /// a message the model has to account for later.
     var seededOpener: String? = nil
+    /// Computed context for the model ONLY (a routine's prescription,
+    /// the block's build notes, the athlete's constraints). Goes into
+    /// the instructions, never into a bubble - the opener is what the
+    /// athlete reads, this is what Coach reads.
+    var seededContext: String? = nil
 
     @Environment(AppState.self) private var appState
     @Environment(\.gsTheme) private var theme
@@ -975,6 +980,9 @@ struct CoachThreadView: View {
             }
             if let seededOpener {
                 railLines.append("THIS THREAD WAS OPENED FROM: \(seededOpener)")
+            }
+            if let seededContext, !seededContext.isEmpty {
+                railLines.append("CONTEXT FOR THIS THREAD (computed - cite it, never invent):\n" + seededContext)
             }
             // The athlete's own standing rules, so Coach can CITE one
             // rather than silently obeying it — the difference between a
@@ -1221,6 +1229,15 @@ struct CoachThreadView: View {
             // question must not appear there AND in the prompt.
             messages.append(CoachChatMessage(id: UUID(), role: "athlete",
                                              body: question, createdAt: .now))
+            // Field 2026-08-27: "I couldn't reach the on-device model"
+            // on a device that had it. open() builds the engine after
+            // six repository reads; a question typed inside that window
+            // found `engine` nil. Wait for open() to finish first.
+            var waited = 0
+            while loading, waited < 150 {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+                waited += 1
+            }
             if !titled {
                 titled = true
                 await CoachChatRepository.autoTitle(threadID: thread.id, from: question)
