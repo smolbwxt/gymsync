@@ -21,6 +21,15 @@ worse than never having built the feature.
 
 ---
 
+## STATUS UPDATE (later the same day)
+
+Commit `bbbb481` closed: **P0.2** (receipts stamp what fired, via
+`Inputs.appliedRuleIDs`), **P1.1** (titration wired - `runVolumeTitration`
+in the wizard, before the targets read), **P1.2 both hosts** (offer sheet
+and calendar land on the schedule), **P2.1** (rules list + retire +
+honest confirm copy). All device-unverified; Fable's brief applies to
+them in full.
+
 ## P0 — Fixed today, verify on device
 
 These were found by the verification pass and fixed in `9ad4c5f`/`HEAD`.
@@ -346,3 +355,53 @@ reads correctly at every individual line.
   tested and the model path has **never executed anywhere**.
 
 That last one is the largest untested surface in the change.
+
+---
+
+# Appendix: onboarding audit (PARTIAL - one agent of nine survived)
+
+The onboarding audit's path-trace agent completed; the seven probe lenses
+and the ranker died on a session limit. So the findings below are from a
+SINGLE agent and are un-verified by an adversarial pass - trust the
+file:line citations, re-derive the conclusions. The seven lenses
+(dead-ends, dropped input, first-run emptiness, health gate, copy,
+navigation, first workout) have NOT run; re-launch the audit workflow
+when limits reset (script is preserved, resumable:
+`gymsync-onboarding-audit-wf_bbe552fd-5a1.js`).
+
+## O1 - Kill after username creation permanently skips half of onboarding [high]
+`isNewSignup` is `@State` on OnboardingCoordinator, set only from the
+UsernameView binding. `loadProfile()` sets `appState.currentProfile` the
+moment a profile row exists, which flips RootView to MainTabView. Kill
+the app after the username is created and before "Enter Gym Sync":
+screens 4-7 (home gym, lift anchors, push priming, welcome) never appear
+again - and screen 7 is the only setter of `pendingCoachOffer`, so the
+Coach offer never fires for that athlete. Evidence:
+OnboardingCoordinator.swift:15,37,72; RootView.swift:59.
+
+## O2 - The KG/LBS choice is silently discarded [high - silent input discard]
+`LiftAnchorsView.swift:191` writes `settings.unitSystem` DOWNSTREAM of the
+empty-anchors early return at :180-183. An athlete flips the unit toggle,
+enters no anchors, presses "SET MY STARTS" - and the button is
+byte-identical to Skip: their unit choice is dropped without a word. This
+is the session's signature defect class, in onboarding.
+
+## O3 - Walkthrough state is device-local and non-resumable [medium]
+Kill on page 2 of 4 -> replays from page 0 (flag written only in onDone;
+`.interactiveDismissDisabled()` blocks escape). Second account on the
+same device gets NO walkthrough, and `pendingCoachOffer` is consumed on
+plain `onAppear` instead - a different first-run per account. Evidence:
+OneShotFlags.swift:16-18,35; RootView.swift:36,92-107; WalkthroughView.swift:17,94.
+
+## O4 - Step numbering is broken [low]
+No screen says "STEP 1 OF 4"; the first numbered screen is "STEP 2 OF 4".
+Three different pip grammars across four screens (UsernameView.swift:33-37
+three pips two filled; HomeGymSetupView.swift:135-145 three pips all
+filled; LiftAnchorsView.swift:41-50 no pips).
+
+## O5 - No true first-run replay for QA [low]
+`OneShotFlags.resetAll()` (SettingsView.swift:489) clears tips and tours
+but not the profile, screening, training profile, or gym - there is no
+in-app way to re-run a genuine first run, which is part of why this path
+goes unexercised.
+
