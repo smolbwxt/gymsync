@@ -589,7 +589,7 @@ private struct BlockThreadDoor: View {
 
     @Environment(AppState.self) private var appState
     @Environment(\.gsTheme) private var theme
-    private struct OpenerPayload: Identifiable {
+    private struct OpenerPayload: Identifiable, Hashable {
         let id = UUID()
         let text: String
     }

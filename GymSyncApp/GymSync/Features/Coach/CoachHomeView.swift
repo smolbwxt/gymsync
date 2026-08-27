@@ -718,6 +718,11 @@ struct CoachThreadView: View {
     /// The Apply loop in threads (owner 2026-08-25): Coach proposed, the
     /// athlete decides — #38's no-silent-tweaks holds here too.
     @State private var pendingEdit: RoutineEditProposal?
+    /// A standing rule the model read out of the conversation, awaiting
+    /// the athlete's verdict - the same consent card the consult close
+    /// uses, in the thread where the request was made.
+    @State private var pendingRule: StandingRuleProposal?
+    @State private var savingRule = false
     @State private var applyingEdit = false
     @State private var allExercises: [Exercise] = []
     /// Held as Any so this view compiles on every SDK; only the gated
@@ -767,6 +772,9 @@ struct CoachThreadView: View {
                 .onChange(of: messages.count) {
                     withAnimation { proxy.scrollTo("chat-tail", anchor: .bottom) }
                 }
+            }
+            if let rule = pendingRule {
+                threadRuleCard(rule)
             }
             if let proposal = pendingEdit {
                 VStack(alignment: .leading, spacing: 6) {
@@ -963,9 +971,106 @@ struct CoachThreadView: View {
                 standingRules: rules.map(\.rule),
                 onProposeEdit: { proposal in
                     DispatchQueue.main.async { pendingEdit = proposal }
+                },
+                catalog: allExercises,
+                onProposeRule: { proposal in
+                    DispatchQueue.main.async { pendingRule = proposal }
                 })
         }
         #endif
+    }
+
+    /// The rule consent card, in-thread. Accepting stores the rule
+    /// confirmed (source "chat") and tells the thread so the model can
+    /// acknowledge; the standing-rules list on the Coach page picks it
+    /// up on next read.
+    private func threadRuleCard(_ proposal: StandingRuleProposal) -> some View {
+        let buildable = proposal.reading.intent.isBuildable(slots: proposal.reading.slots)
+        let condition = proposal.reading.slots["condition"]
+        return VStack(alignment: .leading, spacing: 6) {
+            Text("COACH HEARD A RULE")
+                .font(GSFont.bold(10, relativeTo: .caption2))
+                .tracking(1.1)
+                .foregroundStyle(theme.accent)
+            Text("\u{201c}\(proposal.verbatim)\u{201d}")
+                .font(GSFont.body(12, relativeTo: .caption))
+                .foregroundStyle(theme.neutral700)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(proposal.reading.intent.reading(slots: proposal.reading.slots))
+                .font(GSFont.bold(14, relativeTo: .subheadline))
+                .foregroundStyle(theme.text)
+                .fixedSize(horizontal: false, vertical: true)
+            if let condition, !condition.isEmpty {
+                Text("Kept as said \u{2014} when \(condition), tell me here and I'll make the change then.")
+                    .font(GSFont.body(11, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral700)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if !buildable {
+                Text("I understand this one but can't build it into a block yet \u{2014} it goes on my list.")
+                    .font(GSFont.body(11, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral700)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(spacing: 10) {
+                Button {
+                    guard !savingRule else { return }
+                    savingRule = true
+                    Task {
+                        defer { savingRule = false }
+                        var confirmation = "Held. It shapes every block from the next build on."
+                        if let userID = appState.currentProfile?.id {
+                            do {
+                                try await TrainingRulesRepository.add(
+                                    proposal.verbatim, source: "chat",
+                                    intent: proposal.reading.intent,
+                                    slots: proposal.reading.slots.isEmpty
+                                        ? nil : proposal.reading.slots,
+                                    confirmed: true,
+                                    userID: userID)
+                            } catch {
+                                confirmation = ErrorMapping.map(error).errorDescription
+                                    ?? "That rule didn't stick - tell me again."
+                            }
+                        }
+                        if let saved = await CoachChatRepository.append(
+                            threadID: thread.id, role: "coach", body: confirmation) {
+                            messages.append(saved)
+                        } else {
+                            messages.append(CoachChatMessage(id: UUID(), role: "coach",
+                                                             body: confirmation, createdAt: .now))
+                        }
+                        pendingRule = nil
+                    }
+                } label: {
+                    Text(savingRule ? "SAVING\u{2026}"
+                         : (buildable ? "YES, HOLD THAT" : "YES, THAT'S WHAT I MEANT"))
+                        .font(GSFont.bold(11, relativeTo: .caption2))
+                        .tracking(0.6)
+                        .foregroundStyle(theme.bg)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 7)
+                        .background(theme.accent)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                Button {
+                    pendingRule = nil
+                } label: {
+                    Text("NOT QUITE")
+                        .font(GSFont.bold(11, relativeTo: .caption2))
+                        .tracking(0.6)
+                        .foregroundStyle(theme.neutral700)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.surface)
+        .overlay(RoundedRectangle(cornerRadius: 12)
+            .strokeBorder(theme.accent.opacity(0.4), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .padding(.horizontal, 12)
     }
 
     private func threadProposalSummary(_ p: RoutineEditProposal) -> String {
@@ -1007,6 +1112,42 @@ struct CoachThreadView: View {
         guard let routine, var rows = rowsByRoutine[routine.id],
               let index = rows.firstIndex(where: matches) else { return nil }
         var summary: [String] = []
+        // THE SWAP, first - so any weight/reps in the same proposal land
+        // on the replacement. Wired in BOTH writers on the same day it
+        // entered the proposal: a tool the model can call with a field
+        // only one surface honours is this codebase's silent-discard
+        // defect wearing a new coat.
+        if let swapName = proposal.swapToExerciseName {
+            let needle = swapName.lowercased()
+            let replacement = allExercises.first { $0.name.lowercased() == needle }
+                ?? allExercises
+                    .filter { $0.aliasOf == nil }
+                    .filter { $0.name.lowercased().contains(needle) || needle.contains($0.name.lowercased()) }
+                    .min { $0.name.count < $1.name.count }
+            guard let replacement, replacement.id != rows[index].exerciseID else { return nil }
+            let old = rows[index]
+            // exerciseID is immutable by design - a swap is a REPLACEMENT
+            // row carrying the old prescription. save() deletes and
+            // re-inserts the full array, so position survives by copying.
+            rows[index] = RoutineExercise(
+                id: UUID(), routineID: old.routineID, exerciseID: replacement.id,
+                position: old.position,
+                targetSets: old.targetSets,
+                targetReps: old.targetReps,
+                targetWeight: nil,   // the old load belongs to the old movement
+                restSeconds: old.restSeconds,
+                notes: old.notes,
+                setType: old.setType,
+                supersetGroup: old.supersetGroup,
+                dropSteps: old.dropSteps,
+                dropPercent: old.dropPercent,
+                targetFailure: old.targetFailure,
+                targetRepsLow: old.targetRepsLow,
+                targetRepsHigh: old.targetRepsHigh,
+                cardioZone: old.cardioZone,
+                cardioMinutes: old.cardioMinutes)
+            summary.append("swapped to \(replacement.name)")
+        }
         let unit = ThemeStore.shared.weightUnit
         if let weight = proposal.weight {
             let pounds = Units.toPounds(Decimal(weight), from: unit)

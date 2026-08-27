@@ -3338,6 +3338,42 @@ struct WorkoutSessionView: View {
         }) else { return nil }
         var rows = routineExercises
         var summary: [String] = []
+        // THE SWAP, first - so any weight/reps in the same proposal land
+        // on the replacement. Wired in BOTH writers on the same day it
+        // entered the proposal: a tool the model can call with a field
+        // only one surface honours is this codebase's silent-discard
+        // defect wearing a new coat.
+        if let swapName = proposal.swapToExerciseName {
+            let needle = swapName.lowercased()
+            let replacement = allExercises.first { $0.name.lowercased() == needle }
+                ?? allExercises
+                    .filter { $0.aliasOf == nil }
+                    .filter { $0.name.lowercased().contains(needle) || needle.contains($0.name.lowercased()) }
+                    .min { $0.name.count < $1.name.count }
+            guard let replacement, replacement.id != rows[index].exerciseID else { return nil }
+            let old = rows[index]
+            // exerciseID is immutable by design - a swap is a REPLACEMENT
+            // row carrying the old prescription. save() deletes and
+            // re-inserts the full array, so position survives by copying.
+            rows[index] = RoutineExercise(
+                id: UUID(), routineID: old.routineID, exerciseID: replacement.id,
+                position: old.position,
+                targetSets: old.targetSets,
+                targetReps: old.targetReps,
+                targetWeight: nil,   // the old load belongs to the old movement
+                restSeconds: old.restSeconds,
+                notes: old.notes,
+                setType: old.setType,
+                supersetGroup: old.supersetGroup,
+                dropSteps: old.dropSteps,
+                dropPercent: old.dropPercent,
+                targetFailure: old.targetFailure,
+                targetRepsLow: old.targetRepsLow,
+                targetRepsHigh: old.targetRepsHigh,
+                cardioZone: old.cardioZone,
+                cardioMinutes: old.cardioMinutes)
+            summary.append("swapped to \(replacement.name)")
+        }
         if let weight = proposal.weight {
             let pounds = Units.toPounds(Decimal(weight), from: sessionSettings?.weightUnit ?? .lbs)
             rows[index].targetWeight = "\(pounds)"

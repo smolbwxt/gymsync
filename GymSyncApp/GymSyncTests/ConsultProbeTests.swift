@@ -132,7 +132,7 @@ final class ConsultProbeTests: XCTestCase {
     func testAnAthleteWithNoLogIsNeverAskedToNameTheirNumbers() {
         // Story #1 from the sweep: a 13-year-old on day one was asked
         // "which lift is the number on?" — a question with no answer.
-        let asked = run(ConsultProbe.Context(hasLog: false, isYouth: true), branch: "numbers")
+        let asked = run(ConsultProbe.Context(hasLog: false), branch: "numbers")
         XCTAssertFalse(asked.contains("focus_lift"),
                        "a lifter with no history cannot name a focus lift")
         XCTAssertTrue(asked.contains("anchor_lifts"),
@@ -413,7 +413,10 @@ final class ConsultProbeTests: XCTestCase {
             c.equipmentKnown = equipment
             c.sessionMinutesKnown = minutes
             c.cautionsKnown = cautions
-            c.isYouth = youth
+            // (isYouth was deleted 2026-08-27 - it was never read. The
+            // `youth` story flavor stays for the narrative; it changes
+            // nothing, which is exactly what the audit proved.)
+            _ = youth
             return c
         }
         return [

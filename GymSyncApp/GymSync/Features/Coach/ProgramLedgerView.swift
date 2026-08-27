@@ -27,7 +27,7 @@ struct ProgramLedgerView: View {
     /// page (the calendar's proven pattern).
     @State private var builtFromHere = false
 
-    private struct AARTarget: Identifiable {
+    private struct AARTarget: Identifiable, Hashable {
         let id: UUID
         let title: String
         let opener: String

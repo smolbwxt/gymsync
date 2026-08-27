@@ -175,9 +175,23 @@ struct LiftAnchorsView: View {
             guard let typed = Decimal.parseUserInput(raw), typed > 0 else { continue }
             anchors[slug] = Units.toPounds(typed, from: unit)
         }
-        // Nothing entered = an explicit skip — don't write an empty dict
-        // over a NULL that means "never captured".
+        // Nothing entered = an explicit skip for the ANCHORS - don't
+        // write an empty dict over a NULL that means "never captured".
+        // The UNIT choice is a different fact and it survives the skip:
+        // until 2026-08-27 this early return silently discarded the
+        // KG/LBS toggle, making "SET MY STARTS" with blank fields
+        // byte-identical to Skip. An athlete who flipped to kilograms
+        // and entered nothing lost their choice without a word - the
+        // silent-input-discard defect, in onboarding.
         guard !anchors.isEmpty else {
+            Task {
+                if var settings = try? await UserSettingsRepository.get(),
+                   settings.unitSystem != unit.rawValue {
+                    settings.unitSystem = unit.rawValue
+                    try? await UserSettingsRepository.upsert(settings)
+                    ThemeStore.shared.noteExternalSettingsWrite(settings)
+                }
+            }
             onAdvance()
             return
         }

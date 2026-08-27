@@ -74,7 +74,10 @@ enum ConsultProbe {
         var equipmentKnown: Bool = false
         var sessionMinutesKnown: Bool = false
         var cautionsKnown: Bool = false
-        var isYouth: Bool = false
+        // (isYouth lived here 2026-08 -> 2026-08-27: declared, set only
+        // by tests, read by nothing. The youth ceiling is delivered by
+        // the live wizard path via birthYear; this flag was the
+        // unwired-rule pattern producing false confidence. Deleted.)
         /// Provenance of profile fields, so a persona default can be
         /// challenged and a stated value left alone.
         var provenance: [String: FieldProvenance] = [:]

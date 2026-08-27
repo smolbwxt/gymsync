@@ -40,6 +40,24 @@ import FoundationModels
 // the queue of levers worth building (migration 20260826000007).
 enum RuleClassifier {
 
+    /// The structured vocabulary, shared by every surface that asks the
+    /// model to read a rule (the classifier itself, the consult-close
+    /// chat, the thread engine). One copy - two drifting vocabularies
+    /// would classify the same sentence two ways depending on which
+    /// screen heard it.
+    static let structuredVocabulary = """
+      PAIR <exercise>               do this exercise alongside every lift
+      AVOID <exercise>              never include this exercise
+      SWAP <exercise> FOR <exercise>  stop doing the first, prefer the second
+      ORDER <muscle> <muscle>       train the first muscle before the second
+      CAP <muscle> <number>         at most this many sets per week
+      FLOOR <muscle> <number>       at least this many sets per week
+      CUE <exercise> <instruction>  how to perform the exercise
+      LIGHT <day name>              keep that day easy
+      UNKNOWN                       anything else, or if you are unsure
+    Any line may end with: WHEN <condition> - only when the athlete stated a trigger.
+    """
+
     /// One reading of one rule. `intent` is `.unknown` whenever we could
     /// not do better, which is a legitimate outcome and not an error.
     struct Reading: Equatable, Sendable {

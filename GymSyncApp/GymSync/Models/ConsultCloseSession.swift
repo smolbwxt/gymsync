@@ -127,15 +127,8 @@ final class ConsultCloseSession {
         muscle's weekly sets. Do not promise anything beyond those.
 
         When they state a rule, call proposeStandingRule with their exact \
-        words and ONE line of structured vocabulary:
-          PAIR <exercise>
-          AVOID <exercise>
-          SWAP <exercise> FOR <exercise>
-          ORDER <muscle> <muscle>
-          CAP <muscle> <number>
-          FLOOR <muscle> <number>
-        Any line may end with: WHEN <condition> - use it only when the \
-        athlete stated a trigger.
+        words and ONE line of this vocabulary:
+        \(RuleClassifier.structuredVocabulary)
 
         If a rule has a trigger you cannot check ("if my elbows hurt"), \
         say plainly: you will keep the rule as they said it, and when the \

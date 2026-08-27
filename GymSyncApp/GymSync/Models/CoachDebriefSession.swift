@@ -32,6 +32,11 @@ struct RoutineEditProposal: Equatable {
     let weight: Double?
     let repsLow: Int?
     let repsHigh: Int?
+    /// Replace the exercise itself with this one (owner 2026-08-27:
+    /// "Coach should always have the ability to change anything about a
+    /// person's programming at any time based on feedback that is given
+    /// through chats"). nil = keep the movement, change only numbers.
+    var swapToExerciseName: String? = nil
     let reason: String
 }
 
@@ -165,6 +170,8 @@ struct ProposeRoutineEditTool: Tool {
         var repsLow: Int?
         @Guide(description: "New rep range high, omit to keep current")
         var repsHigh: Int?
+        @Guide(description: "Replace the exercise entirely with this one (name it the way the app does), omit to keep the movement")
+        var swapToExerciseName: String?
         @Guide(description: "One plain sentence on why, citing the session's numbers")
         var reason: String
     }
@@ -176,6 +183,7 @@ struct ProposeRoutineEditTool: Tool {
             weight: arguments.weight,
             repsLow: arguments.repsLow,
             repsHigh: arguments.repsHigh,
+            swapToExerciseName: arguments.swapToExerciseName,
             reason: arguments.reason))
         return "Proposal is on the athlete's screen with an Apply button. Tell them it's ready to apply - do NOT claim the routine has been changed; they decide."
     }

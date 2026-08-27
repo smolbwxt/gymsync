@@ -190,6 +190,8 @@ final class CoachChatEngine {
     /// generator takes them as a parameter: this type stays deterministic
     /// and testable, and the network stays at the edges.
     private let standingRules: [String]
+    private let catalog: [Exercise]
+    private let onProposeRule: (@Sendable (StandingRuleProposal) -> Void)?
 
     init(thread: CoachChatThread,
          profile: TrainingProfile, persona: CoachPersona?,
@@ -198,7 +200,9 @@ final class CoachChatEngine {
          volumeLookup: @escaping @Sendable () -> String,
          progressionLookup: (@Sendable (String, Int?) -> String)? = nil,
          standingRules: [String] = [],
-         onProposeEdit: (@Sendable (RoutineEditProposal) -> Void)? = nil) {
+         onProposeEdit: (@Sendable (RoutineEditProposal) -> Void)? = nil,
+         catalog: [Exercise] = [],
+         onProposeRule: (@Sendable (StandingRuleProposal) -> Void)? = nil) {
         self.thread = thread
         self.profile = profile
         self.persona = persona
@@ -208,6 +212,8 @@ final class CoachChatEngine {
         self.progressionLookup = progressionLookup
         self.onProposeEdit = onProposeEdit
         self.standingRules = standingRules
+        self.catalog = catalog
+        self.onProposeRule = onProposeRule
     }
 
     private func seedSession(summary: String, tail: [CoachChatMessage]) {
@@ -242,7 +248,18 @@ final class CoachChatEngine {
         }
         if let onProposeEdit {
             tools.append(ProposeRoutineEditTool(onPropose: onProposeEdit))
-            instructions += "\nWhen the athlete agrees a concrete change is right, use proposeRoutineEdit with the numbers progressionCheck gave you. Never claim a change was made unless the tool's reply confirms the athlete applied it."
+            instructions += "\nWhen the athlete agrees a concrete change is right, use proposeRoutineEdit with the numbers progressionCheck gave you. To replace an exercise entirely, set swapToExerciseName. Never claim a change was made unless the tool's reply confirms the athlete applied it."
+        }
+        // The standing-rule lever, in chat (owner 2026-08-27: requests
+        // through chat should effect change, always via consent). Same
+        // tool the consult close uses; same card; same grounding through
+        // the tested parser.
+        if let onProposeRule, !catalog.isEmpty {
+            tools.append(ProposeStandingRuleTool(catalog: catalog,
+                                                 onPropose: onProposeRule))
+            instructions += "\nWhen the athlete states a durable training RULE (not a one-off tweak) - a pairing, an exercise to avoid, a swap they always want, an order, a weekly-set cap or floor - call proposeStandingRule with their exact words and one line of this vocabulary:\n"
+                + RuleClassifier.structuredVocabulary
+                + "\nThe athlete confirms on a card; never claim a rule is saved unless the tool's reply says they accepted."
         }
         session = LanguageModelSession(
             tools: tools,
