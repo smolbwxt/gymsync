@@ -58,6 +58,9 @@ struct ProgramScheduleView: View {
     @State private var completedDays: Set<Date> = []
     @State private var scheduledDays: Set<Date> = []
     @State private var sheetWeek: WeekRef?
+    /// Bumped after this page books a week so the embedded calendar
+    /// re-reads its dots.
+    @State private var calendarRefresh = 0
 
     private struct WeekRef: Identifiable { let id: Int }
 
@@ -84,16 +87,21 @@ struct ProgramScheduleView: View {
                 if loading {
                     loadingCard
                 } else if enrollment != nil && !weeks.isEmpty {
+                    // The block in time, first (owner 2026-08-27). The
+                    // same view as the old ON THE CALENDAR page, embedded
+                    // - one grid implementation, not a copy.
+                    BlockCalendarView(enrollment: enrollment, weeks: weeks,
+                                      embedded: true,
+                                      highlightedWeek: selectedWeek,
+                                      refreshToken: calendarRefresh,
+                                      onScheduleChanged: { await reloadSchedule() })
                     arcCard
-                    ForEach(routines) { routine in
-                        dayRow(routine)
-                    }
+                    routinesCard
                     reasoningCard
                     if !changes.isEmpty {
                         changesCard
                     }
                     provenanceCard
-                    calendarDoor
                     askDoor
                 } else if !routines.isEmpty {
                     // (reasoningCard renders inside this branch too, below
@@ -106,11 +114,8 @@ struct ProgramScheduleView: View {
                     // routines the athlete actually has beats an empty
                     // screen that says they have nothing.
                     unenrolledCard
-                    ForEach(routines) { routine in
-                        dayRow(routine)
-                    }
+                    routinesCard
                     reasoningCard
-                    calendarDoor
                     askDoor
                 } else {
                     emptyCard
@@ -281,9 +286,42 @@ struct ProgramScheduleView: View {
             scheduledDays = Set(upcoming.compactMap { $0.scheduledFor }
                 .map { calendar.startOfDay(for: $0) })
         }
+        calendarRefresh += 1
     }
 
-    // MARK: Day rows
+    // MARK: Day rows (housed: owner 2026-08-27, "within a widget border
+    // with a title, something like: Your Routine, built for you")
+
+    private var routinesCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("YOUR ROUTINE")
+                    .font(GSFont.bold(16, relativeTo: .headline))
+                    .tracking(0.5)
+                    .foregroundStyle(theme.text)
+                Spacer()
+                Text("BUILT FOR YOU")
+                    .font(GSFont.bold(10, relativeTo: .caption2))
+                    .tracking(1.1)
+                    .foregroundStyle(theme.accent)
+            }
+            Text("\(routines.count) day\(routines.count == 1 ? "" : "s") a week, in the order Coach wrote them. Tap a day for the lifts and why they're there.")
+                .font(GSFont.body(11, relativeTo: .caption))
+                .foregroundStyle(theme.neutral500)
+                .fixedSize(horizontal: false, vertical: true)
+            VStack(spacing: 0) {
+                ForEach(Array(routines.enumerated()), id: \.element.id) { index, routine in
+                    dayRow(routine)
+                    if index < routines.count - 1 {
+                        Divider().overlay(theme.neutral500.opacity(0.25))
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .gs3DCard(cornerRadius: GSMetrics.radiusSm)
+    }
 
     private func dayRow(_ routine: Routine) -> some View {
         Button {
@@ -309,37 +347,13 @@ struct ProgramScheduleView: View {
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(12)
+            .padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
+        .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(displayName(routine)). \(leadLine(routine))")
-    }
-
-    private var calendarDoor: some View {
-        NavigationLink {
-            BlockCalendarView(enrollment: enrollment, weeks: weeks)
-                .background(theme.bg)
-                .navigationTitle("On the Calendar")
-                .navigationBarTitleDisplayMode(.inline)
-        } label: {
-            HStack(spacing: 10) {
-                Text("ON THE CALENDAR")
-                    .font(GSFont.bold(16, relativeTo: .headline))
-                    .tracking(0.5)
-                    .foregroundStyle(theme.text)
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(theme.neutral500)
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
     }
 
     private var askDoor: some View {

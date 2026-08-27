@@ -23,6 +23,9 @@ enum ConsultVocabulary {
         // The focus-lift picker (2026-08-27) shares the multi-select
         // commit path; its values are exercise ids.
         "focus_lift",
+        // Severity rows: values are "<joint>=severe" for injured joints;
+        // an unmarked joint is a caution.
+        "injury_severity",
     ]
 
     static func isMultiSelect(_ probeID: String) -> Bool {
@@ -134,6 +137,7 @@ enum ConsultVocabulary {
         case "the_date":       return "state meet, 10 weeks out"
         case "anchor_lifts":   return "bench 135, squat 185"
         case "standing_rule":  return "pulls before arms"
+        case "injury_severity": return "working around it"
         default:               return "type your answer"
         }
     }

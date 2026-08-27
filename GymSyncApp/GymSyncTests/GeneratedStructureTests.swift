@@ -142,4 +142,70 @@ final class GeneratedStructureTests: XCTestCase {
         XCTAssertTrue(mains.contains(favourite.id),
                       "the named focus lift is not a main lift anywhere in the week")
     }
+
+    // MARK: An injured joint is an exclusion, not a preference (2026-08-27)
+
+    func testAnInjuredJointKeepsEveryLiftThatLoadsItOutOfTheWeek() {
+        func lift(_ n: Int, _ name: String, _ muscle: String, _ pattern: String,
+                  joints: [String]) -> ProgramGenerator.CatalogExercise {
+            ProgramGenerator.CatalogExercise(
+                id: UUID(), name: name, primaryMuscle: muscle,
+                secondaryMuscles: [], category: "compound", equipment: "barbell",
+                movementPattern: pattern, rank: n, jointStress: joints)
+        }
+        // Every squat and hinge in this catalog loads the hip. A caution
+        // would still fill those slots (nothing else can); an injury
+        // must leave them empty.
+        let catalog = [
+            lift(1, "Back Squat", "quads", "squat", joints: ["hip", "knee"]),
+            lift(2, "Deadlift", "hamstrings", "hinge", joints: ["hip", "lower_back"]),
+            lift(3, "Bench", "chest", "push_horizontal", joints: ["shoulder"]),
+            lift(4, "Row", "back", "pull_horizontal", joints: ["elbow"]),
+            lift(5, "Press", "shoulders", "push_vertical", joints: ["shoulder"]),
+            lift(6, "Pull-Up", "back", "pull_vertical", joints: ["elbow"]),
+        ]
+        var inputs = ProgramGenerator.Inputs(
+            focus: .strength, daysPerWeek: 3, durationWeeks: 4,
+            experience: .intermediate)
+        inputs.injuredJoints = ["hip"]
+
+        let program = ProgramGenerator.generate(inputs: inputs, catalog: catalog)
+
+        let hipLoaders = Set(catalog.filter { $0.jointStress.contains("hip") }.map(\.id))
+        let prescribed = program.days.flatMap(\.exercises).map(\.exerciseID)
+        XCTAssertTrue(hipLoaders.isDisjoint(with: prescribed),
+                      "a lift that loads the injured hip was prescribed")
+        XCTAssertTrue(program.notes.contains { $0.contains("Injured hip") },
+                      "the block does not say why the hip lifts are missing")
+    }
+
+    func testACautionStillFillsTheSlotWhenNothingElseCan() {
+        // The contrast: the same catalog with the hip as a CAUTION keeps
+        // the squat slot filled - a caution is a preference, and a hole
+        // would be a worse program than a deprioritized lift.
+        func lift(_ n: Int, _ name: String, _ muscle: String, _ pattern: String,
+                  joints: [String]) -> ProgramGenerator.CatalogExercise {
+            ProgramGenerator.CatalogExercise(
+                id: UUID(), name: name, primaryMuscle: muscle,
+                secondaryMuscles: [], category: "compound", equipment: "barbell",
+                movementPattern: pattern, rank: n, jointStress: joints)
+        }
+        let squat = lift(1, "Back Squat", "quads", "squat", joints: ["hip", "knee"])
+        let catalog = [
+            squat,
+            lift(2, "Deadlift", "hamstrings", "hinge", joints: ["hip", "lower_back"]),
+            lift(3, "Bench", "chest", "push_horizontal", joints: ["shoulder"]),
+            lift(4, "Row", "back", "pull_horizontal", joints: ["elbow"]),
+        ]
+        var inputs = ProgramGenerator.Inputs(
+            focus: .strength, daysPerWeek: 3, durationWeeks: 4,
+            experience: .intermediate)
+        inputs.cautionJoints = ["hip"]
+
+        let program = ProgramGenerator.generate(inputs: inputs, catalog: catalog)
+
+        let prescribed = program.days.flatMap(\.exercises).map(\.exerciseID)
+        XCTAssertTrue(prescribed.contains(squat.id),
+                      "a cautioned (not injured) hip should not empty the squat slot")
+    }
 }

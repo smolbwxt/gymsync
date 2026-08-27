@@ -275,12 +275,27 @@ struct ConsultAnswers: Equatable, Sendable {
             p.cardioStyle = .steady
             state("cardioStyle")
         }
-        let joints = values("cautions").filter { !$0.isEmpty }
-        if !joints.isEmpty {
-            // Union, never replace: a joint named in a previous consult is
-            // not healed by going unmentioned in this one.
-            p.cautionJoints = Array(Set(p.cautionJoints).union(joints)).sorted()
+        // REPLACE when answered (2026-08-27). The cautions probe is asked
+        // every consult with the known joints pre-selected, so the list
+        // the athlete commits is a statement about ALL of them - an
+        // unticked joint is one they said is fine. (Union was right when
+        // the probe was skipped whenever a joint was known; it is wrong
+        // now that the athlete edits the known list on screen.)
+        if let picked = byProbe["cautions"] {
+            let joints = picked.filter { !$0.isEmpty }
+            p.cautionJoints = Array(Set(joints)).sorted()
+            // A joint no longer named cannot still be injured.
+            p.injuredJoints = p.injuredJoints.filter { joints.contains($0) }
             state("cautionJoints")
+        }
+        if let severity = byProbe["injury_severity"] {
+            let injured = severity.compactMap { token -> String? in
+                let parts = token.split(separator: "=", maxSplits: 1)
+                guard parts.count == 2, parts[1] == "severe" else { return nil }
+                return String(parts[0])
+            }
+            p.injuredJoints = Array(Set(injured)).sorted()
+            state("injuredJoints")
         }
         let patterns = values("wont_do").filter { !$0.isEmpty }
         if !patterns.isEmpty {

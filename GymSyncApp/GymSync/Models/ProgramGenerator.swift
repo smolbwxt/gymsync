@@ -45,6 +45,13 @@ enum ProgramGenerator {
         var excludedPatterns: Set<String> = []
         /// Injury propagation (soft): joint_stress matches sort last.
         var cautionJoints: Set<String> = []
+        /// Joints the athlete marked INJURED (consult severity screen,
+        /// 2026-08-27). Not a caution: every lift labeled with one of
+        /// these is removed from the usable catalog before selection
+        /// runs, so no sort key, focus lift or last-resort fill can put
+        /// it back. Owner: "I'm not squatting or deadlifting if my hip is
+        /// severely injured."
+        var injuredJoints: Set<String> = []
         /// bone_density ranked: spinal-loading lifts score up.
         var axialBoost: Bool = false
         /// The chosen coach's selection stances (CoachPersona.Lens).
@@ -316,6 +323,12 @@ enum ProgramGenerator {
         let usable = usableCatalog(catalog, inputs: inputs)
 
         var notes: [String] = inputs.advisoryNotes
+        if !inputs.injuredJoints.isEmpty {
+            let named = inputs.injuredJoints.sorted()
+                .map { $0.replacingOccurrences(of: "_", with: " ") }
+                .joined(separator: ", ")
+            notes.append("Injured \(named): every lift that loads it is OUT of this block, not just pushed down the list. A pattern that needs it gets no main lift until you tell Coach it has healed.")
+        }
         if inputs.daysPerWeek == 1 {
             notes.append("One day a week means one LONG session (~75-90 minutes) - everything has to fit. A session cap trims it, and two shorter days beat one marathon when life allows.")
         }
@@ -1611,6 +1624,13 @@ enum ProgramGenerator {
             // the substitution graph) fills every hole.
             if inputs.excludedExerciseIDs.contains(ex.id) { return false }
             if inputs.excludedPatterns.contains(ex.movementPattern) { return false }
+            // An injured joint rules out the lift here, at the source -
+            // a caution only sorts it last, and a slot whose every
+            // candidate loads the joint would still be filled.
+            if !inputs.injuredJoints.isEmpty,
+               ex.jointStress.contains(where: { inputs.injuredJoints.contains($0.lowercased()) }) {
+                return false
+            }
             return true
         }
     }

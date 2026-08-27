@@ -295,6 +295,9 @@ enum ProgramBuilder {
         if !profile.cautionJoints.isEmpty {
             config["working around"] = profile.cautionJoints.sorted().joined(separator: ", ")
         }
+        if !profile.injuredJoints.isEmpty {
+            config["injured, kept out"] = profile.injuredJoints.sorted().joined(separator: ", ")
+        }
         if let cap = profile.derivedComplexityCap {
             config["movement complexity"] = "up to level \(cap) of 5"
         }

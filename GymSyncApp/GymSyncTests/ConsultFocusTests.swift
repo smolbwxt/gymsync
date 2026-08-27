@@ -194,4 +194,30 @@ final class ConsultFocusTests: XCTestCase {
         let answers = ConsultAnswers(["focus_lift": [UUID().uuidString]])
         XCTAssertTrue(answers.focusLifts(in: catalog).isEmpty)
     }
+
+    // MARK: - Injury severity (2026-08-27)
+
+    func testAnInjuredJointLandsAsInjuredAndACautionStaysACaution() {
+        let answers = ConsultAnswers([
+            "cautions": ["hip", "knee"],
+            "injury_severity": ["hip=severe"],
+        ])
+        let profile = answers.apply(to: TrainingProfile(), catalog: catalog)
+        XCTAssertEqual(profile.cautionJoints, ["hip", "knee"])
+        XCTAssertEqual(profile.injuredJoints, ["hip"])
+        XCTAssertEqual(profile.provenance["injuredJoints"], .stated)
+    }
+
+    func testAJointNoLongerNamedIsNoLongerInjured() {
+        // The probe is asked every consult with the known list
+        // pre-selected; unticking a joint is the athlete saying it is
+        // fine, and a joint that is fine cannot still be injured.
+        var before = TrainingProfile()
+        before.cautionJoints = ["hip", "knee"]
+        before.injuredJoints = ["hip"]
+        let answers = ConsultAnswers(["cautions": ["knee"]])
+        let after = answers.apply(to: before, catalog: catalog)
+        XCTAssertEqual(after.cautionJoints, ["knee"])
+        XCTAssertTrue(after.injuredJoints.isEmpty)
+    }
 }

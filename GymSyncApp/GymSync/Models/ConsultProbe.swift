@@ -82,6 +82,9 @@ enum ConsultProbe {
         var knownDaysPerWeek: Int? = nil
         var knownSessionMinutes: Int? = nil
         var cautionsKnown: Bool = false
+        /// The cautions probe was answered with at least one joint - the
+        /// severity screen only makes sense then.
+        var cautionsNamed: Bool = false
         // (isYouth lived here 2026-08 -> 2026-08-27: declared, set only
         // by tests, read by nothing. The youth ceiling is delivered by
         // the live wizard path via birthYear; this flag was the
@@ -298,7 +301,12 @@ enum ConsultProbe {
               ask: "Anything that hurts, or that you're working around?",
               tunes: ["cautionJoints"],
               gain: 9, family: .constraint,
-              clarifier: "Pick every joint that's giving you trouble. Lifts that load it stay out of your program."),
+              clarifier: "Pick every joint that's giving you trouble. Next I'll ask how bad each one is."),
+        Probe(id: "injury_severity",
+              ask: "How bad is it?",
+              tunes: ["injuredJoints"],
+              gain: 9, family: .constraint,
+              clarifier: "Working around it: I steer clear where I can. Injured: every lift that loads it stays out of the block."),
         Probe(id: "wont_do",
               ask: "Anything you flat-out won't do?",
               tunes: ["excludedPatterns"],
@@ -434,6 +442,7 @@ enum ConsultProbe {
 
         // Constraints.
         case "cautions":       return !context.cautionsKnown
+        case "injury_severity": return context.answered.contains("cautions") && context.cautionsNamed
         case "wont_do":        return context.answered.contains("cautions")
 
         // Rules: offered once, at the end.

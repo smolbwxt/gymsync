@@ -23,6 +23,21 @@ import SwiftUI
 struct BlockCalendarView: View {
     let enrollment: ProgramEnrollment?
     let weeks: [ProgramWeek]
+    /// Owner 2026-08-27: "the top of this page should be the content
+    /// from the on the calendar page." Embedded, this view renders the
+    /// block-in-time card inside the program page's own scroll - no
+    /// scroll of its own, no week chips (the program page has the week
+    /// buttons), no series card (the ledger owns the next build).
+    var embedded = false
+    /// The program page's selected week, so the grid tints the same week
+    /// the buttons show.
+    var highlightedWeek: Int? = nil
+    /// Bumped by the host when it books a week; the grid re-reads so a
+    /// session booked from the program page shows up here immediately.
+    var refreshToken = 0
+    /// Told when THIS view's own sheet changes a schedule, so the host
+    /// can refresh its week buttons.
+    var onScheduleChanged: (() async -> Void)? = nil
 
     @Environment(AppState.self) private var appState
     @Environment(\.gsTheme) private var theme
@@ -57,27 +72,42 @@ struct BlockCalendarView: View {
     private let blockGold = Color.gsHex(0xE8C33A)
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                if enrollment == nil && !loading {
-                    emptyCard
-                } else {
+        Group {
+            if embedded {
+                VStack(alignment: .leading, spacing: 12) {
                     startsRow
-                    weekChips
                     calendarCard
-                    seriesCard
+                }
+                .onChange(of: refreshToken) { _, _ in
+                    Task { await reloadAll() }
+                }
+                .onChange(of: highlightedWeek) { _, week in
+                    if let week { selectedWeek = week }
+                }
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        if enrollment == nil && !loading {
+                            emptyCard
+                        } else {
+                            startsRow
+                            weekChips
+                            calendarCard
+                            seriesCard
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                }
+                .background(theme.bg)
+                .contentMargins(.bottom, 88, for: .scrollContent)
+                .navigationDestination(isPresented: $freshScheduleAfterBuild) {
+                    ProgramScheduleView()
+                        .background(theme.bg)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
         }
-        .background(theme.bg)
-        .contentMargins(.bottom, 88, for: .scrollContent)
         .task { await load() }
-        .navigationDestination(isPresented: $freshScheduleAfterBuild) {
-            ProgramScheduleView()
-                .background(theme.bg)
-        }
         .sheet(item: $sheetWeek) { ref in
             WeekScheduleSheet(weekNumber: ref.id,
                               window: window(for: ref.id),
@@ -405,9 +435,16 @@ struct BlockCalendarView: View {
     private func load() async {
         guard loading else { return }
         defer { loading = false }
+        await reloadAll()
+    }
+
+    /// Every read, re-runnable: the embedded copy on the program page
+    /// re-reads when that page books a week.
+    private func reloadAll() async {
         if let enrollment, !weeks.isEmpty {
-            selectedWeek = ProgramMath.currentWeek(startedOn: enrollment.startedOn,
-                                                   weeks: weeks.count)
+            selectedWeek = highlightedWeek
+                ?? ProgramMath.currentWeek(startedOn: enrollment.startedOn,
+                                           weeks: weeks.count)
         }
         guard let userID = appState.currentProfile?.id else { return }
         if let history = try? await SessionRepository.history(userID: userID, limit: 120) {
@@ -425,6 +462,7 @@ struct BlockCalendarView: View {
         guard let enrollment else { return }
         weekSchedules = await BlockWeekScheduleRepository.forEnrollment(enrollment.id)
         plannedDays = computePlannedDays()
+        await onScheduleChanged?()
     }
 
     /// Days a per-week override PLANS — distinct from days with a real

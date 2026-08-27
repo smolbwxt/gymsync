@@ -235,6 +235,14 @@ struct CoachConsultView: View {
                     .padding(.bottom, 6)
             }
             .scrollIndicators(.hidden)
+        } else if probe.id == "injury_severity" {
+            ScrollView {
+                InjurySeverityView(joints: answers.values("cautions"),
+                                   selection: $selection)
+                    .padding(.top, 2)
+                    .padding(.bottom, 6)
+            }
+            .scrollIndicators(.hidden)
         } else if probe.id == "gym_comfort" {
             // The adaptive ladder. It commits ITSELF (its stop button is
             // the answer), and it is fed the joints named one question
@@ -330,6 +338,7 @@ struct CoachConsultView: View {
         // Probes whose controls carry their own answer: NEXT is always
         // live for them (an empty pick is a real "no preference").
         let anchors = probe.id == "anchor_lifts" || probe.id == "focus_lift"
+            || probe.id == "injury_severity"
         // A single-choice chip IS the commit, so it needs no button. Only
         // free text, multi-select and the anchor rows do; the ladder
         // commits itself and gets SKIP alone.
@@ -450,7 +459,10 @@ struct CoachConsultView: View {
         // skip it - a value from a block ago is a guess about this one.
         seeded.sessionMinutesKnown = false
         seeded.knownSessionMinutes = profile.sessionMinutes
-        seeded.cautionsKnown = !profile.cautionJoints.isEmpty
+        // Cautions are asked every consult too, with the known joints
+        // pre-selected (see advance): a joint on file could never be
+        // marked injured, or healed, while the probe was skipped as known.
+        seeded.cautionsKnown = false
         seeded.recommendedDaysPerWeek = recommendedDaysPerWeek
         if profile.provenance["daysPerWeek"] == .stated
             || profile.provenance["daysPerWeek"] == .confirmed {
@@ -519,7 +531,9 @@ struct CoachConsultView: View {
             }
         case "equipment":       next.equipmentKnown = true
         case "session_length":  next.sessionMinutesKnown = true
-        case "cautions":        next.cautionsKnown = true
+        case "cautions":
+            next.cautionsKnown = true
+            next.cautionsNamed = !values.isEmpty
         case "standing_rule":   next.offeredRuleCapture = true
         default: break
         }
@@ -550,6 +564,17 @@ struct CoachConsultView: View {
         selection = []
         freeText = ""
         anchorEntries = []
+        // Pre-select what is on file for the probes that are asked every
+        // time, so the athlete confirms or edits a real list rather than
+        // re-entering it.
+        switch ConsultProbe.next(in: next)?.id {
+        case "cautions":
+            selection = Set(profile.cautionJoints)
+        case "injury_severity":
+            selection = Set(profile.injuredJoints.map { "\($0)=severe" })
+        default:
+            break
+        }
         withAnimation(.easeOut(duration: 0.18)) { context = next }
     }
 

@@ -56,7 +56,14 @@ enum ConsultClose {
             // options; free text passes through as given.
             let labels = Dictionary(uniqueKeysWithValues:
                 probe.options.map { ($0.id, $0.label) })
-            let rendered = values.map { labels[$0] ?? $0 }.joined(separator: ", ")
+            var rendered = values.map { labels[$0] ?? $0 }.joined(separator: ", ")
+            if probeID == "injury_severity" {
+                // "hip=severe" -> what it means for the build.
+                let injured = values.compactMap { $0.hasSuffix("=severe") ? String($0.dropLast(7)) : nil }
+                rendered = injured.isEmpty
+                    ? "every named joint is a caution (steer clear where possible)"
+                    : "INJURED, every lift that loads it is OUT of the block: " + injured.joined(separator: ", ")
+            }
             lines.append("- \(probe.ask) -> \(rendered)")
         }
         return lines.isEmpty ? "(the athlete kept every default)" : lines.joined(separator: "\n")

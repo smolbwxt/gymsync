@@ -262,6 +262,10 @@ struct TrainingProfile: Codable, Equatable, Sendable {
     /// sort last in selection (soft, like the complexity gate — never
     /// leaves a hole).
     var cautionJoints: [String] = []
+    /// Joints marked INJURED in the consult's severity screen: every
+    /// lift that loads one is excluded outright (ProgramGenerator
+    /// usableCatalog), where a caution only sorts it last.
+    var injuredJoints: [String] = []
     var equipment: Set<String>? = nil
 
     // MARK: Provenance (field name -> where its value came from)
@@ -594,6 +598,7 @@ struct TrainingProfile: Codable, Equatable, Sendable {
             }
         }
         inputs.excludedPatterns = Set(excludedPatterns)
+        inputs.injuredJoints = Set(injuredJoints.map { $0.lowercased() })
         inputs.cautionJoints = Set(cautionJoints.map { $0.lowercased() })
             .union(exclusions.compactMap { exclusion in
                 exclusion.reasonClass == "injury_pain" ? exclusion.joint?.lowercased() : nil
