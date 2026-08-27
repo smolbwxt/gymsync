@@ -579,3 +579,24 @@ readback. Model-path only — CI never exercises it; verify on device.
    `derivedComplexityCap == 4`, `comfortAnswers[goblet-squat] == true`.
 5. The `Route.wizard` case in CoachHomeView is unreachable — confirm, then
    delete with the wizard file.
+
+## F7 - Focus lifts as a picker; availability asked every consult — DONE (`85757c8`)
+Owner on the focus-lift screen: dropdown of common compounds + catalog
+door, multiple lifts; and "Coach just assumed number of days and gym
+time cap".
+- `FocusLiftPickerView` (15 curated compounds resolved by exact catalog
+  name, fail-closed; ANY LIFT FROM THE CATALOG → `CatalogLiftSheet`,
+  compounds first). Values are exercise ids on the multi-select commit.
+- `ConsultAnswers.focusLifts(in:)` → `TrainingProfile.focusExerciseIDs`
+  → `ProgramGenerator.Inputs.focusExerciseIDs` → `select(priority:)`:
+  a focus lift wins its MAIN pattern slot before scoring (starred was a
+  dead-last tiebreak — too weak for a promise). Config records "focus
+  lifts".
+- `days` / `session_length` always asked; `Context.knownDaysPerWeek` /
+  `knownSessionMinutes` make the question cite last time's answer.
+- **Left open:** a focus lift that loads a cautioned joint is still
+  forced (the athlete named it; the caution sort is bypassed) — decide
+  whether Coach should say so in the close. Equipment is still skipped
+  when known; owner only named days + time. The reroll path
+  (`select` call at ~:1628) does not pass priority — rerolling a focus
+  lift's slot can replace it; probably correct (reroll = "not this one").
