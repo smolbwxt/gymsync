@@ -38,6 +38,13 @@ struct BlockCalendarView: View {
     @State private var plannedDays: Set<Date> = []
     @State private var selectedWeek = 1
     @State private var sheetWeek: WeekRef?
+    /// A block was just built from this calendar; push a FRESH schedule
+    /// page. This view's own `enrollment`/`weeks` are `let` values
+    /// captured before the build, so it cannot render the new block -
+    /// but a fresh ProgramScheduleView fetches, so the athlete lands on
+    /// what they just made instead of popping back to a calendar drawing
+    /// the block they replaced.
+    @State private var freshScheduleAfterBuild = false
     @State private var loading = true
 
     private struct WeekRef: Identifiable { let id: Int }
@@ -67,6 +74,10 @@ struct BlockCalendarView: View {
         .background(theme.bg)
         .contentMargins(.bottom, 88, for: .scrollContent)
         .task { await load() }
+        .navigationDestination(isPresented: $freshScheduleAfterBuild) {
+            ProgramScheduleView()
+                .background(theme.bg)
+        }
         .sheet(item: $sheetWeek) { ref in
             WeekScheduleSheet(weekNumber: ref.id,
                               window: window(for: ref.id),
@@ -253,14 +264,15 @@ struct BlockCalendarView: View {
                     .foregroundStyle(theme.neutral700)
             }
             NavigationLink {
-                // .dismiss on purpose: this view's `enrollment` and
-                // `weeks` are `let` values captured before the build, so
-                // it cannot render a block created after it appeared.
-                // Popping back to a calendar drawing the OLD block is
-                // today's behaviour and stays today's behaviour; sending
-                // the athlete to a screen showing the wrong week would be
-                // worse than sending them nowhere. Tracked separately.
-                CoachWizardView(onCreated: { .dismiss })
+                // .handled: the calendar answers the build by pushing a
+                // FRESH ProgramScheduleView (state above). Its own
+                // captured enrollment/weeks stay stale - acceptable one
+                // level back - but the athlete's next screen is the block
+                // they just built, not the one they replaced.
+                CoachWizardView(onCreated: {
+                    freshScheduleAfterBuild = true
+                    return .handled
+                })
                     .background(theme.bg)
                     .navigationTitle("Plan the next block")
                     .navigationBarTitleDisplayMode(.inline)

@@ -62,6 +62,23 @@ enum RecoveryProbeRepository {
 
     /// Closed probes for one muscle, newest first — what the titration
     /// reads.
+    /// Recent ANSWERED probes across every muscle, one query.
+    ///
+    /// The titration needs "which muscles have recovery evidence", and
+    /// per-muscle `history(muscle:)` cannot answer that without knowing
+    /// the muscle list in advance. RLS scopes rows to the caller.
+    static func recentAnswered(limit: Int = 60) async throws -> [RecoveryProbe] {
+        do {
+            return try await SupabaseService.shared.client
+                .from("recovery_probes")
+                .select("id, muscle, trained_at, recovered_at, last_state, asked_count, last_asked_at")
+                .not("recovered_at", operator: .is, value: "null")
+                .order("trained_at", ascending: false)
+                .limit(limit)
+                .execute().value
+        } catch { throw ErrorMapping.map(error) }
+    }
+
     static func history(muscle: String, limit: Int = 6) async throws -> [RecoveryProbe] {
         do {
             return try await SupabaseService.shared.client

@@ -137,6 +137,16 @@ enum VolumeTitration {
             case .hold, .deload: return 0
             }
         }
+
+        /// The sentence explaining the move, written for the athlete.
+        /// Persisted with the target so the schedule page can say WHY a
+        /// muscle's prescription moved, not just that it did.
+        var reason: String {
+            switch self {
+            case .add(_, let r), .hold(let r), .cut(_, let r), .deload(let r):
+                return r
+            }
+        }
     }
 
     /// The decision for ONE muscle.

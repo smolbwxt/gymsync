@@ -28,6 +28,10 @@ struct CoachHomeView: View {
     /// Rules Coach CAN now build and has not built yet - the mirror of
     /// "the research came back", for capability instead of knowledge.
     @State private var nowBuildable: [TrainingRule] = []
+    /// Every active rule, for the standing-rules list. Distinct from the
+    /// two narrow filters above: this list exists so the athlete can SEE
+    /// everything Coach is holding against their name, and take one back.
+    @State private var standingRulesAll: [TrainingRule] = []
     /// Loaded for the consult, whose constraint chips must offer labels
     /// selection recognises — see ConsultVocabulary.
     @State private var catalog: [Exercise] = []
@@ -78,6 +82,10 @@ struct CoachHomeView: View {
 
                 if !nowBuildable.isEmpty {
                     nowBuildableNotice
+                }
+
+                if !standingRulesAll.isEmpty {
+                    standingRulesSection
                 }
 
                 if !researched.isEmpty {
@@ -404,6 +412,16 @@ struct CoachHomeView: View {
                 .font(GSFont.bold(15, relativeTo: .headline))
                 .foregroundStyle(theme.text)
                 .fixedSize(horizontal: false, vertical: true)
+            if !rule.intent.isBuildable(slots: rule.slots) {
+                // Confirming implies action, so an intent this build
+                // cannot act on must say so BEFORE the athlete confirms -
+                // "I understood you, you agreed, and nothing happened" is
+                // worse than an honest unknown.
+                Text("I understand this one but can't build it into a block yet \u{2014} it goes on my list, and I'll tell you when I can.")
+                    .font(GSFont.body(11, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral700)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             HStack(spacing: 10) {
                 Button {
                     Task {
@@ -411,7 +429,8 @@ struct CoachHomeView: View {
                         await readRules()
                     }
                 } label: {
-                    Text("YES, BUILD IT")
+                    Text(rule.intent.isBuildable(slots: rule.slots)
+                         ? "YES, BUILD IT" : "YES, THAT'S WHAT I MEANT")
                         .font(GSFont.bold(13, relativeTo: .headline))
                         .tracking(0.6)
                         .foregroundStyle(theme.bg)
@@ -475,10 +494,76 @@ struct CoachHomeView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
+    /// Everything Coach is holding against the athlete's name, each with
+    /// its honest status, each removable.
+    ///
+    /// This closes the half of the rules doctrine that was never built.
+    /// The type's own comment says rules are rows "so Coach can CITE one
+    /// and the athlete can RETIRE one" - retire(_:) existed with zero
+    /// callers. Harmless while the table was empty; as of 2026-08-26 rules
+    /// persist AND feed Coach's chat prompt, so a throwaway remark in one
+    /// consult would shape Coach indefinitely with no way to take it back.
+    private var standingRulesSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("YOUR STANDING RULES")
+                .font(GSFont.bold(10, relativeTo: .caption2))
+                .tracking(1.1)
+                .foregroundStyle(theme.neutral500)
+            ForEach(standingRulesAll) { rule in
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("\u{201c}\(rule.rule)\u{201d}")
+                        .font(GSFont.body(13, relativeTo: .subheadline))
+                        .foregroundStyle(theme.text)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(statusLine(for: rule))
+                        .font(GSFont.bold(10, relativeTo: .caption2))
+                        .tracking(0.8)
+                        .foregroundStyle(rule.appliedAt != nil
+                                         ? theme.accent : theme.neutral500)
+                }
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                // Removal rides the long-press context menu - the same
+                // precedent as chat-thread deletion above; no swipe
+                // gestures in a ScrollView.
+                .contextMenu {
+                    Button(role: .destructive) {
+                        Task {
+                            try? await TrainingRulesRepository.retire(rule.id)
+                            await readRules()
+                        }
+                    } label: {
+                        Label("Drop this rule", systemImage: "trash")
+                    }
+                }
+            }
+            Text("Hold a rule to drop it. Dropped rules stop shaping your programs and Coach's advice.")
+                .font(GSFont.body(10, relativeTo: .caption2))
+                .foregroundStyle(theme.neutral500)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .gs3DCard(cornerRadius: 12)
+    }
+
+    /// One honest line per rule. The statuses are mutually exclusive and
+    /// deliberately include the uncomfortable ones - "heard, can't build
+    /// it yet" must be visible, or a confirmed-but-leverless rule reads
+    /// as quietly applied.
+    private func statusLine(for rule: TrainingRule) -> String {
+        if rule.appliedAt != nil { return "LIVE \u{2014} built into your block" }
+        if rule.needsConfirmation { return "WAITING ON YOU \u{2014} confirm my reading above" }
+        if rule.isWaitingToBeBuilt { return "READY \u{2014} goes in on your next build" }
+        if rule.understoodButUnbuildable { return "HEARD \u{2014} on my list, can't build this one yet" }
+        return "KEPT \u{2014} I couldn't read this as a program change"
+    }
+
     private func readRules() async {
         let all = (try? await TrainingRulesRepository.active()) ?? []
         toConfirm = all.filter(\.needsConfirmation)
         nowBuildable = all.filter(\.isWaitingToBeBuilt)
+        standingRulesAll = all
     }
 
     private var researchNotice: some View {

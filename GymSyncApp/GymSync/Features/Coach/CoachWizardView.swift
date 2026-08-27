@@ -863,6 +863,115 @@ struct CoachWizardView: View {
         previewTick += 1
     }
 
+    /// One titration step per probed muscle: read the recovery answers
+    /// and the session outcomes, ask VolumeTitration for a move, persist
+    /// the new target. The generator reads targets right after this runs.
+    ///
+    /// Deliberately conservative at every gate, because each gate is one
+    /// of the titration's own rules: no probe answers -> no move (silence
+    /// blocks the climb); fewer than two readable sessions -> hold; and
+    /// a muscle with no prescription history seeds from the middle of the
+    /// owner's 12-25 band rather than guessing high or low.
+    private func runVolumeTitration(userID: UUID) async {
+        // Recovery evidence, grouped by muscle. No evidence, no titration.
+        let probes = (try? await RecoveryProbeRepository.recentAnswered()) ?? []
+        guard !probes.isEmpty else { return }
+        let recoveryByMuscle = Dictionary(grouping: probes, by: \.muscle)
+
+        // Recent completed sessions that ran a routine - the outcome side.
+        guard let sessions = try? await SessionRepository.history(userID: userID, limit: 30)
+        else { return }
+        let scored = sessions.filter { $0.routineID != nil && $0.completedAt != nil }
+            .prefix(12)
+        guard scored.count >= 2 else { return }
+
+        // Prescriptions for those routines: exercise -> (sets x repsLow).
+        let routineIDs = Array(Set(scored.compactMap(\.routineID)))
+        let rows = (try? await RoutineRepository.exercisesForRoutines(ids: routineIDs)) ?? []
+        let prescriptionByRoutine = Dictionary(grouping: rows, by: \.routineID)
+
+        // The logs those sessions produced.
+        guard let oldest = scored.compactMap(\.completedAt).min(),
+              let logs = try? await SessionRepository.recentSetLogs(
+                  userID: userID,
+                  since: oldest.addingTimeInterval(-86_400))
+        else { return }
+        let logsBySession = Dictionary(grouping: logs, by: \.sessionID)
+
+        // exercise -> primary muscle, from the already-loaded catalog.
+        let muscleByExercise = Dictionary(uniqueKeysWithValues:
+            allExercises.map { ($0.id, $0.primaryMuscle.lowercased()) })
+
+        // Per muscle, per session: prescribed reps vs completed reps.
+        var outcomesByMuscle: [String: [VolumeTitration.SessionOutcome]] = [:]
+        for session in scored {
+            guard let routineID = session.routineID,
+                  let date = session.completedAt,
+                  let prescription = prescriptionByRoutine[routineID]
+            else { continue }
+            let sessionLogs = logsBySession[session.id] ?? []
+            var prescribed: [String: Int] = [:]
+            var completed: [String: Int] = [:]
+            var failed: Set<String> = []
+            for ex in prescription {
+                guard let muscle = muscleByExercise[ex.exerciseID],
+                      let sets = ex.targetSets, sets > 0,
+                      let repsLow = ex.targetRepsLow, repsLow > 0
+                else { continue }   // cardio and un-prescribed rows carry no rep target
+                prescribed[muscle, default: 0] += sets * repsLow
+                for log in sessionLogs where log.exerciseID == ex.exerciseID {
+                    completed[muscle, default: 0] += log.completedReps ?? 0
+                    if log.isFailed { failed.insert(muscle) }
+                }
+            }
+            for (muscle, target) in prescribed where target > 0 {
+                outcomesByMuscle[muscle, default: []].append(
+                    .init(date: date,
+                          repCompletion: min(1.0, Double(completed[muscle] ?? 0) / Double(target)),
+                          bestE1RM: nil,
+                          anyFailure: failed.contains(muscle)))
+            }
+        }
+
+        // Existing targets, so a move perturbs the CURRENT prescription
+        // rather than restarting from the middle every time.
+        let existing = Dictionary(uniqueKeysWithValues:
+            ((try? await VolumeTargetRepository.all()) ?? [])
+                .map { ($0.muscle, $0.weeklySets) })
+
+        for (muscle, recoveryProbes) in recoveryByMuscle {
+            guard let outcomes = outcomesByMuscle[muscle], outcomes.count >= 2
+            else { continue }
+            // Typical days between this muscle's sessions - the horizon
+            // openTooLong measures "still carrying it" against.
+            let dates = outcomes.map(\.date).sorted()
+            let gaps = zip(dates.dropFirst(), dates).map {
+                Calendar.current.dateComponents([.day], from: $1, to: $0).day ?? 3
+            }
+            let gapDays = max(1, gaps.sorted()[gaps.count / 2])
+
+            let current = existing[muscle]
+                ?? VolumeTitration.startingPoint(
+                    low: VolumeTitration.floorWeeklySets,
+                    high: VolumeTitration.ceilingWeeklySets)
+            let move = VolumeTitration.decide(
+                muscle: muscle,
+                current: current,
+                outcomes: outcomes,
+                recovery: recoveryProbes.map(\.observation),
+                sessionGapDays: gapDays)
+            let next = VolumeTitration.apply(move, to: current)
+            // Persist on any move, and also on the FIRST look at a muscle
+            // (no stored target yet) - the hold's reason is worth showing
+            // even when the number does not change.
+            if next != current || existing[muscle] == nil {
+                try? await VolumeTargetRepository.set(
+                    muscle: muscle, weeklySets: next, reason: move.reason,
+                    userID: userID)
+            }
+        }
+    }
+
     /// Whether the athlete must clear the PAR-Q+ before a program is
     /// written for them. nil means "not looked yet" and counts as
     /// REQUIRED — failing closed is the only safe direction for a medical
@@ -891,6 +1000,19 @@ struct CoachWizardView: View {
     private func readTrainingHistory() async {
         guard let userID = appState.currentProfile?.id else { return }
         standingRules = (try? await TrainingRulesRepository.active()) ?? []
+        // THE TITRATION, finally wired. Runs BEFORE the targets read
+        // below, so any move it makes is what this build prescribes.
+        //
+        // Everything it needs existed for weeks with no caller:
+        // VolumeTitration.decide, the probe repository, the target
+        // repository, and the read at the next line. The probe card asked
+        // the athlete how they recovered, session after session, and
+        // nothing ever read the answers into a prescription - we were
+        // collecting data and visibly implying it was used. Owner policy
+        // (2026-08-26): "prescribe middle of the road, and perturb the
+        // volume every couple of weeks to see how performance improves.
+        // The data or the client will tell us how it feels."
+        await runVolumeTitration(userID: userID)
         volumeTargets = Dictionary(
             uniqueKeysWithValues: ((try? await VolumeTargetRepository.all()) ?? [])
                 .map { ($0.muscle, $0.weeklySets) })
@@ -1725,12 +1847,19 @@ struct CoachWizardView: View {
             // from the same max-spacing pattern scheduleHint shows. Best
             // effort - a booking failure never blocks the block.
             if scheduleSessions { await bookTrainingDays() }
-            // Stamp the rules this build actually acted on. Until a rule
-            // is stamped it reads as waiting, which is what lets Coach say
+            // Stamp the rules whose levers ACTUALLY fired while these
+            // inputs were assembled - not the ones whose intent was merely
+            // eligible. The eligible-set predicate once stamped rules
+            // whose lever had been silently clobbered, handing the athlete
+            // a receipt for something that never happened. Until a rule is
+            // stamped it reads as waiting, which is what lets Coach say
             // "I can build this now" when a lever ships for something the
             // athlete asked for long ago.
-            await TrainingRulesRepository.markApplied(
-                standingRules.filter(\.isWaitingToBeBuilt).map(\.id))
+            // `lastInputs` is the exact Inputs this program was generated
+            // from - generatePreview stores it in the same breath as the
+            // preview itself, so the fired-lever list and the program are
+            // never from different assemblies.
+            await TrainingRulesRepository.markApplied(lastInputs?.appliedRuleIDs ?? [])
             errorText = nil
             // The build landed. Where the athlete goes next is the
             // host's call, and dismissing anyway would cancel it.

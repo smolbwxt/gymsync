@@ -485,36 +485,59 @@ struct TrainingProfile: Codable, Equatable, Sendable {
             func id(_ key: String) -> UUID? {
                 slots[key].flatMap(UUID.init(uuidString:))
             }
+            // Each branch reports whether its knob actually moved, and
+            // only a firing earns a place in appliedRuleIDs - the list the
+            // applied_at stamp reads. A branch that finds its slots
+            // malformed falls through to the honest-miss card instead of
+            // being stamped as honoured.
+            var fired = false
             switch rule.intent {
             case .pairWith:
-                inputs.supersetEveryWith = id("exercise_id")
+                if let x = id("exercise_id") {
+                    inputs.supersetEveryWith = x
+                    fired = true
+                }
             case .avoid:
                 // No new generator code: usableCatalog has always
                 // filtered excludedExerciseIDs.
-                if let x = id("exercise_id") { inputs.excludedExerciseIDs.insert(x) }
+                if let x = id("exercise_id") {
+                    inputs.excludedExerciseIDs.insert(x)
+                    fired = true
+                }
             case .swap:
                 // Exclude the one they are done with, and PREFER the one
                 // they named. Both knobs already existed - starred feeds
                 // three selection sites - so the whole lever is two lines.
-                if let from = id("from_id") { inputs.excludedExerciseIDs.insert(from) }
-                if let to = id("to_id") { inputs.starredExerciseIDs.insert(to) }
+                if let from = id("from_id"), let to = id("to_id") {
+                    inputs.excludedExerciseIDs.insert(from)
+                    inputs.starredExerciseIDs.insert(to)
+                    fired = true
+                }
             case .orderBefore:
                 if let a = slots["muscle"], let b = slots["after_muscle"] {
                     inputs.orderMuscleBefore = (first: a.lowercased(),
                                                 then: b.lowercased())
+                    fired = true
                 }
             case .capVolume:
                 if let m = slots["muscle"], let n = Int(slots["number"] ?? "") {
                     inputs.volumeCaps[m.lowercased()] = n
+                    fired = true
                 }
             case .floorVolume:
                 if let m = slots["muscle"], let n = Int(slots["number"] ?? "") {
                     inputs.volumeFloors[m.lowercased()] = n
+                    fired = true
                 }
             case .lightDay, .cue, .unknown:
                 // Unreachable: isBuildable already refused these. Kept
                 // exhaustive so adding a predicate forces a decision here
                 // rather than silently doing nothing.
+                break
+            }
+            if fired {
+                inputs.appliedRuleIDs.append(rule.id)
+            } else {
                 inputs.unhonoredRules.append(rule.rule)
             }
         }

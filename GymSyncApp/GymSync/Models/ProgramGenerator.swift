@@ -130,6 +130,19 @@ enum ProgramGenerator {
         /// produces a band of target +/- 1.
         var volumeCaps: [String: Int] = [:]
         var volumeFloors: [String: Int] = [:]
+        /// Ids of the standing rules whose levers ACTUALLY moved a knob
+        /// while these inputs were assembled. This is what gets stamped
+        /// `applied_at` after the program is written.
+        ///
+        /// The previous stamp asked "was this rule's intent buildable and
+        /// confirmed?" - a fact about the REGISTRY, not about what
+        /// happened. When the avoid lever was silently clobbered
+        /// (2026-08-26), that predicate stamped dead rules as honoured:
+        /// the athlete's exclusion was discarded AND the database recorded
+        /// it applied. Stamping what fired, not what should have fired,
+        /// makes the receipt truthful even when a future lever is
+        /// mis-wired.
+        var appliedRuleIDs: [UUID] = []
         /// Dedicated cardio days appended after the lifting split
         /// (owner 2026-08-14) — prescribed as zone + MINUTES. When
         /// lifting + cardio exceed 7 calendar days, the overflow PAIRS
