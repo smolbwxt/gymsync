@@ -736,6 +736,15 @@ struct CoachThreadView: View {
             }
         }
         .background(theme.bg)
+        // Owner 2026-08-27: "I still can't actually click on anything to
+        // pull up my keyboard... I think it might be hidden underneath of
+        // the home dock." Exactly right - this screen had neither
+        // .gsHidesDock() nor a bottom inset, so the 86pt dock drew over
+        // the input row. Same defect class as the 2026-07-29 UI audit's
+        // CampaignDetailView finding, and the same remedy the consult
+        // already uses: a conversation is a focused context, the dock
+        // hides while you're in one.
+        .gsHidesDock()
         .task { await open() }
     }
 

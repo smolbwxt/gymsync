@@ -12,14 +12,14 @@ import SwiftUI
 /// "Get Stronger" pillar promoted) → ROUTINES & PROGRAMMING | COACH |
 /// DISCOVER (the community-workouts browse, resurrected from the orphaned
 /// LibraryTabView) → THE RACK (dock + weekly-rotation countdown, one
-/// soundboard home) → LOCKER | PRO → SETTINGS. The header avatar became
-/// tappable (→ Edit Profile).
+/// soundboard home) → PRO → SETTINGS. The header avatar became
+/// tappable (→ Edit Profile). LOCKER was cut 2026-08-27 (owner call).
 ///
 /// Widget card recipe (2026-08 3D pass): extruded `GS3DCard` chrome — the
 /// theme's raised face on a 6pt darker lip (the RACK IT anatomy at card
-/// scale). Tappable widgets sink on press (`.gs3DCardStyle`); LOCKER sits
-/// still (`.gs3DCard`). Content recipe: k-label title, a middle content
-/// line, and a quieter footer k-label.
+/// scale). Tappable widgets sink on press (`.gs3DCardStyle`). Content
+/// recipe: k-label title, a middle content line, and a quieter footer
+/// k-label.
 struct YouTabView: View {
     @Environment(\.gsTheme) private var theme
     @Environment(AppState.self) private var appState
@@ -65,10 +65,6 @@ struct YouTabView: View {
                             .gsSpotlightTarget(key: "tour.you.routines")
 
                         coachWidget
-                            .padding(.horizontal, 16)
-                            .padding(.top, 12)
-
-                        lockerWidget
                             .padding(.horizontal, 16)
                             .padding(.top, 12)
 
@@ -311,22 +307,12 @@ struct YouTabView: View {
         .accessibilityLabel("Shop")
     }
 
-    /// Inert this round — avatar, backdrops and effects come later.
-    /// Static extrusion (no sink — nothing to tap); the whole face + lip
-    /// dims to 0.6, the same treatment a disabled 3D button gets.
-    private var lockerWidget: some View {
-        widgetCard(title: "LOCKER") {
-            Text("Avatar · backdrops · effects — soon")
-                .font(GSFont.body(13, relativeTo: .subheadline))
-                .foregroundStyle(theme.neutral700)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-        }
-        .gs3DCard(cornerRadius: GSMetrics.radiusSm)
-        .opacity(0.6)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Locker — coming soon")
-    }
+    // (The LOCKER widget lived here from the 2026-08-12 restructure until
+    // 2026-08-27. Owner: "I don't think that there's any customization in
+    // the UI stuff that will really be unlocked... Eliminate the widget
+    // and let's move on." Deleted outright rather than hidden - a dimmed
+    // "coming soon" card was paying rent on the page for a feature with
+    // no plan behind it.)
 
     private var settingsWidget: some View {
         Button {
