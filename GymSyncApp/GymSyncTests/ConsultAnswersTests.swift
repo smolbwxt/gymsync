@@ -137,11 +137,25 @@ final class ConsultAnswersTests: XCTestCase {
 
     // MARK: - Constraints accumulate
 
+    // The contract flipped 2026-08-27 with the injury-severity work: the
+    // cautions probe is asked EVERY consult with the known joints
+    // pre-selected, so an answered probe is a statement about all of
+    // them. Silence (the probe skipped) still heals nothing.
     func testAJointNamedLastBlockIsNotHealedBySilence() {
         var before = profile()
         before.cautionJoints = ["shoulder"]
+        let after = ConsultAnswers([:]).apply(to: before)
+        XCTAssertEqual(after.cautionJoints, ["shoulder"])
+    }
+
+    func testAnAnsweredCautionsProbeIsTheWholeList() {
+        // The athlete saw "shoulder" pre-selected, unticked it and ticked
+        // "knee". Keeping the shoulder would override what they just did
+        // on screen.
+        var before = profile()
+        before.cautionJoints = ["shoulder"]
         let after = ConsultAnswers(["cautions": ["knee"]]).apply(to: before)
-        XCTAssertEqual(Set(after.cautionJoints), ["shoulder", "knee"])
+        XCTAssertEqual(after.cautionJoints, ["knee"])
     }
 
     func testExcludedPatternsAccumulateToo() {
