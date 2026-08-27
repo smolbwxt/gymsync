@@ -77,9 +77,9 @@ final class GeneratedStructureTests: XCTestCase {
         // A stacked bro-split request is the reachable worst case the
         // audit measured (~17 direct chest sets); the cap holds the whole
         // SESSION at 25 working sets whatever the split does.
-        var inputs = ProgramGenerator.Inputs(focus: .hypertrophy)
-        inputs.daysPerWeek = 2
-        inputs.experience = .advanced
+        let inputs = ProgramGenerator.Inputs(
+            focus: .hypertrophy, daysPerWeek: 2, durationWeeks: 8,
+            experience: .advanced)
         let catalog = (1...30).map { i in
             ProgramGenerator.CatalogExercise(
                 id: UUID(), name: "Lift \(i)",
@@ -92,10 +92,13 @@ final class GeneratedStructureTests: XCTestCase {
         }
         let program = ProgramGenerator.generate(inputs: inputs, catalog: catalog)
         for day in program.days {
-            let working = day.exercises.filter { $0.cardioZone == nil }
-                .map(\.sets).reduce(0, +)
+            // Split into steps: the one-liner filter+map+reduce inside
+            // XCTAssert sent Swift's type-checker over its time budget.
+            let lifting = day.exercises.filter { $0.cardioZone == nil }
+            let setCounts: [Int] = lifting.map(\.sets)
+            let working: Int = setCounts.reduce(0, +)
             XCTAssertLessThanOrEqual(working, 25,
-                "\(day.name) carries \(working) working sets - the day cap is 25")
+                "day carries \(working) working sets - the cap is 25")
         }
     }
 
