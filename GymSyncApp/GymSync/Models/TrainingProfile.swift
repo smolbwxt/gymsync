@@ -538,7 +538,25 @@ struct TrainingProfile: Codable, Equatable, Sendable {
         inputs.cardioStyle = cardioStyle
         inputs.bandOverride = bandOverride
         inputs.selectionTilt = selectionWeights
-        inputs.excludedExerciseIDs = Set(exclusions.map(\.exerciseID))
+        // UNION, never assignment. The standing-rule loop above inserts
+        // into this same set for RuleIntent.avoid and .swap, and this line
+        // used to be a plain `=` that ran 47 lines later and threw both
+        // away.
+        //
+        // Found 2026-08-26 by an adversarial verification pass, hours
+        // after the levers shipped. The failure was the exact defect the
+        // whole day was spent eliminating, and worse than the original:
+        // the athlete typed "never overhead barbell", Coach read it
+        // correctly, showed the reading, they pressed YES BUILD IT, the
+        // id was inserted here and silently discarded - and then
+        // markApplied stamped applied_at, so the rule reported itself as
+        // honoured forever. They ended up with STRONGER evidence it
+        // worked than if the feature had never existed.
+        //
+        // Avoid rules are usually injury-driven. This put a movement
+        // somebody deliberately excluded back into their program with an
+        // explicit assurance it would not be.
+        inputs.excludedExerciseIDs.formUnion(exclusions.map(\.exerciseID))
         // Carryover (Phase 4): last block's skipped lifts sort last; a
         // multi-goal profile past block one names its alternation.
         if let carryover {

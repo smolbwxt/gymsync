@@ -847,7 +847,12 @@ struct CoachWizardView: View {
             standingRules: standingRules,
             volumeTargets: volumeTargets)
         inputs.sessionMinutes = sessionMinutes
-        inputs.starredExerciseIDs = starredExerciseIDs
+        // UNION, for the same reason as excludedExerciseIDs in
+        // generatorInputs: RuleIntent.swap stars the lift the athlete
+        // asked to switch TO, and this assignment ran afterwards and
+        // erased it. Starred routines and a standing rule are both real
+        // signals; neither should silently win.
+        inputs.starredExerciseIDs.formUnion(starredExerciseIDs)
         lastInputs = inputs
         lastCatalog = catalog
         preview = ProgramGenerator.generate(inputs: inputs, catalog: catalog)
