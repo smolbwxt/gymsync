@@ -117,6 +117,19 @@ enum ProgramGenerator {
         /// difference between a lever that costs a day and one that costs
         /// a line, and the substrate decided that, not the feature.
         var supersetEveryWith: UUID? = nil
+        /// Order one muscle's work before another's within a day
+        /// (RuleIntent.orderBefore). Lowercased primary-muscle names.
+        var orderMuscleBefore: (first: String, then: String)? = nil
+        /// Hard weekly-volume bounds the ATHLETE asked for, per muscle
+        /// (RuleIntent.capVolume / .floorVolume).
+        ///
+        /// Separate from `volumeTargets`, and the distinction matters: a
+        /// target is a number to aim AT, a bound is a line not to cross.
+        /// Mapping "no more than 20 sets" onto a target of 20 would have
+        /// silently turned a ceiling into a floor as well, since a target
+        /// produces a band of target +/- 1.
+        var volumeCaps: [String: Int] = [:]
+        var volumeFloors: [String: Int] = [:]
         /// Dedicated cardio days appended after the lifting split
         /// (owner 2026-08-14) — prescribed as zone + MINUTES. When
         /// lifting + cardio exceed 7 calendar days, the overflow PAIRS
@@ -541,7 +554,9 @@ enum ProgramGenerator {
         let balanced = balanceWeeklyVolume(days: days, catalog: catalog,
                                            low: weekly.low, high: weekly.high,
                                            protectedDayNames: emphasisDays,
-                                           targets: inputs.volumeTargets)
+                                           targets: inputs.volumeTargets,
+                                           caps: inputs.volumeCaps,
+                                           floors: inputs.volumeFloors)
         days = balanced.days
         // The note is GENERATED from what the pass actually did, including
         // what it could not do. It used to be written here from the trim and
@@ -861,6 +876,47 @@ enum ProgramGenerator {
         }
         if inputs.experience == .new {
             notes.append("Beginner volume (6–10 weekly sets per muscle) grows you just as fast — extra sets are cost without benefit in year one (Schoenfeld 2018).")
+        }
+
+        // STANDING RULE: train one muscle before another, within a day.
+        //
+        // Only ACCESSORIES move. Mains keep their positions because slot
+        // logic owns them and putting a main second would quietly undo
+        // the heavy-work-first principle the whole generator is built on -
+        // a rule the athlete gave should bend the program, not break it.
+        //
+        // A stable partition, so everything the rule does not mention
+        // keeps its relative order. Deterministic by construction: same
+        // inputs, same week.
+        if let rule = inputs.orderMuscleBefore {
+            let byID = Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, $0) })
+            func muscle(_ ex: Exercise) -> String {
+                (byID[ex.exerciseID]?.primaryMuscle ?? "").lowercased()
+            }
+            var moved = false
+            for d in days.indices {
+                let slots = days[d].exercises.indices.filter {
+                    !days[d].exercises[$0].isMain
+                        && days[d].exercises[$0].cardioZone == nil
+                }
+                let picked = slots.map { days[d].exercises[$0] }
+                let first = picked.filter { muscle($0) == rule.first }
+                let then = picked.filter { muscle($0) == rule.then }
+                guard !first.isEmpty, !then.isEmpty else { continue }
+                let rest = picked.filter {
+                    muscle($0) != rule.first && muscle($0) != rule.then
+                }
+                let reordered = first + then + rest
+                if reordered.map(\.exerciseID) != picked.map(\.exerciseID) {
+                    moved = true
+                }
+                for (slot, ex) in zip(slots, reordered) {
+                    days[d].exercises[slot] = ex
+                }
+            }
+            if moved {
+                notes.append("Your rule, built: \(rule.first) work comes before \(rule.then) on days that have both. Main lifts keep their place at the front \u{2014} moving those would cost you more than the order gains.")
+            }
         }
 
         // STANDING RULE: pair one lift onto every working slot.
@@ -1678,6 +1734,9 @@ enum ProgramGenerator {
     /// appear only as secondaries get no floor: incidental volume is not
     /// a training commitment. Deterministic: muscles alphabetical, adds to
     /// the first qualifying accessory, trims from the last.
+    /// `caps` and `floors` are the athlete's own stated bounds, keyed by
+    /// lowercased muscle. Empty by default, so every existing caller is
+    /// unchanged.
     static func balanceWeeklyVolume(
         days: [Day], catalog: [CatalogExercise], low: Int, high: Int,
         protectedDayNames: Set<String> = [],
@@ -1686,7 +1745,9 @@ enum ProgramGenerator {
         /// which is the entire point of the search, and the wire without
         /// which it would be a knob that records what it learned and is
         /// never read.
-        targets: [String: Int] = [:]
+        targets: [String: Int] = [:],
+        caps: [String: Int] = [:],
+        floors: [String: Int] = [:]
     ) -> (days: [Day], trimmed: Int, added: Int,
           unresolvedLow: [String], unresolvedHigh: [String]) {
         let byID = Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, $0) })
@@ -1725,8 +1786,26 @@ enum ProgramGenerator {
         // single value - balance moves in whole sets and an exact equality
         // would oscillate.
         func bounds(for muscle: String) -> (low: Int, high: Int) {
-            guard let target = targets[muscle] else { return (low, high) }
-            return (max(1, target - 1), target + 1)
+            var lo = low
+            var hi = high
+            if let target = targets[muscle] {
+                lo = max(1, target - 1)
+                hi = target + 1
+            }
+            // A bound the athlete stated outranks both the population
+            // band and a searched target: they asked for it in words.
+            // Each clamp also drags the opposite edge so the band can
+            // never invert - a cap below the floor would otherwise make
+            // every muscle simultaneously under and over volume.
+            if let cap = caps[muscle] {
+                hi = min(hi, max(1, cap))
+                lo = min(lo, hi)
+            }
+            if let floorValue = floors[muscle] {
+                lo = max(lo, floorValue)
+                hi = max(hi, lo)
+            }
+            return (lo, hi)
         }
 
         // FLOOR

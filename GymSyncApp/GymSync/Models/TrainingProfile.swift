@@ -465,22 +465,56 @@ struct TrainingProfile: Codable, Equatable, Sendable {
         // existed. That is the point of classifying the intent and
         // deriving buildability rather than storing a verdict.
         for rule in standingRules {
+            // TWO GATES before any lever moves, and both are load-bearing.
+            //
+            // `confirmed` - the athlete agreed this is what they meant. A
+            // model reading they have not seen must never reshape their
+            // training; that is the whole reason the confirm step exists.
+            // The first version of this loop switched on `intent` alone
+            // and would have fired on an unconfirmed guess.
+            //
+            // `isBuildable(slots:)` - the registry says this build can
+            // act on that predicate WITH THOSE SLOTS. It is slot-aware
+            // because "avoid bad form" and "avoid leg extensions" are the
+            // same predicate and only one has an exercise to exclude.
+            guard rule.confirmed, rule.intent.isBuildable(slots: rule.slots) else {
+                inputs.unhonoredRules.append(rule.rule)
+                continue
+            }
+            let slots = rule.slots ?? [:]
+            func id(_ key: String) -> UUID? {
+                slots[key].flatMap(UUID.init(uuidString:))
+            }
             switch rule.intent {
             case .pairWith:
-                if let raw = rule.slots?["exercise_id"], let id = UUID(uuidString: raw) {
-                    inputs.supersetEveryWith = id
-                } else {
-                    inputs.unhonoredRules.append(rule.rule)
-                }
+                inputs.supersetEveryWith = id("exercise_id")
             case .avoid:
                 // No new generator code: usableCatalog has always
                 // filtered excludedExerciseIDs.
-                if let raw = rule.slots?["exercise_id"], let id = UUID(uuidString: raw) {
-                    inputs.excludedExerciseIDs.insert(id)
-                } else {
-                    inputs.unhonoredRules.append(rule.rule)
+                if let x = id("exercise_id") { inputs.excludedExerciseIDs.insert(x) }
+            case .swap:
+                // Exclude the one they are done with, and PREFER the one
+                // they named. Both knobs already existed - starred feeds
+                // three selection sites - so the whole lever is two lines.
+                if let from = id("from_id") { inputs.excludedExerciseIDs.insert(from) }
+                if let to = id("to_id") { inputs.starredExerciseIDs.insert(to) }
+            case .orderBefore:
+                if let a = slots["muscle"], let b = slots["after_muscle"] {
+                    inputs.orderMuscleBefore = (first: a.lowercased(),
+                                                then: b.lowercased())
                 }
-            case .orderBefore, .lightDay, .unknown:
+            case .capVolume:
+                if let m = slots["muscle"], let n = Int(slots["number"] ?? "") {
+                    inputs.volumeCaps[m.lowercased()] = n
+                }
+            case .floorVolume:
+                if let m = slots["muscle"], let n = Int(slots["number"] ?? "") {
+                    inputs.volumeFloors[m.lowercased()] = n
+                }
+            case .lightDay, .cue, .unknown:
+                // Unreachable: isBuildable already refused these. Kept
+                // exhaustive so adding a predicate forces a decision here
+                // rather than silently doing nothing.
                 inputs.unhonoredRules.append(rule.rule)
             }
         }
