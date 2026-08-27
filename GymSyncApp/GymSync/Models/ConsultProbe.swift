@@ -345,6 +345,10 @@ enum ConsultProbe {
         "cardioStyle", "comfortAnswers", "derivedComplexityCap",
         "excludedPatterns", "cautionJoints", "equipment", "focusMuscles",
         "accessoryVariety",
+        // 2026-08-27: both read by generatorInputs - focus lifts win their
+        // main slot (Inputs.focusExerciseIDs); injured joints exclude at
+        // usableCatalog (Inputs.injuredJoints).
+        "focusExerciseIDs", "injuredJoints",
         // → ProgramGenerator.Inputs (assembled by generatorInputs)
         "durationWeeks", "effort",
         // → UserSettings

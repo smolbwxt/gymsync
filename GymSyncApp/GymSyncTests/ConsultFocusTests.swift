@@ -171,6 +171,9 @@ final class ConsultFocusTests: XCTestCase {
     // MARK: - Multiple focus lifts by id (picker, 2026-08-27)
 
     func testFocusLiftsResolveByIDAndKeepOrder() {
+        // Pin the fixture: `catalog` is computed and mints fresh ids on
+        // every access, so two reads never share an id.
+        let catalog = self.catalog
         let squat = catalog.first { $0.name == "Back Squat" }!
         let bench = catalog.first { $0.name == "Bench Press" }!
         let answers = ConsultAnswers(["focus_lift": [squat.id.uuidString, bench.id.uuidString]])
@@ -179,6 +182,7 @@ final class ConsultFocusTests: XCTestCase {
     }
 
     func testFocusLiftsLandOnTheProfileAsExerciseIDs() {
+        let catalog = self.catalog
         let squat = catalog.first { $0.name == "Back Squat" }!
         let bench = catalog.first { $0.name == "Bench Press" }!
         let answers = ConsultAnswers(["focus_lift": [squat.id.uuidString, bench.id.uuidString]])
