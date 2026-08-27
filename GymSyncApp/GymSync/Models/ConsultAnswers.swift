@@ -37,21 +37,21 @@ struct ConsultAnswers: Equatable, Sendable {
 
     static func goals(forOpener option: String) -> [TrainingGoal] {
         switch option {
-        // "HIT NEW NUMBERS" — the number is the point.
+        // "GET STRONGER" — the number is the point.
         case "numbers": return [.maxStrength]
-        // "ADD SIZE" — the one goal whose name matches its mechanism.
+        // "BUILD MUSCLE" — the one goal whose name matches its mechanism.
         case "size":    return [.hypertrophy]
-        // "PREP FOR A DATE" — sport prep leads; the date sets duration and
+        // "TRAIN FOR AN EVENT" — sport prep leads; the date sets duration and
         // the sport sets the lens (see TrainingProfile's sport lenses).
         case "date":    return [.sportPrep, .maxStrength]
-        // "FORGE THE BODY" — recomposition. Ranked, not blended: the
+        // "BUILD MUSCLE, LOSE FAT" — recomposition. Ranked, not blended: the
         // corpus is consistent that chasing both at once stalls both, so
         // hypertrophy LEADS and fat loss rides second at 0.3 weight,
         // which is exactly what the block planner alternates on.
         case "forge":   return [.hypertrophy, .fatLoss]
-        // "BUILD THE ENGINE"
+        // "IMPROVE CONDITIONING"
         case "engine":  return [.conditioning]
-        // "KEEP IT RUNNING" — maintenance. Not a lesser goal; it is the
+        // "STAY FIT & HEALTHY" — maintenance. Not a lesser goal; it is the
         // one most people are actually in, and general health rides
         // hypertrophy's balanced template.
         default:        return [.generalHealth]

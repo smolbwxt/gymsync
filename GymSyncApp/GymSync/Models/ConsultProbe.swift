@@ -97,14 +97,18 @@ enum ConsultProbe {
 
     static let opener = Probe(
         id: "opener",
-        ask: "What's this block chasing?",
+        // Owner 2026-08-27: plain words. The old labels ("FORGE THE
+        // BODY", "BUILD THE ENGINE") were house metaphors - "makes no
+        // sense to anyone other than us." A goal chip has one job: be
+        // picked correctly by someone who has never seen the app.
+        ask: "What's your goal for this block?",
         options: [
-            Option(id: "numbers", label: "HIT NEW NUMBERS"),
-            Option(id: "size", label: "ADD SIZE"),
-            Option(id: "date", label: "PREP FOR A DATE"),
-            Option(id: "forge", label: "FORGE THE BODY"),
-            Option(id: "engine", label: "BUILD THE ENGINE"),
-            Option(id: "running", label: "KEEP IT RUNNING"),
+            Option(id: "numbers", label: "GET STRONGER"),
+            Option(id: "size", label: "BUILD MUSCLE"),
+            Option(id: "date", label: "TRAIN FOR AN EVENT"),
+            Option(id: "forge", label: "BUILD MUSCLE, LOSE FAT"),
+            Option(id: "engine", label: "IMPROVE CONDITIONING"),
+            Option(id: "running", label: "STAY FIT & HEALTHY"),
         ],
         // generatorFocus and bandOverride are COMPUTED from rankedGoals
         // and were listed here until an audit asked what actually gets
@@ -146,7 +150,7 @@ enum ConsultProbe {
         // to write something nothing reads, which is the dead-knob bug
         // repAppetite spent months being.
         Probe(id: "the_date",
-              ask: "What's on the date, and when is it?",
+              ask: "What's the event, and when is it?",
               tunes: ["durationWeeks", "sportPrepSport"],
               gain: 10, family: .goal),
         // Writing the story tests exposed this hole: five of the six
@@ -157,10 +161,10 @@ enum ConsultProbe {
         // one that holds a pace, or the one that repeats hard efforts —
         // and cardioStyle already carries it.
         Probe(id: "engine_kind",
-              ask: "Which engine — one that holds a pace, or one that repeats hard efforts?",
+              ask: "What kind of conditioning — holding a steady pace, or repeating hard efforts?",
               options: [
-                Option(id: "steady", label: "HOLDS A PACE"),
-                Option(id: "intervals", label: "REPEATS HARD EFFORTS"),
+                Option(id: "steady", label: "STEADY PACE"),
+                Option(id: "intervals", label: "HARD INTERVALS"),
               ],
               tunes: ["cardioStyle"],
               gain: 9, family: .goal),
@@ -294,7 +298,7 @@ enum ConsultProbe {
               ask: "Anything I should treat as a standing rule?",
               tunes: ["trainingRules"],
               gain: 5, family: .rule,
-              clarifier: "Things like \"pulls before arms\" or \"keep Saturdays light\" — I'll hold them across blocks."),
+              clarifier: "Things like \"pulls before arms\" or \"no leg extensions\" — I'll hold them across blocks."),
     ]
 
     // MARK: Tunables
