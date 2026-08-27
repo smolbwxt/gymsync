@@ -91,6 +91,17 @@ struct CoachConsultView: View {
                     questionCard(probe)
                     answerArea(probe)
                     Spacer(minLength: 0)
+                } else if ConsultClose.isAvailable {
+                    // Owner 2026-08-27: "we should be dumped into a chat
+                    // with coach that summarizes our intent, then the
+                    // vectors are finalized, and the rules discussed."
+                    // The close IS that chat. Devices without the model
+                    // keep the static card and the free-text rule probe.
+                    ConsultCloseView(answers: answers,
+                                     profile: profile,
+                                     catalog: catalog,
+                                     userID: userID,
+                                     onDone: { onFinish(answers) })
                 } else {
                     finishedCard
                     Spacer(minLength: 0)
@@ -349,6 +360,13 @@ struct CoachConsultView: View {
         guard !started else { return }
         started = true
         var seeded = ConsultProbe.Context()
+        // When the close chat will run, rule capture belongs to IT - the
+        // free-text probe would ask the same question one screen earlier
+        // and worse. Pre-seeding the flag keeps the probe out of the walk;
+        // on devices without the model the probe shows exactly as before.
+        if ConsultClose.isAvailable {
+            seeded.offeredRuleCapture = true
+        }
         seeded.hasLog = hasLog
         seeded.loggedDaysPerWeek = loggedDaysPerWeek
         seeded.provenance = profile.provenance

@@ -259,6 +259,37 @@ a work list.
 
 ---
 
+## P6.4 — Block catalog + after-action report (owner idea, 2026-08-27)
+
+Owner: "It would be cool if when you clicked the my program widget, it
+took you to a catalog of your previous and current blocks, and you're
+able to engage in an afteraction report. Coach would be fed a prompt of
+everything about that block, and if it was performed, the data from all
+of the exercises from that block. Maybe it doesn't live exactly here,
+but I like this idea."
+
+The substrate is mostly present: `program_enrollments` keeps ended blocks
+(`endedAt`, reason), `ProgramTemplateStore` holds generated templates,
+`TrainingProfile.lastBuild` carries the reasoning, and the debrief engine
+already builds computed-prompt + chat sessions per WORKOUT - a per-BLOCK
+debrief is the same shape at a coarser grain. Missing: a block-history
+list view, a block-level computed prompt (per-exercise aggregates across
+the block's sessions), and the entry point (the My Program widget).
+**Size:** L. **Owner note:** placement undecided ("maybe it doesn't live
+exactly here").
+
+## P6.5 — Onboarding routes through the consult (owner directive, 2026-08-27)
+
+Owner: "We should route everything through the consult, then give people
+the option to edit the rules of their current block, and see what their
+previous blocks consisted of and what drove them there."
+
+The offer sheet currently mounts the wizard bare (RootView.swift). It
+should present the consult (which now closes in the Coach chat where
+rules are discussed) and only then the wizard. Needs applyConsult's
+persistence extracted from CoachHomeView so both hosts share it.
+**Size:** M. First half of the vision that P6.4 completes.
+
 ## P7 — Unresolved
 
 ### P7.1 — A truncated instruction

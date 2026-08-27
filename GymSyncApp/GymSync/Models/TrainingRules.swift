@@ -248,6 +248,7 @@ enum TrainingRulesRepository {
     static func add(_ rule: String, source: String = "consult",
                     intent: RuleIntent = .unknown,
                     slots: [String: String]? = nil,
+                    confirmed: Bool = false,
                     userID: UUID) async throws {
         let trimmed = rule.trimmingCharacters(in: .whitespacesAndNewlines)
         // The column's CHECK is 1...280. Refusing here rather than letting
@@ -260,18 +261,26 @@ enum TrainingRulesRepository {
         guard (1...280).contains(trimmed.count) else {
             throw TrainingRuleRejection.tooLong(trimmed.count)
         }
+        // `confirmed` rides the INSERT, atomically. The consult-close
+        // chat confirms at capture (the athlete just read their words
+        // beside the reading and agreed); an add-then-setConfirmed
+        // two-step could silently persist a confirmed rule as unconfirmed
+        // - setConfirmed swallows its errors - benching it on build one
+        // with no message.
         struct Insert: Encodable {
             let user_id: UUID
             let rule: String
             let source: String
             let intent: String
             let slots: [String: String]?
+            let confirmed: Bool
         }
         do {
             try await SupabaseService.shared.client
                 .from("training_rules")
                 .insert(Insert(user_id: userID, rule: trimmed, source: source,
-                               intent: intent.rawValue, slots: slots))
+                               intent: intent.rawValue, slots: slots,
+                               confirmed: confirmed))
                 .execute()
         } catch { throw ErrorMapping.map(error) }
     }

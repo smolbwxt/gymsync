@@ -288,19 +288,18 @@ struct CoachHomeView: View {
         // defect invisible: every add() threw 23502 and nobody heard it.
         // A rule that cannot be stored is reported, because the athlete
         // just told us something and deserves to know it did not stick.
+        // Rules reach this loop ONLY on devices without the on-device
+        // model: with it, the consult-close chat captures, classifies and
+        // confirms each rule at the moment it is typed, and pre-seeds the
+        // probe flag so answers never carry a standing_rule entry - one
+        // write path per device class, never both. Here, no model means
+        // no classification: the rule is stored honestly heard-only
+        // (.unknown, unconfirmed), reported as heard-not-built, and
+        // counted in the demand queue.
         for rule in answers.standingRules {
-            // Read it into a structured intent before storing. Failure
-            // here is not an error: RuleClassifier returns .unknown when
-            // it cannot do better, which stores the rule verbatim, reports
-            // it as heard-not-built, and counts it in the queue of levers
-            // worth building next.
-            let reading = await RuleClassifier.read(rule, catalog: catalog)
             do {
                 try await TrainingRulesRepository.add(
-                    rule, source: "consult",
-                    intent: reading.intent,
-                    slots: reading.slots.isEmpty ? nil : reading.slots,
-                    userID: userID)
+                    rule, source: "consult", userID: userID)
             } catch {
                 ruleTrouble = ErrorMapping.map(error).errorDescription
             }
