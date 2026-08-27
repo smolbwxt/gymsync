@@ -35,9 +35,27 @@ final class ConsultVocabularyTests: XCTestCase {
 
     // MARK: - Derived vocabularies
 
-    func testJointsComeFromTheCatalogNotFromAHandWrittenList() {
+    // The contract flipped 2026-08-27 (owner: "joints to avoid should be a
+    // dropdown"). The pinned seven ARE the catalog's labels as measured
+    // (shoulder 461 rows, lower_back 308, knee 240, elbow 179, wrist 170,
+    // hip 115, ankle 2); anything else a loaded catalog carries appends
+    // after them. Note this fixture says "low_back" - the real library
+    // says "lower_back" - which is exactly the drift a derived-only list
+    // would have offered as a chip on one device and not another.
+    func testJointsArePinnedFirstAndTheCatalogsExtrasFollow() {
         XCTAssertEqual(ConsultVocabulary.joints(in: catalog),
-                       ["elbow", "knee", "low_back", "shoulder"])
+                       ["shoulder", "lower_back", "knee", "elbow", "wrist", "hip", "ankle",
+                        "low_back"])
+    }
+
+    func testEveryPinnedJointCarriesAPlainLanguageDetail() {
+        let probe = ConsultProbe.bank.first { $0.id == "cautions" }!
+        let options = ConsultVocabulary.options(for: probe, catalog: catalog)
+        for joint in ConsultVocabulary.knownJoints {
+            let option = options.first { $0.id == joint.id }
+            XCTAssertEqual(option?.detail?.isEmpty, false,
+                           "\(joint.id) has no detail - the picker replaces free text, so it must explain itself")
+        }
     }
 
     func testJointsAreDeduplicatedAcrossExercises() {
@@ -50,11 +68,14 @@ final class ConsultVocabularyTests: XCTestCase {
                        ["hinge", "isolation", "push_horizontal", "squat"])
     }
 
-    func testAnUnlabelledCatalogOffersNoConstraintChips() {
-        // Better an empty list than an invented one: chips we cannot honor
-        // are worse than a free-text box.
+    func testAnUnlabelledCatalogStillOffersTheJointPickerButNoPatterns() {
+        // Joints never fall to free text again: an empty or late catalog
+        // used to turn the cautions probe into a text box, and a typed
+        // "knees" never matched the label "knee". Patterns stay derived -
+        // there is no pinned taxonomy for them.
         let bare = [exercise("Mystery")]
-        XCTAssertTrue(ConsultVocabulary.joints(in: bare).isEmpty)
+        XCTAssertEqual(ConsultVocabulary.joints(in: bare),
+                       ConsultVocabulary.knownJoints.map(\.id))
         XCTAssertTrue(ConsultVocabulary.patterns(in: bare).isEmpty)
     }
 
