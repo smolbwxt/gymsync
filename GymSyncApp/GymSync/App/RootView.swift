@@ -42,13 +42,6 @@ struct RootView: View {
     /// appear (walkthrough already seen) or from the walkthrough's
     /// completion, whichever consumes `appState.pendingCoachOffer`.
     @State private var showCoachOffer = false
-    /// The onboarding build landed; push the schedule inside the offer
-    /// sheet. Without this the sheet was the one host with no `onCreated`,
-    /// so it fell to the `.dismiss` default - a brand-new athlete filled
-    /// every dial, pressed "Build my program", and the sheet just closed.
-    /// Their program existed and they were never shown it, as the FIRST
-    /// experience of the product.
-    @State private var coachOfferLanded = false
 
     /// Launch overlay gate. `RootView` is alive for the whole app run, so this
     /// stays true after the first reveal — a later sign-out/sign-in transition
@@ -119,19 +112,16 @@ struct RootView: View {
                             // Same explicit environment injection as the
                             // walkthrough cover — presentation content does
                             // not reliably inherit it here.
+                            //
+                            // Routed THROUGH THE CONSULT (owner
+                            // 2026-08-27: "we should route everything
+                            // through the consult") — the flow walks
+                            // consult → close chat → wizard → landing,
+                            // the same arc a returning athlete gets from
+                            // the Coach tab. The bare-wizard version this
+                            // replaces asked a brand-new athlete nothing.
                             NavigationStack {
-                                CoachWizardView(onCreated: {
-                                    coachOfferLanded = true
-                                    return .handled
-                                })
-                                // A PUSH, not a replace - the wizard is
-                                // this stack's root, so there is nothing
-                                // to swap. Back returns to an idle wizard,
-                                // which is harmless; the athlete lands on
-                                // their program, which is the point.
-                                .navigationDestination(isPresented: $coachOfferLanded) {
-                                    ProgramScheduleView()
-                                }
+                                CoachOfferFlow()
                             }
                             .environment(appState)
                             .environment(\.gsTheme, themeStore.current.withAccent(themeStore.accent))

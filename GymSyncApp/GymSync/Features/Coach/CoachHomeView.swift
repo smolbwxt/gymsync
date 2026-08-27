@@ -281,28 +281,13 @@ struct CoachHomeView: View {
     /// TUNES, the wizard BUILDS, and both read the same profile.
     private func applyConsult(_ answers: ConsultAnswers) async {
         guard let userID = appState.currentProfile?.id else { return }
-        let tuned = answers.apply(to: profile, catalog: catalog)
-        profile = tuned
-        try? await TrainingProfileRepository.save(tuned, userID: userID)
-        // NOT `try?`. The swallowed error here is what made the original
-        // defect invisible: every add() threw 23502 and nobody heard it.
-        // A rule that cannot be stored is reported, because the athlete
-        // just told us something and deserves to know it did not stick.
-        // Rules reach this loop ONLY on devices without the on-device
-        // model: with it, the consult-close chat captures, classifies and
-        // confirms each rule at the moment it is typed, and pre-seeds the
-        // probe flag so answers never carry a standing_rule entry - one
-        // write path per device class, never both. Here, no model means
-        // no classification: the rule is stored honestly heard-only
-        // (.unknown, unconfirmed), reported as heard-not-built, and
-        // counted in the demand queue.
-        for rule in answers.standingRules {
-            do {
-                try await TrainingRulesRepository.add(
-                    rule, source: "consult", userID: userID)
-            } catch {
-                ruleTrouble = ErrorMapping.map(error).errorDescription
-            }
+        // The write path is shared with the onboarding offer flow
+        // (ConsultPersistence) - one copy, or the two hosts drift.
+        let outcome = await ConsultPersistence.apply(
+            answers, to: profile, catalog: catalog, userID: userID)
+        profile = outcome.profile
+        if let trouble = outcome.ruleTrouble {
+            ruleTrouble = trouble
         }
         await readRules()
     }
