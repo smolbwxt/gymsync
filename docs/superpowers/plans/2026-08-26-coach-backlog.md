@@ -469,3 +469,113 @@ but not the profile, screening, training profile, or gym - there is no
 in-app way to re-run a genuine first run, which is part of why this path
 goes unexercised.
 
+
+---
+
+# STATUS UPDATE 3 (2026-08-27, field report round — `910040f`)
+
+Owner's five-item field report, all five built in one commit. What
+shipped, what it replaced, and what it leaves open.
+
+## F1 - Consult builds directly; the wizard is out of the flow — DONE
+- `CoachHomeView` door: THE CONSULT → **BUILD MY PROGRAM**; header of the
+  consult screen renamed to match.
+- `Models/ProgramBuilder.swift` — `CoachWizardView.create()` lifted
+  verbatim (same write order: profile → snapshot → write routines →
+  delete superseded → template → enroll (retires old first) → plan →
+  markApplied). `VolumeTitrationRunner` lifted alongside so the titration
+  still runs before the targets read. Booking REMOVED from build (the
+  program page owns it now).
+- `Features/Coach/ConsultEntryView.swift` — the one entry: loads
+  profile/catalog/cadence, hosts the consult, `ConsultPersistence.apply`
+  THEN `ProgramBuilder.build`, then `onBuilt()`. Used by CoachOfferFlow
+  (rewritten to three lines), ProgramLedgerView.buildDoor,
+  BlockCalendarView's PLAN THE NEXT BLOCK. CoachHomeView keeps its own
+  host (route-swap semantics) and calls the same two functions.
+- `CoachConsultView.onFinish` is `async`; a `.building` phase shows
+  COACH IS BUILDING YOUR PROGRAM. On a failed build the consult returns
+  to its last card; the host shows the error.
+- Silent discard closed: `ConsultPersistence` now writes
+  `answers.liftAnchors` into `UserSettings.liftAnchors` (merged). The
+  probe had been parsed and dropped since it shipped.
+- **Left open:** `CoachWizardView.swift` still compiles and
+  `CoachHomeView.Route.wizard` still references it — nothing routes
+  there. Delete the file + the enum case + the dead helpers
+  (previewSection/previewSeedPounds/view-reroll/scheduleHint) in one
+  sweep. Birth year: the builder passes `birthYear: nil` (the profile
+  never carried it; only the wizard's text field did) — youth ceilings
+  are inactive until the builder reads it from the account profile.
+
+## F2 - Weeks scheduler at the top of the program page — DONE
+- `ProgramScheduleView.arcCard` replaced: SCHEDULE YOUR WEEKS HERE, one
+  line of context (WEEK n · phase/mesocycle · prescription · dates), a
+  4-column grid of extruded WK n buttons whose second line reads the
+  chosen days ("M W F") or SET DAYS / DELOAD. Tap → `WeekScheduleSheet`.
+  Old `weekChips`/`phaseLine`/`chipFace`/`chipInk`/`phaseSpan` removed.
+- `WeekScheduleSheet` gained `totalWeeks`/`startedOn`, an APPLY TO ALL n
+  WEEKS toggle, fetches the block's "Coach · " routines itself, and
+  **books real sessions** via `Models/WeekBooker.swift` (owner's answer:
+  "Book real sessions"): clears the window's solo sessions (series-born
+  via `cancelOccurrence`, plain via `deleteSession`; group sessions
+  untouched), books one per weekday Monday-first cycling the routines,
+  skips days already past, EventKit-syncs when the pref is on. SAME AS
+  THE BLOCK now also clears the booked sessions.
+- ASK COACH FOR A CHANGE is the page's one accent-faced door.
+- **Left open:** `upcoming()` scope — verify it returns only the
+  athlete's own sessions (organizer or invitee) so the clear step can
+  never touch someone else's booking. The calendar's own sheet also books
+  now (same struct) — its planned-dots layer is redundant with real
+  scheduled dots and could go.
+
+## F3 - Structured probes — DONE
+- `AnchorEntryView`: rows of [lift menu over LiftAnchorMath's four slugs
+  → −/weight/+ stepping one `displayIncrement` in the athlete's unit,
+  stored in pounds → ×], ADD A LIFT. Records "slug=pounds" so
+  `ConsultAnswers.liftAnchors` reads it unchanged.
+- Cautions: `ConsultVocabulary.knownJoints` pins the seven catalog joints
+  with plain details ("Deadlifts, heavy squats, bent-over rows"); catalog
+  extras append. Never falls to free text again.
+- Copy: anchor ask/clarifier, comfort ask/clarifier, cautions clarifier
+  rewritten in plain language.
+
+## F4 - "NONE OF THESE" over typed text — DONE
+Footer label is NONE OF THESE only when `multi && !options.isEmpty &&
+selection.isEmpty`. The free-text fallback on a multi probe showed it
+over a typed answer.
+
+## F5 - Adaptive complexity ladder — DONE (integer cap; float recorded)
+- `ComfortLadderView`: pool = catalog minus aliases, minus lifts whose
+  `jointStress` meets the joints just named (plus profile cautions),
+  minus equipment not on hand. Three lifts at the current rung; tap = I
+  CAN DO THAT → vanishes, next candidate at the same rung fills the slot;
+  quota met → rung up; THAT'S MY LIMIT stops; at the start rung with
+  nothing confirmed it steps DOWN to rung 1 once. Reports `cap=N`
+  (highest fully-confirmed rung), `float=X` (cap + fraction on the rung
+  above), and the accepted ids.
+- `ConsultAnswers.apply`: a `cap=` token sets `derivedComplexityCap`
+  directly and derives `comfortAnswers` from it (probe.complexity ≤ cap);
+  the legacy checklist path is unchanged.
+- **Left open (owner's "confident on a float"):** the generator still
+  reads the integer cap. Next step is a soft tilt: `float`'s fraction
+  biases selection toward the rung above without unlocking it. Also the
+  ladder's within-rung order is catalog order — a popularity/rank sort
+  would put bench before decline-close-grip at the same rung.
+
+## F6 - Close chat voice — DONE
+`CoachThinkingRow` (spinner + pulsing COACH IS THINKING) replaces the
+"…" bubble; the same row is the consult's building state. Instructions
+and the opener prompt now demand consequences ("you're comfortable with
+technical lifts, so barbell work leads your days") and forbid the
+readback. Model-path only — CI never exercises it; verify on device.
+
+## Fable double-check for this round
+1. `ProgramBuilder.build` vs the deleted-in-spirit `CoachWizardView.create`
+   — diff the write ORDER line by line; any reordering is a regression.
+2. `WeekBooker.book` clear step: prove `SessionRepository.upcoming()`
+   cannot return another athlete's session (RLS + query).
+3. Ladder: with a catalog where rung 3 has exactly one joint-safe lift,
+   `capacity(3) == 1` — one accept must step up, and `cap` must be 3.
+4. `ConsultAnswers.apply` with values `["cap=4","float=4.33", ...]` →
+   `derivedComplexityCap == 4`, `comfortAnswers[goblet-squat] == true`.
+5. The `Route.wizard` case in CoachHomeView is unreachable — confirm, then
+   delete with the wizard file.
