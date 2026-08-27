@@ -30,6 +30,39 @@ and calendar land on the schedule), **P2.1** (rules list + retire +
 honest confirm copy). All device-unverified; Fable's brief applies to
 them in full.
 
+## STATUS UPDATE 2 (2026-08-27)
+
+Shipped in `d4f8227` and its ancestors, closing most of this document:
+- **P2.1-adjacent / owner directives**: MY PROGRAM opens the program
+  LEDGER (current block pinned, past blocks with after-action Coach
+  threads, build-options frozen per enrollment from now on);
+  ProgramScheduleView gained HOW THIS WAS BUILT + SINCE THE START + the
+  full block payload on its ask door.
+- **P3.1 CLOSED by owner decision**: "Max volume: 25 sets per day" - a
+  final generator pass, mains untouched, honest trim note, tested.
+- **Chat is a change surface** (owner directive): exercise SWAPS via
+  RoutineEditProposal.swapToExerciseName honoured by BOTH writers;
+  standing rules capturable from any thread (source "chat"), same
+  consent card, shared vocabulary constant.
+- **P4.1 CLOSED**: Context.isYouth deleted; tests corrected.
+- **O2 CLOSED**: the KG/LBS toggle survives an anchors skip.
+- **UI wave**: all five You faces wrap at full size; one door recipe on
+  Coach; day-row/week-chip/hub clipping fixed; LOCKER deleted (owner).
+- **Chat input unburied** (.gsHidesDock on the thread view).
+- Consult closes in a chat with Coach; onboarding routes through the
+  consult; goal chips reworded to plain language.
+
+Still open: P2.2 (Home vs the program - owner decision pending), P3.2
+(wizard dead code: previewSection/previewSeedPounds/view-reroll/
+scheduleHint confirmed zero live callers, delete next), P3.3/P3.4 (cue
+render site; lightDay weekday identity), O1 (onboarding resume), O3-O5,
+P5.1 (RIR persistence - still unverified), week-schedule overrides are
+display-only (needs series-link design), screenshot-suite flakes
+(testCatalogBodyWeightLog, testActivityFeed), and the mid-block
+condition APPLIER (Coach proposing the stored conditional swap when the
+athlete reports the trigger in chat - the rules and the swap tool now
+both exist, the join is what remains).
+
 ## P0 — Fixed today, verify on device
 
 These were found by the verification pass and fixed in `9ad4c5f`/`HEAD`.
