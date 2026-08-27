@@ -15,7 +15,7 @@ import SwiftUI
 /// soundboard home) → PRO → SETTINGS. The header avatar became
 /// tappable (→ Edit Profile). LOCKER was cut 2026-08-27 (owner call).
 ///
-/// Widget card recipe (2026-08 3D pass): extruded `GS3DCard` chrome — the
+/// Widget card recipe (2026-08 3D pass, envelope fixed 2026-08-27): the
 /// theme's raised face on a 6pt darker lip (the RACK IT anatomy at card
 /// scale). Tappable widgets sink on press (`.gs3DCardStyle`). Content
 /// recipe: k-label title, a middle content line, and a quieter footer
@@ -224,8 +224,13 @@ struct YouTabView: View {
                 Text("Volume · PRs · body weight · history")
                     .font(GSFont.body(13, relativeTo: .subheadline))
                     .foregroundStyle(theme.neutral700)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                    // UI wave 2026-08-27: the one-line-shrink recipe
+                    // (lineLimit(1) + scaleFactor) rendered face copy at
+                    // ~10pt AND still clipped it at the screen edge. A
+                    // face line wraps at full size; shrinking belongs to
+                    // TITLES, where 17pt is still legible.
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
@@ -243,8 +248,13 @@ struct YouTabView: View {
                 Text(routinesFaceText)
                     .font(GSFont.body(13, relativeTo: .subheadline))
                     .foregroundStyle(theme.neutral700)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                    // UI wave 2026-08-27: the one-line-shrink recipe
+                    // (lineLimit(1) + scaleFactor) rendered face copy at
+                    // ~10pt AND still clipped it at the screen edge. A
+                    // face line wraps at full size; shrinking belongs to
+                    // TITLES, where 17pt is still legible.
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
@@ -276,8 +286,13 @@ struct YouTabView: View {
                 Text("Your ongoing chat, your program, the research")
                     .font(GSFont.body(13, relativeTo: .subheadline))
                     .foregroundStyle(theme.neutral700)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                    // UI wave 2026-08-27: the one-line-shrink recipe
+                    // (lineLimit(1) + scaleFactor) rendered face copy at
+                    // ~10pt AND still clipped it at the screen edge. A
+                    // face line wraps at full size; shrinking belongs to
+                    // TITLES, where 17pt is still legible.
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
@@ -298,8 +313,13 @@ struct YouTabView: View {
                 Text("Pro, the soundboard rack, and training with a personal trainer")
                     .font(GSFont.body(13, relativeTo: .subheadline))
                     .foregroundStyle(theme.neutral700)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                    // UI wave 2026-08-27: the one-line-shrink recipe
+                    // (lineLimit(1) + scaleFactor) rendered face copy at
+                    // ~10pt AND still clipped it at the screen edge. A
+                    // face line wraps at full size; shrinking belongs to
+                    // TITLES, where 17pt is still legible.
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
@@ -322,8 +342,13 @@ struct YouTabView: View {
                 Text("Account, appearance, notifications, home gym")
                     .font(GSFont.body(13, relativeTo: .subheadline))
                     .foregroundStyle(theme.neutral700)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                    // UI wave 2026-08-27: the one-line-shrink recipe
+                    // (lineLimit(1) + scaleFactor) rendered face copy at
+                    // ~10pt AND still clipped it at the screen edge. A
+                    // face line wraps at full size; shrinking belongs to
+                    // TITLES, where 17pt is still legible.
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
@@ -342,7 +367,6 @@ struct YouTabView: View {
 
     private func widgetCard<Face: View>(
         title: String,
-        titleColor: Color? = nil,
         @ViewBuilder face: () -> Face
     ) -> some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -352,7 +376,13 @@ struct YouTabView: View {
             Text(title)
                 .font(GSFont.bold(24, relativeTo: .title2))
                 .tracking(0.5)
-                .foregroundStyle(titleColor ?? theme.text)
+                .foregroundStyle(theme.text)
+                // One line always: "ROUTINES & PROGRAMMING" wrapped on
+                // 375pt devices, making that card taller than its
+                // siblings - the You-page half of "the widgets are all
+                // different sized". A title at 17pt is still a title.
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
             Spacer(minLength: 14)
             face()
         }

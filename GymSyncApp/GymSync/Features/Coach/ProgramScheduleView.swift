@@ -204,6 +204,12 @@ struct ProgramScheduleView: View {
                     Text("W\(number)")
                         .font(GSFont.bold(10, relativeTo: .caption2))
                         .foregroundStyle(chipInk(number, isDeload: week.isDeload))
+                        // Long blocks on small phones: 12 chips share the
+                        // row, and without a scale factor "W10"-"W12"
+                        // ellipsized to "W..." exactly when the block was
+                        // long enough to need them (UI wave 2026-08-27).
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
                         .frame(maxWidth: .infinity)
                         .frame(height: 28)
                 }
@@ -249,7 +255,11 @@ struct ProgramScheduleView: View {
                 Text(leadLine(routine))
                     .font(GSFont.body(11, relativeTo: .caption))
                     .foregroundStyle(theme.neutral700)
-                    .lineLimit(1)
+                    // Was lineLimit(1): the exercise roll-call clipped at
+                    // the screen edge on default type (owner report,
+                    // 2026-08-27 UI wave). Two lines and it breathes.
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -535,6 +545,12 @@ struct ProgramRoutineDetailView: View {
                         Text(scheme(for: row))
                             .font(GSFont.bold(12, relativeTo: .caption).monospacedDigit())
                             .foregroundStyle(theme.neutral700)
+                            // The prescription is the one number the
+                            // athlete came for - a long exercise name
+                            // must never squeeze "3 x 8-12" out of the
+                            // row (UI wave 2026-08-27).
+                            .fixedSize()
+                            .layoutPriority(1)
                     }
                     // The structure, if this lift has one. Accent-coloured
                     // because a superset or a drop set changes HOW the set

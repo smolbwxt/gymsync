@@ -233,7 +233,7 @@ struct RoutinesHubView: View {
                     .foregroundStyle(theme.neutral500)
             }
             .padding(.horizontal, 12)
-            .frame(height: Self.slotRowHeight)
+            .frame(minHeight: Self.slotRowHeight)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -264,7 +264,7 @@ struct RoutinesHubView: View {
                 Spacer()
             }
             .padding(.horizontal, 12)
-            .frame(height: Self.slotRowHeight)
+            .frame(minHeight: Self.slotRowHeight)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -301,7 +301,7 @@ struct RoutinesHubView: View {
                             .foregroundStyle(theme.neutral500)
                     }
                     .padding(.horizontal, 12)
-                    .frame(height: Self.slotRowHeight)
+                    .frame(minHeight: Self.slotRowHeight)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)

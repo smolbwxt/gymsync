@@ -147,7 +147,7 @@ struct CoachHomeView: View {
                 Text(persona?.tagline ?? "Reads the log. Says what matters.")
                     .font(GSFont.body(11, relativeTo: .caption))
                     .foregroundStyle(theme.neutral500)
-                    .lineLimit(1)
+                    .lineLimit(2)
             }
             Spacer()
         }
@@ -156,6 +156,53 @@ struct CoachHomeView: View {
 
     // MARK: CHAT (the headline feature — wide, tall, extruded)
 
+    /// THE door recipe — one envelope for every door on this page.
+    ///
+    /// UI wave 2026-08-27. The three doors were three different
+    /// components: ~120pt/~60pt/~76pt tall, two corner radii, three
+    /// title sizes, icons on opposite sides. Owner: "I don't mind the
+    /// artistic flair... but there should be some kind of consistency."
+    /// The flair IS the recipe now — extruded 3D chrome, accent icon
+    /// top-right, wrapping description, k-label footer with chevron —
+    /// and only the words vary.
+    private func doorLabel(title: String, icon: String,
+                           description: String, footer: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(title)
+                    .font(GSFont.bold(20, relativeTo: .title3))
+                    .tracking(0.5)
+                    .foregroundStyle(theme.text)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Spacer()
+                Image(systemName: icon)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(theme.accent)
+            }
+            Text(description)
+                .font(GSFont.body(13, relativeTo: .subheadline))
+                .foregroundStyle(theme.neutral700)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            HStack {
+                Text(footer)
+                    .font(GSFont.bold(10, relativeTo: .caption2))
+                    .tracking(1.1)
+                    .foregroundStyle(theme.neutral500)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(theme.neutral500)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, minHeight: 120, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+
     private var chatDoor: some View {
         NavigationLink {
             CoachChatView()
@@ -163,36 +210,10 @@ struct CoachHomeView: View {
                 .navigationTitle("Threads")
                 .navigationBarTitleDisplayMode(.inline)
         } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("CHAT")
-                        .font(GSFont.bold(22, relativeTo: .title3))
-                        .tracking(0.5)
-                        .foregroundStyle(theme.text)
-                    Spacer()
-                    Image(systemName: "bubble.left.and.text.bubble.right")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(theme.accent)
-                }
-                Text("Threads with your coach — one per topic. Pick any back up where it left off, or start fresh.")
-                    .font(GSFont.body(13, relativeTo: .subheadline))
-                    .foregroundStyle(theme.neutral700)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-                HStack {
-                    Text("EVERY THREAD REMEMBERS")
-                        .font(GSFont.bold(10, relativeTo: .caption2))
-                        .tracking(1.1)
-                        .foregroundStyle(theme.neutral500)
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(theme.neutral500)
-                }
-            }
-            .padding(14)
-            .frame(maxWidth: .infinity, minHeight: 120, alignment: .leading)
-            .contentShape(Rectangle())
+            doorLabel(title: "CHAT",
+                      icon: "bubble.left.and.text.bubble.right",
+                      description: "Threads with your coach — one per topic. Pick any back up where it left off, or start fresh.",
+                      footer: "EVERY THREAD REMEMBERS")
         }
         .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
         .accessibilityElement(children: .ignore)
@@ -206,9 +227,12 @@ struct CoachHomeView: View {
     // end at the same generator.
     private var consultDoor: some View {
         Button { route = .consult } label: {
-            consultDoorLabel
+            doorLabel(title: "THE CONSULT",
+                      icon: "text.bubble",
+                      description: "A conversation, not a form — Coach asks, you answer, and the block takes shape around what you say.",
+                      footer: consultSubtitle.uppercased())
         }
-        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("The consult — a few questions, then a program")
     }
@@ -240,31 +264,6 @@ struct CoachHomeView: View {
             })
         .background(theme.bg)
         .navigationBarBackButtonHidden(true)
-    }
-
-    private var consultDoorLabel: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "text.bubble")
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(theme.text)
-                .frame(width: 24)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("THE CONSULT")
-                    .font(GSFont.bold(16, relativeTo: .headline))
-                    .tracking(0.5)
-                    .foregroundStyle(theme.text)
-                Text(consultSubtitle)
-                    .font(GSFont.body(11, relativeTo: .caption))
-                    .foregroundStyle(theme.neutral500)
-            }
-            Spacer()
-            Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(theme.neutral500)
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
     }
 
     /// A returning athlete is not starting over, and the door should not
@@ -309,30 +308,12 @@ struct CoachHomeView: View {
         // builder gets onto the stack and exactly one thing that can pop
         // off it.
         Button { route = .wizard } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "wand.and.stars")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(theme.text)
-                    .frame(width: 24)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("MY PROGRAM")
-                        .font(GSFont.bold(16, relativeTo: .headline))
-                        .tracking(0.5)
-                        .foregroundStyle(theme.text)
-                    Text("Goals, schedule, style, body, limits — the generator builds your week")
-                        .font(GSFont.body(11, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral500)
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(theme.neutral500)
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
+            doorLabel(title: "MY PROGRAM",
+                      icon: "wand.and.stars",
+                      description: "Goals, schedule, style, body, limits — the generator builds your week.",
+                      footer: "GOALS · DAYS · STYLE → YOUR WEEK")
         }
-        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("My program — the generator")
     }
@@ -464,7 +445,10 @@ struct CoachHomeView: View {
                 Text("“\(rule.rule)”")
                     .font(GSFont.body(12, relativeTo: .caption))
                     .foregroundStyle(theme.neutral700)
-                    .lineLimit(2)
+                    // Their own sentence never truncates - the same
+                    // content class already wraps in the rules list, and
+                    // a line cut mid-thought reads as a different thought.
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Text("Build your program again and it goes in.")
                 .font(GSFont.body(11, relativeTo: .caption))
@@ -560,7 +544,10 @@ struct CoachHomeView: View {
                 Text("“\(question)”")
                     .font(GSFont.body(12, relativeTo: .caption))
                     .foregroundStyle(theme.neutral700)
-                    .lineLimit(2)
+                    // Their own sentence never truncates - the same
+                    // content class already wraps in the rules list, and
+                    // a line cut mid-thought reads as a different thought.
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Text("Ask again in chat — the library has answers now.")
                 .font(GSFont.body(11, relativeTo: .caption))
