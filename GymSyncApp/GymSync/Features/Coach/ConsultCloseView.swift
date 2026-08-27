@@ -44,10 +44,11 @@ struct ConsultCloseView: View {
                         bubble(turn)
                     }
                     if thinking {
-                        Text("…")
-                            .font(GSFont.bold(15, relativeTo: .body))
-                            .foregroundStyle(theme.neutral500)
-                            .padding(.horizontal, 14)
+                        // Owner 2026-08-27: "a coach thinking little
+                        // loop" - the ellipsis read as a dead screen
+                        // while the opening turn composed.
+                        CoachThinkingRow(text: "COACH IS THINKING")
+                            .padding(.horizontal, 6)
                     }
                 }
                 .padding(16)
@@ -262,5 +263,33 @@ struct ConsultCloseView: View {
                                   text: "Kept, in your words. I'll tell you when I can build it in."))
             }
         }
+    }
+}
+
+// MARK: - CoachThinkingRow
+//
+// The visible wait: a spinner and a pulsing label. Shared by the close
+// chat (composing a turn) and the consult (building the program), so the
+// two waits look like the same coach.
+struct CoachThinkingRow: View {
+    let text: String
+
+    @Environment(\.gsTheme) private var theme
+    @State private var pulse = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+                .tint(theme.accent)
+            Text(text)
+                .font(GSFont.bold(12, relativeTo: .caption))
+                .tracking(1.1)
+                .foregroundStyle(theme.neutral700)
+                .opacity(pulse ? 1 : 0.35)
+                .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true),
+                           value: pulse)
+        }
+        .onAppear { pulse = true }
+        .accessibilityLabel(text.capitalized)
     }
 }

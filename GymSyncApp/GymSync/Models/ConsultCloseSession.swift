@@ -118,9 +118,15 @@ final class ConsultCloseSession {
         questions. What they told you (computed - cite, don't invent):
         \(digest)
 
-        Open by summarizing what you heard in two or three sentences - \
-        their goal, their week, anything notable - so they can correct \
-        you. Then ask whether there are any standing rules you should \
+        Open by saying what you are going to DO with what they told you \
+        - two or three sentences of reasoning, never a readback. They \
+        just gave these answers; do not list them again. Say how the \
+        build leans because of them, with the trade-off: for example, \
+        "You're comfortable with the technical lifts, so barbell work \
+        leads your days and I'll keep the movements challenging" or \
+        "Your knee gets a wide berth - nothing deep and loaded there, so \
+        the leg work stays on hinges and machines." Consequences, not a \
+        summary. Then ask whether there are any standing rules you should \
         hold: things you CAN build in are pairing an exercise with every \
         lift, avoiding an exercise, swapping one exercise for another, \
         training one muscle before another, and capping or flooring a \
@@ -146,7 +152,7 @@ final class ConsultCloseSession {
     /// Coach speaks first — the summary is the opening turn.
     func open() async throws -> String {
         try await session.respond(
-            to: "Open the close: greet briefly, summarize what you heard, then ask about standing rules.").content
+            to: "Open the close: greet in a few words, then say how you will build their block BECAUSE of what they told you - the consequences and trade-offs, not a readback of their answers - and ask about standing rules.").content
     }
 
     func reply(to message: String) async throws -> String {

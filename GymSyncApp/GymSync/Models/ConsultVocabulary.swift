@@ -26,10 +26,28 @@ enum ConsultVocabulary {
         multiSelect.contains(probeID)
     }
 
-    /// Joints the CATALOG actually labels, so a caution always lands on
-    /// something selection can sort by.
+    /// The seven joints the catalog labels (shoulder 461 rows, lower_back
+    /// 308, knee 240, elbow 179, wrist 170, hip 115, ankle 2 - measured
+    /// 2026-08-27). Pinned rather than derived-only because the probe
+    /// rendered as FREE TEXT whenever the catalog was empty or late, and a
+    /// typed "knees" never matched the label "knee" - a caution the
+    /// athlete gave and selection never saw.
+    static let knownJoints: [(id: String, detail: String)] = [
+        ("shoulder",   "Pressing overhead, dips, wide-grip work"),
+        ("lower_back", "Deadlifts, heavy squats, bent-over rows"),
+        ("knee",       "Deep squats, lunges, step-ups"),
+        ("elbow",      "Curls, skull crushers, close-grip pressing"),
+        ("wrist",      "Front rack, push-ups, heavy holds"),
+        ("hip",        "Deep hinges, sumo stance, wide squats"),
+        ("ankle",      "Deep squats, jumps, calf work"),
+    ]
+
+    /// Joints a caution can land on: the pinned seven, plus anything
+    /// else the loaded catalog labels.
     static func joints(in catalog: [Exercise]) -> [String] {
-        Array(Set(catalog.flatMap { $0.jointStress ?? [] })).sorted()
+        let pinned = knownJoints.map(\.id)
+        let extra = Set(catalog.flatMap { $0.jointStress ?? [] }).subtracting(pinned)
+        return pinned + extra.sorted()
     }
 
     /// Movement patterns the catalog actually carries.
@@ -59,8 +77,9 @@ enum ConsultVocabulary {
                                     detail: $0.detail)
             }
         case "cautions":
+            let details = Dictionary(uniqueKeysWithValues: knownJoints.map { ($0.id, $0.detail) })
             return joints(in: catalog).map {
-                ConsultProbe.Option(id: $0, label: display($0))
+                ConsultProbe.Option(id: $0, label: display($0), detail: details[$0])
             }
         case "wont_do":
             return patterns(in: catalog).map {

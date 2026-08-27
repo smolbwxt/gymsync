@@ -51,6 +51,15 @@ struct ProgramScheduleView: View {
     /// What has MOVED since the block started: rules that went live,
     /// volume targets the titration adjusted.
     @State private var changes: [String] = []
+    /// The weeks scheduler at the top of the page (owner 2026-08-27:
+    /// "the top widget becomes the training calendar... weeks are
+    /// extruded buttons... schedule your weeks here").
+    @State private var weekSchedules: [Int: BlockWeekSchedule] = [:]
+    @State private var completedDays: Set<Date> = []
+    @State private var scheduledDays: Set<Date> = []
+    @State private var sheetWeek: WeekRef?
+
+    private struct WeekRef: Identifiable { let id: Int }
 
     var body: some View {
         ScrollView {
@@ -113,6 +122,18 @@ struct ProgramScheduleView: View {
         .background(theme.bg)
         .contentMargins(.bottom, 88, for: .scrollContent)
         .task { await load() }
+        .sheet(item: $sheetWeek) { ref in
+            WeekScheduleSheet(weekNumber: ref.id,
+                              window: weekWindow(ref.id),
+                              enrollmentID: enrollment?.id,
+                              existing: weekSchedules[ref.id],
+                              completed: completedDays,
+                              scheduled: scheduledDays,
+                              totalWeeks: weeks.count,
+                              startedOn: enrollment?.startedOn,
+                              onChanged: { await reloadSchedule() })
+                .presentationDetents([.height(500)])
+        }
         .navigationDestination(item: $pushedRoutineID) { id in
             if let routine = routines.first(where: { $0.id == id }) {
                 ProgramRoutineDetailView(
@@ -129,14 +150,18 @@ struct ProgramScheduleView: View {
         }
     }
 
-    // MARK: The arc
+    // MARK: The weeks (schedule them here)
 
+    /// The top widget: every week of the block as an extruded button that
+    /// opens the day/time sheet. Where-am-I is one line; the why lives in
+    /// the provenance drawer below. Booking is REAL - the sheet writes
+    /// sessions, not just intent (WeekBooker).
     private var arcCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
-                Text("\(weeks.count) WEEKS, ONE ARC")
-                    .font(GSFont.bold(20, relativeTo: .title3))
-                    .tracking(0.3)
+                Text("SCHEDULE YOUR WEEKS HERE")
+                    .font(GSFont.bold(16, relativeTo: .headline))
+                    .tracking(0.5)
                     .foregroundStyle(theme.text)
                 Spacer()
                 Text("WK \(currentWeek) OF \(weeks.count)")
@@ -144,108 +169,118 @@ struct ProgramScheduleView: View {
                     .tracking(1.1)
                     .foregroundStyle(theme.neutral700)
             }
-            weekChips
-            phaseLine
-            // The selected week's OWN prescription, computed by
-            // ProgramMath against the frozen baseline.
+            // The selected week, in one line: its phase (read from the
+            // block's own percentages, or the mesocycle label when the
+            // block has no arc) and its prescription.
             if weeks.indices.contains(selectedWeek - 1) {
                 let week = weeks[selectedWeek - 1]
-                Text(ProgramMath.prescriptionText(week: week, baseline: leadBaseline,
-                                                  unit: ThemeStore.shared.weightUnit))
-                    .font(GSFont.bold(13, relativeTo: .subheadline).monospacedDigit())
-                    .foregroundStyle(week.isDeload ? theme.accent : theme.text)
-                    .fixedSize(horizontal: false, vertical: true)
-                if let range = weekDateRange(selectedWeek) {
-                    Text(range)
-                        .font(GSFont.bold(10, relativeTo: .caption2))
-                        .tracking(1.1)
-                        .foregroundStyle(theme.neutral500)
-                }
+                Text(weekLine(selectedWeek, week: week))
+                    .font(GSFont.bold(12, relativeTo: .caption).monospacedDigit())
+                    .tracking(0.6)
+                    .foregroundStyle(week.isDeload ? theme.accent : theme.neutral700)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
+            weekButtons
+            Text("Tap a week to pick the days and time. Coach books the sessions and puts them on your calendar.")
+                .font(GSFont.body(11, relativeTo: .caption))
+                .foregroundStyle(theme.neutral500)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .gs3DCard(cornerRadius: GSMetrics.radiusSm)
     }
 
-    /// The phase strip when the block has one, the mesocycle readback
-    /// when it does not. Never both, never invented.
-    @ViewBuilder
-    private var phaseLine: some View {
-        if let phases, phases.indices.contains(selectedWeek - 1) {
-            let phase = phases[selectedWeek - 1]
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(phase.rawValue)
-                        .font(GSFont.bold(11, relativeTo: .caption))
-                        .tracking(1.2)
-                        .foregroundStyle(phase == .deload ? theme.accent : theme.text)
-                    Text(phaseSpan(phase))
-                        .font(GSFont.bold(9, relativeTo: .caption2))
-                        .tracking(1.1)
-                        .foregroundStyle(theme.neutral500)
-                }
-                Text(phase.blurb)
-                    .font(GSFont.body(11, relativeTo: .caption))
-                    .foregroundStyle(theme.neutral700)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        } else if let label = BlockPhaseMap.mesocycleLabel(for: weeks, week: selectedWeek) {
-            Text(label)
-                .font(GSFont.bold(11, relativeTo: .caption))
-                .tracking(1.2)
-                .foregroundStyle(theme.neutral700)
+    private func weekLine(_ number: Int, week: ProgramWeek) -> String {
+        var parts = ["WEEK \(number)"]
+        if let phases, phases.indices.contains(number - 1) {
+            parts.append(phases[number - 1].rawValue)
+        } else if let label = BlockPhaseMap.mesocycleLabel(for: weeks, week: number) {
+            parts.append(label)
         }
+        parts.append(ProgramMath.prescriptionText(week: week, baseline: leadBaseline,
+                                                  unit: ThemeStore.shared.weightUnit))
+        if let range = weekDateRange(number) { parts.append(range) }
+        return parts.joined(separator: " \u{00B7} ")
     }
 
-    /// "WK 3-5" — which weeks of this block share the selected phase, so
-    /// the label reads as an arc rather than a one-week tag.
-    private func phaseSpan(_ phase: BlockPhase) -> String {
-        guard let phases else { return "" }
-        let indices = phases.enumerated().filter { $0.element == phase }.map { $0.offset + 1 }
-        guard let first = indices.first, let last = indices.last else { return "" }
-        return first == last ? "WK \(first)" : "WK \(first)-\(last)"
-    }
-
-    private var weekChips: some View {
-        HStack(spacing: 4) {
+    private var weekButtons: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4),
+                  spacing: 6) {
             ForEach(Array(weeks.enumerated()), id: \.offset) { index, week in
                 let number = index + 1
                 Button {
                     selectedWeek = number
+                    sheetWeek = WeekRef(id: number)
                 } label: {
-                    Text("W\(number)")
-                        .font(GSFont.bold(10, relativeTo: .caption2))
-                        .foregroundStyle(chipInk(number, isDeload: week.isDeload))
-                        // Long blocks on small phones: 12 chips share the
-                        // row, and without a scale factor "W10"-"W12"
-                        // ellipsized to "W..." exactly when the block was
-                        // long enough to need them (UI wave 2026-08-27).
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.6)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 28)
+                    VStack(spacing: 3) {
+                        Text("WK \(number)")
+                            .font(GSFont.bold(12, relativeTo: .caption))
+                            .tracking(0.6)
+                            .foregroundStyle(weekInk(number))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                        Text(weekDaysLine(number, isDeload: week.isDeload))
+                            .font(GSFont.bold(9, relativeTo: .caption2))
+                            .tracking(0.8)
+                            .foregroundStyle(weekInk(number).opacity(0.75))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.gs3D(face: chipFace(number, isDeload: week.isDeload),
+                .buttonStyle(.gs3D(face: weekFace(number, isDeload: week.isDeload),
                                    lip: theme.raised3DLip,
-                                   cornerRadius: 8, lipHeight: 3))
-                .accessibilityLabel("Week \(number)\(week.isDeload ? ", deload" : "")")
+                                   cornerRadius: 10, lipHeight: 4))
+                .accessibilityLabel("Week \(number)\(week.isDeload ? ", deload" : ""), \(weekDaysLine(number, isDeload: week.isDeload))")
             }
         }
     }
 
-    private func chipFace(_ number: Int, isDeload: Bool) -> Color {
-        if number == selectedWeek { return theme.accent }
+    /// "M W F" once the week is set, "DELOAD" / "SET DAYS" before.
+    private func weekDaysLine(_ number: Int, isDeload: Bool) -> String {
+        if let schedule = weekSchedules[number], !schedule.weekdays.isEmpty {
+            let letters = ["", "S", "M", "T", "W", "T", "F", "S"]
+            let order = [2, 3, 4, 5, 6, 7, 1]
+            return order.filter { schedule.weekdays.contains($0) }
+                .map { letters[$0] }.joined(separator: " ")
+        }
+        return isDeload ? "DELOAD" : "SET DAYS"
+    }
+
+    private func weekFace(_ number: Int, isDeload: Bool) -> Color {
+        if number == currentWeek { return theme.accent }
         if number < currentWeek { return theme.text.opacity(0.85) }
-        // A deload reads differently from an overload week even before
-        // it is selected — it is the one week whose job is less work.
         if isDeload { return theme.raised3DFace.opacity(0.55) }
         return theme.raised3DFace
     }
 
-    private func chipInk(_ number: Int, isDeload: Bool) -> Color {
-        if number == selectedWeek || number < currentWeek { return theme.bg }
-        return isDeload ? theme.accent : theme.neutral700
+    private func weekInk(_ number: Int) -> Color {
+        number <= currentWeek ? theme.bg : theme.neutral700
+    }
+
+    private func weekWindow(_ number: Int) -> (start: Date, end: Date) {
+        guard let enrollment else { return (Date(), Date()) }
+        return ProgramMath.weekWindow(startedOn: enrollment.startedOn, week: number)
+    }
+
+    /// The per-week overrides and the real sessions on the calendar.
+    private func reloadSchedule() async {
+        guard let enrollment else { return }
+        weekSchedules = await BlockWeekScheduleRepository.forEnrollment(enrollment.id)
+        let calendar = Calendar.current
+        if let userID = appState.currentProfile?.id,
+           let history = try? await SessionRepository.history(userID: userID, limit: 120) {
+            completedDays = Set(history.compactMap { $0.completedAt }
+                .map { calendar.startOfDay(for: $0) })
+        }
+        if let upcoming = try? await SessionRepository.upcoming() {
+            scheduledDays = Set(upcoming.compactMap { $0.scheduledFor }
+                .map { calendar.startOfDay(for: $0) })
+        }
     }
 
     // MARK: Day rows
@@ -547,6 +582,7 @@ struct ProgramScheduleView: View {
             selectedWeek = currentWeek
             phases = BlockPhaseMap.phases(for: template.weeks)
         }
+        await reloadSchedule()
         // `try?` does not add a nesting level here: load() already returns
         // an Optional, and Swift 5 flattens. Same shape as the call in
         // CoachHomeView.task.
@@ -612,24 +648,30 @@ private struct BlockThreadDoor: View {
             }
         } label: {
             HStack(spacing: 10) {
+                Image(systemName: "text.bubble.fill")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(theme.bg)
                 Text("ASK COACH FOR A CHANGE")
                     .font(GSFont.bold(16, relativeTo: .headline))
                     .tracking(0.5)
-                    .foregroundStyle(theme.text)
+                    .foregroundStyle(theme.bg)
                 Spacer()
                 if building {
-                    ProgressView().tint(theme.accent)
+                    ProgressView().tint(theme.bg)
                 } else {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(theme.neutral500)
+                        .foregroundStyle(theme.bg.opacity(0.8))
                 }
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
+        // The one accent-faced door on the page (owner 2026-08-27):
+        // scheduling and viewing are the page; talking to Coach is the
+        // action.
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm, face: theme.accent))
         .navigationDestination(item: $opener) { payload in
             CoachThreadLauncher(title: "Block \u{2014} week \(selectedWeek)",
                                 opener: payload.text)

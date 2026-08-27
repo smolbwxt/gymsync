@@ -265,11 +265,28 @@ struct ConsultAnswers: Equatable, Sendable {
         // a real answer.
         if let picked = byProbe["gym_comfort"] {
             var comfort = p.comfortAnswers ?? [:]
-            for probe in GeneratorScience.comfortProbes {
-                comfort[probe.slug] = picked.contains(probe.slug)
+            // The ladder (ComfortLadderView) reports its verdict as a
+            // "cap=N" token: the highest complexity rung the athlete fully
+            // confirmed against real catalog lifts. The comfort dictionary
+            // is then DERIVED from the cap (every probe at or under it is
+            // a yes) so anything still reading it sees a consistent
+            // answer. The legacy checklist path - picked probe slugs, no
+            // token - keeps its original derivation.
+            if let token = picked.first(where: { $0.hasPrefix("cap=") }),
+               let cap = Int(token.dropFirst(4)) {
+                let bounded = max(1, min(5, cap))
+                for probe in GeneratorScience.comfortProbes {
+                    comfort[probe.slug] = probe.complexity <= bounded
+                }
+                p.comfortAnswers = comfort
+                p.derivedComplexityCap = bounded
+            } else {
+                for probe in GeneratorScience.comfortProbes {
+                    comfort[probe.slug] = picked.contains(probe.slug)
+                }
+                p.comfortAnswers = comfort
+                p.derivedComplexityCap = GeneratorScience.derivedComplexityCap(from: comfort)
             }
-            p.comfortAnswers = comfort
-            p.derivedComplexityCap = GeneratorScience.derivedComplexityCap(from: comfort)
             state("comfortAnswers")
             state("derivedComplexityCap")
         }

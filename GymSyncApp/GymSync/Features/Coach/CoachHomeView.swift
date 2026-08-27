@@ -9,7 +9,7 @@ import SwiftUI
 //
 //   CHAT — the persistent thread (CoachChatView below): one ongoing
 //     conversation with compaction, not a per-workout debrief.
-//   MY PROGRAM — the generator (CoachWizardView), one layer down.
+//   MY PROGRAM — the ledger (ProgramLedgerView); the build lives in the consult.
 //   RESEARCH — when a question the corpus couldn't answer comes back
 //     researched, the delivery notice lands here.
 struct CoachHomeView: View {
@@ -225,21 +225,23 @@ struct CoachHomeView: View {
         .accessibilityLabel("Chat with your coach")
     }
 
-    // MARK: THE CONSULT (the guided way in)
+    // MARK: BUILD MY PROGRAM (the one way in)
     //
-    // Sits above MY PROGRAM because it LEADS there: the five doors are
-    // coarse adjustment, the consult confirms and fine-tunes, and both
-    // end at the same generator.
+    // Owner 2026-08-27: "change the copy of The Consult to Build my
+    // Program... eliminate the 5 door page all together, and land on the
+    // built program page." The consult IS the build now: it ends in the
+    // chat with Coach, BUILD IT runs the builder, and the athlete lands
+    // on the program page with the weeks ready to schedule.
     private var consultDoor: some View {
         Button { route = .consult } label: {
-            doorLabel(title: "THE CONSULT",
-                      icon: "text.bubble",
-                      description: "A conversation, not a form — Coach asks, you answer, and the block takes shape around what you say.",
+            doorLabel(title: "BUILD MY PROGRAM",
+                      icon: "hammer",
+                      description: "A conversation with Coach, then your block — built, and ready to put on the calendar.",
                       footer: consultSubtitle.uppercased())
         }
         .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("The consult — a few questions, then a program")
+        .accessibilityLabel("Build my program — a conversation with Coach, then your block")
     }
 
     private var consultDestination: some View {
@@ -259,24 +261,37 @@ struct CoachHomeView: View {
             recommendedDaysPerWeek: profile.daysPerWeek,
             userID: appState.currentProfile?.id,
             onFinish: { answers in
-                Task {
-                    await applyConsult(answers)
-                    // REPLACES the consult rather than pushing on top of
-                    // it. Stacking was the bug: the builder popped back
-                    // into a consult that then re-ran its health gate.
-                    route = .wizard
-                }
+                await applyConsult(answers)
+                // Build straight from the tuned profile - no wizard in
+                // between - and REPLACE the consult with the program page.
+                // Replacing rather than pushing is what keeps the health
+                // gate from re-running on the way back.
+                await buildFromConsult(answers)
             })
         .background(theme.bg)
         .navigationBarBackButtonHidden(true)
+    }
+
+    /// The build, run from the consult's BUILD IT. Landing is a route
+    /// swap; a failure surfaces in the same notice slot the rule trouble
+    /// uses, and the consult stays put so the athlete can try again.
+    private func buildFromConsult(_ answers: ConsultAnswers) async {
+        guard let userID = appState.currentProfile?.id else { return }
+        do {
+            _ = try await ProgramBuilder.build(profile: profile, answers: answers,
+                                               catalog: catalog, userID: userID)
+            route = .schedule
+        } catch {
+            ruleTrouble = ErrorMapping.map(error).errorDescription
+        }
     }
 
     /// A returning athlete is not starting over, and the door should not
     /// say they are.
     private var consultSubtitle: String {
         profile.carryover == nil
-            ? "A few questions, then I build your first block"
-            : "Tell me what changed and I'll retune the block"
+            ? "A few questions, then your first block"
+            : "Tell me what changed and I'll rebuild the block"
     }
 
     /// Fold the consult's answers into the profile and save. The generator

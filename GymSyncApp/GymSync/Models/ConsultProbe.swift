@@ -184,15 +184,15 @@ enum ConsultProbe {
 
         // ── Cold start: no log to diagnose ───────────────────────────
         Probe(id: "anchor_lifts",
-              ask: "What can you handle for five solid reps right now? Rough is fine — I just need somewhere to start.",
+              ask: "What can you lift for five solid reps right now?",
               tunes: ["liftAnchors"],
               gain: 9, family: .path,
-              clarifier: "If you've never done a lift, say so. Starting light and adding is the whole plan."),
+              clarifier: "Pick a lift, set the weight. Skip any you've never done — starting light and adding is the whole plan."),
         Probe(id: "gym_comfort",
-              ask: "Which of these feels genuinely fine to do today?",
+              ask: "Which of these could you do today without a second thought?",
               tunes: ["comfortAnswers", "derivedComplexityCap"],
               gain: 8, family: .path,
-              clarifier: "This sets how technical your lifts get. Nobody sees the answer."),
+              clarifier: "Tap the ones you're comfortable with. Each yes brings up something harder, until I know where your line is."),
 
         // ── Path ─────────────────────────────────────────────────────
         Probe(id: "days",
@@ -289,7 +289,8 @@ enum ConsultProbe {
         Probe(id: "cautions",
               ask: "Anything that hurts, or that you're working around?",
               tunes: ["cautionJoints"],
-              gain: 9, family: .constraint),
+              gain: 9, family: .constraint,
+              clarifier: "Pick every joint that's giving you trouble. Lifts that load it stay out of your program."),
         Probe(id: "wont_do",
               ask: "Anything you flat-out won't do?",
               tunes: ["excludedPatterns"],

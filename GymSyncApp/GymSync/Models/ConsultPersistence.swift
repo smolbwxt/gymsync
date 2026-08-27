@@ -36,6 +36,19 @@ enum ConsultPersistence {
         // the rules below or the build the athlete is about to run.
         try? await TrainingProfileRepository.save(tuned, userID: userID)
 
+        // The five-rep anchors. ConsultAnswers.liftAnchors parsed them
+        // for months and nothing read the result - the probe asked, the
+        // athlete answered, and every suggestion still seeded from
+        // nothing. Merged, never wholesale: an earlier anchor survives a
+        // consult that only restated one lift.
+        let anchors = answers.liftAnchors
+        if !anchors.isEmpty, var settings = try? await UserSettingsRepository.get() {
+            var held = settings.liftAnchors ?? [:]
+            for (slug, pounds) in anchors where pounds > 0 { held[slug] = pounds }
+            settings.liftAnchors = held
+            try? await UserSettingsRepository.upsert(settings)
+        }
+
         // NOT `try?` on the rules. The swallowed error here is what made
         // the original defect invisible: every add() threw 23502 and
         // nobody heard it.

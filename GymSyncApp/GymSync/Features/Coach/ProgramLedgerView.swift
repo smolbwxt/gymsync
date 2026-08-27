@@ -161,13 +161,9 @@ struct ProgramLedgerView: View {
     /// ledger, and building is one deliberate act inside it.
     private var buildDoor: some View {
         NavigationLink {
-            CoachWizardView(onCreated: {
-                builtFromHere = true
-                return .handled
-            })
-            .background(theme.bg)
-            .navigationTitle("Coach")
-            .navigationBarTitleDisplayMode(.inline)
+            ConsultEntryView(onBuilt: { builtFromHere = true })
+                .background(theme.bg)
+                .navigationBarBackButtonHidden(true)
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "wand.and.stars")

@@ -38,12 +38,18 @@ struct CoachConsultView: View {
     /// record anything.
     let userID: UUID?
 
-    var onFinish: (ConsultAnswers) -> Void
+    /// Async so the host can persist AND build while this view shows
+    /// "Coach is building your program". The wizard used to be the
+    /// screen between the consult and the block; now there is no screen,
+    /// so the wait has to be visible here.
+    var onFinish: (ConsultAnswers) async -> Void
 
     @State private var context = ConsultProbe.Context()
     @State private var answers = ConsultAnswers()
     @State private var selection: Set<String> = []
     @State private var freeText = ""
+    /// The five-rep probe's rows (lift + weight), replacing free text.
+    @State private var anchorEntries: [AnchorEntry] = []
     /// Snapshots for the back button — the consult is a branching walk,
     /// so stepping back must restore what was known THEN, not recompute
     /// it from a context that has already moved on.
@@ -65,6 +71,8 @@ struct CoachConsultView: View {
         /// medical screening would drift.
         case gate
         case probing
+        /// The host is persisting the consult and running the builder.
+        case building
     }
 
     private struct Step {
@@ -101,11 +109,14 @@ struct CoachConsultView: View {
                                      profile: profile,
                                      catalog: catalog,
                                      userID: userID,
-                                     onDone: { onFinish(answers) })
+                                     onDone: { finish() })
                 } else {
                     finishedCard
                     Spacer(minLength: 0)
                 }
+            case .building:
+                buildingCard
+                Spacer(minLength: 0)
             }
         }
         .padding(.horizontal, 16)
@@ -152,7 +163,7 @@ struct CoachConsultView: View {
                                          cornerRadius: 13, lipHeight: 5))
             .accessibilityLabel(history.isEmpty ? "Close" : "Previous question")
 
-            Text("THE CONSULT")
+            Text("BUILD MY PROGRAM")
                 .font(GSFont.bold(20, relativeTo: .title3))
                 .tracking(0.4)
                 .foregroundStyle(theme.text)
@@ -205,7 +216,30 @@ struct CoachConsultView: View {
     @ViewBuilder
     private func answerArea(_ probe: ConsultProbe.Probe) -> some View {
         let options = ConsultVocabulary.options(for: probe, catalog: catalog)
-        if options.isEmpty {
+        if probe.id == "anchor_lifts" {
+            // Owner 2026-08-27: a dropdown of curated lifts, a weight
+            // incrementer, and a plus button — never a sentence to parse.
+            ScrollView {
+                AnchorEntryView(entries: $anchorEntries)
+                    .padding(.top, 2)
+                    .padding(.bottom, 6)
+            }
+            .scrollIndicators(.hidden)
+        } else if probe.id == "gym_comfort" {
+            // The adaptive ladder. It commits ITSELF (its stop button is
+            // the answer), and it is fed the joints named one question
+            // earlier so it never offers a lift that answer ruled out.
+            ScrollView {
+                ComfortLadderView(catalog: catalog,
+                                  avoidJoints: Set(answers.values("cautions"))
+                                      .union(profile.cautionJoints),
+                                  equipment: profile.equipment,
+                                  onFinish: { values in answer(probe, values) })
+                    .padding(.top, 2)
+                    .padding(.bottom, 6)
+            }
+            .scrollIndicators(.hidden)
+        } else if options.isEmpty {
             freeTextField(probe)
         } else {
             ScrollView {
@@ -282,9 +316,12 @@ struct CoachConsultView: View {
     private func footer(_ probe: ConsultProbe.Probe) -> some View {
         let options = ConsultVocabulary.options(for: probe, catalog: catalog)
         let multi = ConsultVocabulary.isMultiSelect(probe.id)
+        let ladder = probe.id == "gym_comfort"
+        let anchors = probe.id == "anchor_lifts"
         // A single-choice chip IS the commit, so it needs no button. Only
-        // free text and multi-select do.
-        if options.isEmpty || multi {
+        // free text, multi-select and the anchor rows do; the ladder
+        // commits itself and gets SKIP alone.
+        if options.isEmpty || multi || anchors {
             HStack(spacing: 10) {
                 Button { skip(probe) } label: {
                     Text("SKIP")
@@ -293,23 +330,47 @@ struct CoachConsultView: View {
                         .foregroundStyle(theme.text)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 14)
+                        .frame(maxWidth: ladder ? CGFloat.infinity : nil)
                 }
                 .buttonStyle(GS3DButtonStyle(face: theme.raised3DFace,
                                              lip: theme.raised3DLip,
                                              cornerRadius: 14))
-                Button { commit(probe) } label: {
-                    Text(multi && selection.isEmpty ? "NONE OF THESE" : "NEXT")
-                        .font(GSFont.bold(14, relativeTo: .headline))
-                        .tracking(0.9)
-                        .foregroundStyle(theme.bg)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 15)
+                if !ladder {
+                    Button { commit(probe) } label: {
+                        // "NONE OF THESE" is only true for a closed
+                        // multi-select with nothing picked. A multi probe
+                        // that fell back to free text (an empty option
+                        // list) used to show it over a typed answer -
+                        // the owner's "submit button still reads none of
+                        // these".
+                        Text(multi && !options.isEmpty && selection.isEmpty
+                             ? "NONE OF THESE" : "NEXT")
+                            .font(GSFont.bold(14, relativeTo: .headline))
+                            .tracking(0.9)
+                            .foregroundStyle(theme.bg)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 15)
+                    }
+                    .buttonStyle(GS3DButtonStyle(face: theme.accent, cornerRadius: 14))
+                    .disabled(!anchors && options.isEmpty && freeText.trimmingCharacters(
+                        in: .whitespacesAndNewlines).isEmpty)
                 }
-                .buttonStyle(GS3DButtonStyle(face: theme.accent, cornerRadius: 14))
-                .disabled(options.isEmpty && freeText.trimmingCharacters(
-                    in: .whitespacesAndNewlines).isEmpty)
             }
         }
+    }
+
+    /// Shown while the host persists the consult and runs the builder.
+    private var buildingCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            CoachThinkingRow(text: "COACH IS BUILDING YOUR PROGRAM")
+            Text("Reading your rules, picking the lifts, setting the week. A few seconds.")
+                .font(GSFont.body(12, relativeTo: .footnote))
+                .foregroundStyle(theme.neutral700)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .gs3DCard(cornerRadius: 18)
     }
 
     private var finishedCard: some View {
@@ -320,7 +381,7 @@ struct CoachConsultView: View {
             Text("Nothing else you could tell me would change what I build.")
                 .font(GSFont.body(12, relativeTo: .footnote))
                 .foregroundStyle(theme.neutral700)
-            Button { onFinish(answers) } label: {
+            Button { finish() } label: {
                 Text("BUILD IT")
                     .font(GSFont.bold(15, relativeTo: .headline))
                     .tracking(1.0)
@@ -388,7 +449,11 @@ struct CoachConsultView: View {
         if ConsultVocabulary.isMultiSelect(probe.id) {
             answer(probe, Array(selection).sorted())
         } else if probe.id == "anchor_lifts" {
-            answer(probe, ConsultVocabulary.parseAnchors(freeText))
+            // "<slug>=<pounds>" - the pair form ConsultAnswers.liftAnchors
+            // reads, written from the rows rather than parsed from prose.
+            answer(probe, anchorEntries
+                .filter { $0.pounds > 0 }
+                .map { "\($0.slug)=\($0.pounds)" })
         } else {
             let text = freeText.trimmingCharacters(in: .whitespacesAndNewlines)
             answer(probe, text.isEmpty ? [] : [text])
@@ -456,9 +521,21 @@ struct CoachConsultView: View {
         advance(to: next)
     }
 
+    /// Hand the answers to the host and show the wait. If the host comes
+    /// back without navigating away (a failed build - it shows the error),
+    /// the consult returns to its last card so the athlete can try again.
+    private func finish() {
+        withAnimation(.easeOut(duration: 0.18)) { phase = .building }
+        Task {
+            await onFinish(answers)
+            withAnimation(.easeOut(duration: 0.18)) { phase = .probing }
+        }
+    }
+
     private func advance(to next: ConsultProbe.Context) {
         selection = []
         freeText = ""
+        anchorEntries = []
         withAnimation(.easeOut(duration: 0.18)) { context = next }
     }
 
@@ -466,6 +543,7 @@ struct CoachConsultView: View {
         guard let previous = history.popLast() else { dismiss(); return }
         selection = []
         freeText = ""
+        anchorEntries = []
         withAnimation(.easeOut(duration: 0.18)) {
             context = previous.context
             answers = previous.answers

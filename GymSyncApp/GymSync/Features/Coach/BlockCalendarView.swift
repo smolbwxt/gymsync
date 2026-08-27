@@ -85,8 +85,10 @@ struct BlockCalendarView: View {
                               existing: weekSchedules[ref.id],
                               completed: completedDays,
                               scheduled: scheduledDays,
+                              totalWeeks: weeks.count,
+                              startedOn: enrollment?.startedOn,
                               onChanged: { await reloadSchedules() })
-                .presentationDetents([.height(400)])
+                .presentationDetents([.height(500)])
         }
     }
 
@@ -269,10 +271,7 @@ struct BlockCalendarView: View {
                 // captured enrollment/weeks stay stale - acceptable one
                 // level back - but the athlete's next screen is the block
                 // they just built, not the one they replaced.
-                CoachWizardView(onCreated: {
-                    freshScheduleAfterBuild = true
-                    return .handled
-                })
+                ConsultEntryView(onBuilt: { freshScheduleAfterBuild = true })
                     .background(theme.bg)
                     .navigationTitle("Plan the next block")
                     .navigationBarTitleDisplayMode(.inline)
@@ -464,8 +463,14 @@ struct WeekScheduleSheet: View {
     let existing: BlockWeekSchedule?
     let completed: Set<Date>
     let scheduled: Set<Date>
+    /// The block's length and start, so APPLY TO ALL WEEKS can address
+    /// every week's window. Optional: a host without a block still gets
+    /// the single-week sheet.
+    var totalWeeks: Int? = nil
+    var startedOn: Date? = nil
     let onChanged: () async -> Void
 
+    @Environment(AppState.self) private var appState
     @Environment(\.gsTheme) private var theme
     @Environment(\.dismiss) private var dismiss
 
@@ -473,6 +478,11 @@ struct WeekScheduleSheet: View {
     @State private var time = Date()
     @State private var saving = false
     @State private var loaded = false
+    /// Owner 2026-08-27: "an option to apply to all weeks".
+    @State private var applyToAll = false
+    /// The block's day routines, Monday-first across the chosen days, so
+    /// each booked session opens on the right prescription.
+    @State private var routines: [Routine] = []
 
     private var calendar: Calendar { .current }
     /// Display order, Monday-first, in Calendar weekday values.
@@ -491,6 +501,9 @@ struct WeekScheduleSheet: View {
             header
             dayToggles
             timeRow
+            if let totalWeeks, totalWeeks > 1 {
+                applyToAllRow(totalWeeks)
+            }
             actions
             Spacer(minLength: 0)
         }
@@ -505,7 +518,38 @@ struct WeekScheduleSheet: View {
             components.hour = existing?.hour ?? 18
             components.minute = existing?.minute ?? 0
             time = calendar.date(from: components) ?? Date()
+            // The block's routines, in the order the generator wrote them.
+            if let ownerID = appState.currentProfile?.id,
+               let all = try? await RoutineRepository.fetchAll(ownerID: ownerID) {
+                routines = all
+                    .filter { $0.name.hasPrefix("Coach · ") && $0.prescribedBy == nil }
+                    .sorted { ($0.createdAt, $0.name) < ($1.createdAt, $1.name) }
+            }
         }
+    }
+
+    private func applyToAllRow(_ total: Int) -> some View {
+        Button {
+            applyToAll.toggle()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: applyToAll ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(applyToAll ? theme.accent : theme.neutral500)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("APPLY TO ALL \(total) WEEKS")
+                        .font(GSFont.bold(12, relativeTo: .caption))
+                        .tracking(0.8)
+                        .foregroundStyle(theme.text)
+                    Text("Same days, same time, every week of the block.")
+                        .font(GSFont.body(11, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral700)
+                }
+                Spacer()
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var header: some View {
@@ -577,7 +621,8 @@ struct WeekScheduleSheet: View {
             Button {
                 save()
             } label: {
-                Text(saving ? "SAVING..." : "SET WEEK \(weekNumber)")
+                Text(saving ? "BOOKING..."
+                     : applyToAll ? "SET ALL \(totalWeeks ?? 1) WEEKS" : "SET WEEK \(weekNumber)")
                     .font(GSFont.bold(14, relativeTo: .subheadline))
                     .tracking(0.5)
                     .foregroundStyle(theme.bg)
@@ -607,21 +652,41 @@ struct WeekScheduleSheet: View {
         }
     }
 
+    /// Record the intent AND book the sessions (owner 2026-08-27: "Book
+    /// real sessions"). One week, or every week of the block.
     private func save() {
         guard let enrollmentID, !saving else { return }
         saving = true
         let components = calendar.dateComponents([.hour, .minute], from: time)
+        let hour = components.hour ?? 18
+        let minute = components.minute ?? 0
+        let targets: [Int] = applyToAll && (totalWeeks ?? 1) > 1
+            ? Array(1...(totalWeeks ?? 1)) : [weekNumber]
         Task {
             defer { saving = false }
-            await BlockWeekScheduleRepository.save(
-                enrollmentID: enrollmentID, weekNumber: weekNumber,
-                weekdays: Array(selectedDays),
-                hour: components.hour ?? 18, minute: components.minute ?? 0)
+            for week in targets {
+                await BlockWeekScheduleRepository.save(
+                    enrollmentID: enrollmentID, weekNumber: week,
+                    weekdays: Array(selectedDays), hour: hour, minute: minute)
+                let target: (start: Date, end: Date)
+                if week == weekNumber {
+                    target = window
+                } else if let startedOn {
+                    target = ProgramMath.weekWindow(startedOn: startedOn, week: week)
+                } else {
+                    continue
+                }
+                await WeekBooker.book(window: target, weekdays: selectedDays,
+                                      hour: hour, minute: minute,
+                                      routines: routines)
+            }
             await onChanged()
             dismiss()
         }
     }
 
+    /// Drop the override AND the sessions it booked - a cleared week is
+    /// an empty week, not a week with ghost sessions on it.
     private func clear() {
         guard let enrollmentID, !saving else { return }
         saving = true
@@ -629,6 +694,8 @@ struct WeekScheduleSheet: View {
             defer { saving = false }
             await BlockWeekScheduleRepository.clear(enrollmentID: enrollmentID,
                                                     weekNumber: weekNumber)
+            await WeekBooker.book(window: window, weekdays: [], hour: 18, minute: 0,
+                                  routines: [])
             await onChanged()
             dismiss()
         }
