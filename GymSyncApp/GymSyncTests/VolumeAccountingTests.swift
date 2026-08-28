@@ -299,4 +299,62 @@ final class VolumeAccountingTests: XCTestCase {
                       "conditioning full-body day dropped all pushing: \(patterns)")
         XCTAssertEqual(patterns.count, 3, "the maintenance floor is three compounds")
     }
+
+    // MARK: Focus tilt (2026-08-28: "make sure hypertrophy actually
+    // means hypertrophy")
+
+    func testFocusFloorsTheMuscleAtTheBandTopAndOthersAtTheFloor() {
+        let bench = ex(1, "Bench", "chest", cat: "compound")
+        let fly = ex(2, "Fly", "chest")
+        let cable = ex(3, "Cable Fly", "chest")
+        let row = ex(4, "Row", "back", cat: "compound")
+        let curl = ex(5, "Curl", "back")
+        let shrug = ex(6, "Shrug", "back")
+        let catalog = [bench, fly, cable, row, curl, shrug]
+        // Both muscles start at 9 direct sets against a 10-20 band.
+        let days = [
+            ProgramGenerator.Day(name: "Push", exercises: [
+                entry(bench, sets: 3, isMain: true),
+                entry(fly, sets: 3), entry(cable, sets: 3)]),
+            ProgramGenerator.Day(name: "Pull", exercises: [
+                entry(row, sets: 3, isMain: true),
+                entry(curl, sets: 3), entry(shrug, sets: 3)]),
+        ]
+
+        let result = ProgramGenerator.balanceWeeklyVolume(
+            days: days, catalog: catalog, low: 10, high: 20,
+            focus: ["chest"])
+        let tally = ProgramGenerator.weeklyMuscleSets(days: result.days,
+                                                     catalog: catalog)
+
+        // Chest chases the band TOP: both accessories climb to the
+        // per-exercise cap of 5 (3 + 5 + 5 = 13), and the pass then runs
+        // out of levers - which it must REPORT, not swallow.
+        XCTAssertEqual(tally["chest"], 13)
+        XCTAssertTrue(result.unresolvedLow.contains("chest"),
+            "the pass ran out of chest levers below the focus floor and must say so")
+        // Back is held at the band FLOOR (10), not the default midpoint:
+        // focus is a trade, the rest of the week pays.
+        XCTAssertEqual(tally["back"], 10)
+        XCTAssertGreaterThan(tally["chest"] ?? 0, tally["back"] ?? 0)
+    }
+
+    func testAnAthleteStatedCapStillOutranksTheFocusTilt() {
+        let bench = ex(1, "Bench", "chest", cat: "compound")
+        let fly = ex(2, "Fly", "chest")
+        let cable = ex(3, "Cable Fly", "chest")
+        let catalog = [bench, fly, cable]
+        let days = [ProgramGenerator.Day(name: "Push", exercises: [
+            entry(bench, sets: 3, isMain: true),
+            entry(fly, sets: 3), entry(cable, sets: 3)])]
+
+        // "cap chest at 10" is the athlete's own words; focus is
+        // aspiration. Words win.
+        let result = ProgramGenerator.balanceWeeklyVolume(
+            days: days, catalog: catalog, low: 10, high: 20,
+            caps: ["chest": 10], focus: ["chest"])
+        let tally = ProgramGenerator.weeklyMuscleSets(days: result.days,
+                                                     catalog: catalog)
+        XCTAssertLessThanOrEqual(tally["chest"] ?? 0, 10)
+    }
 }
