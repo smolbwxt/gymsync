@@ -628,3 +628,21 @@ time cap".
   owner note in the session — the generator only PREFERS focus muscles
   in selection; nothing adds sets; the probe's "I'll give them the
   volume" is unfulfilled. Decision pending.
+
+## F9 - Focus volume lever + prescription audit (`2e51af8`)
+Full report: docs/science/2026-08-28-prescription-audit.md. Focus floors
+at band top / others hold band floor (UI caps three areas — prefix(2)
+dropped a third pick alphabetically); WL LISS buy-out built (design was
+2026-08-13, never shipped); .toFailure → targetFailure on accessories;
+beginner band 8-12; titration targets clamped to band ceiling; female
+rep-top re-clamped to repMax; reroll honors bandOverride; coverage dose
+names dropped orphans; deload comment/code agree; maxHardDaysPerWeek
+rename; GS.dayCapSets named; dead advanced RIR constants deleted.
+**P5.1 RESOLVED-CONFIRMED**: RIR never persisted (3 refs total); full
+persistence = v0.x migration. **P6.3 re-pointed**: the "12 lessons" list
+does not exist on disk — died with the audit scratchpad; use the
+deferred lists in the audit report instead. **P3.1 note**: per-session
+cap stays closed (overnight decision + 25/day owner policy).
+Still open from this round: specialization-duration rule (focus tilt
+runs the whole block; corpus says 4-12 wks then cut), RIR trajectory
+(3-4 → 0-1 across the block), cardio auto-periodization.
