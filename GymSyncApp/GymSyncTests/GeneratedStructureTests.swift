@@ -310,10 +310,17 @@ final class GeneratedStructureTests: XCTestCase {
             auditLift(2, "Row", "back", "compound", "pull_horizontal"),
             auditLift(3, "Squat", "quads", "compound", "squat"),
         ]
-        for j in 0..<4 {
-            catalog.append(auditLift(10 + j, "iso \(j)",
-                                     ["chest", "back", "quads", "biceps"][j],
-                                     "isolation", "isolation"))
+        // Real movement patterns, or no accessory slot ever matches them
+        // (the day-cap fixture's lesson - a pattern of "isolation" is
+        // invisible to selection).
+        let isoSpecs: [(String, String)] = [
+            ("chest", "push_horizontal"), ("back", "pull_horizontal"),
+            ("quads", "squat"), ("shoulders", "push_vertical"),
+            ("biceps", "pull_horizontal"), ("triceps", "push_horizontal"),
+        ]
+        for (j, spec) in isoSpecs.enumerated() {
+            catalog.append(auditLift(10 + j, "iso \(j)", spec.0,
+                                     "isolation", spec.1))
         }
         var inputs = ProgramGenerator.Inputs(
             focus: .hypertrophy, daysPerWeek: 3, durationWeeks: 6,
