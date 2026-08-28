@@ -216,7 +216,11 @@ enum GeneratorScience {
 
     /// Beginner override (Schoenfeld 2018: beginners grow on 5-9 weekly
     /// sets): 6-10 regardless of focus.
-    static let beginnerWeeklySets = (low: 6, high: 10)
+    /// Raised 6-10 -> 8-12 (audit 2026-08-28): the volume-landmarks
+    /// deep-read pins the novice band at 9-12 with ~10 sets as beginner
+    /// MEV - a 6-10 band put the TARGET (the midpoint, 8) at the very
+    /// floor of effectiveness.
+    static let beginnerWeeklySets = (low: 8, high: 12)
 
     // MARK: Progression (by experience; progression-models research)
 
@@ -256,37 +260,50 @@ enum GeneratorScience {
     /// topping out — already encoded in SetProgression; window widths
     /// come from the focus bands above.
 
-    /// Advanced RIR targets (weak confidence — used for prescription COPY
-    /// and RPE hints, not hard gates): accumulation 2-4, intensification
-    /// 0-2.
-    static let advancedAccumulationRIR = 2...4
-    static let advancedIntensificationRIR = 0...2
-
     // MARK: Wave shape (deload + peak; taper research)
 
     /// Deload at the ¾ mark for 8/12-week plans (proactive 4-6-week
-    /// cadence, offered not forced): volume −50%, intensity held.
+    /// cadence, offered not forced): volume −50%, intensity −5%.
+    /// (Audit 2026-08-28: this line used to say "intensity held" while
+    /// the multiplier below shipped 0.95 — the comment lied, the code
+    /// was the policy. A small dip makes the deload FEEL different
+    /// without detraining; the sentence now matches the number.)
     static let deloadVolumeMultiplier = 0.5
     static let deloadIntensityMultiplier = 0.95
 
     /// 1RM peaking taper (moderate confidence — Pritchard-line research):
-    /// 10-14 days, volume −50%, intensity maintained 90-100%.
+    /// 10-14 days, volume −50%, intensity maintained 90-100%. Applied
+    /// here to the FINAL WEEK of a strength block — the short end of the
+    /// cited window, because the wave is built in whole weeks.
     static let taperVolumeMultiplier = 0.5
+
+    /// Owner policy 2026-08-27: "Max volume: 25 sets per day" — the hard
+    /// per-SESSION working-set ceiling, enforced as the generator's final
+    /// pass. Not to be confused with VolumeTitration.ceilingWeeklySets
+    /// (25 sets per MUSCLE per WEEK) — same number, different unit.
+    static let dayCapSets = 25
 
     // MARK: Recovery constraints (recovery research pass, 2026-08)
 
-    /// Six consecutive hard days is the ceiling: no trial shows a full
+    /// Six hard days PER WEEK is the ceiling: no trial shows a full
     /// rest day is required for MUSCLE recovery under proper rotation,
     /// but systemic load (connective tissue, sleep, CNS, adherence) backs
     /// a weekly floor of one non-hard day — an ACTIVE RECOVERY day
     /// satisfies it (ECSS/ACSM overreaching consensus, Meeusen 2013;
     /// practice-based S&C convention, honestly labeled).
-    static let maxConsecutiveHardDays = 6
+    /// (Renamed from maxCONSECUTIVEHardDays, audit 2026-08-28: the
+    /// generator has no day-of-week binding, so "consecutive" was a
+    /// promise the code cannot express — the rule it enforces is a
+    /// weekly count.)
+    static let maxHardDaysPerWeek = 6
 
     /// Same-muscle session spacing: 48 h default (MPS near-baseline by
     /// 48 h in trained lifters — MacDougall 1995 / Phillips 1997
     /// time-course), 72 h after high-fatigue sessions. Rendered as
     /// program NOTES until day-of-week binding exists.
+    /// (The full-body spacing NOTE interpolates this constant — audit
+    /// 2026-08-28: the note used to hardcode "48", so changing this
+    /// changed nothing.)
     static let sameMuscleSpacingHours = 48
 
     // MARK: Split ladder (frequency law: ≥2×/muscle/week wherever days allow)

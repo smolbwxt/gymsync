@@ -279,7 +279,16 @@ struct CoachConsultView: View {
         let picked = selection.contains(option.id)
         return Button {
             if multi {
-                if picked { selection.remove(option.id) } else { selection.insert(option.id) }
+                if picked {
+                    selection.remove(option.id)
+                } else {
+                    // Focus areas cap at three IN THE UI - the probe says
+                    // "up to three", so a fourth tap visibly does not
+                    // select. The old shape recorded everything and
+                    // silently kept the first two alphabetically.
+                    if probe.id == "focus_areas", selection.count >= 3 { return }
+                    selection.insert(option.id)
+                }
             } else {
                 answer(probe, [option.id])
             }

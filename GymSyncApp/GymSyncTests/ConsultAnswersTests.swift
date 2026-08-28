@@ -91,12 +91,14 @@ final class ConsultAnswersTests: XCTestCase {
 
     // MARK: - Focus areas
 
-    func testFocusIsCappedAtTwoBecauseTheQuestionPromisesTwo() {
-        // The probe says "pick two and I'll give them the volume, and pull
-        // it back everywhere else". Honoring five would make that sentence
-        // false and spread the volume back out.
+    func testFocusIsCappedAtThreeBecauseTheQuestionPromisesUpToThree() {
+        // The probe says "pick up to three - they get the top of the
+        // week's volume". Honoring five would spread the volume back out;
+        // the UI caps the selection at three so nothing is dropped, and
+        // this prefix is the safety net behind it (2026-08-28, raised
+        // from two when focus became a real volume lever).
         let answers = ConsultAnswers(["focus_areas": ["chest", "back", "quads", "biceps"]])
-        XCTAssertEqual(answers.focusMuscles?.count, 2)
+        XCTAssertEqual(answers.focusMuscles?.count, 3)
     }
 
     func testFocusIsFilteredToTheVocabularyTheCoverageCheckUses() {

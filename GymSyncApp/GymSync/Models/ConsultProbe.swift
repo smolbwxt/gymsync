@@ -153,10 +153,10 @@ enum ConsultProbe {
               gain: 9, family: .goal,
               clarifier: "Pick as many as you like. Each one leads a day, and the muscles behind it get more of the work."),
         Probe(id: "focus_areas",
-              ask: "Which two areas do you want to look different?",
+              ask: "Which areas do you want to look different?",
               tunes: ["focusMuscles"],
               gain: 9, family: .goal,
-              clarifier: "Pick two and I'll give them the volume, and pull it back everywhere else."),
+              clarifier: "Pick up to three. They get the top of the week's volume, and the rest of the week pays for it."),
         // Note this tunes DURATION, not a phase model. Phase structure is
         // DERIVED — BlockPhase.phases(for:) reads each week's
         // percentOfBaseline and names what it finds. Listing a

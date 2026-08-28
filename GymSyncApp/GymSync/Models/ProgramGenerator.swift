@@ -589,10 +589,28 @@ enum ProgramGenerator {
         let balanced = balanceWeeklyVolume(days: days, catalog: catalog,
                                            low: weekly.low, high: weekly.high,
                                            protectedDayNames: emphasisDays,
-                                           targets: inputs.volumeTargets,
+                                           // Clamped to the band ceiling:
+                                           // the titration's own floor is
+                                           // 12, which would drag a NEW
+                                           // athlete past the 6-10
+                                           // beginner band (audit
+                                           // 2026-08-28). Evidence may
+                                           // lower volume freely; it may
+                                           // not out-prescribe the band's
+                                           // top.
+                                           targets: inputs.volumeTargets
+                                               .mapValues { min($0, weekly.high) },
                                            caps: inputs.volumeCaps,
-                                           floors: inputs.volumeFloors)
+                                           floors: inputs.volumeFloors,
+                                           focus: Set((inputs.focusMuscles ?? [])
+                                               .map { $0.lowercased() }))
         days = balanced.days
+        if let focus = inputs.focusMuscles, !focus.isEmpty {
+            let named = focus.sorted()
+                .map { $0.replacingOccurrences(of: "_", with: " ") }
+                .joined(separator: ", ")
+            notes.append("Focus volume: \(named) \(focus.count == 1 ? "sits" : "sit") at the top of the weekly band; every other muscle holds the band's floor to pay for it - focus is a trade, not a bonus.")
+        }
         // The note is GENERATED from what the pass actually did, including
         // what it could not do. It used to be written here from the trim and
         // add COUNTS alone, independently of the outcome - which is the
@@ -669,6 +687,10 @@ enum ProgramGenerator {
                                  band: band, inputs: inputs, setsPerExercise: 2))
                 covered.append(muscle)
             }
+            // Orphans past the third are not dosed this block - say so
+            // (audit 2026-08-28: they used to appear in NO note, the one
+            // silent exit in a pass built to never be silent).
+            uncoverable.append(contentsOf: orphans.dropFirst(3))
             if !covered.isEmpty {
                 notes.append("Coverage dose: \(covered.joined(separator: ", ")) had no direct work this week, so a small dose rides the lightest day — something beats nothing.")
             }
@@ -792,13 +814,32 @@ enum ProgramGenerator {
             }
         }
 
+        // Weight-loss LISS buy-out (owner design 2026-08-13; unbuilt
+        // until the 2026-08-28 audit found a weight-loss block with no
+        // cardio dial shipped ZERO cardio). Every lifting day ends in
+        // zone-2 steady work: 30 min for a new lifter - the cardio is
+        // half the session - 15 for everyone else.
+        if inputs.focus == .weightLoss, inputs.cardioDays == 0,
+           let engine = usable.first(where: { $0.category == "cardio" })
+               ?? catalog.first(where: { $0.category == "cardio" }) {
+            let minutes = inputs.experience == .new ? 30 : 15
+            for index in days.indices where days[index].exercises.contains(where: \.isMain) {
+                days[index].exercises.append(Exercise(
+                    exerciseID: engine.id, name: engine.name,
+                    sets: 1, repsLow: 0, repsHigh: 0, restSeconds: 0,
+                    percentOfMax: nil, isMain: false, slot: nil,
+                    cardioZone: 2, cardioMinutes: minutes))
+            }
+            notes.append("Weight loss runs on the deficit; the lifting protects the muscle while you're in one. Every session buys out with \(minutes) zone-2 minutes to widen the deficit without costing recovery.")
+        }
+
         // Recovery ceiling (research pass): six hard days max — a 7-day
         // request gets six lifting days and day 7 converts to ACTIVE
         // RECOVERY (the evidence-backed way to train daily).
         var hardDayCount = days.count
-        if days.count > GeneratorScience.maxConsecutiveHardDays {
+        if days.count > GeneratorScience.maxHardDaysPerWeek {
             days[days.count - 1] = recoveryDay(name: "Active Recovery", usable: usable)
-            hardDayCount = GeneratorScience.maxConsecutiveHardDays
+            hardDayCount = GeneratorScience.maxHardDaysPerWeek
             notes.append("Six hard days is the ceiling — day 7 is active recovery. No trial shows a full rest day is required for muscle under rotation, but connective tissue, sleep, and burnout say otherwise (Meeusen 2013 consensus).")
         }
         // Threshold ≥2 (trainer audit: the off-by-one left 2-day full-body
@@ -806,7 +847,7 @@ enum ProgramGenerator {
         // arithmetically honest wording — five same-muscle days cannot all
         // sit 48h apart, so the note asks for the possible, not the ideal.
         if split.filter({ $0 == GeneratorScience.DayKind.fullBody }).count >= 2 {
-            notes.append("Space full-body days as evenly as the week allows — muscles want ~48 hours between sessions that hit them (muscle protein synthesis runs its course by ~48h in trained lifters).")
+            notes.append("Space full-body days as evenly as the week allows — muscles want ~\(GeneratorScience.sameMuscleSpacingHours) hours between sessions that hit them (muscle protein synthesis runs its course by then in trained lifters).")
         }
 
         // Dedicated cardio (owner 2026-08-14): zone + MINUTES. When
@@ -875,7 +916,7 @@ enum ProgramGenerator {
 
         // Wave: flat for 4 weeks (double progression carries it), ramp
         // with a ¾-mark deload for 8/12 (offered, never forced), and a
-        // final-week taper look on strength (volume −50%, intensity held —
+        // final-week taper look on strength (volume −50%, intensity −5% —
         // the peaking research).
         var weeks: [Week] = []
         let deloadWeek = inputs.durationWeeks >= 8
@@ -1022,6 +1063,24 @@ enum ProgramGenerator {
             notes.append("Last accessory of each day runs as a drop set — two drops of about 20%, taken past the point a straight set would stop. It is the cheapest extra stimulus available once the heavy work is done.")
         }
 
+        // The failure appetite (audit 2026-08-28: EffortAppetite.toFailure
+        // promised "take the last set to failure" and produced only RIR
+        // numbers that die at the persistence boundary - the athlete saw
+        // nothing). Accessories carry the flag the live session already
+        // renders as a TO FAILURE final set; mains never do - grinding a
+        // heavy compound to failure costs recovery the block did not
+        // budget.
+        if inputs.effort == .toFailure {
+            for d in days.indices {
+                for x in days[d].exercises.indices {
+                    let e = days[d].exercises[x]
+                    guard !e.isMain, e.cardioZone == nil, e.setType == nil else { continue }
+                    days[d].exercises[x].targetFailure = true
+                }
+            }
+            notes.append("You asked to train to failure: every accessory's last set runs to technical failure. The main lifts stay one clean rep short - grinding a heavy compound costs more than it builds.")
+        }
+
         // THE DAY CEILING - the last pass, deliberately. Owner
         // 2026-08-27, closing the session-volume question the corpus
         // could not settle: "Max volume: 25 sets per day."
@@ -1039,7 +1098,7 @@ enum ProgramGenerator {
         // athlete was told they would do. The note reports exactly what
         // was trimmed, because a silent trim is this codebase's named
         // defect.
-        let dayCap = 25
+        let dayCap = GeneratorScience.dayCapSets
         var trimmedDays: [String] = []
         for d in days.indices {
             func working() -> Int {
@@ -1519,6 +1578,10 @@ enum ProgramGenerator {
         // bonused top.
         let anchorReps = repsHigh
         repsHigh += GeneratorScience.repRangeTopBonus(sex: inputs.sex, repsHigh: repsHigh)
+        // The bonus must not carry the range past the exercise's labeled
+        // window (audit 2026-08-28: the clamp above ran first, so a
+        // female athlete's top could exceed repMax by one).
+        if let hi = ex.repMax, hi > 0 { repsHigh = min(repsHigh, max(hi, repsLow)) }
         var rest = isMain ? band.mainRestSeconds : band.accessoryRestSeconds
         if !isMain { rest = max(30, rest + GeneratorScience.accessoryRestDelta(sex: inputs.sex)) }
         // %1RM anchored to the RANGE TOP (trainer audit: the midpoint
@@ -1667,7 +1730,12 @@ enum ProgramGenerator {
                                 deprioritized: inputs.deprioritizedExerciseIDs) else { return nil }
         var replacement = prescription(for: next, slot: slot,
                                        band: GeneratorScience.applyRepAppetite(
-                                           GeneratorScience.band(for: inputs.focus),
+                                           // Same band generate() used —
+                                           // the override (power_rfd) was
+                                           // the one input reroll dropped
+                                           // (audit 2026-08-28).
+                                           inputs.bandOverride
+                                               ?? GeneratorScience.band(for: inputs.focus),
                                            appetite: inputs.repAppetite),
                                        inputs: inputs,
                                        setsPerExercise: exercise.sets)
@@ -1841,7 +1909,14 @@ enum ProgramGenerator {
         /// never read.
         targets: [String: Int] = [:],
         caps: [String: Int] = [:],
-        floors: [String: Int] = [:]
+        floors: [String: Int] = [:],
+        /// Muscles the athlete asked to FOCUS (owner 2026-08-28: "make
+        /// sure hypertrophy actually means hypertrophy"). A focus muscle
+        /// is floored at the TOP of the band; every other muscle is held
+        /// to the band's midpoint to pay for it. Until now focus was only
+        /// a selection preference - the probe's "I'll give them the
+        /// volume" was copy the volume pass never read.
+        focus: Set<String> = []
     ) -> (days: [Day], trimmed: Int, added: Int,
           unresolvedLow: [String], unresolvedHigh: [String]) {
         let byID = Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, $0) })
@@ -1882,6 +1957,24 @@ enum ProgramGenerator {
         func bounds(for muscle: String) -> (low: Int, high: Int) {
             var lo = low
             var hi = high
+            // The focus tilt applies FIRST, deliberately: a titration
+            // target is recovery evidence and a cap/floor is the
+            // athlete's own words - both outrank aspiration, so both are
+            // applied after this and can override it.
+            if !focus.isEmpty {
+                if focus.contains(muscle) {
+                    lo = max(lo, hi)
+                } else {
+                    // Non-focus muscles hold the band FLOOR - the corpus
+                    // specialization spec (volume-landmarks 2026-08-25:
+                    // focus +20-40%, everything else cut or held) bounded
+                    // by the one demonstrated harm line: never below the
+                    // band's low (the <12-weekly-sets penalty is the only
+                    // proven downside in the whole volume literature).
+                    hi = min(hi, max(1, low))
+                    lo = min(lo, hi)
+                }
+            }
             if let target = targets[muscle] {
                 lo = max(1, target - 1)
                 hi = target + 1

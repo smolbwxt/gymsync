@@ -208,4 +208,118 @@ final class GeneratedStructureTests: XCTestCase {
         XCTAssertTrue(prescribed.contains(squat.id),
                       "a cautioned (not injured) hip should not empty the squat slot")
     }
+
+    // MARK: Focus means VOLUME (owner 2026-08-28: "make sure hypertrophy
+    // actually means hypertrophy")
+
+    func testAFocusMuscleOutVolumesEveryOtherMuscle() {
+        func lift(_ n: Int, _ name: String, _ muscle: String,
+                  _ category: String, _ pattern: String)
+        -> ProgramGenerator.CatalogExercise {
+            ProgramGenerator.CatalogExercise(
+                id: UUID(), name: name, primaryMuscle: muscle,
+                secondaryMuscles: [], category: category, equipment: "barbell",
+                movementPattern: pattern, rank: n)
+        }
+        // Enough accessories per muscle that the balance pass has levers
+        // in both directions.
+        var catalog: [ProgramGenerator.CatalogExercise] = [
+            lift(1, "Bench", "chest", "compound", "push_horizontal"),
+            lift(2, "Row", "back", "compound", "pull_horizontal"),
+            lift(3, "Squat", "quads", "compound", "squat"),
+            lift(4, "Press", "shoulders", "compound", "push_vertical"),
+            lift(5, "RDL", "hamstrings", "compound", "hinge"),
+        ]
+        for (i, muscle) in ["chest", "back", "quads", "shoulders", "hamstrings"].enumerated() {
+            for j in 0..<3 {
+                catalog.append(lift(10 + i * 3 + j, "\(muscle) iso \(j)",
+                                    muscle, "isolation", "isolation"))
+            }
+        }
+        var inputs = ProgramGenerator.Inputs(
+            focus: .hypertrophy, daysPerWeek: 4, durationWeeks: 8,
+            experience: .intermediate)
+        inputs.focusMuscles = ["chest"]
+
+        let program = ProgramGenerator.generate(inputs: inputs, catalog: catalog)
+
+        let byID = Dictionary(uniqueKeysWithValues: catalog.map { ($0.id, $0.primaryMuscle) })
+        var sets: [String: Int] = [:]
+        for ex in program.days.flatMap(\.exercises) where ex.cardioZone == nil {
+            if let muscle = byID[ex.exerciseID] { sets[muscle, default: 0] += ex.sets }
+        }
+        let chest = sets["chest"] ?? 0
+        XCTAssertGreaterThan(chest, 0, "the focus muscle got no work at all")
+        for (muscle, count) in sets where muscle != "chest" {
+            XCTAssertGreaterThan(chest, count,
+                "focus promised chest the volume, but \(muscle) carries \(count) sets to chest's \(chest) - focus is still only a selection preference")
+        }
+        XCTAssertTrue(program.notes.contains { $0.contains("Focus volume") },
+                      "the block does not tell the athlete the focus tilt happened")
+    }
+
+    // MARK: Audit 2026-08-28 - promises the code now keeps
+
+    private func auditLift(_ n: Int, _ name: String, _ muscle: String,
+                           _ category: String, _ pattern: String)
+    -> ProgramGenerator.CatalogExercise {
+        ProgramGenerator.CatalogExercise(
+            id: UUID(), name: name, primaryMuscle: muscle,
+            secondaryMuscles: [], category: category, equipment: "barbell",
+            movementPattern: pattern, rank: n)
+    }
+
+    func testWeightLossActuallyPrescribesCardio() {
+        // Owner design 2026-08-13: weight loss buys out in LISS. Until
+        // the audit, a weight-loss block with cardioDays=0 shipped zero
+        // cardio - the goal's own modality was missing.
+        var catalog = [
+            auditLift(1, "Bench", "chest", "compound", "push_horizontal"),
+            auditLift(2, "Row", "back", "compound", "pull_horizontal"),
+            auditLift(3, "Squat", "quads", "compound", "squat"),
+        ]
+        var bike = auditLift(9, "Stationary Bike", "quads", "cardio", "other")
+        catalog.append(bike)
+        let inputs = ProgramGenerator.Inputs(
+            focus: .weightLoss, daysPerWeek: 3, durationWeeks: 6,
+            experience: .intermediate)
+
+        let program = ProgramGenerator.generate(inputs: inputs, catalog: catalog)
+
+        for day in program.days where day.exercises.contains(where: \.isMain) {
+            let liss = day.exercises.filter { $0.cardioZone == 2 }
+            XCTAssertFalse(liss.isEmpty,
+                "\(day.name) is a weight-loss lifting day with no zone-2 buy-out")
+            XCTAssertEqual(liss.first?.cardioMinutes, 15,
+                "intermediate weight loss buys out at 15 minutes")
+        }
+        _ = bike
+    }
+
+    func testToFailureAppetiteMarksAccessoriesAndSparesMains() {
+        var catalog = [
+            auditLift(1, "Bench", "chest", "compound", "push_horizontal"),
+            auditLift(2, "Row", "back", "compound", "pull_horizontal"),
+            auditLift(3, "Squat", "quads", "compound", "squat"),
+        ]
+        for j in 0..<4 {
+            catalog.append(auditLift(10 + j, "iso \(j)",
+                                     ["chest", "back", "quads", "biceps"][j],
+                                     "isolation", "isolation"))
+        }
+        var inputs = ProgramGenerator.Inputs(
+            focus: .hypertrophy, daysPerWeek: 3, durationWeeks: 6,
+            experience: .intermediate)
+        inputs.effort = .toFailure
+
+        let program = ProgramGenerator.generate(inputs: inputs, catalog: catalog)
+
+        let lifting = program.days.flatMap(\.exercises).filter { $0.cardioZone == nil }
+        let accessories = lifting.filter { !$0.isMain && $0.setType == nil }
+        XCTAssertFalse(accessories.isEmpty, "fixture produced no plain accessories")
+        XCTAssertTrue(accessories.allSatisfy(\.targetFailure),
+            "the failure appetite must reach the accessories the athlete sees")
+        XCTAssertTrue(lifting.filter(\.isMain).allSatisfy { !$0.targetFailure },
+            "mains must never be prescribed to failure")
+    }
 }

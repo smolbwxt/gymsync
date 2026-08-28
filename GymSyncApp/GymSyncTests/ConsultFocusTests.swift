@@ -109,14 +109,14 @@ final class ConsultFocusTests: XCTestCase {
 
     func testTheLiftAndTheAreasCombine() {
         // Someone chasing a bench number who also wants their back to look
-        // different gets both, and the two-area cap still holds on the
-        // areas themselves.
+        // different gets both; areas cap at three and the lift's muscle
+        // still joins on top.
         let answers = ConsultAnswers([
             "focus_areas": ["back", "biceps", "calves"],
             "focus_lift": ["Back Squat"],
         ])
         let focus = answers.focusMuscles(in: catalog)
-        XCTAssertEqual(focus, ["back", "biceps", "quads"])
+        XCTAssertEqual(focus, ["back", "biceps", "calves", "quads"])
     }
 
     func testTheSameMuscleIsNotCountedTwice() {

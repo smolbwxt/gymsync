@@ -75,9 +75,12 @@ struct ConsultAnswers: Equatable, Sendable {
     // Answers the generator needs that are NOT profile fields, exposed as
     // parsed values rather than left as strings for a caller to re-parse.
 
-    /// Two areas, at most — the probe promises "pick two and I'll give
-    /// them the volume", and honoring more than two would make that
-    /// sentence false. Filtered to the vocabulary the coverage check uses.
+    /// Up to three areas — the probe says "pick up to three", the view
+    /// caps the selection at three (so a fourth tap visibly does not
+    /// select, instead of a pick being silently dropped by prefix), and
+    /// the generator's volume balance floors each one at the top of the
+    /// weekly band. Three is the ceiling because the 25-set day cap and
+    /// the weekly recovery budget make five-way "focus" mean nothing.
     var focusMuscles: Set<String>? {
         focusMuscles(in: [])
     }
@@ -91,7 +94,7 @@ struct ConsultAnswers: Equatable, Sendable {
     func focusMuscles(in catalog: [Exercise]) -> Set<String>? {
         var picked = values("focus_areas")
             .filter { GeneratorScience.majorMuscles.contains($0) }
-            .prefix(2)
+            .prefix(3)
             .map { $0 }
         // Every focus lift's muscle, not just the first - the athlete can
         // name several now (owner 2026-08-27).
