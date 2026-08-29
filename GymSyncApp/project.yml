@@ -320,6 +320,13 @@ targets:
       - target: GymSync
 
 schemes:
+  # Watch app alone - the CI watch-screenshot job builds this to capture
+  # App Store watch screenshots from the simulator ([watch-shot] commits).
+  GymSyncWatch:
+    build:
+      targets:
+        GymSyncWatch: all
+
   GymSync:
     build:
       targets:

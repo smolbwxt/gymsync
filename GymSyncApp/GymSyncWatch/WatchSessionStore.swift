@@ -76,6 +76,32 @@ final class WatchSessionStore: NSObject {
 
     private var isReachable = false
 
+    #if DEBUG
+    /// Marketing screenshots ONLY (`--marketing-demo` launch argument,
+    /// passed by the CI watch-screenshot job): fill the store with demo
+    /// session state so the REAL views render a live turn - the same
+    /// fixture pattern the iPhone marketing screenshot suite uses
+    /// (coach_dana and friends). Debug builds only; the release binary
+    /// contains no such path, so a shipped watch app can never show
+    /// invented state.
+    func seedForScreenshots() {
+        sessionState = WatchSessionStatePayload(
+            sessionID: UUID(),
+            groupID: UUID(),
+            sessionName: "Push Crew — Push Day",
+            currentExerciseName: "Bench Press",
+            currentExerciseID: UUID(),
+            currentLifterName: "Alex",
+            isMyTurn: true,
+            burpeesOwed: 6,
+            burpeesPaid: 4,
+            soundboardFavorites: ["airhorn", "crowd-cheer", "lets-go", "bell"],
+            soundboardFavoriteLabels: ["Airhorn", "Crowd Cheer", "Let's Go", "Bell"],
+            sampleHeartRate: true)
+        isStale = false
+    }
+    #endif
+
     private override init() {
         super.init()
         guard WCSession.isSupported() else { return }

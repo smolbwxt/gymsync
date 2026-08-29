@@ -418,3 +418,72 @@ jobs:
             -authenticationKeyPath "$HOME/private_keys/AuthKey_57G3DK86PA.p8" \
             -authenticationKeyID 57G3DK86PA \
             -authenticationKeyIssuerID d0ee236a-ef18-498e-8d99-26b47c70d4f0
+
+  # App Store watch screenshots ([watch-shot] commits only): builds the
+  # real watch app, launches it in the watch simulator with the debug
+  # --marketing-demo seed, and captures the actual rendered UI. Never a
+  # mock-up - guideline 2.3.3 wants the app as it really renders, so the
+  # screenshot comes from the binary, with demo state driven through the
+  # same fixture idea the iPhone marketing suite uses.
+  watch-screenshot:
+    if: contains(github.event.head_commit.message, '[watch-shot]')
+    runs-on: macos-15
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 26
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      # The watch target compiles no secrets, but the generated project
+      # lists the iOS target too - keep its template files present.
+      - name: Placeholder secrets
+        run: |
+          cp GymSyncApp/GymSync/Config/Secrets.swift.template GymSyncApp/GymSync/Config/Secrets.swift || true
+          cp GymSyncApp/GymSyncTests/TestSecrets.swift.template GymSyncApp/GymSyncTests/TestSecrets.swift || true
+
+      - name: Generate Xcode project from project.yml
+        run: xcodegen generate --spec GymSyncApp/project.yml --project GymSyncApp
+
+      - name: Build watch app for simulator
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project GymSyncApp/GymSync.xcodeproj \
+            -scheme GymSyncWatch \
+            -configuration Debug \
+            -destination 'generic/platform=watchOS Simulator' \
+            -derivedDataPath DerivedData \
+            CODE_SIGNING_ALLOWED=NO | tail -20
+
+      - name: Launch in watch simulator and capture
+        run: |
+          UDID=$(xcrun simctl list devices available | grep -E "Apple Watch (Ultra|Series)" | head -1 | grep -oE "[0-9A-F-]{36}")
+          if [ -z "$UDID" ]; then
+            RUNTIME=$(xcrun simctl list runtimes | grep watchOS | tail -1 | grep -oE "com.apple.CoreSimulator.SimRuntime.watchOS[0-9-]*")
+            UDID=$(xcrun simctl create "MarketingWatch" "Apple Watch Ultra 2 (49mm)" "$RUNTIME")
+          fi
+          echo "sim: $UDID"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          APP=$(find DerivedData/Build/Products -name "GymSyncWatch.app" -maxdepth 2 | head -1)
+          echo "app: $APP"
+          xcrun simctl install "$UDID" "$APP"
+          xcrun simctl launch "$UDID" app.gymsync.ios.watchkitapp --marketing-demo
+          sleep 8
+          mkdir -p watch-shots
+          xcrun simctl io "$UDID" screenshot watch-shots/watch-whose-turn.png
+          xcrun simctl io "$UDID" screenshot --type png watch-shots/watch-whose-turn-2.png || true
+          ls -la watch-shots
+
+      - name: Upload watch screenshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: watch-screenshot
+          path: watch-shots/

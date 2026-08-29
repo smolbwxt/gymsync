@@ -44,6 +44,14 @@ struct ContentView: View {
             LedgerView(store: store)
         }
         .tabViewStyle(.verticalPage)
+        .task {
+            #if DEBUG
+            // CI marketing screenshots - see seedForScreenshots' doc.
+            if CommandLine.arguments.contains("--marketing-demo") {
+                store.seedForScreenshots()
+            }
+            #endif
+        }
     }
 }
 
