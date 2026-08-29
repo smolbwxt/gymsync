@@ -33,6 +33,19 @@ enum OneShotFlags {
     /// literals live here (their single source of truth) and the views read
     /// them through `@AppStorage` with the same string.
     static let walkthroughKey = "hasSeenWalkthroughV1"
+
+    /// O3 (2026-08-28): the walkthrough is per-ACCOUNT - a second account
+    /// on the same phone gets its own first run. The legacy device-wide
+    /// key is deliberately not honored: an existing user sees the
+    /// (skippable) walkthrough once more, which is cheaper than a new
+    /// account silently getting none.
+    static func walkthroughSeen(userID: UUID) -> Bool {
+        UserDefaults.standard.bool(forKey: "\(walkthroughKey).\(userID.uuidString)")
+    }
+
+    static func setWalkthroughSeen(userID: UUID) {
+        UserDefaults.standard.set(true, forKey: "\(walkthroughKey).\(userID.uuidString)")
+    }
     static let venueAdvisoryKey = "hasSeenVenueAdvisory"
 
     static var all: [Flag] {
@@ -67,8 +80,15 @@ enum OneShotFlags {
         } + [
             Flag(id: walkthroughKey,
                  label: "First-run walkthrough",
-                 isSet: { UserDefaults.standard.bool(forKey: walkthroughKey) },
-                 reset: { UserDefaults.standard.removeObject(forKey: walkthroughKey) }),
+                 // Per-user keys share the prefix; the QA reset must clear
+                 // every one of them or it silently tests less and less
+                 // (this registry's founding rule).
+                 isSet: { UserDefaults.standard.dictionaryRepresentation().keys
+                     .contains { $0.hasPrefix(walkthroughKey)
+                         && UserDefaults.standard.bool(forKey: $0) } },
+                 reset: { UserDefaults.standard.dictionaryRepresentation().keys
+                     .filter { $0.hasPrefix(walkthroughKey) }
+                     .forEach { UserDefaults.standard.removeObject(forKey: $0) } }),
             Flag(id: venueAdvisoryKey,
                  label: "Local hub safety advisory",
                  isSet: { UserDefaults.standard.bool(forKey: venueAdvisoryKey) },

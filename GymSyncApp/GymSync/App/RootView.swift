@@ -33,7 +33,6 @@ struct RootView: View {
     // sign-in + profile onboarding). Both Skip and "Get started" set the flag.
     // Key comes from OneShotFlags so the QA "replay first-run tips" reset
     // can never drift from what this actually reads.
-    @AppStorage(OneShotFlags.walkthroughKey) private var hasSeenWalkthrough = false
     @State private var showWalkthrough = false
 
     /// Onboarding COACH offer — the wizard sheet queued behind the
@@ -90,7 +89,7 @@ struct RootView: View {
                             }
                         }
                         .onAppear {
-                            if !hasSeenWalkthrough {
+                            if !OneShotFlags.walkthroughSeen(userID: userID) {
                                 showWalkthrough = true
                             } else if appState.pendingCoachOffer {
                                 appState.pendingCoachOffer = false
@@ -99,7 +98,7 @@ struct RootView: View {
                         }
                         .fullScreenCover(isPresented: $showWalkthrough) {
                             WalkthroughView {
-                                hasSeenWalkthrough = true
+                                OneShotFlags.setWalkthroughSeen(userID: userID)
                                 showWalkthrough = false
                                 if appState.pendingCoachOffer {
                                     appState.pendingCoachOffer = false

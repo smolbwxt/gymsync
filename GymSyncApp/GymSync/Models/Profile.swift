@@ -33,6 +33,10 @@ struct Profile: Codable, Identifiable, Sendable, Equatable {
     /// retires the HR-max 190 placeholder.
     let sex: String?
     let birthYear: Int?
+    /// O1 (2026-08-28): when this signup FINISHED the onboarding arc.
+    /// nil = never finished - the coordinator resumes it. Backfilled to
+    /// created_at for pre-migration profiles.
+    let onboardedAt: Date?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -49,6 +53,7 @@ struct Profile: Codable, Identifiable, Sendable, Equatable {
         case weeklySessionGoalChangedAt = "weekly_session_goal_changed_at"
         case sex
         case birthYear = "birth_year"
+        case onboardedAt = "onboarded_at"
     }
 
     // Custom decode so any pre-migration cached JSON (no is_curator/
@@ -74,6 +79,7 @@ struct Profile: Codable, Identifiable, Sendable, Equatable {
         weeklySessionGoalChangedAt = try c.decodeIfPresent(Date.self, forKey: .weeklySessionGoalChangedAt)
         sex = try c.decodeIfPresent(String.self, forKey: .sex)
         birthYear = try c.decodeIfPresent(Int.self, forKey: .birthYear)
+        onboardedAt = try c.decodeIfPresent(Date.self, forKey: .onboardedAt)
     }
 
     /// The goal governing the CURRENT calendar week (anti-goalpost rule,
@@ -240,6 +246,21 @@ enum ProfileRepository {
 
     /// Generator demographics (skippable, wizard/onboarding). nil leaves
     /// a field untouched — never clears.
+    /// O1: stamp onboarding as finished. Called exactly once, from the
+    /// welcome screen's completion - the durable end of the arc.
+    static func markOnboarded() async throws {
+        guard let userID = await SupabaseService.shared.currentUserID() else {
+            throw GymSyncError.unauthorized
+        }
+        do {
+            try await client
+                .from("profiles")
+                .update(["onboarded_at": ISO8601DateFormatter().string(from: Date())])
+                .eq("id", value: userID.uuidString)
+                .execute()
+        } catch { throw ErrorMapping.map(error) }
+    }
+
     static func updateDemographics(sex: String?, birthYear: Int?) async throws {
         guard let userID = await SupabaseService.shared.currentUserID() else {
             throw GymSyncError.unauthorized

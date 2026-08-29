@@ -7,12 +7,6 @@ struct OnboardingCoordinator: View {
     @State private var profile: Profile?
     @State private var loading = true
 
-    // Only set true when `profile` was just created via UsernameView in
-    // this session — drives the home-gym + priming + welcome screens. A
-    // `profile` loaded from `loadProfile()` (a returning user who already
-    // completed onboarding previously) skips straight to completion, as
-    // before.
-    @State private var isNewSignup = false
     @State private var onboardingStep: OnboardingStep = .gym
 
     /// gym -> lifts -> priming -> welcome. Lifts (STEP 4 OF 4, owner
@@ -32,12 +26,15 @@ struct OnboardingCoordinator: View {
             } else if profile == nil {
                 UsernameView(chosenProfile: Binding(
                     get: { profile },
-                    set: { newProfile in
-                        profile = newProfile
-                        isNewSignup = newProfile != nil
-                    }
+                    set: { newProfile in profile = newProfile }
                 ))
-            } else if isNewSignup, let p = profile {
+            } else if let p = profile, p.onboardedAt == nil {
+                // O1 (2026-08-28, review-critical): "needs onboarding" is
+                // the DURABLE profiles.onboarded_at, not process memory.
+                // The old @State isNewSignup meant killing the app after
+                // username creation skipped screens 2-4 and the Coach
+                // offer forever; now a half-finished signup RESUMES here
+                // (every step is skippable, so re-showing them is cheap).
                 switch onboardingStep {
                 case .gym:
                     HomeGymSetupView(isOnboarding: true, onAdvance: {
@@ -53,6 +50,12 @@ struct OnboardingCoordinator: View {
                     })
                 case .welcome:
                     WelcomeView(profile: p) {
+                        // The durable end of the arc - a kill anywhere
+                        // before this stamp resumes onboarding instead of
+                        // skipping it forever. Best-effort: a failed stamp
+                        // re-shows skippable screens once, which is
+                        // cheaper than the inverse.
+                        Task { try? await ProfileRepository.markOnboarded() }
                         appState.currentProfile = p
                     }
                 }
@@ -69,7 +72,13 @@ struct OnboardingCoordinator: View {
         defer { loading = false }
         do {
             profile = try await ProfileRepository.fetch(userID: userID)
-            if let p = profile { appState.currentProfile = p }
+            // Setting currentProfile routes to the main app (RootView
+            // switches on it) - so only an ONBOARDED profile may set it.
+            // This line was O1's actual escape hatch: it fired the moment
+            // a username row existed.
+            if let p = profile, p.onboardedAt != nil {
+                appState.currentProfile = p
+            }
         } catch {
             AppLogger.auth.error("profile load failed: \(error.localizedDescription, privacy: .public)")
         }
