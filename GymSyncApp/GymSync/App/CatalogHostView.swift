@@ -1301,6 +1301,9 @@ extension Profile {
         // matching fresh-row state.
         self.sex = nil
         self.birthYear = nil
+        // 20260828000001: a catalog fixture is an "already onboarded"
+        // user - nil here would route the host into onboarding resume.
+        self.onboardedAt = .now
     }
 }
 
