@@ -646,3 +646,22 @@ cap stays closed (overnight decision + 25/day owner policy).
 Still open from this round: specialization-duration rule (focus tilt
 runs the whole block; corpus says 4-12 wks then cut), RIR trajectory
 (3-4 → 0-1 across the block), cardio auto-periodization.
+
+## F10 - Home = the block's today; bookings carry + heal routines (`832b6d7`)
+Owner decisions 2026-08-28. `ProgramToday.resolveRoutine` is the one
+answer to "which routine is today's" (session's own → block's next Coach
+day not done this week → nil); resolving a routine-less session ATTACHES
+the routine (setRoutine existed, zero callers). Home's last-used guess
+deleted; LobbyView resolves+attaches on load; WeekBooker fetches the
+block's routines when handed an empty list; builder reads birth year
+from the account profile (E3 CLOSED).
+**E1 CLOSED with receipts**: upcoming() = inner join on my participant
+rows + RLS select policy; deletes gated by "organizer deletes own
+scheduled sessions" (organizer_id = auth.uid() AND state='scheduled').
+**P5.1 CLOSED**: RIR confirmed never persisted (audit 2026-08-28);
+persistence = v0.x migration.
+**Untested by CI** (repos have no seams): ProgramToday's week-wrap pick
+and the lobby attach - field-verify: check into a Coach-booked session,
+the prescribed day should load without picking anything.
+Remaining v0 code: O1/O3 onboarding resume (review-critical), M2 gates
+(blocked on ASC products).
