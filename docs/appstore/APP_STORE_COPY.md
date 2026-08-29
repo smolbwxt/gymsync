@@ -88,7 +88,7 @@ Add the real site when the web portal ships.
 enrolled as an individual, your name; if you enrolled as an LLC, the
 LLC's exact legal name.)
 
-## Screenshots (6.9" slot, 1320×2868 — upload in this order)
+## Screenshots (1284×2778 — the size this ASC form accepts; upload in this order)
 | # | File | Story it tells |
 |---|---|---|
 | 1 | 01-personal-record | The payoff — full-screen PR celebration |
@@ -101,8 +101,10 @@ LLC's exact legal name.)
 | 8 | 08-gym-hub | Your gym, live |
 
 First three are what shows in search results — payoff, social, programming.
-Source: CI screenshot suite (run 33197562124), upscaled 1206×2622 →
-1320×2868 (aspect delta 0.06%, visually lossless). The suite also
+Source: CI screenshot suite (run 33197562124), 1206×2622 originals
+scaled to fill 1284×2778 with a 13px center crop (no stretch). ASC
+rejected 1320×2868 — this account's form wants the 6.5" sizes
+(1242×2688 / 1284×2778). The suite also
 contains shots with test-fixture data (ProposalConflictTest-*) and the
 dormant Pro paywall ("Coming soon" button) — never upload those; the
 paywall shot especially would draw an App Review question.
