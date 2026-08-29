@@ -30,6 +30,19 @@ enum WeekBooker {
                      routines: [Routine]) async -> Int {
         let calendar = Calendar.current
 
+        // A booking without its routine is the owner-reported defect
+        // ("sessions booked by coach don't carry a routine when checking
+        // in") - if the caller's routine list is empty, fetch the block's
+        // own day routines rather than booking blanks.
+        var routines = routines
+        if routines.isEmpty,
+           let ownerID = await SupabaseService.shared.currentUserID(),
+           let all = try? await RoutineRepository.fetchAll(ownerID: ownerID) {
+            routines = all
+                .filter { $0.name.hasPrefix("Coach · ") && $0.prescribedBy == nil }
+                .sorted { ($0.createdAt, $0.name) < ($1.createdAt, $1.name) }
+        }
+
         // 1. Clear what this week held before. Occurrences that came from
         //    a series are cancelled through the series (so the series
         //    stays consistent); plain sessions are deleted outright.

@@ -109,13 +109,13 @@ enum ProgramBuilder {
                 explosive: ex.explosive ?? false,
                 jointStress: ex.jointStress ?? [])
         }
+        // Youth ceilings read the ACCOUNT profile's birth year (the
+        // training profile never carried it; the wizard's own text field
+        // was the only source until the 2026-08-28 audit).
+        let accountBirthYear = ((try? await ProfileRepository.fetch(userID: userID)) ?? nil)?.birthYear
         var inputs = loaded.generatorInputs(
             durationWeeks: duration,
-            // Birth year lived only in the wizard's own text field; the
-            // profile does not carry it. nil leaves the youth ceilings
-            // off, exactly as a skipped wizard field did. (Backlog: read
-            // it from the account profile.)
-            birthYear: nil,
+            birthYear: accountBirthYear,
             daysSinceLastSession: daysSinceLastSession,
             daysSinceReturn: daysSinceReturn,
             standingRules: standingRules,

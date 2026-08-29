@@ -1537,15 +1537,29 @@ struct HomeView: View {
 
     @MainActor
     private func loadTodaysRoutine() async {
-        let targetID = historySessions.first(where: { $0.routineID != nil })?.routineID ?? ownedRoutines.first?.id
-        guard let targetID,
-              let (routine, exercises) = try? await RoutineRepository.fetch(id: targetID) else {
+        // The enrolled block owns "today" (owner 2026-08-28: "Home leads
+        // with today's booked session from the enrollment, and the dead
+        // last-used path is deleted"). The old guess - last-used routine,
+        // else an arbitrary owned one - showed a stale routine on the
+        // primary surface right after Coach built a new block.
+        guard let userID = appState.currentProfile?.id else {
             todaysRoutine = nil
             todaysRoutineExercises = []
             return
         }
-        todaysRoutine = routine
-        todaysRoutineExercises = exercises
+        let todaysSolo = upcomingSessions.first { s in
+            s.groupID == nil
+                && (s.scheduledFor.map { Calendar.current.isDateInToday($0) } ?? false)
+        }
+        if let resolved = await ProgramToday.resolveRoutine(session: todaysSolo,
+                                                            ownerID: userID) {
+            todaysRoutine = resolved.routine
+            todaysRoutineExercises = resolved.exercises
+        } else {
+            // No block: the card offers the picker, honestly.
+            todaysRoutine = nil
+            todaysRoutineExercises = []
+        }
     }
 
     @MainActor

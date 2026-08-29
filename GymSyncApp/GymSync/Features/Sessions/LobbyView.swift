@@ -1438,6 +1438,22 @@ struct LobbyView: View {
                     routineForSession = routine
                 }
             }
+            // Owner 2026-08-28: "sessions booked by coach don't actually
+            // carry a routine when checking in. Everything should be
+            // provided by Coach." Pre-WeekBooker bookings (and any booking
+            // whose routine fetch failed) arrive routine-less - resolve
+            // the enrolled block's day and ATTACH it (ProgramToday heals
+            // the row), so the athlete under Coaching manages nothing.
+            if routineForSession == nil {
+                let effective = currentSession ?? session
+                if effective.groupID == nil,
+                   let resolved = await ProgramToday.resolveRoutine(
+                       session: effective, ownerID: effective.organizerID) {
+                    routineInfo = (name: resolved.routine.name,
+                                   exercises: resolved.exercises)
+                    routineForSession = resolved.routine
+                }
+            }
 
             if allExercises.isEmpty {
                 allExercises = (try? await ExerciseRepository.fetchAll()) ?? []
