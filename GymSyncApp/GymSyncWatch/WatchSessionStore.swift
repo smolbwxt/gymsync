@@ -84,7 +84,10 @@ final class WatchSessionStore: NSObject {
     /// (coach_dana and friends). Debug builds only; the release binary
     /// contains no such path, so a shipped watch app can never show
     /// invented state.
+    private var screenshotMode = false
+
     func seedForScreenshots() {
+        screenshotMode = true
         sessionState = WatchSessionStatePayload(
             sessionID: UUID(),
             groupID: UUID(),
@@ -120,6 +123,12 @@ final class WatchSessionStore: NSObject {
     /// enough to prove the mechanism without inventing a Watch-side timer
     /// this task's placeholder UI has no other use for).
     func refreshStaleness() {
+        #if DEBUG
+        // Screenshot mode pins freshness: the standalone CI simulator has
+        // no paired phone, so isReachable is honestly false and the stale
+        // banner fired over the demo state (first capture proved it).
+        if screenshotMode { isStale = false; return }
+        #endif
         guard let sessionState else {
             isStale = false // "no session" isn't "stale" — it's simply empty; ContentView distinguishes the two.
             return
