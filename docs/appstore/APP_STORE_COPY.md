@@ -108,3 +108,12 @@ rejected 1320×2868 — this account's form wants the 6.5" sizes
 contains shots with test-fixture data (ProposalConflictTest-*) and the
 dormant Pro paywall ("Coming soon" button) — never upload those; the
 paywall shot especially would draw an App Review question.
+
+## Apple Watch screenshot (416×496 — Series 10 46mm)
+`watch-whose-turn.png` — the real watch app (Phase W) captured in the
+watch simulator by the `watch-screenshot` CI job (runs on commits tagged
+`[watch-shot]`): whose-turn surface with the debug-only `--marketing-demo`
+seed (PUSH CREW — PUSH DAY · Bench Press · Your turn). Never a mock-up:
+guideline 2.3.3 wants the app as the binary renders it. The seed and the
+screenshot-mode freshness pin are `#if DEBUG` — the released watch app
+contains neither.
