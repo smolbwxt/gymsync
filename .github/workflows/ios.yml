@@ -42,15 +42,17 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
-          # OPTIONAL secret (Phase O Task 4, master spec §6.8.5) — no Sentry
-          # project exists yet, so this repo secret doesn't exist either.
-          # `${{ secrets.SENTRY_DSN }}` already evaluates to an empty string
-          # when the secret is unset (GitHub Actions' built-in behavior for a
-          # missing secret reference — no `|| ''` fallback needed, same as
-          # every other secret in this workflow), which is exactly what
-          # CrashReporting.start(dsn:) treats as "disabled" (Services/
-          # CrashReporting.swift).
-          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          # SENTRY_DSN is deliberately NOT passed to the simulator jobs
+          # (Sentry triage 2026-08-31). It used to be, and the cost was
+          # severe: 2,062 of the project's 2,072 lifetime events — and 474
+          # of its 475 "users" — were GitHub Actions simulators, since every
+          # CI run installs fresh and mints a new anonymous install id. The
+          # real-device signal (10 events in 90 days) sat under 99.5% noise,
+          # and the event quota paid for it. An unset var expands empty
+          # below, which CrashReporting.start(dsn:) treats as "disabled" on
+          # a provably-no-op path (Services/CrashReporting.swift, asserted
+          # by CrashReportingTests' call-count fake). Only deploy-testflight
+          # — the job that ships to real devices — still receives the DSN.
           TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
           TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
         run: |
@@ -148,15 +150,17 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
-          # OPTIONAL secret (Phase O Task 4, master spec §6.8.5) — no Sentry
-          # project exists yet, so this repo secret doesn't exist either.
-          # `${{ secrets.SENTRY_DSN }}` already evaluates to an empty string
-          # when the secret is unset (GitHub Actions' built-in behavior for a
-          # missing secret reference — no `|| ''` fallback needed, same as
-          # every other secret in this workflow), which is exactly what
-          # CrashReporting.start(dsn:) treats as "disabled" (Services/
-          # CrashReporting.swift).
-          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          # SENTRY_DSN is deliberately NOT passed to the simulator jobs
+          # (Sentry triage 2026-08-31). It used to be, and the cost was
+          # severe: 2,062 of the project's 2,072 lifetime events — and 474
+          # of its 475 "users" — were GitHub Actions simulators, since every
+          # CI run installs fresh and mints a new anonymous install id. The
+          # real-device signal (10 events in 90 days) sat under 99.5% noise,
+          # and the event quota paid for it. An unset var expands empty
+          # below, which CrashReporting.start(dsn:) treats as "disabled" on
+          # a provably-no-op path (Services/CrashReporting.swift, asserted
+          # by CrashReportingTests' call-count fake). Only deploy-testflight
+          # — the job that ships to real devices — still receives the DSN.
           TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
           TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
         run: |
@@ -406,6 +410,32 @@ jobs:
             -authenticationKeyIssuerID d0ee236a-ef18-498e-8d99-26b47c70d4f0 \
             CODE_SIGN_STYLE=Automatic \
             CURRENT_PROJECT_VERSION=${{ github.run_number }}
+
+      # Symbolication (Sentry triage 2026-08-31). Without dSYMs, EVERY
+      # first-party frame in a Sentry crash renders as `<redacted>` — which
+      # is precisely why GYMSYNC-D9 (a stack overflow in Swift generic-type
+      # metadata, reached through ZStack.init on the Home tab) could not be
+      # pinned to a specific view: the app frames carrying that answer were
+      # unresolvable. The archive's dSYMs are the only artifact that fixes
+      # that, and they exist only here, so they upload here.
+      #
+      # Guarded rather than `if:`-gated on the secret so a missing token
+      # SKIPS symbolication instead of failing a deploy — same defensive
+      # idiom as this workflow's `if [ -n "$SUPABASE_URL" ]` secret writes.
+      # Requires repo secret SENTRY_AUTH_TOKEN (org:mattaniah, scope
+      # project:releases). Until it exists, this step is a logged no-op.
+      - name: Upload dSYMs to Sentry
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        run: |
+          if [ -z "$SENTRY_AUTH_TOKEN" ]; then
+            echo "::warning::SENTRY_AUTH_TOKEN unset - skipping dSYM upload. Crashes from build ${{ github.run_number }} will stay unsymbolicated."
+            exit 0
+          fi
+          npx --yes @sentry/cli@latest debug-files upload \
+            --org mattaniah \
+            --project gymsync \
+            "$RUNNER_TEMP/GymSync.xcarchive/dSYMs"
 
       # ExportOptions.plist has destination:upload — this step also uploads to TestFlight.
       - name: Export and upload to TestFlight
