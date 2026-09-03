@@ -73,10 +73,27 @@ Welcome to GymSync — log your lifts, run a real program, and train live
 with your crew. Built with love, chalk, and published research.
 
 ## Support URL (required)
-https://github.com/smolbwxt/gymsync/issues
-(works today — support requests arrive as issues on the public repo;
-a dedicated GitHub Pages support page can replace it any time without
-resubmission, since URL changes don't require review)
+⚠️ MUST CHANGE — the repo went private on 2026-09-03 (IP protection, and a
+precondition for putting CI on the Mac mini: see docs/ops/mac-mini-runner.md).
+The old value below depended on the repo being public and now returns 404 to
+everyone who is not signed in as the owner. Apple requires a Support URL that
+is publicly reachable, and a dead one is a Guideline 1.5 rejection —
+App Review does check it.
+
+Superseded value (do not use):
+~~https://github.com/smolbwxt/gymsync/issues~~
+
+Replacement: add a `support.html` to the smolbwxt/gymsync-legal repo, which
+already serves the privacy policy and terms over GitHub Pages, and use:
+https://smolbwxt.github.io/gymsync-legal/support.html
+
+That repo MUST stay public. GitHub Pages does not serve sites from private
+repositories on the Free plan, so privating it would take down the privacy
+policy URL as well — and that one is a hard App Store requirement, not just a
+support link.
+
+Changing these URLs in App Store Connect does not require a resubmission, so
+this can be fixed independently of any build.
 
 ## Marketing URL (optional)
 Leave blank for v1.0 — it's optional and an empty field beats a thin page.
