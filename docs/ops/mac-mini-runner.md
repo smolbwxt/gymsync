@@ -87,14 +87,27 @@ Found out on first provisioning (2026-09-03), from Homebrew's own banner:
   deno and XcodeGen release zips, the gh `.pkg`), and `ios.yml` no longer
   falls back to `brew install` for anything. Do not `brew install` on this
   machine; if you need a tool, add it to the script the same way.
-- **There is a clock on it.** The same banner: macOS 27 drops Intel entirely,
-  and GitHub is retiring its Intel macOS runners in 2027. Xcode 27 (autumn
-  2027) will need a macOS this machine cannot run, and App Store Connect
-  starts requiring apps built against the iOS 27 SDK roughly the following
-  spring. Call it **eighteen months** as the deploy box. The Xcode 26 toolchain
-  it has today covers everything until then. The runner labels are
-  architecture-neutral on purpose so the swap, when it comes, is a `--runner`
-  on the new machine and nothing in the repo.
+- **Getting Xcode onto it is not the App Store.** The store offers only the
+  newest Xcode, and from 26.4 that requires macOS 26.2 — Tahoe, which does not
+  support a 2018 mini and never will. **Xcode 26.3** (26 Feb 2026) is the last
+  release that runs on Sequoia 15.6+, and it is a normal signed Apple download:
+  <https://developer.apple.com/download/all/?q=Xcode%2026.3> (sign in with the
+  developer account), expand the `.xip`, move `Xcode.app` to `/Applications`,
+  open it once. Its iOS 26 SDK is all the app needs — deployment target is
+  iOS 17 and nothing in the source is gated on a 26.x minor.
+- **There is a clock on it, and it is short.** Xcode 27 ships alongside iOS 27
+  in **September 2026** — now — and like 26.4 it will need a macOS this machine
+  cannot run. App Store Connect has required each new major SDK from the
+  following April for years running, so expect uploads built with the iOS 26
+  SDK to be refused from **around April 2027**. That is roughly **seven
+  months** as the deploy box, not the eighteen an earlier draft of this page
+  claimed. Everything else — compiling, unit tests, screenshots, pgTAP, Deno,
+  parity — has no such deadline and keeps working on Xcode 26.3 indefinitely.
+  So the realistic shape after April 2027 is: this mini stays the test runner,
+  and an Apple Silicon Mac (a base M4 mini, or a cloud Mac for deploys only)
+  takes the `deploy-testflight` job. The runner labels are architecture-neutral
+  on purpose so that split is a `--runner` on the new machine and a one-label
+  edit to `deploy-testflight` — nothing else in the repo changes.
 - **It is slower than what CI ran on.** GitHub's `macos-15` runners were Apple
   Silicon. Expect `build-test` and `screenshots` to take longer here; watch
   the first few runs against their 45-minute `timeout-minutes` before deciding

@@ -147,7 +147,15 @@ setup_xcode() {
   if [ -z "$xcode" ] && [ -d /Applications/Xcode.app ]; then
     xcode=/Applications/Xcode.app
   fi
-  [ -n "$xcode" ] || die "No Xcode in /Applications. Install Xcode 26 from the App Store, open it once, then re-run."
+  # Not the App Store (2026-09-03): it only offers the newest Xcode, and from
+  # 26.4 that needs macOS 26.2 — which a 2018 Intel mini can never run. Xcode
+  # 26.3 (Feb 2026) is the last release that runs on Sequoia 15.6+, and it is
+  # a normal signed Apple download, not a workaround.
+  [ -n "$xcode" ] || die "No Xcode in /Applications.
+      Download Xcode 26.3 (.xip) — NOT from the App Store, that build needs macOS 26.2:
+        https://developer.apple.com/download/all/?q=Xcode%2026.3
+      Double-click the .xip to expand, move Xcode.app to /Applications, open it once
+      so it installs its components and the iOS 26 simulator runtime, then re-run."
 
   export DEVELOPER_DIR="$xcode/Contents/Developer"
   ok "$xcode — $(xcodebuild -version | head -1)"
