@@ -27,23 +27,51 @@ nice-to-have here — it is the thing that keeps a private GymSync free.
 
 ## What runs where
 
-| Job | Runner | Why |
+Everything runs on the mini. GitHub-hosted usage is zero, so the 2,000-minute
+allowance is never touched at all.
+
+The mini hosts **two runners**, distinguished by label:
+
+| Job | Runner label | Notes |
 |---|---|---|
-| `ios.yml` › `build-test` | mini | needs macOS + Xcode |
-| `ios.yml` › `screenshots` | mini | needs a simulator |
-| `ios.yml` › `deploy-testflight` | mini | needs macOS + the signing identity |
-| `ios.yml` › `watch-screenshot` | mini | needs a watch simulator |
-| `ios.yml` › `parity` | GitHub `ubuntu-latest` | Puppeteer + pixel diff, no Mac needed |
-| `backend.yml` › `pgtap`, `deno-test`, `deploy-functions` | GitHub `ubuntu-latest` | no Mac needed |
+| `ios.yml` › `build-test` | `gymsync` | Xcode + simulator |
+| `ios.yml` › `screenshots` | `gymsync` | Xcode + simulator |
+| `ios.yml` › `deploy-testflight` | `gymsync` | Xcode + signing identity |
+| `ios.yml` › `watch-screenshot` | `gymsync` | watch simulator |
+| `ios.yml` › `parity` | `gymsync-light` | Node + Puppeteer |
+| `backend.yml` › `pgtap` | `gymsync-light` | Node, remote Postgres |
+| `backend.yml` › `deno-test` | `gymsync-light` | Deno (3-leg matrix) |
+| `backend.yml` › `deploy-functions` | `gymsync-light` | Supabase CLI |
 
-The Linux jobs stay on GitHub deliberately. At the 1× multiplier they total
-~20 billed minutes per full run, so the 2,000-minute allowance covers roughly a
-hundred pushes a month — comfortably free, and one less toolchain (Postgres,
-Deno, Chromium) to maintain on the mini.
+Two, not one, because a runner takes a single job at a time. With everything on
+one runner, `parity` and the whole `backend.yml` chain would queue behind a
+45-minute `xcodebuild` — and a push touching both `GymSyncApp/` and `supabase/`
+would serialise into one very long line. Splitting them means the light jobs run
+while Xcode is busy, which is roughly what GitHub's fleet was doing for free.
 
-The workflow selects the mini with `runs-on: [self-hosted, macOS, gymsync]`.
+Nothing about the light jobs actually needed Linux:
+
+- **`pgtap`** — `run_pgtap.js` is a plain `pg` client against a remote Supabase
+  URL. No local Postgres, no `psql` binary.
+- **`deno-test`** — `denoland/setup-deno@v2` fetches a darwin-arm64 build and
+  the pinned version (2.9.2) is unchanged.
+- **`parity`** — a pixel diff, but a tolerant one. The two things that differ
+  between Linux and macOS Chromium are antialiasing and font hinting, and
+  `parity_diff.js:68` already discards both (`includeAA: false`,
+  `threshold: 0.12` — "a coarse structural delta", per the report's own lede).
+  Glyph metrics can't drift either, because the canvas serves its own `.woff2`
+  files instead of resolving system fonts. And it is `continue-on-error`
+  report-only, so a surprise surfaces for a human rather than blocking a merge.
+- **`deploy-functions`** — the one genuine port. `supabase/setup-cli@v1` only
+  branches on Linux libc and architecture and has no darwin path, so it is gone
+  rather than moved: the CLI is already a devDependency, and `npx` runs the
+  version the repo pins instead of the `version: latest` the action fetched.
+  The deploy also gains `--use-api`, which bundles server-side; the default
+  path shells out to Docker, which `ubuntu-latest` had preinstalled and the
+  mini does not.
+
 The runner assigns itself `self-hosted`, `macOS` and `ARM64`; the setup script
-adds `gymsync`.
+adds `gymsync` or `gymsync-light`.
 
 ## One-time setup
 
@@ -117,15 +145,24 @@ and the job hangs to its timeout.
 
 ### 5. Register the runner
 
-Get a registration token (valid ~1 hour) from
-<https://github.com/smolbwxt/gymsync/settings/actions/runners/new>, then:
+Two runners, each needing its own registration token from
+<https://github.com/smolbwxt/gymsync/settings/actions/runners/new>. Tokens are
+single-use and expire in about an hour, so fetch them one at a time:
 
 ```sh
-./scripts/mac-mini-setup.sh --runner <TOKEN>
+./scripts/mac-mini-setup.sh --runner       <TOKEN>   # Xcode jobs
+./scripts/mac-mini-setup.sh --runner-light <TOKEN>   # Node/Deno jobs
 ```
 
-Downloads the current `actions/runner`, registers it against the repo with the
-`gymsync` label, installs it as a launchd service, and starts it.
+Each downloads the current `actions/runner` into its own directory
+(`~/actions-runner` and `~/actions-runner-light`), registers with its label and
+a distinct name, installs a launchd service, and starts it. Both should appear
+online under Settings → Actions → Runners.
+
+Adding more light runners later is just more directories — the script's
+`--runner-light` is safe to run again after moving the existing
+`~/actions-runner-light` aside, and the three `deno-test` matrix legs are the
+obvious thing to parallelise if the queue starts to bite.
 
 ### 6. Verify
 
@@ -144,7 +181,7 @@ Still required (the mini does not hold these):
 - `TEST_USER_EMAIL`, `TEST_USER_PASSWORD`, `CI_TEST_USERNAME`
 - `ASC_API_KEY` — the App Store Connect `.p8`
 - `SENTRY_DSN`, `SENTRY_AUTH_TOKEN`
-- `SUPABASE_DB_URL`, `SUPABASE_ACCESS_TOKEN` (Linux jobs)
+- `SUPABASE_DB_URL`, `SUPABASE_ACCESS_TOKEN` (`backend.yml`)
 
 **No longer used, safe to delete:** `IOS_SIGNING_CERT_P12` and
 `IOS_SIGNING_CERT_PASSWORD`. The certificate now lives in the mini's keychain;
@@ -157,12 +194,14 @@ get for free from a disposable VM.
 
 ## Operating notes
 
-**Serialisation.** One runner takes one job at a time, so `build-test` →
-`deploy-testflight` now run back to back instead of in parallel with anything.
-The `concurrency` block cancels superseded runs on non-`master` refs so a burst
-of pushes does not queue for hours; `master` is exempt so a deploy already
-archiving is never killed part-way to TestFlight. If the wait becomes annoying,
-register a second runner instance from a second directory on the same mini.
+**Serialisation.** Each runner takes one job at a time. On the `gymsync`
+runner that means `build-test` → `deploy-testflight` run back to back; on
+`gymsync-light`, `pgtap` and the three `deno-test` legs queue where they used to
+fan out across GitHub's fleet — call it six minutes instead of three. Both
+workflows now carry a `concurrency` block that cancels superseded runs on
+non-`master` refs so a burst of pushes does not stack up; `master` is exempt in
+both, so neither an archiving TestFlight build nor an in-flight function deploy
+is ever cut off half-way.
 
 **DerivedData persists** between runs, which is a large speed win over hosted
 runners and a new source of stale-build weirdness. The existing fast-fail retry
@@ -178,14 +217,16 @@ upgrading Xcode, re-run `./scripts/mac-mini-setup.sh` to re-accept the license.
 **Service control:**
 
 ```sh
-cd ~/actions-runner
-./svc.sh status
-./svc.sh stop
-./svc.sh start
+for d in ~/actions-runner ~/actions-runner-light; do (cd "$d" && ./svc.sh status); done
+cd ~/actions-runner-light && ./svc.sh stop && ./svc.sh start
 ```
 
 **Runner offline.** Check the mini is awake and logged in first — that is nearly
-always the cause. `pmset -g custom | grep sleep` should show `0`.
+always the cause. `pmset -g custom | grep sleep` should show `0`. Note that with
+no GitHub-hosted fallback, a mini that is down means *nothing* runs: no tests,
+no TestFlight build, no function deploy. If that becomes a problem, the cheapest
+insurance is putting `parity` and `backend.yml` back on `ubuntu-latest` — they
+were within the free allowance by a wide margin.
 
 ## Consequences of privating, outside CI
 

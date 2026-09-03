@@ -12,9 +12,17 @@ on:
       - "scripts/**"
       - ".github/workflows/backend.yml"
 
+# The light runner takes one job at a time too, so pgtap and the three
+# deno-test matrix legs now queue where they used to run side by side on
+# GitHub's fleet. Cancelling superseded branch runs keeps that queue short;
+# master is exempt so an in-flight function deploy is never cut off.
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
 jobs:
   pgtap:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, gymsync-light]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -27,7 +35,7 @@ jobs:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
 
   deno-test:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, gymsync-light]
     strategy:
       matrix:
         function: [push-dispatcher, livekit-token, account-deletion-cascade]
@@ -49,7 +57,7 @@ jobs:
   deploy-functions:
     needs: [pgtap, deno-test]
     if: github.ref == 'refs/heads/master' && github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, gymsync-light]
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
     steps:
@@ -60,10 +68,28 @@ jobs:
           exit 0
       - uses: actions/checkout@v4
         if: env.SUPABASE_ACCESS_TOKEN != ''
-      - uses: supabase/setup-cli@v1
+      # supabase/setup-cli@v1 is gone rather than moved: its installer only
+      # branches on Linux libc and architecture and has no darwin path at all.
+      # No replacement action is needed — the CLI is already a devDependency
+      # (package.json, supabase ^2.109.1), so npx runs the version the repo
+      # pins instead of the `version: latest` the action was fetching, which
+      # is strictly better for a deploy step.
+      - name: Install the pinned Supabase CLI
         if: env.SUPABASE_ACCESS_TOKEN != ''
-        with:
-          version: latest
+        env:
+          # Only the supabase CLI is wanted here; puppeteer's postinstall
+          # would pull ~150MB of Chromium for a step that never renders
+          # anything (same reasoning as the QA seed step in ios.yml).
+          PUPPETEER_SKIP_DOWNLOAD: 1
+        run: npm ci
+      # --use-api bundles the functions server-side. The default path shells
+      # out to Docker, which ubuntu-latest had preinstalled and the mini does
+      # not — and installing Docker Desktop on the build machine to bundle four
+      # edge functions is a poor trade against a documented flag that skips it.
       - name: Deploy push-dispatcher, livekit-token, and account-deletion-cascade
         if: env.SUPABASE_ACCESS_TOKEN != ''
-        run: supabase functions deploy push-dispatcher livekit-token account-deletion-cascade clip-sweeper --project-ref chjkkwqwdlmaxacwglzm
+        run: |
+          npx supabase functions deploy \
+            push-dispatcher livekit-token account-deletion-cascade clip-sweeper \
+            --project-ref chjkkwqwdlmaxacwglzm \
+            --use-api

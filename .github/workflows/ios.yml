@@ -332,7 +332,18 @@ jobs:
   # (`continue-on-error`) — this never blocks a merge, it just surfaces
   # divergence for a human to look at.
   parity:
-    runs-on: ubuntu-latest
+    # On the light runner, not the Xcode one: this is a Node/Puppeteer job and
+    # has no reason to sit behind a 45-minute xcodebuild.
+    #
+    # Moving it off Linux is safe despite being a pixel diff. The two things
+    # that actually differ between Linux and macOS Chromium are antialiasing
+    # and font hinting, and parity_diff.js already discards both —
+    # `includeAA: false` with `threshold: 0.12` (a deliberately coarse
+    # structural delta, per the report's own lede). Glyph metrics can't drift
+    # either: the canvas serves its own .woff2 files rather than resolving
+    # system fonts. And the job is continue-on-error report-only, so even an
+    # unexpected shift surfaces for a human instead of blocking a merge.
+    runs-on: [self-hosted, macOS, gymsync-light]
     timeout-minutes: 20
     needs: screenshots
     continue-on-error: true

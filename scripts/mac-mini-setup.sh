@@ -17,7 +17,8 @@
 #
 #   ./scripts/mac-mini-setup.sh                      # deps + toolchain + power
 #   ./scripts/mac-mini-setup.sh --signing cert.p12   # install the Apple cert
-#   ./scripts/mac-mini-setup.sh --runner <TOKEN>     # register the CI runner
+#   ./scripts/mac-mini-setup.sh --runner <TOKEN>     # register the Xcode runner
+#   ./scripts/mac-mini-setup.sh --runner-light <TOKEN>  # register the light runner
 #   ./scripts/mac-mini-setup.sh --doctor             # report, change nothing
 #
 # See docs/ops/mac-mini-runner.md for the surrounding procedure.
@@ -25,8 +26,13 @@
 set -euo pipefail
 
 REPO_URL="https://github.com/smolbwxt/gymsync"
-RUNNER_LABEL="gymsync"
+# Two runners, one machine. The Xcode jobs get a runner to themselves; the
+# Node/Deno jobs get their own so they are not stuck behind a 45-minute
+# xcodebuild. See docs/ops/mac-mini-runner.md for why both live here.
+RUNNER_LABEL="gymsync"            # build-test, screenshots, deploy, watch
 RUNNER_DIR="$HOME/actions-runner"
+RUNNER_LABEL_LIGHT="gymsync-light"  # pgtap, deno-test, parity, deploy-functions
+RUNNER_DIR_LIGHT="$HOME/actions-runner-light"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 bold() { printf '\033[1m%s\033[0m\n' "$*"; }
@@ -233,59 +239,70 @@ setup_signing() {
 # ------------------------------------------------------------------- runner
 
 setup_runner() {
-  local token="${1:-}"
-  bold "GitHub Actions runner"
+  local token="${1:-}" label="${2:?}" dir="${3:?}" suffix="${4:-}"
+  bold "GitHub Actions runner — $label"
 
   if [ -z "$token" ]; then
-    die "Needs a registration token. Get one (valid ~1 hour) at:
+    die "Needs a registration token (valid ~1 hour), from:
       ${REPO_URL}/settings/actions/runners/new
-      then run: $0 --runner <TOKEN>"
+      A token is single-use, so grab a fresh one for each runner."
   fi
 
-  if [ -f "$RUNNER_DIR/.runner" ]; then
-    ok "runner already configured in $RUNNER_DIR"
-    ( cd "$RUNNER_DIR" && ./svc.sh status 2>/dev/null | sed 's/^/    /' ) || true
+  if [ -f "$dir/.runner" ]; then
+    ok "already configured in $dir"
+    ( cd "$dir" && ./svc.sh status 2>/dev/null | sed 's/^/    /' ) || true
     return
   fi
 
-  mkdir -p "$RUNNER_DIR"
-  local arch tag version tarball
+  mkdir -p "$dir"
+  local arch version tarball
   case "$(uname -m)" in
-    arm64) arch="osx-arm64" ;;
+    arm64)  arch="osx-arm64" ;;
     x86_64) arch="osx-x64" ;;
     *) die "Unsupported architecture: $(uname -m)" ;;
   esac
 
-  tag="$(curl -fsSL https://api.github.com/repos/actions/runner/releases/latest \
-        | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p' | head -1)"
-  [ -n "$tag" ] || die "Could not determine the latest actions/runner release."
-  version="$tag"
+  version="$(curl -fsSL https://api.github.com/repos/actions/runner/releases/latest \
+            | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p' | head -1)"
+  [ -n "$version" ] || die "Could not determine the latest actions/runner release."
   tarball="actions-runner-${arch}-${version}.tar.gz"
-  warn "downloading runner ${version} (${arch})"
-  curl -fsSL -o "$RUNNER_DIR/$tarball" \
-    "https://github.com/actions/runner/releases/download/v${version}/${tarball}"
-  tar xzf "$RUNNER_DIR/$tarball" -C "$RUNNER_DIR"
-  rm -f "$RUNNER_DIR/$tarball"
 
-  # --labels adds `gymsync` on top of the labels the runner assigns itself
-  # (self-hosted, macOS, ARM64) — together they are exactly what the workflow's
-  # `runs-on: [self-hosted, macOS, gymsync]` asks for.
-  ( cd "$RUNNER_DIR" && ./config.sh \
+  warn "downloading runner ${version} (${arch})"
+  curl -fsSL -o "$dir/$tarball" \
+    "https://github.com/actions/runner/releases/download/v${version}/${tarball}"
+  tar xzf "$dir/$tarball" -C "$dir"
+  rm -f "$dir/$tarball"
+
+  # --labels adds ours on top of the ones the runner assigns itself
+  # (self-hosted, macOS, ARM64); together they are exactly what the workflows'
+  # `runs-on:` arrays ask for. Each runner needs a distinct --name, hence the
+  # suffix — two runners registering under one name would replace each other.
+  ( cd "$dir" && ./config.sh \
       --url "$REPO_URL" \
       --token "$token" \
-      --name "$(scutil --get LocalHostName 2>/dev/null || hostname -s)" \
-      --labels "$RUNNER_LABEL" \
+      --name "$(scutil --get LocalHostName 2>/dev/null || hostname -s)${suffix}" \
+      --labels "$label" \
       --work "_work" \
       --unattended \
       --replace )
-  ok "runner registered"
+  ok "registered with label: $label"
 
   # svc.sh installs a LaunchAgent, so the runner lives inside the logged-in
-  # user's session. That is deliberate and load-bearing: only a session-scoped
+  # user session. That is deliberate and load-bearing: only a session-scoped
   # process can reach the unlocked login keychain holding the signing identity.
   # It is also why the mini needs automatic login enabled — see the runbook.
-  ( cd "$RUNNER_DIR" && ./svc.sh install && ./svc.sh start )
-  ok "runner installed as a launchd service and started"
+  ( cd "$dir" && ./svc.sh install && ./svc.sh start )
+  ok "installed as a launchd service and started"
+}
+
+runner_status() {
+  local label="$1" dir="$2"
+  if [ -f "$dir/.runner" ]; then
+    ok "runner '$label' configured"
+    ( cd "$dir" && ./svc.sh status 2>/dev/null | sed 's/^/    /' ) || warn "  service not running"
+  else
+    warn "runner '$label' not configured"
+  fi
 }
 
 # ------------------------------------------------------------------- doctor
@@ -318,12 +335,8 @@ doctor() {
   [ -d GymSyncApp/GymSync.xcodeproj ] \
     && ok "GymSync.xcodeproj generated" || warn "no .xcodeproj — run this script with no arguments"
 
-  if [ -f "$RUNNER_DIR/.runner" ]; then
-    ok "runner configured"
-    ( cd "$RUNNER_DIR" && ./svc.sh status 2>/dev/null | sed 's/^/    /' ) || warn "service not running"
-  else
-    warn "runner not configured (run --runner <TOKEN>)"
-  fi
+  runner_status "$RUNNER_LABEL" "$RUNNER_DIR"
+  runner_status "$RUNNER_LABEL_LIGHT" "$RUNNER_DIR_LIGHT"
   printf '\n'
 }
 
@@ -334,7 +347,10 @@ cd "$REPO_ROOT"
 
 case "${1:-}" in
   --signing) shift; setup_signing "${1:-}" ;;
-  --runner)  shift; setup_runner  "${1:-}" ;;
+  --runner)
+    shift; setup_runner "${1:-}" "$RUNNER_LABEL" "$RUNNER_DIR" "" ;;
+  --runner-light)
+    shift; setup_runner "${1:-}" "$RUNNER_LABEL_LIGHT" "$RUNNER_DIR_LIGHT" "-light" ;;
   --doctor)  doctor ;;
   ""|--all)
     setup_homebrew
@@ -346,7 +362,9 @@ case "${1:-}" in
     printf '\n'
     bold "Base toolchain ready."
     printf '  Next: %s --signing /path/to/cert.p12\n' "$0"
-    printf '        %s --runner  <TOKEN from %s/settings/actions/runners/new>\n\n' "$0" "$REPO_URL"
+    printf '        %s --runner       <TOKEN>   # Xcode jobs\n' "$0"
+    printf '        %s --runner-light <TOKEN>   # Node/Deno jobs\n' "$0"
+    printf '  Tokens (one each, single-use): %s/settings/actions/runners/new\n\n' "$REPO_URL"
     ;;
   -h|--help)
     sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
