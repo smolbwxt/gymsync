@@ -46,36 +46,98 @@ require_macos() {
 }
 
 # ---------------------------------------------------------------- toolchain
+#
+# Nothing here goes through Homebrew. Learned on 2026-09-03, the day the mini
+# was first provisioned: it is an Intel x86_64 machine, and Homebrew dropped
+# Intel macOS support (announced 2025-08, effective 2026-09). brew still runs,
+# but with no bottles every install is a source build — `gh` pulled in a
+# from-scratch Go toolchain, node would be about an hour, deno is a Rust build
+# that runs for hours. Each tool below comes from the artifact its own project
+# ships for macOS, all of which still cover x86_64: the nodejs.org .pkg, the
+# deno and XcodeGen release zips, the gh .pkg. Same path on Apple Silicon, so
+# nothing forks on architecture except the artifact name.
 
-setup_homebrew() {
-  bold "Homebrew"
-  if command -v brew >/dev/null 2>&1; then
-    ok "brew $(brew --version | head -1 | awk '{print $2}')"
-    return
-  fi
-  # Not installed silently: Homebrew's installer wants an interactive sudo and
-  # prints its own prompts, so hand the user the command rather than pretending
-  # to have done it.
-  die "Homebrew is not installed. Install it first:
-      /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"
-      then re-run this script."
+ARCH="$(uname -m)"
+have() { command -v "$1" >/dev/null 2>&1; }
+
+resolve_arch() {
+  case "$ARCH" in
+    x86_64) NODE_ARCH=x64;   DENO_ARCH=x86_64;  GH_ARCH=amd64 ;;
+    arm64)  NODE_ARCH=arm64; DENO_ARCH=aarch64; GH_ARCH=arm64 ;;
+    *) die "Unsupported architecture: $ARCH" ;;
+  esac
+}
+
+install_xcodegen() {
+  # project.yml is the source of truth; there is no committed .xcodeproj and
+  # every job generates one. The release zip is a universal binary and carries
+  # its own installer: bin/ -> /usr/local/bin, share/ (the SettingPresets it
+  # needs at runtime) -> /usr/local/share.
+  if have xcodegen; then ok "xcodegen $(xcodegen --version 2>/dev/null | awk '{print $2}')"; return; fi
+  warn "installing XcodeGen from its GitHub release (needs sudo for /usr/local)"
+  curl -fsSL -o "$TMP/xcodegen.zip" \
+    "https://github.com/yonaskolb/XcodeGen/releases/latest/download/xcodegen.zip"
+  unzip -q -o "$TMP/xcodegen.zip" -d "$TMP"
+  ( cd "$TMP/xcodegen" && sudo ./install.sh )
+  xcodegen --version >/dev/null 2>&1 || die "xcodegen installed but will not run on this machine ($ARCH)."
+  ok "xcodegen $(xcodegen --version | awk '{print $2}') -> /usr/local/bin"
+}
+
+install_node() {
+  # scripts/*, `npm ci` in the screenshots and deploy-functions jobs, and
+  # `npx supabase`. 22 LTS: what design-web and the parity harness were
+  # authored against. The .pkg lands in /usr/local/bin, which is on the
+  # default PATH — so the runner's LaunchAgent finds it with no shell rc.
+  if have node; then ok "node $(node --version)"; return; fi
+  warn "installing node 22 LTS from nodejs.org (needs sudo for the .pkg)"
+  local base="https://nodejs.org/dist/latest-v22.x" file
+  file="$(curl -fsSL "$base/SHASUMS256.txt" | grep -oE "node-v22[^ ]*-darwin-${NODE_ARCH}\.pkg" | head -1)"
+  [ -n "$file" ] || die "No darwin-${NODE_ARCH} .pkg listed under $base"
+  curl -fsSL -o "$TMP/node.pkg" "$base/$file"
+  sudo installer -pkg "$TMP/node.pkg" -target / >/dev/null
+  ok "node $(node --version) -> /usr/local/bin"
+}
+
+DENO_VERSION="2.9.2"   # must match backend.yml's setup-deno pin
+install_deno() {
+  # supabase/functions/* test + check + lint. Pinned to what CI runs so a
+  # function that lints clean here lints clean there.
+  if have deno; then ok "deno $(deno --version | head -1 | awk '{print $2}')"; return; fi
+  warn "installing deno ${DENO_VERSION} from its GitHub release (needs sudo for /usr/local)"
+  curl -fsSL -o "$TMP/deno.zip" \
+    "https://github.com/denoland/deno/releases/download/v${DENO_VERSION}/deno-${DENO_ARCH}-apple-darwin.zip"
+  unzip -q -o "$TMP/deno.zip" -d "$TMP/deno"
+  sudo install -m 755 "$TMP/deno/deno" /usr/local/bin/deno
+  ok "deno $(deno --version | head -1 | awk '{print $2}') -> /usr/local/bin"
+}
+
+install_gh() {
+  # Not used by CI. For the human at the keyboard: `gh auth login` is how a
+  # Google-SSO GitHub account authenticates git on this machine (no password
+  # exists to type), and it cancels runs and reads job logs from the terminal.
+  if have gh; then ok "gh $(gh --version | head -1 | awk '{print $3}')"; return; fi
+  warn "installing GitHub CLI from its release .pkg (needs sudo)"
+  local url
+  url="$(curl -fsSL https://api.github.com/repos/cli/cli/releases/latest \
+        | grep -oE "https://[^\"]+_macOS_${GH_ARCH}\.pkg" | head -1)"
+  [ -n "$url" ] || die "No macOS_${GH_ARCH} .pkg in cli/cli's latest release"
+  curl -fsSL -o "$TMP/gh.pkg" "$url"
+  sudo installer -pkg "$TMP/gh.pkg" -target / >/dev/null
+  ok "gh $(gh --version | head -1 | awk '{print $3}') -> /usr/local/bin"
 }
 
 setup_packages() {
-  bold "Build dependencies"
-  # xcodegen: the repo has no committed .xcodeproj — project.yml is the source
-  #   of truth and every job generates from it.
-  # node: scripts/ (seed_qa_fixtures, parity harness, sentry-cli via npx).
-  # deno: supabase/functions/* test + check + lint.
-  # git-lfs is deliberately NOT installed — this repo does not use it.
-  for pkg in xcodegen node deno; do
-    if brew list --formula "$pkg" >/dev/null 2>&1; then
-      ok "$pkg $(brew list --versions "$pkg" | awk '{print $2}')"
-    else
-      warn "installing $pkg"
-      brew install "$pkg"
-    fi
-  done
+  bold "Build dependencies ($ARCH)"
+  resolve_arch
+  if have brew && [ "$ARCH" = "x86_64" ]; then
+    warn "Homebrew is present but unsupported on Intel — nothing below uses it, and neither should you"
+  fi
+  TMP="$(mktemp -d)"
+  trap 'rm -rf "$TMP"' EXIT
+  install_xcodegen
+  install_node
+  install_deno
+  install_gh
 }
 
 setup_xcode() {
@@ -311,7 +373,7 @@ setup_runner() {
   rm -f "$dir/$tarball"
 
   # --labels adds ours on top of the ones the runner assigns itself
-  # (self-hosted, macOS, ARM64); together they are exactly what the workflows'
+  # (self-hosted, macOS, X64 or ARM64); together they are exactly what the workflows'
   # `runs-on:` arrays ask for. Each runner needs a distinct --name, hence the
   # suffix — two runners registering under one name would replace each other.
   ( cd "$dir" && ./config.sh \
@@ -347,8 +409,9 @@ runner_status() {
 doctor() {
   bold "GymSync Mac mini — status"
   printf '\n'
-  command -v brew     >/dev/null 2>&1 && ok "homebrew"  || warn "homebrew missing"
+  ok "architecture: $ARCH$( [ "$ARCH" = x86_64 ] && printf ' — Intel: see the runbook on this machine\x27s runway' )"
   command -v xcodegen >/dev/null 2>&1 && ok "xcodegen"  || warn "xcodegen missing"
+  command -v gh       >/dev/null 2>&1 && ok "gh"        || warn "gh missing (optional)"
   command -v node     >/dev/null 2>&1 && ok "node $(node --version)" || warn "node missing"
   command -v deno     >/dev/null 2>&1 && ok "deno $(deno --version | head -1 | awk '{print $2}')" || warn "deno missing"
 
@@ -391,7 +454,6 @@ case "${1:-}" in
   --smoke)   smoke_build ;;
   --doctor)  doctor ;;
   ""|--all)
-    setup_homebrew
     setup_packages
     setup_xcode
     setup_simulators

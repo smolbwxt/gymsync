@@ -66,10 +66,16 @@ jobs:
             exit 1
           }
 
-      - name: Install XcodeGen
-        # Idempotent: the mini keeps its Homebrew prefix between runs, and a
-        # reinstall on every job costs minutes of wall clock for no change.
-        run: command -v xcodegen >/dev/null 2>&1 || brew install xcodegen
+      - name: Verify XcodeGen
+        # No install fallback (2026-09-03): the mini is Intel, where Homebrew
+        # has no bottles and `brew install xcodegen` would be a from-source
+        # Swift build in the middle of a CI job. A missing xcodegen means the
+        # machine was never provisioned — say so and stop.
+        run: |
+          command -v xcodegen >/dev/null 2>&1 || {
+            echo "::error::xcodegen not on PATH — run scripts/mac-mini-setup.sh on this runner"
+            exit 1
+          }
 
       # Must run BEFORE xcodegen: generated project only includes files that exist at generate time.
       # Real values come from repo secrets (absent on fork PRs -> template placeholders, network tests skip).
@@ -198,10 +204,16 @@ jobs:
             exit 1
           }
 
-      - name: Install XcodeGen
-        # Idempotent: the mini keeps its Homebrew prefix between runs, and a
-        # reinstall on every job costs minutes of wall clock for no change.
-        run: command -v xcodegen >/dev/null 2>&1 || brew install xcodegen
+      - name: Verify XcodeGen
+        # No install fallback (2026-09-03): the mini is Intel, where Homebrew
+        # has no bottles and `brew install xcodegen` would be a from-source
+        # Swift build in the middle of a CI job. A missing xcodegen means the
+        # machine was never provisioned — say so and stop.
+        run: |
+          command -v xcodegen >/dev/null 2>&1 || {
+            echo "::error::xcodegen not on PATH — run scripts/mac-mini-setup.sh on this runner"
+            exit 1
+          }
 
       # Same as build-test: must run BEFORE xcodegen. TEST_USER_EMAIL/
       # PASSWORD here double as the UITEST_EMAIL/PASSWORD launch-environment
@@ -451,10 +463,16 @@ jobs:
             exit 1
           }
 
-      - name: Install XcodeGen
-        # Idempotent: the mini keeps its Homebrew prefix between runs, and a
-        # reinstall on every job costs minutes of wall clock for no change.
-        run: command -v xcodegen >/dev/null 2>&1 || brew install xcodegen
+      - name: Verify XcodeGen
+        # No install fallback (2026-09-03): the mini is Intel, where Homebrew
+        # has no bottles and `brew install xcodegen` would be a from-source
+        # Swift build in the middle of a CI job. A missing xcodegen means the
+        # machine was never provisioned — say so and stop.
+        run: |
+          command -v xcodegen >/dev/null 2>&1 || {
+            echo "::error::xcodegen not on PATH — run scripts/mac-mini-setup.sh on this runner"
+            exit 1
+          }
 
       # Must run BEFORE xcodegen (source list fixed at generate time).
       # TestSecrets stub keeps the project generatable; test target isn't built for archive.
@@ -616,10 +634,16 @@ jobs:
             exit 1
           }
 
-      - name: Install XcodeGen
-        # Idempotent: the mini keeps its Homebrew prefix between runs, and a
-        # reinstall on every job costs minutes of wall clock for no change.
-        run: command -v xcodegen >/dev/null 2>&1 || brew install xcodegen
+      - name: Verify XcodeGen
+        # No install fallback (2026-09-03): the mini is Intel, where Homebrew
+        # has no bottles and `brew install xcodegen` would be a from-source
+        # Swift build in the middle of a CI job. A missing xcodegen means the
+        # machine was never provisioned — say so and stop.
+        run: |
+          command -v xcodegen >/dev/null 2>&1 || {
+            echo "::error::xcodegen not on PATH — run scripts/mac-mini-setup.sh on this runner"
+            exit 1
+          }
 
       # The watch target compiles no secrets, but the generated project
       # lists the iOS target too - keep its template files present.

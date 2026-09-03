@@ -70,8 +70,42 @@ Nothing about the light jobs actually needed Linux:
   path shells out to Docker, which `ubuntu-latest` had preinstalled and the
   mini does not.
 
-The runner assigns itself `self-hosted`, `macOS` and `ARM64`; the setup script
-adds `gymsync` or `gymsync-light`.
+The runner assigns itself `self-hosted`, `macOS` and its architecture (`X64`
+on this mini); the setup script adds `gymsync` or `gymsync-light`. The
+workflows never name an architecture, so the same YAML will follow the label
+onto an Apple Silicon replacement unchanged.
+
+## This mini is Intel — what that means
+
+Found out on first provisioning (2026-09-03), from Homebrew's own banner:
+
+- **Homebrew does not support it.** Intel macOS support ended 2026-09. `brew`
+  still runs, but with no bottles every install is a source build — `gh`
+  pulled in a from-scratch Go toolchain, node is about an hour, deno is a Rust
+  build that runs for hours. `scripts/mac-mini-setup.sh` therefore installs
+  every tool from its project's own macOS artifact (nodejs.org `.pkg`, the
+  deno and XcodeGen release zips, the gh `.pkg`), and `ios.yml` no longer
+  falls back to `brew install` for anything. Do not `brew install` on this
+  machine; if you need a tool, add it to the script the same way.
+- **There is a clock on it.** The same banner: macOS 27 drops Intel entirely,
+  and GitHub is retiring its Intel macOS runners in 2027. Xcode 27 (autumn
+  2027) will need a macOS this machine cannot run, and App Store Connect
+  starts requiring apps built against the iOS 27 SDK roughly the following
+  spring. Call it **eighteen months** as the deploy box. The Xcode 26 toolchain
+  it has today covers everything until then. The runner labels are
+  architecture-neutral on purpose so the swap, when it comes, is a `--runner`
+  on the new machine and nothing in the repo.
+- **It is slower than what CI ran on.** GitHub's `macos-15` runners were Apple
+  Silicon. Expect `build-test` and `screenshots` to take longer here; watch
+  the first few runs against their 45-minute `timeout-minutes` before deciding
+  whether to raise them. The persistent DerivedData helps a lot after the
+  first build.
+- **FoundationModels compiles, but may not run.** The Coach adapter links the
+  framework, and the iOS 26 SDK carries it on Intel, so the build is fine.
+  On-device Apple Intelligence itself needs Apple Silicon; any test that
+  actually invokes the model on the simulator will not behave here the way it
+  did on the hosted runner. Nothing in the suite is known to, but if a Coach
+  test goes red only on this machine, that is the first place to look.
 
 ## One-time setup
 
@@ -94,7 +128,8 @@ cd gymsync
 ./scripts/mac-mini-setup.sh
 ```
 
-Installs Homebrew packages (`xcodegen`, `node`, `deno`), verifies Xcode 26 and
+Installs `xcodegen`, `node`, `deno` and `gh` from their official macOS
+artifacts (no Homebrew — see the Intel section below), verifies Xcode 26 and
 its iOS 26 SDK, accepts the Xcode license, checks for iPhone and Apple Watch
 simulators, disables system sleep, and bootstraps the workspace for hand builds
 — seeding `Secrets.swift` / `TestSecrets.swift` from their templates (never
