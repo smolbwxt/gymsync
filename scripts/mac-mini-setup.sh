@@ -19,6 +19,7 @@
 #   ./scripts/mac-mini-setup.sh --signing cert.p12   # install the Apple cert
 #   ./scripts/mac-mini-setup.sh --runner <TOKEN>     # register the Xcode runner
 #   ./scripts/mac-mini-setup.sh --runner-light <TOKEN>  # register the light runner
+#   ./scripts/mac-mini-setup.sh --smoke              # compile the app, no runner needed
 #   ./scripts/mac-mini-setup.sh --doctor             # report, change nothing
 #
 # See docs/ops/mac-mini-runner.md for the surrounding procedure.
@@ -188,6 +189,42 @@ setup_workspace() {
   fi
 }
 
+find_xcode() {
+  local xcode
+  xcode="$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1 || true)"
+  if [ -z "$xcode" ] && [ -d /Applications/Xcode.app ]; then
+    xcode=/Applications/Xcode.app
+  fi
+  [ -n "$xcode" ] || die "No Xcode in /Applications."
+  printf '%s' "$xcode"
+}
+
+smoke_build() {
+  bold "Smoke build — compile GymSync for the iOS Simulator"
+  # Proves the toolchain end to end — Xcode, SDK, xcodegen output, SPM
+  # resolution, the Swift compile itself — before any runner is registered,
+  # in a few minutes rather than the 20+ a full test run costs. A mini that
+  # fails here would have failed build-test the same way, just later and
+  # with a queued job in front of it.
+  #
+  # Signing is disabled ONLY here. ios.yml's rule against unsigned simulator
+  # bundles is about TESTS: unsigned test hosts lack keychain entitlements
+  # and supabase-swift silently drops its session. This is a build, nothing
+  # signs in, and it means the smoke works before --signing has been run.
+  [ -d GymSyncApp/GymSync.xcodeproj ] \
+    || die "No GymSync.xcodeproj — run this script with no arguments first."
+  local xcode
+  xcode="$(find_xcode)"
+  export DEVELOPER_DIR="$xcode/Contents/Developer"
+  ok "using $xcode"
+  ( cd GymSyncApp && set -o pipefail && xcodebuild build \
+      -project GymSync.xcodeproj \
+      -scheme GymSync \
+      -destination 'generic/platform=iOS Simulator' \
+      CODE_SIGNING_ALLOWED=NO | tail -25 )
+  ok "GymSync compiles on this machine"
+}
+
 # ------------------------------------------------------------------ signing
 
 setup_signing() {
@@ -351,6 +388,7 @@ case "${1:-}" in
     shift; setup_runner "${1:-}" "$RUNNER_LABEL" "$RUNNER_DIR" "" ;;
   --runner-light)
     shift; setup_runner "${1:-}" "$RUNNER_LABEL_LIGHT" "$RUNNER_DIR_LIGHT" "-light" ;;
+  --smoke)   smoke_build ;;
   --doctor)  doctor ;;
   ""|--all)
     setup_homebrew
@@ -361,7 +399,8 @@ case "${1:-}" in
     setup_workspace
     printf '\n'
     bold "Base toolchain ready."
-    printf '  Next: %s --signing /path/to/cert.p12\n' "$0"
+    printf '  Next: %s --smoke                       # prove it compiles\n' "$0"
+    printf '        %s --signing /path/to/cert.p12\n' "$0"
     printf '        %s --runner       <TOKEN>   # Xcode jobs\n' "$0"
     printf '        %s --runner-light <TOKEN>   # Node/Deno jobs\n' "$0"
     printf '  Tokens (one each, single-use): %s/settings/actions/runners/new\n\n' "$REPO_URL"

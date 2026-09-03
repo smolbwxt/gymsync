@@ -110,6 +110,16 @@ backend.
 
 Idempotent — re-run it after any OS or Xcode update.
 
+Then prove the toolchain actually compiles Swift, before anything is registered:
+
+```sh
+./scripts/mac-mini-setup.sh --smoke
+```
+
+A build-only pass of the `GymSync` scheme for the iOS Simulator — a few minutes,
+no signing identity needed, no runner involved. A mini that fails here would fail
+`build-test` identically, just later and with a queued job in front of it.
+
 ### 3. Enable automatic login
 
 System Settings → Users & Groups → Automatically log in as → *your user*.
