@@ -409,7 +409,6 @@ struct SettingsView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .background(theme.surface)
         .overlay(alignment: .bottom) { Rectangle().fill(theme.divider).frame(height: 1) }
     }
 
@@ -461,7 +460,6 @@ struct SettingsView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .background(theme.surface)
         .overlay(alignment: .bottom) { Rectangle().fill(theme.divider).frame(height: 1) }
     }
 
@@ -612,6 +610,13 @@ struct SettingsView: View {
         // (the settings-list idiom; extruding twelve stacked rows would be
         // noise). gs3DCard clips content to the rounded face, replacing
         // the old clipShape + divider stroke.
+        //
+        // NO row in here carries a `theme.surface` fill of its own — the
+        // card's face REPLACES `theme.surface` (GS3DButton.swift:103), so a
+        // row fill only paints flat over the extrusion. That holds for the
+        // `GSSettingsRow`s and for every hand-rolled row alike; a box that
+        // mixed the two rendered as visible stripes. Dividers, not fills,
+        // are what separate stacked rows.
         .gs3DCard(cornerRadius: GSMetrics.radiusMd)
     }
 
@@ -651,7 +656,6 @@ struct SettingsView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .background(theme.surface)
         .overlay(alignment: .bottom) {
             Rectangle().fill(theme.divider).frame(height: 1)
         }
@@ -725,7 +729,6 @@ struct SettingsView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .background(theme.surface)
         .overlay(alignment: .bottom) {
             Rectangle().fill(theme.divider).frame(height: 1)
         }
@@ -882,7 +885,6 @@ struct SettingsView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
-            .background(theme.surface)
             .contentShape(Rectangle())
             .overlay(alignment: .bottom) {
                 Rectangle().fill(theme.divider).frame(height: 1)
@@ -949,7 +951,6 @@ struct SettingsView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
-                .background(theme.surface)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -974,7 +975,6 @@ struct SettingsView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
-            .background(theme.surface)
         }
     }
 

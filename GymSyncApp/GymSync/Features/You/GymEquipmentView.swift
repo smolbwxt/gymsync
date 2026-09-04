@@ -148,6 +148,10 @@ struct GymEquipmentView: View {
             .frame(maxWidth: .infinity)
         }
         .buttonStyle(GSPrimaryButtonStyle(fontSize: 15, verticalPadding: 13))
+        // The `checkmark` above is a bare symbol with no text of its own, so
+        // the saved state would otherwise be inaudible — same reason
+        // SettingsView's Reset button spells its confirmation out.
+        .accessibilityLabel(savedTick ? "Saved" : "Save")
         .disabled(saving || Units.parseToPounds(barText, unit: unit) == nil || selectedPlates.isEmpty)
         .opacity((saving || Units.parseToPounds(barText, unit: unit) == nil || selectedPlates.isEmpty) ? 0.6 : 1)
     }
