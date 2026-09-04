@@ -61,6 +61,13 @@ enum CatalogScreen: String, CaseIterable {
     case paywall = "paywall"
     case pumpComposer = "pump-composer"
     case pumpFeedPost = "pump-feed-post"
+    case appearance = "appearance"
+    case gymEquipment = "gym-equipment"
+    case notificationPreferences = "notification-preferences"
+    case restTimerSetting = "rest-timer-setting"
+    case heartRateMonitor = "heart-rate-monitor"
+    case coaching = "coaching"
+    case createGroup = "create-group"
 }
 
 struct CatalogHostView: View {
@@ -117,6 +124,13 @@ struct CatalogHostView: View {
             case .paywall:                    PaywallView(highlight: .programs)
             case .pumpComposer:               content_pumpComposer
             case .pumpFeedPost:               content_pumpFeedPost
+            case .appearance:                 content_appearance
+            case .gymEquipment:               content_gymEquipment
+            case .notificationPreferences:    content_notificationPreferences
+            case .restTimerSetting:           content_restTimerSetting
+            case .heartRateMonitor:           content_heartRateMonitor
+            case .coaching:                   content_coaching
+            case .createGroup:                content_createGroup
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1268,6 +1282,140 @@ struct CatalogHostView: View {
                 onDismiss: {}
             )
         }
+    }
+
+    // MARK: - Settings subtree + Create Group (P2 restyle sweep, 2026-09-03)
+    //
+    // The gs3D restyle of the Settings subtree and the Create Group friend
+    // picker (plan `docs/superpowers/plans/2026-09-03-p2-restyle-and-
+    // screenshot-fix.md`, Tasks 2-4) has no reviewable surface without these
+    // ids: the CI `screenshots` job's artifact is the only way the owner sees
+    // a restyle before TestFlight, and `testYouAppearance` is the only
+    // signed-in walk that reaches the Settings subtree at all — every other
+    // screen below sits one tap deeper than any existing capture.
+    //
+    // Each of these is a PUSHED destination that sets its own
+    // `.navigationTitle`, so each gets its own `NavigationStack` for the same
+    // reason `content_editProfile` documents above — except `create-group`,
+    // which self-wraps (`CreateGroupView.swift:29`), like `report-sheet`.
+    //
+    // NO fixture seams are added to the target views by this task (the P2
+    // restyle tasks own those files, and this one is capture-wiring only).
+    // Where a screen's `.task` makes a live call it resolves to its
+    // empty/unauthorized state — catalog mode bypasses auth entirely
+    // (`GymSyncApp.swift:57-73`) — which is the documented, accepted shape
+    // for these captures. Per-screen consequences are noted below; the one
+    // that costs review value is `create-group` (see its note).
+
+    /// `appearance`: `AppearanceView` (Features/You/AppearanceView.swift:16)
+    /// takes no parameters — it reads `ThemeStore.shared` through its own
+    /// `@State` (:18). Hermetic: `ThemeStore.select(_:)` only fires from a
+    /// row tap (:62). Catalog mode pins Onyx + sky (`GymSyncApp.swift:70-73`),
+    /// so the capture shows the accent picker plus every palette row with
+    /// Onyx's selection indicator lit.
+    private var content_appearance: some View {
+        NavigationStack { AppearanceView() }
+    }
+
+    /// Shared by `gym-equipment` and `rest-timer-setting`, both of which take
+    /// `currentSettings:`/`onSaved:` (GymEquipmentView.swift:19-20,
+    /// RestTimerSettingView.swift:41). `UserSettings.defaults(userID:)`
+    /// (Models/UserSettings.swift:99-101) mirrors the table's own column
+    /// defaults, so both screens render exactly what a user with no saved row
+    /// sees: 2:00 rest, lbs, a 45 lb bar, and `plateInventory == nil` — which
+    /// `GymEquipmentView.seed()` (:143-155) reads as "the standard set for my
+    /// unit", lighting every standard plate chip and giving the preview
+    /// loader a full 225 lb stack to draw. Both screens persist only from a
+    /// tap (`select(_:)` / the Save button), so neither capture writes.
+    private static let catalogSettingsFixture = UserSettings.defaults(userID: UUID())
+
+    /// `gym-equipment`: the bar-weight field, the plate-inventory chip grid,
+    /// and the live `GSBarLoader` preview.
+    private var content_gymEquipment: some View {
+        NavigationStack {
+            GymEquipmentView(currentSettings: Self.catalogSettingsFixture, onSaved: { _ in })
+        }
+    }
+
+    /// `rest-timer-setting`: the five preset rows (2:00 checked, per the
+    /// fixture) plus the Custom stepper row.
+    private var content_restTimerSetting: some View {
+        NavigationStack {
+            RestTimerSettingView(currentSettings: Self.catalogSettingsFixture, onSaved: { _ in })
+        }
+    }
+
+    /// `notification-preferences`: `NotificationPreferencesView`
+    /// (Features/You/NotificationPreferencesView.swift:15) takes no
+    /// parameters. Its `.task` (:97-100) calls
+    /// `PushReceiver.refreshAuthorizationStatus()` — a
+    /// `UNUserNotificationCenter.notificationSettings()` READ
+    /// (Services/PushReceiver.swift:22-24), never `requestAuthorization()`,
+    /// so no system permission alert can land over the capture — then
+    /// `loadPrefs()`, whose per-category reads are `try?`-swallowed (:228).
+    /// With no session every row therefore keeps the optimistic `true`
+    /// default (:25-27): the capture shows both grouped sections all-on, and
+    /// the denied banner (:110-144, gated on `.denied` at :111) stays hidden
+    /// because a fresh simulator
+    /// reports `.notDetermined`, not `.denied`.
+    private var content_notificationPreferences: some View {
+        NavigationStack { NotificationPreferencesView() }
+    }
+
+    /// `heart-rate-monitor`: `HeartRateMonitorView`
+    /// (Features/You/HeartRateMonitorView.swift:9) takes no parameters and is
+    /// hermetic by construction — `BLEHeartRateService`'s `CBCentralManager`
+    /// is built lazily in `ensureCentral()`
+    /// (Services/BLEHeartRateService.swift:112-115), reached ONLY from
+    /// `startScanning()`/`connect(id:)` (:61, :74), both tap-driven. Merely
+    /// rendering the screen never touches CoreBluetooth, so the system
+    /// Bluetooth prompt (whose own doc comment at :59 names the first
+    /// `startScanning()` as the trigger) can't cover the capture. `state`
+    /// stays `.idle` and `discovered` is empty, so this is the NOT-PAIRED
+    /// state: both gs3D cards (:103, :145) render, and "Nearby devices" shows
+    /// its Scan button with no device rows.
+    /// `WatchConnectivityBridge.pairingStatus`
+    /// (Services/WatchConnectivityBridge.swift:162-169) is a pure read of
+    /// `WCSession.default` behind an `isSupported()` guard, so the Apple
+    /// Watch row renders its honest simulator status rather than trapping.
+    private var content_heartRateMonitor: some View {
+        NavigationStack { HeartRateMonitorView() }
+    }
+
+    /// `coaching`: `CoachingView` (Features/You/CoachingView.swift:11) takes
+    /// no parameters but reads `@Environment(AppState.self)` (:13), which the
+    /// `.environment(AppState.shared)` injection on this file's `body` (see
+    /// its comment above) already covers. Its `.task { await load() }` calls
+    /// `TrainerClientRepository.mine()` with no session; `load()`'s
+    /// `defer { loading = false }` (:276) clears the spinner whether the call
+    /// throws or not, so the capture lands on the real empty state rather
+    /// than a stuck `ProgressView` — "Coached by / Nobody", the restyled
+    /// gs3D redeem box (:203), and the trainer/clients section (:228, :246).
+    private var content_coaching: some View {
+        NavigationStack { CoachingView() }
+    }
+
+    /// `create-group`: `CreateGroupView` (Features/Social/CreateGroupView.swift:5)
+    /// takes only `onCreated:` (:6) and self-wraps its own `NavigationStack`
+    /// (:29), so no extra wrapper here — the `report-sheet`/`delete-account`
+    /// sheet shape. `create()` (:247) never fires without a tap, so the
+    /// capture is hermetic.
+    ///
+    /// KNOWN GAP, deliberately accepted by this task's brief ("screens that
+    /// need a live service render their empty state — that is fine"): the
+    /// friend list comes from `.task { friends = (try? await
+    /// FriendRepository.friends()) ?? [] }` (:172-174), and catalog mode has
+    /// no session, so `friends` stays empty and the capture shows the "No
+    /// friends to add yet" branch (:74-79) INSTEAD OF the gs3D-restyled
+    /// multi-select rows (:80-126) that Task 4 actually changed. `friends` is
+    /// `@State private` (:7), so there is no way to seed it from here; a
+    /// `catalogFixtureFriends:` seam on `CreateGroupView` itself — the same
+    /// `#if DEBUG` idiom `BlockedUsersView`/`DiscoverView` already use — is
+    /// the fix, and this task is scoped to not touch the target views. The
+    /// capture still reviews the name field, the avatar picker, the nav-bar
+    /// chrome and the Create button.
+    private var content_createGroup: some View {
+        CreateGroupView(onCreated: { _ in })
     }
 }
 
