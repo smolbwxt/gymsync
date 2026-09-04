@@ -3,9 +3,14 @@ import SwiftUI
 // MARK: - WalkthroughView (redesign, 2026-07-23 — user-requested)
 //
 // First-time walkthrough: a four-page full-screen pager shown ONCE after the
-// user first lands on the main app (RootView gates it on the
-// `hasSeenWalkthroughV1` @AppStorage flag). Onyx language throughout; the
-// accent follows the user's live `\.gsTheme` accent like everything else.
+// user first lands on the main app. RootView gates it on
+// `OneShotFlags.walkthroughSeen(userID:)` (RootView.swift:92), which is
+// per-ACCOUNT — the key is `hasSeenWalkthroughV1.<uuid>`, so a second account
+// on the same phone gets its own first run. The bare device-wide
+// `hasSeenWalkthroughV1` only counts in the LAUNCH-ARGUMENT domain, the
+// QA/UI-test override (`-hasSeenWalkthroughV1 YES`); nothing persists it.
+// Onyx language throughout; the accent follows the user's live `\.gsTheme`
+// accent like everything else.
 //
 // Deliberately content-only pages (SF Symbol art + title + copy) — no live
 // data, no network, so it can never block or fail. Skip is always available;

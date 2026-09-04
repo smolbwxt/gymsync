@@ -78,7 +78,12 @@ struct CreateGroupView: View {
                             .padding(.horizontal, 16)
                             .padding(.vertical, 12)
                     } else {
-                        VStack(spacing: 0) {
+                        // gs3D pass (2026-09-03): the friend multi-select
+                        // rows join the extruded language. The hairline that
+                        // separated FLAT rows retires — a lip cannot read
+                        // against an abutting neighbor, so 8pt of air does
+                        // the separating now.
+                        VStack(spacing: 8) {
                             ForEach(friends) { profile in
                                 Button {
                                     if selected.contains(profile.id) {
@@ -97,29 +102,27 @@ struct CreateGroupView: View {
 
                                         selectionCheckbox(isSelected: selected.contains(profile.id))
                                     }
-                                    .padding(.horizontal, 16)
+                                    .padding(.horizontal, 10)
                                     .padding(.vertical, 10)
-                                    .background(
-                                        selected.contains(profile.id)
-                                            ? theme.accent100
-                                            : Color.clear
-                                    )
                                     .overlay(
                                         selected.contains(profile.id)
-                                            ? RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.accent, lineWidth: 1)
+                                            ? RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
+                                                .strokeBorder(theme.accent, lineWidth: 2)
                                             : nil
                                     )
+                                    .contentShape(Rectangle())
                                 }
-                                .buttonStyle(.plain)
-
-                                if profile.id != friends.last?.id {
-                                    Rectangle()
-                                        .fill(theme.divider)
-                                        .frame(height: 1)
-                                        .padding(.horizontal, 16)
-                                }
+                                // gs3D pass (2026-09-03): sinking extruded row;
+                                // the label sheds its fills (accent100 retired)
+                                // and selection reads as the 2pt accent ring —
+                                // the ScheduleSessionView precedent (77a6c28).
+                                .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
                             }
                         }
+                        // The rows carry the card inset now (the label used to
+                        // own the 16pt itself); 10pt inside the face matches
+                        // the precedent's row metrics.
+                        .padding(.horizontal, 16)
                     }
 
                     if let errorText {

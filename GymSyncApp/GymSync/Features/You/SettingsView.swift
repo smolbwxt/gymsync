@@ -409,7 +409,6 @@ struct SettingsView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .background(theme.surface)
         .overlay(alignment: .bottom) { Rectangle().fill(theme.divider).frame(height: 1) }
     }
 
@@ -461,7 +460,6 @@ struct SettingsView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .background(theme.surface)
         .overlay(alignment: .bottom) { Rectangle().fill(theme.divider).frame(height: 1) }
     }
 
@@ -497,26 +495,50 @@ struct SettingsView: View {
                         qaResetConfirmed = false
                     }
                 } label: {
-                    Text(qaResetConfirmed ? "Reset ✓" : "Reset")
-                        .font(GSFont.bold(12, relativeTo: .caption))
-                        .foregroundStyle(theme.bg)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(theme.accent)
-                        .clipShape(Capsule())
+                    // Emoji sweep (spec §7): the confirmation "✓" was
+                    // functional chrome, not content — it becomes the
+                    // `checkmark` SF Symbol, sized with the same
+                    // `.system(size:weight:)` idiom every other glyph on
+                    // this screen uses. A bare symbol carries no text, so
+                    // the confirmation reaches VoiceOver through the
+                    // explicit `.accessibilityLabel` on the button below —
+                    // not automatically.
+                    HStack(spacing: 5) {
+                        if qaResetConfirmed {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 11, weight: .bold))
+                        }
+                        Text("Reset")
+                            .font(GSFont.bold(12, relativeTo: .caption))
+                    }
+                    .foregroundStyle(theme.bg)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
                 }
-                .buttonStyle(.plain)
+                // Extruded like every tappable (design law) — the compact
+                // gs3D accent anatomy RoutinesListView's New button uses,
+                // replacing the last flat accent capsule inside a converted
+                // container. The style owns the face and its lip, so the
+                // old `.background(theme.accent)` + `.clipShape(Capsule())`
+                // retire with `.buttonStyle(.plain)`.
+                .buttonStyle(.gs3D(face: theme.accent, cornerRadius: 10, lipHeight: 5))
                 .frame(minHeight: 44)
+                // The `checkmark` above is a bare symbol with no text of its
+                // own; spell the confirmation out so VoiceOver announces the
+                // state change rather than just "Reset".
+                .accessibilityLabel(qaResetConfirmed ? "Reset, done" : "Reset")
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
-            .background(theme.surface)
         }
-        .clipShape(RoundedRectangle(cornerRadius: GSMetrics.radiusMd))
-        .overlay(
-            RoundedRectangle(cornerRadius: GSMetrics.radiusMd)
-                .strokeBorder(theme.divider, lineWidth: 1)
-        )
+        // gs3D pass (P2): the QA box was missed by the 2026-08-13 sweep —
+        // it now wears the same single extruded container as
+        // `settingsGroupBox` and `legalGroupBox`, and the old clipShape +
+        // divider stroke retire (gs3DCard clips to its own rounded face).
+        // The row inside carries no fill of its own — the card's face
+        // REPLACES `theme.surface` (GS3DButton.swift:103), so a row fill
+        // only painted flat over the extrusion. Same as `GSSettingsRow`.
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd)
         .onAppear { qaSeenCount = OneShotFlags.seenCount }
     }
 
@@ -588,6 +610,13 @@ struct SettingsView: View {
         // (the settings-list idiom; extruding twelve stacked rows would be
         // noise). gs3DCard clips content to the rounded face, replacing
         // the old clipShape + divider stroke.
+        //
+        // NO row in here carries a `theme.surface` fill of its own — the
+        // card's face REPLACES `theme.surface` (GS3DButton.swift:103), so a
+        // row fill only paints flat over the extrusion. That holds for the
+        // `GSSettingsRow`s and for every hand-rolled row alike; a box that
+        // mixed the two rendered as visible stripes. Dividers, not fills,
+        // are what separate stacked rows.
         .gs3DCard(cornerRadius: GSMetrics.radiusMd)
     }
 
@@ -627,7 +656,6 @@ struct SettingsView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .background(theme.surface)
         .overlay(alignment: .bottom) {
             Rectangle().fill(theme.divider).frame(height: 1)
         }
@@ -701,7 +729,6 @@ struct SettingsView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-        .background(theme.surface)
         .overlay(alignment: .bottom) {
             Rectangle().fill(theme.divider).frame(height: 1)
         }
@@ -771,13 +798,23 @@ struct SettingsView: View {
                 Spacer()
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-            .background(theme.surface)
-            .cornerRadius(GSMetrics.radiusSm)
-            .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
-            .contentShape(Rectangle())
+            .padding(.vertical, 11)
         }
-        .buttonStyle(.plain)
+        // gs3D pass (P2): the destructive CTA joins the language as a
+        // NEUTRAL extruded button — GroupView's "Leave Group" footer
+        // (Features/Social/GroupView.swift:279-293) is the precedent: the
+        // raised pair carries the depth, the label keeps its own meaning
+        // color (red here, as the row's doc comment above requires).
+        // Footprint math: the flat row was content + 14pt top + 14pt
+        // bottom. The face now takes 11 + 11 and the 6pt lip sits below
+        // it, so the composite's height is unchanged at content + 28.
+        // (6pt rather than the style's 7pt default is what makes that sum
+        // land on whole points; GroupView could keep 7 because its label
+        // carried an explicit 37pt minHeight against a 44pt target.)
+        .buttonStyle(.gs3D(face: theme.raised3DFace,
+                           lip: theme.raised3DLip,
+                           cornerRadius: GSMetrics.radiusSm,
+                           lipHeight: 6))
     }
 
     /// Reads the live `ThemeStore` (not `userSettings.palette`) so this row
@@ -848,7 +885,6 @@ struct SettingsView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
-            .background(theme.surface)
             .contentShape(Rectangle())
             .overlay(alignment: .bottom) {
                 Rectangle().fill(theme.divider).frame(height: 1)
@@ -915,7 +951,6 @@ struct SettingsView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
-                .background(theme.surface)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -940,7 +975,6 @@ struct SettingsView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
-            .background(theme.surface)
         }
     }
 

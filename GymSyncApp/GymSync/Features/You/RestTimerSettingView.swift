@@ -49,12 +49,16 @@ struct RestTimerSettingView: View {
             VStack(alignment: .leading, spacing: 16) {
                 GSSectionHeader("Default rest timer")
 
-                VStack(spacing: 0) {
-                    ForEach(Array(Self.presets.enumerated()), id: \.element) { index, seconds in
-                        presetRow(seconds: seconds, isLast: index == Self.presets.count - 1)
+                // gs3D pass (2026-09-03, P2): a preset is a choice the user
+                // taps, so each row sits proud and sinks on its own rather
+                // than living inside one bordered group box. The box's
+                // stroke and the internal hairlines retire — the lips
+                // delineate — and `isLast` goes with them.
+                VStack(spacing: 8) {
+                    ForEach(Self.presets, id: \.self) { seconds in
+                        presetRow(seconds: seconds)
                     }
                 }
-                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
 
                 GSSectionHeader("Custom")
                 customStepperRow()
@@ -77,7 +81,13 @@ struct RestTimerSettingView: View {
         .gsHidesDock()
     }
 
-    private func presetRow(seconds: Int, isLast: Bool) -> some View {
+    /// One sinking extruded preset row. The label sheds its own surface fill
+    /// (it would paint over the face) and the selection reads as the 2pt
+    /// accent ring plus the checkmark it always had — the HomeView pickCard
+    /// anatomy. Footprint held: a 38pt face on a 6pt lip is the old 44pt
+    /// row, and the style's `contentShape` covers both, so the tap target
+    /// stays at Apple's 44pt floor (`GSPrimaryButtonStyle`'s own idiom).
+    private func presetRow(seconds: Int) -> some View {
         let isSelected = selectedSeconds == seconds
         return Button {
             select(seconds)
@@ -94,16 +104,16 @@ struct RestTimerSettingView: View {
                 }
             }
             .padding(.horizontal, 16)
-            .frame(minHeight: 44)
-            .background(theme.surface)
+            .frame(minHeight: 38)
+            .overlay(
+                isSelected
+                    ? RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
+                        .strokeBorder(theme.accent, lineWidth: 2)
+                    : nil
+            )
             .contentShape(Rectangle())
-            .overlay(alignment: .bottom) {
-                if !isLast {
-                    Rectangle().fill(theme.divider).frame(height: 1)
-                }
-            }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
@@ -112,9 +122,14 @@ struct RestTimerSettingView: View {
     /// `select(_:)` path as a preset tap (optimistic — reverts + surfaces
     /// `errorText` on failure), so a failed upsert here behaves identically
     /// to a failed preset selection.
+    ///
+    /// gs3D pass (2026-09-03, P2): deliberately still FLAT. A stepper is a
+    /// numeric input, and inputs are furniture, not widgets — the same
+    /// judgment that keeps ScheduleSessionView's DatePicker tiles and the
+    /// bar-weight field flat while the tappable rows around them sit proud.
     private func customStepperRow() -> some View {
         HStack(spacing: 12) {
-            stepperBox(symbol: "−", color: theme.neutral700) {
+            stepperBox(symbol: "−") {
                 select(clamped(selectedSeconds - Self.stepSeconds))
             }
 
@@ -127,7 +142,7 @@ struct RestTimerSettingView: View {
 
             Spacer(minLength: 0)
 
-            stepperBox(symbol: "+", color: theme.accent) {
+            stepperBox(symbol: "+") {
                 select(clamped(selectedSeconds + Self.stepSeconds))
             }
         }
@@ -141,11 +156,16 @@ struct RestTimerSettingView: View {
     /// (zero-radius, matches this screen's/`LogSetSheet`'s existing
     /// bordered-`Rectangle` treatment), full-frame `contentShape` so the
     /// whole 44pt square is tappable, not just the glyph.
-    private func stepperBox(symbol: String, color: Color, action: @escaping () -> Void) -> some View {
+    ///
+    /// The glyph colour was a `color:` parameter so the "+" box could carry
+    /// an accent tint; the owner's default-text law (2026-08-13) retires
+    /// accent on UI text, both glyphs read neutral700 now, and the knob went
+    /// with the tint.
+    private func stepperBox(symbol: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(symbol)
                 .font(.system(size: 20, weight: .light))
-                .foregroundColor(color)
+                .foregroundColor(theme.neutral700)
                 .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }

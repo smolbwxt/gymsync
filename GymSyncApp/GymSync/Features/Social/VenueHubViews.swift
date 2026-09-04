@@ -469,7 +469,9 @@ struct VenueHubView: View {
                  ? "Nobody's on the hub right now"
                  : "\(presentMembers.count) other\(presentMembers.count == 1 ? "" : "s") here right now")
                 .font(GSFont.bodyMedium(14, relativeTo: .subheadline))
-                .foregroundStyle(theme.accent700)
+                // Owner law (2026-08-13): accent tint on UI text retires —
+                // default text, matching the venue name above it.
+                .foregroundStyle(theme.text)
         }
         .padding(.horizontal, 16)
     }
@@ -571,7 +573,9 @@ struct VenueHubView: View {
                             Spacer(minLength: 0)
                             Text("\(StatMath.compactNumber(Units.fromPounds(row.volume, to: ThemeStore.shared.weightUnit))) \(ThemeStore.shared.weightUnit == .kg ? "kg" : "lb")")
                                 .font(GSFont.body(13, relativeTo: .subheadline))
-                                .foregroundStyle(theme.accent700)
+                                // Owner law (2026-08-13): the accent700 tint
+                                // retires — this is UI text, not chart ink.
+                                .foregroundStyle(theme.text)
                                 .monospacedDigit()
                         }
                         .padding(.horizontal, 14)
@@ -579,8 +583,12 @@ struct VenueHubView: View {
                         if index < board.count - 1 { GSDivider() }
                     }
                 }
-                .background(theme.surface)
-                .cornerRadius(GSMetrics.radiusSm)
+                // gs3D pass (2026-09-03): the ranked list's flat surface box
+                // becomes a static extruded card (nothing here is tappable).
+                // The rows inside stay flat furniture and keep their GSDivider
+                // hairlines — the rounded face clips them full-bleed, the way
+                // the check-in card above relies on.
+                .gs3DCard(cornerRadius: GSMetrics.radiusMd)
                 .padding(.horizontal, 16)
             }
         }
@@ -617,15 +625,24 @@ struct VenueHubView: View {
                     ForEach(isOwner ? Venue.equipmentClasses : shownEquipment, id: \.self) { kind in
                         let isOn = shownEquipment.contains(kind)
                         if isOwner {
+                            // gs3D pass (2026-09-03): the creator's chips are
+                            // tappable, so they sit proud and sink — accent
+                            // face when the class is on, the neutral raised
+                            // pair when off (ExercisesListView filter-chip
+                            // precedent). Capsule geometry survives as a
+                            // half-height corner radius: 30pt face / r15.
                             Button {
                                 Task { await toggleEquipment(kind) }
                             } label: {
-                                equipmentChip(kind, on: isOn)
+                                equipmentChipLabel(kind, on: isOn)
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(isOn
+                                ? .gs3D(face: theme.accent, cornerRadius: 15, lipHeight: 4)
+                                : .gs3D(face: theme.raised3DFace, lip: theme.raised3DLip,
+                                        cornerRadius: 15, lipHeight: 4))
                             .disabled(busy)
                         } else {
-                            equipmentChip(kind, on: true)
+                            equipmentChip(kind)
                         }
                     }
                 }
@@ -634,18 +651,33 @@ struct VenueHubView: View {
         }
     }
 
-    private func equipmentChip(_ kind: String, on: Bool) -> some View {
+    /// Non-creator view: a quiet, flat display capsule. Nothing here is
+    /// tappable, so it stays furniture (only widgets and tappables get
+    /// depth) — and it only ever renders classes the gym HAS, so the old
+    /// off-state dimming (`opacity(on ? 1 : 0.6)`) no longer applies.
+    private func equipmentChip(_ kind: String) -> some View {
         Text(kind.capitalized)
             .font(GSFont.bold(13, relativeTo: .subheadline))
-            .foregroundStyle(on ? theme.text : theme.neutral500)
+            .foregroundStyle(theme.text)
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
             .background(theme.surface)
             .clipShape(Capsule())
             .overlay(
-                Capsule().strokeBorder(on ? theme.accent : theme.divider, lineWidth: 1)
+                Capsule().strokeBorder(theme.accent, lineWidth: 1)
             )
-            .opacity(on ? 1 : 0.6)
+    }
+
+    /// Creator view: the LABEL only — face, lip and press-sink come from the
+    /// `.gs3D` style on the Button (a fill painted here would sit on top of
+    /// the extruded face). 30pt face + 4pt lip = the 34pt footprint the flat
+    /// capsule had, so the strip never grows.
+    private func equipmentChipLabel(_ kind: String, on: Bool) -> some View {
+        Text(kind.capitalized)
+            .font(GSFont.bold(13, relativeTo: .subheadline))
+            .foregroundStyle(on ? theme.bg : theme.text.opacity(0.78))
+            .padding(.horizontal, 14)
+            .frame(height: 30)
     }
 
     /// Creator-only. Never-empty guard mirrors the wizard's dial; classes
