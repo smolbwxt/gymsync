@@ -133,13 +133,20 @@ struct NotificationPreferencesView: View {
                 .buttonStyle(GSSecondaryButtonStyle(fontSize: 11, horizontalPadding: 9, verticalPadding: 6))
                 .frame(minHeight: 44)
             }
+            // gs3D pass (2026-09-03, P2): the banner is a static widget the
+            // user reads — the "Open" button inside is the tappable — so it
+            // takes the extruded face/lip container in place of the flat
+            // surface fill. The 3pt accent rule STAYS: it is the severity
+            // marker, not delineation chrome; gs3DCard clips it to the
+            // rounded face, which also fixes the old square-fill-inside-a-
+            // rounded-screen mismatch.
             .padding(12)
-            .background(theme.surface)
             .overlay(alignment: .leading) {
                 Rectangle()
                     .fill(theme.accent)
                     .frame(width: 3)
             }
+            .gs3DCard(cornerRadius: GSMetrics.radiusSm)
         }
     }
 
@@ -156,12 +163,24 @@ struct NotificationPreferencesView: View {
                     toggleRow(category: entry.category, label: entry.label, isLast: index == entries.count - 1)
                 }
             }
-            .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
+            // gs3D pass (2026-09-03, P2): the WHOLE group box becomes ONE
+            // extruded container and the toggle rows inside stay flat
+            // furniture — SettingsView's settingsGroupBox precedent (a
+            // toggle row inside an already-extruded group box is furniture;
+            // extruding five stacked rows would be noise). gs3DCard clips
+            // the rows to the rounded face, replacing the divider stroke
+            // that used to float over their square fills.
+            .gs3DCard(cornerRadius: GSMetrics.radiusMd)
         }
     }
 
     // MARK: - Toggle row
 
+    /// Flat furniture INSIDE the extruded group box. The row sheds the
+    /// `theme.surface` fill it used to carry — a fill here would paint over
+    /// the container's face and leave only the lip reading (the crew-row
+    /// note in StatsTabView) — and keeps the hairline that separates it from
+    /// the next row.
     private func toggleRow(category: String, label: String, isLast: Bool) -> some View {
         let isOn = prefs[category] ?? true
         return HStack {
@@ -180,7 +199,6 @@ struct NotificationPreferencesView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 12)
         .frame(minHeight: 44)
-        .background(theme.surface)
         .overlay(alignment: .bottom) {
             if !isLast {
                 Rectangle().fill(theme.divider).frame(height: 1)

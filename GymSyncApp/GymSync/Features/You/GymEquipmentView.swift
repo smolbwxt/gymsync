@@ -116,9 +116,12 @@ struct GymEquipmentView: View {
                 plates: plates.isEmpty ? unit.standardPlates : plates,
                 unit: unit
             )
+            // gs3D pass (2026-09-03, P2): the live loader preview is a
+            // static widget the user reads — extruded face/lip container in
+            // place of the flat surface fill. The bar-weight TextField above
+            // deliberately stays flat: form inputs are furniture.
             .padding(14)
-            .background(theme.surface)
-            .cornerRadius(GSMetrics.radiusMd)
+            .gs3DCard(cornerRadius: GSMetrics.radiusMd)
         }
     }
 
@@ -199,16 +202,23 @@ private struct FlowChipsDecimal: View {
                         .font(GSFont.bold(13, relativeTo: .subheadline))
                         .foregroundStyle(isOn(plate) ? plateInk(plate) : theme.neutral700)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(isOn(plate) ? GSBarLoader.plateColor(plate, unit: unit) : theme.surface)
-                        .cornerRadius(10)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 10)
-                                .strokeBorder(isOn(plate) ? Color.clear : theme.divider, lineWidth: 1)
-                        )
-                        .contentShape(Rectangle())
+                        .frame(height: 32)
                 }
-                .buttonStyle(.plain)
+                // gs3D pass (2026-09-03, P2): a plate is a selectable chip,
+                // so it sits proud and sinks (ExercisesListView filter-chip
+                // precedent), and the flat fill + divider stroke retire.
+                // The ON face keeps the COMPETITION PLATE COLOUR rather than
+                // going accent: that hue is data ink — the same colour the
+                // Preview loader draws directly below, and what `plateInk`
+                // exists to stay readable against — so an accent face would
+                // destroy the chip↔plate mapping. An explicit non-neutral
+                // face derives its darker lip, the documented accent-face
+                // path (GS3DButton.swift:100-102). OFF = the neutral raised
+                // pair. Footprint held: 32pt face + 4pt lip = the old
+                // 10 + 13pt line + 10 chip.
+                .buttonStyle(isOn(plate)
+                    ? .gs3D(face: GSBarLoader.plateColor(plate, unit: unit), cornerRadius: 10, lipHeight: 4)
+                    : .gs3D(face: theme.raised3DFace, lip: theme.raised3DLip, cornerRadius: 10, lipHeight: 4))
                 .accessibilityLabel("\(GSBarLoader.plateLabel(plate)) \(unit.label) plates \(isOn(plate) ? "available" : "not available")")
             }
         }
