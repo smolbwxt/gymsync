@@ -45,17 +45,28 @@ enum OneShotFlags {
     /// QA escape hatch `ScreenshotTests.launchApp()` depends on; without it the
     /// walkthrough's `fullScreenCover` sits over every signed-in capture.
     static func walkthroughSeen(userID: UUID) -> Bool {
-        if launchArgumentSkipsWalkthrough { return true }
+        walkthroughSeen(userID: userID,
+                        launchArguments: UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain))
+    }
+
+    /// Testable seam: `launchArguments` is the argument-domain dictionary. See the doc comment on
+    /// the zero-argument overload for why only the argument domain (never the persisted legacy key)
+    /// counts as an override.
+    ///
+    /// Injected rather than read here so tests never have to mutate the process-wide argument
+    /// domain — `setVolatileDomain(_:forName:)` is documented to raise NSInvalidArgumentException
+    /// when the named domain already exists, and NSArgumentDomain always does.
+    static func walkthroughSeen(userID: UUID, launchArguments: [String: Any]) -> Bool {
+        if launchArgumentSkipsWalkthrough(launchArguments) { return true }
         return UserDefaults.standard.bool(forKey: "\(walkthroughKey).\(userID.uuidString)")
     }
 
-    /// UI-test / QA override: `-hasSeenWalkthroughV1 YES` on the launch line. Read from the
-    /// ARGUMENT domain only — the persisted legacy device-wide key is deliberately not honored
+    /// UI-test / QA override: `-hasSeenWalkthroughV1 YES` on the launch line. Reads the ARGUMENT
+    /// domain only — the persisted legacy device-wide key is deliberately not honored
     /// (O3, 2026-08-28: an existing user sees the skippable walkthrough once more, which is
     /// cheaper than a second account on the same phone silently getting none).
     /// `ScreenshotTests.launchApp()` relies on this.
-    private static var launchArgumentSkipsWalkthrough: Bool {
-        let args = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+    private static func launchArgumentSkipsWalkthrough(_ args: [String: Any]) -> Bool {
         guard let raw = args[walkthroughKey] else { return false }
         if let flag = raw as? Bool { return flag }
         if let number = raw as? NSNumber { return number.boolValue }

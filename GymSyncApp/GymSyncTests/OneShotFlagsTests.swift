@@ -98,12 +98,10 @@ final class OneShotFlagsTests: XCTestCase {
     /// The UI-test / QA contract: `-hasSeenWalkthroughV1 YES` on the launch line lands in the
     /// argument domain (never persisted) and skips the walkthrough for ANY account.
     func testLaunchArgumentOverrideSkipsWalkthroughForAnyAccount() {
-        let previous = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
-        defer { UserDefaults.standard.setVolatileDomain(previous, forName: UserDefaults.argumentDomain) }
-        var args = previous
-        args[OneShotFlags.walkthroughKey] = "YES"   // launch args arrive as the string "YES"
-        UserDefaults.standard.setVolatileDomain(args, forName: UserDefaults.argumentDomain)
-        XCTAssertTrue(OneShotFlags.walkthroughSeen(userID: UUID()))
+        let args: [String: Any] = [OneShotFlags.walkthroughKey: "YES"]   // launch args arrive as the string "YES"
+        XCTAssertTrue(OneShotFlags.walkthroughSeen(userID: UUID(), launchArguments: args))
+        XCTAssertFalse(OneShotFlags.walkthroughSeen(userID: UUID(), launchArguments: [:]),
+                       "no launch argument, no per-account key: the walkthrough shows")
     }
 
     /// O3 product decision (cbbdfe7): a PERSISTED legacy device-wide key is not an override.
