@@ -39,13 +39,16 @@ final class ScreenshotTests: XCTestCase {
 
     private func launchApp() -> XCUIApplication {
         let app = XCUIApplication()
-        // Suppress the first-run walkthrough cover: RootView presents it off
-        // @AppStorage("hasSeenWalkthroughV1"), and a fresh CI simulator has it
-        // false. The covered tab buttons still EXIST in the AX hierarchy (so
-        // waitForTabBar passes) but aren't hittable — every tab tap then dies
-        // in kAXErrorCannotComplete scroll-to-visible. NSArgumentDomain sits
-        // first in UserDefaults.standard's search list, so this overrides
-        // without touching app code or persisted state.
+        // Suppress the first-run walkthrough cover: RootView presents it when
+        // OneShotFlags.walkthroughSeen(userID:) is false, and a fresh CI
+        // simulator account has never seen it. The covered tab buttons still
+        // EXIST in the AX hierarchy (so waitForTabBar passes) but aren't
+        // hittable — every tab tap then dies in kAXErrorCannotComplete
+        // scroll-to-visible. The flag itself is per-ACCOUNT
+        // ("hasSeenWalkthroughV1.<uuid>"), so this argument does NOT match a
+        // stored key: walkthroughSeen() honors it explicitly, reading the
+        // NSArgumentDomain — which nothing ever persists — as the UI-test/QA
+        // override. Nothing on disk is touched.
         app.launchArguments += ["-hasSeenWalkthroughV1", "YES"]
         // Same class of failure as the walkthrough cover: a first-visit
         // spotlight is a modal scrim, so every tab/segment tap underneath it

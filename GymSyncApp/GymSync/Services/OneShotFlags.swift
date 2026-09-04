@@ -35,12 +35,32 @@ enum OneShotFlags {
     static let walkthroughKey = "hasSeenWalkthroughV1"
 
     /// O3 (2026-08-28): the walkthrough is per-ACCOUNT - a second account
-    /// on the same phone gets its own first run. The legacy device-wide
-    /// key is deliberately not honored: an existing user sees the
-    /// (skippable) walkthrough once more, which is cheaper than a new
-    /// account silently getting none.
+    /// on the same phone gets its own first run. A PERSISTED device-wide
+    /// `hasSeenWalkthroughV1` is deliberately not honored: an existing
+    /// user sees the (skippable) walkthrough once more, which is cheaper
+    /// than a new account silently getting none.
+    ///
+    /// The one override is the LAUNCH-ARGUMENT domain — `-hasSeenWalkthroughV1 YES`
+    /// on the command line, which nothing ever persists. That is the UI-test /
+    /// QA escape hatch `ScreenshotTests.launchApp()` depends on; without it the
+    /// walkthrough's `fullScreenCover` sits over every signed-in capture.
     static func walkthroughSeen(userID: UUID) -> Bool {
-        UserDefaults.standard.bool(forKey: "\(walkthroughKey).\(userID.uuidString)")
+        if launchArgumentSkipsWalkthrough { return true }
+        return UserDefaults.standard.bool(forKey: "\(walkthroughKey).\(userID.uuidString)")
+    }
+
+    /// UI-test / QA override: `-hasSeenWalkthroughV1 YES` on the launch line. Read from the
+    /// ARGUMENT domain only — the persisted legacy device-wide key is deliberately not honored
+    /// (O3, 2026-08-28: an existing user sees the skippable walkthrough once more, which is
+    /// cheaper than a second account on the same phone silently getting none).
+    /// `ScreenshotTests.launchApp()` relies on this.
+    private static var launchArgumentSkipsWalkthrough: Bool {
+        let args = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+        guard let raw = args[walkthroughKey] else { return false }
+        if let flag = raw as? Bool { return flag }
+        if let number = raw as? NSNumber { return number.boolValue }
+        if let text = raw as? String { return ["YES", "yes", "TRUE", "true", "1"].contains(text) }
+        return false
     }
 
     static func setWalkthroughSeen(userID: UUID) {

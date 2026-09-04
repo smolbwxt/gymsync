@@ -83,4 +83,32 @@ final class OneShotFlagsTests: XCTestCase {
             XCTAssertFalse(flag.isSet(), "\(flag.id): isSet() true after clearing that exact key — id is not the storage key")
         }
     }
+
+    // MARK: - Walkthrough
+
+    /// O3 contract: the walkthrough is per-account.
+    func testWalkthroughSeenIsPerAccount() {
+        let a = UUID(), b = UUID()
+        XCTAssertFalse(OneShotFlags.walkthroughSeen(userID: a))
+        OneShotFlags.setWalkthroughSeen(userID: a)
+        XCTAssertTrue(OneShotFlags.walkthroughSeen(userID: a))
+        XCTAssertFalse(OneShotFlags.walkthroughSeen(userID: b), "a second account must get its own first run")
+    }
+
+    /// The UI-test / QA contract: `-hasSeenWalkthroughV1 YES` on the launch line lands in the
+    /// argument domain (never persisted) and skips the walkthrough for ANY account.
+    func testLaunchArgumentOverrideSkipsWalkthroughForAnyAccount() {
+        let previous = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+        defer { UserDefaults.standard.setVolatileDomain(previous, forName: UserDefaults.argumentDomain) }
+        var args = previous
+        args[OneShotFlags.walkthroughKey] = "YES"   // launch args arrive as the string "YES"
+        UserDefaults.standard.setVolatileDomain(args, forName: UserDefaults.argumentDomain)
+        XCTAssertTrue(OneShotFlags.walkthroughSeen(userID: UUID()))
+    }
+
+    /// O3 product decision (cbbdfe7): a PERSISTED legacy device-wide key is not an override.
+    func testPersistedLegacyKeyIsNotHonored() {
+        UserDefaults.standard.set(true, forKey: OneShotFlags.walkthroughKey)
+        XCTAssertFalse(OneShotFlags.walkthroughSeen(userID: UUID()))
+    }
 }
