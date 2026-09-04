@@ -148,9 +148,14 @@ struct GymEquipmentView: View {
             .frame(maxWidth: .infinity)
         }
         .buttonStyle(GSPrimaryButtonStyle(fontSize: 15, verticalPadding: 13))
-        // The `checkmark` above is a bare symbol with no text of its own, so
-        // the saved state would otherwise be inaudible — same reason
-        // SettingsView's Reset button spells its confirmation out.
+        // Not a fix for silence — the label's own `Text` already swaps to
+        // "Saved", so the Button's derived VoiceOver label announces the
+        // state either way. This PINS the announcement to `savedTick`, so a
+        // later edit to that `Text` (a longer string, an icon-only variant)
+        // can't desync what is spoken from what is shown. SettingsView's
+        // Reset button reaches the same guarantee from the other side: its
+        // `Text("Reset")` is constant, so there the explicit label is what
+        // adds the confirmation at all.
         .accessibilityLabel(savedTick ? "Saved" : "Save")
         .disabled(saving || Units.parseToPounds(barText, unit: unit) == nil || selectedPlates.isEmpty)
         .opacity((saving || Units.parseToPounds(barText, unit: unit) == nil || selectedPlates.isEmpty) ? 0.6 : 1)
