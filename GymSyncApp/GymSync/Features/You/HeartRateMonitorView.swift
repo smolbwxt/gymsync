@@ -55,9 +55,15 @@ struct HeartRateMonitorView: View {
                             .foregroundStyle(theme.text)
                         // Live preview proves the pairing works before a
                         // session ever depends on it.
+                        // Owner text law (2026-08-12): UI text carries no
+                        // accent tint — the live readout reads in the
+                        // secondary neutral, the same swap StatsTabView's
+                        // month-trend line took in the P1 sweep. The
+                        // heart icon above keeps the accent (icons and
+                        // data ink may).
                         Text(ble.latestBPM.map { "\($0) bpm" } ?? "waiting for signal…")
                             .font(GSFont.body(13, relativeTo: .subheadline))
-                            .foregroundStyle(theme.accent700)
+                            .foregroundStyle(theme.neutral700)
                             .monospacedDigit()
                     }
                     Spacer()
@@ -90,8 +96,11 @@ struct HeartRateMonitorView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
-        .background(theme.surface)
-        .cornerRadius(GSMetrics.radiusMd)
+        // gs3D pass (P2): a status/reading card is a widget the athlete
+        // READS, so it joins the extruded language and matches
+        // `appleWatchRow` right above it. The surface fill + cornerRadius
+        // retire — the face is the fill, the lip is the delineation.
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd)
     }
 
     @ViewBuilder
@@ -108,6 +117,9 @@ struct HeartRateMonitorView: View {
                     .tracking(1.1)
                     .foregroundStyle(theme.neutral700)
                 Spacer()
+                // Owner text law: the READY state reads in the DEFAULT text
+                // color, not accent — the accent lives on the watch glyph to
+                // the left, which is where the color signal belongs.
                 Text(!status.active ? "CHECKING…"
                      : !status.paired ? "NOT PAIRED"
                      : !status.appInstalled ? "APP NOT ON WATCH"
@@ -115,7 +127,7 @@ struct HeartRateMonitorView: View {
                     .font(GSFont.bold(11, relativeTo: .caption2))
                     .tracking(0.8)
                     .foregroundStyle(status.paired && status.appInstalled
-                                     ? theme.accent : theme.neutral500)
+                                     ? theme.text : theme.neutral500)
             }
             Text(!status.active
                  ? "Talking to the watch — give it a second."
@@ -161,11 +173,13 @@ struct HeartRateMonitorView: View {
                     }
                     .padding(.horizontal, 14)
                     .padding(.vertical, 12)
-                    .background(theme.surface)
-                    .cornerRadius(GSMetrics.radiusSm)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                // A discovered device is a thing you TAP: it sits proud and
+                // sinks. The label sheds its own surface fill and radius —
+                // a fill here would paint over the face (StatsTabView's
+                // navRow precedent, same intrinsic-height row shape).
+                .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
             }
 
             Button {
