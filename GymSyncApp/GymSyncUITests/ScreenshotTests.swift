@@ -302,6 +302,23 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogPumpComposer()           { captureCatalog("pump-composer") }
     func testCatalogPumpFeedPost()           { captureCatalog("pump-feed-post") }
 
+    // P2 restyle sweep (2026-09-03): the Settings subtree + Create Group.
+    // `testYouAppearance` above is the only signed-in walk that reaches the
+    // Settings subtree, and it stops at Appearance — every other restyled
+    // screen sits one tap deeper, so the catalog is the only way the CI
+    // artifact shows them. `appearance` duplicates `testYouAppearance`'s
+    // screen deliberately: this one renders it hermetically (no auth, no
+    // walkthrough cover, pinned Onyx + sky), so a restyle stays reviewable
+    // even when the signed-in walk regresses — which is exactly what
+    // happened between 2026-08-29 and Task 1 of this plan.
+    func testCatalogAppearance()             { captureCatalog("appearance") }
+    func testCatalogGymEquipment()           { captureCatalog("gym-equipment") }
+    func testCatalogNotificationPreferences() { captureCatalog("notification-preferences") }
+    func testCatalogRestTimerSetting()       { captureCatalog("rest-timer-setting") }
+    func testCatalogHeartRateMonitor()       { captureCatalog("heart-rate-monitor") }
+    func testCatalogCoaching()               { captureCatalog("coaching") }
+    func testCatalogCreateGroup()            { captureCatalog("create-group") }
+
     // MARK: - Seeded deep-screen captures
     //
     // Reachable via the deterministic `ci_test_user_2` fixture world (Task 3,
