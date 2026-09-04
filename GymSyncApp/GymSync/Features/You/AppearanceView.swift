@@ -11,8 +11,10 @@ import SwiftUI
 /// Both apply live and persist best-effort ("Pick a look. It applies
 /// everywhere — tabs, live session, chat.").
 ///
-/// Restyled to the Onyx language: rounded (GSMetrics) card rows on `surface`,
-/// no zero-radius chrome.
+/// Restyled to the Onyx language: rounded (GSMetrics) card rows, no
+/// zero-radius chrome. gs3D pass (2026-09-03, P2): the accent card is a
+/// static extruded widget and the palette rows are sinking extruded rows —
+/// the flat `surface` fills and the divider strokes they wore retired.
 struct AppearanceView: View {
     @Environment(\.gsTheme) private var theme
     @State private var themeStore = ThemeStore.shared
@@ -33,9 +35,13 @@ struct AppearanceView: View {
                         .foregroundColor(theme.neutral500)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                // gs3D pass (2026-09-03, P2): the accent card is a static
+                // widget the user reads (GSAccentPicker owns the taps
+                // inside it), so it takes the extruded face/lip container —
+                // the flat surface fill + cornerRadius retire.
                 .padding(16)
-                .background(theme.surface)
-                .cornerRadius(GSMetrics.radiusMd)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .gs3DCard(cornerRadius: GSMetrics.radiusMd)
 
                 // ── Palette ────────────────────────────────────────────────
                 GSSectionHeader("Palette")
@@ -79,15 +85,21 @@ struct AppearanceView: View {
             }
             .padding(12)
             .frame(minHeight: 44)
-            .background(theme.surface)
-            .cornerRadius(GSMetrics.radiusSm)
-            .contentShape(Rectangle())
             .overlay(
-                RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
-                    .strokeBorder(isSelected ? theme.accent : theme.divider, lineWidth: isSelected ? 2 : 1)
+                isSelected
+                    ? RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
+                        .strokeBorder(theme.accent, lineWidth: 2)
+                    : nil
             )
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        // gs3D pass (2026-09-03, P2): a palette row is tappable, so it sits
+        // proud and sinks. The label sheds its own surface fill and its
+        // divider stroke — the lip delineates now — and selection reads as
+        // the 2pt accent ring overlay (HomeView pickCard precedent). The
+        // swatch strip and the selectionIndicator keep their own borders:
+        // that's artwork, not card chrome.
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(option.name), \(option.subtitle)")
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
