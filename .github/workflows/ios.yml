@@ -15,9 +15,18 @@ on:
   # gates it to master, so a dispatch off any other ref build-tests only.
   workflow_dispatch:
 
+# One Mac mini runs one job at a time, so a burst of pushes would otherwise
+# queue behind each other for hours. Superseded runs on the same ref are worth
+# nothing once a newer commit exists — cancel them and let the runner start on
+# the tip. `master` is excluded from cancellation via the group key so a deploy
+# that is already archiving is never killed half-way to TestFlight.
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
 jobs:
   build-test:
-    runs-on: macos-15
+    runs-on: [self-hosted, macOS, gymsync]
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
@@ -30,11 +39,43 @@ jobs:
       # picker below is name-agnostic, so it follows the selection.
       - name: Select Xcode 26
         run: |
-          sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+          # Self-hosted mini (2026-09-03): no `sudo xcode-select` here. The
+          # runner account would need passwordless sudo, and the switch is
+          # global and permanent — on a machine that outlives the job, a run
+          # that dies between the switch and its end leaves every later build
+          # (and the owner's own Xcode) pointed somewhere unexpected.
+          # DEVELOPER_DIR scopes the identical selection to this job and needs
+          # no privileges at all.
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1 || true)
+          if [ -z "$XCODE" ] && [ -d /Applications/Xcode.app ]; then
+            XCODE=/Applications/Xcode.app
+          fi
+          if [ -z "$XCODE" ]; then
+            echo "::error::No Xcode found in /Applications. Run scripts/mac-mini-setup.sh on the mini."
+            exit 1
+          fi
+          echo "DEVELOPER_DIR=$XCODE/Contents/Developer" >> "$GITHUB_ENV"
+          export DEVELOPER_DIR="$XCODE/Contents/Developer"
           xcodebuild -version
+          # The hosted runners let us assume the bundle name told the truth.
+          # The mini has whatever Xcode the owner installed, possibly renamed,
+          # so assert on the SDK — that is the thing App Store Connect checks
+          # and the thing FoundationModels actually needs.
+          xcodebuild -showsdks | grep -q 'iphoneos26' || {
+            echo "::error::Selected Xcode has no iOS 26 SDK: $XCODE"
+            exit 1
+          }
 
-      - name: Install XcodeGen
-        run: brew install xcodegen
+      - name: Verify XcodeGen
+        # No install fallback (2026-09-03): the mini is Intel, where Homebrew
+        # has no bottles and `brew install xcodegen` would be a from-source
+        # Swift build in the middle of a CI job. A missing xcodegen means the
+        # machine was never provisioned — say so and stop.
+        run: |
+          command -v xcodegen >/dev/null 2>&1 || {
+            echo "::error::xcodegen not on PATH — run scripts/mac-mini-setup.sh on this runner"
+            exit 1
+          }
 
       # Must run BEFORE xcodegen: generated project only includes files that exist at generate time.
       # Real values come from repo secrets (absent on fork PRs -> template placeholders, network tests skip).
@@ -121,7 +162,7 @@ jobs:
   # timing, simulator quirks) must not block merges while it's hardened —
   # the artifact existing is the goal, not this job's pass/fail status.
   screenshots:
-    runs-on: macos-15
+    runs-on: [self-hosted, macOS, gymsync]
     timeout-minutes: 45
     needs: build-test
     continue-on-error: true
@@ -136,11 +177,43 @@ jobs:
       # picker below is name-agnostic, so it follows the selection.
       - name: Select Xcode 26
         run: |
-          sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+          # Self-hosted mini (2026-09-03): no `sudo xcode-select` here. The
+          # runner account would need passwordless sudo, and the switch is
+          # global and permanent — on a machine that outlives the job, a run
+          # that dies between the switch and its end leaves every later build
+          # (and the owner's own Xcode) pointed somewhere unexpected.
+          # DEVELOPER_DIR scopes the identical selection to this job and needs
+          # no privileges at all.
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1 || true)
+          if [ -z "$XCODE" ] && [ -d /Applications/Xcode.app ]; then
+            XCODE=/Applications/Xcode.app
+          fi
+          if [ -z "$XCODE" ]; then
+            echo "::error::No Xcode found in /Applications. Run scripts/mac-mini-setup.sh on the mini."
+            exit 1
+          fi
+          echo "DEVELOPER_DIR=$XCODE/Contents/Developer" >> "$GITHUB_ENV"
+          export DEVELOPER_DIR="$XCODE/Contents/Developer"
           xcodebuild -version
+          # The hosted runners let us assume the bundle name told the truth.
+          # The mini has whatever Xcode the owner installed, possibly renamed,
+          # so assert on the SDK — that is the thing App Store Connect checks
+          # and the thing FoundationModels actually needs.
+          xcodebuild -showsdks | grep -q 'iphoneos26' || {
+            echo "::error::Selected Xcode has no iOS 26 SDK: $XCODE"
+            exit 1
+          }
 
-      - name: Install XcodeGen
-        run: brew install xcodegen
+      - name: Verify XcodeGen
+        # No install fallback (2026-09-03): the mini is Intel, where Homebrew
+        # has no bottles and `brew install xcodegen` would be a from-source
+        # Swift build in the middle of a CI job. A missing xcodegen means the
+        # machine was never provisioned — say so and stop.
+        run: |
+          command -v xcodegen >/dev/null 2>&1 || {
+            echo "::error::xcodegen not on PATH — run scripts/mac-mini-setup.sh on this runner"
+            exit 1
+          }
 
       # Same as build-test: must run BEFORE xcodegen. TEST_USER_EMAIL/
       # PASSWORD here double as the UITEST_EMAIL/PASSWORD launch-environment
@@ -258,6 +331,12 @@ jobs:
           name: app-screenshots
           path: ${{ runner.temp }}/screens
           if-no-files-found: warn
+          # Private repos get 500 MB of free artifact storage; public repos
+          # got it unmetered, which is why the 90-day default was fine before.
+          # These PNG sets accumulate every run and would cross that line into
+          # billing within weeks. Nobody has ever gone back further than a few
+          # days to look at one.
+          retention-days: 7
 
   # Design-parity harness: renders the design canvas's proof frames, diffs
   # them against the app-screenshots artifact from the `screenshots` job
@@ -265,7 +344,18 @@ jobs:
   # (`continue-on-error`) — this never blocks a merge, it just surfaces
   # divergence for a human to look at.
   parity:
-    runs-on: ubuntu-latest
+    # On the light runner, not the Xcode one: this is a Node/Puppeteer job and
+    # has no reason to sit behind a 45-minute xcodebuild.
+    #
+    # Moving it off Linux is safe despite being a pixel diff. The two things
+    # that actually differ between Linux and macOS Chromium are antialiasing
+    # and font hinting, and parity_diff.js already discards both —
+    # `includeAA: false` with `threshold: 0.12` (a deliberately coarse
+    # structural delta, per the report's own lede). Glyph metrics can't drift
+    # either: the canvas serves its own .woff2 files rather than resolving
+    # system fonts. And the job is continue-on-error report-only, so even an
+    # unexpected shift surfaces for a human instead of blocking a merge.
+    runs-on: [self-hosted, macOS, gymsync-light]
     timeout-minutes: 20
     needs: screenshots
     continue-on-error: true
@@ -333,9 +423,10 @@ jobs:
           name: parity-report
           path: parity-out
           if-no-files-found: warn
+          retention-days: 7  # see app-screenshots above
 
   deploy-testflight:
-    runs-on: macos-15
+    runs-on: [self-hosted, macOS, gymsync]
     timeout-minutes: 45
     needs: build-test
     if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
@@ -345,11 +436,43 @@ jobs:
       # App Store Connect rejects uploads built with SDKs older than iOS 26.
       - name: Select Xcode 26
         run: |
-          sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+          # Self-hosted mini (2026-09-03): no `sudo xcode-select` here. The
+          # runner account would need passwordless sudo, and the switch is
+          # global and permanent — on a machine that outlives the job, a run
+          # that dies between the switch and its end leaves every later build
+          # (and the owner's own Xcode) pointed somewhere unexpected.
+          # DEVELOPER_DIR scopes the identical selection to this job and needs
+          # no privileges at all.
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1 || true)
+          if [ -z "$XCODE" ] && [ -d /Applications/Xcode.app ]; then
+            XCODE=/Applications/Xcode.app
+          fi
+          if [ -z "$XCODE" ]; then
+            echo "::error::No Xcode found in /Applications. Run scripts/mac-mini-setup.sh on the mini."
+            exit 1
+          fi
+          echo "DEVELOPER_DIR=$XCODE/Contents/Developer" >> "$GITHUB_ENV"
+          export DEVELOPER_DIR="$XCODE/Contents/Developer"
           xcodebuild -version
+          # The hosted runners let us assume the bundle name told the truth.
+          # The mini has whatever Xcode the owner installed, possibly renamed,
+          # so assert on the SDK — that is the thing App Store Connect checks
+          # and the thing FoundationModels actually needs.
+          xcodebuild -showsdks | grep -q 'iphoneos26' || {
+            echo "::error::Selected Xcode has no iOS 26 SDK: $XCODE"
+            exit 1
+          }
 
-      - name: Install XcodeGen
-        run: brew install xcodegen
+      - name: Verify XcodeGen
+        # No install fallback (2026-09-03): the mini is Intel, where Homebrew
+        # has no bottles and `brew install xcodegen` would be a from-source
+        # Swift build in the middle of a CI job. A missing xcodegen means the
+        # machine was never provisioned — say so and stop.
+        run: |
+          command -v xcodegen >/dev/null 2>&1 || {
+            echo "::error::xcodegen not on PATH — run scripts/mac-mini-setup.sh on this runner"
+            exit 1
+          }
 
       # Must run BEFORE xcodegen (source list fixed at generate time).
       # TestSecrets stub keeps the project generatable; test target isn't built for archive.
@@ -368,33 +491,52 @@ jobs:
       - name: Generate Xcode project from project.yml
         run: xcodegen generate --spec GymSyncApp/project.yml --project GymSyncApp
 
+      # Under $RUNNER_TEMP, not $HOME (2026-09-03). On a hosted runner the
+      # whole VM was destroyed after the job, so ~/private_keys was ephemeral
+      # by accident. The mini is not destroyed: the same line would leave an
+      # App Store Connect private key sitting in the runner account's home
+      # directory forever. The runner wipes _work/_temp at the start of every
+      # job, so this path gives back the lifetime the hosted VM used to.
       - name: Write App Store Connect API key
         env:
           ASC_API_KEY: ${{ secrets.ASC_API_KEY }}
         run: |
-          mkdir -p ~/private_keys
-          printf '%s' "$ASC_API_KEY" > ~/private_keys/AuthKey_57G3DK86PA.p8
+          mkdir -p "$RUNNER_TEMP/private_keys"
+          chmod 700 "$RUNNER_TEMP/private_keys"
+          printf '%s' "$ASC_API_KEY" > "$RUNNER_TEMP/private_keys/AuthKey_57G3DK86PA.p8"
+          chmod 600 "$RUNNER_TEMP/private_keys/AuthKey_57G3DK86PA.p8"
 
-      # Import the stable Apple Development signing cert so automatic signing REUSES it
-      # instead of minting a new "Created via API" cert per run (Apple caps certs per
-      # account — the cap was hit on 2026-07-12 and blocked the deploy).
-      - name: Import signing certificate into temporary keychain
-        env:
-          IOS_SIGNING_CERT_P12: ${{ secrets.IOS_SIGNING_CERT_P12 }}
-          IOS_SIGNING_CERT_PASSWORD: ${{ secrets.IOS_SIGNING_CERT_PASSWORD }}
+      # The reason the old per-run p12 import existed still holds: automatic
+      # signing must REUSE a stable Apple Development cert rather than mint a
+      # new "Created via API" one each run, because Apple caps certs per
+      # account and that cap blocked the deploy on 2026-07-12.
+      #
+      # What changed on 2026-09-03 is where the cert lives. A hosted runner
+      # arrived with an empty keychain every time, so the cert had to be
+      # rebuilt from a repo secret on every run — and the last line of that
+      # step, `security list-keychains -d user -s ...`, rewrote the account's
+      # keychain SEARCH LIST to point at a keychain under $RUNNER_TEMP. On a
+      # throwaway VM that was harmless. On the mini it is not: the temp
+      # keychain is deleted at the next job start and the search list is left
+      # naming a file that no longer exists, breaking codesign for every later
+      # build AND for the owner's own Xcode.
+      #
+      # So the cert is now installed once, into the mini's login keychain, by
+      # `scripts/mac-mini-setup.sh --signing` (which also runs the
+      # set-key-partition-list that stops codesign blocking on a UI prompt).
+      # CI's job is only to assert it is there and fail with an instruction if
+      # it is not. IOS_SIGNING_CERT_P12 / IOS_SIGNING_CERT_PASSWORD are no
+      # longer read by this workflow and can be deleted from repo secrets.
+      - name: Verify signing identity is present
         run: |
-          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
-          KEYCHAIN_PASSWORD=$(uuidgen)
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          echo "$IOS_SIGNING_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
-          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN_PATH" \
-            -P "$IOS_SIGNING_CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
-          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
-          rm "$RUNNER_TEMP/cert.p12"
-          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
+          if ! security find-identity -v -p codesigning | grep -q 'Apple Development'; then
+            echo "::error::No Apple Development codesigning identity in this runner's keychains."
+            echo "On the mini, run: scripts/mac-mini-setup.sh --signing /path/to/cert.p12"
+            echo "See docs/ops/mac-mini-runner.md for the full procedure."
+            security find-identity -v -p codesigning || true
+            exit 1
+          fi
+          security find-identity -v -p codesigning
 
       - name: Archive (automatic signing via ASC API key)
         working-directory: GymSyncApp
@@ -405,7 +547,7 @@ jobs:
             -destination 'generic/platform=iOS' \
             -archivePath "$RUNNER_TEMP/GymSync.xcarchive" \
             -allowProvisioningUpdates \
-            -authenticationKeyPath "$HOME/private_keys/AuthKey_57G3DK86PA.p8" \
+            -authenticationKeyPath "$RUNNER_TEMP/private_keys/AuthKey_57G3DK86PA.p8" \
             -authenticationKeyID 57G3DK86PA \
             -authenticationKeyIssuerID d0ee236a-ef18-498e-8d99-26b47c70d4f0 \
             CODE_SIGN_STYLE=Automatic \
@@ -445,7 +587,7 @@ jobs:
             -exportOptionsPlist GymSyncApp/ExportOptions.plist \
             -exportPath "$RUNNER_TEMP/export" \
             -allowProvisioningUpdates \
-            -authenticationKeyPath "$HOME/private_keys/AuthKey_57G3DK86PA.p8" \
+            -authenticationKeyPath "$RUNNER_TEMP/private_keys/AuthKey_57G3DK86PA.p8" \
             -authenticationKeyID 57G3DK86PA \
             -authenticationKeyIssuerID d0ee236a-ef18-498e-8d99-26b47c70d4f0
 
@@ -457,7 +599,7 @@ jobs:
   # same fixture idea the iPhone marketing suite uses.
   watch-screenshot:
     if: contains(github.event.head_commit.message, '[watch-shot]')
-    runs-on: macos-15
+    runs-on: [self-hosted, macOS, gymsync]
     timeout-minutes: 30
     continue-on-error: true
     steps:
@@ -465,11 +607,43 @@ jobs:
 
       - name: Select Xcode 26
         run: |
-          sudo xcode-select -s "$(ls -d /Applications/Xcode_26*.app | sort -V | tail -1)"
+          # Self-hosted mini (2026-09-03): no `sudo xcode-select` here. The
+          # runner account would need passwordless sudo, and the switch is
+          # global and permanent — on a machine that outlives the job, a run
+          # that dies between the switch and its end leaves every later build
+          # (and the owner's own Xcode) pointed somewhere unexpected.
+          # DEVELOPER_DIR scopes the identical selection to this job and needs
+          # no privileges at all.
+          XCODE=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1 || true)
+          if [ -z "$XCODE" ] && [ -d /Applications/Xcode.app ]; then
+            XCODE=/Applications/Xcode.app
+          fi
+          if [ -z "$XCODE" ]; then
+            echo "::error::No Xcode found in /Applications. Run scripts/mac-mini-setup.sh on the mini."
+            exit 1
+          fi
+          echo "DEVELOPER_DIR=$XCODE/Contents/Developer" >> "$GITHUB_ENV"
+          export DEVELOPER_DIR="$XCODE/Contents/Developer"
           xcodebuild -version
+          # The hosted runners let us assume the bundle name told the truth.
+          # The mini has whatever Xcode the owner installed, possibly renamed,
+          # so assert on the SDK — that is the thing App Store Connect checks
+          # and the thing FoundationModels actually needs.
+          xcodebuild -showsdks | grep -q 'iphoneos26' || {
+            echo "::error::Selected Xcode has no iOS 26 SDK: $XCODE"
+            exit 1
+          }
 
-      - name: Install XcodeGen
-        run: brew install xcodegen
+      - name: Verify XcodeGen
+        # No install fallback (2026-09-03): the mini is Intel, where Homebrew
+        # has no bottles and `brew install xcodegen` would be a from-source
+        # Swift build in the middle of a CI job. A missing xcodegen means the
+        # machine was never provisioned — say so and stop.
+        run: |
+          command -v xcodegen >/dev/null 2>&1 || {
+            echo "::error::xcodegen not on PATH — run scripts/mac-mini-setup.sh on this runner"
+            exit 1
+          }
 
       # The watch target compiles no secrets, but the generated project
       # lists the iOS target too - keep its template files present.
@@ -517,3 +691,4 @@ jobs:
         with:
           name: watch-screenshot
           path: watch-shots/
+          retention-days: 7  # see app-screenshots above
