@@ -1366,8 +1366,16 @@ struct CatalogHostView: View {
     /// (Features/You/HeartRateMonitorView.swift:9) takes no parameters and is
     /// hermetic by construction — `BLEHeartRateService`'s `CBCentralManager`
     /// is built lazily in `ensureCentral()`
-    /// (Services/BLEHeartRateService.swift:112-115), reached ONLY from
-    /// `startScanning()`/`connect(id:)` (:61, :74), both tap-driven. Merely
+    /// (Services/BLEHeartRateService.swift:112-115), which has exactly three
+    /// callers. Two are tap-driven from this very screen: `startScanning()`
+    /// (:61, tapped at HeartRateMonitorView.swift:187) and `connect(id:)`
+    /// (:74, tapped at :160). The third is `connectRememberedIfAny()`
+    /// (:88-92), the auto-reconnect — its only callers outside the service
+    /// are the two live-session views (GroupSessionLiveView.swift:4749,
+    /// WorkoutSessionView.swift:3675), and catalog mode hosts one screen
+    /// with no session, so neither is ever on screen. (The service's own
+    /// re-entries at :152 and :191 are `CBCentralManagerDelegate` callbacks;
+    /// they cannot fire before a central exists.) Merely
     /// rendering the screen never touches CoreBluetooth, so the system
     /// Bluetooth prompt (whose own doc comment at :59 names the first
     /// `startScanning()` as the trigger) can't cover the capture. `state`
@@ -1389,8 +1397,9 @@ struct CatalogHostView: View {
     /// `TrainerClientRepository.mine()` with no session; `load()`'s
     /// `defer { loading = false }` (:276) clears the spinner whether the call
     /// throws or not, so the capture lands on the real empty state rather
-    /// than a stuck `ProgressView` — "Coached by / Nobody", the restyled
-    /// gs3D redeem box (:203), and the trainer/clients section (:228, :246).
+    /// than a stuck `ProgressView` — "Coached by / Nobody", the gs3D redeem
+    /// box (:203, from the earlier P1 sweep — `CoachingView.swift` has no
+    /// commits in this range), and the trainer/clients section (:228, :246).
     private var content_coaching: some View {
         NavigationStack { CoachingView() }
     }
@@ -1408,7 +1417,7 @@ struct CatalogHostView: View {
     /// no session, so `friends` stays empty and the capture shows the "No
     /// friends to add yet" branch (:74-79) INSTEAD OF the gs3D-restyled
     /// multi-select rows (:80-126) that Task 4 actually changed. `friends` is
-    /// `@State private` (:7), so there is no way to seed it from here; a
+    /// `@State private` (:11), so there is no way to seed it from here; a
     /// `catalogFixtureFriends:` seam on `CreateGroupView` itself — the same
     /// `#if DEBUG` idiom `BlockedUsersView`/`DiscoverView` already use — is
     /// the fix, and this task is scoped to not touch the target views. The
