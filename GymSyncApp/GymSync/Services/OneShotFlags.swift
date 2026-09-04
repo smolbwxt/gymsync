@@ -35,12 +35,43 @@ enum OneShotFlags {
     static let walkthroughKey = "hasSeenWalkthroughV1"
 
     /// O3 (2026-08-28): the walkthrough is per-ACCOUNT - a second account
-    /// on the same phone gets its own first run. The legacy device-wide
-    /// key is deliberately not honored: an existing user sees the
-    /// (skippable) walkthrough once more, which is cheaper than a new
-    /// account silently getting none.
+    /// on the same phone gets its own first run. A PERSISTED device-wide
+    /// `hasSeenWalkthroughV1` is deliberately not honored: an existing
+    /// user sees the (skippable) walkthrough once more, which is cheaper
+    /// than a new account silently getting none.
+    ///
+    /// The one override is the LAUNCH-ARGUMENT domain — `-hasSeenWalkthroughV1 YES`
+    /// on the command line, which nothing ever persists. That is the UI-test /
+    /// QA escape hatch `ScreenshotTests.launchApp()` depends on; without it the
+    /// walkthrough's `fullScreenCover` sits over every signed-in capture.
     static func walkthroughSeen(userID: UUID) -> Bool {
-        UserDefaults.standard.bool(forKey: "\(walkthroughKey).\(userID.uuidString)")
+        walkthroughSeen(userID: userID,
+                        launchArguments: UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain))
+    }
+
+    /// Testable seam: `launchArguments` is the argument-domain dictionary. See the doc comment on
+    /// the zero-argument overload for why only the argument domain (never the persisted legacy key)
+    /// counts as an override.
+    ///
+    /// Injected rather than read here so tests never have to mutate the process-wide argument
+    /// domain — `setVolatileDomain(_:forName:)` is documented to raise NSInvalidArgumentException
+    /// when the named domain already exists, and NSArgumentDomain always does.
+    static func walkthroughSeen(userID: UUID, launchArguments: [String: Any]) -> Bool {
+        if launchArgumentSkipsWalkthrough(launchArguments) { return true }
+        return UserDefaults.standard.bool(forKey: "\(walkthroughKey).\(userID.uuidString)")
+    }
+
+    /// UI-test / QA override: `-hasSeenWalkthroughV1 YES` on the launch line. Reads the ARGUMENT
+    /// domain only — the persisted legacy device-wide key is deliberately not honored
+    /// (O3, 2026-08-28: an existing user sees the skippable walkthrough once more, which is
+    /// cheaper than a second account on the same phone silently getting none).
+    /// `ScreenshotTests.launchApp()` relies on this.
+    private static func launchArgumentSkipsWalkthrough(_ args: [String: Any]) -> Bool {
+        guard let raw = args[walkthroughKey] else { return false }
+        if let flag = raw as? Bool { return flag }
+        if let number = raw as? NSNumber { return number.boolValue }
+        if let text = raw as? String { return ["YES", "yes", "TRUE", "true", "1"].contains(text) }
+        return false
     }
 
     static func setWalkthroughSeen(userID: UUID) {
