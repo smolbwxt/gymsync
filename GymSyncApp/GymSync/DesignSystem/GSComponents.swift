@@ -498,7 +498,10 @@ public struct GSSettingsRow: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
-            .background(theme.surface)
+            // No fill of its own: every call site sits inside a `.gs3DCard`
+            // box, whose face REPLACES `theme.surface` (GS3DButton.swift:103).
+            // A `theme.surface` fill here painted flat over that extruded
+            // face. The divider below is what still separates stacked rows.
             .contentShape(Rectangle())
             .overlay(alignment: .bottom) {
                 if showDivider {

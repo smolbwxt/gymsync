@@ -501,8 +501,10 @@ struct SettingsView: View {
                     // functional chrome, not content — it becomes the
                     // `checkmark` SF Symbol, sized with the same
                     // `.system(size:weight:)` idiom every other glyph on
-                    // this screen uses, and read out as part of the
-                    // button's own VoiceOver label.
+                    // this screen uses. A bare symbol carries no text, so
+                    // the confirmation reaches VoiceOver through the
+                    // explicit `.accessibilityLabel` on the button below —
+                    // not automatically.
                     HStack(spacing: 5) {
                         if qaResetConfirmed {
                             Image(systemName: "checkmark")
@@ -514,22 +516,30 @@ struct SettingsView: View {
                     .foregroundStyle(theme.bg)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(theme.accent)
-                    .clipShape(Capsule())
                 }
-                .buttonStyle(.plain)
+                // Extruded like every tappable (design law) — the compact
+                // gs3D accent anatomy RoutinesListView's New button uses,
+                // replacing the last flat accent capsule inside a converted
+                // container. The style owns the face and its lip, so the
+                // old `.background(theme.accent)` + `.clipShape(Capsule())`
+                // retire with `.buttonStyle(.plain)`.
+                .buttonStyle(.gs3D(face: theme.accent, cornerRadius: 10, lipHeight: 5))
                 .frame(minHeight: 44)
+                // The `checkmark` above is a bare symbol with no text of its
+                // own; spell the confirmation out so VoiceOver announces the
+                // state change rather than just "Reset".
+                .accessibilityLabel(qaResetConfirmed ? "Reset, done" : "Reset")
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
-            .background(theme.surface)
         }
         // gs3D pass (P2): the QA box was missed by the 2026-08-13 sweep —
         // it now wears the same single extruded container as
         // `settingsGroupBox` and `legalGroupBox`, and the old clipShape +
         // divider stroke retire (gs3DCard clips to its own rounded face).
-        // The row inside keeps its flat `theme.surface` fill, exactly like
-        // every row in those two boxes: rows are furniture.
+        // The row inside carries no fill of its own — the card's face
+        // REPLACES `theme.surface` (GS3DButton.swift:103), so a row fill
+        // only painted flat over the extrusion. Same as `GSSettingsRow`.
         .gs3DCard(cornerRadius: GSMetrics.radiusMd)
         .onAppear { qaSeenCount = OneShotFlags.seenCount }
     }

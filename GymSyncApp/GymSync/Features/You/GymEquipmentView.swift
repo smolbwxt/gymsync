@@ -133,8 +133,19 @@ struct GymEquipmentView: View {
         Button {
             Task { await save() }
         } label: {
-            Text(savedTick ? "Saved ✓" : "Save")
-                .frame(maxWidth: .infinity)
+            // Emoji sweep (spec §7): the confirmation "✓" was functional
+            // chrome, not content — it becomes the `checkmark` SF Symbol,
+            // the same idiom SettingsView's QA Reset button uses. The
+            // outer `.frame(maxWidth: .infinity)` stays put so the CTA
+            // keeps its full-width footprint and centered label.
+            HStack(spacing: 5) {
+                if savedTick {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 13, weight: .bold))
+                }
+                Text(savedTick ? "Saved" : "Save")
+            }
+            .frame(maxWidth: .infinity)
         }
         .buttonStyle(GSPrimaryButtonStyle(fontSize: 15, verticalPadding: 13))
         .disabled(saving || Units.parseToPounds(barText, unit: unit) == nil || selectedPlates.isEmpty)
