@@ -469,7 +469,9 @@ struct VenueHubView: View {
                  ? "Nobody's on the hub right now"
                  : "\(presentMembers.count) other\(presentMembers.count == 1 ? "" : "s") here right now")
                 .font(GSFont.bodyMedium(14, relativeTo: .subheadline))
-                .foregroundStyle(theme.accent700)
+                // Owner law (2026-08-13): accent tint on UI text retires —
+                // default text, matching the venue name above it.
+                .foregroundStyle(theme.text)
         }
         .padding(.horizontal, 16)
     }
