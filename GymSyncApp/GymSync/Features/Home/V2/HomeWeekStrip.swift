@@ -94,7 +94,11 @@ struct HomeWeekStrip: View {
         let shape = RoundedRectangle(cornerRadius: 5)
         switch state {
         case .done:
-            shape.fill(met ? Self.green : theme.text)
+            // Deliberately NOT green when the goal is met: green belongs to
+            // the tail (`4/4` and `GOAL MET`) alone. Turning the chips green
+            // as well made the difference between the two B frames read as a
+            // state change rather than as the arrangement being judged.
+            shape.fill(theme.text)
                 .frame(width: 10, height: 24)
         case .today:
             shape.strokeBorder(theme.accent, lineWidth: 2)

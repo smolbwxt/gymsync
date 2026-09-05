@@ -92,16 +92,19 @@ struct HomeStreakTile: View {
         }
     }
 
-    /// Filled = done (green once the goal is met, otherwise plain text
-    /// colour). The NEXT slot is an accent ring — the invitation — and the
-    /// rest are the recessed neutral. Production breathes the next slot with
-    /// an animation; a screenshot cannot show a breath, so the ring carries it.
+    /// Filled = done, in the plain text colour whether or not the goal is met:
+    /// green belongs to the fraction line alone, so the two A frames stay
+    /// comparable slot for slot and the difference between them reads as the
+    /// arrangement rather than as a state change. The NEXT slot is an accent
+    /// ring — the invitation — and the rest are the recessed neutral.
+    /// Production breathes the next slot with an animation; a screenshot
+    /// cannot show a breath, so the ring carries it.
     @ViewBuilder
     private func slot(_ index: Int) -> some View {
         let filled = index < daysDone
         let isNext = !filled && index == daysDone && !met
         RoundedRectangle(cornerRadius: 3)
-            .fill(filled ? (met ? Self.green : theme.text) : theme.neutral300)
+            .fill(filled ? theme.text : theme.neutral300)
             .frame(width: 17, height: 14)
             .overlay(
                 isNext

@@ -32,10 +32,10 @@ struct HomeCoachLine: View {
                 (
                     Text("Coach: ")
                         .font(GSFont.bold(13.5, relativeTo: .subheadline))
-                        .foregroundColor(theme.text)
+                        .foregroundStyle(theme.text)
                     + Text(sentence)
                         .font(GSFont.body(13.5, relativeTo: .subheadline))
-                        .foregroundColor(theme.neutral700)
+                        .foregroundStyle(theme.neutral700)
                 )
                 .fixedSize(horizontal: false, vertical: true)
 

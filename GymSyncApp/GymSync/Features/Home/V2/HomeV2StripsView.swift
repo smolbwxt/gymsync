@@ -62,15 +62,19 @@ struct HomeV2StripsView: View {
                     .foregroundStyle(theme.neutral500)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 6)
-                Text(world.todayPill)
-                    .font(GSFont.bold(10, relativeTo: .caption2))
-                    .tracking(1.2)
-                    .monospacedDigit()
-                    .foregroundStyle(theme.neutral700)
-                    .lineLimit(1)
-                    .padding(.horizontal, 11)
-                    .padding(.vertical, 6)
-                    .background(Capsule().fill(theme.neutral300))
+                // Absent on a crew night: the button 60 pt below already says
+                // the time, and the pill would only repeat it.
+                if let pill = world.todayPill {
+                    Text(pill)
+                        .font(GSFont.bold(10, relativeTo: .caption2))
+                        .tracking(1.2)
+                        .monospacedDigit()
+                        .foregroundStyle(theme.neutral700)
+                        .lineLimit(1)
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 6)
+                        .background(Capsule().fill(theme.neutral300))
+                }
             }
 
             Text(world.todayTitle)
@@ -109,10 +113,10 @@ struct HomeV2StripsView: View {
             (
                 Text(HomeV2Fixtures.somethingElsePrefix)
                     .font(GSFont.body(12.5, relativeTo: .caption))
-                    .foregroundColor(theme.neutral500)
+                    .foregroundStyle(theme.neutral500)
                 + Text(HomeV2Fixtures.somethingElseAction)
                     .font(GSFont.bold(12.5, relativeTo: .caption))
-                    .foregroundColor(theme.accent)
+                    .foregroundStyle(theme.accent)
             )
             .frame(maxWidth: .infinity, alignment: .center)
         }

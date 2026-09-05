@@ -227,6 +227,10 @@ struct HomeCalendarCard: View {
                     .monospacedDigit()
                     .foregroundStyle(theme.neutral500)
                     .lineLimit(1)
+                    // A clock time is short; "No time set" — the block's own
+                    // lift on a solo day — is not. Shrink rather than clip
+                    // inside the fixed column.
+                    .minimumScaleFactor(0.8)
             }
             .frame(width: 58, alignment: .leading)
 

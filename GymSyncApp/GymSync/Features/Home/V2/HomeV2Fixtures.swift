@@ -30,9 +30,10 @@ struct HomeV2World {
     let coachSentence: String
     let coachWaiting: Int?
 
-    // Arrangement B's today card.
+    // Arrangement B's today card. `todayPill` is optional: a crew night has
+    // nothing to say there that the button does not already say.
     let todayKicker: String
-    let todayPill: String
+    let todayPill: String?
     let todayTitle: String
     let todayLine: String
 
@@ -72,11 +73,14 @@ enum HomeV2Fixtures {
         // the plan's own fixture detail ("Dana checked in, Sam on the way"),
         // which has no other home in either arrangement.
         todayKicker: "TONIGHT · WITH PUSH CREW",
-        todayPill: "5:00 PM",
+        // No pill: the time is already in the button's second line 60 pt
+        // below ("PUSH CREW · PUSH A · 5:00 PM · OPEN NOW"), and saying it
+        // twice on one card is noise.
+        todayPill: nil,
         todayTitle: "Push A",
         todayLine: "Dana checked in · Sam on the way",
         months: months(trainedThisMonth: [1, 2, 4]),
-        appointments: appointments
+        appointments: crewNightAppointments
     )
 
     /// The solo day: today's lift comes from the enrolled block, no time set,
@@ -108,7 +112,7 @@ enum HomeV2Fixtures {
         todayLine: "5 exercises · about 50 min · no time set",
         // Four training days in the bank this week, matching 4/4 above.
         months: months(trainedThisMonth: [1, 2, 3, 4]),
-        appointments: appointments
+        appointments: soloDayAppointments
     )
 
     // MARK: Shared facts
@@ -151,11 +155,19 @@ enum HomeV2Fixtures {
         ]
     }
 
-    /// Three upcoming rows. Crew tiles wear their group identity colour
-    /// (`GSGroupColor`'s Okabe-Ito palette, colourblind-safe and never the
-    /// user's accent); the solo row passes `nil` so it resolves to the accent
-    /// at render.
-    static let appointments: [HomeCalendarCard.Appointment] = [
+    // Each world gets its OWN three rows, because the calendar's first row is
+    // a statement about today and the two worlds disagree about today. Sharing
+    // one list put "Today 5:00 PM · Push A · Push Crew · IN" three hundred
+    // points under a hero reading "TODAY · FROM YOUR BLOCK / Pull A / no time
+    // set" — a frame telling two stories about the same day, which spends the
+    // owner's attention on the contradiction instead of on the arrangement.
+    //
+    // Crew tiles wear their group identity colour (`GSGroupColor`'s Okabe-Ito
+    // palette — colourblind-safe, and never the user's accent); a solo row
+    // passes `nil` so it resolves to the accent at render.
+
+    /// The crew night: tonight's session is the first row, already checked in.
+    static let crewNightAppointments: [HomeCalendarCard.Appointment] = [
         HomeCalendarCard.Appointment(
             id: 1, day: "Today", time: "5:00 PM", initials: "PC",
             tint: GSGroupColor.palette[4], ink: groupInk,
@@ -170,6 +182,27 @@ enum HomeV2Fixtures {
             id: 3, day: "Sun", time: "10:00 AM", initials: "You",
             tint: nil, ink: nil,
             title: "Pull A", subtitle: "from your block", repeats: false, status: nil
+        ),
+    ]
+
+    /// The solo day: the first row IS the hero's lift — the block's own Pull A,
+    /// no time set — and the rows after it are the ones the v7 proof's Home B
+    /// shows (Tuesday's crew session still uncommitted, Thursday's block day).
+    static let soloDayAppointments: [HomeCalendarCard.Appointment] = [
+        HomeCalendarCard.Appointment(
+            id: 1, day: "Today", time: "No time set", initials: "You",
+            tint: nil, ink: nil,
+            title: "Pull A", subtitle: "from your block", repeats: false, status: nil
+        ),
+        HomeCalendarCard.Appointment(
+            id: 2, day: "Tue", time: "5:00 PM", initials: "PC",
+            tint: GSGroupColor.palette[4], ink: groupInk,
+            title: "Push B", subtitle: "Push Crew", repeats: false, status: .commit
+        ),
+        HomeCalendarCard.Appointment(
+            id: 3, day: "Thu", time: "6:30 AM", initials: "You",
+            tint: nil, ink: nil,
+            title: "Lower A", subtitle: "from your block", repeats: false, status: nil
         ),
     ]
 
