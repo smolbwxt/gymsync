@@ -397,6 +397,15 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogCoaching()               { captureCatalog("coaching") }
     func testCatalogCreateGroup()            { captureCatalog("create-group") }
 
+    // The live solo set page (screenshot-pipeline plan, Task 6). The app
+    // spends more minutes on this screen than any other and it had no
+    // capture at all: none of the 16 signed-in walks starts a workout,
+    // because starting one writes a real session and real set logs to the
+    // shared ci_test_user_2 account. The catalog builds it from fixture
+    // values instead (`content_soloLiveSet`), so the design round gets the
+    // screen without the suite acquiring a write.
+    func testCatalogSoloLiveSet()            { captureCatalog("solo-live-set") }
+
     // MARK: - Seeded deep-screen captures
     //
     // Reachable via the deterministic `ci_test_user_2` fixture world (Task 3,

@@ -118,5 +118,9 @@
   "group-recap": {
     "frame": 8,
     "title": "Group Recap"
+  },
+  "solo-live-set": {
+    "frame": 66,
+    "title": "Onyx Solo Workout (redesign)"
   }
 }

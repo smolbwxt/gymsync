@@ -300,7 +300,7 @@ jobs:
 
       # Guards the MEDIUM. `continue-on-error: true` on this job plus
       # `if: always()` on the two steps above means a suite that failed 40 of
-      # its 70 methods still publishes a green-looking `app-screenshots`
+      # its 71 methods still publishes a green-looking `app-screenshots`
       # artifact, and nobody is told the design-review medium degraded. This
       # is the floor that closes that. It runs AFTER the upload deliberately:
       # a failure here must not cost us the partial artifact that explains
@@ -316,7 +316,7 @@ jobs:
         if: always()
         run: |
           SCREENS="$RUNNER_TEMP/screens"
-          FLOOR=70
+          FLOOR=71
           COUNT=$(find "$SCREENS" -maxdepth 1 -type f -name 'app-*' 2>/dev/null | wc -l | tr -d ' ')
           if [ "$COUNT" -eq 0 ] && [ -f "$SCREENS/manifest.json" ]; then
             COUNT=$(node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));const ts=Array.isArray(m)?m:[];let n=0;for(const t of ts)for(const a of (t.attachments||[]))if(String(a.suggestedHumanReadableName||'').startsWith('app-'))n++;console.log(n);" "$SCREENS/manifest.json" || echo 0)
