@@ -1,4 +1,21 @@
+import Foundation
 import SwiftUI
+
+/// The two launch-argument keys behind `ThemeStore.launchPin(from:)`. A
+/// plain namespace rather than statics on `ThemeStore` because `ThemeStore`
+/// is `@MainActor` and the seam that reads these is `nonisolated`.
+///
+/// The launch line passes `-gsPalette onyx`; `NSArgumentDomain` stores that
+/// under the dash-less key, with the value as an `NSString`.
+/// `ScreenshotTests.launchApp()` writes the same two flags as literals (the
+/// UI test target runs out-of-process and links no app code — the same
+/// reason `-guidanceTipsEnabled` is a literal there), and
+/// `ThemeStoreLaunchPinTests` asserts these values so a rename can't
+/// silently orphan them.
+enum ThemeLaunchArgument {
+    static let palette = "gsPalette"
+    static let accent = "gsAccent"
+}
 
 /// Live palette state — Canvas Completion Task 5. Singleton (matches
 /// `AppState.shared`/`AuthService.shared`'s convention) so both `RootView`
@@ -14,7 +31,115 @@ import SwiftUI
 @MainActor
 public final class ThemeStore {
     public static let shared = ThemeStore()
-    private init() {}
+
+    /// A launch-argument pin (`-gsPalette onyx -gsAccent sky`) beats both the
+    /// seed and the persisted `user_settings` row, for the whole process. It
+    /// exists because the 16 signed-in screenshot captures render the CI
+    /// account's palette (a light one + lime) while the 54 catalog captures
+    /// hard-pin onyx+sky at `GymSyncApp.swift` — the design-review medium was
+    /// comparing two different looks. Reading it here, at `init()`, genuinely
+    /// beats the first frame: `ThemeStore.shared` is constructed when
+    /// `RootView`'s `@State private var themeStore` is initialised, before
+    /// `body` runs. No async, no network, nothing to race.
+    private init() {
+        let launchArguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+        let pin = Self.launchPin(from: launchArguments)
+        // LOAD-BEARING ORDERING: `isPinned` is the only stored property with
+        // no inline default, so this assignment is what completes phase-1
+        // initialisation. Every line below it writes an @Observable-tracked
+        // property or calls an instance method, neither of which is legal
+        // before that. Do not move it down.
+        isPinned = pin.palette != nil || pin.accent != nil
+        if let palette = pin.palette {
+            paletteID = palette
+            current = GSPalettes.theme(for: palette)
+        }
+        if let pinnedAccent = pin.accent {
+            accentID = pinnedAccent
+            accent = GSAccents.accent(for: pinnedAccent)
+        }
+        // LOG ONCE on a value that was supplied but did not resolve. Without
+        // this a typo'd `-gsPalette onxy` unpins the whole capture suite
+        // SILENTLY: `isPinned` goes false, `load()` repaints from the CI
+        // account's row, and all 16 signed-in captures go back to the light
+        // palette — with no failing test and nothing in the log. Nothing on
+        // the UI-test side can guard a value typo (that target links no app
+        // code), so this line is the only signal there can be. It lives here,
+        // at the call site, rather than in `launchPin(from:)` so the seam
+        // stays pure and its unit tests stay free of logging.
+        Self.warnIfUnresolved(launchArguments,
+                              key: ThemeLaunchArgument.palette,
+                              flag: "-gsPalette",
+                              resolved: pin.palette,
+                              known: GSPalettes.all.map(\.id))
+        Self.warnIfUnresolved(launchArguments,
+                              key: ThemeLaunchArgument.accent,
+                              flag: "-gsAccent",
+                              resolved: pin.accent,
+                              known: GSAccents.all.map(\.id))
+        // Only when pinned: an unpinned launch must keep `GSAppearance.apply()`
+        // (GymSyncApp.init) as the one stamp until a real palette resolves,
+        // exactly as before.
+        if isPinned { restampAppearance() }
+    }
+
+    /// Warns exactly when a flag was PRESENT but its value did not resolve —
+    /// silence when the flag is absent (the overwhelmingly common case: every
+    /// real launch), silence when it resolved. `privacy: .public` on all three
+    /// values: they are a launch-line flag name, a palette/accent id, and the
+    /// accepted-id list — none is user data, and a redacted warning would not
+    /// tell anyone what to fix.
+    private nonisolated static func warnIfUnresolved(_ launchArguments: [String: Any],
+                                                     key: String,
+                                                     flag: String,
+                                                     resolved: String?,
+                                                     known: [String]) {
+        guard resolved == nil, let raw = launchArguments[key] else { return }
+        AppLogger.ui.warning(
+            "\(flag, privacy: .public) named an unknown value \(String(describing: raw), privacy: .public) — ignored, the seeded look stands. Accepted: \(known.joined(separator: ", "), privacy: .public)")
+    }
+
+    /// True when either launch argument named a KNOWN palette/accent. While
+    /// set, `select(_:)` and `selectAccent(_:)` are no-ops and `load()` skips
+    /// its two APPLY lines — neither the network row nor a stray tap may
+    /// repaint a pinned capture. Everything else `load()` caches still lands
+    /// (units, plates, anchors, `shareHeartRate`): the pin owns the palette
+    /// and the accent, not the account's data.
+    private let isPinned: Bool
+
+    /// Testable seam: `launchArguments` is the argument-domain dictionary,
+    /// injected rather than read here so tests never have to mutate the
+    /// process-wide argument domain (`setVolatileDomain(_:forName:)` raises
+    /// NSInvalidArgumentException when the domain already exists, and
+    /// NSArgumentDomain always does). Same shape, and the same reasoning, as
+    /// `OneShotFlags.walkthroughSeen(userID:launchArguments:)`.
+    ///
+    /// ARGUMENT DOMAIN ONLY — deliberately not `UserDefaults.standard.string(
+    /// forKey:)`, which would also honour a persisted key. Nothing ever
+    /// persists to NSArgumentDomain, so this cannot leak into a real launch.
+    /// UNGATED (no `#if DEBUG`), matching `-hasSeenWalkthroughV1` and
+    /// `-guidanceTipsEnabled`: a cosmetic, unexploitable override, and the
+    /// codebase already has this convention — a third pattern would be worse
+    /// than either existing one.
+    ///
+    /// An unrecognised name resolves to `nil` for that key and is IGNORED
+    /// (the seed stands), because `GSPalettes.theme(for:)` /
+    /// `GSAccents.accent(for:)` are total: a typo'd `-gsPalette onxy` would
+    /// otherwise silently pin midnight and read as a palette bug.
+    nonisolated static func launchPin(from launchArguments: [String: Any]) -> (palette: String?, accent: String?) {
+        (palette: pinnedID(launchArguments[ThemeLaunchArgument.palette], known: GSPalettes.all.map(\.id)),
+         accent: pinnedID(launchArguments[ThemeLaunchArgument.accent], known: GSAccents.all.map(\.id)))
+    }
+
+    /// Accepts a `String` value (launch arguments always arrive as NSString —
+    /// the lesson `GuidanceTip.tipsEnabled`'s doc comment paid a CI round
+    /// for), trims surrounding whitespace, and returns it only if it names a
+    /// known preset.
+    private nonisolated static func pinnedID(_ raw: Any?, known: [String]) -> String? {
+        guard let text = raw as? String else { return nil }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return known.contains(trimmed) ? trimmed : nil
+    }
 
     public private(set) var paletteID: String = "onyx"
     public private(set) var current: GSTheme = .onyx
@@ -124,10 +249,18 @@ public final class ThemeStore {
     /// Settings Hub read (`UserSettingsRepository.get()` itself already
     /// falls back to `.defaults` when no row exists; this additionally
     /// tolerates the call throwing, e.g. pre-sign-in).
+    ///
+    /// Under a launch-argument pin this still LOADS and still caches
+    /// everything (fix round 1): the row's units, bar/plate inventory, lift
+    /// anchors and `shareHeartRate` are what the captured screens draw
+    /// themselves with, and throwing them away made the frames less faithful,
+    /// not more. Only the two lines that would REPAINT are skipped — the pin
+    /// exists to own palette + accent, nothing else.
     public func load() async {
         guard let settings = try? await UserSettingsRepository.get() else { return }
         lastKnownSettings = settings
         setShareHeartRate(settings.shareHeartRate)
+        guard !isPinned else { return }
         apply(paletteID: settings.palette)
         applyAccent(settings.accent)
     }
@@ -153,6 +286,10 @@ public final class ThemeStore {
     /// paletteID:)` below still runs synchronously on every call, before any
     /// cancellation logic.
     public func select(_ paletteID: String) {
+        // Pinned: a stray tap during a capture walk (the Appearance screen is
+        // one of the captured destinations) must not repaint the rest of the
+        // suite, and must not write the pin to the account's row either.
+        guard !isPinned else { return }
         apply(paletteID: paletteID)
         persistTask?.cancel()
         persistGeneration += 1
@@ -189,6 +326,7 @@ public final class ThemeStore {
     /// upsert. Writes both the current palette AND accent (see `select`'s
     /// comment) so the two pickers can't clobber each other's field.
     public func selectAccent(_ id: String) {
+        guard !isPinned else { return }   // see `select(_:)`
         applyAccent(id)
         persistTask?.cancel()
         persistGeneration += 1

@@ -68,6 +68,7 @@ enum CatalogScreen: String, CaseIterable {
     case heartRateMonitor = "heart-rate-monitor"
     case coaching = "coaching"
     case createGroup = "create-group"
+    case soloLiveSet = "solo-live-set"
 }
 
 struct CatalogHostView: View {
@@ -131,6 +132,7 @@ struct CatalogHostView: View {
             case .heartRateMonitor:           content_heartRateMonitor
             case .coaching:                   content_coaching
             case .createGroup:                content_createGroup
+            case .soloLiveSet:                content_soloLiveSet
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1425,6 +1427,169 @@ struct CatalogHostView: View {
     /// chrome and the Create button.
     private var content_createGroup: some View {
         CreateGroupView(onCreated: { _ in })
+    }
+
+    // MARK: - Solo live set page (screenshot-pipeline plan, Task 6)
+    //
+    // The live solo set page — `WorkoutSessionView.soloFixedPage`
+    // (Features/Workout/WorkoutSessionView.swift:965) — is the screen the
+    // app spends the most MINUTES on and the only one with no capture at
+    // all: `ScreenshotTests`' signed-in walks never start a workout (that
+    // would write real sessions and set logs to the shared CI account), and
+    // the four production call sites all sit behind a Start tap.
+    //
+    // NO app-code change is needed, because the page's own gate
+    // (`liveSessionBody`, :859) is satisfied by init parameters alone:
+    //
+    //     !isFreeform && !completed && currentExercise != nil
+    //                                && currentRoutineExercise != nil
+    //
+    // `isFreeform` is `routineExercises.isEmpty` (:282), `currentRoutineExercise`
+    // is `activeExercises[0]` (:324), and `currentExercise` resolves that row's
+    // `exerciseID` against `allExercises` (:337) — so three RoutineExercises
+    // plus their three matching Exercises put the real page on screen.
+    //
+    // TWO side effects before the view is built, both of which are the
+    // difference between a screen and a scrim — same builder-side-effect
+    // idiom `content_topLifters` above already uses for identity:
+    //
+    // 1. `GuidanceTip.workout.markSeen()`. `sessionChrome` carries
+    //    `.gsSpotlight(.workout)` (:360), which presents a full-screen
+    //    modal scrim 450 ms after appear (GSSpotlight.swift:67-75) on any
+    //    device that has not seen it. `ScreenshotTests.launchApp()` kills
+    //    tips with `-guidanceTipsEnabled NO`, but `captureCatalog()` sets
+    //    NO launch arguments at all — so without this line the capture is
+    //    the spotlight card, not the set page. Marking the one tip seen is
+    //    narrower than flipping the global switch and cannot affect any
+    //    other capture: `.workout` fires nowhere else.
+    //
+    // 2. A pre-seeded `AppState.shared.liveSoloSession`. `startIfNeeded()`
+    //    (:3610) ADOPTS a live solo session for the same routine (:3635-3646)
+    //    and only calls `SessionRepository.startSolo` when it finds none
+    //    (:3648). Seeding it matters for two independent reasons:
+    //    - startSolo's `guard let userID = await currentUserID()`
+    //      (SessionRepository.swift:22) is NOT a reliable no-op in catalog
+    //      mode. Catalog mode bypasses RootView, but the Supabase client
+    //      restores its persisted session from the simulator's own storage,
+    //      and the signed-in walks in this very suite put one there — so a
+    //      catalog launch can be authenticated, and an unseeded capture
+    //      would INSERT a real `in_progress` session row on ci_test_user_2
+    //      once per CI run. That is the same leak class this plan's Task 4
+    //      just closed in ProposalRepositoryTests; a capture must not
+    //      reopen it.
+    //    - Whichever branch runs, a non-nil session re-arms the warm-up
+    //      window: `soloWarmupMinutes` is `SoloWarmupStore.minutes`, whose
+    //      NEVER-CONFIGURED default is 5, not the 0 that :189 still claims
+    //      (WarmUpPhaseView.swift:35-42, changed by the 2026-08-21 field
+    //      report). A session started "now" therefore opens `soloWarmupPage`
+    //      and covers the whole capture. The fixture's `startedAt` is 18
+    //      minutes in the past, so `startedAt + 5 min` is already behind
+    //      `.now`, `soloWarmupEndsAt` is never set (:3640-3644), and the
+    //      set page renders. It also gives the vitals row a plausible
+    //      elapsed clock instead of 00:00.
+    //
+    // What the adopt branch DOES call is `restoreLoggedProgress` →
+    // `SessionRepository.setLogs` on a UUID no row carries: one read that
+    // returns nothing, wrapped in `try?`. Everything else degrades on its
+    // own — `loadLastTime()` and `loadSoloCeilings()` guard on
+    // `appState.currentProfile?.id`, which catalog mode leaves nil, and
+    // `loadPickerCatalogIfFreeform()` is skipped by `guard isFreeform`.
+    //
+    // The frame is deliberately SPARSE: no prior history means LAST TIME
+    // reads "FIRST TIME", the SETS pager shows only the current column, and
+    // the entry card opens with no prefilled weight (no `targetWeight` on
+    // the fixture rows — inventing one would put a number on a design proof
+    // that no real first session would show). Seeding logged sets needs a
+    // `#if DEBUG` init inside WorkoutSessionView itself; that is the
+    // follow-up, not this task.
+    //
+    // Wrapped in `NavigationStack` for the same reason as
+    // `content_discoverDetail`/`content_editProfile` above: `sessionChrome`
+    // sets `.navigationTitle` (:364) and `.toolbar` (:369), both of which
+    // no-op without a nav ancestor.
+    //
+    // Proof frame: `docs/design/frame-map.json` → 66, the Onyx redesign
+    // gallery's `solo-workout` phone (scripts/render_redesign_proofs.js:40).
+    private static let soloFixtureRoutineID = UUID()
+    private static let soloFixtureOwnerID = UUID()
+
+    private static let soloFixtureBench = Exercise(
+        id: UUID(), name: "Bench Press", slug: "bench-press", category: "compound",
+        primaryMuscle: "chest", secondaryMuscles: ["triceps", "shoulders"],
+        equipment: "barbell", defaultUnit: "lbs", demoVideoURL: nil
+    )
+    private static let soloFixtureInclineDB = Exercise(
+        id: UUID(), name: "Incline DB Press", slug: "incline-db-press", category: "compound",
+        primaryMuscle: "chest", secondaryMuscles: ["shoulders", "triceps"],
+        equipment: "dumbbell", defaultUnit: "lbs", demoVideoURL: nil
+    )
+    private static let soloFixtureDips = Exercise(
+        id: UUID(), name: "Dips", slug: "dips", category: "compound",
+        primaryMuscle: "chest", secondaryMuscles: ["triceps"],
+        equipment: "bodyweight", defaultUnit: "lbs", demoVideoURL: nil
+    )
+    private static let soloFixtureExercises: [Exercise] = [
+        soloFixtureBench, soloFixtureInclineDB, soloFixtureDips,
+    ]
+
+    private static let soloFixtureRoutine = Routine(
+        id: Self.soloFixtureRoutineID, ownerID: Self.soloFixtureOwnerID, name: "Push A",
+        description: nil, visibility: "private", createdAt: .now, updatedAt: .now
+    )
+
+    private static let soloFixtureRoutineExercises: [RoutineExercise] = [
+        RoutineExercise(
+            id: UUID(), routineID: Self.soloFixtureRoutineID,
+            exerciseID: Self.soloFixtureBench.id, position: 1,
+            targetSets: 4, targetReps: "5", targetWeight: nil, restSeconds: nil, notes: nil
+        ),
+        RoutineExercise(
+            id: UUID(), routineID: Self.soloFixtureRoutineID,
+            exerciseID: Self.soloFixtureInclineDB.id, position: 2,
+            targetSets: 3, targetReps: "10", targetWeight: nil, restSeconds: nil, notes: nil
+        ),
+        RoutineExercise(
+            id: UUID(), routineID: Self.soloFixtureRoutineID,
+            exerciseID: Self.soloFixtureDips.id, position: 3,
+            targetSets: 3, targetReps: "12", targetWeight: nil, restSeconds: nil, notes: nil
+        ),
+    ]
+
+    /// 18 minutes ago — see reason 2 in the block above: this is what keeps
+    /// the warm-up page from covering the capture.
+    private static let soloFixtureStartedAt = Date().addingTimeInterval(-18 * 60)
+
+    private static let soloFixtureSession = WorkoutSession(
+        id: UUID(),
+        routineID: Self.soloFixtureRoutineID,
+        organizerID: Self.soloFixtureOwnerID,
+        state: "in_progress",
+        startedAt: Self.soloFixtureStartedAt,
+        completedAt: nil,
+        createdAt: Self.soloFixtureStartedAt,
+        groupID: nil,
+        roomCode: nil,
+        scheduledFor: nil,
+        seriesID: nil,
+        currentTurnUserID: nil,
+        currentTurnStartedAt: nil
+    )
+
+    private var content_soloLiveSet: some View {
+        GuidanceTip.workout.markSeen()
+        AppState.shared.liveSoloSession = AppState.LiveSoloSession(
+            session: Self.soloFixtureSession,
+            routine: Self.soloFixtureRoutine,
+            routineExercises: Self.soloFixtureRoutineExercises,
+            allExercises: Self.soloFixtureExercises
+        )
+        return NavigationStack {
+            WorkoutSessionView(
+                routine: Self.soloFixtureRoutine,
+                routineExercises: Self.soloFixtureRoutineExercises,
+                allExercises: Self.soloFixtureExercises
+            )
+        }
     }
 }
 

@@ -384,7 +384,17 @@ private struct MainTabView: View {
             // profile-loaded state" timing as the push-token registration
             // above, since that's the earliest point a `user_settings` row
             // is guaranteed to be readable for the signed-in user.
+            //
+            // Registered with the launch counter (2026-09-05) for the same
+            // reason the four tab-root fetches are: the app renders the
+            // SEEDED onyx+sky look until this lands, so an unregistered
+            // load repainted the whole app one frame after the overlay
+            // lifted — the palette "pop" the overlay exists to hide. The
+            // 2.5 s cap in `RootView` still bounds it, so a slow or hung
+            // settings read delays the reveal at worst, never wedges it.
+            appState.beginLaunchFetch()
             await ThemeStore.shared.load()
+            appState.endLaunchFetch()
         }
         .task {
             // Coach-generated blocks live in `program_templates`, but

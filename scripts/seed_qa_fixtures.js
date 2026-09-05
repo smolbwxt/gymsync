@@ -63,12 +63,47 @@ async function rest(pathAndQuery, opts = {}) {
 const rep = { Prefer: 'return=representation' };
 const MARK = '[QA]'; // stable marker: name-prefix for fixture rows we own
 
-// Real second CI account (id/username only — Swift tests never sign in as
-// it) used as the friend counterpart. Not managed by this script.
-const ACCEPTED_FRIEND_USERNAME = 'ci_test_user';
+// Mirrors the deny-list in `set_logs_reject_prelive`, the BEFORE INSERT
+// trigger on set_logs (20260803000002_set_logs_reject_prelive.sql:19). It
+// raises P0001 "session has not started" for a log written against a session
+// in any of these states. Keep this list identical to the migration's.
+const PRELIVE_STATES = ['scheduled', 'lobby_open', 'editing', 'voting', 'locked'];
+
+// Walks a fixture session live so the set_logs written into it are accepted:
+// start -> log -> complete, the same order a real client produces. Two
+// fixture blocks below (the Murph attempt and the campaign-progress sessions)
+// create their session as `scheduled`, and CI run 33990257726 died on exactly
+// that, at the first set_logs insert.
+//
+// Idempotent by state, which is what makes a rerun safe in both directions:
+// a session already `in_progress` is left alone, and a `completed` one — what
+// a finished prior run leaves behind — is never re-opened. `session.state` is
+// updated in place so the completion PATCH that follows can filter on the
+// state it will actually find.
+async function ensureSessionLive(session, startedAt) {
+  if (!PRELIVE_STATES.includes(session.state)) return;
+  await rest(`sessions?id=eq.${session.id}`, { method: 'PATCH',
+    body: JSON.stringify({ state: 'in_progress', started_at: startedAt }) });
+  session.state = 'in_progress';
+}
+
+// WHO IS WHO (corrected 2026-09-05, from the DB and the repo secrets):
+// the seeded world's OWNER is whoever `--username` names — supplied by the
+// CI_TEST_USERNAME secret as `ci_test_user`, which is the account CI
+// actually signs in as. Its email (ci-tests@gymsync.app) is TEST_USER_EMAIL,
+// which the screenshot job forwards as UITEST_EMAIL, and its username is the
+// greeting rendered on the Home capture. The GymSyncTests unit target signs
+// in as the same account.
+//
+// `ci_test_user_2` is the real SECOND CI account (id/username only — nothing
+// signs in as it here) used solely as the accepted-friend counterpart. That
+// matches the Swift tests, which also treat `_2` as the counterpart:
+// FriendRepositoryTests sends its requests TO `ci_test_user_2`, and
+// GroupRepositoryTests invites it. Not managed by this script.
+const ACCEPTED_FRIEND_USERNAME = 'ci_test_user_2';
 
 // Third profile, created here if missing, used as the *pending* friend
-// counterpart. `ci_test_user` is already spoken for as the accepted friend,
+// counterpart. `ci_test_user_2` is already spoken for as the accepted friend,
 // and the only other existing profile in the project is a real dev account
 // ("Smola") — seeding a fake pending request onto a real person's account
 // would pollute their data, so we mint a dedicated fixture profile instead.
@@ -216,7 +251,7 @@ async function main() {
   // messages (PR / streak / campaign-completion — the trigger loops ALL of
   // the achiever's groups, draft-blind). A CI-account membership in a REAL
   // user's group therefore silently posts test chatter into that chat: it
-  // happened once (ci_test_user_2 was a member of "Men for Christ", leaking
+  // happened once (ci_test_user was a member of "Men for Christ", leaking
   // system_pr + system_campaign rows — cleaned + membership removed live).
   // Every fixture below deliberately uses only the `[QA]`-prefixed group,
   // so any membership OUTSIDE that marker is unwanted by construction. This
@@ -454,72 +489,107 @@ async function main() {
   console.log(`  personal records: ${PR_EXERCISES.map((p) => p.slug).join(', ')}${skipped ? ` (${skipped} already existed, left as-is)` : ''}`);
 
   // --- one published/featured routine for the Library Featured shelf ------
-  // Publishing visibility='public' is curator-gated by RLS (routines
-  // INSERT/UPDATE policies require profiles.is_curator); the service-role
-  // key bypasses RLS entirely so this isn't strictly required for the
-  // write to succeed, but we still flip the flag for realism and in case
-  // any other code path keys off it. profiles_guard_is_curator only blocks
-  // the authenticated/anon Postgres roles, not service_role, so this PATCH
-  // is unaffected by that trigger.
+  // THE CURATOR GRANT IS SCOPED AND ALWAYS REVOKED (2026-09-05).
+  //
+  // Why it exists: setting `is_featured = true` on a routine is curator-gated
+  // by RLS (`20260728000008_open_publishing_and_stars.sql:12-29` — publishing
+  // `visibility='public'` opened to every owner; the FEATURED spotlight did
+  // not), and the featured-workouts pack below writes exactly that. The
+  // service-role key bypasses RLS entirely, so the grant is not strictly
+  // required for these writes to land — it is here for realism, so the seed
+  // exercises the same shape a real curator would. `profiles_guard_is_curator`
+  // (20260717000004) only blocks the authenticated/anon roles, not
+  // service_role, so this PATCH is unaffected by that trigger.
+  //
+  // Why it is REVOKED, in a `finally`: the seeded account is `ci_test_user`,
+  // the same account the GymSyncTests unit target signs in as, and
+  // `CurationRepositoryTests.testOpenPublishingButFeaturedIsCuratorGated`
+  // requires it to be a NON-curator at rest — it asserts that a self-feature
+  // is rejected by RLS ("non-curator self-feature must be rejected by RLS",
+  // CurationRepositoryTests.swift:52, with the file's own header at :4-6
+  // stating the CI user is deliberately not a curator). The previous version
+  // of this block granted the flag and never revoked it, which turned that
+  // test red on CI run 33990996813. `finally`, not a trailing statement, so a
+  // throw anywhere in the span below still revokes.
+  //
+  // The rows created under the grant stay valid after it: RLS gates the
+  // WRITE, not the row's existence, so the featured shelf keeps rendering.
+  //
+  // SPAN: the two blocks that write `routines` — this featured routine and
+  // the featured-workouts pack. Everything after them (Murph attempt,
+  // campaign, progress sessions) writes sessions / session_participants /
+  // set_logs / workout_attempts / campaigns, none of which consults
+  // is_curator (campaigns has no client write policy at all —
+  // 20260728000001_campaigns_schema.sql:250), so the span ends here rather
+  // than being re-granted later.
   await rest(`profiles?id=eq.${me.id}`, { method: 'PATCH', body: JSON.stringify({ is_curator: true }) });
-  await rest(`routines?owner_id=eq.${me.id}&visibility=eq.public&name=ilike.${encodeURIComponent(MARK + '%')}`, { method: 'DELETE' });
-  const [featured] = await rest('routines', { method: 'POST', headers: rep,
-    body: JSON.stringify({ owner_id: me.id, name: FEATURED_ROUTINE.name, visibility: 'public' }) });
-  const featuredRows = FEATURED_ROUTINE.exercises.map((e, i) => ({
-    routine_id: featured.id, exercise_id: bySlug[e.slug], position: i + 1,
-    target_sets: e.sets, target_reps: String(e.reps),
-  }));
-  await rest('routine_exercises', { method: 'POST', body: JSON.stringify(featuredRows) });
-  console.log(`  featured routine: ${FEATURED_ROUTINE.name}`);
-
-  // --- Phase L Task 4: featured workouts pack (find-or-create by natural
-  //     key, NOT delete-then-recreate) --------------------------------------
-  // Deliberately NOT this file's usual "delete-by-marker then re-insert"
-  // idiom (ROUTINE_PACK/FEATURED_ROUTINE above): those routines are never
-  // referenced by another table across a re-run, but these 3 ARE — "The
-  // Murph"'s id is what the attempt fixture below points at
-  // (workout_attempts.routine_id / leaderboard_entries.routine_id, both
-  // `ON DELETE SET NULL`, `20260723000001_public_workout_repository.
-  // sql:72,93`). Deleting and recreating it every run would silently orphan
-  // the CI attempt fixture's leaderboard row (routine_id -> NULL) on the
-  // SECOND run — the exact "group_id ON DELETE SET NULL orphaning" lesson
-  // this file's own group block already learned (see that block's comment,
-  // above), applied here to a new table. Find-or-create by (owner_id, name)
-  // instead — same natural-key idiom the group block uses — and PATCH the
-  // publish fields in place on every run so a pack-definition edit still
-  // takes effect without minting a new id.
-  const featuredWorkoutIDs = {};
-  for (const w of FEATURED_WORKOUTS) {
-    let [routine] = await rest(
-      `routines?select=id&owner_id=eq.${me.id}&name=eq.${encodeURIComponent(w.name)}`);
-    const publishFields = {
-      visibility: 'public',
-      is_featured: w.isFeatured,
-      default_sort: w.defaultSort,
-      scoring_metrics: w.scoringMetrics,
-      scoring_top_set_exercise_id: w.topSetExerciseSlug ? bySlug[w.topSetExerciseSlug] : null,
-      description: w.description,
-    };
-    if (!routine) {
-      [routine] = await rest('routines', { method: 'POST', headers: rep,
-        body: JSON.stringify({ owner_id: me.id, name: w.name, ...publishFields }) });
-    } else {
-      await rest(`routines?id=eq.${routine.id}`, { method: 'PATCH', body: JSON.stringify(publishFields) });
-    }
-    featuredWorkoutIDs[w.name] = routine.id;
-
-    // routine_exercises carry no cross-run stable reference (nothing else
-    // points at a specific routine_exercises row) — safe to delete-and-
-    // reinsert every run, same idiom as ROUTINE_PACK above.
-    await rest(`routine_exercises?routine_id=eq.${routine.id}`, { method: 'DELETE' });
-    const rows = w.exercises.map((e, i) => ({
-      routine_id: routine.id, exercise_id: bySlug[e.slug], position: i + 1,
-      target_sets: e.sets ?? null, target_reps: e.reps != null ? String(e.reps) : null,
-      target_weight: e.weight != null ? String(e.weight) : null,
+  const featuredWorkoutIDs = {};   // declared outside the try: read by the Murph/campaign blocks below
+  try {
+    await rest(`routines?owner_id=eq.${me.id}&visibility=eq.public&name=ilike.${encodeURIComponent(MARK + '%')}`, { method: 'DELETE' });
+    const [featured] = await rest('routines', { method: 'POST', headers: rep,
+      body: JSON.stringify({ owner_id: me.id, name: FEATURED_ROUTINE.name, visibility: 'public' }) });
+    const featuredRows = FEATURED_ROUTINE.exercises.map((e, i) => ({
+      routine_id: featured.id, exercise_id: bySlug[e.slug], position: i + 1,
+      target_sets: e.sets, target_reps: String(e.reps),
     }));
-    await rest('routine_exercises', { method: 'POST', body: JSON.stringify(rows) });
+    await rest('routine_exercises', { method: 'POST', body: JSON.stringify(featuredRows) });
+    console.log(`  featured routine: ${FEATURED_ROUTINE.name}`);
+
+    // --- Phase L Task 4: featured workouts pack (find-or-create by natural
+    //     key, NOT delete-then-recreate) ------------------------------------
+    // Deliberately NOT this file's usual "delete-by-marker then re-insert"
+    // idiom (ROUTINE_PACK/FEATURED_ROUTINE above): those routines are never
+    // referenced by another table across a re-run, but these 3 ARE — "The
+    // Murph"'s id is what the attempt fixture below points at
+    // (workout_attempts.routine_id / leaderboard_entries.routine_id, both
+    // `ON DELETE SET NULL`, `20260723000001_public_workout_repository.
+    // sql:72,93`). Deleting and recreating it every run would silently orphan
+    // the CI attempt fixture's leaderboard row (routine_id -> NULL) on the
+    // SECOND run — the exact "group_id ON DELETE SET NULL orphaning" lesson
+    // this file's own group block already learned (see that block's comment,
+    // above), applied here to a new table. Find-or-create by (owner_id, name)
+    // instead — same natural-key idiom the group block uses — and PATCH the
+    // publish fields in place on every run so a pack-definition edit still
+    // takes effect without minting a new id.
+    for (const w of FEATURED_WORKOUTS) {
+      let [routine] = await rest(
+        `routines?select=id&owner_id=eq.${me.id}&name=eq.${encodeURIComponent(w.name)}`);
+      const publishFields = {
+        visibility: 'public',
+        is_featured: w.isFeatured,
+        default_sort: w.defaultSort,
+        scoring_metrics: w.scoringMetrics,
+        scoring_top_set_exercise_id: w.topSetExerciseSlug ? bySlug[w.topSetExerciseSlug] : null,
+        description: w.description,
+      };
+      if (!routine) {
+        [routine] = await rest('routines', { method: 'POST', headers: rep,
+          body: JSON.stringify({ owner_id: me.id, name: w.name, ...publishFields }) });
+      } else {
+        await rest(`routines?id=eq.${routine.id}`, { method: 'PATCH', body: JSON.stringify(publishFields) });
+      }
+      featuredWorkoutIDs[w.name] = routine.id;
+
+      // routine_exercises carry no cross-run stable reference (nothing else
+      // points at a specific routine_exercises row) — safe to delete-and-
+      // reinsert every run, same idiom as ROUTINE_PACK above.
+      await rest(`routine_exercises?routine_id=eq.${routine.id}`, { method: 'DELETE' });
+      const rows = w.exercises.map((e, i) => ({
+        routine_id: routine.id, exercise_id: bySlug[e.slug], position: i + 1,
+        target_sets: e.sets ?? null, target_reps: e.reps != null ? String(e.reps) : null,
+        target_weight: e.weight != null ? String(e.weight) : null,
+      }));
+      await rest('routine_exercises', { method: 'POST', body: JSON.stringify(rows) });
+    }
+    console.log(`  featured workouts pack: ${FEATURED_WORKOUTS.map((w) => w.name).join(', ')}`);
+  } finally {
+    // Unconditional: the account must be a non-curator at rest, whether or
+    // not the span above succeeded. A failed run that left the flag ON is
+    // what red-lit build-test; this revoke also self-heals that state on the
+    // next run, because it runs even when the span throws.
+    await rest(`profiles?id=eq.${me.id}`, { method: 'PATCH', body: JSON.stringify({ is_curator: false }) });
+    console.log('  curator grant revoked (ci_test_user is a non-curator at rest)');
   }
-  console.log(`  featured workouts pack: ${FEATURED_WORKOUTS.map((w) => w.name).join(', ')}`);
 
   // --- Phase L Task 4: CI-account "The Murph" attempt fixture -------------
   // workout_attempts/leaderboard_entries are written EXCLUSIVELY by DEFINER
@@ -533,10 +603,23 @@ async function main() {
   // (the same bypass this whole script already relies on for
   // sessions/session_participants/set_logs elsewhere) to write a real
   // session_participants row, a real workout_attempts row, and real
-  // set_logs, then flip `sessions.state` scheduled -> completed in ONE
-  // PATCH so the REAL `leaderboard_recompute_on_session_completion` trigger
-  // computes time_seconds/total_volume/top_sets itself — never hand-written
-  // into leaderboard_entries directly.
+  // set_logs, then let the REAL
+  // `leaderboard_recompute_on_session_completion` trigger compute
+  // time_seconds/total_volume/top_sets itself — never hand-written into
+  // leaderboard_entries directly.
+  //
+  // THREE steps, in this order, and the order is not cosmetic:
+  //   1. `scheduled` -> `in_progress` (`ensureSessionLive`), because
+  //      `set_logs_reject_prelive` — a BEFORE INSERT trigger ON set_logs
+  //      (20260803000002) — raises P0001 "session has not started" for a log
+  //      written into any pre-live session. This is the step CI run
+  //      33990257726 was missing.
+  //   2. insert the set_logs.
+  //   3. `in_progress` -> `completed` in ONE PATCH, which is the transition
+  //      the leaderboard recompute (AFTER UPDATE OF state) listens for.
+  // It is also the order a real client produces, which is the point: the
+  // fixture walks the same path a lifter does rather than synthesising a
+  // terminal state the triggers never saw.
   //
   // Fixed, deterministic `scheduled_for` (never `now()`) is this block's
   // natural key, same idiom as STREAK_DATES above — sessions has no name
@@ -578,7 +661,7 @@ async function main() {
   // Task 7 item 2 (pre-GA ledger, .superpowers/sdd/task-7-brief.md item 2)
   // ADJUDICATION — is_opt_in_leaderboard hardcoded FALSE (was `true`):
   // this CI fixture attempt was live in production with opt-in TRUE, which
-  // put ci_test_user_2's "42:13" row on the REAL public "The Murph"
+  // put ci_test_user's "42:13" row on the REAL public "The Murph"
   // leaderboard next to genuine users — the pre-GA blocker
   // (.superpowers/sdd/progress.md's "PRE-GA LEDGER: ... (2) scope QA seeding
   // off prod / remove CI Murph entry before GA").
@@ -661,6 +744,13 @@ async function main() {
     // for the same reason as the run/vest omission above: an honest
     // limitation of an added-load volume metric applied to a bodyweight
     // benchmark, not a bug.
+
+    // START before logging — set_logs_reject_prelive rejects a log written
+    // into a `scheduled` session (see the helper). `started_at` matches the
+    // attempt row's own value above, so the session and the attempt agree on
+    // when this workout began.
+    await ensureSessionLive(murphSession, MURPH_ATTEMPT_SCHEDULED_FOR);
+
     const existingLogs = await rest(
       `set_logs?select=id&session_id=eq.${murphSession.id}&user_id=eq.${me.id}`);
     if (!existingLogs.length) {
@@ -673,12 +763,13 @@ async function main() {
       await rest('set_logs', { method: 'POST', body: JSON.stringify(logRows) });
     }
 
-    // scheduled -> completed: the exact transition
+    // in_progress -> completed: the exact transition
     // leaderboard_recompute_on_session_completion listens for (AFTER UPDATE
     // OF state), same guard shape as the streak block's own completion PATCH
-    // above. The `state=eq.scheduled` filter makes this a no-op (0 rows) if
-    // a prior run already completed it.
-    await rest(`sessions?id=eq.${murphSession.id}&state=eq.scheduled`, { method: 'PATCH',
+    // above. The state filter still makes this a no-op (0 rows) if a prior
+    // run already completed it — it just names `in_progress` now, because
+    // `ensureSessionLive` above is what this session is coming from.
+    await rest(`sessions?id=eq.${murphSession.id}&state=eq.in_progress`, { method: 'PATCH',
       body: JSON.stringify({ state: 'completed', completed_at: MURPH_ATTEMPT_COMPLETED_AT }) });
 
     const [entry] = await rest(
@@ -780,9 +871,11 @@ async function main() {
   // trigger's `NEW.routine_id = ANY(c.curated_routine_ids)` predicate
   // matches. Fixed, deterministic timestamps (never `now()`) as each
   // session's natural key, same reasoning as MURPH_ATTEMPT_SCHEDULED_FOR
-  // above — the `state=eq.scheduled` filter on the completion PATCH makes
-  // every run after the first a no-op (0 rows), so the trigger fires
-  // EXACTLY once per session regardless of how many times this script
+  // above — the state filter on the completion PATCH (`in_progress`, per the
+  // three-step start -> log -> complete order the Murph block above
+  // documents) makes every run after the first a no-op (0 rows), because a
+  // completed session is neither re-started nor re-completed, so the trigger
+  // fires EXACTLY once per session regardless of how many times this script
   // re-runs, even if a much later re-run has since PATCHed the campaign's
   // own starts_at/ends_at window forward past these fixed completed_ats —
   // the accrual already happened and is not re-derived from the campaign's
@@ -831,6 +924,9 @@ async function main() {
     // honest number (back-squat, 5 reps @ 135 lbs = 675) rather than 0 —
     // same "weight IS NOT NULL" shape the trigger's own volume SUM
     // requires (20260728000002_campaign_progress_trigger.sql:256-261).
+    // START before logging, same trigger, same reason as the Murph block.
+    await ensureSessionLive(progressSession, fx.scheduledFor);
+
     const existingProgressLogs = await rest(
       `set_logs?select=id&session_id=eq.${progressSession.id}&user_id=eq.${me.id}`);
     if (!existingProgressLogs.length) {
@@ -840,7 +936,7 @@ async function main() {
       }]) });
     }
 
-    await rest(`sessions?id=eq.${progressSession.id}&state=eq.scheduled`, { method: 'PATCH',
+    await rest(`sessions?id=eq.${progressSession.id}&state=eq.in_progress`, { method: 'PATCH',
       body: JSON.stringify({ state: 'completed', completed_at: fx.completedAt }) });
   }
 

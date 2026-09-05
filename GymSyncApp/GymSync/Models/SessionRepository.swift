@@ -440,7 +440,27 @@ enum SessionRepository {
     }
 
     /// Sessions where I am a participant with an active (pre-workout) state, ordered by scheduled_for.
-    static func upcoming() async throws -> [WorkoutSession] {
+    ///
+    /// Bounded on BOTH axes, like the sibling `upcomingScheduled(organizerID:limit:)`.
+    /// This query had neither, and a pre-workout state is sticky: nothing ever
+    /// moves a stale `scheduled` row out of it, so every one stayed "upcoming"
+    /// forever and the result set only ever grew. That is not hypothetical — the
+    /// shared CI account reached ~680 rows, and this is the FIRST `async let` of
+    /// `HomeView.refresh()`, which runs inside the wave the launch overlay holds
+    /// on, so the cost landed on every single app launch. A real user who
+    /// accumulates a few hundred never-started sessions pays exactly the same.
+    ///
+    /// The floor is `now − 30 min`, not `now`: Home only treats a session as
+    /// MISSED 30 minutes after its scheduled start (`HomeView.todaysSession`,
+    /// `nextActionableSession`), so a hard `>= now` would pull the "Join …" hero
+    /// out from under someone two minutes late to their own lobby. Every
+    /// pre-workout insert path sets `scheduled_for` (`schedule`,
+    /// `scheduleForClient`, `SessionSeries`), so no row is lost to a NULL.
+    ///
+    /// `limit` mirrors the sibling's signature and defaults high enough that no
+    /// existing caller changes behaviour — all four pass nothing and none render
+    /// more than a handful.
+    static func upcoming(limit: Int = 200) async throws -> [WorkoutSession] {
         guard let userID = await SupabaseService.shared.currentUserID() else {
             throw GymSyncError.unauthorized
         }
@@ -449,12 +469,15 @@ enum SessionRepository {
             // two-step (fetch ALL participations, then sessions .in(ids))
             // fanned every historical session ID into the request URL and
             // returned 400 once a user accumulated a few hundred sessions.
+            let floor = Date.now.addingTimeInterval(-30 * 60)
             let sessions: [WorkoutSession] = try await client
                 .from("sessions")
                 .select("*, session_participants!inner(user_id)")
                 .eq("session_participants.user_id", value: userID.uuidString)
                 .in("state", values: ["scheduled", "lobby_open", "editing", "voting", "locked"])
+                .gte("scheduled_for", value: ISO8601DateFormatter().string(from: floor))
                 .order("scheduled_for", ascending: true)
+                .limit(limit)
                 .execute().value
             return sessions
         } catch { throw ErrorMapping.map(error) }
