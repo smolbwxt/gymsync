@@ -29,6 +29,13 @@ import XCTest
 /// not: that detached task can lose the race with process exit, which is the
 /// defect ModerationRepositoryTests.swift:20-27 records having already been
 /// bitten by.
+///
+/// The one path this CANNOT cover: `startSolo` and `schedule` are not
+/// transactional — each inserts the session row, then the participant rows in a
+/// separate round trip (SessionRepository.swift:42-53 and :391-417) — so a
+/// throw between the two orphans a session before the factory is ever handed an
+/// id to register. That is a production-side gap, not something a test helper
+/// can close.
 extension XCTestCase {
 
     /// Solo session (`state: in_progress`, `started_at` set, self as the sole

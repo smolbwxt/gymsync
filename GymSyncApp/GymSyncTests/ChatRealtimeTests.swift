@@ -5,7 +5,13 @@ final class ChatRealtimeTests: XCTestCase {
     func testInsertIsDeliveredToSubscriber() async throws {
         try await TestAuth.signInIfConfigured()
         let group = try await GroupRepository.create(name: "CI Realtime Group")
-        defer { Task { try? await GroupRepository.deleteGroup(groupID: group.id) } }
+        // Registered the instant the row exists. The `defer { Task { } }` this
+        // replaces was detached: XCTest does not await it, so it could lose the
+        // race with process exit — the defect
+        // ModerationRepositoryTests.swift:20-27 records having been bitten by.
+        addTeardownBlock {
+            try? await GroupRepository.deleteGroup(groupID: group.id)
+        }
 
         let expectation = XCTestExpectation(description: "realtime insert delivered")
         let service = await ChatRealtimeService()
@@ -20,14 +26,12 @@ final class ChatRealtimeTests: XCTestCase {
 
         await fulfillment(of: [expectation], timeout: 25)
         await service.unsubscribe()
-        try await GroupRepository.deleteGroup(groupID: group.id)
     }
 
     func testSessionInsertIsDeliveredToSubscriber() async throws {
         try await TestAuth.signInIfConfigured()
-        // No `defer { Task { } }` here: makeTempSoloSession registers the delete
-        // with addTeardownBlock, which XCTest awaits. A detached task can lose
-        // the race with process exit (ModerationRepositoryTests.swift:20-27).
+        // Cleanup is the teardown block inside makeTempSoloSession, which
+        // XCTest awaits — same discipline as the group above.
         let session = try await makeTempSoloSession()
 
         let expectation = XCTestExpectation(description: "realtime insert delivered")
