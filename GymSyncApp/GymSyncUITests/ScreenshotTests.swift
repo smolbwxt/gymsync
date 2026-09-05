@@ -71,6 +71,19 @@ final class ScreenshotTests: XCTestCase {
         // `@testable import GymSync`, asserts the key's value so a rename
         // can't silently orphan this string.)
         app.launchArguments += ["-guidanceTipsEnabled", "NO"]
+        // Pin the LOOK. Without this the 16 signed-in captures render the CI
+        // account's persisted user_settings palette (a light one, lime accent)
+        // while the 54 catalog captures hard-pin onyx+sky at GymSyncApp.swift
+        // — the parity harness was comparing two different design languages,
+        // and the owner's proofs are onyx. ThemeStore reads these from the
+        // ARGUMENT domain in init() (before the first frame) and then ignores
+        // load()/select(), so the network row can't repaint a capture.
+        // Literals, not ThemeLaunchArgument.palette/.accent: this target runs
+        // out-of-process and links no app code — same reason
+        // -guidanceTipsEnabled is a literal above. ThemeStoreLaunchPinTests
+        // (which DOES `@testable import GymSync`) asserts these key strings so
+        // a rename can't silently orphan them.
+        app.launchArguments += ["-gsPalette", "onyx", "-gsAccent", "sky"]
         var env = app.launchEnvironment
         // Sourced from the UI test *process's* environment — CI's
         // `xcodebuild test` step sets these via `env:`, which XCTest inherits
