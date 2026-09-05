@@ -489,72 +489,107 @@ async function main() {
   console.log(`  personal records: ${PR_EXERCISES.map((p) => p.slug).join(', ')}${skipped ? ` (${skipped} already existed, left as-is)` : ''}`);
 
   // --- one published/featured routine for the Library Featured shelf ------
-  // Publishing visibility='public' is curator-gated by RLS (routines
-  // INSERT/UPDATE policies require profiles.is_curator); the service-role
-  // key bypasses RLS entirely so this isn't strictly required for the
-  // write to succeed, but we still flip the flag for realism and in case
-  // any other code path keys off it. profiles_guard_is_curator only blocks
-  // the authenticated/anon Postgres roles, not service_role, so this PATCH
-  // is unaffected by that trigger.
+  // THE CURATOR GRANT IS SCOPED AND ALWAYS REVOKED (2026-09-05).
+  //
+  // Why it exists: setting `is_featured = true` on a routine is curator-gated
+  // by RLS (`20260728000008_open_publishing_and_stars.sql:12-29` — publishing
+  // `visibility='public'` opened to every owner; the FEATURED spotlight did
+  // not), and the featured-workouts pack below writes exactly that. The
+  // service-role key bypasses RLS entirely, so the grant is not strictly
+  // required for these writes to land — it is here for realism, so the seed
+  // exercises the same shape a real curator would. `profiles_guard_is_curator`
+  // (20260717000004) only blocks the authenticated/anon roles, not
+  // service_role, so this PATCH is unaffected by that trigger.
+  //
+  // Why it is REVOKED, in a `finally`: the seeded account is `ci_test_user`,
+  // the same account the GymSyncTests unit target signs in as, and
+  // `CurationRepositoryTests.testOpenPublishingButFeaturedIsCuratorGated`
+  // requires it to be a NON-curator at rest — it asserts that a self-feature
+  // is rejected by RLS ("non-curator self-feature must be rejected by RLS",
+  // CurationRepositoryTests.swift:52, with the file's own header at :4-6
+  // stating the CI user is deliberately not a curator). The previous version
+  // of this block granted the flag and never revoked it, which turned that
+  // test red on CI run 33990996813. `finally`, not a trailing statement, so a
+  // throw anywhere in the span below still revokes.
+  //
+  // The rows created under the grant stay valid after it: RLS gates the
+  // WRITE, not the row's existence, so the featured shelf keeps rendering.
+  //
+  // SPAN: the two blocks that write `routines` — this featured routine and
+  // the featured-workouts pack. Everything after them (Murph attempt,
+  // campaign, progress sessions) writes sessions / session_participants /
+  // set_logs / workout_attempts / campaigns, none of which consults
+  // is_curator (campaigns has no client write policy at all —
+  // 20260728000001_campaigns_schema.sql:250), so the span ends here rather
+  // than being re-granted later.
   await rest(`profiles?id=eq.${me.id}`, { method: 'PATCH', body: JSON.stringify({ is_curator: true }) });
-  await rest(`routines?owner_id=eq.${me.id}&visibility=eq.public&name=ilike.${encodeURIComponent(MARK + '%')}`, { method: 'DELETE' });
-  const [featured] = await rest('routines', { method: 'POST', headers: rep,
-    body: JSON.stringify({ owner_id: me.id, name: FEATURED_ROUTINE.name, visibility: 'public' }) });
-  const featuredRows = FEATURED_ROUTINE.exercises.map((e, i) => ({
-    routine_id: featured.id, exercise_id: bySlug[e.slug], position: i + 1,
-    target_sets: e.sets, target_reps: String(e.reps),
-  }));
-  await rest('routine_exercises', { method: 'POST', body: JSON.stringify(featuredRows) });
-  console.log(`  featured routine: ${FEATURED_ROUTINE.name}`);
-
-  // --- Phase L Task 4: featured workouts pack (find-or-create by natural
-  //     key, NOT delete-then-recreate) --------------------------------------
-  // Deliberately NOT this file's usual "delete-by-marker then re-insert"
-  // idiom (ROUTINE_PACK/FEATURED_ROUTINE above): those routines are never
-  // referenced by another table across a re-run, but these 3 ARE — "The
-  // Murph"'s id is what the attempt fixture below points at
-  // (workout_attempts.routine_id / leaderboard_entries.routine_id, both
-  // `ON DELETE SET NULL`, `20260723000001_public_workout_repository.
-  // sql:72,93`). Deleting and recreating it every run would silently orphan
-  // the CI attempt fixture's leaderboard row (routine_id -> NULL) on the
-  // SECOND run — the exact "group_id ON DELETE SET NULL orphaning" lesson
-  // this file's own group block already learned (see that block's comment,
-  // above), applied here to a new table. Find-or-create by (owner_id, name)
-  // instead — same natural-key idiom the group block uses — and PATCH the
-  // publish fields in place on every run so a pack-definition edit still
-  // takes effect without minting a new id.
-  const featuredWorkoutIDs = {};
-  for (const w of FEATURED_WORKOUTS) {
-    let [routine] = await rest(
-      `routines?select=id&owner_id=eq.${me.id}&name=eq.${encodeURIComponent(w.name)}`);
-    const publishFields = {
-      visibility: 'public',
-      is_featured: w.isFeatured,
-      default_sort: w.defaultSort,
-      scoring_metrics: w.scoringMetrics,
-      scoring_top_set_exercise_id: w.topSetExerciseSlug ? bySlug[w.topSetExerciseSlug] : null,
-      description: w.description,
-    };
-    if (!routine) {
-      [routine] = await rest('routines', { method: 'POST', headers: rep,
-        body: JSON.stringify({ owner_id: me.id, name: w.name, ...publishFields }) });
-    } else {
-      await rest(`routines?id=eq.${routine.id}`, { method: 'PATCH', body: JSON.stringify(publishFields) });
-    }
-    featuredWorkoutIDs[w.name] = routine.id;
-
-    // routine_exercises carry no cross-run stable reference (nothing else
-    // points at a specific routine_exercises row) — safe to delete-and-
-    // reinsert every run, same idiom as ROUTINE_PACK above.
-    await rest(`routine_exercises?routine_id=eq.${routine.id}`, { method: 'DELETE' });
-    const rows = w.exercises.map((e, i) => ({
-      routine_id: routine.id, exercise_id: bySlug[e.slug], position: i + 1,
-      target_sets: e.sets ?? null, target_reps: e.reps != null ? String(e.reps) : null,
-      target_weight: e.weight != null ? String(e.weight) : null,
+  const featuredWorkoutIDs = {};   // declared outside the try: read by the Murph/campaign blocks below
+  try {
+    await rest(`routines?owner_id=eq.${me.id}&visibility=eq.public&name=ilike.${encodeURIComponent(MARK + '%')}`, { method: 'DELETE' });
+    const [featured] = await rest('routines', { method: 'POST', headers: rep,
+      body: JSON.stringify({ owner_id: me.id, name: FEATURED_ROUTINE.name, visibility: 'public' }) });
+    const featuredRows = FEATURED_ROUTINE.exercises.map((e, i) => ({
+      routine_id: featured.id, exercise_id: bySlug[e.slug], position: i + 1,
+      target_sets: e.sets, target_reps: String(e.reps),
     }));
-    await rest('routine_exercises', { method: 'POST', body: JSON.stringify(rows) });
+    await rest('routine_exercises', { method: 'POST', body: JSON.stringify(featuredRows) });
+    console.log(`  featured routine: ${FEATURED_ROUTINE.name}`);
+
+    // --- Phase L Task 4: featured workouts pack (find-or-create by natural
+    //     key, NOT delete-then-recreate) ------------------------------------
+    // Deliberately NOT this file's usual "delete-by-marker then re-insert"
+    // idiom (ROUTINE_PACK/FEATURED_ROUTINE above): those routines are never
+    // referenced by another table across a re-run, but these 3 ARE — "The
+    // Murph"'s id is what the attempt fixture below points at
+    // (workout_attempts.routine_id / leaderboard_entries.routine_id, both
+    // `ON DELETE SET NULL`, `20260723000001_public_workout_repository.
+    // sql:72,93`). Deleting and recreating it every run would silently orphan
+    // the CI attempt fixture's leaderboard row (routine_id -> NULL) on the
+    // SECOND run — the exact "group_id ON DELETE SET NULL orphaning" lesson
+    // this file's own group block already learned (see that block's comment,
+    // above), applied here to a new table. Find-or-create by (owner_id, name)
+    // instead — same natural-key idiom the group block uses — and PATCH the
+    // publish fields in place on every run so a pack-definition edit still
+    // takes effect without minting a new id.
+    for (const w of FEATURED_WORKOUTS) {
+      let [routine] = await rest(
+        `routines?select=id&owner_id=eq.${me.id}&name=eq.${encodeURIComponent(w.name)}`);
+      const publishFields = {
+        visibility: 'public',
+        is_featured: w.isFeatured,
+        default_sort: w.defaultSort,
+        scoring_metrics: w.scoringMetrics,
+        scoring_top_set_exercise_id: w.topSetExerciseSlug ? bySlug[w.topSetExerciseSlug] : null,
+        description: w.description,
+      };
+      if (!routine) {
+        [routine] = await rest('routines', { method: 'POST', headers: rep,
+          body: JSON.stringify({ owner_id: me.id, name: w.name, ...publishFields }) });
+      } else {
+        await rest(`routines?id=eq.${routine.id}`, { method: 'PATCH', body: JSON.stringify(publishFields) });
+      }
+      featuredWorkoutIDs[w.name] = routine.id;
+
+      // routine_exercises carry no cross-run stable reference (nothing else
+      // points at a specific routine_exercises row) — safe to delete-and-
+      // reinsert every run, same idiom as ROUTINE_PACK above.
+      await rest(`routine_exercises?routine_id=eq.${routine.id}`, { method: 'DELETE' });
+      const rows = w.exercises.map((e, i) => ({
+        routine_id: routine.id, exercise_id: bySlug[e.slug], position: i + 1,
+        target_sets: e.sets ?? null, target_reps: e.reps != null ? String(e.reps) : null,
+        target_weight: e.weight != null ? String(e.weight) : null,
+      }));
+      await rest('routine_exercises', { method: 'POST', body: JSON.stringify(rows) });
+    }
+    console.log(`  featured workouts pack: ${FEATURED_WORKOUTS.map((w) => w.name).join(', ')}`);
+  } finally {
+    // Unconditional: the account must be a non-curator at rest, whether or
+    // not the span above succeeded. A failed run that left the flag ON is
+    // what red-lit build-test; this revoke also self-heals that state on the
+    // next run, because it runs even when the span throws.
+    await rest(`profiles?id=eq.${me.id}`, { method: 'PATCH', body: JSON.stringify({ is_curator: false }) });
+    console.log('  curator grant revoked (ci_test_user is a non-curator at rest)');
   }
-  console.log(`  featured workouts pack: ${FEATURED_WORKOUTS.map((w) => w.name).join(', ')}`);
 
   // --- Phase L Task 4: CI-account "The Murph" attempt fixture -------------
   // workout_attempts/leaderboard_entries are written EXCLUSIVELY by DEFINER
