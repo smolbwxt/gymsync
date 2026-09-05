@@ -25,8 +25,10 @@ final class ChatRealtimeTests: XCTestCase {
 
     func testSessionInsertIsDeliveredToSubscriber() async throws {
         try await TestAuth.signInIfConfigured()
-        let session = try await SessionRepository.startSolo(routineID: nil)
-        defer { Task { try? await SessionRepository.complete(sessionID: session.id) } }
+        // No `defer { Task { } }` here: makeTempSoloSession registers the delete
+        // with addTeardownBlock, which XCTest awaits. A detached task can lose
+        // the race with process exit (ModerationRepositoryTests.swift:20-27).
+        let session = try await makeTempSoloSession()
 
         let expectation = XCTestExpectation(description: "realtime insert delivered")
         let service = await ChatRealtimeService()
@@ -42,6 +44,5 @@ final class ChatRealtimeTests: XCTestCase {
 
         await fulfillment(of: [expectation], timeout: 25)
         await service.unsubscribe()
-        try await SessionRepository.complete(sessionID: session.id)
     }
 }
