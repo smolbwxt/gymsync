@@ -9,7 +9,7 @@ import XCTest
 /// a real Apple ID in CI), then walks each of the five tabs plus the
 /// You -> Appearance destination, attaching a screenshot for each.
 ///
-/// This account (ci_test_user_2 — same one the GymSyncTests unit test target
+/// This account (ci_test_user — same one the GymSyncTests unit test target
 /// uses) is shared and its data mutates between runs; these screenshots are
 /// for layout/visual verification only, not content assertions. Deliberately
 /// no pixel-diffing here — that's a follow-up once this pipeline is proven

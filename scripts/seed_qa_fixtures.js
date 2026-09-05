@@ -63,12 +63,23 @@ async function rest(pathAndQuery, opts = {}) {
 const rep = { Prefer: 'return=representation' };
 const MARK = '[QA]'; // stable marker: name-prefix for fixture rows we own
 
-// Real second CI account (id/username only — Swift tests never sign in as
-// it) used as the friend counterpart. Not managed by this script.
-const ACCEPTED_FRIEND_USERNAME = 'ci_test_user';
+// WHO IS WHO (corrected 2026-09-05, from the DB and the repo secrets):
+// the seeded world's OWNER is whoever `--username` names — supplied by the
+// CI_TEST_USERNAME secret as `ci_test_user`, which is the account CI
+// actually signs in as. Its email (ci-tests@gymsync.app) is TEST_USER_EMAIL,
+// which the screenshot job forwards as UITEST_EMAIL, and its username is the
+// greeting rendered on the Home capture. The GymSyncTests unit target signs
+// in as the same account.
+//
+// `ci_test_user_2` is the real SECOND CI account (id/username only — nothing
+// signs in as it here) used solely as the accepted-friend counterpart. That
+// matches the Swift tests, which also treat `_2` as the counterpart:
+// FriendRepositoryTests sends its requests TO `ci_test_user_2`, and
+// GroupRepositoryTests invites it. Not managed by this script.
+const ACCEPTED_FRIEND_USERNAME = 'ci_test_user_2';
 
 // Third profile, created here if missing, used as the *pending* friend
-// counterpart. `ci_test_user` is already spoken for as the accepted friend,
+// counterpart. `ci_test_user_2` is already spoken for as the accepted friend,
 // and the only other existing profile in the project is a real dev account
 // ("Smola") — seeding a fake pending request onto a real person's account
 // would pollute their data, so we mint a dedicated fixture profile instead.
@@ -216,7 +227,7 @@ async function main() {
   // messages (PR / streak / campaign-completion — the trigger loops ALL of
   // the achiever's groups, draft-blind). A CI-account membership in a REAL
   // user's group therefore silently posts test chatter into that chat: it
-  // happened once (ci_test_user_2 was a member of "Men for Christ", leaking
+  // happened once (ci_test_user was a member of "Men for Christ", leaking
   // system_pr + system_campaign rows — cleaned + membership removed live).
   // Every fixture below deliberately uses only the `[QA]`-prefixed group,
   // so any membership OUTSIDE that marker is unwanted by construction. This
@@ -578,7 +589,7 @@ async function main() {
   // Task 7 item 2 (pre-GA ledger, .superpowers/sdd/task-7-brief.md item 2)
   // ADJUDICATION — is_opt_in_leaderboard hardcoded FALSE (was `true`):
   // this CI fixture attempt was live in production with opt-in TRUE, which
-  // put ci_test_user_2's "42:13" row on the REAL public "The Murph"
+  // put ci_test_user's "42:13" row on the REAL public "The Murph"
   // leaderboard next to genuine users — the pre-GA blocker
   // (.superpowers/sdd/progress.md's "PRE-GA LEDGER: ... (2) scope QA seeding
   // off prod / remove CI Murph entry before GA").
