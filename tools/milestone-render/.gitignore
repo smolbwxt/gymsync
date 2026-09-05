@@ -1,0 +1,7 @@
+# Rendered frame sets are build artefacts: every set regenerates in well under a minute
+# on the GPU (see README). Only the manifests and the small design proofs are tracked.
+out*/frame_*.png
+out*/**/frame_*.png
+
+# Half-size --preview scratch renders.
+out*/preview/
