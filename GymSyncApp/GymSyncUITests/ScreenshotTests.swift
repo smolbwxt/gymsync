@@ -422,6 +422,17 @@ final class ScreenshotTests: XCTestCase {
     // screen without the suite acquiring a write.
     func testCatalogSoloLiveSet()            { captureCatalog("solo-live-set") }
 
+    // Home v2 (home-v2 catalog plan): both arrangements, each in its own
+    // fixture world and in the other's. These four ARE the deliverable — the
+    // owner asked to judge A and B as implemented screens rather than
+    // mockups, and the CI artifact is the only way a design round sees a
+    // screen before TestFlight. Production Home is untouched, so
+    // `testHomeTab`'s capture still shows the live screen beside them.
+    func testCatalogHomeV2Tiles()            { captureCatalog("home-v2-tiles") }
+    func testCatalogHomeV2Strips()           { captureCatalog("home-v2-strips") }
+    func testCatalogHomeV2TilesSoloDay()     { captureCatalog("home-v2-tiles-solo-day") }
+    func testCatalogHomeV2StripsCrewNight()  { captureCatalog("home-v2-strips-crew-night") }
+
     // MARK: - Seeded deep-screen captures
     //
     // Reachable via the deterministic `ci_test_user_2` fixture world (Task 3,

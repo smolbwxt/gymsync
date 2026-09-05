@@ -317,7 +317,7 @@ jobs:
 
       # Guards the MEDIUM. `continue-on-error: true` on this job plus
       # `if: always()` on the two steps above means a suite that failed 40 of
-      # its 71 methods still publishes a green-looking `app-screenshots`
+      # its 75 methods still publishes a green-looking `app-screenshots`
       # artifact, and nobody is told the design-review medium degraded. This
       # is the floor that closes that. It runs AFTER the upload deliberately:
       # a failure here must not cost us the partial artifact that explains
@@ -333,7 +333,7 @@ jobs:
         if: always()
         run: |
           SCREENS="$RUNNER_TEMP/screens"
-          FLOOR=71
+          FLOOR=75
           # `|| true` + the `:-0` default for the same `set -eo pipefail`
           # reason as the simulator picker above: a missing $SCREENS makes
           # `find` exit 1, which would kill the step before it printed the
