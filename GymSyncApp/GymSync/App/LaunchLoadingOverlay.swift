@@ -54,6 +54,21 @@ struct LaunchLoadingOverlay: View {
                     .opacity(settled ? 1 : 0)
             }
         }
+        // FIRST accessibility identifier in the app, and the convention for
+        // test-visible chrome from here on: any full-screen cover a UI test
+        // must wait OUT gets a stable id here rather than being matched on
+        // its copy ("LOADING THE BAR"), which would silently stop checking
+        // the moment someone rewords the caption.
+        //
+        // `.contain` keeps the caption/art queryable underneath instead of
+        // flattening them into one element, and makes this ZStack itself
+        // surface as an `otherElements` container —
+        // `ScreenshotTests.waitForLaunchOverlay` waits for it to STOP
+        // existing, which SwiftUI reports only once the 350 ms removal
+        // transition has finished (a screenshot taken any earlier catches a
+        // partially-faded overlay).
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("launch-overlay")
         .task {
             // Reduce-motion users still get the hold (the mount window is the
             // functional half); they just don't get the fade-in flourish.

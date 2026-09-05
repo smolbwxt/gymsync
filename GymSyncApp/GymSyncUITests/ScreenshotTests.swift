@@ -27,6 +27,16 @@ final class ScreenshotTests: XCTestCase {
     // "Home" button exists — see AuthService.bootstrap() / OnboardingCoordinator.
     private let launchTimeout: TimeInterval = 60
 
+    /// Ceiling for the cold-launch brand overlay. The product's own worst
+    /// case is 4.15 s (1300 ms brand moment + a hold capped at 2500 ms +
+    /// a 350 ms fade — LaunchLoadingOverlay/RootView); 15 s is slack for a
+    /// loaded CI runner, not a target.
+    private let launchOverlayTimeout: TimeInterval = 15
+
+    /// Render budget for a `captureCatalog` launch — see the comment at its
+    /// only use site for why this is a constant of its own and not `settle()`.
+    private let catalogRenderBudget: TimeInterval = 2.0
+
     override func setUp() {
         super.setUp()
         // Abort a test at its first failure: without this, XCTFail (e.g. the
@@ -98,15 +108,42 @@ final class ScreenshotTests: XCTestCase {
             attachScreenshot(app, named: "launch-failed.png")
         }
         XCTAssertTrue(appeared, "Tab bar did not appear within \(launchTimeout)s — autologin, profile load, or app launch may have failed")
+        if appeared { waitForLaunchOverlay(app) }
         return appeared
+    }
+
+    /// Waits OUT the cold-launch brand overlay.
+    ///
+    /// Called from `waitForTabBar` (rather than from each test) so all 16
+    /// signed-in walks inherit it. The overlay is an `.overlay` ON
+    /// `MainTabView`, so the tab bar EXISTS from the same instant the
+    /// overlay does — `waitForTabBar` alone is not a readiness signal, it
+    /// is the signal that the overlay just appeared. The overlay then lives
+    /// 1.65–4.15 s (1300 ms brand moment + a 0–2500 ms hold on
+    /// `launchFetchesInFlight` + a 350 ms fade), i.e. always longer than
+    /// `settle()`, which is why `app-tab-home` was captured dimmed or
+    /// mid-fade on every run.
+    ///
+    /// `waitForNonExistence` is the right primitive precisely because
+    /// SwiftUI keeps a view mounted (and its AX elements queryable) for the
+    /// whole removal transition: this releases when the last pixel is gone,
+    /// which no fixed sleep can promise.
+    private func waitForLaunchOverlay(_ app: XCUIApplication) {
+        let gone = app.otherElements["launch-overlay"].waitForNonExistence(timeout: launchOverlayTimeout)
+        if !gone {
+            attachScreenshot(app, named: "launch-overlay-stuck.png")
+        }
+        XCTAssertTrue(gone, "Launch overlay still present after \(launchOverlayTimeout)s — every capture from this test would be taken under it")
     }
 
     /// Brief settle so in-flight layout/animations (tab transition, palette
     /// re-render) finish before the screenshot is taken. Not a hard
-    /// synchronization point — deliberately simple per the "no brittle
-    /// queries" brief.
+    /// synchronization point — the real one is `waitForLaunchOverlay` above,
+    /// which is why this is 0.3 s and not the 1.0 s it used to be. It is
+    /// deliberately not removed: a tab tap still animates, and 0.3 s of
+    /// quiescence costs 70 × 0.3 s across the suite instead of 70 × 1.0 s.
     private func settle() {
-        Thread.sleep(forTimeInterval: 1.0)
+        Thread.sleep(forTimeInterval: 0.3)
     }
 
     private func attachScreenshot(_ app: XCUIApplication, named name: String) {
@@ -249,8 +286,14 @@ final class ScreenshotTests: XCTestCase {
         env["UITEST_CATALOG"] = id
         app.launchEnvironment = env
         app.launch()
-        settle()
-        settle()
+        // NOT `settle()`: a catalog launch bypasses `RootView` entirely, so
+        // there is no launch overlay to wait OUT and nothing here is a
+        // synchronization point — this sleep is the screen's whole render
+        // budget. Pinned at the 2.0 s the two `settle()` calls added up to
+        // before `settle()` dropped to 0.3 s. These 54 captures are the ones
+        // that already look right; shrinking their only wait is not part of
+        // the overlay fix.
+        Thread.sleep(forTimeInterval: catalogRenderBudget)
         attachScreenshot(app, named: "app-\(id).png")
     }
 
