@@ -16,10 +16,7 @@ final class SessionSchedulingTests: XCTestCase {
         // below checks in immediately) — see
         // supabase/migrations/20260715000003_checkin_window.sql.
         let scheduledFor = Date().addingTimeInterval(15 * 60) // +15 minutes
-        let session = try await SessionRepository.schedule(
-            groupID: nil,
-            inviteeIDs: [],
-            routineID: nil,
+        let session = try await makeTempScheduledSession(
             scheduledFor: scheduledFor,
             generateRoomCode: true
         )
@@ -60,7 +57,8 @@ final class SessionSchedulingTests: XCTestCase {
         // 6. Start (evaluate_lateness + in_progress)
         try await SessionRepository.start(sessionID: session.id)
 
-        // 7. Complete
+        // 7. Complete — the lifecycle's final assertion, NOT cleanup: the row
+        //    is removed by makeTempScheduledSession's teardown block.
         let completed = try await SessionRepository.complete(sessionID: session.id)
         XCTAssertEqual(completed.state, "completed")
         XCTAssertNotNil(completed.completedAt)

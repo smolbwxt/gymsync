@@ -36,14 +36,29 @@ final class ProposalRepositoryTests: XCTestCase {
             updatedAt: Date()
         )
         try await RoutineRepository.save(routine, exercises: [])
+        // Registered BEFORE the session's own cleanup so that LIFO teardown
+        // order deletes the session first and the routine second — the order
+        // the trailing hand-written cleanup used to enforce. sessions.routine_id
+        // is ON DELETE SET NULL (20260709000006_create_sessions.sql:3), so the
+        // reverse order would null routine_id on a still-live session row: the
+        // exact FK erasure that minted this suite's null-started_at residue.
+        // Same shape as testDuplicateAffectsExerciseThrowsValidation below.
+        addTeardownBlock {
+            try? await RoutineRepository.delete(id: routine.id)
+        }
 
         // 2. Create a single-participant scheduled session tied to the routine.
-        let session = try await SessionRepository.schedule(
-            groupID: nil,
-            inviteeIDs: [],
+        //    makeTempScheduledSession (TestSession.swift) registers
+        //    deleteSession before handing the session back, so the two
+        //    `XCTFail(...); return` guards below can no longer skip cleanup the
+        //    way the trailing delete did. DELETE, not complete(): completing
+        //    only moves the row into history(), which HomeView.fetchHistory
+        //    feeds to StatMath.workoutsThisWeek — the full reasoning lives in
+        //    TestSession.swift's header. No assertion here depends on the
+        //    session reaching 'completed'.
+        let session = try await makeTempScheduledSession(
             routineID: routine.id,
-            scheduledFor: Date(),
-            generateRoomCode: false
+            scheduledFor: Date()
         )
 
         // 3. Pick any seeded exercise.
@@ -84,22 +99,8 @@ final class ProposalRepositoryTests: XCTestCase {
             routineExercises.contains { $0.exerciseID == exercise.id },
             "routine_exercises should contain the added exercise after auto-approval"
         )
-
-        // MARK: Cleanup
-        // DELETE the session, don't complete it. Completing only moved the row
-        // out of upcoming() and into history(): that query is
-        // `organizer_id = <this account> AND state = 'completed'`
-        // (SessionRepository.swift:141-152), which HomeView.fetchHistory feeds
-        // to StatMath.workoutsThisWeek — the stat tile inside `app-tab-home`.
-        // A completed orphan per CI run therefore inflated the very Home
-        // capture this branch exists to fix. deleteSession removes set_logs
-        // then the session row, and session_participants.session_id is
-        // ON DELETE CASCADE (20260709000006_create_sessions.sql:19), so
-        // nothing is left behind. No assertion above depends on the session
-        // reaching 'completed'.
-        try await SessionRepository.deleteSession(id: session.id)
-        // Delete the routine (cascades to routine_exercises).
-        try await RoutineRepository.delete(id: routine.id)
+        // Cleanup is registered at creation time (step 1 and step 2 above), not
+        // here — a trailing cleanup is skipped by every early return.
     }
 
     // MARK: - Test 2: duplicate affects_exercise_id on same session throws .validation

@@ -7,7 +7,7 @@ final class SessionRepositoryTests: XCTestCase {
     }
 
     func testStartAndCompleteSoloSession() async throws {
-        let session = try await SessionRepository.startSolo(routineID: nil)
+        let session = try await makeTempSoloSession()
         XCTAssertEqual(session.state, "in_progress")
         XCTAssertNotNil(session.startedAt)
 
@@ -22,7 +22,7 @@ final class SessionRepositoryTests: XCTestCase {
         }
         let exercises = try await ExerciseRepository.fetchAll()
         let bench = try XCTUnwrap(exercises.first { $0.slug == "bench-press" })
-        let session = try await SessionRepository.startSolo(routineID: nil)
+        let session = try await makeTempSoloSession()
 
         let log = SetLog(
             id: UUID(),
@@ -42,7 +42,8 @@ final class SessionRepositoryTests: XCTestCase {
 
         let logs = try await SessionRepository.setLogs(sessionID: session.id)
         XCTAssertTrue(logs.contains { $0.id == log.id })
-
-        _ = try await SessionRepository.complete(sessionID: session.id)
+        // No complete() here: nothing below asserts on it and it was never
+        // cleanup. makeTempSoloSession's teardown block deletes the session
+        // (and its set_logs) instead.
     }
 }

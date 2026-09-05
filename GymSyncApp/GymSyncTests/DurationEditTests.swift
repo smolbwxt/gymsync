@@ -5,9 +5,8 @@ import XCTest
 ///
 /// Single actor — all test methods run serially within this class.
 ///
-/// Cleanup note: completed sessions cannot be cancelled via cancelOccurrence (only
-/// pre-workout sessions apply). The test-data row is left in place (completed state,
-/// group_id = nil) per the precedent established in SessionSchedulingTests.
+/// Cleanup: sessions come from `makeTempScheduledSession` (TestSession.swift), which
+/// registers `deleteSession` in a teardown block before handing the session back.
 final class DurationEditTests: XCTestCase {
 
     override func setUp() async throws {
@@ -22,13 +21,7 @@ final class DurationEditTests: XCTestCase {
         }
 
         // ── 1. Create an ad-hoc session (self-only, scheduled now) ────────────
-        let session = try await SessionRepository.schedule(
-            groupID: nil,
-            inviteeIDs: [],
-            routineID: nil,
-            scheduledFor: Date(),
-            generateRoomCode: false
-        )
+        let session = try await makeTempScheduledSession(scheduledFor: Date())
         XCTAssertEqual(session.state, "scheduled")
 
         // ── 2. Open lobby + check in ──────────────────────────────────────────
@@ -83,10 +76,7 @@ final class DurationEditTests: XCTestCase {
         }
 
         // ── Build a completed session ─────────────────────────────────────────
-        let session = try await SessionRepository.schedule(
-            groupID: nil, inviteeIDs: [], routineID: nil,
-            scheduledFor: Date(), generateRoomCode: false
-        )
+        let session = try await makeTempScheduledSession(scheduledFor: Date())
         try await SessionRepository.openLobby(sessionID: session.id)
         try await SessionRepository.checkIn(sessionID: session.id, method: "traveling_override")
         try await SessionRepository.start(sessionID: session.id)
@@ -132,10 +122,7 @@ final class DurationEditTests: XCTestCase {
         }
 
         // ── Build a completed session ─────────────────────────────────────────
-        let session = try await SessionRepository.schedule(
-            groupID: nil, inviteeIDs: [], routineID: nil,
-            scheduledFor: Date(), generateRoomCode: false
-        )
+        let session = try await makeTempScheduledSession(scheduledFor: Date())
         try await SessionRepository.openLobby(sessionID: session.id)
         try await SessionRepository.checkIn(sessionID: session.id, method: "traveling_override")
         try await SessionRepository.start(sessionID: session.id)
@@ -180,12 +167,8 @@ final class DurationEditTests: XCTestCase {
         }
 
         // Create a scheduled session — do NOT start or complete it.
-        let session = try await SessionRepository.schedule(
-            groupID: nil,
-            inviteeIDs: [],
-            routineID: nil,
-            scheduledFor: Date().addingTimeInterval(3600),
-            generateRoomCode: false
+        let session = try await makeTempScheduledSession(
+            scheduledFor: Date().addingTimeInterval(3600)
         )
         XCTAssertEqual(session.state, "scheduled")
 
@@ -203,9 +186,6 @@ final class DurationEditTests: XCTestCase {
         } catch {
             XCTFail("Expected GymSyncError.validation but got: \(error)")
         }
-
-        // Cleanup: delete the scheduled occurrence.
-        try await SeriesRepository.cancelOccurrence(sessionID: session.id)
     }
 
     // MARK: - Validation: completed < started must throw .validation
@@ -217,13 +197,7 @@ final class DurationEditTests: XCTestCase {
 
         // We need a completed session to have a valid sessionID to pass.
         // Re-use a minimal lifecycle: schedule → checkIn → start → complete.
-        let session = try await SessionRepository.schedule(
-            groupID: nil,
-            inviteeIDs: [],
-            routineID: nil,
-            scheduledFor: Date(),
-            generateRoomCode: false
-        )
+        let session = try await makeTempScheduledSession(scheduledFor: Date())
         try await SessionRepository.openLobby(sessionID: session.id)
         try await SessionRepository.checkIn(sessionID: session.id, method: "traveling_override")
         try await SessionRepository.start(sessionID: session.id)

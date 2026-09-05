@@ -47,19 +47,21 @@ final class SessionKudosTests: XCTestCase {
         // them. This gives `is_session_participant` a true row for BOTH
         // sender and recipient, which the session_kudos INSERT policy
         // requires for both parties.
-        session = try await SessionRepository.schedule(
-            groupID: nil,
+        //
+        // makeTempScheduledSession (TestSession.swift) registers deleteSession
+        // in a teardown block before returning, from setUp — so a throw in any
+        // of the three test methods still removes the row. The old tearDown
+        // called complete() and called it cleanup: that left the row behind in
+        // history(), 3 per build-test run. session_kudos.session_id and
+        // session_participants.session_id are both ON DELETE CASCADE
+        // (20260720000001_session_kudos.sql:30,
+        // 20260709000006_create_sessions.sql:19), so the delete takes the kudos
+        // rows and BOTH participant rows — organizer and the ci_test_user_2
+        // invitee — with it.
+        session = try await makeTempScheduledSession(
             inviteeIDs: [recipientID],
-            routineID: nil,
-            scheduledFor: Date(),
-            generateRoomCode: false
+            scheduledFor: Date()
         )
-    }
-
-    override func tearDown() async throws {
-        if let session {
-            try? await SessionRepository.complete(sessionID: session.id)
-        }
     }
 
     func testSendToSpecificRecipientInsertsExpectedRow() async throws {

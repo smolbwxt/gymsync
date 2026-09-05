@@ -3,7 +3,6 @@ import XCTest
 
 final class ChatRepositoryTests: XCTestCase {
     private var group: GymGroup!
-    private var session: WorkoutSession!
 
     override func setUp() async throws {
         try await TestAuth.signInIfConfigured()
@@ -13,9 +12,6 @@ final class ChatRepositoryTests: XCTestCase {
     override func tearDown() async throws {
         if let group {
             try? await GroupRepository.deleteGroup(groupID: group.id)
-        }
-        if let session {
-            try? await SessionRepository.complete(sessionID: session.id)
         }
     }
 
@@ -53,7 +49,7 @@ final class ChatRepositoryTests: XCTestCase {
     }
 
     func testSessionSendFetchLifecycle() async throws {
-        session = try await SessionRepository.startSolo(routineID: nil)
+        let session = try await makeTempSoloSession()
 
         // New solo session: no sub-thread messages yet
         let empty = try await ChatRepository.sessionMessages(sessionID: session.id)
