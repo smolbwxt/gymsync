@@ -183,26 +183,51 @@ jobs:
       # Seeds a deterministic fixture world (group, sessions, chat, friends,
       # routine library, featured routine) into the CI test account so app
       # captures below reflect populated states instead of empty ones.
-      # Guarded on SUPABASE_SECRET_KEY: fork PRs don't have repo secrets, so
-      # this step is skipped there rather than failing the job.
+      #
+      # The guard was written for fork PRs (no repo secrets there) and was
+      # silently swallowing a MISSING SECRET on trusted refs: neither
+      # SUPABASE_SECRET_KEY nor CI_TEST_USERNAME has ever been added to this
+      # repo's secrets, so this step has never actually seeded anything — it
+      # "succeeded" in 0 s on every run, and every deep capture below has
+      # been navigating whatever residue was left in the live account.
+      # Fork PRs still skip quietly; a non-fork ref now says so loudly, in
+      # the log AND in the job summary.
       - name: Seed QA fixture world
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           CI_TEST_USERNAME: ${{ secrets.CI_TEST_USERNAME }}
+          # `null || false` for push/dispatch events, where there is no PR.
+          IS_FORK_PR: ${{ github.event.pull_request.head.repo.fork || false }}
           # seed_qa_fixtures.js uses only node builtins — skip puppeteer's
           # ~150MB Chromium download here (the parity job below needs it,
           # this one doesn't).
           PUPPETEER_SKIP_DOWNLOAD: 1
         run: |
-          if [ -n "$SUPABASE_SECRET_KEY" ]; then
+          if [ -n "$SUPABASE_SECRET_KEY" ] && [ -n "$CI_TEST_USERNAME" ]; then
             trap 'rm -f .env.local' EXIT
             printf 'SUPABASE_URL=%s\nSUPABASE_SECRET_KEY=%s\n' "$SUPABASE_URL" "$SUPABASE_SECRET_KEY" > .env.local
             npm ci
             node scripts/seed_qa_fixtures.js --username "$CI_TEST_USERNAME"
             rm -f .env.local
-          else
+          elif [ "$IS_FORK_PR" = "true" ]; then
             echo "No SUPABASE_SECRET_KEY (fork PR) — skipping seed; captures will show empty states."
+          else
+            # TODO(owner): flip to exit 1 once SUPABASE_SECRET_KEY and
+            # CI_TEST_USERNAME are in repo secrets. Warning, not failure,
+            # deliberately: a hard fail today would stop EVERY capture until
+            # the secrets exist, and the captures are the medium.
+            echo "::warning::QA seed skipped on a non-fork ref: SUPABASE_SECRET_KEY and/or CI_TEST_USERNAME is not set in repo secrets. Deep captures (chat, lobby, recap, ledger, group stats, friends, routine detail) are navigating stale account residue, not a deterministic fixture world."
+            {
+              echo '### :warning: QA fixture seed skipped'
+              echo ''
+              echo 'Add these repo secrets to make the deep captures deterministic:'
+              echo ''
+              echo '- `SUPABASE_SECRET_KEY`'
+              echo '- `CI_TEST_USERNAME`'
+              echo ''
+              echo 'Until then the seeded screens navigate whatever residue is in the live CI account.'
+            } >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Run screenshot UI tests
@@ -218,13 +243,27 @@ jobs:
           TEST_RUNNER_UITEST_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
           TEST_RUNNER_UITEST_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
         run: |
-          # Same simulator-selection logic as build-test.
-          DEST=$(xcrun simctl list devices available | grep -E 'iPhone' | head -1 \
-            | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' | head -1)
-          if [ -z "$DEST" ]; then
-            DEST=$(xcrun simctl list devices available | grep -v '^==' | grep '(' | head -1 \
-              | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' | head -1)
+          # PINNED BY NAME, unlike build-test's `head -1`. The capture device
+          # decides the capture RESOLUTION, and every parity diff is computed
+          # against it — a runner-image refresh that reorders `simctl list`
+          # would silently shift every frame in the design-review artifact.
+          # Falls back to the first available iPhone (and says so) rather than
+          # failing, so a future image that drops this model still produces
+          # captures.
+          PREFERRED_SIM="iPhone 16 Pro"
+          DEVICES=$(xcrun simctl list devices available)
+          # The trailing " (" pins the match to the exact model: "iPhone 16 Pro"
+          # alone would also match "iPhone 16 Pro Max".
+          SIM_LINE=$(echo "$DEVICES" | grep -F "$PREFERRED_SIM (" | head -1)
+          if [ -z "$SIM_LINE" ]; then
+            echo "::warning::$PREFERRED_SIM is not available on this runner image — falling back to the first available iPhone; capture resolution may differ from the parity baseline."
+            SIM_LINE=$(echo "$DEVICES" | grep -E 'iPhone' | head -1)
           fi
+          if [ -z "$SIM_LINE" ]; then
+            SIM_LINE=$(echo "$DEVICES" | grep -v '^==' | grep '(' | head -1)
+          fi
+          DEST=$(echo "$SIM_LINE" | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' | head -1)
+          echo "Using simulator: $(echo "$SIM_LINE" | sed 's/^[[:space:]]*//')"
           echo "Using simulator UDID: $DEST"
           xcodebuild test \
             -project GymSync.xcodeproj \
@@ -258,6 +297,35 @@ jobs:
           name: app-screenshots
           path: ${{ runner.temp }}/screens
           if-no-files-found: warn
+
+      # Guards the MEDIUM. `continue-on-error: true` on this job plus
+      # `if: always()` on the two steps above means a suite that failed 40 of
+      # its 70 methods still publishes a green-looking `app-screenshots`
+      # artifact, and nobody is told the design-review medium degraded. This
+      # is the floor that closes that. It runs AFTER the upload deliberately:
+      # a failure here must not cost us the partial artifact that explains
+      # why the count dropped.
+      #
+      # Counts the way the downstream parity job does — by the attachment's
+      # `suggestedHumanReadableName` in manifest.json, because xcresulttool
+      # writes the files themselves under UUID names and only
+      # scripts/rename_app_shots.js turns them back into `app-<id>.png`. The
+      # on-disk `app-*` count is tried first for the xcparse fallback path,
+      # which names files after the attachment.
+      - name: Verify capture count
+        if: always()
+        run: |
+          SCREENS="$RUNNER_TEMP/screens"
+          FLOOR=70
+          COUNT=$(find "$SCREENS" -maxdepth 1 -type f -name 'app-*' 2>/dev/null | wc -l | tr -d ' ')
+          if [ "$COUNT" -eq 0 ] && [ -f "$SCREENS/manifest.json" ]; then
+            COUNT=$(node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));const ts=Array.isArray(m)?m:[];let n=0;for(const t of ts)for(const a of (t.attachments||[]))if(String(a.suggestedHumanReadableName||'').startsWith('app-'))n++;console.log(n);" "$SCREENS/manifest.json" || echo 0)
+          fi
+          echo "app captures exported: $COUNT (floor: $FLOOR)"
+          if [ "$COUNT" -lt "$FLOOR" ]; then
+            echo "::error::Only $COUNT app captures were exported (floor $FLOOR). The screenshot suite degraded — check the test failures in 'Run screenshot UI tests' above; the partial artifact is still attached to this run."
+            exit 1
+          fi
 
   # Design-parity harness: renders the design canvas's proof frames, diffs
   # them against the app-screenshots artifact from the `screenshots` job
