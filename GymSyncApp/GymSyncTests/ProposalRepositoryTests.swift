@@ -125,6 +125,16 @@ final class ProposalRepositoryTests: XCTestCase {
             notes: nil
         )
         try await RoutineRepository.save(routine, exercises: [rex])
+        // Register cleanup the instant the row exists, not at the end of the
+        // method: the `throw XCTSkip(...)` in the else-branch below exits before
+        // the trailing `RoutineRepository.delete` ever runs, so on the (always
+        // taken) FK-failure path this routine leaked too.
+        // addTeardownBlock rather than `defer { Task { ... } }` because XCTest
+        // awaits teardown blocks, while a detached Task can lose the race with
+        // process exit — same reasoning as ModerationRepositoryTests.swift:20-24.
+        addTeardownBlock {
+            try? await RoutineRepository.delete(id: routine.id)
+        }
 
         // 2. Create a TWO-participant scenario by creating a second session.
         //    We need at least 2 participants so the first proposal stays OPEN
@@ -172,6 +182,20 @@ final class ProposalRepositoryTests: XCTestCase {
                     "scheduled_for": ISO8601DateFormatter().string(from: Date())
                 ])
                 .execute()
+
+            // The session row exists from here on, so its cleanup is registered
+            // here — before the insert below that always throws. The third
+            // participant insert uses a random UUID with no `profiles` row, so
+            // the FK violation is deterministic: `twoParticipantSessionID` stays
+            // nil, the `if let` never runs, and the `complete(sessionID:)` inside
+            // it never ran either. That leaked exactly one `state: 'scheduled'`
+            // session per build-test run into the shared ci_test_user_2 account
+            // (~680 by 2026-09), inflating SessionRepository.upcoming() — which
+            // HomeView fetches inside the launch-overlay hold, so the screenshot
+            // job's Home capture got progressively worse run over run.
+            addTeardownBlock {
+                _ = try? await SessionRepository.complete(sessionID: sessionID)
+            }
 
             // Insert self as participant
             _ = try await client
