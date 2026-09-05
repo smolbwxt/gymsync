@@ -189,7 +189,10 @@ final class ScreenshotTests: XCTestCase {
     /// sub-tab that swaps content (and, in `testGroupStats`, fetches it), or
     /// a tab switch captured immediately. None of those has a synchronization
     /// point of its own, so they keep the pre-2026-09-05 1.0 s rather than
-    /// inheriting `settle()`'s post-wait 0.3 s.
+    /// inheriting `settle()`'s post-wait 0.3 s. `testHomeTab` uses it for a
+    /// different reason: to outlast the launch overlay's 350 ms fade in case
+    /// SwiftUI releases the overlay's a11y container at the START of that
+    /// removal transition rather than at the end.
     private func settleAfterNavigation() {
         Thread.sleep(forTimeInterval: 1.0)
     }
@@ -240,7 +243,7 @@ final class ScreenshotTests: XCTestCase {
     func testHomeTab() {
         let app = launchApp()
         guard waitForTabBar(app) else { return }
-        settle()
+        settleAfterNavigation()
         attachScreenshot(app, named: "app-tab-home.png")
     }
 
