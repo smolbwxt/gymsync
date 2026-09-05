@@ -46,7 +46,15 @@ enum WeekBooker {
         // 1. Clear what this week held before. Occurrences that came from
         //    a series are cancelled through the series (so the series
         //    stays consistent); plain sessions are deleted outright.
-        if let upcoming = try? await SessionRepository.upcoming() {
+        //
+        //    Explicit limit: this is the one caller that must see PAST the
+        //    near horizon. `upcoming()`'s default of 200 is sized for what a
+        //    screen renders, but this pass has to find every session already
+        //    sitting inside `window` — and a long recurring series can put
+        //    200+ rows ahead of it (a year of 4x/week is ~208). A target week
+        //    beyond the default would silently not be cleared and would then
+        //    be double-booked by step 2.
+        if let upcoming = try? await SessionRepository.upcoming(limit: 1000) {
             for session in upcoming where session.groupID == nil {
                 guard let when = session.scheduledFor,
                       when >= window.start, when < window.end else { continue }

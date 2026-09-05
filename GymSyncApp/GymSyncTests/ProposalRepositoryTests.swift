@@ -86,8 +86,18 @@ final class ProposalRepositoryTests: XCTestCase {
         )
 
         // MARK: Cleanup
-        // Complete the session so it doesn't linger in upcoming().
-        _ = try await SessionRepository.complete(sessionID: session.id)
+        // DELETE the session, don't complete it. Completing only moved the row
+        // out of upcoming() and into history(): that query is
+        // `organizer_id = <this account> AND state = 'completed'`
+        // (SessionRepository.swift:141-152), which HomeView.fetchHistory feeds
+        // to StatMath.workoutsThisWeek — the stat tile inside `app-tab-home`.
+        // A completed orphan per CI run therefore inflated the very Home
+        // capture this branch exists to fix. deleteSession removes set_logs
+        // then the session row, and session_participants.session_id is
+        // ON DELETE CASCADE (20260709000006_create_sessions.sql:19), so
+        // nothing is left behind. No assertion above depends on the session
+        // reaching 'completed'.
+        try await SessionRepository.deleteSession(id: session.id)
         // Delete the routine (cascades to routine_exercises).
         try await RoutineRepository.delete(id: routine.id)
     }
@@ -187,14 +197,22 @@ final class ProposalRepositoryTests: XCTestCase {
             // here — before the insert below that always throws. The third
             // participant insert uses a random UUID with no `profiles` row, so
             // the FK violation is deterministic: `twoParticipantSessionID` stays
-            // nil, the `if let` never runs, and the `complete(sessionID:)` inside
-            // it never ran either. That leaked exactly one `state: 'scheduled'`
+            // nil, the `if let` never runs, and the cleanup inside it never ran
+            // either. That leaked exactly one `state: 'scheduled'`
             // session per build-test run into the shared ci_test_user_2 account
             // (~680 by 2026-09), inflating SessionRepository.upcoming() — which
             // HomeView fetches inside the launch-overlay hold, so the screenshot
             // job's Home capture got progressively worse run over run.
+            //
+            // DELETE, not complete: completing would only move the orphan from
+            // upcoming() into history() — `organizer_id = <this account> AND
+            // state = 'completed'` — which HomeView.fetchHistory feeds to
+            // StatMath.workoutsThisWeek, the stat tile inside `app-tab-home`.
+            // That relocates the leak into the capture this branch is fixing.
+            // deleteSession removes set_logs then the session, and
+            // session_participants cascades on the session FK.
             addTeardownBlock {
-                _ = try? await SessionRepository.complete(sessionID: sessionID)
+                try? await SessionRepository.deleteSession(id: sessionID)
             }
 
             // Insert self as participant
@@ -252,8 +270,11 @@ final class ProposalRepositoryTests: XCTestCase {
                 XCTFail("expected GymSyncError.validation but got \(error)")
             }
 
-            // Cleanup: complete + delete routine.
-            _ = try await SessionRepository.complete(sessionID: sessionID)
+            // Cleanup: delete the session (the teardown block above repeats
+            // this harmlessly under `try?`). Delete rather than complete for
+            // the same reason as the teardown — a completed row is still a
+            // row, and history() reads it into Home's stat tile.
+            try await SessionRepository.deleteSession(id: sessionID)
         } else {
             // Fallback: FK blocks fake user — document intent and skip assertion.
             //
