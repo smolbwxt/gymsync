@@ -63,6 +63,30 @@ async function rest(pathAndQuery, opts = {}) {
 const rep = { Prefer: 'return=representation' };
 const MARK = '[QA]'; // stable marker: name-prefix for fixture rows we own
 
+// Mirrors the deny-list in `set_logs_reject_prelive`, the BEFORE INSERT
+// trigger on set_logs (20260803000002_set_logs_reject_prelive.sql:19). It
+// raises P0001 "session has not started" for a log written against a session
+// in any of these states. Keep this list identical to the migration's.
+const PRELIVE_STATES = ['scheduled', 'lobby_open', 'editing', 'voting', 'locked'];
+
+// Walks a fixture session live so the set_logs written into it are accepted:
+// start -> log -> complete, the same order a real client produces. Two
+// fixture blocks below (the Murph attempt and the campaign-progress sessions)
+// create their session as `scheduled`, and CI run 33990257726 died on exactly
+// that, at the first set_logs insert.
+//
+// Idempotent by state, which is what makes a rerun safe in both directions:
+// a session already `in_progress` is left alone, and a `completed` one — what
+// a finished prior run leaves behind — is never re-opened. `session.state` is
+// updated in place so the completion PATCH that follows can filter on the
+// state it will actually find.
+async function ensureSessionLive(session, startedAt) {
+  if (!PRELIVE_STATES.includes(session.state)) return;
+  await rest(`sessions?id=eq.${session.id}`, { method: 'PATCH',
+    body: JSON.stringify({ state: 'in_progress', started_at: startedAt }) });
+  session.state = 'in_progress';
+}
+
 // WHO IS WHO (corrected 2026-09-05, from the DB and the repo secrets):
 // the seeded world's OWNER is whoever `--username` names — supplied by the
 // CI_TEST_USERNAME secret as `ci_test_user`, which is the account CI
@@ -544,10 +568,23 @@ async function main() {
   // (the same bypass this whole script already relies on for
   // sessions/session_participants/set_logs elsewhere) to write a real
   // session_participants row, a real workout_attempts row, and real
-  // set_logs, then flip `sessions.state` scheduled -> completed in ONE
-  // PATCH so the REAL `leaderboard_recompute_on_session_completion` trigger
-  // computes time_seconds/total_volume/top_sets itself — never hand-written
-  // into leaderboard_entries directly.
+  // set_logs, then let the REAL
+  // `leaderboard_recompute_on_session_completion` trigger compute
+  // time_seconds/total_volume/top_sets itself — never hand-written into
+  // leaderboard_entries directly.
+  //
+  // THREE steps, in this order, and the order is not cosmetic:
+  //   1. `scheduled` -> `in_progress` (`ensureSessionLive`), because
+  //      `set_logs_reject_prelive` — a BEFORE INSERT trigger ON set_logs
+  //      (20260803000002) — raises P0001 "session has not started" for a log
+  //      written into any pre-live session. This is the step CI run
+  //      33990257726 was missing.
+  //   2. insert the set_logs.
+  //   3. `in_progress` -> `completed` in ONE PATCH, which is the transition
+  //      the leaderboard recompute (AFTER UPDATE OF state) listens for.
+  // It is also the order a real client produces, which is the point: the
+  // fixture walks the same path a lifter does rather than synthesising a
+  // terminal state the triggers never saw.
   //
   // Fixed, deterministic `scheduled_for` (never `now()`) is this block's
   // natural key, same idiom as STREAK_DATES above — sessions has no name
@@ -672,6 +709,13 @@ async function main() {
     // for the same reason as the run/vest omission above: an honest
     // limitation of an added-load volume metric applied to a bodyweight
     // benchmark, not a bug.
+
+    // START before logging — set_logs_reject_prelive rejects a log written
+    // into a `scheduled` session (see the helper). `started_at` matches the
+    // attempt row's own value above, so the session and the attempt agree on
+    // when this workout began.
+    await ensureSessionLive(murphSession, MURPH_ATTEMPT_SCHEDULED_FOR);
+
     const existingLogs = await rest(
       `set_logs?select=id&session_id=eq.${murphSession.id}&user_id=eq.${me.id}`);
     if (!existingLogs.length) {
@@ -684,12 +728,13 @@ async function main() {
       await rest('set_logs', { method: 'POST', body: JSON.stringify(logRows) });
     }
 
-    // scheduled -> completed: the exact transition
+    // in_progress -> completed: the exact transition
     // leaderboard_recompute_on_session_completion listens for (AFTER UPDATE
     // OF state), same guard shape as the streak block's own completion PATCH
-    // above. The `state=eq.scheduled` filter makes this a no-op (0 rows) if
-    // a prior run already completed it.
-    await rest(`sessions?id=eq.${murphSession.id}&state=eq.scheduled`, { method: 'PATCH',
+    // above. The state filter still makes this a no-op (0 rows) if a prior
+    // run already completed it — it just names `in_progress` now, because
+    // `ensureSessionLive` above is what this session is coming from.
+    await rest(`sessions?id=eq.${murphSession.id}&state=eq.in_progress`, { method: 'PATCH',
       body: JSON.stringify({ state: 'completed', completed_at: MURPH_ATTEMPT_COMPLETED_AT }) });
 
     const [entry] = await rest(
@@ -791,9 +836,11 @@ async function main() {
   // trigger's `NEW.routine_id = ANY(c.curated_routine_ids)` predicate
   // matches. Fixed, deterministic timestamps (never `now()`) as each
   // session's natural key, same reasoning as MURPH_ATTEMPT_SCHEDULED_FOR
-  // above — the `state=eq.scheduled` filter on the completion PATCH makes
-  // every run after the first a no-op (0 rows), so the trigger fires
-  // EXACTLY once per session regardless of how many times this script
+  // above — the state filter on the completion PATCH (`in_progress`, per the
+  // three-step start -> log -> complete order the Murph block above
+  // documents) makes every run after the first a no-op (0 rows), because a
+  // completed session is neither re-started nor re-completed, so the trigger
+  // fires EXACTLY once per session regardless of how many times this script
   // re-runs, even if a much later re-run has since PATCHed the campaign's
   // own starts_at/ends_at window forward past these fixed completed_ats —
   // the accrual already happened and is not re-derived from the campaign's
@@ -842,6 +889,9 @@ async function main() {
     // honest number (back-squat, 5 reps @ 135 lbs = 675) rather than 0 —
     // same "weight IS NOT NULL" shape the trigger's own volume SUM
     // requires (20260728000002_campaign_progress_trigger.sql:256-261).
+    // START before logging, same trigger, same reason as the Murph block.
+    await ensureSessionLive(progressSession, fx.scheduledFor);
+
     const existingProgressLogs = await rest(
       `set_logs?select=id&session_id=eq.${progressSession.id}&user_id=eq.${me.id}`);
     if (!existingProgressLogs.length) {
@@ -851,7 +901,7 @@ async function main() {
       }]) });
     }
 
-    await rest(`sessions?id=eq.${progressSession.id}&state=eq.scheduled`, { method: 'PATCH',
+    await rest(`sessions?id=eq.${progressSession.id}&state=eq.in_progress`, { method: 'PATCH',
       body: JSON.stringify({ state: 'completed', completed_at: fx.completedAt }) });
   }
 
