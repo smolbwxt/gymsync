@@ -27,9 +27,14 @@ Future design iterations follow these rules; a proof that breaks one says so and
 - **Accent is the user's pick** (sky by default) and is spent on: the one primary action per screen,
   an invitation line, the current item in a pager or turn strip, the talk pill while transmitting.
   A page never has two accent buttons.
+- **One exception, on purpose:** the sign-in screen paints its whole background in the accent as the
+  brand moment before an account exists. No other screen may. (Owner ruling 2026-09-05.)
 - Green means done or present (checked in, recovered, goal met). Red is for errors only.
 - Plates are competition colours (55 red, 45 blue `#2F6FD0`, 35 yellow, 25 green, 10 white, 5 grey,
   2.5 light grey) on any surface.
+- Heart-rate zones keep their own ramp (blue → green → yellow → orange → red) wherever a zone is shown;
+  like plate colours, this is data colour, not accent, and is exempt from the gold/green/red rules.
+  (Owner ruling 2026-09-05.)
 - **No decorative emoji.** SF Symbols for glyphs. Reactions and kudos emoji stay, because they are content.
 
 ## 3. Type
@@ -88,7 +93,9 @@ Future design iterations follow these rules; a proof that breaks one says so and
 
 ## 9. Copy
 
-- Sentence case for sentences; caps for kickers and buttons.
+- Sentence case for sentences; caps for kickers. Buttons are **not** required to be caps (owner ruling
+  2026-09-05): the big primary action buttons keep the caps they have (LOG SET 3, START SET, CHECK IN,
+  COMMIT), everything else may be sentence case, and no sweep changes existing labels either way.
 - A button says exactly what happens and keeps its verb through the flow (LOG SET 3, LOG SET 3 & PASS,
   START SET, CHECK IN, TALK IT THROUGH).
 - Errors say what happened and how to fix it. Empty states invite ("Schedule your first lift").

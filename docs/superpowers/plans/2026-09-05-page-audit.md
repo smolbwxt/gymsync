@@ -52,7 +52,7 @@ Order is inverted: an accent flame lands first and the headline is a small muted
 
 ### B8. Copy (≈12 screens)
 - Weight convention on every entry surface: derive the kicker from equipment (`TOTAL INCL. BAR` / `PER HAND` / `TOTAL ADDED`) on the live set card AND the plate-math sheet (it shows `Weight (lbs)`, so a string-keyed fix misses it). This is field-report item #2.
-- Button case: caps everywhere, per rule 9 — at least nine sentence-case labels (`Save Set`, `Done`, `Start`, `Snap`, `Start program`, `Repeat this week`, `Re-baseline`, `Add your gym`, `Confirm — I'm 18 or older`) plus ~17 in audit A.
+- ~~Button case sweep~~ — **dropped by owner ruling 2026-09-05**: buttons are not required to be caps; existing labels stay as they are.
 - `Abandon program` is red; red is for errors — use the raised face with default text.
 - Notifications-denied: the capture is byte-identical to the priming screen and still offers "Turn on notifications". First verify whether the catalog's forced `.denied` status is being overwritten (PushPrimingView reads `pushReceiver.authorizationStatus`; the fixture passes `catalogAuthorizationStatus: .denied`) — if the app's real denied branch works, fix the fixture; if not, the screen needs "Notifications are off" + OPEN SETTINGS.
 - Empty states invite (Blocked Users row rebuild: fixed-width right-aligned UNBLOCK, list surface, back button).
@@ -82,12 +82,12 @@ Program template detail buries its two required FOCUS pickers below an eight-row
 - Downgrade: `StatsTabView` gold gate (not rendered in this state); the literal `"WEIGHT · LBS"` string fix (covers half the surface — see B8).
 - Confirmed from pixels: rank-1 accent in campaign detail and Discover detail; the `accent100` me-row; the flat paywall block; Top Lifters rank accent; the weight-convention gap.
 
-## Rulings needed from the owner
+## Owner rulings (2026-09-05)
 
-1. Sign-in splash: does it get a full-bleed-accent exemption as the one brand moment?
-2. Heart-rate zone ramp: does it get the same colour carve-out plate colours have?
-3. Button case: confirm caps for every button label (rule 9) — it is the single most widespread inconsistency.
-4. Home: tiles (A) or strips (B).
+1. Sign-in splash keeps its full-bleed accent — the one allowed exception. **Answered: yes.**
+2. Heart-rate zone ramp is data colour, exempt like plate colours. **Answered: yes.**
+3. Buttons are not required to be caps; existing labels stay. **Answered** — the caps sweep is dropped.
+4. Home: both arrangements are being built as real SwiftUI in the catalog (`docs/superpowers/plans/2026-09-05-home-v2-catalog.md`); the owner picks A, B, or a mix from the rendered frames.
 
 ## Suggested order
 
