@@ -235,3 +235,9 @@ Follow-ups (not in #25): deep-capture navigation is stale — `app-lobby` and `a
 
 ### 2026-09-05 21:40 UTC — PR #25 merged (master a38e7bf); owner: audit every page vs the rules + leak hunt
 Master run (build → seeded screenshots → TestFlight deploy) being watched. Visual audit of all 71 seeded captures (12 labelled contact sheets) running as two Opus reviewers cross-referencing the code sweep → `visual-audit-A/B.md`; consolidated page checklist to follow. Leak hunt (completed-solo sessions, ~13 per build-test run) running → `leak-hunt.md`; fix branch `fix/unit-test-session-leak` pre-cut from master at G:/Projects/GymSync-wt/session-leak.
+
+### 2026-09-05 22:20 UTC — leak fixed, residue cleaned, audit delivered
+- PR #27 merged (master 4d1d4e3): `TestSession.swift` factory registers its own delete; 14 methods / 8 test files converted; leak verified stopped (no residue rows after the last pre-fix build). PR #26 merged (docs). PR #25 → TestFlight 832.
+- Cleanup on `ci_test_user`: 8,720 residue sessions deleted in 3 batches with the seed's 3 streak-chain fixtures excluded; set_logs cascaded; the BEFORE DELETE streak trigger recomputed current_streak to 0; longest_streak written 3053 → 3. Account now 15 sessions, all seed fixtures.
+- Page audit checklist delivered: `docs/superpowers/plans/2026-09-05-page-audit.md` (11 / 48 / 12; 11 batches). Owner rulings pending: sign-in splash accent exemption; HR zone colours; caps on all buttons; Home tiles vs strips.
+- Follow-ups: seed pins user_streaks each run; 8 mis-navigated CI captures; push-denied fixture; chat_messages orphans (~2/run); nine other `defer { Task {} }` sites (groups/routines); `schedule`/`startSolo` non-transactional; ci_test_user_2 curator residue.
