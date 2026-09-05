@@ -250,21 +250,38 @@ jobs:
           # Falls back to the first available iPhone (and says so) rather than
           # failing, so a future image that drops this model still produces
           # captures.
+          # EVERY grep below is `|| true`, and that is load-bearing, not
+          # defensive noise: GitHub runs this block under
+          # `bash --noprofile --norc -eo pipefail`, so a `grep` that matches
+          # nothing exits 1, `pipefail` carries that past `head -1` into the
+          # `SIM_LINE=$(…)` assignment, and `set -e` kills the step — on
+          # exactly the line the fallback below exists for. Without `|| true`
+          # the fallback is unreachable dead code and the step dies having
+          # printed nothing at all. (Reproduced by the task reviewer.)
           PREFERRED_SIM="iPhone 16 Pro"
           DEVICES=$(xcrun simctl list devices available)
           # The trailing " (" pins the match to the exact model: "iPhone 16 Pro"
           # alone would also match "iPhone 16 Pro Max".
-          SIM_LINE=$(echo "$DEVICES" | grep -F "$PREFERRED_SIM (" | head -1)
+          SIM_LINE=$(echo "$DEVICES" | grep -F "$PREFERRED_SIM (" | head -1 || true)
           if [ -z "$SIM_LINE" ]; then
             echo "::warning::$PREFERRED_SIM is not available on this runner image — falling back to the first available iPhone; capture resolution may differ from the parity baseline."
-            SIM_LINE=$(echo "$DEVICES" | grep -E 'iPhone' | head -1)
+            SIM_LINE=$(echo "$DEVICES" | grep -E 'iPhone' | head -1 || true)
           fi
           if [ -z "$SIM_LINE" ]; then
-            SIM_LINE=$(echo "$DEVICES" | grep -v '^==' | grep '(' | head -1)
+            SIM_LINE=$(echo "$DEVICES" | grep -v '^==' | grep '(' | head -1 || true)
           fi
-          DEST=$(echo "$SIM_LINE" | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' | head -1)
+          DEST=$(echo "$SIM_LINE" | grep -oE '[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}' | head -1 || true)
           echo "Using simulator: $(echo "$SIM_LINE" | sed 's/^[[:space:]]*//')"
           echo "Using simulator UDID: $DEST"
+          # `|| true` above removed the (accidental) `set -e` stop, so an
+          # unresolvable device must now fail on purpose — otherwise
+          # xcodebuild is handed `-destination "id="` and reports something
+          # far less obvious.
+          if [ -z "$DEST" ]; then
+            echo "::error::No simulator UDID could be resolved. Available devices were:"
+            echo "$DEVICES"
+            exit 1
+          fi
           xcodebuild test \
             -project GymSync.xcodeproj \
             -scheme GymSyncScreenshots \
@@ -317,10 +334,17 @@ jobs:
         run: |
           SCREENS="$RUNNER_TEMP/screens"
           FLOOR=71
-          COUNT=$(find "$SCREENS" -maxdepth 1 -type f -name 'app-*' 2>/dev/null | wc -l | tr -d ' ')
+          # `|| true` + the `:-0` default for the same `set -eo pipefail`
+          # reason as the simulator picker above: a missing $SCREENS makes
+          # `find` exit 1, which would kill the step before it printed the
+          # count the plan asks for either way. Masked today by the export
+          # step's `mkdir -p`, but the guard is free.
+          COUNT=$(find "$SCREENS" -maxdepth 1 -type f -name 'app-*' 2>/dev/null | wc -l | tr -d ' ' || true)
+          COUNT=${COUNT:-0}
           if [ "$COUNT" -eq 0 ] && [ -f "$SCREENS/manifest.json" ]; then
             COUNT=$(node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));const ts=Array.isArray(m)?m:[];let n=0;for(const t of ts)for(const a of (t.attachments||[]))if(String(a.suggestedHumanReadableName||'').startsWith('app-'))n++;console.log(n);" "$SCREENS/manifest.json" || echo 0)
           fi
+          COUNT=${COUNT:-0}
           echo "app captures exported: $COUNT (floor: $FLOOR)"
           if [ "$COUNT" -lt "$FLOOR" ]; then
             echo "::error::Only $COUNT app captures were exported (floor $FLOOR). The screenshot suite degraded — check the test failures in 'Run screenshot UI tests' above; the partial artifact is still attached to this run."

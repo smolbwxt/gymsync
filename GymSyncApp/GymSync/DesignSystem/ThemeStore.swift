@@ -42,7 +42,13 @@ public final class ThemeStore {
     /// `RootView`'s `@State private var themeStore` is initialised, before
     /// `body` runs. No async, no network, nothing to race.
     private init() {
-        let pin = Self.launchPin(from: UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain))
+        let launchArguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+        let pin = Self.launchPin(from: launchArguments)
+        // LOAD-BEARING ORDERING: `isPinned` is the only stored property with
+        // no inline default, so this assignment is what completes phase-1
+        // initialisation. Every line below it writes an @Observable-tracked
+        // property or calls an instance method, neither of which is legal
+        // before that. Do not move it down.
         isPinned = pin.palette != nil || pin.accent != nil
         if let palette = pin.palette {
             paletteID = palette
@@ -52,10 +58,45 @@ public final class ThemeStore {
             accentID = pinnedAccent
             accent = GSAccents.accent(for: pinnedAccent)
         }
+        // LOG ONCE on a value that was supplied but did not resolve. Without
+        // this a typo'd `-gsPalette onxy` unpins the whole capture suite
+        // SILENTLY: `isPinned` goes false, `load()` repaints from the CI
+        // account's row, and all 16 signed-in captures go back to the light
+        // palette — with no failing test and nothing in the log. Nothing on
+        // the UI-test side can guard a value typo (that target links no app
+        // code), so this line is the only signal there can be. It lives here,
+        // at the call site, rather than in `launchPin(from:)` so the seam
+        // stays pure and its unit tests stay free of logging.
+        Self.warnIfUnresolved(launchArguments,
+                              key: ThemeLaunchArgument.palette,
+                              flag: "-gsPalette",
+                              resolved: pin.palette,
+                              known: GSPalettes.all.map(\.id))
+        Self.warnIfUnresolved(launchArguments,
+                              key: ThemeLaunchArgument.accent,
+                              flag: "-gsAccent",
+                              resolved: pin.accent,
+                              known: GSAccents.all.map(\.id))
         // Only when pinned: an unpinned launch must keep `GSAppearance.apply()`
         // (GymSyncApp.init) as the one stamp until a real palette resolves,
         // exactly as before.
         if isPinned { restampAppearance() }
+    }
+
+    /// Warns exactly when a flag was PRESENT but its value did not resolve —
+    /// silence when the flag is absent (the overwhelmingly common case: every
+    /// real launch), silence when it resolved. `privacy: .public` on all three
+    /// values: they are a launch-line flag name, a palette/accent id, and the
+    /// accepted-id list — none is user data, and a redacted warning would not
+    /// tell anyone what to fix.
+    private nonisolated static func warnIfUnresolved(_ launchArguments: [String: Any],
+                                                     key: String,
+                                                     flag: String,
+                                                     resolved: String?,
+                                                     known: [String]) {
+        guard resolved == nil, let raw = launchArguments[key] else { return }
+        AppLogger.ui.warning(
+            "\(flag, privacy: .public) named an unknown value \(String(describing: raw), privacy: .public) — ignored, the seeded look stands. Accepted: \(known.joined(separator: ", "), privacy: .public)")
     }
 
     /// True when either launch argument named a KNOWN palette/accent. While

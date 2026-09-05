@@ -171,14 +171,23 @@ final class ScreenshotTests: XCTestCase {
                        "launch overlay caption still on screen after the identifier wait — the launch-overlay query is probably not matching")
     }
 
-    /// Brief settle so in-flight layout/animations (tab transition, palette
+    /// Brief settle so in-flight layout/animations (tab switch, palette
     /// re-render) finish before the screenshot is taken. Not a hard
     /// synchronization point — the real one is `waitForLaunchOverlay` above,
     /// which is why this is 0.3 s and not the 1.0 s it used to be. It is
-    /// deliberately not removed: a tab tap still animates, and 0.3 s of
-    /// quiescence costs 70 × 0.3 s across the suite instead of 70 × 1.0 s.
+    /// deliberately not removed: a tab tap still animates, and a tab switch
+    /// in this app is a pure visibility change (`MainTabView` keeps every tab
+    /// mounted), so 0.3 s of quiescence is enough where a wait precedes it.
+    /// Where one does NOT — a navigation push — use `settleAfterNavigation()`.
     private func settle() {
         Thread.sleep(forTimeInterval: 0.3)
+    }
+
+    /// A navigation PUSH has no synchronization point of its own — nothing
+    /// waits for the destination — so these sites keep the pre-2026-09-05
+    /// 1.0 s budget rather than inheriting `settle()`'s post-overlay 0.3 s.
+    private func settleAfterNavigation() {
+        Thread.sleep(forTimeInterval: 1.0)
     }
 
     private func attachScreenshot(_ app: XCUIApplication, named name: String) {
@@ -219,7 +228,7 @@ final class ScreenshotTests: XCTestCase {
             settle()
         }
         widget.tap()
-        settle()
+        settleAfterNavigation()
     }
 
     // MARK: - Tab screenshots
@@ -249,7 +258,7 @@ final class ScreenshotTests: XCTestCase {
         openYouWidget(app, label: "Routines and programming")
         let exercisesRow = app.buttons["Exercises"]
         if exercisesRow.waitForExistence(timeout: 10) { exercisesRow.tap() }
-        settle()
+        settleAfterNavigation()
         attachScreenshot(app, named: "app-library-exercises.png")
     }
 
@@ -297,7 +306,7 @@ final class ScreenshotTests: XCTestCase {
             return
         }
         appearanceRow.tap()
-        settle()
+        settleAfterNavigation()
         attachScreenshot(app, named: "app-you-appearance.png")
     }
 
@@ -433,7 +442,7 @@ final class ScreenshotTests: XCTestCase {
         ).firstMatch
         if crew.waitForExistence(timeout: 15) {
             crew.tap()
-            settle()
+            settleAfterNavigation()
         }
     }
 
@@ -472,7 +481,7 @@ final class ScreenshotTests: XCTestCase {
         ).firstMatch
         if lobbySession.waitForExistence(timeout: 10) {
             lobbySession.tap()
-            settle()
+            settleAfterNavigation()
         }
         attachScreenshot(app, named: "app-lobby.png")
     }
@@ -498,7 +507,7 @@ final class ScreenshotTests: XCTestCase {
         ).firstMatch
         if completedSession.waitForExistence(timeout: 10) {
             completedSession.tap()
-            settle()
+            settleAfterNavigation()
         }
         attachScreenshot(app, named: "app-session-recap.png")
     }
@@ -530,7 +539,7 @@ final class ScreenshotTests: XCTestCase {
         ).firstMatch
         if ledgerRow.waitForExistence(timeout: 10) {
             ledgerRow.tap()
-            settle()
+            settleAfterNavigation()
         }
         attachScreenshot(app, named: "app-burpee-ledger.png")
     }
@@ -570,7 +579,7 @@ final class ScreenshotTests: XCTestCase {
         ).firstMatch
         if friendsRow.waitForExistence(timeout: 15) {
             friendsRow.tap()
-            settle()
+            settleAfterNavigation()
         }
         attachScreenshot(app, named: "app-friends.png")
     }
@@ -588,7 +597,7 @@ final class ScreenshotTests: XCTestCase {
         ).firstMatch
         if pushDay.waitForExistence(timeout: 15) {
             pushDay.tap()
-            settle()
+            settleAfterNavigation()
         }
         attachScreenshot(app, named: "app-routine-detail.png")
     }
@@ -612,10 +621,12 @@ final class ScreenshotTests: XCTestCase {
             firstExercise.tap()
         }
 
-        // Demo frames download over the network — two settle cycles (mirrors
-        // captureCatalog's double-settle for async image loads) before capture.
-        settle()
-        settle()
+        // Demo frames download over the network — two cycles (mirrors
+        // captureCatalog's own double budget for async image loads) before
+        // capture, and both are the navigation budget: the tap above pushes
+        // ExerciseDetailView with nothing waiting on it.
+        settleAfterNavigation()
+        settleAfterNavigation()
         attachScreenshot(app, named: "app-exercise-detail.png")
     }
 
@@ -646,10 +657,11 @@ final class ScreenshotTests: XCTestCase {
             activityRow.tap()
         }
 
-        // Two settle cycles (mirrors testExerciseDetail's double-settle) —
-        // the feed's `.task` issues a network RPC call before rows render.
-        settle()
-        settle()
+        // Two cycles (mirrors testExerciseDetail above) — the feed's `.task`
+        // issues a network RPC call before rows render, and the tap above
+        // pushed the screen with nothing waiting on it.
+        settleAfterNavigation()
+        settleAfterNavigation()
         attachScreenshot(app, named: "app-activity-feed.png")
     }
 }
