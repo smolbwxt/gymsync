@@ -171,21 +171,25 @@ final class ScreenshotTests: XCTestCase {
                        "launch overlay caption still on screen after the identifier wait — the launch-overlay query is probably not matching")
     }
 
-    /// Brief settle so in-flight layout/animations (tab switch, palette
-    /// re-render) finish before the screenshot is taken. Not a hard
-    /// synchronization point — the real one is `waitForLaunchOverlay` above,
-    /// which is why this is 0.3 s and not the 1.0 s it used to be. It is
-    /// deliberately not removed: a tab tap still animates, and a tab switch
-    /// in this app is a pure visibility change (`MainTabView` keeps every tab
-    /// mounted), so 0.3 s of quiescence is enough where a wait precedes it.
-    /// Where one does NOT — a navigation push — use `settleAfterNavigation()`.
+    /// Brief settle for residual layout/animation once a REAL wait has
+    /// already happened — after `waitForLaunchOverlay` (via `waitForTabBar`),
+    /// after a `waitForExistence`, after a `swipeUp` whose result is checked
+    /// with `isHittable`. That preceding wait is the synchronization point;
+    /// this is only the tail of it, which is why it is 0.3 s and not the
+    /// 1.0 s it used to be. Not removed: things still animate.
+    ///
+    /// If a tap changes what is about to be captured and nothing waits on the
+    /// result, this is the WRONG helper — use `settleAfterNavigation()`.
     private func settle() {
         Thread.sleep(forTimeInterval: 0.3)
     }
 
-    /// A navigation PUSH has no synchronization point of its own — nothing
-    /// waits for the destination — so these sites keep the pre-2026-09-05
-    /// 1.0 s budget rather than inheriting `settle()`'s post-overlay 0.3 s.
+    /// The budget after any tap that changes the captured content with no
+    /// explicit wait on the result — a navigation push, a segmented-control
+    /// sub-tab that swaps content (and, in `testGroupStats`, fetches it), or
+    /// a tab switch captured immediately. None of those has a synchronization
+    /// point of its own, so they keep the pre-2026-09-05 1.0 s rather than
+    /// inheriting `settle()`'s post-wait 0.3 s.
     private func settleAfterNavigation() {
         Thread.sleep(forTimeInterval: 1.0)
     }
@@ -266,7 +270,7 @@ final class ScreenshotTests: XCTestCase {
         let app = launchApp()
         guard waitForTabBar(app) else { return }
         selectTab(app, label: "Crews")
-        settle()
+        settleAfterNavigation()
         attachScreenshot(app, named: "app-tab-social.png")
     }
 
@@ -281,7 +285,7 @@ final class ScreenshotTests: XCTestCase {
         let app = launchApp()
         guard waitForTabBar(app) else { return }
         selectTab(app, label: "You")
-        settle()
+        settleAfterNavigation()
         attachScreenshot(app, named: "app-tab-you.png")
     }
 
@@ -467,7 +471,7 @@ final class ScreenshotTests: XCTestCase {
         let sessionsTab = app.buttons["Sessions"]
         if sessionsTab.waitForExistence(timeout: 10) {
             sessionsTab.tap()
-            settle()
+            settleAfterNavigation()
         }
 
         // The seeded world has exactly one session per state; "Lobby Open"
@@ -496,7 +500,7 @@ final class ScreenshotTests: XCTestCase {
         let sessionsTab = app.buttons["Sessions"]
         if sessionsTab.waitForExistence(timeout: 10) {
             sessionsTab.tap()
-            settle()
+            settleAfterNavigation()
         }
 
         // The seeded world's one "completed" session is the only row whose
@@ -522,7 +526,7 @@ final class ScreenshotTests: XCTestCase {
         let sessionsTab = app.buttons["Sessions"]
         if sessionsTab.waitForExistence(timeout: 10) {
             sessionsTab.tap()
-            settle()
+            settleAfterNavigation()
         }
 
         // The Burpee Ledger row is GroupView.sessionsList's first Section,
@@ -559,7 +563,7 @@ final class ScreenshotTests: XCTestCase {
         let statsTab = app.buttons["Stats"]
         if statsTab.waitForExistence(timeout: 10) {
             statsTab.tap()
-            settle()
+            settleAfterNavigation()
         }
         attachScreenshot(app, named: "app-group-stats.png")
     }
