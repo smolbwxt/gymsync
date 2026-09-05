@@ -61,12 +61,14 @@ struct LaunchLoadingOverlay: View {
         // the moment someone rewords the caption.
         //
         // `.contain` keeps the caption/art queryable underneath instead of
-        // flattening them into one element, and makes this ZStack itself
-        // surface as an `otherElements` container —
-        // `ScreenshotTests.waitForLaunchOverlay` waits for it to STOP
-        // existing, which SwiftUI reports only once the 350 ms removal
-        // transition has finished (a screenshot taken any earlier catches a
-        // partially-faded overlay).
+        // flattening them into one element — do NOT change it to `.combine`
+        // or `.ignore`: `ScreenshotTests.waitForLaunchOverlay` reads the
+        // "LOADING THE BAR" caption as an independent tripwire against this
+        // identifier silently failing to match. `.contain` also makes this
+        // ZStack itself surface as its own container element, which is what
+        // the test waits to STOP existing — SwiftUI reports that only once
+        // the 350 ms removal transition has finished (a screenshot taken any
+        // earlier catches a partially-faded overlay).
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("launch-overlay")
         .task {

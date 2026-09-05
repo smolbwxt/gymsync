@@ -59,8 +59,11 @@ public final class ThemeStore {
     }
 
     /// True when either launch argument named a KNOWN palette/accent. While
-    /// set, `load()`, `select(_:)` and `selectAccent(_:)` are no-ops — neither
-    /// the network row nor a stray tap may repaint a pinned capture.
+    /// set, `select(_:)` and `selectAccent(_:)` are no-ops and `load()` skips
+    /// its two APPLY lines — neither the network row nor a stray tap may
+    /// repaint a pinned capture. Everything else `load()` caches still lands
+    /// (units, plates, anchors, `shareHeartRate`): the pin owns the palette
+    /// and the accent, not the account's data.
     private let isPinned: Bool
 
     /// Testable seam: `launchArguments` is the argument-domain dictionary,
@@ -205,17 +208,18 @@ public final class ThemeStore {
     /// Settings Hub read (`UserSettingsRepository.get()` itself already
     /// falls back to `.defaults` when no row exists; this additionally
     /// tolerates the call throwing, e.g. pre-sign-in).
+    ///
+    /// Under a launch-argument pin this still LOADS and still caches
+    /// everything (fix round 1): the row's units, bar/plate inventory, lift
+    /// anchors and `shareHeartRate` are what the captured screens draw
+    /// themselves with, and throwing them away made the frames less faithful,
+    /// not more. Only the two lines that would REPAINT are skipped — the pin
+    /// exists to own palette + accent, nothing else.
     public func load() async {
-        // A launch-argument pin owns the look for the whole process — the
-        // account's persisted row is exactly what it is overriding. Whole-
-        // method early return (not a palette/accent-only skip): a pinned
-        // process is a capture harness, and `lastKnownSettings` staying nil
-        // just means the other cached fields fall back to their documented
-        // absence-means-default values.
-        guard !isPinned else { return }
         guard let settings = try? await UserSettingsRepository.get() else { return }
         lastKnownSettings = settings
         setShareHeartRate(settings.shareHeartRate)
+        guard !isPinned else { return }
         apply(paletteID: settings.palette)
         applyAccent(settings.accent)
     }

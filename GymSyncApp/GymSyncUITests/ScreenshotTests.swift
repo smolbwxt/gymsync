@@ -141,12 +141,34 @@ final class ScreenshotTests: XCTestCase {
     /// SwiftUI keeps a view mounted (and its AX elements queryable) for the
     /// whole removal transition: this releases when the last pixel is gone,
     /// which no fixed sleep can promise.
+    ///
+    /// TWO SIGNALS, on purpose (fix round 1). The identifier wait is the
+    /// PRIMARY one — it is the contract, and it is what blocks. But a query
+    /// that matches NOTHING also returns "gone" instantly, so an identifier
+    /// that stopped resolving would silently restore the old dim-Home bug
+    /// with a green suite: the exact "checker that stops checking" failure
+    /// the identifier was introduced to avoid. So:
+    ///   - the query is type-agnostic (`descendants(matching: .any)`), since
+    ///     the element type a SwiftUI a11y container surfaces as is not
+    ///     something this suite should be betting on — the same lesson
+    ///     `openYouWidget` already paid for below; and
+    ///   - the caption is checked afterwards as an independent TRIPWIRE. It
+    ///     is deliberately NOT the thing we wait on (it is marketing copy and
+    ///     would rot), but if the overlay is genuinely still up while the
+    ///     identifier wait reports success, this is what says so.
     private func waitForLaunchOverlay(_ app: XCUIApplication) {
-        let gone = app.otherElements["launch-overlay"].waitForNonExistence(timeout: launchOverlayTimeout)
-        if !gone {
+        let gone = app.descendants(matching: .any)["launch-overlay"].firstMatch
+            .waitForNonExistence(timeout: launchOverlayTimeout)
+        let captionStillUp = app.staticTexts["LOADING THE BAR"].exists
+        // Read both signals BEFORE asserting: `continueAfterFailure = false`
+        // aborts at the first XCTFail, and a PNG of the screen that tripped
+        // either one is the whole diagnosis.
+        if !gone || captionStillUp {
             attachScreenshot(app, named: "launch-overlay-stuck.png")
         }
         XCTAssertTrue(gone, "Launch overlay still present after \(launchOverlayTimeout)s — every capture from this test would be taken under it")
+        XCTAssertFalse(captionStillUp,
+                       "launch overlay caption still on screen after the identifier wait — the launch-overlay query is probably not matching")
     }
 
     /// Brief settle so in-flight layout/animations (tab transition, palette
