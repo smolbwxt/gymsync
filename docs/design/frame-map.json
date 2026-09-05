@@ -122,5 +122,21 @@
   "solo-live-set": {
     "frame": 66,
     "title": "Onyx Solo Workout (redesign)"
+  },
+  "home-v2-tiles": {
+    "frame": 69,
+    "title": "Home v2 - A tiles (v7 proof)"
+  },
+  "home-v2-tiles-solo-day": {
+    "frame": 69,
+    "title": "Home v2 - A tiles (v7 proof)"
+  },
+  "home-v2-strips": {
+    "frame": 70,
+    "title": "Home v2 - B strips (v7 proof)"
+  },
+  "home-v2-strips-crew-night": {
+    "frame": 70,
+    "title": "Home v2 - B strips (v7 proof)"
   }
 }

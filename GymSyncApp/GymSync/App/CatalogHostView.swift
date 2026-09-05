@@ -69,6 +69,13 @@ enum CatalogScreen: String, CaseIterable {
     case coaching = "coaching"
     case createGroup = "create-group"
     case soloLiveSet = "solo-live-set"
+    // Home v2 — the two arrangements, each in its own fixture world and in
+    // the other's, so the owner can compare arrangements AND states. See
+    // `content_homeV2Tiles` for the whole story.
+    case homeV2Tiles = "home-v2-tiles"
+    case homeV2Strips = "home-v2-strips"
+    case homeV2TilesSoloDay = "home-v2-tiles-solo-day"
+    case homeV2StripsCrewNight = "home-v2-strips-crew-night"
 }
 
 struct CatalogHostView: View {
@@ -133,6 +140,10 @@ struct CatalogHostView: View {
             case .coaching:                   content_coaching
             case .createGroup:                content_createGroup
             case .soloLiveSet:                content_soloLiveSet
+            case .homeV2Tiles:                content_homeV2Tiles
+            case .homeV2Strips:               content_homeV2Strips
+            case .homeV2TilesSoloDay:         content_homeV2TilesSoloDay
+            case .homeV2StripsCrewNight:      content_homeV2StripsCrewNight
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1590,6 +1601,62 @@ struct CatalogHostView: View {
                 allExercises: Self.soloFixtureExercises
             )
         }
+    }
+
+    // MARK: - Home v2 (home-v2 catalog plan, Tasks 2-4)
+    //
+    // The owner asked for both arrangements built rather than drawn: "give me
+    // mockups for both. I will assess when I see them implemented by
+    // themselves or a mix of the two." So Home v2 exists as two real SwiftUI
+    // compositions of one shared set of pieces (`Features/Home/V2/`) — A
+    // tiles, B strips — reachable ONLY from here. Production `HomeView` is
+    // untouched; nothing is wired until the owner picks A, B, or a mix.
+    //
+    // FOUR ids rather than two: each arrangement is captured in its own
+    // fixture world AND in the other's, because the states are half the
+    // question. A crew night puts the gold CHECK IN button on the page (the
+    // one screen where gold outranks everything, design language rule 2) and
+    // brings the quiet solo pill and the burpee counter with it; a solo day
+    // replaces all three with the accent START · PULL A. Capturing only
+    // `home-v2-tiles` (crew) and `home-v2-strips` (solo) would let a
+    // difference between the ARRANGEMENTS and a difference between the
+    // STATES read as one thing.
+    //
+    // No fixture seam is needed on either view and no side effect is taken
+    // before building one (unlike `content_soloLiveSet` above): both views
+    // take a plain `HomeV2World` value, read no `AppState`, make no
+    // repository call, and hold no `.task`. No `NavigationStack` wrapper
+    // either — neither sets a `.navigationTitle` or a `.toolbar`; each is a
+    // `ScrollView` on `theme.bg`, exactly what Home is.
+    //
+    // Proof authority: the v7 proof's "Home, v2" section (`Home A · tiles`,
+    // `Home B · strips`) at
+    // https://claude.ai/code/artifact/33a36a70-aff4-4413-98c4-4eb1768fb50f.
+    // That proof is an HTML artifact, not one of the numbered frames
+    // `render_proofs.js`/`render_redesign_proofs.js` emit, so
+    // `docs/design/frame-map.json` reserves frames 69/70 for it (the next
+    // free numbers after the redesign gallery's 60-68) and `parity_diff.js`
+    // logs `skip <id>: no proof frame` for these four until the proof is
+    // rendered into `docs/design/mockups/`. Deliberate: pointing them at
+    // frame 60 (the SUPERSEDED Onyx Home) would score them against an
+    // authority they are meant to replace.
+
+    private var content_homeV2Tiles: some View {
+        HomeV2TilesView(world: HomeV2Fixtures.crewNight)
+    }
+
+    private var content_homeV2Strips: some View {
+        HomeV2StripsView(world: HomeV2Fixtures.soloDay)
+    }
+
+    /// A in B's world — the swapped state.
+    private var content_homeV2TilesSoloDay: some View {
+        HomeV2TilesView(world: HomeV2Fixtures.soloDay)
+    }
+
+    /// B in A's world — the swapped state.
+    private var content_homeV2StripsCrewNight: some View {
+        HomeV2StripsView(world: HomeV2Fixtures.crewNight)
     }
 }
 
