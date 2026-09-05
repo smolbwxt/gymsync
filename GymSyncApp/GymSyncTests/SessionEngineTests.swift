@@ -21,13 +21,7 @@ final class SessionEngineTests: XCTestCase {
         let client = SupabaseService.shared.client
 
         // ── 1. Schedule a self-only ad-hoc session ─────────────────────────
-        let session = try await SessionRepository.schedule(
-            groupID: nil,
-            inviteeIDs: [],
-            routineID: nil,
-            scheduledFor: Date(),
-            generateRoomCode: false
-        )
+        let session = try await makeTempScheduledSession(scheduledFor: Date())
         XCTAssertEqual(session.state, "scheduled")
 
         // ── 2. Open lobby + check in ───────────────────────────────────────
@@ -121,7 +115,7 @@ final class SessionEngineTests: XCTestCase {
             }
         }
 
-        // ── 10. complete + cleanup ─────────────────────────────────────────
+        // ── 10. complete — asserted, not cleanup ───────────────────────────
         let completed = try await SessionRepository.complete(sessionID: session.id)
         XCTAssertEqual(completed.state, "completed")
         XCTAssertNotNil(completed.completedAt)
