@@ -518,9 +518,9 @@ struct CalendarSchedulingView: View {
 
         let month = CalendarMonthGrid.Month(
             label: monthStart.formatted(.dateTime.month(.wide).year()),
-            weekdayLabels: Self.weekdayLabels(cal),
+            weekdayLabels: CalendarMonthMath.weekdayLabels(cal),
             dayCount: dayCount,
-            leadingBlanks: (cal.component(.weekday, from: monthStart) - cal.firstWeekday + 7) % 7,
+            leadingBlanks: CalendarMonthMath.leadingBlanks(monthStart: monthStart, cal: cal),
             trained: trained,
             scheduled: scheduled,
             crew: crew,
@@ -667,15 +667,6 @@ struct CalendarSchedulingView: View {
             days.insert(number)
         }
         return days
-    }
-
-    /// `M T W T F S S`, rotated to the locale's first weekday — the same
-    /// rotation `TrainingMonthField`'s leading-blank arithmetic assumes.
-    private static func weekdayLabels(_ cal: Calendar) -> [String] {
-        let symbols = cal.veryShortWeekdaySymbols
-        guard symbols.count == 7 else { return ["M", "T", "W", "T", "F", "S", "S"] }
-        let first = cal.firstWeekday - 1
-        return (0..<7).map { symbols[(first + $0) % 7].uppercased() }
     }
 
     // MARK: Refresh
