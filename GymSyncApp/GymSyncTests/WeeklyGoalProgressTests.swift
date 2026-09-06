@@ -247,7 +247,7 @@ final class WeeklyGoalProgressTests: XCTestCase {
                        "8 sets short beats 1 set short, even at a worse fraction")
     }
 
-    func testZeroTargetGroupIsNeverNext() {
+    func testZeroTargetGroupIsNeverNextAndIsNeverMet() {
         let progress = WeeklyGoalProgressMath.muscleSetsProgress(
             goal: goal(.muscleSets, params: .init(muscleTargets: ["chest": 0, "back": 0])),
             logs: [], catalog: [:], now: wednesday, calendar: testCalendar)
@@ -255,7 +255,19 @@ final class WeeklyGoalProgressTests: XCTestCase {
         XCTAssertEqual(progress.chips.count, 2)
         XCTAssertTrue(progress.chips.allSatisfy { !$0.isNext },
                       "a 0/0 chip draws an empty meter and prompts nothing")
-        XCTAssertTrue(progress.met, "0 of 0 is met, vacuously")
+        XCTAssertFalse(progress.met,
+                       "an athlete who trained nothing must not open Home to GOAL MET — a 0 target is reachable through the editor's steppers AND through a volume_targets row at weekly_sets = 0")
+    }
+
+    func testARealTargetAlongsideAZeroOneStillDecidesMet() {
+        let bench = exercise(1, "Bench Press", "chest")
+        let progress = WeeklyGoalProgressMath.muscleSetsProgress(
+            goal: goal(.muscleSets, params: .init(muscleTargets: ["chest": 2, "back": 0])),
+            logs: [log(bench, reps: 8), log(bench, reps: 8, index: 2)],
+            catalog: catalog([bench]), now: wednesday, calendar: testCalendar)
+
+        XCTAssertTrue(progress.met,
+                      "one chip with a real target, and it is met — the 0-target chip does not veto it")
     }
 
     func testNoChipIsNextWhenEveryChipIsMet() {
@@ -684,19 +696,126 @@ final class WeeklyGoalProgressTests: XCTestCase {
             catalog: catalog([stretch]), calendar: testCalendar))
     }
 
-    func testHealthKitWorkoutOutranksTheInference() {
+    /// Health workouts are matched to a session by its OWN WINDOW, not by
+    /// calendar day. Keyed by day, one Saturday run promoted every session
+    /// that Saturday: two lifting sessions credited toward a `cardio` goal,
+    /// and neither of them was the run.
+    private func healthTag(_ type: String, minutesFromWednesday offset: Int,
+                           lengthMinutes: Int = 40) -> HealthWorkoutTag {
+        let start = wednesday.addingTimeInterval(TimeInterval(offset * 60))
+        return HealthWorkoutTag(type: type, start: start,
+                                end: start.addingTimeInterval(TimeInterval(lengthMinutes * 60)))
+    }
+
+    func testHealthKitWorkoutOverlappingTheSessionOutranksTheInference() {
         let press = exercise(12, "Bench Press", "chest", category: "compound")
         let strength = routine(21, "Push Day")
-        let pushSession = sessionOf(strength)
-        let day = testCalendar.startOfDay(for: pushSession.completedAt!)
+        let pushSession = sessionOf(strength)   // startedAt == completedAt == noon
 
         XCTAssertTrue(WeeklyGoalProgressMath.sessionCounts(
             towardType: "cardio", session: pushSession,
             routines: [strength.id: strength],
             routineExercises: [strength.id: [routineRow(strength, press, position: 1)]],
             catalog: catalog([press]),
-            healthWorkoutTypesByDay: [day: ["cardio"]], calendar: testCalendar),
-            "a real HealthKit workout is fact; the routine inference is a guess")
+            healthWorkouts: [healthTag("cardio", minutesFromWednesday: -10)],
+            calendar: testCalendar),
+            "a real HealthKit workout over this session's own window is fact")
+    }
+
+    func testHealthKitWorkoutElsewhereInTheDayDoesNotPromoteASession() {
+        let press = exercise(12, "Bench Press", "chest", category: "compound")
+        let strength = routine(21, "Push Day")
+        let pushSession = sessionOf(strength)   // noon
+
+        XCTAssertFalse(WeeklyGoalProgressMath.sessionCounts(
+            towardType: "cardio", session: pushSession,
+            routines: [strength.id: strength],
+            routineExercises: [strength.id: [routineRow(strength, press, position: 1)]],
+            catalog: catalog([press]),
+            // A 7 a.m. run, five hours before the lift. Same day, different
+            // training — it must not make a push day into a cardio session.
+            healthWorkouts: [healthTag("cardio", minutesFromWednesday: -300)],
+            calendar: testCalendar),
+            "the day is not the window: a morning run does not promote an evening lift")
+    }
+
+    func testHealthKitToleranceCoversClockSkewAtTheEdges() {
+        let press = exercise(12, "Bench Press", "chest", category: "compound")
+        let strength = routine(21, "Push Day")
+        let pushSession = sessionOf(strength)
+
+        // Ends 10 minutes BEFORE the session's instant — inside the 15-minute
+        // tolerance, because the watch closes its workout on its own clock
+        // and the lifter taps Finish a few minutes later.
+        XCTAssertTrue(WeeklyGoalProgressMath.sessionCounts(
+            towardType: "cardio", session: pushSession,
+            routines: [strength.id: strength], routineExercises: [:],
+            catalog: [:],
+            healthWorkouts: [healthTag("cardio", minutesFromWednesday: -50,
+                                       lengthMinutes: 40)],
+            calendar: testCalendar))
+
+        // Ends 20 minutes before — outside it.
+        XCTAssertFalse(WeeklyGoalProgressMath.sessionCounts(
+            towardType: "cardio", session: pushSession,
+            routines: [strength.id: strength], routineExercises: [:],
+            catalog: [:],
+            healthWorkouts: [healthTag("cardio", minutesFromWednesday: -60,
+                                       lengthMinutes: 40)],
+            calendar: testCalendar))
+    }
+
+    func testHealthKitWorkoutOfADifferentTypeDoesNotMatch() {
+        let strength = routine(21, "Push Day")
+        XCTAssertFalse(WeeklyGoalProgressMath.sessionCounts(
+            towardType: "cardio", session: sessionOf(strength),
+            routines: [strength.id: strength], routineExercises: [:], catalog: [:],
+            healthWorkouts: [healthTag("mobility", minutesFromWednesday: 0)],
+            calendar: testCalendar))
+    }
+
+    /// THE LIMITATION, MADE EXPLICIT. The count's spine is app sessions, so
+    /// a run recorded only on a watch cannot move a `cardio` goal by itself
+    /// — it can only corroborate a session the app already has.
+    func testHealthWorkoutWithNoAppSessionCountsNothing() {
+        let progress = WeeklyGoalProgressMath.sessionsOfTypeProgress(
+            goal: goal(.sessionsOfType, params: .init(sessionType: "cardio", count: 3)),
+            sessions: [],                       // the athlete logged nothing in the app
+            routines: [:], routineExercises: [:], catalog: [:],
+            healthWorkouts: [healthTag("cardio", minutesFromWednesday: 0),
+                             healthTag("cardio", minutesFromWednesday: -1440)],
+            now: wednesday, calendar: testCalendar)
+
+        XCTAssertEqual(progress.value, 0,
+                       "two real Health runs, no app sessions, and the count is 0 — documented, not accidental")
+    }
+
+    func testTheNameMatchIsAWordNotASubstring() {
+        // "old-school classic".contains("class") is true, and a routine
+        // called Classic is not a class.
+        let classic = routine(25, "Old-School Classic")
+        XCTAssertFalse(WeeklyGoalProgressMath.sessionCounts(
+            towardType: "class", session: sessionOf(classic),
+            routines: [classic.id: classic], routineExercises: [:], catalog: [:],
+            calendar: testCalendar),
+            "a substring match let Classic satisfy a class goal outright")
+
+        let realClass = routine(26, "Tuesday Spin Class")
+        XCTAssertTrue(WeeklyGoalProgressMath.sessionCounts(
+            towardType: "class", session: sessionOf(realClass),
+            routines: [realClass.id: realClass], routineExercises: [:], catalog: [:],
+            calendar: testCalendar),
+            "and the word itself still matches")
+    }
+
+    func testNameWordsSplitsOnEverythingThatIsNotAlphanumeric() {
+        XCTAssertEqual(WeeklyGoalProgressMath.nameWords("Old-School Classic"),
+                       ["old", "school", "classic"])
+        XCTAssertEqual(WeeklyGoalProgressMath.nameWords("Saturday HIIT Blast"),
+                       ["saturday", "hiit", "blast"])
+        XCTAssertEqual(WeeklyGoalProgressMath.nameWords("Coach · Pull A"),
+                       ["coach", "pull", "a"],
+                       "the Coach routine prefix's middle dot is a separator, not a word")
     }
 
     func testSessionWithNoRoutineCountsNothing() {
@@ -957,6 +1076,71 @@ final class WeeklyGoalProgressTests: XCTestCase {
         XCTAssertEqual(distance.rightHandRead, "")
         XCTAssertEqual(days.kicker, "GOAL MET · 4 DAYS LEFT",
                        "the kicker still carries the number")
+    }
+
+    // MARK: - CONNECT HEALTH (controller ruling, 2026-09-06)
+
+    func testDistanceSaysConnectHealthRatherThanZeroMiles() {
+        // The failure this closes: a permission never asked for returns 0
+        // metres, and `0 / 15 mi` then says "you have not run" when the
+        // truth is "nobody ever asked you".
+        let progress = WeeklyGoalProgressMath.distanceProgress(
+            goal: distanceGoal("run", target: 15), metres: 0, unit: .lbs,
+            healthNeedsConnecting: true, now: wednesday, calendar: testCalendar)
+
+        XCTAssertEqual(progress.rightHandRead, "CONNECT HEALTH")
+        XCTAssertEqual(progress.value, 0)
+        XCTAssertEqual(progress.chips.first?.done, 0)
+        XCTAssertFalse(progress.met)
+    }
+
+    func testDistanceNeverReadsMetWhileHealthIsUnconnected() {
+        // Metres cannot arrive while unconnected, but if they somehow did,
+        // an unconnected strip must not claim the goal was met.
+        let progress = WeeklyGoalProgressMath.distanceProgress(
+            goal: distanceGoal("run", target: 1), metres: 15_000, unit: .lbs,
+            healthNeedsConnecting: true, now: wednesday, calendar: testCalendar)
+
+        XCTAssertFalse(progress.met)
+        XCTAssertEqual(progress.value, 0)
+    }
+
+    func testConnectedDistanceReadsNormally() {
+        let progress = WeeklyGoalProgressMath.distanceProgress(
+            goal: distanceGoal("run", target: 15), metres: 15_000, unit: .lbs,
+            healthNeedsConnecting: false, now: wednesday, calendar: testCalendar)
+
+        XCTAssertEqual(progress.rightHandRead, "4 DAYS LEFT")
+        XCTAssertEqual(progress.value, 9.3206, accuracy: 0.001)
+    }
+
+    func testSessionsOfTypeSaysConnectHealthButKeepsItsRealCount() {
+        // DELIBERATE DEVIATION from the ruling's "chips with done 0", and
+        // the reason is the ruling's own: this count's spine is the app's
+        // OWN completed sessions, so zeroing it would render a false 0 for
+        // data this app recorded itself.
+        let bike = exercise(10, "Assault Bike", "quads", category: "cardio")
+        let cardio = routine(24, "Cardio Engine")
+        let progress = WeeklyGoalProgressMath.sessionsOfTypeProgress(
+            goal: goal(.sessionsOfType, params: .init(sessionType: "cardio", count: 3)),
+            sessions: [sessionOf(cardio)], routines: [cardio.id: cardio],
+            routineExercises: [cardio.id: [routineRow(cardio, bike, position: 1)]],
+            catalog: catalog([bike]), healthNeedsConnecting: true,
+            now: wednesday, calendar: testCalendar)
+
+        XCTAssertEqual(progress.rightHandRead, "CONNECT HEALTH")
+        XCTAssertEqual(progress.value, 1,
+                       "the app's own completed session is real and stays counted")
+    }
+
+    func testDispatcherCarriesTheConnectHealthFlag() {
+        let progress = WeeklyGoalProgressMath.progress(
+            goal: distanceGoal("run", target: 15), logs: [], catalog: [:],
+            sessions: [], effectiveWeeklyGoal: 3, unit: .lbs,
+            healthNeedsConnecting: true, distanceMetres: 0,
+            now: wednesday, calendar: testCalendar)
+
+        XCTAssertEqual(progress.rightHandRead, "CONNECT HEALTH")
     }
 
     func testDispatcherRoutesDistance() {

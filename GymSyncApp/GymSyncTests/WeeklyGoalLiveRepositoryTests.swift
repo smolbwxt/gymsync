@@ -108,6 +108,36 @@ final class WeeklyGoalLiveRepositoryTests: XCTestCase {
                              "setAt maps to updated_at and is stamped by the server")
     }
 
+    /// The two `params` fields whose round trip is genuinely in question:
+    /// `targetWeightLbs` is a `Decimal`, and `byDate` is a `Date` inside
+    /// `jsonb` encoded by the SDK's own date strategy. `muscleTargets` and
+    /// `distanceTarget` are Int and Double and were never in doubt.
+    func testLiftPayloadRoundTripsItsDecimalAndItsDate() async throws {
+        try await TestAuth.signInIfConfigured()
+        guard let userID = await SupabaseService.shared.currentUserID() else {
+            return XCTFail("signed in but no user id")
+        }
+        let week = temporaryWeek("2099-02-15")
+        let exerciseID = UUID()
+        // A whole second, so the assertion cannot fail on sub-second
+        // precision the wire format may not carry.
+        let byDate = Date(timeIntervalSince1970: 4_102_444_800)
+
+        await repository.save(goal(week, userID: userID, kind: .lift,
+                                   params: .init(exerciseID: exerciseID,
+                                                 targetWeightLbs: 225,
+                                                 byDate: byDate)))
+        let read = await repository.goal(weekStart: week)
+
+        XCTAssertEqual(read?.kind, .lift)
+        XCTAssertEqual(read?.params.exerciseID, exerciseID)
+        XCTAssertEqual(read?.params.targetWeightLbs, 225,
+                       "a Decimal survives the jsonb round trip")
+        XCTAssertEqual(read?.params.byDate?.timeIntervalSince1970 ?? 0,
+                       byDate.timeIntervalSince1970, accuracy: 1,
+                       "and so does a Date, through the SDK's own encoding strategy")
+    }
+
     func testClearToCoachLeavesACoachRow() async throws {
         try await TestAuth.signInIfConfigured()
         guard let userID = await SupabaseService.shared.currentUserID() else {

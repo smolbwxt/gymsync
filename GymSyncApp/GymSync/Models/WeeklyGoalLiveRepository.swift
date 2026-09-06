@@ -77,7 +77,7 @@ private struct WeeklyGoalRow: Codable {
 /// Best-effort throughout, matching the protocol's own contract: `async`
 /// with no `throws`, because a network blip on Home must render the
 /// invitation rather than an error on a strip.
-struct LiveWeeklyGoalRepository: WeeklyGoalRepository {
+struct LiveWeeklyGoalRepository: WeeklyGoalRepository, WeeklyGoalCoachWriter {
 
     private var client: SupabaseClient { SupabaseService.shared.client }
 
@@ -108,10 +108,23 @@ struct LiveWeeklyGoalRepository: WeeklyGoalRepository {
     ///
     /// Upserts on the primary key `(user_id, week_start)`, so saving twice
     /// in a week edits one row rather than failing on the second.
+    /// SAVE IS ALSO WHERE HEALTH IS ASKED FOR (controller ruling,
+    /// 2026-09-06). The editor's primary and its ACCEPT both land here, so a
+    /// `distance` or `sessionsOfType` save is a real user gesture and the
+    /// system sheet has an answer in it. Deliberately NOT from
+    /// `progress(for:)` or from Home's refresh, which would put a
+    /// permission sheet in front of someone who only opened the app.
+    ///
+    /// Best-effort and non-blocking: iOS does not re-prompt once answered,
+    /// so calling it on every save of these kinds is cheap and idempotent,
+    /// and a throw here must never cost the athlete their goal.
     @discardableResult
     func save(_ goal: WeeklyGoal) async -> Bool {
         var userGoal = goal
         userGoal.source = .user
+        if goal.kind == .distance || goal.kind == .sessionsOfType {
+            try? await HealthKitBridge.requestWorkoutAndDistancePermission()
+        }
         return await upsert(userGoal)
     }
 
@@ -170,30 +183,55 @@ struct LiveWeeklyGoalRepository: WeeklyGoalRepository {
     func detect(weekStart: String) async -> WeeklyGoal? {
         guard let userID = await SupabaseService.shared.currentUserID() else { return nil }
         let unit = await MainActor.run { ThemeStore.shared.weightUnit }
+        let calendar = Calendar.current
+        let now = Date()
 
         async let enrollment = try? await ProgramRepository.active()
         async let trainingProfile = try? await TrainingProfileRepository.load()
         async let volumeTargets = (try? await VolumeTargetRepository.all()) ?? []
-        async let catalog = catalogByID()
-        async let routines = weekRoutines(userID: userID)
+        async let library = routineLibrary(userID: userID)
+        async let sessions = weekSessions(userID: userID)
         async let weeklyGoal = effectiveWeeklyGoal(userID: userID)
 
-        let loadedRoutines = await routines
+        // THE WEEK'S ROUTINES, not the athlete's whole library. Feeding the
+        // detector everything they own summed `muscleTargets` across five
+        // saved routines when the week prescribes one, and let the
+        // conditioning test judge the library rather than the week.
+        let weekRoutines = WeeklyGoalDetector.routinesForWeek(
+            library: await library, sessions: await sessions,
+            now: now, calendar: calendar)
         let rows = (try? await RoutineRepository
-            .exercisesForRoutines(ids: loadedRoutines.map(\.id))) ?? []
+            .exercisesForRoutines(ids: weekRoutines.map(\.id))) ?? []
         let byRoutine = Dictionary(grouping: rows, by: \.routineID)
+
+        // THE CATALOG IS FETCHED ONLY WHEN IT WILL BE READ. It is ~1,300
+        // paged rows on every book() and every build(), and it is looked up
+        // only through `routineExercises` — so with no routines this week,
+        // neither consumer has anything to resolve and the fetch is pure
+        // waste. That covers the case the review named: rule 3 answering
+        // `days` for an athlete with an unbooked week.
+        //
+        // NOT skipped merely because the titration has rows, which was the
+        // other option offered: `muscleSetParams`' routines fallback is not
+        // the only consumer — `isMostlyCardio` reads the catalog too, and
+        // skipping on a non-empty `volume_targets` would silently stop a
+        // cardio-flavoured week from being detected as one.
+        let targets = await volumeTargets
+        let catalog = weekRoutines.isEmpty ? [:] : await catalogByID()
 
         return WeeklyGoalDetector.detect(
             userID: userID,
             enrollment: await enrollment,
-            weekRoutines: loadedRoutines,
+            weekRoutines: weekRoutines,
             routineExercises: byRoutine,
-            catalog: await catalog,
+            catalog: catalog,
             trainingProfile: await trainingProfile,
-            volumeTargets: await volumeTargets,
+            volumeTargets: targets,
             effectiveWeeklyGoal: await weeklyGoal,
             weekStart: weekStart,
-            unit: unit)
+            unit: unit,
+            now: now,
+            calendar: calendar)
     }
 
     /// What Coach WOULD set, for the Coach tile's line. Writes nothing, ever
@@ -246,7 +284,8 @@ struct LiveWeeklyGoalRepository: WeeklyGoalRepository {
 
         switch goal.kind {
         case .muscleSets:
-            async let logs = weekSetLogs(userID: userID, since: weekStart)
+            async let logs = weekSetLogs(userID: userID, since: weekStart,
+                                         until: weekEnd)
             async let catalog = catalogByID()
             return WeeklyGoalProgressMath.muscleSetsProgress(
                 goal: goal, logs: await logs, catalog: await catalog,
@@ -291,8 +330,8 @@ struct LiveWeeklyGoalRepository: WeeklyGoalRepository {
         case .sessionsOfType:
             async let sessions = weekSessions(userID: userID)
             async let catalog = catalogByID()
-            async let tags = HealthKitBridge.workoutTypeTagsByDay(
-                from: weekStart, to: weekEnd, calendar: calendar)
+            async let tags = HealthKitBridge.workoutTags(from: weekStart, to: weekEnd)
+            async let needsConnecting = HealthKitBridge.weeklyGoalHealthNeedsConnecting()
             let loaded = await sessions
             let routineIDs = Array(Set(loaded.compactMap(\.routineID)))
             async let routines = routinesByID(userID: userID)
@@ -302,14 +341,20 @@ struct LiveWeeklyGoalRepository: WeeklyGoalRepository {
                 goal: goal, sessions: loaded, routines: await routines,
                 routineExercises: Dictionary(grouping: rows, by: \.routineID),
                 catalog: await catalog,
-                healthWorkoutTypesByDay: await tags,
+                healthWorkouts: await tags,
+                healthNeedsConnecting: await needsConnecting,
                 now: now, calendar: calendar)
 
         case .distance:
-            let metres = await HealthKitBridge.distanceMeters(
+            // The read AND the "have we ever asked" check, together: a
+            // permission never requested returns 0 metres, and 0 mi must not
+            // be how the strip says "Health is not connected".
+            async let metres = HealthKitBridge.distanceMeters(
                 activity: goal.params.activity ?? "", from: weekStart, to: weekEnd)
+            async let needsConnecting = HealthKitBridge.weeklyGoalHealthNeedsConnecting()
             return WeeklyGoalProgressMath.distanceProgress(
-                goal: goal, metres: metres, unit: unit,
+                goal: goal, metres: await metres, unit: unit,
+                healthNeedsConnecting: await needsConnecting,
                 now: now, calendar: calendar)
         }
     }
@@ -325,7 +370,14 @@ struct LiveWeeklyGoalRepository: WeeklyGoalRepository {
     /// server-side would silently undercount every week that contained one.
     /// `exerciseHistory` above takes the same position and says so in its own
     /// comment.
-    private func weekSetLogs(userID: UUID, since: Date) async -> [SetLog] {
+    ///
+    /// BOUNDED AT BOTH ENDS AND EXPLICITLY LIMITED. `gte` alone leaned on
+    /// "no future logs exist" for its ceiling and on PostgREST's default
+    /// max-rows for its size — so a heavy week could silently truncate and
+    /// undercount the tally with no signal at all. 2,000 is far above any
+    /// real week (a 3-hour session logs perhaps 40 sets) and low enough to
+    /// stay one page.
+    private func weekSetLogs(userID: UUID, since: Date, until: Date) async -> [SetLog] {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         do {
@@ -334,8 +386,10 @@ struct LiveWeeklyGoalRepository: WeeklyGoalRepository {
                 .select()
                 .eq("user_id", value: userID)
                 .gte("logged_at", value: formatter.string(from: since))
+                .lt("logged_at", value: formatter.string(from: until))
                 .eq("is_penalty", value: "false")
                 .order("logged_at", ascending: true)
+                .limit(2000)
                 .execute().value
             return rows
         } catch {
@@ -360,12 +414,22 @@ struct LiveWeeklyGoalRepository: WeeklyGoalRepository {
         return Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
-    private func weekRoutines(userID: UUID) async -> [Routine] {
+    /// EVERY routine the athlete owns — the library, and named as such.
+    ///
+    /// It used to be called `weekRoutines` and handed straight to the
+    /// detector, which is how a five-routine library became a week's targets.
+    /// `WeeklyGoalDetector.routinesForWeek(library:sessions:)` is what
+    /// narrows it now; this function's only job is the fetch.
+    private func routineLibrary(userID: UUID) async -> [Routine] {
         (try? await RoutineRepository.fetchAll(ownerID: userID)) ?? []
     }
 
+    /// The library keyed by id, for looking a session's routine name up.
+    /// `sessionsOfType` wants the NAME of whatever routine a session ran,
+    /// including one no longer scheduled, so this one is deliberately not
+    /// narrowed to the week.
     private func routinesByID(userID: UUID) async -> [UUID: Routine] {
-        let all = await weekRoutines(userID: userID)
+        let all = await routineLibrary(userID: userID)
         return Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 

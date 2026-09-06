@@ -49,12 +49,46 @@ enum HealthKitBridge {
     /// same thing, which is also what makes them safe to call unconditionally.
     static func requestWorkoutAndDistancePermission() async throws {
         guard HKHealthStore.isHealthDataAvailable() else { return }
-        try await store.requestAuthorization(
-            toShare: [],
-            read: [HKObjectType.workoutType(),
-                   HKQuantityType(.distanceWalkingRunning),
-                   HKQuantityType(.distanceCycling)]
-        )
+        try await store.requestAuthorization(toShare: [], read: weeklyGoalReadTypes)
+    }
+
+    /// The three read types the weekly goal needs, in one place so the
+    /// request and the status check cannot ask about different sets.
+    private static var weeklyGoalReadTypes: Set<HKObjectType> {
+        [HKObjectType.workoutType(),
+         HKQuantityType(.distanceWalkingRunning),
+         HKQuantityType(.distanceCycling)]
+    }
+
+    /// Has the athlete never been ASKED for the weekly goal's Health reads?
+    ///
+    /// This is what stops `0 mi` from meaning two different things: a
+    /// `distance` goal whose permission was never requested reads a perfect,
+    /// silent zero, indistinguishable from a week with no runs in it. While
+    /// this returns true the strip says `CONNECT HEALTH` instead of a number
+    /// (`WeeklyGoalProgressMath.connectHealthRead`).
+    ///
+    /// `getRequestStatusForAuthorization` is the ONLY signal Apple offers
+    /// here, and it answers "would a request show a sheet", not "did they say
+    /// yes". That is deliberate on Apple's part: `authorizationStatus(for:)`
+    /// reports the SHARING side only, because disclosing read permission
+    /// would itself leak health information. **So a DENIAL is
+    /// indistinguishable from no data** once the ask has happened, and a
+    /// lifter who declined sees `0 / 15 mi`. Stated at
+    /// `distanceProgress` too, and the honest limit of this whole mechanism.
+    ///
+    /// `true` when Health is unavailable on the device, because "connect
+    /// Health" is then permanently the truthful read rather than `0 mi`.
+    static func weeklyGoalHealthNeedsConnecting() async -> Bool {
+        guard HKHealthStore.isHealthDataAvailable() else { return true }
+        do {
+            let status = try await store.statusForAuthorizationRequest(
+                toShare: [], read: weeklyGoalReadTypes)
+            return status == .shouldRequest
+        } catch {
+            AppLogger.health.error("weekly goal health status failed: \(error.localizedDescription, privacy: .public)")
+            return true
+        }
     }
 
     /// The goal editor's four activities, mapped to HealthKit's own types.
@@ -140,20 +174,24 @@ enum HealthKitBridge {
             .reduce(0.0) { $0 + ($1.totalDistance?.doubleValue(for: .meter()) ?? 0) }
     }
 
-    /// The map `WeeklyGoalProgressMath.sessionCounts` reads to let a real
-    /// HealthKit workout outrank a routine-name guess (task A6): day ->
-    /// the `sessionsOfType` tags recorded that day.
+    /// The tags `WeeklyGoalProgressMath.sessionCounts` reads to let a real
+    /// HealthKit workout outrank a routine-name guess (task A6), each
+    /// carrying its OWN WINDOW.
     ///
-    /// Only the two HealthKit activity types that map cleanly onto this
+    /// Windows, not days. Keyed by calendar day this promoted every app
+    /// session that day — an outdoor run plus two lifting sessions on a
+    /// Saturday credited two toward a `cardio` goal, neither of them the run
+    /// — so the match now has to overlap the session it is corroborating
+    /// (`HealthWorkoutTag.matches(type:sessionStart:sessionEnd:)`).
+    ///
+    /// Only the two HealthKit activity families that map cleanly onto this
     /// app's type vocabulary are tagged. `hiit` and `class` are deliberately
     /// absent even though `.highIntensityIntervalTraining` exists, because
     /// this app's `hiit` means "a routine the athlete calls HIIT", and
     /// equating the two would make a Peloton class satisfy a goal about
     /// their own programming.
-    static func workoutTypeTagsByDay(from start: Date, to end: Date,
-                                     calendar: Calendar = .current) async -> [Date: Set<String>] {
-        var tags: [Date: Set<String>] = [:]
-        for workout in await workouts(from: start, to: end) {
+    static func workoutTags(from start: Date, to end: Date) async -> [HealthWorkoutTag] {
+        await workouts(from: start, to: end).compactMap { workout in
             let tag: String
             switch workout.workoutActivityType {
             case .running, .cycling, .rowing, .walking, .elliptical, .stairClimbing:
@@ -161,11 +199,11 @@ enum HealthKitBridge {
             case .yoga, .flexibility, .mindAndBody, .preparationAndRecovery:
                 tag = "mobility"
             default:
-                continue
+                return nil
             }
-            tags[calendar.startOfDay(for: workout.startDate), default: []].insert(tag)
+            return HealthWorkoutTag(type: tag, start: workout.startDate,
+                                    end: workout.endDate)
         }
-        return tags
     }
 
     static func duration(from start: Date, to end: Date) -> TimeInterval {

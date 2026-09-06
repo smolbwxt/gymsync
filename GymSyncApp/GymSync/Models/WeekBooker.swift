@@ -27,7 +27,8 @@ enum WeekBooker {
     static func book(window: (start: Date, end: Date),
                      weekdays: Set<Int>,
                      hour: Int, minute: Int,
-                     routines: [Routine]) async -> Int {
+                     routines: [Routine],
+                     goalWriter: WeeklyGoalCoachWriter = LiveWeeklyGoalRepository()) async -> Int {
         let calendar = Calendar.current
 
         // A booking without its routine is the owner-reported defect
@@ -108,7 +109,15 @@ enum WeekBooker {
         //    as it is — booking a week must never silently replace a goal
         //    the athlete set for it. Best-effort, like every other Coach
         //    write here: a failure costs the goal, never the booking.
-        await LiveWeeklyGoalRepository()
+        //
+        //    INJECTED, not constructed inline, so a unit test of this
+        //    function does not perform six network fetches and a write.
+        //
+        //    ONE WEEK, and `window` may span several: weeks 2..n of a booked
+        //    block carry no row until Home's next detection fills them. That
+        //    is what the plan specifies, recorded here so it reads as a
+        //    decision rather than an oversight.
+        await goalWriter
             .writeDetectedGoal(weekStart: WeekMath.weekStartString(window.start))
 
         return booked

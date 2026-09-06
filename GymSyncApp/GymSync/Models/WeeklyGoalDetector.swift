@@ -251,6 +251,47 @@ enum WeeklyGoalDetector {
             ranked.map { ($0.key.rawValue, $0.value) })
     }
 
+    // MARK: - Which routines are the WEEK's
+
+    /// The routines THIS WEEK actually uses, resolved from the week's own
+    /// sessions.
+    ///
+    /// **The athlete's routine LIBRARY is never a target source.** Feeding
+    /// `detect` every routine they own summed `muscleTargets` across all of
+    /// them — a target several times what the week prescribes, and a goal
+    /// that cannot be met — and let `isMostlyCardio` judge the library
+    /// rather than the week, which could flip a strength block into
+    /// `sessionsOfType(cardio)`. The parameter has always been called
+    /// `weekRoutines`; this is what makes the name true.
+    ///
+    /// A session counts as this week's if it was COMPLETED this week or is
+    /// BOOKED for it — the week's goal is about the whole week, not only the
+    /// part already trained, so Monday must not derive its targets from an
+    /// empty week.
+    static func weekRoutineIDs(sessions: [WorkoutSession],
+                               now: Date = .now,
+                               calendar: Calendar = .current) -> Set<UUID> {
+        var ids: Set<UUID> = []
+        for session in sessions {
+            guard let routineID = session.routineID else { continue }
+            let when = session.completedAt ?? session.scheduledFor
+            guard let when,
+                  calendar.isDate(when, equalTo: now, toGranularity: .weekOfYear)
+            else { continue }
+            ids.insert(routineID)
+        }
+        return ids
+    }
+
+    /// `library` narrowed to the week — the pair above, applied.
+    static func routinesForWeek(library: [Routine],
+                                sessions: [WorkoutSession],
+                                now: Date = .now,
+                                calendar: Calendar = .current) -> [Routine] {
+        let ids = weekRoutineIDs(sessions: sessions, now: now, calendar: calendar)
+        return library.filter { ids.contains($0.id) }
+    }
+
     // MARK: - Helpers
 
     /// Is the week's work mostly cardio? Half or more of the week's

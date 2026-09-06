@@ -49,7 +49,8 @@ enum ProgramBuilder {
     static func build(profile loaded: TrainingProfile,
                       answers: ConsultAnswers?,
                       catalog all: [Exercise],
-                      userID: UUID) async throws -> Outcome {
+                      userID: UUID,
+                      goalWriter: WeeklyGoalCoachWriter = LiveWeeklyGoalRepository()) async throws -> Outcome {
 
         // ── 1. Evidence ──────────────────────────────────────────────
         let standingRules = (try? await TrainingRulesRepository.active()) ?? []
@@ -231,8 +232,10 @@ enum ProgramBuilder {
         // alone (WeeklyGoalWriteRule) — building a block must not silently
         // replace a goal the athlete set for this week. Best-effort, like
         // every other write after step 5's deliverable.
-        await LiveWeeklyGoalRepository()
-            .writeDetectedGoal(weekStart: WeekMath.weekStartString())
+        //
+        // INJECTED, not constructed inline, so a unit test of build(...)
+        // does not perform six network fetches and a write.
+        await goalWriter.writeDetectedGoal(weekStart: WeekMath.weekStartString())
 
         return Outcome(program: program, durationWeeks: duration)
     }

@@ -352,6 +352,94 @@ final class WeeklyGoalDetectorTests: XCTestCase {
         XCTAssertEqual(params.targetSource, "titration")
     }
 
+    // MARK: - The WEEK's routines, never the library
+
+    private func completedSession(_ routine: Routine, dayOffset: Int) -> WorkoutSession {
+        let when = Calendar.current.date(byAdding: .day, value: dayOffset, to: now)!
+        return WorkoutSession(id: UUID(), routineID: routine.id, organizerID: userID,
+                              state: "completed", startedAt: when, completedAt: when,
+                              createdAt: when, groupID: nil, roomCode: nil,
+                              scheduledFor: nil, seriesID: nil,
+                              currentTurnUserID: nil, currentTurnStartedAt: nil)
+    }
+
+    private func bookedSession(_ routine: Routine, dayOffset: Int) -> WorkoutSession {
+        let when = Calendar.current.date(byAdding: .day, value: dayOffset, to: now)!
+        return WorkoutSession(id: UUID(), routineID: routine.id, organizerID: userID,
+                              state: "scheduled", startedAt: nil, completedAt: nil,
+                              createdAt: now, groupID: nil, roomCode: nil,
+                              scheduledFor: when, seriesID: nil,
+                              currentTurnUserID: nil, currentTurnStartedAt: nil)
+    }
+
+    /// THE DEFECT THIS PINS: `weekRoutines` used to be the athlete's whole
+    /// routine LIBRARY, so five saved routines summed into one week's
+    /// targets — a number several times what the week prescribes, and a goal
+    /// that cannot be met.
+    func testRoutinesTheWeekDoesNotUseContributeNothing() {
+        let bench = exercise(2, "Bench Press", "chest")
+        let squat = exercise(1, "Back Squat", "quads")
+        let curl = exercise(7, "Curl", "biceps")
+
+        let push = routine(10, "Push")          // trained this week
+        let legs = routine(11, "Legs")          // in the library, NOT this week
+        let arms = routine(12, "Arms")          // in the library, NOT this week
+        let library = [push, legs, arms]
+
+        let rows: [UUID: [RoutineExercise]] = [
+            push.id: [row(push, bench, sets: 10)],
+            legs.id: [row(legs, squat, sets: 20)],
+            arms.id: [row(arms, curl, sets: 20)],
+        ]
+        let catalogByID = [bench.id: bench, squat.id: squat, curl.id: curl]
+
+        // Only `push` has a session in this week.
+        let weekRoutines = WeeklyGoalDetector.routinesForWeek(
+            library: library,
+            sessions: [completedSession(push, dayOffset: 0)],
+            now: now, calendar: .current)
+
+        XCTAssertEqual(weekRoutines.map(\.id), [push.id])
+
+        let targets = WeeklyGoalDetector.routineTargets(
+            weekRoutines: weekRoutines, routineExercises: rows, catalog: catalogByID)
+
+        XCTAssertEqual(targets[.chest], 10)
+        XCTAssertNil(targets[.legs], "a routine the week does not use is not a target")
+        XCTAssertNil(targets[.arms], "nor is one saved for some other block")
+    }
+
+    func testABookedButUntrainedRoutineIsStillTheWeeksRoutine() {
+        // Monday must not derive its targets from an empty week: a session
+        // on the books counts as this week's, not only a completed one.
+        let push = routine(10, "Push")
+        let weekRoutines = WeeklyGoalDetector.routinesForWeek(
+            library: [push], sessions: [bookedSession(push, dayOffset: 1)],
+            now: now, calendar: .current)
+
+        XCTAssertEqual(weekRoutines.map(\.id), [push.id])
+    }
+
+    func testASessionInAnotherWeekDoesNotPullItsRoutineIn() {
+        let push = routine(10, "Push")
+        let weekRoutines = WeeklyGoalDetector.routinesForWeek(
+            library: [push], sessions: [completedSession(push, dayOffset: -21)],
+            now: now, calendar: .current)
+
+        XCTAssertTrue(weekRoutines.isEmpty)
+    }
+
+    func testASessionWithNoRoutineContributesNoRoutineID() {
+        let freestyle = WorkoutSession(id: UUID(), routineID: nil, organizerID: userID,
+                                       state: "completed", startedAt: now,
+                                       completedAt: now, createdAt: now, groupID: nil,
+                                       roomCode: nil, scheduledFor: nil, seriesID: nil,
+                                       currentTurnUserID: nil, currentTurnStartedAt: nil)
+        XCTAssertTrue(WeeklyGoalDetector.weekRoutineIDs(sessions: [freestyle],
+                                                        now: now, calendar: .current)
+                          .isEmpty)
+    }
+
     // MARK: - The lift target's unit round trip
 
     func testLiftTargetRoundsOnTheGridTheAthletesPlatesAreMarkedIn() {

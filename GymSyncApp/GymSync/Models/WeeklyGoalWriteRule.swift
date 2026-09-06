@@ -41,3 +41,34 @@ enum WeeklyGoalWriteRule {
         return existing.source == .coach
     }
 }
+
+// MARK: - The seam Coach's write paths take
+
+/// What `WeekBooker` and `ProgramBuilder` need from the goal repository, and
+/// nothing else.
+///
+/// A protocol OF ITS OWN rather than the Task 0.2 `WeeklyGoalRepository`,
+/// for two reasons. That protocol is the FROZEN interface three streams read
+/// and this stream may not widen it — and `writeDetectedGoal` is not on it,
+/// because detection is Stream A's concern and no UI stream calls it. So the
+/// seam that restores testability is this one-method protocol, declared next
+/// to the rule it enforces.
+///
+/// Without it, both Coach paths constructed `LiveWeeklyGoalRepository()`
+/// inline: any future unit test of `book(...)` or `build(...)` would perform
+/// six network fetches and a write, and the branch writes real
+/// `weekly_goals` rows from these paths well before I1 swaps the read
+/// binding off the stub.
+protocol WeeklyGoalCoachWriter: Sendable {
+    /// Detect this week's goal and persist it only if
+    /// `WeeklyGoalWriteRule` allows. Returns the goal now in effect.
+    @discardableResult
+    func writeDetectedGoal(weekStart: String) async -> WeeklyGoal?
+}
+
+/// Writes nothing and answers nothing — what a test injects when it wants to
+/// exercise a booking or a build without touching the network.
+struct NoOpWeeklyGoalCoachWriter: WeeklyGoalCoachWriter {
+    @discardableResult
+    func writeDetectedGoal(weekStart: String) async -> WeeklyGoal? { nil }
+}

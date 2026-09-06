@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(15);
+SELECT plan(17);
 
 -- ── Fixtures ──────────────────────────────────────────────────────────────────
 -- fl_alice — the caller.
@@ -8,6 +8,7 @@ SELECT plan(15);
 -- fl_cara  — PENDING friend, solo session, show_solo_workouts TRUE   → hidden.
 -- fl_dan   — ACCEPTED friend, SOLO session, show_solo_workouts FALSE → hidden,
 --            until the flag is flipped mid-test.
+-- fl_frank — NO friendship row at all, solo session, opted in    -> hidden.
 -- fl_erin  — ACCEPTED friend, CREW session she only PARTICIPATES in,
 --            show_solo_workouts FALSE → visible anyway: a crew session is not
 --            a solo workout, and she reaches the result through the
@@ -17,13 +18,15 @@ INSERT INTO auth.users (id, email) VALUES
   ('00000000-0000-0000-0000-0000000f1002', 'fl2@t.com'),
   ('00000000-0000-0000-0000-0000000f1003', 'fl3@t.com'),
   ('00000000-0000-0000-0000-0000000f1004', 'fl4@t.com'),
-  ('00000000-0000-0000-0000-0000000f1005', 'fl5@t.com');
+  ('00000000-0000-0000-0000-0000000f1005', 'fl5@t.com'),
+  ('00000000-0000-0000-0000-0000000f1006', 'fl6@t.com');
 INSERT INTO profiles (id, username, display_name, show_solo_workouts) VALUES
   ('00000000-0000-0000-0000-0000000f1001', 'fl_alice', 'Alice', false),
   ('00000000-0000-0000-0000-0000000f1002', 'fl_bob',   'Bob',   true),
   ('00000000-0000-0000-0000-0000000f1003', 'fl_cara',  'Cara',  true),
   ('00000000-0000-0000-0000-0000000f1004', 'fl_dan',   'Dan',   false),
-  ('00000000-0000-0000-0000-0000000f1005', 'fl_erin',  'Erin',  false);
+  ('00000000-0000-0000-0000-0000000f1005', 'fl_erin',  'Erin',  false),
+  ('00000000-0000-0000-0000-0000000f1006', 'fl_frank', 'Frank', true);
 
 -- Friendships. Bob's and Cara's rows are stored ALICE -> THEM; Dan's and
 -- Erin's are stored THEM -> ALICE, deliberately the other direction, so this
@@ -56,14 +59,18 @@ INSERT INTO sessions (id, organizer_id, group_id, state, started_at) VALUES
    '00000000-0000-0000-0000-0000000f1010', 'in_progress', now() - interval '5 minutes'),
   -- Bob also has a session on the books that has not started.
   ('00000000-0000-0000-0000-0000000f1025', '00000000-0000-0000-0000-0000000f1002',
-   NULL, 'scheduled', NULL);
+   NULL, 'scheduled', NULL),
+  -- Frank, solo, live, opted in — and no friendship with Alice at all.
+  ('00000000-0000-0000-0000-0000000f1026', '00000000-0000-0000-0000-0000000f1006',
+   NULL, 'in_progress', now() - interval '25 minutes');
 INSERT INTO session_participants (session_id, user_id) VALUES
   ('00000000-0000-0000-0000-0000000f1021', '00000000-0000-0000-0000-0000000f1002'),
   ('00000000-0000-0000-0000-0000000f1022', '00000000-0000-0000-0000-0000000f1003'),
   ('00000000-0000-0000-0000-0000000f1023', '00000000-0000-0000-0000-0000000f1004'),
   ('00000000-0000-0000-0000-0000000f1024', '00000000-0000-0000-0000-0000000f1001'),
   ('00000000-0000-0000-0000-0000000f1024', '00000000-0000-0000-0000-0000000f1005'),
-  ('00000000-0000-0000-0000-0000000f1025', '00000000-0000-0000-0000-0000000f1002');
+  ('00000000-0000-0000-0000-0000000f1025', '00000000-0000-0000-0000-0000000f1002'),
+  ('00000000-0000-0000-0000-0000000f1026', '00000000-0000-0000-0000-0000000f1006');
 
 
 -- ============================================================
@@ -126,6 +133,17 @@ SELECT results_eq(
   'a pending friend request does not put someone on the crew pulse'
 );
 
+-- ── 7b. …and a total STRANGER is not either ───────────────────────────────────
+--       Cara proves `pending`; Frank has no friendships row at all, which is
+--       the case the query's shape makes unreachable but nothing proved. He
+--       is mid-session and has opted into sharing solo workouts, so the only
+--       thing keeping him out is the absence of a friendship.
+SELECT results_eq(
+  $$SELECT count(*)::int FROM friends_live() WHERE username = 'fl_frank'$$,
+  ARRAY[0],
+  'a stranger with no friendships row never reaches the crew pulse'
+);
+
 -- ── 8. THE SOLO-PRESENCE GATE, negative case ──────────────────────────────────
 --      Dan is an accepted friend, mid-session, and invisible: his session has
 --      no group_id, so it is a SOLO WORKOUT, and profiles.show_solo_workouts
@@ -185,7 +203,28 @@ SELECT results_eq(
   'a blocked friend disappears from the crew pulse'
 );
 
--- ── 12. The grant posture ─────────────────────────────────────────────────────
+-- ── 12. …and the OTHER direction: when THEY blocked YOU ───────────────────────
+--       The assertion above cannot isolate the RPC's own predicate, because
+--       the sever-on-block trigger removes the friendship row too and either
+--       mechanism alone would produce zero. So: block in the reverse
+--       direction as `postgres` (RLS lets a user write only their OWN blocks),
+--       then RE-INSERT the friendship the trigger just severed. Now the
+--       friendship exists AND the block exists, and only
+--       `NOT private.is_blocked(fi.id, auth.uid())` can hide Erin.
+SET LOCAL role postgres;
+INSERT INTO blocked_users (blocker_id, blocked_id) VALUES
+  ('00000000-0000-0000-0000-0000000f1005', '00000000-0000-0000-0000-0000000f1001');
+INSERT INTO friendships (user_id, friend_id, status) VALUES
+  ('00000000-0000-0000-0000-0000000f1005', '00000000-0000-0000-0000-0000000f1001', 'accepted');
+SET LOCAL role authenticated;
+
+SELECT results_eq(
+  $$SELECT count(*)::int FROM friends_live() WHERE username = 'fl_erin'$$,
+  ARRAY[0],
+  'a friend who has blocked YOU is hidden by the RPC''s own predicate, not only by the trigger'
+);
+
+-- ── 13. The grant posture ─────────────────────────────────────────────────────
 --       REVOKE FROM PUBLIC, anon then GRANT TO authenticated — the repo's
 --       revoke-then-grant idiom. Asserted through has_function_privilege
 --       rather than by switching to `anon` and catching an error, so the

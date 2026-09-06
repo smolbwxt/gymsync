@@ -16,7 +16,53 @@ import Foundation
 // (Models/WeeklyGoalRepository.swift). A view that recomputed any of it
 // would be a second opinion about the same week.
 
+/// One Apple Health workout, reduced to what the goal math needs: what kind
+/// of thing it was, and when it happened.
+///
+/// A value type rather than an `HKWorkout` so `WeeklyGoalProgressMath` stays
+/// pure and HealthKit-free — the bridge maps, this matches.
+struct HealthWorkoutTag: Equatable, Sendable {
+    /// The `sessionsOfType` vocabulary: `cardio` | `mobility`. Only the two
+    /// HealthKit activity families that map cleanly onto this app's types
+    /// are tagged; see `HealthKitBridge.workoutTags(from:to:)`.
+    let type: String
+    let start: Date
+    let end: Date
+
+    /// How far outside an app session's own window a Health workout may sit
+    /// and still be the same piece of training.
+    ///
+    /// Fifteen minutes each way, and the number is not arbitrary: the watch
+    /// closes its workout on its own clock, and a lifter taps Finish in the
+    /// app minutes after racking the last set. Wider than this and a
+    /// lunchtime run starts corroborating an evening lift; narrower and a
+    /// genuine pairing is missed on clock skew alone.
+    static let matchTolerance: TimeInterval = 15 * 60
+
+    /// Does this workout overlap the given session's window, within the
+    /// tolerance? Interval overlap, not a day match — a day match promoted
+    /// every session that day, which is the defect this replaces.
+    func matches(type wanted: String, sessionStart: Date, sessionEnd: Date) -> Bool {
+        guard type == wanted else { return false }
+        return start <= sessionEnd.addingTimeInterval(Self.matchTolerance)
+            && end >= sessionStart.addingTimeInterval(-Self.matchTolerance)
+    }
+}
+
 enum WeeklyGoalProgressMath {
+
+    /// A routine name split into whole words, lowercased.
+    ///
+    /// The type match is a WORD match, not a substring one: `"old-school
+    /// classic".contains("class")` is true, so a routine named "Classic"
+    /// satisfied a `class` goal outright. Splitting on everything that is
+    /// not a letter or a digit keeps "Saturday HIIT Blast", "SUNDAY
+    /// MOBILITY" and "Cardio Engine" matching while closing that.
+    static func nameWords(_ name: String) -> [String] {
+        name.lowercased()
+            .split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+            .map(String.init)
+    }
 
     // MARK: - A3: the muscle-sets tally
 
@@ -115,6 +161,12 @@ enum WeeklyGoalProgressMath {
     static func rightHandRead(met: Bool, phrase: String) -> String {
         met ? "" : phrase
     }
+
+    /// What the two Health-backed kinds say in place of a number while
+    /// Apple Health has never been asked. The strip's own tap opens the
+    /// editor, whose copy tells the athlete where to connect it — this read
+    /// only has to stop `0 mi` from meaning two different things.
+    static let connectHealthRead = "CONNECT HEALTH"
 
     /// The week's seven day letters, in the DEVICE calendar's own order —
     /// starting at `calendar.firstWeekday`, so a Sunday-first athlete reads
@@ -419,16 +471,30 @@ enum WeeklyGoalProgressMath {
     ///    The name check applies to every type as a fallback, because a
     ///    routine called "Sunday Mobility" with untagged stretches is
     ///    obviously mobility to its author.
-    /// 3. **An Apple Health workout of the matching type on the same day**
-    ///    outranks both (task A7's query supplies it): a real HealthKit
-    ///    workout is recorded fact, where the two above are guesses about a
-    ///    routine's intent.
+    /// 3. **An Apple Health workout of the matching type OVERLAPPING THIS
+    ///    SESSION'S OWN WINDOW** outranks both (task A7's query supplies
+    ///    them): a real HealthKit workout is recorded fact, where the two
+    ///    above are guesses about a routine's intent.
     ///
-    /// **Its limitation, stated plainly:** a routine whose exercises are
-    /// mis-categorised in the catalog, or whose name says nothing, will not
-    /// count no matter what the athlete actually did. A `session_type`
-    /// column is the real fix and is out of this plan's scope (the plan's
-    /// own "What this plan does not decide" #4).
+    ///    Matched by WINDOW, not by calendar day. A day-keyed match promoted
+    ///    every app session that day: an outdoor run plus two lifting
+    ///    sessions on a Saturday credited **two** toward a `cardio` goal,
+    ///    and neither of the two was the run.
+    ///
+    /// **Its limitations, both of them, stated plainly:**
+    ///
+    /// - a routine whose exercises are mis-categorised in the catalog, or
+    ///   whose name says nothing, will not count no matter what the athlete
+    ///   actually did; and
+    /// - **a Health workout with no app session behind it counts NOTHING.**
+    ///   This function answers per APP SESSION and the caller counts app
+    ///   sessions, so a run recorded only on a watch cannot move a `cardio`
+    ///   goal by itself — it can only corroborate a session the app already
+    ///   has. That is the larger of the two, and it is the honest shape of a
+    ///   count whose spine is `sessions`.
+    ///
+    /// A `session_type` column is the real fix for both and is out of this
+    /// plan's scope (the plan's own "What this plan does not decide" #4).
     ///
     /// Returns a Bool per session, so a session with TWO matching signals is
     /// still one session — the caller counts sessions, not signals.
@@ -437,19 +503,26 @@ enum WeeklyGoalProgressMath {
                               routines: [UUID: Routine],
                               routineExercises: [UUID: [RoutineExercise]],
                               catalog: [UUID: Exercise],
-                              healthWorkoutTypesByDay: [Date: Set<String>] = [:],
+                              healthWorkouts: [HealthWorkoutTag] = [],
                               calendar: Calendar = .current) -> Bool {
         guard let completedAt = session.completedAt else { return false }
         let wanted = type.lowercased()
 
-        // 3 — recorded fact beats inference.
-        let day = calendar.startOfDay(for: completedAt)
-        if healthWorkoutTypesByDay[day]?.contains(wanted) == true { return true }
+        // 3 — recorded fact beats inference, but only for the session it
+        //     actually overlaps.
+        let sessionStart = session.startedAt ?? completedAt
+        if healthWorkouts.contains(where: { $0.matches(type: wanted,
+                                                       sessionStart: sessionStart,
+                                                       sessionEnd: completedAt) }) {
+            return true
+        }
 
         guard let routineID = session.routineID else { return false }
 
-        // 2 — the name, for hiit/class and as everyone's fallback.
-        if let name = routines[routineID]?.name.lowercased(), name.contains(wanted) {
+        // 2 — the name, for hiit/class and as everyone's fallback. A WORD
+        //     match, not a substring one: "old-school classic" contains
+        //     "class", and a routine called Classic is not a class.
+        if let name = routines[routineID]?.name, nameWords(name).contains(wanted) {
             return true
         }
 
@@ -476,7 +549,8 @@ enum WeeklyGoalProgressMath {
                                        routines: [UUID: Routine],
                                        routineExercises: [UUID: [RoutineExercise]],
                                        catalog: [UUID: Exercise],
-                                       healthWorkoutTypesByDay: [Date: Set<String>] = [:],
+                                       healthWorkouts: [HealthWorkoutTag] = [],
+                                       healthNeedsConnecting: Bool = false,
                                        now: Date = .now,
                                        calendar: Calendar = .current) -> WeeklyGoalProgress {
         let daysLeft = WeekMath.daysRemaining(in: now, from: now, calendar: calendar)
@@ -491,7 +565,7 @@ enum WeeklyGoalProgressMath {
                                  routines: routines,
                                  routineExercises: routineExercises,
                                  catalog: catalog,
-                                 healthWorkoutTypesByDay: healthWorkoutTypesByDay,
+                                 healthWorkouts: healthWorkouts,
                                  calendar: calendar)
         }.count)
 
@@ -499,12 +573,27 @@ enum WeeklyGoalProgressMath {
         let subject = WeeklyGoalProgress.Chip(name: type.uppercased(), done: done,
                                               target: target, isNext: false)
 
+        // NOT-CONNECTED IS SAID, NOT SHOWN AS A NUMBER (controller ruling,
+        // 2026-09-06). When Health has never been asked, the corroborating
+        // signal is missing and the strip says so.
+        //
+        // DELIBERATE DEVIATION on `done`, flagged for the controller: the
+        // ruling says these kinds render "chips with done 0", and that is
+        // exactly right for `distance`, whose ONLY source is Health. Here it
+        // is not — the count's spine is the app's OWN completed sessions,
+        // and zeroing two real HIIT sessions would render a false 0 for data
+        // this app recorded itself, which is the same harm the ruling exists
+        // to prevent, pointed the other way. So the read says CONNECT HEALTH
+        // and the true count stands. A one-line revert if the controller
+        // wants strict parity.
         return WeeklyGoalProgress(chips: [subject],
                                   value: done,
                                   target: target,
                                   met: met,
-                                  rightHandRead: rightHandRead(met: met,
-                                                               phrase: daysLeftPhrase(daysLeft)),
+                                  rightHandRead: healthNeedsConnecting
+                                      ? connectHealthRead
+                                      : rightHandRead(met: met,
+                                                      phrase: daysLeftPhrase(daysLeft)),
                                   kicker: kicker(source: goal.source, met: met,
                                                  daysLeft: daysLeft))
     }
@@ -532,11 +621,23 @@ enum WeeklyGoalProgressMath {
     /// `9.4 / 15 mi`.
     ///
     /// Pure: the caller does the HealthKit read (`HealthKitBridge
-    /// .distanceMeters(activity:from:to:)`) and passes metres in. That
-    /// keeps the arithmetic testable with no store, and it means the
-    /// DENIED path and the NO-DATA path are the same path — HealthKit never
-    /// discloses a read denial, so 0 metres is the only honest answer to
-    /// both, and the strip renders `0 / 15 mi` rather than an error.
+    /// .distanceMeters(activity:from:to:)`) and passes metres in, which
+    /// keeps the arithmetic testable with no store.
+    ///
+    /// **`0 mi` MUST MEAN "you have not run", NEVER "Health is not
+    /// connected"** (controller ruling, 2026-09-06). HealthKit's read is the
+    /// ONLY source for this kind, so an unasked permission produces a
+    /// perfect, silent zero. `healthNeedsConnecting` is the caller's answer
+    /// to "have we ever asked", and while it is true the strip says
+    /// `CONNECT HEALTH` and the chip is empty instead of claiming a number.
+    ///
+    /// **What this CANNOT distinguish, and it is Apple's design not an
+    /// oversight:** a DENIAL. HealthKit deliberately never discloses read
+    /// authorization — `authorizationStatus(for:)` reports only the sharing
+    /// side, and `getRequestStatusForAuthorization` says whether the athlete
+    /// has been ASKED, not what they answered. So a lifter who declined
+    /// reads `0 / 15 mi` after the ask, exactly as a lifter who has not run
+    /// does. Recorded rather than papered over.
     ///
     /// One SUBJECT CHIP names the activity (`RUN` / `BIKE` / `ROW` /
     /// `WALK`), which is what Stream C picks the glyph from — `figure.run`,
@@ -545,12 +646,15 @@ enum WeeklyGoalProgressMath {
     static func distanceProgress(goal: WeeklyGoal,
                                  metres: Double,
                                  unit: WeightUnit,
+                                 healthNeedsConnecting: Bool = false,
                                  now: Date = .now,
                                  calendar: Calendar = .current) -> WeeklyGoalProgress {
         let daysLeft = WeekMath.daysRemaining(in: now, from: now, calendar: calendar)
-        let value = distanceValue(metres: max(0, metres), unit: unit)
+        let value = healthNeedsConnecting
+            ? 0
+            : distanceValue(metres: max(0, metres), unit: unit)
         let target = goal.params.distanceTarget ?? 0
-        let met = target > 0 && value >= target
+        let met = !healthNeedsConnecting && target > 0 && value >= target
         let subject = WeeklyGoalProgress.Chip(
             name: (goal.params.activity ?? "").uppercased(),
             done: value, target: target, isNext: false)
@@ -560,8 +664,10 @@ enum WeeklyGoalProgressMath {
                                   target: target,
                                   unitLabel: distanceUnitLabel(unit),
                                   met: met,
-                                  rightHandRead: rightHandRead(met: met,
-                                                               phrase: daysLeftPhrase(daysLeft)),
+                                  rightHandRead: healthNeedsConnecting
+                                      ? connectHealthRead
+                                      : rightHandRead(met: met,
+                                                      phrase: daysLeftPhrase(daysLeft)),
                                   kicker: kicker(source: goal.source, met: met,
                                                  daysLeft: daysLeft))
     }
@@ -589,7 +695,8 @@ enum WeeklyGoalProgressMath {
                          unit: WeightUnit = .lbs,
                          routines: [UUID: Routine] = [:],
                          routineExercises: [UUID: [RoutineExercise]] = [:],
-                         healthWorkoutTypesByDay: [Date: Set<String>] = [:],
+                         healthWorkouts: [HealthWorkoutTag] = [],
+                         healthNeedsConnecting: Bool = false,
                          distanceMetres: Double = 0,
                          now: Date = .now,
                          calendar: Calendar = .current) -> WeeklyGoalProgress {
@@ -612,10 +719,12 @@ enum WeeklyGoalProgressMath {
             return sessionsOfTypeProgress(
                 goal: goal, sessions: sessions, routines: routines,
                 routineExercises: routineExercises, catalog: catalog,
-                healthWorkoutTypesByDay: healthWorkoutTypesByDay,
+                healthWorkouts: healthWorkouts,
+                healthNeedsConnecting: healthNeedsConnecting,
                 now: now, calendar: calendar)
         case .distance:
             return distanceProgress(goal: goal, metres: distanceMetres, unit: unit,
+                                    healthNeedsConnecting: healthNeedsConnecting,
                                     now: now, calendar: calendar)
         }
     }
