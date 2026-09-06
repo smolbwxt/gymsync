@@ -110,6 +110,24 @@ enum HomeOneButtonState {
     }
 }
 
+/// The glance-level commit status of the crew session the `.checkInOpens`
+/// state is counting down to.
+///
+/// Production only. It exists because the Home inventory
+/// (`.superpowers/sdd/2026-09-04-investigations/screen-inventory-2.md` §1d)
+/// calls the commit chip "the only glance-level commit status" in the app —
+/// committing itself lives on the crew room's board — and the countdown card
+/// that used to carry it (`HomeView.countdownBody`) is gone. It rides the
+/// one button's own navigation rather than being a nested `Button`, the same
+/// call `HomeView.commitControl` made and for the same reason (a `Button`
+/// inside a `Button`'s label is a gesture-conflict hazard).
+enum HomeOneButtonCommitChip {
+    /// You haven't said yet.
+    case commit
+    case committed
+    case out
+}
+
 /// Home's one primary (design language rule 4: one primary per screen). A
 /// sinking extruded control — `GS3DCardStyle` rather than `GS3DButtonStyle`
 /// because the gold state paints a gradient over its own face and only the
@@ -119,6 +137,15 @@ struct HomeOneButton: View {
     @Environment(\.gsTheme) private var theme
 
     let state: HomeOneButtonState
+    /// The commit chip on the trailing edge, or `nil` for no chip at all.
+    ///
+    /// ADDITIVE, defaulted to `nil`, exactly like
+    /// `HomeCalendarCard.showsAppointments`: every catalog call site
+    /// (`HomeV3Frame`, `HomeV2TilesView`, `HomeV2StripsView`) omits it and
+    /// renders byte-identically to the frames the owner approved — the `nil`
+    /// path adds a zero-width `.padding(.trailing, 0)` and an empty overlay,
+    /// neither of which changes layout.
+    var commitChip: HomeOneButtonCommitChip?
     var action: () -> Void = {}
 
     var body: some View {
@@ -127,7 +154,17 @@ struct HomeOneButton: View {
                                         lipHeight: HomeV2Metrics.lip,
                                         face: faceColor))
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(state.line1). \(state.line2)")
+            .accessibilityLabel(accessibilityText)
+    }
+
+    private var accessibilityText: String {
+        let base = "\(state.line1). \(state.line2)"
+        switch commitChip {
+        case nil:          return base
+        case .commit:      return base + ". You haven't committed yet."
+        case .committed:   return base + ". You're in."
+        case .out:         return base + ". You're out."
+        }
     }
 
     private var buttonFace: some View {
@@ -148,11 +185,51 @@ struct HomeOneButton: View {
                 .foregroundStyle(secondaryInk)
         }
         .padding(.horizontal, 14)
+        // Reserves the chip's lane so the centred copy never runs under it.
+        // Zero — a layout no-op — whenever there is no chip.
+        .padding(.trailing, commitChip == nil ? 0 : 96)
         .frame(maxWidth: .infinity)
         .frame(height: HomeV2Metrics.oneButtonFace)
         .foregroundStyle(primaryInk)
         .background(goldGradient)
+        .overlay(alignment: .trailing) { commitChipView }
         .contentShape(Rectangle())
+    }
+
+    /// The chip itself — `HomeView.commitControl`'s three faces, character
+    /// for character, sized to a trailing lane instead of the countdown
+    /// card's full width.
+    @ViewBuilder
+    private var commitChipView: some View {
+        switch commitChip {
+        case .none:
+            EmptyView()
+        case .commit:
+            Text("COMMIT ›")
+                .font(GSFont.bold(11, relativeTo: .caption))
+                .kerning(0.8)
+                .foregroundStyle(theme.bg)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .gs3DCard(cornerRadius: 10, lipHeight: 4, face: theme.accent)
+                .padding(.trailing, 12)
+        case .committed:
+            HStack(spacing: 5) {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 9, weight: .bold))
+                Text("YOU'RE IN")
+                    .font(GSFont.bold(10, relativeTo: .caption2))
+                    .kerning(1.1)
+            }
+            .foregroundStyle(Color.gsHex(0x2FA45C))
+            .padding(.trailing, 14)
+        case .out:
+            Text("YOU'RE OUT")
+                .font(GSFont.bold(10, relativeTo: .caption2))
+                .kerning(1.1)
+                .foregroundStyle(HomeV2Gold.top)
+                .padding(.trailing, 14)
+        }
     }
 
     /// `nil` = the theme's tuned neutral raised pair (`GS3DCardChrome`'s

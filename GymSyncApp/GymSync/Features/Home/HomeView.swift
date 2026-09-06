@@ -46,12 +46,36 @@ struct HomeView: View {
     @State private var nextCommitStatus: SessionCommitment.Status?
     /// Weekly-goal editor sheet for the intraweek streak widget.
     @State private var showGoalSheet = false
-    @State private var homeSlotBreathing = false
     @State private var profile: Profile?
     @State private var todaysRoutine: Routine?
     @State private var todaysRoutineExercises: [RoutineExercise] = []
     @State private var showRoutinePicker = false
     @State private var routinePickerPreselected: Routine?
+
+    // MARK: - Home v3 state (production plan, stream B)
+    //
+    // Design: docs/superpowers/specs/2026-09-06-home-v3-production-and
+    // -weekly-goal-design.md §A — variation 08a, the composition the owner
+    // approved. These three are DECLARED here by task B1 because the
+    // composition below reads them; their fetches arrive with tasks B4
+    // (friends-live) and B6 (the weekly goal), which is why an empty
+    // `friendsLive` renders no crew-pulse strip at all (owner ruling 2) and
+    // a nil `weeklyGoal` renders the strip's invitation line.
+
+    /// Who from the crew is mid-session right now. Empty = the strip is
+    /// absent and the page shifts up; there is no "nobody's training" state.
+    @State private var friendsLive: [FriendLive] = []
+    /// This week's goal, or nil when no goal row exists yet.
+    @State private var weeklyGoal: WeeklyGoal?
+    /// Everything the goal strip renders, already resolved upstream — no
+    /// view on this page does goal arithmetic.
+    @State private var goalProgress: WeeklyGoalProgress = .init()
+    /// The Coach tile's destination. Home is inside a `NavigationStack`, so
+    /// this is a local push — deliberately NOT an `AppState.PendingRoute`
+    /// case, which is the push deep-link enum and this is not one.
+    @State private var showCoach = false
+    /// The calendar card's destination (design §C).
+    @State private var showCalendarPage = false
 
     // MARK: - Stat-tile row state (Phase U Task 5 / frame 41)
     //
@@ -77,22 +101,27 @@ struct HomeView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                // Redesign (all-tabs proof): bento of floating widgets on the
-                // Onyx ground — consistent 12pt rhythm, no full-width divider
-                // rules between sections. Every data/action path from the old
-                // layout is preserved; only the arrangement changed.
-                // Declutter round (user feedback 2026-07-21): stat tiles
-                // removed (Stats tab owns the numbers), schedule promoted to
-                // its own widget above the calendar, calendar extended.
+                // Home v3, variation 08a — the composition the owner
+                // approved (design: docs/superpowers/specs/2026-09-06-home
+                // -v3-production-and-weekly-goal-design.md §A), sourced from
+                // `HomeV3TargetsAboveCalendarView` and the shared
+                // `HomeV3Frame` it renders inside. Same 16 pt page margins
+                // and 12 pt rhythm as before; strips sit 2 pt tighter to
+                // what follows them (`homeV3Strip()`'s rule).
+                //
+                // The greeting is PRODUCTION's, not the fixture header: it
+                // carries the "?" help door and the avatar tap, which
+                // `HomeV2GreetingHeader` does not.
                 VStack(alignment: .leading, spacing: 0) {
                     greetingHeader
                     replayFailureNotice
-                    primaryCTASection
-                    checkInAndStreakRow
+                    oneButtonSection
+                    tilePairSection
                         .gsSpotlightTarget(key: "tour.home.streak")
-                    scheduleWidget
-                        .gsSpotlightTarget(key: "tour.home.schedule")
-                    calendarWidget
+                    crewPulseSection
+                    goalStripSection
+                        .gsSpotlightTarget(key: "tour.home.goal")
+                    calendarCardSection
                         .gsSpotlightTarget(key: "tour.home.calendar")
                     if !activeCampaigns.isEmpty {
                         campaignsSection
@@ -151,6 +180,35 @@ struct HomeView: View {
             }
             .sheet(isPresented: $showRoutinePicker) {
                 RoutinePickerSheet(routines: ownedRoutines, initialRoutine: routinePickerPreselected)
+            }
+            // The weekly-goal editor, moved off `weeklyGoalWidget` (deleted
+            // with the wide streak card) and onto the page root — it is the
+            // tap target of BOTH `HomeStreakTile` and, until Stream C's
+            // editor lands, `HomeWeeklyGoalStrip`.
+            .sheet(isPresented: $showGoalSheet) {
+                // The editor seeds from the STANDING goal (what next week
+                // will be), not the effective one — that's the value being
+                // edited.
+                WeeklyGoalSheet(initial: profile?.weeklySessionGoal ?? 3) { updated in
+                    profile = updated
+                }
+            }
+            // Coach's front door. Reachable elsewhere only from the You
+            // tab's own `showCoach` push (`YouTabView.swift:124-131`); the
+            // Coach tile is Home's.
+            .navigationDestination(isPresented: $showCoach) {
+                CoachHomeView()
+                    .background(theme.bg)
+                    .navigationTitle("Coach")
+                    .navigationBarTitleDisplayMode(.inline)
+            }
+            // The calendar card is a door (design language rule 4): the
+            // whole card, its `+` and its chevron all land on this one page,
+            // seeded with what Home already fetched so it paints instantly.
+            .navigationDestination(isPresented: $showCalendarPage) {
+                CalendarSchedulingView(completedSessions: historySessions,
+                                       upcomingSessions: upcomingSessions,
+                                       groups: groups)
             }
             .navigationDestination(isPresented: $navigateToJoined) {
                 if let session = joinedSession {
@@ -329,267 +387,270 @@ struct HomeView: View {
         return profile.username
     }
 
-    // MARK: - Primary CTA (redesign: context-aware + persistent solo)
+    // MARK: - The one button (design §A item 3)
     //
-    // Smart primary: when a session is scheduled TODAY, the hero card is
-    // "Join {session}" (NavigationLink → LobbyView — the app's single session
-    // entry point); the persistent "Start solo workout" secondary sits right
-    // beneath it so a spontaneous lift is always one predictable tap. When
-    // nothing is on today, the hero IS the solo start (today's-routine info
-    // folded into its subtitle — absorbs the old standalone routine card).
+    // ONE primary, five states, and none of them starts a workout by itself
+    // (design language rule 5): every state lands on a screen where the
+    // lifter can still do something different. It replaces the join hero,
+    // the gold check-in tile, the countdown tile and the empty tile — four
+    // shapes that used to morph into each other — with one shape that only
+    // changes what it says.
+    //
+    // State resolution reuses what this screen already computes:
+    // `nextActionableSession(now:)`, `checkInAvailable(_:now:)`,
+    // `checkInOpensAt(_:)`, `compactCountdown(to:from:)` and
+    // `ProgramToday.resolveRoutine`'s result (`todaysRoutine`). No new
+    // fetch, and no timing rule is touched — the 20-minute window and the
+    // 30-minute missed cutoff are exactly where they were.
+    //
+    // `todaysSession` went with the join hero it existed to feed. It held a
+    // SECOND copy of the 30-minute cutoff, and the button reads the first
+    // one — `nextActionableSession(now:)`, untouched below. Keeping an
+    // unreachable duplicate of a timing rule is how two answers to the same
+    // question start.
 
-    private var todaysSession: WorkoutSession? {
-        upcomingSessions.first { session in
-            guard let when = session.scheduledFor else { return false }
-            // Same 30-min missed cutoff as the check-in widget: a missed
-            // session must not keep the "Join …" hero alive all day.
-            guard session.state == "in_progress" || Date.now <= when.addingTimeInterval(30 * 60) else { return false }
-            return Calendar.current.isDateInToday(when)
-        }
-    }
+    /// 08a's top row: the one button, and — only when the primary is about a
+    /// session with other people — the quiet solo escape under it (design
+    /// language rule 5; a solo primary already opens the start screen, so
+    /// the pill would be a second door to the same room).
+    ///
+    /// It stays inside the `TimelineView(.periodic(by: 30))` the check-in
+    /// widget used to own, at the SAME cadence: the `.checkInOpens`
+    /// countdown has to stay live, and re-selecting the candidate session
+    /// every 30 s is what lets a session that crosses the 30-minute missed
+    /// line drop out of the button on its own.
+    private var oneButtonSection: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            let session = nextActionableSession(now: context.date)
+            let state = oneButtonState(for: session, now: context.date)
+            VStack(spacing: 9) {
+                HomeOneButton(state: state,
+                              commitChip: commitChip(for: state, session: session)) {
+                    performOneButtonAction(state, session: session)
+                }
+                .gsSpotlightTarget(.home)
 
-    @ViewBuilder
-    private var primaryCTASection: some View {
-        VStack(spacing: 9) {
-            if let session = todaysSession {
-                NavigationLink {
-                    // .id — see navigateToJoined's destination comment: the
-                    // computed session re-resolving must rebuild the lobby,
-                    // never mutate a pushed one in place.
-                    LobbyView(session: session)
-                        .id(session.id)
-                } label: {
-                    ctaCard(
-                        title: "Join \(routineLabel(for: session))",
-                        subtitle: ctaSubtitle(for: session)
+                if state.isCrewState {
+                    HomeSoloRow(
+                        burpeesOwed: burpeesOwed,
+                        onStartSolo: {
+                            routinePickerPreselected = nil
+                            showRoutinePicker = true
+                        },
+                        onOpenLedger: { showBurpeeLedger = true }
                     )
                 }
-                .buttonStyle(.gs3D(face: theme.raised3DFace, lip: theme.raised3DLip, cornerRadius: GSMetrics.radiusMd))
             }
-            // ONE architecture in every state (user 2026-07-31: "I don't
-            // think we should change the widget architecture at all from
-            // pre-check-in to post"): the solo start is ALWAYS this pill
-            // row, the burpee debt always emerges beside it when owed, and
-            // only the Join hero comes and goes with an actual session.
-            // (Replaces the old no-session branch's big Start Solo Workout
-            // hero — the morph between the two shapes was the complaint.)
-            soloSecondaryButton
+            .padding(.horizontal, 16)
+            .padding(.bottom, 12)
         }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 12)
     }
 
-    // Declutter round: the solo start is a LITTLE BIGGER everywhere it
-    // appears (user feedback) — taller hero card, larger play circle, and a
-    // weightier secondary button.
+    /// The plan's state table, resolved by `HomeOneButtonResolver`. Every
+    /// rule it needs is applied HERE by the helpers that already existed, so
+    /// the resolver owns branch order and nothing else.
+    private func oneButtonState(for session: WorkoutSession?, now: Date) -> HomeOneButtonState {
+        HomeOneButtonResolver.state(next: session.map { oneButtonInput(for: $0, now: now) },
+                                    todaysRoutineName: todaysRoutine?.name)
+    }
+
+    private func oneButtonInput(for session: WorkoutSession, now: Date) -> HomeOneButtonInput {
+        let opensAt = checkInOpensAt(session)
+        return HomeOneButtonInput(
+            isInProgress: session.state == "in_progress",
+            startedAtLabel: session.startedAt.map { $0.formatted(.dateTime.hour().minute()) },
+            isGroupSession: session.groupID != nil,
+            checkInAvailable: checkInAvailable(session, now: now),
+            opensInLabel: opensAt.flatMap { now < $0 ? compactCountdown(to: $0, from: now) : nil },
+            crewName: crewName(for: session),
+            routineName: routineLabel(for: session),
+            timeLabel: session.scheduledFor.map { $0.formatted(.dateTime.hour().minute()) } ?? ""
+        )
+    }
+
+    /// The crew a session belongs to, or `Solo`. Same lookup
+    /// `pushWatchIdleStateIfNoLiveSession` makes, kept separate from
+    /// `routineLabel(for:)` for the reason that function's doc comment gives.
+    private func crewName(for session: WorkoutSession) -> String {
+        session.groupID.flatMap { gid in groups.first(where: { $0.id == gid })?.name } ?? "Solo"
+    }
+
+    /// The commit chip, kept from the deleted countdown card because the
+    /// Home inventory calls it the only glance-level commit status in the
+    /// app. Only on `.checkInOpens`, and only for a crew session — a solo
+    /// lift has nobody to commit to. It is NOT a nested button: the whole
+    /// one button already routes to the crew room, where committing lives.
+    private func commitChip(for state: HomeOneButtonState,
+                            session: WorkoutSession?) -> HomeOneButtonCommitChip? {
+        guard case .checkInOpens = state, session?.groupID != nil else { return nil }
+        switch nextCommitStatus {
+        case nil:        return .commit
+        case .committed: return .committed
+        case .out:       return .out
+        }
+    }
+
+    /// Every state opens a SCREEN; none starts a workout (design language
+    /// rule 5). `.startRoutine` lands on the picker with today's routine
+    /// preselected — the lifter can still run something else.
+    private func performOneButtonAction(_ state: HomeOneButtonState,
+                                        session: WorkoutSession?) {
+        switch state {
+        case .joinSession, .checkIn:
+            if let session { openLobby(session) }
+        case .checkInOpens:
+            guard let session else { return }
+            if let groupID = session.groupID {
+                // The crew room, where committing lives (owner feedback
+                // 2026-08-11) — the countdown card never committed directly
+                // and neither does this.
+                appState.pendingRoute = .chat(groupID: groupID)
+                appState.selectedTab = .social
+            } else {
+                openLobby(session)
+            }
+        case .startRoutine, .startWorkout:
+            routinePickerPreselected = todaysRoutine
+            showRoutinePicker = true
+        }
+    }
+
+    /// Home's one lobby push. `.id(session.id)` on the destination is
+    /// load-bearing — see `navigateToJoined`'s destination comment for the
+    /// 2026-07-30 field bug it exists to prevent.
+    private func openLobby(_ session: WorkoutSession) {
+        joinedSession = session
+        navigateToJoined = true
+    }
+
+    // MARK: - Tile pair, crew pulse, goal strip, calendar (design §A items 5-8)
     //
-    // 2026-08 visual-language pass: the hero is a BUTTON, so it wears the
-    // extruded 3D style on the theme's raised face (theme.surface was
-    // invisible as 3D against the page ground — owner field report);
-    // vertical padding drops 22 → 18.5 so content + 37 + the 7pt lip keeps
-    // the card's exact prior footprint. Subtitle rides neutral700 — the
-    // lighter raised face washed out neutral500.
-    private func ctaCard(title: String, subtitle: String) -> some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(GSFont.bold(19, relativeTo: .headline))
-                    .foregroundStyle(theme.text)
-                    .lineLimit(1)
-                Text(subtitle)
-                    .font(GSFont.body(13, relativeTo: .caption))
-                    .foregroundStyle(theme.neutral700)
-                    .lineLimit(1)
-            }
-            Spacer(minLength: 8)
-            Circle()
-                .fill(theme.accent)
-                .frame(width: 54, height: 54)
-                .overlay(
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(theme.bg)
-                        .offset(x: 1)
-                )
-        }
-        .padding(.horizontal, 22)
-        .padding(.vertical, 18.5)
-    }
+    // Equal heights in the tile row: both tiles stretch to
+    // `maxHeight: .infinity` inside an `HStack` that is
+    // `fixedSize(vertical: true)`, so the row sizes to the taller tile and
+    // the shorter one fills — the same constraint the old check-in/streak
+    // row carried, at `HomeV3Metrics`' 10 pt gap.
 
-    // Redesign fix (2026-07-23 screenshot): the solo button read as a
-    // translucent outline pill among solid widgets — now it IS a widget:
-    // solid surface fill, widget radius, no border.
-    private var soloSecondaryButton: some View {
-        // Burpee debt (user direction 2026-07-25): when you owe burpees, the
-        // start button CONCEDES real estate and the counter EMERGES beside
-        // it — Duolingo-style, springy rather than a hard swap. At zero debt
-        // the widget doesn't exist at all, so it never taxes a new user's
-        // home screen (burpee debt is group-scoped: a brand-new user owes
-        // nothing by construction).
-        HStack(spacing: 10) {
-            Button {
-                routinePickerPreselected = nil
-                showRoutinePicker = true
-            } label: {
-                HStack(spacing: 7) {
-                    Spacer(minLength: 0)
-                    Image(systemName: "plus")
-                        .font(.system(size: 14, weight: .bold))
-                    // Always "solo" (user 2026-07-31: dropping the word when
-                    // the debt badge appeared made the widget ambiguous —
-                    // it fits fine beside the 96pt badge).
-                    Text("Start solo workout")
-                        .font(GSFont.bold(15, relativeTo: .subheadline))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
-                    Spacer(minLength: 0)
-                }
-                .foregroundStyle(theme.text)
-                // 55pt face + the style's 7pt lip = exactly the row's fixed
-                // 62pt — the pill and the burpee badge stay shoulder-to-
-                // shoulder (the badge still fills the row flat: it's a
-                // status widget, not a CTA).
-                .frame(height: 55)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.gs3D(face: theme.raised3DFace, lip: theme.raised3DLip, cornerRadius: GSMetrics.radiusMd))
-            .gsSpotlightTarget(.home)
-
-            if burpeesOwed > 0 {
-                burpeeOwedWidget
-                    // Emerges from the right edge with a slight scale pop —
-                    // the button's width animates in the same transaction,
-                    // so it reads as one element yielding space to another.
-                    .transition(
-                        .asymmetric(
-                            insertion: .scale(scale: 0.6, anchor: .trailing)
-                                .combined(with: .opacity)
-                                .combined(with: .move(edge: .trailing)),
-                            removal: .scale(scale: 0.7, anchor: .trailing)
-                                .combined(with: .opacity)
-                        )
-                    )
-            }
-        }
-        // One fixed row height so the start pill and the debt badge stand
-        // shoulder-to-shoulder (user 2026-07-31: the pill sat visibly
-        // shorter than the badge beside it).
-        .frame(height: 62)
-        .animation(.spring(response: 0.42, dampingFraction: 0.68), value: burpeesOwed > 0)
-    }
-
-    /// The debt counter. Fixed width so the start button's concession is a
-    /// predictable amount rather than a text-length-dependent jitter.
-    /// 3D pass (2026-08): STATIC extrusion — it's a status widget, not a
-    /// CTA, so it doesn't sink; accent face + derived darker lip (accent
-    /// reads in every palette). lipHeight 7 — the solo pill beside it is a
-    /// 55pt face on a 7pt lip, so a 7pt lip here lands both face/lip seams
-    /// on the same line inside the row's fixed 62pt.
-    private var burpeeOwedWidget: some View {
-        Button {
-            showBurpeeLedger = true
-        } label: {
-            VStack(spacing: 1) {
-                Text("\(burpeesOwed)")
-                    .font(GSFont.heading(22, relativeTo: .title2))
-                    .foregroundStyle(theme.bg)
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-                Text("burpees")
-                    .font(GSFont.bold(9.5, relativeTo: .caption2))
-                    .tracking(0.6)
-                    .foregroundStyle(theme.bg.opacity(0.8))
-            }
-            .frame(width: 96)
-            .frame(maxHeight: .infinity)
-            // Accent, not gold (user 2026-07-31): gold is the CHECK-IN
-            // signal color and nothing else gets to wear it. Accent =
-            // "yours to act on" — a debt is exactly that.
-            .gs3DCard(cornerRadius: GSMetrics.radiusMd, lipHeight: 7, face: theme.accent)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("You owe \(burpeesOwed) burpees. Open the burpee ledger.")
-    }
-
-    // MARK: - Schedule widget (declutter round: its own widget above the calendar)
-
-    private var scheduleWidget: some View {
-        Button {
-            showScheduleSheet = true
-        } label: {
-            HStack(spacing: 13) {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(theme.neutral300)
-                    .frame(width: 42, height: 42)
-                    .overlay(
-                        Image(systemName: "calendar.badge.plus")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(theme.accent)
-                    )
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Schedule a session")
-                        .font(GSFont.bold(15.5, relativeTo: .headline))
-                        .foregroundStyle(theme.text)
-                    Text("Plan your next lift — solo or with a crew")
-                        .font(GSFont.body(12, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral500)
-                }
-                Spacer(minLength: 8)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(theme.neutral500)
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .gsDiscovery(.homeSchedule)
-        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
-        .padding(.horizontal, 16)
-        .padding(.bottom, 12)
-    }
-
-    private func ctaSubtitle(for session: WorkoutSession) -> String {
-        let who = session.groupID.flatMap { gid in groups.first(where: { $0.id == gid })?.name } ?? "Session"
-        if let when = session.scheduledFor {
-            return "\(who) · \(when.formatted(.dateTime.hour().minute()))"
-        }
-        return who
-    }
-
-    private var soloSubtitle: String {
-        if let routine = todaysRoutine {
-            return "\(routine.name) · \(todaysRoutineExercises.count) exercises · ~\(StatMath.estimatedMinutes(exercises: todaysRoutineExercises)) min"
-        }
-        return "Pick a routine or go freestyle"
-    }
-
-    // MARK: - Check-in + Streak row (redesign v2, user feedback 2026-07-21)
-    //
-    // The PR widget was replaced: Home's hero pair is forward-looking now.
-    // PRs still celebrate via the full-screen overlay at the moment they
-    // happen and live permanently on Stats — a backward-looking trophy was
-    // the least useful thing in this slot. The check-in widget shows the
-    // NEXT session with a live countdown, and flips into an accent "Check
-    // in" action the moment the session is actually joinable (lobby_open /
-    // in_progress — check-in opens when the organizer opens the lobby, an
-    // event, so the countdown targets the scheduled start and the button
-    // activates on live state).
-    //
-    // Equal heights: both cards' content stretches to `maxHeight: .infinity`
-    // inside an HStack that is `fixedSize(vertical: true)` — the row sizes to
-    // the taller card and the shorter one fills to match (the v1 mismatch was
-    // exactly this missing constraint).
-
-
-    private var checkInAndStreakRow: some View {
-        HStack(alignment: .top, spacing: 11) {
-            checkInWidget
-            streakWidget
+    private var tilePairSection: some View {
+        HStack(alignment: .top, spacing: HomeV3Metrics.tileGap) {
+            streakSlot
+            coachSlot
         }
         .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 12)
+    }
+
+    /// No widget renders a bare zero (user feedback 2026-07-25): someone who
+    /// has never trained gets the invitation, not a 0-streak tile. The
+    /// branch is production's own — only the trained side becomes the v3
+    /// tile, whose slot grid wraps every 5 in ROWS where the wide card
+    /// wrapped in columns.
+    @ViewBuilder
+    private var streakSlot: some View {
+        if hasEverTrained {
+            HomeStreakTile(streak: userStreak?.currentStreak ?? 0,
+                           daysDone: daysThisWeek,
+                           // Anti-goalpost rule (owner 2026-08-12): the tile
+                           // renders the EFFECTIVE goal — an edit made
+                           // mid-week lands next week, never this one.
+                           goal: profile?.effectiveWeeklyGoal ?? 3) {
+                showGoalSheet = true
+            }
+        } else {
+            streakInviteWidget(hasTrainedBefore: false)
+        }
+    }
+
+    /// Coach's tile. The sentence and the badge are task B3's; the route is
+    /// the composition's, because a tile that opens nothing is not a tile.
+    private var coachSlot: some View {
+        HomeCoachTile(sentence: coachSentence,
+                      waiting: coachWaiting) {
+            showCoach = true
+        }
+    }
+
+    /// Owner ruling 2: the crew pulse renders ONLY when a friend is actually
+    /// lifting. When nobody is, nothing renders at all and everything below
+    /// shifts up — no empty state and no reserved gap. The 2 pt-tighter foot
+    /// is 08a's `homeV3Strip()`: a strip belongs to what follows it.
+    @ViewBuilder
+    private var crewPulseSection: some View {
+        if let friend = friendsLive.first {
+            HomeCrewPulseStrip(initials: friend.initials,
+                               headline: crewPulseHeadline(friend),
+                               detail: crewPulseDetail(friend)) {
+                openFriendLive(friend)
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 10)
+        }
+    }
+
+    /// This week's goal. `kind == nil` is the invitation line — the only
+    /// state in which the strip shows something other than a reading.
+    ///
+    /// Until Stream C's `WeeklyGoalEditorSheet` lands the tap opens the
+    /// existing weekly-goal sheet, so the strip is never inert; integration
+    /// task I1 swaps the destination.
+    private var goalStripSection: some View {
+        HomeWeeklyGoalStrip(kind: weeklyGoal?.kind, progress: goalProgress) {
+            showGoalSheet = true
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 12)
+    }
+
+    /// Coach's line on the tile — one sentence, first person (design
+    /// language rule 7).
+    ///
+    /// Task B1 ships the static invitation, which is the last rung of the
+    /// precedence the plan sets out; task **B3** adds the rungs above it
+    /// (today's routine, the block's week, and — once Stream A's repository
+    /// can propose — a proposed change to a user-set goal).
+    private var coachSentence: String {
+        "Tell me how the week's going and I'll shape the next one."
+    }
+
+    /// The accent count badge. `nil` — no badge at all — until there is a
+    /// real unread count to show. `coach_chat_threads`
+    /// (`20260824000005_coach_chat_threads.sql`) carries none, and a badge
+    /// that always reads `1` is worse than no badge (design language rule 4:
+    /// badges point, they do not shout).
+    private var coachWaiting: Int? { nil }
+
+    /// `{Name} is lifting now` — the design's copy, verbatim.
+    private func crewPulseHeadline(_ friend: FriendLive) -> String {
+        "\(friend.displayName) is lifting now"
+    }
+
+    /// `{Crew} · {when}` for a crew session, `Solo` otherwise.
+    private func crewPulseDetail(_ friend: FriendLive) -> String {
+        guard let groupName = friend.groupName else { return "Solo" }
+        guard let startedAt = friend.startedAt else { return groupName }
+        return "\(groupName) · \(startedAt.formatted(.dateTime.hour().minute()))"
+    }
+
+    /// Tap on the crew pulse. Task **B4** upgrades this to open the friend's
+    /// LOBBY when `session_participants` includes you; until then it opens
+    /// the crew room, which is where a session you are not in belongs.
+    private func openFriendLive(_ friend: FriendLive) {
+        guard let groupID = friend.groupID else { return }
+        appState.pendingRoute = .chat(groupID: groupID)
+        appState.selectedTab = .social
+    }
+
+    /// The calendar as a door (design §A item 8): three months of dots, the
+    /// `{n} UPCOMING` count, the `+`, the chevron — and NO appointment rows.
+    /// The itinerary they used to hold is written out on the page the card
+    /// opens.
+    private var calendarCardSection: some View {
+        HomeCalendarCard(months: calendarMonths,
+                         appointments: calendarAppointments,
+                         showsAppointments: false) {
+            showCalendarPage = true
+        }
         .padding(.horizontal, 16)
         .padding(.bottom, 12)
     }
@@ -626,85 +687,12 @@ struct HomeView: View {
         return now >= opensAt
     }
 
-    /// Gold ready-state palette — a STATUS color, deliberately independent of
-    /// the user's accent (spec §4's two-color-system discipline: status is a
-    /// third, fixed semantic).
-    private static let goldTop = Color.gsHex(0xF6C945)
-    private static let goldBottom = Color.gsHex(0xDCA426)
-    private static let goldInk = Color.gsHex(0x261A02)
-
-    @State private var checkInShimmer = false
-
-    @ViewBuilder
-    private var checkInWidget: some View {
-        // TimelineView OUTERMOST (missed-cutoff fix): the candidate itself is
-        // re-selected every 30s, so a session that crosses the 30-min missed
-        // line drops out live — the gold shimmer can no longer run forever on
-        // an event nobody started.
-        TimelineView(.periodic(from: .now, by: 30)) { context in
-            // 3D pass (2026-08): every state of this slot is an extruded
-            // card that sinks on press (`.gs3DCardStyle`) — the two links
-            // are split so the gold state can wear its own gold face
-            // (derived darker lip, the accent-face path) while the
-            // countdown/empty states ride the theme's raised pair.
-            if let session = nextActionableSession(now: context.date) {
-                if checkInAvailable(session, now: context.date) {
-                    NavigationLink {
-                        // .id — the TimelineView re-resolves this session
-                        // every 30s; a pushed lobby must be rebuilt, not
-                        // re-propped (the exact route that wrote 14 sets
-                        // into a scheduled future occurrence, field bug
-                        // 2026-07-30/31).
-                        LobbyView(session: session)
-                            .id(session.id)
-                    } label: {
-                        goldCheckInCard(session)
-                    }
-                    .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd,
-                                                face: Self.goldBottom))
-                } else if let groupID = session.groupID {
-                    // Group session countdown (owner feedback 2026-08-11):
-                    // the body navigates to the CREW ROOM (where committing
-                    // lives), not the lobby — check-in still goes gold above.
-                    Button {
-                        appState.pendingRoute = .chat(groupID: groupID)
-                        appState.selectedTab = .social
-                    } label: {
-                        countdownBody(session, now: context.date)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                            .padding(15)
-                    }
-                    .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
-                } else {
-                    NavigationLink {
-                        // .id — same rebuild-not-reprop rule as above.
-                        LobbyView(session: session)
-                            .id(session.id)
-                    } label: {
-                        countdownBody(session, now: context.date)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-                            .padding(15)
-                    }
-                    .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
-                }
-            } else {
-                // Empty state is a POINTER, not a dead card (user feedback
-                // 2026-07-25): with nothing scheduled, this slot offers the
-                // step that's actually missing. Deliberately NOT gold —
-                // gold means "the window is open, act now", and borrowing
-                // that urgency for an invitation would devalue it.
-                Button {
-                    if hasNoCrew { appState.selectedTab = .social }
-                    else { showScheduleSheet = true }
-                } label: {
-                    checkInEmptyBody
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        .padding(15)
-                }
-                .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
-            }
-        }
-    }
+    // (`goldTop`/`goldBottom`/`goldInk`, `checkInShimmer`, `checkInWidget`,
+    // `goldCheckInCard`, `countdownBody`, `checkInEmptyBody` and
+    // `commitControl` were deleted with the check-in tile — the one button
+    // carries all four of their states now, and `HomeV2Gold` carries the
+    // palette. `commitControl`'s three faces survive as
+    // `HomeOneButtonCommitChip`.)
 
     /// Sums the user's OUTSTANDING debt across every group and remembers the
     /// group holding the most of it (the tap target). Best-effort per group:
@@ -730,73 +718,6 @@ struct HomeView: View {
         burpeeDebtGroup = worst?.group
     }
 
-    /// Scheduling is offered ahead of finding a crew whenever the user has
-    /// any routine to run: a solo lift is achievable alone in the next hour,
-    /// while joining a crew depends on other people. Someone with neither a
-    /// crew nor a routine gets pointed at people first — a brand-new user
-    /// with nothing to run benefits more from a group than an empty calendar.
-    private var hasNoCrew: Bool { groups.isEmpty && ownedRoutines.isEmpty }
-
-    /// The gold shimmering ready-state (user feedback 2026-07-23): when the
-    /// 20-minute window opens, the whole widget turns gold with a slow
-    /// diagonal shimmer sweep — unmissable "you can act now".
-    private func goldCheckInCard(_ session: WorkoutSession) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 6) {
-                Image(systemName: "dot.radiowaves.left.and.right")
-                    .font(.system(size: 10, weight: .bold))
-                Text("CHECK-IN OPEN")
-                    .font(GSFont.bold(10, relativeTo: .caption2))
-                    .tracking(1.3)
-            }
-            .foregroundStyle(Self.goldInk.opacity(0.75))
-
-            Text(routineLabel(for: session))
-                .font(GSFont.bold(14, relativeTo: .subheadline))
-                .foregroundStyle(Self.goldInk)
-                .lineLimit(1)
-                .padding(.top, 8)
-
-            HStack(spacing: 6) {
-                Text("Check in")
-                    .font(GSFont.bold(14, relativeTo: .subheadline))
-                Image(systemName: "arrow.right")
-                    .font(.system(size: 12, weight: .bold))
-            }
-            .foregroundStyle(Color.gsHex(0xFFE9A8))
-            .padding(.horizontal, 14)
-            .padding(.vertical, 9)
-            .background(Self.goldInk)
-            .cornerRadius(11)
-            .padding(.top, 10)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(15)
-        // 3D pass: the gradient stays the card's visible face — it sits
-        // exactly over the style's solid goldBottom face plate, whose only
-        // remaining jobs are the derived dark-amber lip and the sink. The
-        // style's clipShape rounds gradient + shimmer together (this
-        // replaces the old .cornerRadius here).
-        .background(
-            LinearGradient(colors: [Self.goldTop, Self.goldBottom],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
-        )
-        // Shimmer: a soft diagonal highlight band sweeping across every ~2.4s.
-        .overlay(
-            GeometryReader { geo in
-                LinearGradient(colors: [.clear, .white.opacity(0.4), .clear],
-                               startPoint: .leading, endPoint: .trailing)
-                    .frame(width: 70)
-                    .rotationEffect(.degrees(22))
-                    .offset(x: checkInShimmer ? geo.size.width + 90 : -140)
-                    .animation(.linear(duration: 2.4).repeatForever(autoreverses: false),
-                               value: checkInShimmer)
-            }
-            .allowsHitTesting(false)
-        )
-        .onAppear { checkInShimmer = true }
-    }
-
     /// Compact countdown units (user feedback 2026-07-23): two significant
     /// figures max — "3d", "12h", "45m" — targeting when check-in OPENS.
     private func compactCountdown(to target: Date, from now: Date) -> String {
@@ -808,236 +729,11 @@ struct HomeView: View {
         return "\(max(1, Int(ceil(seconds / 60))))m"
     }
 
-    @ViewBuilder
-    private func countdownBody(_ session: WorkoutSession, now: Date) -> some View {
-        // Owner feedback 2026-08-11: the routine-title line ("Workout"
-        // fallback) and the greyed "until check-in · opens…" subtitle are
-        // gone; the kicker carries the whole sentence, the number carries
-        // the answer, and group sessions gain the commit control. Round 3:
-        // everything centered — the left-justified number + chip floated
-        // awkwardly in the tall card.
-        VStack(alignment: .center, spacing: 0) {
-            HStack(spacing: 6) {
-                Image(systemName: "clock")
-                    .font(.system(size: 10, weight: .bold))
-                Text("CHECK IN FOR NEXT SESSION IN:")
-                    .font(GSFont.bold(10, relativeTo: .caption2))
-                    .tracking(1.3)
-                    .multilineTextAlignment(.center)
-            }
-            .foregroundStyle(theme.accent)
-
-            if let opensAt = checkInOpensAt(session), opensAt > now {
-                Text(compactCountdown(to: opensAt, from: now))
-                    .font(GSFont.heading(30, relativeTo: .title2))
-                    .foregroundStyle(theme.text)
-                    .monospacedDigit()
-                    .padding(.top, 8)
-            } else {
-                // Window has passed but state hasn't flipped live yet.
-                Text("Starting soon")
-                    .font(GSFont.heading(18, relativeTo: .title3))
-                    .foregroundStyle(theme.text)
-                    .padding(.top, 8)
-                Text("waiting for the organizer")
-                    .font(GSFont.body(10.5, relativeTo: .caption2))
-                    .foregroundStyle(theme.neutral500)
-                    .padding(.top, 3)
-            }
-
-            if session.groupID != nil {
-                commitControl(session)
-                    .padding(.top, 10)
-            }
-        }
-        .contentShape(Rectangle())
-    }
-
-    /// Owner feedback 2026-08-11 round 2: the Home widget never commits
-    /// directly — committing happens ON the crew room's board. This chip is
-    /// a visual affordance riding the card's own navigation (the whole card
-    /// already routes to the room), so it deliberately is NOT a nested
-    /// button; it just looks pressable because the destination is where
-    /// pressing happens.
-    @ViewBuilder
-    private func commitControl(_ session: WorkoutSession) -> some View {
-        switch nextCommitStatus {
-        case nil:
-            Text("COMMIT ›")
-                .font(GSFont.bold(11, relativeTo: .caption))
-                .kerning(0.8)
-                .foregroundStyle(theme.bg)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-                .gs3DCard(cornerRadius: 10, lipHeight: 4, face: theme.accent)
-        case .committed:
-            HStack(spacing: 5) {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 9, weight: .bold))
-                Text("YOU'RE IN")
-                    .font(GSFont.bold(10, relativeTo: .caption2))
-                    .kerning(1.1)
-            }
-            .foregroundStyle(Color.gsHex(0x2FA45C))
-        case .out:
-            Text("YOU'RE OUT")
-                .font(GSFont.bold(10, relativeTo: .caption2))
-                .kerning(1.1)
-                .foregroundStyle(Self.goldTop)
-        }
-    }
-
-    private var checkInEmptyBody: some View {
-        // Redesign (2026-07-25): was a quiet "Nothing scheduled" dead end.
-        // Now it names the next step and is tappable — see checkInWidget.
-        let crewFirst = hasNoCrew
-        return VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 6) {
-                Image(systemName: crewFirst ? "person.2" : "calendar.badge.plus")
-                    .font(.system(size: 10, weight: .bold))
-                Text(crewFirst ? "GET STARTED" : "NEXT SESSION")
-                    .font(GSFont.bold(10, relativeTo: .caption2))
-                    .tracking(1.3)
-            }
-            .foregroundStyle(theme.neutral500)
-
-            Text(crewFirst ? "Find your crew" : "Schedule a workout")
-                .font(GSFont.bold(14, relativeTo: .subheadline))
-                .foregroundStyle(theme.text)
-                .padding(.top, 9)
-
-            Text(crewFirst
-                 ? "Train with friends — shared sessions and live turns."
-                 : "Pick a day and a routine, then check in when you arrive.")
-                .font(GSFont.body(11, relativeTo: .caption2))
-                .foregroundStyle(theme.neutral500)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 3)
-
-            HStack(spacing: 5) {
-                Text(crewFirst ? "Go to Social" : "Schedule")
-                    .font(GSFont.bold(11, relativeTo: .caption2))
-                Image(systemName: "arrow.right")
-                    .font(.system(size: 9, weight: .bold))
-            }
-            .foregroundStyle(theme.accent)
-            .padding(.top, 8)
-        }
-    }
-
-    /// No widget renders a bare zero (user feedback 2026-07-25: a new user's
-    /// home shouldn't open by scoring them on a game they haven't started).
-    /// Instead the streak card becomes an invitation — and "never trained"
-    /// and "streak lapsed" are deliberately DIFFERENT invitations: telling
-    /// someone who trained for three weeks to "schedule your first lift"
-    /// would be both wrong and a little insulting.
-    private var streakWidget: some View {
-        // Owner feedback 2026-08-11: the count card now speaks the crew
-        // room's intraweek language — your sessions this week against YOUR
-        // goal, slots filling bottom-up. The never-trained invitation stays;
-        // a lapsed-but-trained user sees 0-of-goal with the next slot
-        // breathing (an invitation shaped as progress, not a bare zero).
-        if hasEverTrained {
-            return AnyView(weeklyGoalWidget)
-        }
-        return AnyView(streakInviteWidget(hasTrainedBefore: false))
-    }
-
-    /// DISTINCT training days this calendar week (solo included — they
-    /// count toward streaks since 20260803000005). Days, not sessions
-    /// (owner 2026-08-12: the goal line reads "1/4 days this week") — two
-    /// sessions on the same day fill one slot.
+    /// DISTINCT training days this calendar week. The rule now lives in
+    /// `WeeklyGoalProgressMath` so the streak tile and the goal strip cannot
+    /// give two answers about the same week — the design's agreement law.
     private var daysThisWeek: Int {
-        let calendar = Calendar.current
-        let days = historySessions.compactMap { session -> Date? in
-            guard let completedAt = session.completedAt,
-                  calendar.isDate(completedAt, equalTo: .now, toGranularity: .weekOfYear)
-            else { return nil }
-            return calendar.startOfDay(for: completedAt)
-        }
-        return Set(days).count
-    }
-
-    private var weeklyGoalWidget: some View {
-        // Anti-goalpost rule (owner 2026-08-12): the widget renders the
-        // EFFECTIVE goal — an edit made mid-week doesn't move this week's
-        // slots or fraction; it lands next week (Profile.effectiveWeeklyGoal).
-        let goal = profile?.effectiveWeeklyGoal ?? 3
-        let done = daysThisWeek
-        let met = done >= goal
-        let green = Color.gsHex(0x2FA45C)
-        // Owner feedback 2026-08-11 round 3: the big number is the ALL-TIME
-        // session streak (user_streaks.current_streak — it never resets on
-        // the week), while the slots + goal line stay weekly. Slots wrap
-        // into a new column every 5 so a 14-goal never becomes a tower, and
-        // their colors are THEME TOKENS — the previous hardcoded Onyx-dark
-        // recesses were invisible against a filled slot on light themes.
-        let streak = userStreak?.currentStreak ?? 0
-        let columns: [[Int]] = stride(from: 0, to: max(goal, 1), by: 5).map {
-            Array($0..<min($0 + 5, max(goal, 1)))
-        }
-        return Button {
-            showGoalSheet = true
-        } label: {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .center, spacing: 14) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("\(streak)")
-                            .font(GSFont.heading(56, relativeTo: .largeTitle))
-                            .foregroundStyle(met ? green : theme.text)
-                            .monospacedDigit()
-                            .minimumScaleFactor(0.6)
-                        Text("STREAK")
-                            .font(GSFont.bold(11, relativeTo: .caption))
-                            .kerning(1.6)
-                            .foregroundStyle(met ? green : theme.neutral500)
-                    }
-                    Spacer(minLength: 0)
-                    HStack(alignment: .bottom, spacing: 4) {
-                        ForEach(columns.indices, id: \.self) { c in
-                            VStack(spacing: 4) {
-                                ForEach(columns[c].reversed(), id: \.self) { index in
-                                    let filled = index < done
-                                    let isNext = !filled && index == done && !met
-                                    RoundedRectangle(cornerRadius: 3)
-                                        .fill(filled ? (met ? green : theme.text)
-                                                     : (isNext && homeSlotBreathing
-                                                        ? theme.neutral400 : theme.neutral300))
-                                        .frame(width: 17, height: 14)
-                                        .animation(isNext ? .easeInOut(duration: 1.1).repeatForever(autoreverses: true) : nil,
-                                                   value: homeSlotBreathing)
-                                }
-                            }
-                        }
-                    }
-                }
-                // Owner 2026-08-12 round 2: the fraction spans the FULL card
-                // below the number/slots row — sharing the squeezed left
-                // column made "1/4 DAYS THIS WEEK" clip against the grid.
-                // Says (a) your global streak, (b) how you're tracking
-                // against the week that protects it.
-                Text("\(done)/\(goal) DAYS THIS WEEK")
-                    .font(GSFont.bold(12, relativeTo: .caption))
-                    .kerning(0.6)
-                    .foregroundStyle(met ? green : theme.accent)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .padding(.horizontal, 15)
-            .padding(.vertical, 12)
-        }
-        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
-        .onAppear { homeSlotBreathing = true }
-        .sheet(isPresented: $showGoalSheet) {
-            // The editor seeds from the STANDING goal (what next week will
-            // be), not the effective one — that's the value being edited.
-            WeeklyGoalSheet(initial: profile?.weeklySessionGoal ?? 3) { updated in
-                profile = updated
-            }
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Streak \(streak). \(done) of \(goal) days this week. Tap to change your goal.")
+        WeeklyGoalProgressMath.daysThisWeek(completed: historySessions)
     }
 
     /// True once the user has any completed session in history — the
@@ -1086,19 +782,99 @@ struct HomeView: View {
     // (streakCountWidget deleted 2026-08-12 — dead since the weekly-goal
     // widget replaced it; the wiring audit confirmed zero call sites.)
 
-    // MARK: - Training calendar (redesign: replaces the Upcoming list)
+    // MARK: - The calendar card's data
+    //
+    // `HomeCalendarCard` takes fixture-shaped values (a month's length, its
+    // leading blanks, day NUMBERS) rather than `Date`s, because the catalog
+    // frames have to render identically whatever day CI runs on. Production
+    // has real dates, so this is where they are flattened — from the same
+    // three arrays `TrainingCalendarWidget` took, on the same dot semantics.
+    //
+    // Task B5 lifts both of these into a testable `HomeCalendarCardModel`.
 
-    private var calendarWidget: some View {
-        TrainingCalendarWidget(
-            completedSessions: historySessions,
-            upcomingSessions: upcomingSessions,
-            groups: groups,
-            titleFor: { routineLabel(for: $0) },
-            onSchedule: { showScheduleSheet = true },
-            onFindCrew: { appState.selectedTab = .social }
-        )
-        .padding(.horizontal, 16)
-        .padding(.bottom, 12)
+    private var calendarMonths: [HomeCalendarCard.Month] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: .now)
+        guard let thisMonthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: today))
+        else { return [] }
+
+        // Trained: the same fallback chain the production dot field used —
+        // completed, else started, else scheduled.
+        let trainedDays = Set(historySessions.compactMap { session -> Date? in
+            guard let when = session.completedAt ?? session.startedAt ?? session.scheduledFor else { return nil }
+            return calendar.startOfDay(for: when)
+        })
+        let plannedDays = Set(upcomingSessions.compactMap { session -> Date? in
+            session.scheduledFor.map { calendar.startOfDay(for: $0) }
+        })
+
+        return [-1, 0, 1].compactMap { offset -> HomeCalendarCard.Month? in
+            guard let monthStart = calendar.date(byAdding: .month, value: offset, to: thisMonthStart)
+            else { return nil }
+            let dayCount = calendar.range(of: .day, in: .month, for: monthStart)?.count ?? 30
+            // Leading blanks before day 1, relative to the locale's week
+            // start — `firstWeekday` is honoured, same as the old field.
+            let leading = (calendar.component(.weekday, from: monthStart) - calendar.firstWeekday + 7) % 7
+            var trained: Set<Int> = []
+            var planned: Set<Int> = []
+            for dayIndex in 0..<dayCount {
+                guard let day = calendar.date(byAdding: .day, value: dayIndex, to: monthStart) else { continue }
+                if trainedDays.contains(day) { trained.insert(dayIndex + 1) }
+                if plannedDays.contains(day) { planned.insert(dayIndex + 1) }
+            }
+            let parts = calendar.dateComponents([.year, .month], from: monthStart)
+            return HomeCalendarCard.Month(
+                id: "\(parts.year ?? 0)-\(parts.month ?? 0)",
+                label: monthStart.formatted(.dateTime.month(.abbreviated)).uppercased(),
+                dayCount: dayCount,
+                leadingBlanks: leading,
+                trained: trained,
+                planned: planned,
+                today: offset == 0 ? calendar.component(.day, from: today) : nil,
+                position: offset < 0 ? .past : (offset == 0 ? .current : .future)
+            )
+        }
+    }
+
+    /// Every upcoming session, so the header's `{n} UPCOMING` count is the
+    /// same number the old widget showed. The ROWS these describe do not
+    /// render on Home any more (`showsAppointments: false`) — they are
+    /// written out on the calendar page — but the card still counts them.
+    ///
+    /// `status` is deliberately `nil`: Home fetches a commitment only for
+    /// the NEXT group session (`nextCommitStatus`), and a per-row chip built
+    /// from one session's answer would be a guess about the others.
+    private var calendarAppointments: [HomeCalendarCard.Appointment] {
+        upcomingSessions.enumerated().map { index, session in
+            let group = session.groupID.flatMap { gid in groups.first(where: { $0.id == gid }) }
+            let day: String
+            if let when = session.scheduledFor {
+                day = Calendar.current.isDateInToday(when)
+                    ? "Today"
+                    : when.formatted(.dateTime.weekday(.abbreviated))
+            } else {
+                day = session.state.replacingOccurrences(of: "_", with: " ").capitalized
+            }
+            return HomeCalendarCard.Appointment(
+                id: index,
+                day: day,
+                time: session.scheduledFor.map { $0.formatted(.dateTime.hour().minute()) } ?? "No time set",
+                initials: group.map { initials(of: $0.name) } ?? "You",
+                tint: group.map { GSGroupColor.color(for: $0.id) },
+                ink: group.map { GSGroupColor.onColor(for: $0.id) },
+                title: routineLabel(for: session),
+                subtitle: group?.name ?? "Solo",
+                repeats: session.seriesID != nil,
+                status: nil
+            )
+        }
+    }
+
+    /// Two-letter crew tile, the `TrainingCalendarWidget.initials` idiom.
+    private func initials(of name: String) -> String {
+        name.split(separator: " ").prefix(2)
+            .map { String($0.prefix(1)).uppercased() }
+            .joined()
     }
 
     // MARK: - Campaigns carousel (Phase C Task 2)
