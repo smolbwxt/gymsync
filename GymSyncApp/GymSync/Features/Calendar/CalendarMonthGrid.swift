@@ -58,6 +58,10 @@ struct CalendarMonthGrid: View {
     /// crew colour actually on the grid so the legend describes THIS month
     /// rather than a generic one.
     let legendCrewColor: Color
+    /// Told the day-of-month a tap landed on, so the host can select that
+    /// day's week. `nil` makes the cells plain text — which is what the
+    /// catalog passes, so a fixture frame has nothing to press.
+    var onSelectDay: ((Int) -> Void)? = nil
 
     /// Cell face; the column slot is whatever the row's width divides into
     /// seven, so the grid fills its card at any width without measuring.
@@ -101,7 +105,7 @@ struct CalendarMonthGrid: View {
                         let day = row * 7 + column - month.leadingBlanks + 1
                         Group {
                             if day >= 1 && day <= month.dayCount {
-                                dayCell(day)
+                                selectableDayCell(day)
                             } else {
                                 Color.clear.frame(width: cell, height: cell)
                             }
@@ -110,6 +114,20 @@ struct CalendarMonthGrid: View {
                     }
                 }
             }
+        }
+    }
+
+    /// A day is a button only where selecting a week means something. The
+    /// catalog passes no handler, so its cells stay plain `Text` and cannot
+    /// be pressed at all — no disabled `Button` wrapping a fixture row, and
+    /// no chance of the frame coming back dimmed.
+    @ViewBuilder
+    private func selectableDayCell(_ day: Int) -> some View {
+        if let onSelectDay {
+            Button { onSelectDay(day) } label: { dayCell(day) }
+                .buttonStyle(.plain)
+        } else {
+            dayCell(day)
         }
     }
 

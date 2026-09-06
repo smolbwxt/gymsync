@@ -51,8 +51,18 @@ struct CalendarSchedulingView: View {
     @Environment(\.gsTheme) private var theme
 
     @State private var showScheduleSheet = false
-    /// Months away from `today`'s month — the swipe's whole state.
+    /// Months away from `today`'s month — which month the GRID shows.
     @State private var monthOffset = 0
+    /// Start-of-week for the week the page is TALKING about: the agenda, the
+    /// boxed days on the grid, the block row's `week n of m`.
+    ///
+    /// `nil` means "the current week", which is the state on first appear —
+    /// stored as an absence rather than written in an `onAppear` so the page
+    /// has one correct answer from its very first layout pass. Tapping a day
+    /// selects that day's week; swiping to another month selects that
+    /// month's first week, and swiping back to the current month returns
+    /// here.
+    @State private var selectedWeekStart: Date?
     /// Background re-fetches. `nil` until one lands, so the page paints from
     /// the caller's arrays first and never blanks while it re-reads.
     @State private var refreshedUpcoming: [WorkoutSession]?
@@ -96,7 +106,8 @@ struct CalendarSchedulingView: View {
                     .foregroundStyle(theme.neutral500)
 
                 CalendarMonthGrid(month: resolved.month,
-                                  legendCrewColor: resolved.legendCrewColor)
+                                  legendCrewColor: resolved.legendCrewColor,
+                                  onSelectDay: daySelection)
                     .gesture(monthSwipe)
 
                 agendaCard
@@ -173,6 +184,12 @@ struct CalendarSchedulingView: View {
         }
         .task { await refresh() }
         .refreshable { await refresh() }
+        // The pills belong to the week on screen, so they are re-read when
+        // the selection moves — a bounded handful of crew sessions, the same
+        // call `refresh()` makes.
+        .onChange(of: effectiveWeekStart) {
+            Task { await loadCommitments() }
+        }
     }
 
     // MARK: This week
@@ -184,7 +201,7 @@ struct CalendarSchedulingView: View {
     private var agendaCard: some View {
         VStack(spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
-                GSSectionHeader("This week")
+                GSSectionHeader(resolved.weekTitle)
                 Text("SWIPE A ROW TO MOVE OR CANCEL")
                     .font(GSFont.bodyMedium(10, relativeTo: .caption2))
                     .tracking(1.1)
@@ -345,7 +362,7 @@ struct CalendarSchedulingView: View {
         .buttonStyle(.gs3D(face: theme.accent, cornerRadius: GSMetrics.radiusSm))
     }
 
-    // MARK: Months
+    // MARK: Months and the selected week
 
     /// Swipe left for the next month, right for the previous one.
     ///
@@ -358,11 +375,73 @@ struct CalendarSchedulingView: View {
             .onEnded { value in
                 guard abs(value.translation.width) > abs(value.translation.height) else { return }
                 if value.translation.width < -40 {
-                    withAnimation(.easeOut(duration: 0.2)) { monthOffset += 1 }
+                    changeMonth(by: 1)
                 } else if value.translation.width > 40 {
-                    withAnimation(.easeOut(duration: 0.2)) { monthOffset -= 1 }
+                    changeMonth(by: -1)
                 }
             }
+    }
+
+    /// Changing month changes the SELECTION too. A grid showing October over
+    /// an agenda headed `THIS WEEK` and listing September is the page
+    /// contradicting itself; worse, it offers a month it will not talk
+    /// about, on the page design §C names as the home of "anything on a
+    /// timeline is editable from here".
+    private func changeMonth(by delta: Int) {
+        let cal = Calendar.current
+        let target = monthOffset + delta
+        withAnimation(.easeOut(duration: 0.2)) {
+            monthOffset = target
+            // Back at the current month → back to the current week, not to
+            // the 1st. That is where you were when you left.
+            selectedWeekStart = target == 0
+                ? nil
+                : weekStart(containing: monthStart(offset: target, cal: cal), cal: cal)
+        }
+    }
+
+    /// `nil` for the catalog, whose world is fixed and whose cells must not
+    /// be pressable. Written out rather than inlined as a ternary against
+    /// `nil`, which gives a closure literal nothing to infer from.
+    private var daySelection: ((Int) -> Void)? {
+        guard world == nil else { return nil }
+        return { day in selectWeek(ofDay: day) }
+    }
+
+    /// Tapping a day selects its week — the selection mechanism design §C's
+    /// "the SELECTED week's agenda below" implies and the grid's boxed row
+    /// makes visible.
+    private func selectWeek(ofDay day: Int) {
+        let cal = Calendar.current
+        let month = monthStart(offset: monthOffset, cal: cal)
+        guard let date = cal.date(byAdding: .day, value: day - 1, to: month) else { return }
+        withAnimation(.easeOut(duration: 0.15)) {
+            let start = weekStart(containing: date, cal: cal)
+            // Selecting a day in the current week clears back to nil rather
+            // than pinning an equal date, so "am I on this week?" stays one
+            // question with one answer.
+            selectedWeekStart = start == currentWeekStart ? nil : start
+        }
+    }
+
+    /// The week the page is about — the selection, or the current week.
+    private var effectiveWeekStart: Date {
+        selectedWeekStart ?? currentWeekStart
+    }
+
+    private var currentWeekStart: Date {
+        let cal = Calendar.current
+        return weekStart(containing: cal.startOfDay(for: today), cal: cal)
+    }
+
+    private func weekStart(containing date: Date, cal: Calendar) -> Date {
+        cal.dateInterval(of: .weekOfYear, for: date)?.start ?? cal.startOfDay(for: date)
+    }
+
+    private func monthStart(offset: Int, cal: Calendar) -> Date {
+        let todayStart = cal.startOfDay(for: today)
+        let thisMonthStart = cal.date(from: cal.dateComponents([.year, .month], from: todayStart)) ?? todayStart
+        return cal.date(byAdding: .month, value: offset, to: thisMonthStart) ?? thisMonthStart
     }
 
     /// The page's own read of the sessions it holds, projected onto the
@@ -372,8 +451,8 @@ struct CalendarSchedulingView: View {
     private var derivedWorld: CalendarWorld {
         let cal = Calendar.current
         let todayStart = cal.startOfDay(for: today)
-        let thisMonthStart = cal.date(from: cal.dateComponents([.year, .month], from: todayStart)) ?? todayStart
-        let monthStart = cal.date(byAdding: .month, value: monthOffset, to: thisMonthStart) ?? thisMonthStart
+        let monthStart = monthStart(offset: monthOffset, cal: cal)
+        let weekStart = effectiveWeekStart
         let dayCount = cal.range(of: .day, in: .month, for: monthStart)?.count ?? 30
 
         var trained: Set<Int> = []
@@ -409,12 +488,15 @@ struct CalendarSchedulingView: View {
             scheduled: scheduled,
             crew: crew,
             today: dayNumber(of: todayStart, inMonthOf: monthStart, cal: cal),
-            selectedWeek: selectedWeekDays(todayStart: todayStart, monthStart: monthStart, cal: cal)
+            selectedWeek: selectedWeekDays(weekStart: weekStart, monthStart: monthStart, cal: cal)
         )
         return CalendarWorld(month: month,
                              legendCrewColor: legendCrew,
-                             agenda: agendaItems(todayStart: todayStart, cal: cal),
-                             block: blockRow(todayStart: todayStart, cal: cal),
+                             weekTitle: weekStart == currentWeekStart
+                                 ? "This week"
+                                 : "Week of \(weekStart.formatted(.dateTime.month(.abbreviated).day()))",
+                             agenda: agendaItems(weekStart: weekStart, cal: cal),
+                             block: blockRow(weekStart: weekStart, cal: cal),
                              campaigns: campaignRows)
     }
 
@@ -427,14 +509,18 @@ struct CalendarSchedulingView: View {
     /// week count, through `ProgramMath.currentWeek` — the same call
     /// `ProgramScheduleView.load()` makes (:592-594), so the page and the
     /// program screen can never disagree about which week you are in.
-    private func blockRow(todayStart: Date, cal: Calendar) -> CalendarBlockRow? {
+    private func blockRow(weekStart: Date, cal: Calendar) -> CalendarBlockRow? {
         guard let enrollment = activeEnrollment,
               let weeks = enrollment.template?.weeks, !weeks.isEmpty else { return nil }
+        // `now:` is the SELECTED week's start, not today's: browse to a week
+        // three weeks out and the row says which block week that is, which is
+        // the only reading that makes the row worth having on a page you can
+        // navigate.
         let week = ProgramMath.currentWeek(startedOn: enrollment.startedOn,
                                            weeks: weeks.count,
-                                           now: todayStart)
+                                           now: weekStart)
         var parts = ["Coach block", "week \(week) of \(weeks.count)"]
-        let days = blockWeekdays(todayStart: todayStart, cal: cal)
+        let days = blockWeekdays(weekStart: weekStart, cal: cal)
         if !days.isEmpty { parts.append(days.joined(separator: ", ")) }
         return CalendarBlockRow(text: parts.joined(separator: " · "),
                                 enrollment: enrollment,
@@ -446,8 +532,8 @@ struct CalendarSchedulingView: View {
     /// header states ("the app does not guess which weekdays you train").
     /// `WeekBooker` books a block's days as solo sessions against the
     /// `Coach · …` routines (WeekBooker.swift:41-44), which is the signal.
-    private func blockWeekdays(todayStart: Date, cal: Calendar) -> [String] {
-        guard let week = cal.dateInterval(of: .weekOfYear, for: todayStart) else { return [] }
+    private func blockWeekdays(weekStart: Date, cal: Calendar) -> [String] {
+        guard let week = cal.dateInterval(of: .weekOfYear, for: weekStart) else { return [] }
         var byColumn: [Int: String] = [:]
         for session in upcoming {
             guard session.groupID == nil,
@@ -466,8 +552,8 @@ struct CalendarSchedulingView: View {
     // list's whole promise (design rule 4) is that everything on it opens
     // where it can be changed.
 
-    private func agendaItems(todayStart: Date, cal: Calendar) -> [CalendarAgendaItem] {
-        guard let week = cal.dateInterval(of: .weekOfYear, for: todayStart) else { return [] }
+    private func agendaItems(weekStart: Date, cal: Calendar) -> [CalendarAgendaItem] {
+        guard let week = cal.dateInterval(of: .weekOfYear, for: weekStart) else { return [] }
         let inWeek: [(session: WorkoutSession, when: Date)] = upcoming.compactMap { session in
             guard let when = session.scheduledFor, when >= week.start, when < week.end else { return nil }
             return (session, when)
@@ -530,11 +616,12 @@ struct CalendarSchedulingView: View {
         return cal.component(.day, from: date)
     }
 
-    /// The days of today's week that fall in the displayed month. Browsing
-    /// to another month simply finds none, and nothing is boxed — which is
-    /// correct: the agenda under the grid is always THIS week.
-    private func selectedWeekDays(todayStart: Date, monthStart: Date, cal: Calendar) -> Set<Int> {
-        guard let week = cal.dateInterval(of: .weekOfYear, for: todayStart) else { return [] }
+    /// The selected week's days that fall in the displayed month. A week
+    /// that straddles a month boundary boxes only the half on screen, which
+    /// is honest: the other half is a swipe away, and selecting a day there
+    /// keeps the same week.
+    private func selectedWeekDays(weekStart: Date, monthStart: Date, cal: Calendar) -> Set<Int> {
+        guard let week = cal.dateInterval(of: .weekOfYear, for: weekStart) else { return [] }
         var days: Set<Int> = []
         for offset in 0..<7 {
             guard let day = cal.date(byAdding: .day, value: offset, to: week.start),
@@ -575,8 +662,8 @@ struct CalendarSchedulingView: View {
             if let routines = try? await RoutineRepository.fetchAll(ownerID: userID) {
                 routinesByID = Dictionary(routines.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
             }
-            await loadCommitments(userID: userID)
         }
+        await loadCommitments()
         activeEnrollment = try? await ProgramRepository.active()
         await loadCampaigns()
     }
@@ -623,9 +710,10 @@ struct CalendarSchedulingView: View {
     /// (`CommitmentRepository.commitments(sessionID:)`, HomeView:1361), and
     /// the same reasoning `loadCampaignJoinState` (:1501) writes down.
     @MainActor
-    private func loadCommitments(userID: UUID) async {
+    private func loadCommitments() async {
+        guard world == nil, let userID = selfID else { return }
         let cal = Calendar.current
-        guard let week = cal.dateInterval(of: .weekOfYear, for: cal.startOfDay(for: today)) else { return }
+        guard let week = cal.dateInterval(of: .weekOfYear, for: effectiveWeekStart) else { return }
         var found: [UUID: SessionCommitment.Status] = [:]
         for session in upcoming {
             guard session.groupID != nil,
@@ -650,7 +738,11 @@ struct CalendarWorld {
     var month: CalendarMonthGrid.Month
     /// The swatch the grid's legend wears for `Crew`.
     var legendCrewColor: Color
-    /// This week's timeline, in time order.
+    /// The agenda's section header — `This week`, or `Week of Sep 21` once
+    /// the selection has moved off it. The page must never head another
+    /// week's list with `THIS WEEK`.
+    var weekTitle: String = "This week"
+    /// The selected week's timeline, in time order.
     var agenda: [CalendarAgendaItem] = []
     /// The active block's row, absent when there is no active enrollment.
     var block: CalendarBlockRow? = nil
