@@ -209,4 +209,99 @@ enum HomeV2Fixtures {
     /// Ink on a group-colour tile — `GSGroupColor.onColor`'s value for every
     /// palette entry (all are mid-to-light hues, so near-black reads on each).
     private static let groupInk = Color.gsHex(0x0A0B0D)
+
+    // MARK: Home v3
+    //
+    // The eight new pieces' values, from the v3 plan's "New pieces" table
+    // (`docs/superpowers/plans/2026-09-06-home-v3-ten-variations.md`) —
+    // verbatim except for UP NEXT, which carries a controller waiver granted
+    // in review round 1 and is explained where it is declared below.
+    //
+    // Most are SHARED by both worlds: the last lift, the PR watch, the body
+    // weight and the lifetime total are facts about the LIFTER, not about
+    // which kind of session today happens to be, and keeping them shared
+    // keeps the ten frames comparable — a difference between two
+    // compositions then reads as the composition rather than as the data.
+    //
+    // A value that names a DAY cannot be shared, because the two worlds
+    // disagree about the days: that is the same reason the calendar's rows
+    // are already split into `crewNightAppointments`/`soloDayAppointments`
+    // (:160-168 makes the argument in full).
+    //
+    // They live as statics rather than as new `HomeV2World` fields on
+    // purpose: adding stored properties to that struct would rewrite both
+    // world literals above (v2 pieces are frozen except for additive
+    // parameters).
+
+    /// `HomeUpNextStrip`'s two strings, kept together as one value so the
+    /// when and the session can never drift apart — which is exactly what
+    /// they did in round 1, when a single shared pair told the crew world's
+    /// Saturday story on three solo-day frames whose calendar shows Today,
+    /// Tue and Thu and no Saturday at all.
+    struct UpNext {
+        /// The when, e.g. `NEXT · TUE 5:00 PM`.
+        let kicker: String
+        /// The session, e.g. `Push B with Push Crew`.
+        let title: String
+    }
+
+    /// The crew night's next — `crewNightAppointments`' second row, the Legs
+    /// Crew Saturday, which is the plan's own verbatim value. No composition
+    /// uses it today (the strip appears only on the solo frames 02, 04 and
+    /// 10), but it exists so a crew composition can take the strip later
+    /// without inheriting another world's day.
+    static let crewNightUpNext = UpNext(kicker: "NEXT · SAT 9:00 AM",
+                                        title: "Lower B with Legs Crew")
+
+    /// The solo day's next — `soloDayAppointments`' second row. Today's row
+    /// on that day IS the hero's own Pull A, from the block, with no time
+    /// set, so the next thing wearing a clock is Tuesday's Push Crew
+    /// session: the row the calendar still marks COMMIT.
+    static let soloDayUpNext = UpNext(kicker: "NEXT · TUE 5:00 PM",
+                                      title: "Push B with Push Crew")
+
+    /// `HomeLastLiftTile`.
+    static let lastLiftRoutine = "Push A"
+    static let lastLiftDetail = "Wed · 7,240 lb · 1 PR"
+
+    /// `HomePRWatchTile` — the second line is an invitation, so it is the
+    /// one place a v3 tile spends accent (design language rule 3).
+    static let prWatchLift = "Bench 205"
+    static let prWatchInvitation = "210 is within reach"
+
+    /// `HomeRecoveryStrip`.
+    static let recoveryFresh = "BACK · LEGS"
+    static let recoveryTender = "CHEST"
+    static let recoverySentence = "Back and legs are fresh. Chest is still tender."
+
+    /// `HomeMilestoneTile` — the percentage in the line and the bar's fill
+    /// are the same number stated twice, deliberately: 0.29 is what the bar
+    /// draws, `29% of Mount Fuji` is what it says.
+    static let milestoneTotal = "1.31M lb"
+    static let milestoneLine = "29% of Mount Fuji"
+    static let milestoneProgress = 0.29
+
+    /// `HomeBodyWeightTile`. The change opens with U+2212 MINUS SIGN, not a
+    /// hyphen — it sits beside tabular digits and a hyphen reads as a dash
+    /// at that size.
+    static let bodyWeight = "180.4 lb"
+    static let bodyWeightChange = "−5.8 since July"
+
+    /// `HomeCrewPulseStrip` — Dana is the crew-night fixture's own first
+    /// checked-in lifter (`crewNightAppointments`' Push Crew row says the
+    /// same session), so the two agree on any frame that shows both.
+    static let crewPulseInitials = "DA"
+    static let crewPulseHeadline = "Dana is lifting now"
+    static let crewPulseDetail = "Push Crew · tonight 5:00 PM"
+
+    /// `HomeWeekPlanStrip` — two done, one next, matching the `soloDay`
+    /// week's shape closely enough that a frame carrying both does not
+    /// contradict itself (the plan's three named days are the training days
+    /// of that week; the strip names them where the week strip only counts
+    /// them).
+    static let weekPlan: [HomeWeekPlanStrip.Entry] = [
+        .init(id: 0, label: "TUE PUSH", state: .done),
+        .init(id: 1, label: "THU PULL", state: .done),
+        .init(id: 2, label: "SAT LEGS", state: .next),
+    ]
 }

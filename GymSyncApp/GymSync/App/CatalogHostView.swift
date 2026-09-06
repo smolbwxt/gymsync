@@ -76,6 +76,18 @@ enum CatalogScreen: String, CaseIterable {
     case homeV2Strips = "home-v2-strips"
     case homeV2TilesSoloDay = "home-v2-tiles-solo-day"
     case homeV2StripsCrewNight = "home-v2-strips-crew-night"
+    // Home v3 — ten compositions of the same kit, five crew nights and five
+    // solo days. See `content_homeV3Tiles` for the whole story.
+    case homeV3Tiles = "home-v3-01-tiles"
+    case homeV3Strips = "home-v3-02-strips"
+    case homeV3WeekTiles = "home-v3-03-week-tiles"
+    case homeV3TileLine = "home-v3-04-tile-line"
+    case homeV3Recovery = "home-v3-05-recovery"
+    case homeV3Milestone = "home-v3-06-milestone"
+    case homeV3Body = "home-v3-07-body"
+    case homeV3Crew = "home-v3-08-crew"
+    case homeV3Plan = "home-v3-09-plan"
+    case homeV3Minimal = "home-v3-10-minimal"
 }
 
 struct CatalogHostView: View {
@@ -144,6 +156,16 @@ struct CatalogHostView: View {
             case .homeV2Strips:               content_homeV2Strips
             case .homeV2TilesSoloDay:         content_homeV2TilesSoloDay
             case .homeV2StripsCrewNight:      content_homeV2StripsCrewNight
+            case .homeV3Tiles:                content_homeV3Tiles
+            case .homeV3Strips:               content_homeV3Strips
+            case .homeV3WeekTiles:            content_homeV3WeekTiles
+            case .homeV3TileLine:             content_homeV3TileLine
+            case .homeV3Recovery:             content_homeV3Recovery
+            case .homeV3Milestone:            content_homeV3Milestone
+            case .homeV3Body:                 content_homeV3Body
+            case .homeV3Crew:                 content_homeV3Crew
+            case .homeV3Plan:                 content_homeV3Plan
+            case .homeV3Minimal:              content_homeV3Minimal
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1657,6 +1679,86 @@ struct CatalogHostView: View {
     /// B in A's world — the swapped state.
     private var content_homeV2StripsCrewNight: some View {
         HomeV2StripsView(world: HomeV2Fixtures.crewNight)
+    }
+
+    // MARK: - Home v3 (ten variations)
+    //
+    // The owner, after seeing the four v2 frames: "there's goodness in both
+    // … the tile version of the start workout and check-in wins over the
+    // striped version … strip the detail sessions from the bottom of the
+    // training calendar … give me like 10 different mock ups." So this is the
+    // second round of the same method — catalog-only compositions of shared
+    // pieces in `Features/Home/V2/`, rendered by CI, no production wiring.
+    // Plan: `docs/superpowers/plans/2026-09-06-home-v3-ten-variations.md`.
+    //
+    // Ten ids, not four: what is being judged is no longer A vs B but which
+    // arrangement of the settled kit the owner wants to live in. Three things
+    // are fixed across every frame and are NOT the variable — arrangement A's
+    // top row, the calendar card with its itinerary folded away
+    // (`showsAppointments: false`), and the greeting header — so a difference
+    // between two frames reads as the composition rather than as a decision
+    // already made.
+    //
+    // WORLDS: five compositions render `crewNight` (01, 03, 05, 07, 08) and
+    // five `soloDay` (02, 04, 06, 09, 10), the split the plan's table
+    // specifies. Both button states therefore appear across the set, the same
+    // reason the v2 round captured each arrangement twice — except that here
+    // the state is spread ACROSS the ten rather than doubling each of them,
+    // because twenty frames is not a thing a person can compare.
+    //
+    // No fixture seam and no side effect, exactly as for the v2 pair above:
+    // every one of these takes a plain `HomeV2World` value, reads no
+    // `AppState`, makes no repository call, holds no `.task`. No
+    // `NavigationStack` either — each is a `ScrollView` on `theme.bg`, which
+    // is what Home is.
+    //
+    // Proof authority: none yet. These ten ARE the proof — the owner asked
+    // for mockups and this round renders them as real screens instead. As
+    // with the v2 ids, `docs/design/frame-map.json` reserves the next free
+    // frame numbers (71-80, after the v2 round's 69/70) and `parity_diff.js`
+    // logs `skip <id>: no proof frame` for all ten until something is
+    // rendered into `docs/design/mockups/`. Pointing them at frame 60 (the
+    // superseded Onyx Home) would score them against the authority they
+    // exist to replace.
+
+    private var content_homeV3Tiles: some View {
+        HomeV3TilesView(world: HomeV2Fixtures.crewNight)
+    }
+
+    private var content_homeV3Strips: some View {
+        HomeV3StripsView(world: HomeV2Fixtures.soloDay)
+    }
+
+    private var content_homeV3WeekTiles: some View {
+        HomeV3WeekTilesView(world: HomeV2Fixtures.crewNight)
+    }
+
+    private var content_homeV3TileLine: some View {
+        HomeV3TileLineView(world: HomeV2Fixtures.soloDay)
+    }
+
+    private var content_homeV3Recovery: some View {
+        HomeV3RecoveryView(world: HomeV2Fixtures.crewNight)
+    }
+
+    private var content_homeV3Milestone: some View {
+        HomeV3MilestoneView(world: HomeV2Fixtures.soloDay)
+    }
+
+    private var content_homeV3Body: some View {
+        HomeV3BodyView(world: HomeV2Fixtures.crewNight)
+    }
+
+    private var content_homeV3Crew: some View {
+        HomeV3CrewView(world: HomeV2Fixtures.crewNight)
+    }
+
+    private var content_homeV3Plan: some View {
+        HomeV3PlanView(world: HomeV2Fixtures.soloDay)
+    }
+
+    private var content_homeV3Minimal: some View {
+        HomeV3MinimalView(world: HomeV2Fixtures.soloDay)
     }
 }
 

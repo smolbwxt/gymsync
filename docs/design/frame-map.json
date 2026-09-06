@@ -138,5 +138,45 @@
   "home-v2-strips-crew-night": {
     "frame": 70,
     "title": "Home v2 - B strips (v7 proof)"
+  },
+  "home-v3-01-tiles": {
+    "frame": 71,
+    "title": "Home v3 - 01 tiles (crew night)"
+  },
+  "home-v3-02-strips": {
+    "frame": 72,
+    "title": "Home v3 - 02 strips (solo day)"
+  },
+  "home-v3-03-week-tiles": {
+    "frame": 73,
+    "title": "Home v3 - 03 week + tiles (crew night)"
+  },
+  "home-v3-04-tile-line": {
+    "frame": 74,
+    "title": "Home v3 - 04 tiles then a line (solo day)"
+  },
+  "home-v3-05-recovery": {
+    "frame": 75,
+    "title": "Home v3 - 05 recovery (crew night)"
+  },
+  "home-v3-06-milestone": {
+    "frame": 76,
+    "title": "Home v3 - 06 milestone (solo day)"
+  },
+  "home-v3-07-body": {
+    "frame": 77,
+    "title": "Home v3 - 07 body (crew night)"
+  },
+  "home-v3-08-crew": {
+    "frame": 78,
+    "title": "Home v3 - 08 crew (crew night)"
+  },
+  "home-v3-09-plan": {
+    "frame": 79,
+    "title": "Home v3 - 09 plan (solo day)"
+  },
+  "home-v3-10-minimal": {
+    "frame": 80,
+    "title": "Home v3 - 10 minimal (solo day)"
   }
 }

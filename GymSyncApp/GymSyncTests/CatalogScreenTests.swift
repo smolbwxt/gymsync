@@ -56,6 +56,16 @@ final class CatalogScreenTests: XCTestCase {
             "home-v2-strips",
             "home-v2-tiles-solo-day",
             "home-v2-strips-crew-night",
+            "home-v3-01-tiles",
+            "home-v3-02-strips",
+            "home-v3-03-week-tiles",
+            "home-v3-04-tile-line",
+            "home-v3-05-recovery",
+            "home-v3-06-milestone",
+            "home-v3-07-body",
+            "home-v3-08-crew",
+            "home-v3-09-plan",
+            "home-v3-10-minimal",
         ]
         for id in ids {
             XCTAssertNotNil(CatalogScreen(rawValue: id), "missing catalog case: \(id)")
