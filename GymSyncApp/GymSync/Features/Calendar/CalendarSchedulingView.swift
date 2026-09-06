@@ -67,8 +67,13 @@ struct CalendarSchedulingView: View {
     /// session, because `navigationDestination(item:)` wants a `Hashable`
     /// and `WorkoutSession` is not one.
     @State private var lobbySessionID: UUID?
-    /// The row being MOVED — opens the scheduler preloaded from it.
+    /// The row being MOVED — opens the shared change-time sheet.
     @State private var moveTarget: WorkoutSession?
+    /// The new time being picked in that sheet.
+    @State private var moveDate: Date = .now
+    /// A failed reschedule. Surfaced, never swallowed: MOVE is the one act
+    /// on this page that writes to a session other people are standing in.
+    @State private var errorText: String?
     /// The active block, for the `Coach block · week n of m` row.
     @State private var activeEnrollment: ProgramEnrollment?
     /// One row per JOINED active campaign. Built in `refresh()` rather than
@@ -132,20 +137,30 @@ struct CalendarSchedulingView: View {
             }
         }
         .sheet(item: $moveTarget) { session in
-            // MOVE is the SAME scheduler, preloaded from the row (the only
-            // preload its frozen init offers: the routine and the crew), and
-            // then the original is retired through exactly the branch
-            // `WeekBooker.book` makes when it clears a week
-            // (`Models/WeekBooker.swift:48-59`). Book-then-retire rather than
-            // an in-place edit because that is the existing edit path; doing
-            // only the first half would leave a copy, which is not a move.
-            ScheduleSessionView(preloadedRoutine: session.routineID.flatMap { routinesByID[$0] },
-                                preselectedGroupID: session.groupID) { _ in
-                Task {
-                    await retire(session)
-                    await refresh()
-                }
-            }
+            // MOVE is a real move: the shared `SessionTimeSheet` over
+            // `SessionRepository.reschedule`, one `UPDATE sessions SET
+            // scheduled_for` on the SAME row.
+            //
+            // It used to book a replacement through `ScheduleSessionView`
+            // and delete the original. That is a destroy-and-recreate, and
+            // on a crew session it wipes exactly what this page renders:
+            // every `session_commitments` row (the `IN` / `COMMIT` pill),
+            // every participant's check-in state, the proposals and votes,
+            // the chat thread, the room code, and the `series_id` that makes
+            // a `↻` row a `↻` row. It also re-homes `organizer_id` onto
+            // whoever swiped. Deleted, not softened.
+            SessionTimeSheet(
+                date: $moveDate,
+                onCancel: { moveTarget = nil },
+                onSave: { Task { await applyMove(session) } }
+            )
+        }
+        .alert("Couldn't move that session",
+               isPresented: Binding(get: { errorText != nil },
+                                    set: { if !$0 { errorText = nil } })) {
+            Button("OK", role: .cancel) { errorText = nil }
+        } message: {
+            Text(errorText ?? "")
         }
         .navigationDestination(item: $lobbySessionID) { id in
             if let session = upcoming.first(where: { $0.id == id }) {
@@ -218,13 +233,67 @@ struct CalendarSchedulingView: View {
         }
     }
 
-    private func moveAction(for item: CalendarAgendaItem) -> (() -> Void)? {
-        guard let session = item.session else { return nil }
-        return { moveTarget = session }
+    /// MOVE is offered exactly where the lobby offers Manage → *Change
+    /// time*: `isOrganizer && (state == "scheduled" || state ==
+    /// "lobby_open")` — `LobbyView.isManageVisible` (:93-96), mirrored, not
+    /// approximated. `reschedule` is organizer-only by DB policy, and a
+    /// PostgREST `UPDATE` that RLS filters to zero rows returns SUCCESS, so
+    /// offering MOVE to a participant would be an affordance that silently
+    /// does nothing.
+    private func canMove(_ session: WorkoutSession) -> Bool {
+        session.organizerID == selfID
+            && (session.state == "scheduled" || session.state == "lobby_open")
     }
 
+    private var selfID: UUID? { appState.currentProfile?.id }
+
+    private func moveAction(for item: CalendarAgendaItem) -> (() -> Void)? {
+        guard let session = item.session, canMove(session) else { return nil }
+        return {
+            moveDate = session.scheduledFor ?? Date()
+            moveTarget = session
+        }
+    }
+
+    /// Reschedule the row in place, then re-read the week.
+    ///
+    /// No `try?`. A failed move is surfaced the way the lobby surfaces its
+    /// own (`LobbyView.applyReschedule`, :1688-1712): the `GymSyncError`'s
+    /// description, in front of the user. The EventKit sync mirrors that
+    /// method too — gated on the same You-tab toggle, run AFTER the refresh
+    /// so it reads the server-confirmed `scheduledFor` rather than a
+    /// hand-built snapshot, and `syncEvent` updates the mapped event in
+    /// place rather than creating a second one.
+    @MainActor
+    private func applyMove(_ session: WorkoutSession) async {
+        let newDate = moveDate
+        moveTarget = nil
+        do {
+            try await SessionRepository.reschedule(sessionID: session.id, to: newDate)
+            await refresh()
+            if CalendarSyncPrefsStore.isEnabled(),
+               let moved = upcoming.first(where: { $0.id == session.id }) {
+                await EventKitBridge.syncEvent(
+                    session: moved,
+                    routineName: moved.routineID.flatMap { routinesByID[$0] }?.name,
+                    exerciseCount: nil
+                )
+            }
+        } catch let error as GymSyncError {
+            errorText = error.errorDescription
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    /// CANCEL is gated on the same rule as MOVE, and for the same reason:
+    /// the lobby offers *Cancel session* under exactly that condition
+    /// (`LobbyView.manageMenu` behind `isManageVisible`), and both delete
+    /// paths are owner-scoped by RLS — a participant's DELETE filters to
+    /// zero rows and returns success, so the row would appear to vanish and
+    /// come straight back on the next refresh.
     private func cancelAction(for item: CalendarAgendaItem) -> (() -> Void)? {
-        guard let session = item.session else { return nil }
+        guard let session = item.session, canMove(session) else { return nil }
         return {
             Task {
                 await retire(session)
@@ -238,7 +307,8 @@ struct CalendarSchedulingView: View {
     /// a series is cancelled THROUGH the series so the series stays
     /// consistent; a plain session is deleted. No new repository method.
     ///
-    /// Used by CANCEL, and by MOVE once the replacement is booked.
+    /// CANCEL only. MOVE no longer passes through here — it reschedules the
+    /// row in place and nothing is destroyed.
     private func retire(_ session: WorkoutSession) async {
         if session.seriesID != nil {
             try? await SeriesRepository.cancelOccurrence(sessionID: session.id)
