@@ -60,8 +60,11 @@ struct HomeCoachTargetsStrip: View {
     }
 
     let targets: [Target]
-    /// The kicker row's right-hand read, e.g. `2 SESSIONS LEFT` — how much
-    /// of the week is left to move these numbers.
+    /// The kicker row's right-hand read, e.g. `1 SESSION LEFT` — how much of
+    /// the week is left to move these numbers. Words rather than a count,
+    /// because the caller owes it agreement with whatever else on the page
+    /// states the same week (`HomeStreakTile` does, on both addendum
+    /// frames), and only the caller can see that page.
     let sessionsLeft: String
     /// Tap → the per-muscle week on Stats. Inert in the catalog (there is no
     /// navigation in a `CatalogHostView` frame), declared so the composition

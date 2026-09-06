@@ -330,23 +330,28 @@ enum HomeV2Fixtures {
         .init(id: 3, name: "ARMS", done: 8, target: 8, isNext: false),
     ]
 
-    /// The kicker row's right-hand read, one value per world — the plan's
-    /// own numbers.
+    /// The kicker row's right-hand read, one value per world. It is that
+    /// world's `weeklyGoal - daysDone` and NOTHING else: both addendum
+    /// frames put this strip on the same page as `HomeStreakTile`, and a
+    /// page may not tell two stories about one week — the law :160-168
+    /// states for the calendar's rows, and the one round 1 enforced on UP
+    /// NEXT.
     ///
-    /// This counts SESSIONS still to be trained in the block's week; the
-    /// streak tile beside it counts DAYS against the weekly goal. They are
-    /// different questions with different answers (a 4-day goal can be met
-    /// on the next day while the block still has two sessions programmed),
-    /// which is why the number here is not `weeklyGoal - daysDone`.
-    ///
-    /// A value that names a stretch of THIS week cannot be shared, for the
-    /// reason :160-168 gives in full for the calendar's rows: the two worlds
-    /// disagree about what is left of the week.
-    static let crewNightSessionsLeft = "2 SESSIONS LEFT"
+    /// The crew night has 3 of its 4 in the bank (`crewNight.daysDone`), so
+    /// one session is left, and the word is singular because the count is.
+    static let crewNightSessionsLeft = "1 SESSION LEFT"
 
-    /// The solo day's read. No composition uses it today — both addendum
-    /// frames render the crew night, following variation 08 — but it exists
-    /// so a solo composition can take the strip later without inheriting
-    /// another world's week, the same reason `crewNightUpNext` exists.
-    static let soloDaySessionsLeft = "1 SESSION LEFT"
+    /// The solo day has met its 4 of 4, so no session is left this week to
+    /// move these numbers with. No composition uses this today — both
+    /// addendum frames render the crew night, following variation 08 — but
+    /// it exists so a solo composition can take the strip later without
+    /// inheriting another world's week, the same reason `crewNightUpNext`
+    /// exists.
+    ///
+    /// Deliberately NOT `GOAL MET`, which is `HomeWeekStrip`'s own tail and
+    /// means the SESSION goal there. The goal in view on THIS strip is
+    /// Coach's targets, and three of those four are unmet (chest 8/12, back
+    /// 10/12, legs 6/12) — those words here would congratulate the reader
+    /// in front of the evidence against them.
+    static let soloDaySessionsLeft = "0 SESSIONS LEFT"
 }
