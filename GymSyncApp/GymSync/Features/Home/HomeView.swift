@@ -73,6 +73,12 @@ struct HomeView: View {
     // approved. Every one of these is filled by `refresh()`'s single
     // parallel batch and committed in its one state-write block.
 
+    /// MY sessions that are live right now (`SessionRepository
+    /// .liveForCurrentUser()`). `upcoming()` cannot contain them — its state
+    /// list is the pre-workout states — so without this read the one button's
+    /// `JOIN THE SESSION` face was unreachable and a crew session vanished
+    /// from Home the moment it started.
+    @State private var liveSessions: [WorkoutSession] = []
     /// Who from the crew is mid-session right now. Empty = the strip is
     /// absent and the page shifts up; there is no "nobody's training" state.
     @State private var friendsLive: [FriendLive] = []
@@ -848,14 +854,40 @@ struct HomeView: View {
         .padding(.bottom, 12)
     }
 
-    /// The soonest ACTIONABLE upcoming session (repository order is
-    /// soonest-first). A session is considered MISSED — and skipped — 30
-    /// minutes after its scheduled start unless it actually went live
-    /// (user feedback 2026-07-24: the gold shimmer ran forever on missed
-    /// events). The widget then falls through to the next session, or the
-    /// empty state.
+    /// What the one button may be about: the crew sessions that are LIVE
+    /// RIGHT NOW, then what is coming up.
+    ///
+    /// Live first, deliberately — a session that has already started outranks
+    /// one that has not, and putting it at the head is what makes
+    /// `nextActionableSession`'s existing `state == "in_progress"` disjunct
+    /// win without touching that predicate.
+    ///
+    /// The two arrays cannot overlap: `SessionRepository.upcoming()` filters
+    /// to the PRE-workout states and `liveForCurrentUser()` to `in_progress`
+    /// alone, so no session can appear in both and no de-duplication is
+    /// needed.
+    ///
+    /// SOLO live sessions are excluded here, not in the repository. A live
+    /// solo session already has a recovery surface — `AppState
+    /// .liveSoloSession` and RootView's SESSION LIVE pill, which re-present
+    /// `WorkoutSessionView` in resume mode (`AppState.swift:133-147`) — and
+    /// routing it through `LobbyView` instead would fight that design. A live
+    /// CREW session has no such handle, which is the gap this closes.
+    private var actionableSessions: [WorkoutSession] {
+        liveSessions.filter { $0.groupID != nil } + upcomingSessions
+    }
+
+    /// The soonest ACTIONABLE session (repository order is soonest-first). A
+    /// session is considered MISSED — and skipped — 30 minutes after its
+    /// scheduled start unless it actually went live (user feedback
+    /// 2026-07-24: the gold shimmer ran forever on missed events). The button
+    /// then falls through to the next session, or to the start screen.
+    ///
+    /// The 30-minute rule and both branches above it are unchanged; only the
+    /// array they scan grew, because `upcoming()` alone could never contain
+    /// an `in_progress` row and the first branch was therefore dead.
     private func nextActionableSession(now: Date) -> WorkoutSession? {
-        upcomingSessions.first { session in
+        actionableSessions.first { session in
             if session.state == "in_progress" { return true }
             guard let when = session.scheduledFor else { return true }
             return now <= when.addingTimeInterval(30 * 60)
@@ -1210,6 +1242,7 @@ struct HomeView: View {
         // failures are swallowed independently and stale data is left in
         // place. Home v3's own fetches join this batch and nowhere else.
         async let sessionsFetch  = SessionRepository.upcoming()
+        async let liveFetch      = SessionRepository.liveForCurrentUser()
         async let groupsFetch    = GroupRepository.myGroups()
         async let historyFetch   = fetchHistory(userID: userID)
         async let routinesFetch  = fetchOwnedRoutines(userID: userID)
@@ -1230,6 +1263,7 @@ struct HomeView: View {
         // back-to-back with no suspension between them, which SwiftUI
         // coalesces into a single render: the screen arrives whole.
         let sessions        = try? await sessionsFetch
+        let live            = try? await liveFetch
         let fetchedGroups   = try? await groupsFetch
         let history         = await historyFetch
         let routines        = await routinesFetch
@@ -1243,6 +1277,10 @@ struct HomeView: View {
 
         // ── single commit (no awaits until after this block) ──
         if let sessions { upcomingSessions = sessions }
+        // Assigned unconditionally on success AND cleared on an empty
+        // result: a session that ENDED must stop claiming the button, and
+        // "nothing is live" is a real answer here, not a failed fetch.
+        if let live { liveSessions = live }
         if let fetchedGroups { groups = fetchedGroups }
         if let history { historySessions = history }
         if let routines { ownedRoutines = routines }

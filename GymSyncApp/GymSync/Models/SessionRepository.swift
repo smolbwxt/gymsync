@@ -483,6 +483,45 @@ enum SessionRepository {
         } catch { throw ErrorMapping.map(error) }
     }
 
+    /// The current user's sessions that are ACTUALLY LIVE (`in_progress`).
+    ///
+    /// `upcoming()` deliberately excludes `in_progress` — its state list is
+    /// the PRE-workout states, and four callers rely on that. So nothing in
+    /// the app could answer "is one of my sessions running right now?"
+    /// without a group id, and Home's `JOIN THE SESSION` state was
+    /// unreachable: a crew session vanished from Home the instant it went
+    /// live (`AppState.swift:148-149` even records the opposite belief —
+    /// "Home's 'Join' hero + check-in widget already re-enter an in_progress
+    /// group session" — which the query never delivered).
+    ///
+    /// Same idiom as `upcoming()` and for the same reasons: a server-side
+    /// inner join on my participant rows rather than a two-step id fan-out,
+    /// and a bounded `limit`. NO `scheduled_for` floor — a live session may
+    /// carry a NULL `scheduled_for` (`startSolo` sets none), and filtering on
+    /// it would drop exactly the rows this exists to find. Ordered by
+    /// `started_at` so the longest-running session is first.
+    ///
+    /// Returns solo sessions too. Home only routes the CREW ones (a live
+    /// solo session has its own recovery surface — `AppState.liveSoloSession`
+    /// and RootView's SESSION LIVE pill); other callers may want both, and
+    /// the state filter is the honest boundary for a repository.
+    static func liveForCurrentUser(limit: Int = 20) async throws -> [WorkoutSession] {
+        guard let userID = await SupabaseService.shared.currentUserID() else {
+            throw GymSyncError.unauthorized
+        }
+        do {
+            let sessions: [WorkoutSession] = try await client
+                .from("sessions")
+                .select("*, session_participants!inner(user_id)")
+                .eq("session_participants.user_id", value: userID.uuidString)
+                .eq("state", value: "in_progress")
+                .order("started_at", ascending: true)
+                .limit(limit)
+                .execute().value
+            return sessions
+        } catch { throw ErrorMapping.map(error) }
+    }
+
     /// Participants for a session, joined with their profiles.
     static func participants(sessionID: UUID) async throws -> [(participant: SessionParticipant, profile: Profile)] {
         do {
