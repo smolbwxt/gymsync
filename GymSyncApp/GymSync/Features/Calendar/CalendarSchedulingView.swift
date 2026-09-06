@@ -57,6 +57,18 @@ struct CalendarSchedulingView: View {
     /// the caller's arrays first and never blanks while it re-reads.
     @State private var refreshedUpcoming: [WorkoutSession]?
     @State private var refreshedCompleted: [WorkoutSession]?
+    /// Your own routines, for the agenda's titles — the same list and the
+    /// same `"Workout"` fallback `HomeView.routineLabel(for:)` uses (:1599).
+    @State private var routinesByID: [UUID: Routine] = [:]
+    /// Your answer on each of this week's crew sessions, so a row says `IN`
+    /// or `COMMIT` because it was READ, never because it was assumed.
+    @State private var commitmentBySession: [UUID: SessionCommitment.Status] = [:]
+    /// The tapped row — pushes the lobby. Keyed by id rather than by the
+    /// session, because `navigationDestination(item:)` wants a `Hashable`
+    /// and `WorkoutSession` is not one.
+    @State private var lobbySessionID: UUID?
+    /// The row being MOVED — opens the scheduler preloaded from it.
+    @State private var moveTarget: WorkoutSession?
 
     private var completed: [WorkoutSession] { refreshedCompleted ?? completedSessions }
     private var upcoming: [WorkoutSession] { refreshedUpcoming ?? upcomingSessions }
@@ -77,11 +89,8 @@ struct CalendarSchedulingView: View {
                                   legendCrewColor: resolved.legendCrewColor)
                     .gesture(monthSwipe)
 
-                thisWeekHeader
+                agendaCard
 
-                // Stream D — D3: the selected week's agenda, one row per item
-                // with day / routine / crew or Solo / status pill / chevron,
-                // and the swipe actions the header above advertises.
                 // Stream D — D4: the block's days and campaign deadlines on
                 // the same timeline.
 
@@ -113,26 +122,120 @@ struct CalendarSchedulingView: View {
                 Task { await refresh() }
             }
         }
+        .sheet(item: $moveTarget) { session in
+            // MOVE is the SAME scheduler, preloaded from the row (the only
+            // preload its frozen init offers: the routine and the crew), and
+            // then the original is retired through exactly the branch
+            // `WeekBooker.book` makes when it clears a week
+            // (`Models/WeekBooker.swift:48-59`). Book-then-retire rather than
+            // an in-place edit because that is the existing edit path; doing
+            // only the first half would leave a copy, which is not a move.
+            ScheduleSessionView(preloadedRoutine: session.routineID.flatMap { routinesByID[$0] },
+                                preselectedGroupID: session.groupID) { _ in
+                Task {
+                    await retire(session)
+                    await refresh()
+                }
+            }
+        }
+        .navigationDestination(item: $lobbySessionID) { id in
+            if let session = upcoming.first(where: { $0.id == id }) {
+                // `.id` — session-identity pin, the rule every lobby push in
+                // this app follows (`HomeView.navigateToJoined`'s destination
+                // comment has the field-bug story).
+                LobbyView(session: session)
+                    .id(session.id)
+            }
+        }
         .task { await refresh() }
         .refreshable { await refresh() }
     }
 
     // MARK: This week
 
-    /// `THIS WEEK` and, on the right, what you can do to a row in it. The
-    /// hint names the gesture the agenda rows carry (task D3) — it is here
-    /// because it belongs to the SECTION, not to any one row, and a hint
-    /// printed once above a list is the only place it does not repeat.
-    private var thisWeekHeader: some View {
-        HStack(alignment: .firstTextBaseline) {
-            GSSectionHeader("This week")
-            Text("SWIPE A ROW TO MOVE OR CANCEL")
-                .font(GSFont.bodyMedium(10, relativeTo: .caption2))
-                .tracking(1.1)
-                .foregroundStyle(theme.neutral500)
-                .multilineTextAlignment(.trailing)
+    /// The agenda: `THIS WEEK`, the swipe hint, and one row per thing on the
+    /// week's timeline. ONE raised card with flat furniture inside it
+    /// (design language rule 1) — the rows are full-bleed inside it so a
+    /// swipe can carry a row all the way to the card's edge.
+    private var agendaCard: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                GSSectionHeader("This week")
+                Text("SWIPE A ROW TO MOVE OR CANCEL")
+                    .font(GSFont.bodyMedium(10, relativeTo: .caption2))
+                    .tracking(1.1)
+                    .foregroundStyle(theme.neutral500)
+                    .multilineTextAlignment(.trailing)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 12)
+
+            if resolved.agenda.isEmpty {
+                Text("Nothing on the books this week.")
+                    .font(GSFont.body(12.5, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 16)
+            } else {
+                ForEach(Array(resolved.agenda.enumerated()), id: \.element.id) { index, item in
+                    Rectangle().fill(theme.divider).frame(height: 1)
+                    agendaRow(item)
+                    if index == resolved.agenda.count - 1 {
+                        Color.clear.frame(height: 4)
+                    }
+                }
+            }
         }
-        .padding(.top, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd)
+    }
+
+    /// One agenda row, with its edit paths attached when there is a live
+    /// session behind it. A fixture row has none, so the swipe is not
+    /// installed and the tap goes nowhere — a catalog frame must not be able
+    /// to open a lobby or delete anything.
+    private func agendaRow(_ item: CalendarAgendaItem) -> some View {
+        CalendarSwipeRow(onMove: moveAction(for: item),
+                         onCancel: cancelAction(for: item)) {
+            Button {
+                if let session = item.session { lobbySessionID = session.id }
+            } label: {
+                CalendarAgendaRowView(item: item)
+            }
+            .buttonStyle(.plain)
+            .disabled(item.session == nil)
+        }
+    }
+
+    private func moveAction(for item: CalendarAgendaItem) -> (() -> Void)? {
+        guard let session = item.session else { return nil }
+        return { moveTarget = session }
+    }
+
+    private func cancelAction(for item: CalendarAgendaItem) -> (() -> Void)? {
+        guard let session = item.session else { return nil }
+        return {
+            Task {
+                await retire(session)
+                await refresh()
+            }
+        }
+    }
+
+    /// Take a session off the books — the branch `WeekBooker.book` already
+    /// makes (`Models/WeekBooker.swift:48-59`): an occurrence that belongs to
+    /// a series is cancelled THROUGH the series so the series stays
+    /// consistent; a plain session is deleted. No new repository method.
+    ///
+    /// Used by CANCEL, and by MOVE once the replacement is booked.
+    private func retire(_ session: WorkoutSession) async {
+        if session.seriesID != nil {
+            try? await SeriesRepository.cancelOccurrence(sessionID: session.id)
+        } else {
+            try? await SessionRepository.deleteSession(id: session.id)
+        }
     }
 
     // MARK: The primary
@@ -229,7 +332,71 @@ struct CalendarSchedulingView: View {
             today: dayNumber(of: todayStart, inMonthOf: monthStart, cal: cal),
             selectedWeek: selectedWeekDays(todayStart: todayStart, monthStart: monthStart, cal: cal)
         )
-        return CalendarWorld(month: month, legendCrewColor: legendCrew)
+        return CalendarWorld(month: month,
+                             legendCrewColor: legendCrew,
+                             agenda: agendaItems(todayStart: todayStart, cal: cal))
+    }
+
+    // MARK: The week's agenda
+    //
+    // Scheduled sessions only — history is not editable from here, and this
+    // list's whole promise (design rule 4) is that everything on it opens
+    // where it can be changed.
+
+    private func agendaItems(todayStart: Date, cal: Calendar) -> [CalendarAgendaItem] {
+        guard let week = cal.dateInterval(of: .weekOfYear, for: todayStart) else { return [] }
+        let inWeek: [(session: WorkoutSession, when: Date)] = upcoming.compactMap { session in
+            guard let when = session.scheduledFor, when >= week.start, when < week.end else { return nil }
+            return (session, when)
+        }
+        return inWeek
+            .sorted { $0.when < $1.when }
+            .map { agendaItem(session: $0.session, when: $0.when, cal: cal) }
+    }
+
+    private func agendaItem(session: WorkoutSession, when: Date, cal: Calendar) -> CalendarAgendaItem {
+        let routine = session.routineID.flatMap { routinesByID[$0] }
+        let group = session.groupID.flatMap { id in groups.first { $0.id == id } }
+        let repeats = session.seriesID != nil
+
+        // The subtitle says only what was read. `from your block` is not a
+        // guess: `WeekBooker` books a block's days against the routines named
+        // `Coach · …` (`Models/WeekBooker.swift:41-44`,
+        // `ProgramScheduleView.load()`), so that prefix IS the signal, and a
+        // solo session without it simply reads `Solo`.
+        var details: [String] = [group?.name ?? "Solo"]
+        if repeats {
+            details.append("repeats weekly")
+        } else if group == nil, let name = routine?.name, name.hasPrefix("Coach · ") {
+            details.append("from your block")
+        }
+
+        // Ternary by design (`SessionCommitment`'s own header): no row means
+        // you have not said, which is the COMMIT state; an explicit OUT is
+        // not a pill, because there is nothing to show up to.
+        var status: CalendarAgendaItem.Status?
+        if group != nil {
+            let mine = commitmentBySession[session.id]
+            if mine == .committed {
+                status = .checkedIn
+                details.append("you're in")
+            } else if mine == .out {
+                status = nil
+            } else {
+                status = .commit
+            }
+        }
+
+        return CalendarAgendaItem(
+            id: session.id,
+            dayNumber: cal.component(.day, from: when),
+            weekday: when.formatted(.dateTime.weekday(.abbreviated)).uppercased(),
+            title: "\(routine?.name ?? "Workout") · \(when.formatted(date: .omitted, time: .shortened))",
+            repeats: repeats,
+            subtitle: details.joined(separator: " · "),
+            status: status,
+            session: session
+        )
     }
 
     /// The day-of-month, but only when the date falls in `monthStart`'s
@@ -275,13 +442,42 @@ struct CalendarSchedulingView: View {
         if let rows = try? await SessionRepository.upcoming() {
             refreshedUpcoming = rows
         }
-        if let userID = appState.currentProfile?.id,
-           let rows = try? await SessionRepository.history(userID: userID, limit: 60) {
+        if let userID = appState.currentProfile?.id {
             // 60 is what `HomeView` already passes for the same widget's
             // history (:1458) — the page and the card it opens read the same
             // window, so they cannot disagree about which days are filled.
-            refreshedCompleted = rows
+            if let rows = try? await SessionRepository.history(userID: userID, limit: 60) {
+                refreshedCompleted = rows
+            }
+            if let routines = try? await RoutineRepository.fetchAll(ownerID: userID) {
+                routinesByID = Dictionary(routines.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            }
+            await loadCommitments(userID: userID)
         }
+    }
+
+    /// Your answer on each of THIS WEEK's crew sessions.
+    ///
+    /// Sequential per-session awaits rather than a `TaskGroup`, and only for
+    /// the sessions actually on screen: a week holds a handful of crew
+    /// sessions, which bounds this to a couple of round trips — the same
+    /// call `HomeView` already makes for the one session it shows
+    /// (`CommitmentRepository.commitments(sessionID:)`, HomeView:1361), and
+    /// the same reasoning `loadCampaignJoinState` (:1501) writes down.
+    @MainActor
+    private func loadCommitments(userID: UUID) async {
+        let cal = Calendar.current
+        guard let week = cal.dateInterval(of: .weekOfYear, for: cal.startOfDay(for: today)) else { return }
+        var found: [UUID: SessionCommitment.Status] = [:]
+        for session in upcoming {
+            guard session.groupID != nil,
+                  let when = session.scheduledFor, when >= week.start, when < week.end,
+                  let rows = try? await CommitmentRepository.commitments(sessionID: session.id) else { continue }
+            if let mine = rows.first(where: { $0.userID == userID }) {
+                found[session.id] = mine.status
+            }
+        }
+        commitmentBySession = found
     }
 }
 
@@ -296,4 +492,6 @@ struct CalendarWorld {
     var month: CalendarMonthGrid.Month
     /// The swatch the grid's legend wears for `Crew`.
     var legendCrewColor: Color
+    /// This week's timeline, in time order.
+    var agenda: [CalendarAgendaItem] = []
 }
