@@ -4,12 +4,14 @@ Headless Blender pipeline for the milestone artwork: a growing stack of 45 lb pl
 top-rung scene of a plate column bridging Earth to the moon. Everything renders to transparent
 8-bit RGBA PNGs; the app paints its own background (`#0A0B0D`) behind them.
 
-Two scripts, both built entirely from code — no `.blend` file is needed:
+Built entirely from code — no `.blend` file is needed:
 
 | Script | Renders |
 |---|---|
 | `render_plates.py` | The plate stack (hero column and tile variants) |
 | `render_earth_moon.py` | Earth + moon + plate column (imports geometry/material/helpers from `render_plates.py`) |
+| `render_vessel.py` | An animal-shaped glass vessel poured full of plates (rigid-body sim) |
+| `render_earth_ring.py` | A ring of plates stacked face to face around Earth's equator (imports from `render_plates.py`, `render_earth_moon.py`, `render_vessel.py`) |
 
 ## Blender
 
@@ -86,6 +88,62 @@ is procedural — no downloaded textures.
 Each set takes well under a minute on the GPU (~0.4–0.7 s/frame), which is why the frame PNGs are
 **not** committed; see `.gitignore`. Manifests and design proofs are committed.
 
+### 4. Earth ring — plates stacked face to face around the equator
+
+`--fills` values (not a frame count), like `render_vessel.py`: plates are stacked FACE TO
+FACE — a roll of coins bent into a circle, each plate's axis tangent to the ring so its flat
+face presses the next plate's face — and the ring advances by each plate's *thickness*, not
+its diameter. The covered arc always starts at the terminator (the day/night line on the
+stylised Earth, reused from `render_earth_moon.py`) and grows eastward; the uncovered arc
+renders nothing (`hide_render`, no ghost plates); fill 1.0 closes the ring exactly.
+
+```bash
+# 1200x1200 -> tools/milestone-render/out-earth-ring/
+G:/Tools/blender-5.2.1-windows-x64/blender.exe -b -P tools/milestone-render/render_earth_ring.py -- \
+  --out tools/milestone-render/out-earth-ring --ring-diameter 0.13 --ring-radius 1.40 \
+  --elevation 62 --fills 0.25 0.5 0.75 1.0 --size 1200x1200 --samples 96
+```
+
+Symbolic scale: Earth radius 1.0, ring radius 1.40 (pass 3 — floats clear of the surface as
+a distinct halo; passes 1–2 used 1.06, hugging it). Plate **diameter** is the dial
+(`--ring-diameter`, default 0.13 Earth radii — an earlier pass at 0.35 read as a hose, not
+plates); plate **count** is derived from it and the ring radius via the real 45's
+thickness/diameter ratio (thickness = 0.09 × diameter; `N = round(2π·ring_radius /
+thickness)`, ≈752 at the defaults). Honestly closing a real equatorial ring at a real 45's
+1.5 in thickness takes ~1.05 **billion** plates face to face (see `manifest.json`'s
+`honest_math` block) — the symbolic count rendered is sized so the per-plate chamfer seam
+(what sells "stack" rather than "tube") stays legible at 1200 px.
+
+Camera **elevation** is steep — `--elevation`, default 62° above the equatorial plane, a
+near-polar view where the ring reads as a halo/ellipse around the disk. This isn't just a
+framing choice: a shallower 3/4 view (tried first, ~13°) let the ring's far side project
+inside Earth's own silhouette, and that self-occlusion made fill 0.50 and 0.75 render
+**pixel-identical** — confirmed the hard way, by image-diffing the renders. Going near-polar
+(pass 2, 68°) fixed that, but left the ring radius at 1.06: `1.06 × sin(68°) ≈ 0.98`, just
+*under* Earth's own radius, so the ring still grazed the limb and the uncovered arc visually
+merged with the atmosphere's Fresnel rim instead of reading as a gap. Pass 3 lifts the ring
+to `--ring-radius 1.40` so `ring_radius × sin(elevation) > earth_radius` holds with real
+margin — the whole ring floats visibly clear of the planet at every fill level, reading as an
+orbiting halo rather than a rim traced along the edge. That inequality is only an
+orthographic approximation, though: `verify_ring_clears_limb()` checks it against the actual
+finite-distance perspective camera (a ray–sphere test per ring point) and hard-fails if any
+point is occluded — the brief's proposed 1.24 failed that real check (binary-searched the
+true threshold to ≈1.34), which is why the shipped default carries margin above the formula's
+number rather than sitting on it. `verify_distinct_renders()` still hashes every rendered
+frame and hard-fails on any collision. `--azimuth` defaults to the terminator dawn line's own
+angle and no longer needs to dodge occlusion the way it did at a shallow elevation.
+
+Making the whole ring visible at once (pass 2) exposed a lighting issue: Earth's
+single-direction key sun (correct for giving Earth a terminator) necessarily leaves roughly
+half the ring's circumference unlit, dragging the whole-ring median color toward black. Fixed
+the same way `render_vessel.py` fixed the identical problem for plates buried in shadow — a
+small self-emission on the plate material at its own colour (`--emission`, default 0.48) —
+rather than adding more directional lights, which only relocates the dark gap to between them.
+
+Earth/atmosphere are reused, not reimplemented — imported from `render_earth_moon.py`; the
+plate mesh comes from `render_plates.py` (its material is not reused as-is — see emission,
+above); the preview compositing helper is imported from `render_vessel.py`.
+
 ---
 
 ## How the app picks a frame
@@ -134,6 +192,24 @@ cross-fade in from empty.
 `render_earth_moon.py` shares `--out`, `--frames`, `--size`, `--samples`, `--proof-frame`,
 `--proof-width`, `--light-scale`, `--save-blend`, and adds `--only K [K…]` (render just these
 frames) and `--no-plate-rim`.
+
+`render_earth_ring.py`:
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--out DIR` | `tools/milestone-render/out-earth-ring` | Output directory |
+| `--ring-diameter F` | `0.13` | Plate face diameter, Earth radii. Plate count is DERIVED from this and `--ring-radius` (honest count is ~1.05 billion) |
+| `--ring-radius F` | `1.40` | Ring radius, Earth radii — how far the ring floats off the surface. Must satisfy `ring_radius * sin(elevation) > 1.0`; checked against the real camera by `verify_ring_clears_limb()`, not just this formula |
+| `--fills F [F…]` | `0.25 0.5 0.75 1.0` | Fraction of the ring filled, each written as `ring_<pct>.png` |
+| `--size WxH` | `1200x1200` | Render size in px |
+| `--samples N` | `96` | Cycles samples (denoised) |
+| `--elevation F` | `62.0` | Camera elevation above the equatorial plane, deg — must satisfy the `--ring-radius` inequality above or the ring merges with the limb and some fills may render identically |
+| `--azimuth F` | dawn line's own angle | Camera azimuth, deg |
+| `--preview-width N` | `600` | Downscaled preview width |
+| `--preview-bg HEX` | `0A0B0D` | Composite previews over this colour (app's real ground) |
+| `--light-scale F` | `1.0` | Multiply all three (Earth) light energies (exposure tuning) |
+| `--emission F` | `0.48` | Plate self-emission strength at #2F6FD0 (keeps the ring's far side from reading black) |
+| `--save-blend` | off | Also write `earth_ring.blend` for hand tweaking |
 
 ---
 

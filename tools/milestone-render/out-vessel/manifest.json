@@ -1,0 +1,95 @@
+{
+  "generator": "tools/milestone-render/render_vessel.py",
+  "blender_version": "5.2.1 LTS",
+  "engine": "CYCLES",
+  "device_type": "OPTIX",
+  "devices": [
+    "NVIDIA GeForce RTX 5070"
+  ],
+  "samples": 96,
+  "image_size": [
+    1200,
+    800
+  ],
+  "background": "transparent (RGBA, 8-bit PNG); app paints #0A0B0D behind",
+  "animal": {
+    "name": "Blue whale",
+    "pounds": 300000
+  },
+  "shell_asset": {
+    "path": "assets/whale.glb",
+    "see": "tools/milestone-render/ASSETS.md",
+    "tris": 444,
+    "length_units": 6.0
+  },
+  "fill_is_continuous": true,
+  "fill_mapping": "fill = lifted_lb / 300000, clamped to [0,1]; continuous -- any step size renders, not tied to a frame count",
+  "method": "rigid-body settle; fill = lowest f*N plates by height",
+  "plate": {
+    "diameter": 0.27764,
+    "thickness": 0.0236,
+    "color_hex": "#2F6FD0",
+    "count_at_full_fill": 754,
+    "rot_jitter_deg": 8.0,
+    "seed": 20260905
+  },
+  "pour": {
+    "collider": "welded shell mesh, 444 tris",
+    "target_plates": 1000,
+    "overfill_factor": 1.3,
+    "spawned": 1691,
+    "survivors": 754,
+    "escaped": 937,
+    "sim_frames": 260,
+    "substeps_per_frame": 10,
+    "solver_iterations": 20
+  },
+  "renders": [
+    {
+      "fill": 0.3,
+      "tag": "30",
+      "plates_shown": 226,
+      "seconds": 1.53
+    },
+    {
+      "fill": 0.65,
+      "tag": "65",
+      "plates_shown": 490,
+      "seconds": 1.52
+    },
+    {
+      "fill": 1.0,
+      "tag": "100",
+      "plates_shown": 754,
+      "seconds": 1.62
+    }
+  ],
+  "camera": {
+    "lens_mm": 70.0,
+    "elevation_deg": 16.0,
+    "azimuth_deg": -96.0,
+    "fit": {
+      "distance": 13.4125,
+      "ndc_x": [
+        0.05,
+        0.95
+      ],
+      "ndc_y": [
+        0.2557,
+        0.7443
+      ]
+    }
+  },
+  "previews": [
+    "preview_30_600.png",
+    "preview_65_600.png",
+    "preview_100_600.png"
+  ],
+  "preview_background": "#0A0B0D",
+  "timing": {
+    "spawn_seconds": 0.1,
+    "sim_seconds": 153.6,
+    "mean_render_seconds_per_frame": 1.56,
+    "total_seconds": 173.02
+  }
+}
