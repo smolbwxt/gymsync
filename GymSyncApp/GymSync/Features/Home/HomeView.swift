@@ -16,6 +16,8 @@ struct HomeView: View {
 
     /// Who from the crew is lifting right now.
     var friendsRepository: any FriendsLiveRepository = EmptyFriendsLiveRepository()
+    /// This week's goal and its progress.
+    var goalRepository: any WeeklyGoalRepository = StubWeeklyGoalRepository()
 
     @State private var upcomingSessions: [WorkoutSession] = []
     @State private var groups: [GymGroup] = []
@@ -68,11 +70,8 @@ struct HomeView: View {
     //
     // Design: docs/superpowers/specs/2026-09-06-home-v3-production-and
     // -weekly-goal-design.md §A — variation 08a, the composition the owner
-    // approved. These three are DECLARED here by task B1 because the
-    // composition below reads them; their fetches arrive with tasks B4
-    // (friends-live) and B6 (the weekly goal), which is why an empty
-    // `friendsLive` renders no crew-pulse strip at all (owner ruling 2) and
-    // a nil `weeklyGoal` renders the strip's invitation line.
+    // approved. Every one of these is filled by `refresh()`'s single
+    // parallel batch and committed in its one state-write block.
 
     /// Who from the crew is mid-session right now. Empty = the strip is
     /// absent and the page shifts up; there is no "nobody's training" state.
@@ -82,6 +81,10 @@ struct HomeView: View {
     /// Everything the goal strip renders, already resolved upstream — no
     /// view on this page does goal arithmetic.
     @State private var goalProgress: WeeklyGoalProgress = .init()
+    /// False until the first goal fetch lands, whatever it found. Gates the
+    /// strip's SKELETON — the difference between "no goal yet" (the
+    /// invitation) and "we haven't asked yet" (a shape, not a gap).
+    @State private var goalLoaded = false
     /// The Coach tile's destination. Home is inside a `NavigationStack`, so
     /// this is a local push — deliberately NOT an `AppState.PendingRoute`
     /// case, which is the push deep-link enum and this is not one.
@@ -603,18 +606,94 @@ struct HomeView: View {
         }
     }
 
-    /// This week's goal. `kind == nil` is the invitation line — the only
-    /// state in which the strip shows something other than a reading.
+    /// This week's goal, in three states (the design's, plus the plan's
+    /// loading rung):
+    ///
+    ///   * **loading** — the strip's chrome with its kicker and a skeleton
+    ///     chip row, NOT an empty gap. The page must not jump when the fetch
+    ///     lands, and "we haven't asked yet" is not the same statement as
+    ///     "you have no goal". Home has no other skeleton (inventory §1c);
+    ///     this one is scoped to this strip and nothing else.
+    ///   * **goal present** — the kind's reading.
+    ///   * **no goal** — `kind: nil`, the invitation line.
     ///
     /// Until Stream C's `WeeklyGoalEditorSheet` lands the tap opens the
     /// existing weekly-goal sheet, so the strip is never inert; integration
     /// task I1 swaps the destination.
+    ///
+    /// THE AGREEMENT LAW: `goalProgress.rightHandRead` and
+    /// `HomeStreakTile`'s `daysDone/goal` describe the same week. Nothing
+    /// here re-derives either — the numbers arrive resolved, and a view that
+    /// recomputed one would be a second opinion about the same seven days.
+    @ViewBuilder
     private var goalStripSection: some View {
-        HomeWeeklyGoalStrip(kind: weeklyGoal?.kind, progress: goalProgress) {
-            showGoalSheet = true
+        Group {
+            if goalLoaded {
+                HomeWeeklyGoalStrip(kind: weeklyGoal?.kind, progress: goalProgress) {
+                    showGoalSheet = true
+                }
+            } else {
+                goalStripSkeleton
+            }
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 12)
+    }
+
+    /// The strip's own chrome — `surface` fill, 14 pt radius, 12 pt padding
+    /// — with the kicker legible and the chips redacted. Built here rather
+    /// than inside `HomeWeeklyGoalStrip` because that piece is frozen for
+    /// Stream C; the geometry below is a copy of its own, so the two states
+    /// are the same height and nothing moves when the numbers arrive.
+    ///
+    /// The kicker reads `THIS WEEK` alone: whose goal it is — Coach's or
+    /// yours — is exactly what has not been fetched yet, and a placeholder
+    /// that guessed would flicker into a different word.
+    private var goalStripSkeleton: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Text("THIS WEEK")
+                    .font(GSFont.bold(10, relativeTo: .caption2))
+                    .tracking(1.2)
+                    .foregroundStyle(theme.neutral500)
+                    .lineLimit(1)
+                Spacer(minLength: 6)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(theme.neutral500)
+            }
+
+            HStack(spacing: 8) {
+                ForEach(0..<4, id: \.self) { _ in
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text("GROUP")
+                            .font(GSFont.bold(9, relativeTo: .caption2))
+                            .tracking(1.0)
+                            .foregroundStyle(theme.neutral500)
+                            .lineLimit(1)
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(theme.neutral300)
+                            .frame(height: 4)
+                        Text("0/0")
+                            .font(GSFont.bold(12, relativeTo: .caption))
+                            .monospacedDigit()
+                            .foregroundStyle(theme.text)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 8)
+                }
+            }
+            .redacted(reason: .placeholder)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: HomeV2Metrics.stripRadius))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("This week's goal is loading.")
     }
 
     // MARK: - The Coach tile (task B3)
@@ -1140,6 +1219,7 @@ struct HomeView: View {
         async let streakFetch    = fetchStreak(userID: userID)
         async let programFetch   = fetchActiveProgram(userID: userID)
         async let friendsFetch   = fetchFriendsLive(userID: userID)
+        async let goalFetch      = fetchWeeklyGoal(userID: userID)
 
         // Perf (user report 2026-07-25: "things load incrementally over a
         // fraction of a second"): every `await` is a suspension point, so
@@ -1159,6 +1239,7 @@ struct HomeView: View {
         let streak          = await streakFetch
         let program         = await programFetch
         let friends         = await friendsFetch
+        let goal            = await goalFetch
 
         // ── single commit (no awaits until after this block) ──
         if let sessions { upcomingSessions = sessions }
@@ -1171,6 +1252,9 @@ struct HomeView: View {
         if let streak { userStreak = streak }
         activeProgram = program
         friendsLive = friends
+        weeklyGoal = goal.goal
+        goalProgress = goal.progress
+        goalLoaded = true
         statsLoading = false
 
         // Commit signal for the next actionable group session (Phase B,
@@ -1301,6 +1385,27 @@ struct HomeView: View {
     private func fetchFriendsLive(userID: UUID?) async -> [FriendLive] {
         guard userID != nil else { return [] }
         return await friendsRepository.live()
+    }
+
+    /// This week's goal and the progress against it (task B6).
+    ///
+    /// Two awaits inside ONE child task, so the batch still starts every
+    /// fetch together: `progress(for:)` needs the goal, and splitting them
+    /// into two `async let`s would mean either a second round trip on a goal
+    /// nobody has yet or an interleaved await in `refresh()` — the exact
+    /// thing the single-commit block exists to prevent.
+    ///
+    /// The week key comes from `WeekMath`, the one definition of "this week"
+    /// on this page; the streak tile counts the same one.
+    ///
+    /// Signed out returns the empty progress, which renders the invitation —
+    /// never an error and never a stuck skeleton.
+    private func fetchWeeklyGoal(userID: UUID?) async -> (goal: WeeklyGoal?, progress: WeeklyGoalProgress) {
+        guard userID != nil else { return (nil, WeeklyGoalProgress()) }
+        guard let goal = await goalRepository.goal(weekStart: WeekMath.weekStartString()) else {
+            return (nil, WeeklyGoalProgress())
+        }
+        return (goal, await goalRepository.progress(for: goal))
     }
 
     private func fetchOwnedRoutines(userID: UUID?) async -> [Routine]? {
