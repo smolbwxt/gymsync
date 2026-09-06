@@ -98,20 +98,27 @@ struct CalendarSchedulingView: View {
     private var resolved: CalendarWorld { world ?? derivedWorld }
 
     var body: some View {
-        ScrollView {
+        // Resolved ONCE per layout pass. `resolved` recomputes
+        // `derivedWorld` on every read, and that walks up to 60 completed
+        // and 200 upcoming sessions twice, re-filters and re-sorts the week,
+        // and calls `Date.formatted` twice per agenda row plus once for the
+        // month label and once per campaign. Read seven times from `body`,
+        // as it was, that is scroll jank rather than a theoretical cost.
+        let painted = resolved
+        return ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 // The `{Month} {Year}` SUBTITLE the proof draws under the
                 // title — not a kicker. It sits directly beneath the large
                 // `Calendar` the nav bar renders, which is why the nav title
                 // is `.large` here and the type is sentence-case body rather
                 // than tracked all-caps.
-                Text(resolved.month.label)
+                Text(painted.month.label)
                     .font(GSFont.body(15, relativeTo: .subheadline))
                     .foregroundStyle(theme.neutral500)
                     .accessibilityAddTraits(.isHeader)
 
-                CalendarMonthGrid(month: resolved.month,
-                                  legendCrewColor: resolved.legendCrewColor,
+                CalendarMonthGrid(month: painted.month,
+                                  legendCrewColor: painted.legendCrewColor,
                                   onSelectDay: daySelection)
                     // SIMULTANEOUS, not exclusive: this sits inside a
                     // vertical `ScrollView`, and a plain `.gesture` here can
@@ -121,12 +128,12 @@ struct CalendarSchedulingView: View {
                     // sharing costs nothing.
                     .simultaneousGesture(monthSwipe)
 
-                agendaCard
+                agendaCard(painted)
 
-                if let block = resolved.block {
+                if let block = painted.block {
                     CalendarBlockRowView(row: block)
                 }
-                ForEach(resolved.campaigns) { campaign in
+                ForEach(painted.campaigns) { campaign in
                     CalendarCampaignRowView(row: campaign)
                 }
             }
@@ -223,10 +230,10 @@ struct CalendarSchedulingView: View {
     /// week's timeline. ONE raised card with flat furniture inside it
     /// (design language rule 1) — the rows are full-bleed inside it so a
     /// swipe can carry a row all the way to the card's edge.
-    private var agendaCard: some View {
+    private func agendaCard(_ painted: CalendarWorld) -> some View {
         VStack(spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
-                GSSectionHeader(resolved.weekTitle)
+                GSSectionHeader(painted.weekTitle)
                 Text("SWIPE A ROW TO MOVE OR CANCEL")
                     .font(GSFont.bodyMedium(10, relativeTo: .caption2))
                     .tracking(1.1)
@@ -237,7 +244,7 @@ struct CalendarSchedulingView: View {
             .padding(.top, 14)
             .padding(.bottom, 10)
 
-            if resolved.agenda.isEmpty {
+            if painted.agenda.isEmpty {
                 Text("Nothing on the books this week.")
                     .font(GSFont.body(12.5, relativeTo: .caption))
                     .foregroundStyle(theme.neutral500)
@@ -245,10 +252,10 @@ struct CalendarSchedulingView: View {
                     .padding(.horizontal, 16)
                     .padding(.bottom, 16)
             } else {
-                ForEach(Array(resolved.agenda.enumerated()), id: \.element.id) { index, item in
+                ForEach(Array(painted.agenda.enumerated()), id: \.element.id) { index, item in
                     Rectangle().fill(theme.divider).frame(height: 1)
                     agendaRow(item)
-                    if index == resolved.agenda.count - 1 {
+                    if index == painted.agenda.count - 1 {
                         Color.clear.frame(height: 4)
                     }
                 }
