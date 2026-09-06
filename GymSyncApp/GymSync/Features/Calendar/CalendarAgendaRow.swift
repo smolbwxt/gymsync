@@ -153,24 +153,36 @@ struct CalendarSwipeRow<Content: View>: View {
     private var editable: Bool { onMove != nil || onCancel != nil }
 
     var body: some View {
-        ZStack(alignment: .trailing) {
-            if editable {
-                HStack(spacing: 0) {
-                    action("MOVE", tint: theme.accent) { onMove?() }
-                    action("CANCEL", tint: Color.gsHex(0xE05252)) { onCancel?() }
+        row
+            // A BACKGROUND, not a `ZStack` sibling. A background is proposed
+            // the primary view's own size, so the actions come out exactly
+            // the row's height; as a ZStack sibling they are proposed the
+            // page's unspecified height instead and `maxHeight: .infinity`
+            // collapses to the label's ideal height — two short buttons
+            // floating in the middle of the row. It also fixes them in
+            // place, which is the point: the row slides, the actions do not.
+            .background(alignment: .trailing) {
+                if editable {
+                    HStack(spacing: 0) {
+                        action("MOVE", tint: theme.accent) { onMove?() }
+                        action("CANCEL", tint: Color.gsHex(0xE05252)) { onCancel?() }
+                    }
+                    .frame(width: actionsWidth)
                 }
-                .frame(width: actionsWidth)
             }
-            // Branching on `editable` rather than passing an optional gesture:
-            // `gesture(_:)` takes a `Gesture`, not an `Optional`, and
-            // `gesture(_:isEnabled:)` is iOS 18 (this app ships to 17).
-            if editable {
-                face.gesture(drag)
-            } else {
-                face
-            }
+            .clipped()
+    }
+
+    /// Branching on `editable` rather than passing an optional gesture:
+    /// `gesture(_:)` takes a `Gesture`, not an `Optional`, and
+    /// `gesture(_:isEnabled:)` is iOS 18 (this app ships to 17).
+    @ViewBuilder
+    private var row: some View {
+        if editable {
+            face.gesture(drag)
+        } else {
+            face
         }
-        .clipped()
     }
 
     /// The row itself — opaque, in the card's own face colour, because the
