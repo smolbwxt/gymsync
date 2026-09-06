@@ -78,38 +78,10 @@ struct HomeWeekStrip: View {
     private var chips: some View {
         HStack(spacing: 6) {
             ForEach(days) { day in
-                VStack(spacing: 4) {
-                    chip(day.state)
-                    Text(day.letter)
-                        .font(GSFont.bold(9, relativeTo: .caption2))
-                        .foregroundStyle(day.state.isToday ? theme.accent : theme.neutral500)
-                }
+                HomeWeekDayChip(letter: day.letter, state: day.state)
             }
         }
         .frame(maxWidth: .infinity)
-    }
-
-    @ViewBuilder
-    private func chip(_ state: Day.State) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 5)
-        switch state {
-        case .done:
-            // Deliberately NOT green when the goal is met: green belongs to
-            // the tail (`4/4` and `GOAL MET`) alone. Turning the chips green
-            // as well made the difference between the two B frames read as a
-            // state change rather than as the arrangement being judged.
-            shape.fill(theme.text)
-                .frame(width: 10, height: 24)
-        case .today:
-            shape.strokeBorder(theme.accent, lineWidth: 2)
-                .frame(width: 10, height: 24)
-        case .planned:
-            shape.strokeBorder(theme.accent.opacity(0.55), lineWidth: 1.5)
-                .frame(width: 10, height: 24)
-        case .empty:
-            shape.fill(theme.neutral300)
-                .frame(width: 10, height: 24)
-        }
     }
 
     private var tail: some View {
@@ -131,6 +103,67 @@ struct HomeWeekStrip: View {
     }
 }
 
+// MARK: - One day
+
+/// ONE day of the training week, exactly as `HomeWeekStrip` has always drawn
+/// it: a 10 × 24 chip with the weekday letter under it.
+///
+/// Extracted from `HomeWeekStrip.chips` / `chip(_:)` in task C2, because the
+/// weekly goal's `days` kind renders the same seven chips
+/// (`HomeWeeklyGoalStrip.daysBody`) and the plan asks for Home's two week
+/// readouts to be "literally the same view". The alternative — a second copy
+/// built on the same constants — is the exact mistake `HomeCalendarCard`'s
+/// own doc comment records against itself (:14-26) and that Stream D's D1
+/// exists to unwind; making it a second time, in the same week, on the same
+/// screen, would be a choice rather than a constraint.
+///
+/// A pure move. Same `RoundedRectangle(cornerRadius: 5)`, same 10 × 24 frame,
+/// same fills and strokes, same `VStack(spacing: 4)`, same 9 pt letter in the
+/// same two colours. `HomeWeekStrip`'s rendering does not change, which is
+/// what keeps every v2/v3 frame carrying it byte-identical.
+struct HomeWeekDayChip: View {
+    @Environment(\.gsTheme) private var theme
+
+    /// The weekday's letter — `M`, `T`, … The letters repeat, so this is
+    /// never an identity; `HomeWeekStrip.Day.id` still keys the `ForEach`.
+    let letter: String
+    let state: HomeWeekStrip.Day.State
+
+    var body: some View {
+        VStack(spacing: 4) {
+            chip
+            Text(letter)
+                .font(GSFont.bold(9, relativeTo: .caption2))
+                .foregroundStyle(state.isToday ? theme.accent : theme.neutral500)
+        }
+    }
+
+    @ViewBuilder
+    private var chip: some View {
+        let shape = RoundedRectangle(cornerRadius: 5)
+        switch state {
+        case .done:
+            // Deliberately NOT green when the goal is met: green belongs to
+            // the tail (`4/4` and `GOAL MET`) alone. Turning the chips green
+            // as well made the difference between the two B frames read as a
+            // state change rather than as the arrangement being judged.
+            shape.fill(theme.text)
+                .frame(width: 10, height: 24)
+        case .today:
+            shape.strokeBorder(theme.accent, lineWidth: 2)
+                .frame(width: 10, height: 24)
+        case .planned:
+            shape.strokeBorder(theme.accent.opacity(0.55), lineWidth: 1.5)
+                .frame(width: 10, height: 24)
+        case .empty:
+            shape.fill(theme.neutral300)
+                .frame(width: 10, height: 24)
+        }
+    }
+}
+
+/// Still file-private: `HomeWeekDayChip` is declared in this file, so the
+/// extraction costs the app no new public surface.
 private extension HomeWeekStrip.Day.State {
     var isToday: Bool {
         if case .today = self { return true }
