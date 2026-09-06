@@ -460,6 +460,29 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogHomeV309Plan()           { captureCatalog("home-v3-09-plan") }
     func testCatalogHomeV310Minimal()        { captureCatalog("home-v3-10-minimal") }
 
+    // The weekly goal (home-v3 production plan, Stream C). Owner ruling 3 on
+    // Home v3 turned one strip into five: the strip renders THIS WEEK'S
+    // GOAL, of which muscle sets is one kind and miles, sessions, days and a
+    // lift are the others. Seven ids cover every state it can be in — the
+    // five kinds, the met week, and the week before Coach has detected
+    // anything — because five renderings that exist only in a plan are five
+    // decisions nobody has seen.
+    //
+    // The two editor ids capture the sheet's two HEADER branches rather than
+    // two of its five lever sets: the standing copy line on a Coach-set
+    // goal, and a Coach proposal with its ACCEPT on a user-set one (owner
+    // answer 3: Coach may ask, never overwrite). Lever sets are one chip-tap
+    // apart in a build; that branch is not.
+    func testCatalogHomeGoalStripMuscleSets() { captureCatalog("home-goal-strip-muscle-sets") }
+    func testCatalogHomeGoalStripDistance()   { captureCatalog("home-goal-strip-distance") }
+    func testCatalogHomeGoalStripSessions()   { captureCatalog("home-goal-strip-sessions") }
+    func testCatalogHomeGoalStripDays()       { captureCatalog("home-goal-strip-days") }
+    func testCatalogHomeGoalStripLift()       { captureCatalog("home-goal-strip-lift") }
+    func testCatalogHomeGoalStripMet()        { captureCatalog("home-goal-strip-met") }
+    func testCatalogHomeGoalStripEmpty()      { captureCatalog("home-goal-strip-empty") }
+    func testCatalogHomeGoalEditor()          { captureCatalog("home-goal-editor") }
+    func testCatalogHomeGoalEditorLift()      { captureCatalog("home-goal-editor-lift") }
+
     // MARK: - Seeded deep-screen captures
     //
     // Reachable via the deterministic `ci_test_user_2` fixture world (Task 3,
