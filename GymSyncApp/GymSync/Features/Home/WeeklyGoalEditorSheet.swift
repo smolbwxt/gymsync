@@ -70,6 +70,19 @@ struct WeeklyGoalEditorSheet: View {
     var repository: any WeeklyGoalRepository = StubWeeklyGoalRepository()
     /// Coach's standing suggestion, when there is one.
     var proposal: Proposal? = nil
+    /// The profile's **standing** weekly session goal — `Profile
+    /// .weeklySessionGoal`, what next week will be, which is the value the
+    /// streak sheet edits and the value this sheet's `days` stepper edits
+    /// too.
+    ///
+    /// It is the seed for that stepper, and it is deliberately NOT
+    /// `goal.params.count`: the `days` kind and the streak goal are ONE
+    /// number, held in `profiles.weekly_session_goal`, and a second copy
+    /// inside `weekly_goals.params` would let the two editors walk each
+    /// other backwards. `WeeklyGoalSheet` (`HomeView.swift:1035`) seeds from
+    /// exactly this field, with exactly this fallback, and says why: the
+    /// standing goal "is the value being edited", not the effective one.
+    var weeklySessionGoal: Int = 3
     /// The block's focus lifts, shown at the top of the lift picker.
     var focusLifts: [LiftOption] = []
     /// Whether to load the full exercise catalog behind the focus lifts.
@@ -115,6 +128,7 @@ struct WeeklyGoalEditorSheet: View {
          weekStart: String,
          repository: any WeeklyGoalRepository = StubWeeklyGoalRepository(),
          proposal: Proposal? = nil,
+         weeklySessionGoal: Int = 3,
          focusLifts: [LiftOption] = [],
          loadsCatalog: Bool = true,
          today: Date = .now,
@@ -124,6 +138,7 @@ struct WeeklyGoalEditorSheet: View {
         self.weekStart = weekStart
         self.repository = repository
         self.proposal = proposal
+        self.weeklySessionGoal = weeklySessionGoal
         self.focusLifts = focusLifts
         self.loadsCatalog = loadsCatalog
         self.today = today
@@ -142,7 +157,10 @@ struct WeeklyGoalEditorSheet: View {
         // `count` is one column serving two kinds, so it is only this kind's
         // count when this kind is the one that wrote it.
         _sessionCount = State(initialValue: goal?.kind == .sessionsOfType ? (params.count ?? 3) : 3)
-        _dayCount = State(initialValue: goal?.kind == .days ? (params.count ?? 4) : 4)
+        // NEVER from `params.count` — see `weeklySessionGoal`. The profile's
+        // standing goal is the number; the goal row does not hold a second
+        // copy of it.
+        _dayCount = State(initialValue: Self.clampDays(weeklySessionGoal))
         _exerciseID = State(initialValue: params.exerciseID ?? focusLifts.first?.id)
         _targetWeightLbs = State(initialValue: params.targetWeightLbs ?? 225)
         _byDate = State(initialValue: params.byDate ?? Self.defaultByDate(from: today))
@@ -355,13 +373,28 @@ struct WeeklyGoalEditorSheet: View {
     /// One stepper, and the anti-goalpost sentence the streak sheet already
     /// ships (`HomeView.WeeklyGoalSheet`), verbatim.
     ///
-    /// The `days` kind and the streak tile's weekly goal are ONE number — the
-    /// plan's requirement, and the reason a save of this kind also calls
-    /// `ProfileRepository.updateWeeklySessionGoal`. That write carries the
-    /// anti-goalpost rule (owner 2026-08-12: an edit lands next week), so
-    /// this sheet has to say the same thing the other one says, in the same
-    /// words, or the two editors of one number would disagree about when it
-    /// takes effect.
+    /// **THE PROFILE IS THE NUMBER.** The `days` kind and the streak tile's
+    /// weekly goal are one figure, and it lives in
+    /// `profiles.weekly_session_goal`. This stepper edits that column and
+    /// nothing else: it seeds from `weeklySessionGoal` (never from
+    /// `params.count`), and a save writes it through
+    /// `ProfileRepository.updateWeeklySessionGoal` — whose anti-goalpost
+    /// snapshot lands the change NEXT week (owner 2026-08-12). The week's
+    /// `weekly_goals` row still gets written, so the strip switches to the
+    /// `days` reading straight away, but it carries **no `count`**: a second
+    /// copy of one number, saved with a different effective date, is how the
+    /// note below and the button above came to contradict each other.
+    ///
+    /// So the sentence is true as written, and it is the streak sheet's own
+    /// sentence, word for word, because two editors of one number may not
+    /// disagree about when it takes effect.
+    ///
+    /// The range is the design's 1–7 where the streak sheet's is 1–14 (it
+    /// counts SESSIONS; this counts DAYS, and a week has seven). A standing
+    /// goal above 7 therefore seeds clamped — and `save()` writes the
+    /// profile only when the stepper actually moved, so opening this sheet
+    /// on a 10-session goal and saving a different kind cannot quietly cut
+    /// it to 7.
     private var dayLevers: some View {
         VStack(alignment: .leading, spacing: 10) {
             stepperRow(title: "PER WEEK",
@@ -641,12 +674,22 @@ struct WeeklyGoalEditorSheet: View {
             return
         }
 
-        // ONE SOURCE OF TRUTH for the days number: the `days` kind and the
-        // streak tile's weekly goal are the same figure, so a save of this
-        // kind writes both. Best-effort, like every other Coach-adjacent
-        // write — a goal that saved must not be reported as a failure
-        // because a second, slower write did not.
-        if kind == .days {
+        // ONE SOURCE OF TRUTH for the days number. The row above carries
+        // `kind = .days` and NO count; the number itself lives in
+        // `profiles.weekly_session_goal` and is written here, through the
+        // same static the streak sheet calls, so both editors inherit the
+        // one anti-goalpost snapshot and the note beside the stepper stays
+        // true.
+        //
+        // Only when the stepper actually moved. The design's range is 1–7
+        // and the profile's is 1–14, so a person holding themselves to ten
+        // sessions a week sees this stepper seeded at seven; writing that
+        // back unasked would cut their goal for opening a sheet.
+        //
+        // Best-effort, like every other Coach-adjacent write: a goal that
+        // saved must not be reported as a failure because a second, slower
+        // write did not land.
+        if kind == .days, dayCount != Self.clampDays(weeklySessionGoal) {
             _ = try? await ProfileRepository.updateWeeklySessionGoal(dayCount)
         }
 
@@ -668,9 +711,16 @@ struct WeeklyGoalEditorSheet: View {
     }
 
     /// Only the chosen kind's fields are written. `WeeklyGoalParams` encodes
-    /// with `encodeIfPresent`, so a `days` goal persists `{"count": 4}` and
-    /// not six nulls beside it — and a lift the person picked while browsing
-    /// does not ride along inside a distance goal.
+    /// with `encodeIfPresent`, so a `distance` goal persists
+    /// `{"activity":"run","distanceTarget":15}` and not seven nulls beside
+    /// it — and a lift the person picked while browsing does not ride along
+    /// inside it.
+    ///
+    /// **`days` writes NOTHING.** Its params are empty on purpose: the number
+    /// is `profiles.weekly_session_goal` and there is exactly one of it (see
+    /// `dayLevers`). The row still says `kind = .days`, which is all the
+    /// strip needs to switch readings; A4 reads the target from
+    /// `Profile.effectiveWeeklyGoal`.
     ///
     /// `targetSource` is left nil on every user save. Its documented values
     /// are `"titration"` and `"routines"`, and both describe where COACH got
@@ -692,7 +742,7 @@ struct WeeklyGoalEditorSheet: View {
             params.sessionType = sessionType
             params.count = sessionCount
         case .days:
-            params.count = dayCount
+            break
         case .lift:
             params.exerciseID = exerciseID
             params.targetWeightLbs = targetWeightLbs
@@ -732,6 +782,11 @@ struct WeeklyGoalEditorSheet: View {
         guard let value = value, value.isFinite, value > 0, value < 1_000 else { return fallback }
         return Int(value.rounded())
     }
+
+    /// The profile's standing goal, brought into the `days` stepper's range.
+    /// Used for the seed AND for the "did the stepper move?" comparison in
+    /// `save()`, so the two can never diverge.
+    private static func clampDays(_ goal: Int) -> Int { max(1, min(7, goal)) }
 
     /// Six weeks out — a block's length, and the horizon a lift goal is
     /// written against when the person has not named one.
