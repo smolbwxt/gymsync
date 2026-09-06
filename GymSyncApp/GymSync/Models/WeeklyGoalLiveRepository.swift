@@ -1,0 +1,343 @@
+import Foundation
+import Supabase
+
+// MARK: - LiveWeeklyGoalRepository
+//
+// Plan: docs/superpowers/plans/2026-09-06-home-v3-production-plan.md, Stream
+// A task A12. The Supabase implementation of the Task 0 protocol.
+//
+// ITS OWN FILE, and that is a ruling rather than a preference (Task 0
+// review, finding 2): `Models/WeeklyGoal.swift` is the frozen interface
+// three other streams read, and `WeeklyGoal` is deliberately not `Codable` —
+// `setAt` has no column of its own. Putting the persistence here keeps that
+// file untouched for the whole of the parallel build.
+//
+// THE DEFAULT BINDING IS STILL THE STUB. Integration task I1 swaps it.
+
+/// One row of `public.weekly_goals`.
+///
+/// `created_at` and `updated_at` are optionals ONLY so that a write can omit
+/// them: Swift's synthesized encoder uses `encodeIfPresent` for optionals, so
+/// an upsert built with both nil sends neither, and the column default and
+/// the `weekly_goals_touch_updated_at` trigger do their jobs. Both columns
+/// are `NOT NULL` in the table, so on a READ they are always present.
+private struct WeeklyGoalRow: Codable {
+    let userID: UUID
+    /// The raw DATE string. Never a `Date` — DATE columns must not go
+    /// through the SDK's timestamp decoder (`ProgramEnrollment.swift:34-36`).
+    let weekStart: String
+    let kind: String
+    let params: WeeklyGoalParams
+    let source: String
+    let createdAt: Date?
+    let updatedAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case userID = "user_id"
+        case weekStart = "week_start"
+        case kind
+        case params
+        case source
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
+
+    init(_ goal: WeeklyGoal) {
+        userID = goal.userID
+        weekStart = goal.weekStartString
+        kind = goal.kind.rawValue
+        params = goal.params
+        source = goal.source.rawValue
+        createdAt = nil
+        updatedAt = nil
+    }
+
+    /// nil when the row carries a `kind` or `source` this build does not
+    /// know — a forward-compatibility guard rather than a crash. The strip
+    /// then renders the invitation, which is the honest state for "there is
+    /// a goal here that this version cannot read".
+    var model: WeeklyGoal? {
+        guard let kind = WeeklyGoalKind(rawValue: kind),
+              let source = WeeklyGoalSource(rawValue: source) else { return nil }
+        return WeeklyGoal(userID: userID,
+                          weekStartString: weekStart,
+                          kind: kind,
+                          params: params,
+                          source: source,
+                          // `updated_at` IS `setAt`: the goal's own trigger
+                          // bumps it on every edit (A1). The fallbacks are
+                          // unreachable — both columns are NOT NULL.
+                          setAt: updatedAt ?? createdAt ?? .distantPast)
+    }
+}
+
+/// Reads and writes this week's goal against `weekly_goals`, and computes
+/// its progress through `WeeklyGoalProgressMath`.
+///
+/// Best-effort throughout, matching the protocol's own contract: `async`
+/// with no `throws`, because a network blip on Home must render the
+/// invitation rather than an error on a strip.
+struct LiveWeeklyGoalRepository: WeeklyGoalRepository {
+
+    private var client: SupabaseClient { SupabaseService.shared.client }
+
+    // MARK: - Read
+
+    func goal(weekStart: String) async -> WeeklyGoal? {
+        guard let userID = await SupabaseService.shared.currentUserID() else { return nil }
+        do {
+            let rows: [WeeklyGoalRow] = try await client
+                .from("weekly_goals")
+                .select()
+                .eq("user_id", value: userID)
+                .eq("week_start", value: weekStart)
+                .limit(1)
+                .execute().value
+            return rows.first?.model
+        } catch {
+            AppLogger.db.error("weekly_goals read failed: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
+    // MARK: - Write
+
+    /// The athlete's own goal. Always `source = 'user'` on this path — this
+    /// is the editor's Save, and owner answer 3 turns on that column: once
+    /// it says `user`, Coach may only propose (task A11).
+    ///
+    /// Upserts on the primary key `(user_id, week_start)`, so saving twice
+    /// in a week edits one row rather than failing on the second.
+    @discardableResult
+    func save(_ goal: WeeklyGoal) async -> Bool {
+        var userGoal = goal
+        userGoal.source = .user
+        return await upsert(userGoal)
+    }
+
+    /// LET COACH SET IT: delete the row, then hand back what detection says
+    /// this week should be — and persist that, so the next read agrees with
+    /// what the editor just showed.
+    ///
+    /// The delete comes first on purpose. If detection fails, the athlete is
+    /// left with no row, which is the state the detector is guaranteed to
+    /// fill on the next Home refresh; leaving the old `user` row in place
+    /// would silently contradict the button they just pressed.
+    func clearToCoach(weekStart: String) async -> WeeklyGoal? {
+        await deleteRow(weekStart: weekStart)
+        guard let detected = await detect(weekStart: weekStart) else { return nil }
+        await upsert(detected)
+        return detected
+    }
+
+    /// Removes this week's row and writes nothing back. `clearToCoach`'s
+    /// first half, and the only way a test can undo what it wrote.
+    func deleteRow(weekStart: String) async {
+        guard let userID = await SupabaseService.shared.currentUserID() else { return }
+        do {
+            try await client
+                .from("weekly_goals")
+                .delete()
+                .eq("user_id", value: userID)
+                .eq("week_start", value: weekStart)
+                .execute()
+        } catch {
+            AppLogger.db.error("weekly_goals delete failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Writes a row exactly as given. Shared by `save` and by A11's Coach
+    /// write path, which has already decided it is allowed to write.
+    @discardableResult
+    func upsert(_ goal: WeeklyGoal) async -> Bool {
+        do {
+            try await client
+                .from("weekly_goals")
+                .upsert(WeeklyGoalRow(goal), onConflict: "user_id,week_start")
+                .execute()
+            return true
+        } catch {
+            AppLogger.db.error("weekly_goals upsert failed: \(error.localizedDescription, privacy: .public)")
+            return false
+        }
+    }
+
+    // MARK: - Detection
+
+    /// What Coach would set for `weekStart`, fetching the detector's inputs.
+    /// Writes NOTHING — the propose-only path (A11) and `clearToCoach` both
+    /// build on this.
+    func detect(weekStart: String) async -> WeeklyGoal? {
+        guard let userID = await SupabaseService.shared.currentUserID() else { return nil }
+        let unit = await MainActor.run { ThemeStore.shared.weightUnit }
+
+        async let enrollment = try? await ProgramRepository.active()
+        async let trainingProfile = try? await TrainingProfileRepository.load()
+        async let volumeTargets = (try? await VolumeTargetRepository.all()) ?? []
+        async let catalog = catalogByID()
+        async let routines = weekRoutines(userID: userID)
+        async let weeklyGoal = effectiveWeeklyGoal(userID: userID)
+
+        let loadedRoutines = await routines
+        let rows = (try? await RoutineRepository
+            .exercisesForRoutines(ids: loadedRoutines.map(\.id))) ?? []
+        let byRoutine = Dictionary(grouping: rows, by: \.routineID)
+
+        return WeeklyGoalDetector.detect(
+            userID: userID,
+            enrollment: await enrollment,
+            weekRoutines: loadedRoutines,
+            routineExercises: byRoutine,
+            catalog: await catalog,
+            trainingProfile: await trainingProfile,
+            volumeTargets: await volumeTargets,
+            effectiveWeeklyGoal: await weeklyGoal,
+            weekStart: weekStart,
+            unit: unit)
+    }
+
+    // MARK: - Progress
+
+    /// Only what THIS kind needs is fetched. A `days` goal has no business
+    /// paging the 1,300-row exercise catalog, and Home's refresh is a budget
+    /// the strip shares with eight other reads.
+    func progress(for goal: WeeklyGoal) async -> WeeklyGoalProgress {
+        guard let userID = await SupabaseService.shared.currentUserID() else {
+            return WeeklyGoalProgress()
+        }
+        let calendar = Calendar.current
+        let now = Date()
+        let weekStart = WeekMath.startOfWeek(now, calendar: calendar)
+        let weekEnd = calendar.date(byAdding: .day, value: 7, to: weekStart) ?? now
+        let unit = await MainActor.run { ThemeStore.shared.weightUnit }
+
+        switch goal.kind {
+        case .muscleSets:
+            async let logs = weekSetLogs(userID: userID, since: weekStart)
+            async let catalog = catalogByID()
+            return WeeklyGoalProgressMath.muscleSetsProgress(
+                goal: goal, logs: await logs, catalog: await catalog,
+                now: now, calendar: calendar)
+
+        case .days:
+            async let sessions = weekSessions(userID: userID)
+            async let weeklyGoal = effectiveWeeklyGoal(userID: userID)
+            return WeeklyGoalProgressMath.daysProgress(
+                goal: goal, sessions: await sessions,
+                effectiveWeeklyGoal: await weeklyGoal,
+                now: now, calendar: calendar)
+
+        case .lift:
+            guard let exerciseID = goal.params.exerciseID else {
+                return WeeklyGoalProgressMath.liftProgress(
+                    goal: goal, blockLogs: [], blockStartLbs: nil, unit: unit,
+                    now: now, calendar: calendar)
+            }
+            async let enrollment = try? await ProgramRepository.active()
+            async let history = (try? await SessionRepository.exerciseHistory(
+                userID: userID, exerciseID: exerciseID, limit: 500)) ?? []
+            async let exercise = try? await ExerciseRepository.fetch(id: exerciseID)
+
+            let block = await enrollment
+            let allLogs = await history
+            let liftName = await exercise
+            // The BLOCK's logs, not the week's: an e1RM is a block-long fact.
+            // With no active block the whole history is the window, which is
+            // the honest reading of "since you started chasing this".
+            let blockLogs = allLogs.filter { log in
+                guard let block else { return true }
+                return log.loggedAt >= block.startedOn
+            }
+            return WeeklyGoalProgressMath.liftProgress(
+                goal: goal, blockLogs: blockLogs,
+                blockStartLbs: block?.baselineValue(for: exerciseID),
+                unit: unit,
+                exerciseName: liftName?.name ?? "",
+                now: now, calendar: calendar)
+
+        case .sessionsOfType:
+            async let sessions = weekSessions(userID: userID)
+            async let catalog = catalogByID()
+            async let tags = HealthKitBridge.workoutTypeTagsByDay(
+                from: weekStart, to: weekEnd, calendar: calendar)
+            let loaded = await sessions
+            let routineIDs = Array(Set(loaded.compactMap(\.routineID)))
+            async let routines = routinesByID(userID: userID)
+            let rows = (try? await RoutineRepository
+                .exercisesForRoutines(ids: routineIDs)) ?? []
+            return WeeklyGoalProgressMath.sessionsOfTypeProgress(
+                goal: goal, sessions: loaded, routines: await routines,
+                routineExercises: Dictionary(grouping: rows, by: \.routineID),
+                catalog: await catalog,
+                healthWorkoutTypesByDay: await tags,
+                now: now, calendar: calendar)
+
+        case .distance:
+            let metres = await HealthKitBridge.distanceMeters(
+                activity: goal.params.activity ?? "", from: weekStart, to: weekEnd)
+            return WeeklyGoalProgressMath.distanceProgress(
+                goal: goal, metres: metres, unit: unit,
+                now: now, calendar: calendar)
+        }
+    }
+
+    // MARK: - The fetches
+
+    /// This week's set logs, PENALTY EXCLUDED AND FAILED KEPT.
+    ///
+    /// Deliberately not `SessionRepository.recentSetLogs(userID:since:)`,
+    /// which filters `is_failed = false` at the query. That is right for the
+    /// volume chart it backs and wrong here: a failed triple completed two
+    /// reps and credits a full set (`SetLog.completedReps`), so filtering it
+    /// server-side would silently undercount every week that contained one.
+    /// `exerciseHistory` above takes the same position and says so in its own
+    /// comment.
+    private func weekSetLogs(userID: UUID, since: Date) async -> [SetLog] {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        do {
+            return try await client
+                .from("set_logs")
+                .select()
+                .eq("user_id", value: userID)
+                .gte("logged_at", value: formatter.string(from: since))
+                .eq("is_penalty", value: "false")
+                .order("logged_at", ascending: true)
+                .execute().value
+        } catch {
+            AppLogger.db.error("weekly goal set_logs read failed: \(error.localizedDescription, privacy: .public)")
+            return []
+        }
+    }
+
+    /// Completed AND scheduled sessions — `daysProgress` needs both: the
+    /// completed ones fill a chip, the scheduled ones mark it booked.
+    private func weekSessions(userID: UUID) async -> [WorkoutSession] {
+        async let history = (try? await SessionRepository.history(userID: userID,
+                                                                  limit: 50)) ?? []
+        async let upcoming = (try? await SessionRepository.upcoming(limit: 50)) ?? []
+        return await history + upcoming
+    }
+
+    private func catalogByID() async -> [UUID: Exercise] {
+        let all = (try? await ExerciseRepository.fetchAll()) ?? []
+        return Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    private func weekRoutines(userID: UUID) async -> [Routine] {
+        (try? await RoutineRepository.fetchAll(ownerID: userID)) ?? []
+    }
+
+    private func routinesByID(userID: UUID) async -> [UUID: Routine] {
+        let all = await weekRoutines(userID: userID)
+        return Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// The anti-goalpost weekly days number, with the app's own default when
+    /// there is no profile to read (`HomeView.weeklyGoalWidget` uses the same
+    /// 3).
+    private func effectiveWeeklyGoal(userID: UUID) async -> Int {
+        let profile = try? await ProfileRepository.fetch(userID: userID)
+        return profile?.effectiveWeeklyGoal ?? 3
+    }
+}
