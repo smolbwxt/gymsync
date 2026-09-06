@@ -181,7 +181,11 @@ final class WeeklyGoalModelTests: XCTestCase {
     /// the contract, not an implementation detail.
     func testStubReturnsTheDesignsFixtureGoal() async throws {
         let repository = StubWeeklyGoalRepository()
-        let goal = try XCTUnwrap(await repository.goal(weekStart: "2026-09-06"))
+        // `XCTUnwrap` takes an autoclosure, and Swift forbids `await` inside
+        // one ('async call in an autoclosure that does not support
+        // concurrency'), so the fetch is bound first and unwrapped second.
+        let fetched = await repository.goal(weekStart: "2026-09-06")
+        let goal = try XCTUnwrap(fetched)
 
         XCTAssertEqual(goal.kind, .muscleSets)
         XCTAssertEqual(goal.source, .coach)
