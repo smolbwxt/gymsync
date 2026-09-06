@@ -1834,7 +1834,7 @@ struct CatalogHostView: View {
     /// places a real month is production's, exercised by `derivedWorld`.
     private static let calendarFixtureWorld = CalendarWorld(
         month: CalendarMonthGrid.Month(
-            label: "SEPTEMBER 2026",
+            label: "September 2026",
             weekdayLabels: ["M", "T", "W", "T", "F", "S", "S"],
             dayCount: 30,
             leadingBlanks: 0,

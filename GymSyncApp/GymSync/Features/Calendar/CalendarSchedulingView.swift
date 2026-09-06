@@ -100,10 +100,15 @@ struct CalendarSchedulingView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                // The `{Month} {Year}` SUBTITLE the proof draws under the
+                // title — not a kicker. It sits directly beneath the large
+                // `Calendar` the nav bar renders, which is why the nav title
+                // is `.large` here and the type is sentence-case body rather
+                // than tracked all-caps.
                 Text(resolved.month.label)
-                    .font(GSFont.bold(11, relativeTo: .caption))
-                    .tracking(1.2)
+                    .font(GSFont.body(15, relativeTo: .subheadline))
                     .foregroundStyle(theme.neutral500)
+                    .accessibilityAddTraits(.isHeader)
 
                 CalendarMonthGrid(month: resolved.month,
                                   legendCrewColor: resolved.legendCrewColor,
@@ -125,7 +130,12 @@ struct CalendarSchedulingView: View {
         }
         .background(theme.bg)
         .navigationTitle("Calendar")
-        .navigationBarTitleDisplayMode(.inline)
+        // `.large`, so the page opens under the big left-aligned `Calendar`
+        // the v7 proof draws, with the month line as its subtitle. It
+        // collapses to inline on scroll and keeps the trailing `+` in both
+        // states. The scaffold's `.inline` was the narrower reading; the
+        // proof and plan D2 item 1 both want the header block.
+        .navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
@@ -480,7 +490,7 @@ struct CalendarSchedulingView: View {
         let legendCrew = crew.keys.min().flatMap { crew[$0] } ?? GSGroupColor.palette[2]
 
         let month = CalendarMonthGrid.Month(
-            label: monthStart.formatted(.dateTime.month(.wide).year()).uppercased(),
+            label: monthStart.formatted(.dateTime.month(.wide).year()),
             weekdayLabels: Self.weekdayLabels(cal),
             dayCount: dayCount,
             leadingBlanks: (cal.component(.weekday, from: monthStart) - cal.firstWeekday + 7) % 7,
