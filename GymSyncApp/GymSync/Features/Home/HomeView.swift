@@ -5,6 +5,18 @@ struct HomeView: View {
     @Environment(\.gsTheme) private var theme
     @Environment(AppState.self) private var appState
 
+    // MARK: - Injected repositories (production plan, Task 0's interface)
+    //
+    // Defaulted, so `HomeView()` at `RootView.swift:495` is unchanged and a
+    // test or a preview can hand in its own. Integration task **I1** swaps
+    // these defaults for Stream A's live implementations; until then Home is
+    // correct rather than half-built — an empty friends repository IS the
+    // shipping state of the crew pulse (owner ruling 2), and the stub goal
+    // repository renders the design's own fixture numbers.
+
+    /// Who from the crew is lifting right now.
+    var friendsRepository: any FriendsLiveRepository = EmptyFriendsLiveRepository()
+
     @State private var upcomingSessions: [WorkoutSession] = []
     @State private var groups: [GymGroup] = []
     @State private var showScheduleSheet = false
@@ -714,10 +726,30 @@ struct HomeView: View {
         return "\(groupName) · \(startedAt.formatted(.dateTime.hour().minute()))"
     }
 
-    /// Tap on the crew pulse. Task **B4** upgrades this to open the friend's
-    /// LOBBY when `session_participants` includes you; until then it opens
-    /// the crew room, which is where a session you are not in belongs.
+    /// Tap on the crew pulse: that session's LOBBY when you are one of its
+    /// participants, the crew room otherwise.
+    ///
+    /// Participation is asked at TAP TIME rather than carried on
+    /// `FriendLive`, for two reasons. `SessionRepository.upcoming()` filters
+    /// to `scheduled | lobby_open | editing | voting | locked`, so a session
+    /// that is actually `in_progress` — the only kind this strip shows — is
+    /// never in `upcomingSessions` and cannot be checked against it. And the
+    /// answer only matters for the one row a lifter actually presses, so
+    /// asking for all of them on every refresh would be work for nothing.
     private func openFriendLive(_ friend: FriendLive) {
+        Task { await routeToFriendLive(friend) }
+    }
+
+    @MainActor
+    private func routeToFriendLive(_ friend: FriendLive) async {
+        if let userID = appState.currentProfile?.id,
+           let rows = try? await SessionRepository.participants(sessionID: friend.sessionID),
+           rows.contains(where: { $0.participant.userID == userID }),
+           let session = try? await SessionRepository.session(id: friend.sessionID) {
+            openLobby(session)
+            return
+        }
+        // Not yours to walk into — the crew room is where you ask.
         guard let groupID = friend.groupID else { return }
         appState.pendingRoute = .chat(groupID: groupID)
         appState.selectedTab = .social
@@ -1184,6 +1216,7 @@ struct HomeView: View {
         async let campaignsFetch = fetchActiveCampaigns(userID: userID)
         async let streakFetch    = fetchStreak(userID: userID)
         async let programFetch   = fetchActiveProgram(userID: userID)
+        async let friendsFetch   = fetchFriendsLive(userID: userID)
 
         // Perf (user report 2026-07-25: "things load incrementally over a
         // fraction of a second"): every `await` is a suspension point, so
@@ -1202,6 +1235,7 @@ struct HomeView: View {
         let campaigns       = await campaignsFetch
         let streak          = await streakFetch
         let program         = await programFetch
+        let friends         = await friendsFetch
 
         // ── single commit (no awaits until after this block) ──
         if let sessions { upcomingSessions = sessions }
@@ -1213,6 +1247,7 @@ struct HomeView: View {
         activeCampaigns = campaigns ?? []
         if let streak { userStreak = streak }
         activeProgram = program
+        friendsLive = friends
         statsLoading = false
 
         // Commit signal for the next actionable group session (Phase B,
@@ -1334,6 +1369,15 @@ struct HomeView: View {
     private func fetchActiveProgram(userID: UUID?) async -> ProgramEnrollment? {
         guard userID != nil else { return nil }
         return (try? await ProgramRepository.active()) ?? nil
+    }
+
+    /// Who from the crew is mid-session (task B4). Non-throwing by
+    /// construction: the protocol returns `[]` rather than an error, because
+    /// "nobody is lifting" and "the query failed" render the same thing —
+    /// no strip at all.
+    private func fetchFriendsLive(userID: UUID?) async -> [FriendLive] {
+        guard userID != nil else { return [] }
+        return await friendsRepository.live()
     }
 
     private func fetchOwnedRoutines(userID: UUID?) async -> [Routine]? {
