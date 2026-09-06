@@ -585,8 +585,185 @@ final class WeeklyGoalProgressTests: XCTestCase {
         XCTAssertEqual(progress.unitLabel, "lbs")
     }
 
+    // MARK: - A6: sessionsOfType
+
+    private func routine(_ n: Int, _ name: String) -> Routine {
+        Routine(id: id(n), ownerID: id(9001), name: name, description: nil,
+                visibility: "private", createdAt: wednesday, updatedAt: wednesday)
+    }
+
+    private func routineRow(_ routine: Routine, _ exercise: Exercise,
+                            position: Int) -> RoutineExercise {
+        RoutineExercise(id: UUID(), routineID: routine.id, exerciseID: exercise.id,
+                        position: position, targetSets: 3, targetReps: "10",
+                        targetWeight: nil, restSeconds: 90, notes: nil)
+    }
+
+    private func sessionOf(_ routine: Routine?, dayOffset: Int = 0) -> WorkoutSession {
+        let completed = testCalendar.date(byAdding: .day, value: dayOffset,
+                                          to: wednesday)!
+        return WorkoutSession(id: UUID(), routineID: routine?.id,
+                              organizerID: id(9001), state: "completed",
+                              startedAt: completed, completedAt: completed,
+                              createdAt: completed, groupID: nil, roomCode: nil,
+                              scheduledFor: nil, seriesID: nil,
+                              currentTurnUserID: nil, currentTurnStartedAt: nil)
+    }
+
+    func testCardioCountsWhenHalfTheRoutineIsCardio() {
+        let bike = exercise(10, "Assault Bike", "quads", category: "cardio")
+        let row = exercise(11, "Rower", "back", category: "cardio")
+        let press = exercise(12, "Bench Press", "chest", category: "compound")
+        let conditioning = routine(20, "Tuesday Engine")
+        let rows = [routineRow(conditioning, bike, position: 1),
+                    routineRow(conditioning, row, position: 2),
+                    routineRow(conditioning, press, position: 3)]
+
+        XCTAssertTrue(WeeklyGoalProgressMath.sessionCounts(
+            towardType: "cardio", session: sessionOf(conditioning),
+            routines: [conditioning.id: conditioning],
+            routineExercises: [conditioning.id: rows],
+            catalog: catalog([bike, row, press]), calendar: testCalendar),
+            "2 of 3 cardio clears the half threshold")
+    }
+
+    func testCardioDoesNotCountWhenOnlyOneExerciseIsCardio() {
+        let bike = exercise(10, "Assault Bike", "quads", category: "cardio")
+        let press = exercise(12, "Bench Press", "chest", category: "compound")
+        let squat = exercise(13, "Back Squat", "quads", category: "compound")
+        let strength = routine(21, "Push Day")
+        let rows = [routineRow(strength, press, position: 1),
+                    routineRow(strength, squat, position: 2),
+                    routineRow(strength, bike, position: 3)]
+
+        XCTAssertFalse(WeeklyGoalProgressMath.sessionCounts(
+            towardType: "cardio", session: sessionOf(strength),
+            routines: [strength.id: strength],
+            routineExercises: [strength.id: rows],
+            catalog: catalog([bike, press, squat]), calendar: testCalendar),
+            "five minutes on the bike does not make a strength day a cardio day")
+    }
+
+    func testHiitCountsOnTheRoutineNameBecauseItHasNoCategory() {
+        let burpee = exercise(14, "Burpee", "legs", category: "compound")
+        let hiit = routine(22, "Saturday HIIT Blast")
+        let rows = [routineRow(hiit, burpee, position: 1)]
+
+        XCTAssertTrue(WeeklyGoalProgressMath.sessionCounts(
+            towardType: "hiit", session: sessionOf(hiit),
+            routines: [hiit.id: hiit], routineExercises: [hiit.id: rows],
+            catalog: catalog([burpee]), calendar: testCalendar),
+            "hiit has no category — the name is the only signal")
+        XCTAssertFalse(WeeklyGoalProgressMath.sessionCounts(
+            towardType: "class", session: sessionOf(hiit),
+            routines: [hiit.id: hiit], routineExercises: [hiit.id: rows],
+            catalog: catalog([burpee]), calendar: testCalendar))
+    }
+
+    func testNameMatchIsCaseInsensitive() {
+        let stretch = exercise(15, "Hip Opener", "hip_flexors", category: "mobility")
+        let named = routine(23, "SUNDAY MOBILITY")
+        XCTAssertTrue(WeeklyGoalProgressMath.sessionCounts(
+            towardType: "mobility", session: sessionOf(named),
+            routines: [named.id: named],
+            routineExercises: [named.id: [routineRow(named, stretch, position: 1)]],
+            catalog: catalog([stretch]), calendar: testCalendar))
+    }
+
+    func testHealthKitWorkoutOutranksTheInference() {
+        let press = exercise(12, "Bench Press", "chest", category: "compound")
+        let strength = routine(21, "Push Day")
+        let pushSession = sessionOf(strength)
+        let day = testCalendar.startOfDay(for: pushSession.completedAt!)
+
+        XCTAssertTrue(WeeklyGoalProgressMath.sessionCounts(
+            towardType: "cardio", session: pushSession,
+            routines: [strength.id: strength],
+            routineExercises: [strength.id: [routineRow(strength, press, position: 1)]],
+            catalog: catalog([press]),
+            healthWorkoutTypesByDay: [day: ["cardio"]], calendar: testCalendar),
+            "a real HealthKit workout is fact; the routine inference is a guess")
+    }
+
+    func testSessionWithNoRoutineCountsNothing() {
+        XCTAssertFalse(WeeklyGoalProgressMath.sessionCounts(
+            towardType: "cardio", session: sessionOf(nil),
+            routines: [:], routineExercises: [:], catalog: [:],
+            calendar: testCalendar),
+            "a freestyle session carries no type signal at all")
+    }
+
+    func testSessionWithTwoMatchingSignalsIsCountedOnce() {
+        let bike = exercise(10, "Assault Bike", "quads", category: "cardio")
+        // Named "Cardio" AND all-cardio by category — two signals, one session.
+        let both = routine(24, "Cardio Engine")
+        let rows = [routineRow(both, bike, position: 1)]
+        let progress = WeeklyGoalProgressMath.sessionsOfTypeProgress(
+            goal: goal(.sessionsOfType, params: .init(sessionType: "cardio", count: 3)),
+            sessions: [sessionOf(both)], routines: [both.id: both],
+            routineExercises: [both.id: rows], catalog: catalog([bike]),
+            now: wednesday, calendar: testCalendar)
+
+        XCTAssertEqual(progress.value, 1, "sessions are counted, not signals")
+        XCTAssertEqual(progress.target, 3)
+        XCTAssertFalse(progress.met)
+    }
+
+    func testSessionsOfTypeIgnoresOtherWeeks() {
+        let bike = exercise(10, "Assault Bike", "quads", category: "cardio")
+        let cardio = routine(24, "Cardio Engine")
+        let rows = [routineRow(cardio, bike, position: 1)]
+        let progress = WeeklyGoalProgressMath.sessionsOfTypeProgress(
+            goal: goal(.sessionsOfType, params: .init(sessionType: "cardio", count: 2)),
+            sessions: [sessionOf(cardio, dayOffset: 0),
+                       sessionOf(cardio, dayOffset: -4)],   // last week
+            routines: [cardio.id: cardio], routineExercises: [cardio.id: rows],
+            catalog: catalog([bike]), now: wednesday, calendar: testCalendar)
+
+        XCTAssertEqual(progress.value, 1)
+    }
+
+    func testSessionsOfTypeMetFlipsTheKicker() {
+        let bike = exercise(10, "Assault Bike", "quads", category: "cardio")
+        let cardio = routine(24, "Cardio Engine")
+        let rows = [routineRow(cardio, bike, position: 1)]
+        let progress = WeeklyGoalProgressMath.sessionsOfTypeProgress(
+            goal: goal(.sessionsOfType, params: .init(sessionType: "cardio", count: 2)),
+            sessions: [sessionOf(cardio, dayOffset: 0),
+                       sessionOf(cardio, dayOffset: -1)],
+            routines: [cardio.id: cardio], routineExercises: [cardio.id: rows],
+            catalog: catalog([bike]), now: wednesday, calendar: testCalendar)
+
+        XCTAssertTrue(progress.met)
+        XCTAssertEqual(progress.kicker, "GOAL MET · 4 DAYS LEFT")
+    }
+
+    func testSessionsOfTypeWithNoCountIsNotMet() {
+        let progress = WeeklyGoalProgressMath.sessionsOfTypeProgress(
+            goal: goal(.sessionsOfType, params: .init(sessionType: "cardio")),
+            sessions: [], routines: [:], routineExercises: [:], catalog: [:],
+            now: wednesday, calendar: testCalendar)
+
+        XCTAssertFalse(progress.met, "0 of 0 is a goal that was never finished being set")
+    }
+
+    func testDispatcherRoutesSessionsOfType() {
+        let bike = exercise(10, "Assault Bike", "quads", category: "cardio")
+        let cardio = routine(24, "Cardio Engine")
+        let progress = WeeklyGoalProgressMath.progress(
+            goal: goal(.sessionsOfType, params: .init(sessionType: "cardio", count: 3)),
+            logs: [], catalog: catalog([bike]), sessions: [sessionOf(cardio)],
+            effectiveWeeklyGoal: 3,
+            routines: [cardio.id: cardio],
+            routineExercises: [cardio.id: [routineRow(cardio, bike, position: 1)]],
+            now: wednesday, calendar: testCalendar)
+
+        XCTAssertEqual(progress.value, 1)
+        XCTAssertEqual(progress.target, 3)
+    }
+
     func testDispatcherReturnsChromeForKindsNotYetImplemented() {
-        for kind in [WeeklyGoalKind.distance, .sessionsOfType] {
+        for kind in [WeeklyGoalKind.distance] {
             let progress = WeeklyGoalProgressMath.progress(
                 goal: goal(kind), logs: [], catalog: [:], sessions: [],
                 effectiveWeeklyGoal: 3, now: wednesday, calendar: testCalendar)

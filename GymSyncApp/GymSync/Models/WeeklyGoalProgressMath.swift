@@ -331,6 +331,109 @@ enum WeeklyGoalProgressMath {
                                                  daysLeft: daysLeft))
     }
 
+    // MARK: - A6: sessionsOfType
+
+    /// Does one completed session count toward a `sessionsOfType` goal?
+    ///
+    /// **THIS IS AN INFERENCE, AND IT IS THE HONEST ONE AVAILABLE TODAY.**
+    /// There is no `session_type` column and no routine tag anywhere in the
+    /// schema — grep-verified. So the type is read off two signals the app
+    /// genuinely has:
+    ///
+    /// 1. **The routine's exercise categories.** `Exercise.category` is one
+    ///    of `compound | isolation | cardio | mobility`
+    ///    (`20260813000001_import_free_exercise_db.sql`'s mapping comment).
+    ///    A session counts for `cardio` or `mobility` when **at least half**
+    ///    the routine's exercises carry that category. Half, not one: a
+    ///    strength routine that ends with five minutes on the bike is not a
+    ///    cardio session, and a single tagged row would make it one.
+    /// 2. **The routine's name**, case-insensitively, for `hiit` and
+    ///    `class` — which have no category and can be named nothing else.
+    ///    The name check applies to every type as a fallback, because a
+    ///    routine called "Sunday Mobility" with untagged stretches is
+    ///    obviously mobility to its author.
+    /// 3. **An Apple Health workout of the matching type on the same day**
+    ///    outranks both (task A7's query supplies it): a real HealthKit
+    ///    workout is recorded fact, where the two above are guesses about a
+    ///    routine's intent.
+    ///
+    /// **Its limitation, stated plainly:** a routine whose exercises are
+    /// mis-categorised in the catalog, or whose name says nothing, will not
+    /// count no matter what the athlete actually did. A `session_type`
+    /// column is the real fix and is out of this plan's scope (the plan's
+    /// own "What this plan does not decide" #4).
+    ///
+    /// Returns a Bool per session, so a session with TWO matching signals is
+    /// still one session — the caller counts sessions, not signals.
+    static func sessionCounts(towardType type: String,
+                              session: WorkoutSession,
+                              routines: [UUID: Routine],
+                              routineExercises: [UUID: [RoutineExercise]],
+                              catalog: [UUID: Exercise],
+                              healthWorkoutTypesByDay: [Date: Set<String>] = [:],
+                              calendar: Calendar = .current) -> Bool {
+        guard let completedAt = session.completedAt else { return false }
+        let wanted = type.lowercased()
+
+        // 3 — recorded fact beats inference.
+        let day = calendar.startOfDay(for: completedAt)
+        if healthWorkoutTypesByDay[day]?.contains(wanted) == true { return true }
+
+        guard let routineID = session.routineID else { return false }
+
+        // 2 — the name, for hiit/class and as everyone's fallback.
+        if let name = routines[routineID]?.name.lowercased(), name.contains(wanted) {
+            return true
+        }
+
+        // 1 — the category threshold, for the two types that have one.
+        guard wanted == "cardio" || wanted == "mobility" else { return false }
+        let categories = (routineExercises[routineID] ?? [])
+            .compactMap { catalog[$0.exerciseID]?.category.lowercased() }
+        guard !categories.isEmpty else { return false }
+        let matching = categories.filter { $0 == wanted }.count
+        return Double(matching) >= Double(categories.count) / 2.0
+    }
+
+    /// `2 of 3 HIIT` — n dots, filled as done.
+    ///
+    /// Sessions are counted, not signals: `sessionCounts` answers once per
+    /// session, so a routine named "HIIT" whose exercises are also all
+    /// cardio still moves the number by one.
+    static func sessionsOfTypeProgress(goal: WeeklyGoal,
+                                       sessions: [WorkoutSession],
+                                       routines: [UUID: Routine],
+                                       routineExercises: [UUID: [RoutineExercise]],
+                                       catalog: [UUID: Exercise],
+                                       healthWorkoutTypesByDay: [Date: Set<String>] = [:],
+                                       now: Date = .now,
+                                       calendar: Calendar = .current) -> WeeklyGoalProgress {
+        let daysLeft = WeekMath.daysRemaining(in: now, from: now, calendar: calendar)
+        let type = goal.params.sessionType ?? ""
+        let target = Double(goal.params.count ?? 0)
+
+        let done = Double(sessions.filter { session in
+            guard let completedAt = session.completedAt,
+                  calendar.isDate(completedAt, equalTo: now, toGranularity: .weekOfYear)
+            else { return false }
+            return sessionCounts(towardType: type, session: session,
+                                 routines: routines,
+                                 routineExercises: routineExercises,
+                                 catalog: catalog,
+                                 healthWorkoutTypesByDay: healthWorkoutTypesByDay,
+                                 calendar: calendar)
+        }.count)
+
+        let met = target > 0 && done >= target
+
+        return WeeklyGoalProgress(value: done,
+                                  target: target,
+                                  met: met,
+                                  rightHandRead: daysLeftPhrase(daysLeft),
+                                  kicker: kicker(source: goal.source, met: met,
+                                                 daysLeft: daysLeft))
+    }
+
     // MARK: - A4: the dispatcher
 
     /// One entry point per goal, so `LiveWeeklyGoalRepository` (A12) never
@@ -338,8 +441,8 @@ enum WeeklyGoalProgressMath {
     ///
     /// A kind whose math has not landed yet returns the strip's CHROME —
     /// the right kicker and right-hand read with no numbers — rather than a
-    /// zeroed progress that would render as "0 of 0, met". Tasks A6-A7 fill
-    /// the remaining two arms.
+    /// zeroed progress that would render as "0 of 0, met". Task A7 fills the
+    /// last arm.
     ///
     /// `logs` are THIS WEEK's; `blockLogs` are the active block's, which the
     /// `lift` kind needs because an e1RM is a block-long fact rather than a
@@ -354,6 +457,9 @@ enum WeeklyGoalProgressMath {
                          blockLogs: [SetLog] = [],
                          blockStartLbs: Decimal? = nil,
                          unit: WeightUnit = .lbs,
+                         routines: [UUID: Routine] = [:],
+                         routineExercises: [UUID: [RoutineExercise]] = [:],
+                         healthWorkoutTypesByDay: [Date: Set<String>] = [:],
                          now: Date = .now,
                          calendar: Calendar = .current) -> WeeklyGoalProgress {
         switch goal.kind {
@@ -368,7 +474,13 @@ enum WeeklyGoalProgressMath {
             return liftProgress(goal: goal, blockLogs: blockLogs,
                                 blockStartLbs: blockStartLbs, unit: unit,
                                 now: now, calendar: calendar)
-        case .distance, .sessionsOfType:
+        case .sessionsOfType:
+            return sessionsOfTypeProgress(
+                goal: goal, sessions: sessions, routines: routines,
+                routineExercises: routineExercises, catalog: catalog,
+                healthWorkoutTypesByDay: healthWorkoutTypesByDay,
+                now: now, calendar: calendar)
+        case .distance:
             let daysLeft = WeekMath.daysRemaining(in: now, from: now, calendar: calendar)
             return WeeklyGoalProgress(rightHandRead: daysLeftPhrase(daysLeft),
                                       kicker: kicker(source: goal.source, met: false,
