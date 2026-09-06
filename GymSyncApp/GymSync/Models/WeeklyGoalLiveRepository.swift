@@ -329,7 +329,7 @@ struct LiveWeeklyGoalRepository: WeeklyGoalRepository {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         do {
-            return try await client
+            let rows: [SetLog] = try await client
                 .from("set_logs")
                 .select()
                 .eq("user_id", value: userID)
@@ -337,6 +337,7 @@ struct LiveWeeklyGoalRepository: WeeklyGoalRepository {
                 .eq("is_penalty", value: "false")
                 .order("logged_at", ascending: true)
                 .execute().value
+            return rows
         } catch {
             AppLogger.db.error("weekly goal set_logs read failed: \(error.localizedDescription, privacy: .public)")
             return []
@@ -349,7 +350,9 @@ struct LiveWeeklyGoalRepository: WeeklyGoalRepository {
         async let history = (try? await SessionRepository.history(userID: userID,
                                                                   limit: 50)) ?? []
         async let upcoming = (try? await SessionRepository.upcoming(limit: 50)) ?? []
-        return await history + upcoming
+        let completed = await history
+        let booked = await upcoming
+        return completed + booked
     }
 
     private func catalogByID() async -> [UUID: Exercise] {
