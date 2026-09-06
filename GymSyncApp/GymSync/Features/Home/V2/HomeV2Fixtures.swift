@@ -209,4 +209,71 @@ enum HomeV2Fixtures {
     /// Ink on a group-colour tile — `GSGroupColor.onColor`'s value for every
     /// palette entry (all are mid-to-light hues, so near-black reads on each).
     private static let groupInk = Color.gsHex(0x0A0B0D)
+
+    // MARK: Home v3
+    //
+    // The eight new pieces' values, verbatim from the v3 plan's "New pieces"
+    // table (`docs/superpowers/plans/2026-09-06-home-v3-ten-variations.md`).
+    //
+    // These are SHARED by both worlds rather than split crew/solo the way
+    // `crewNightAppointments`/`soloDayAppointments` are: the plan gives one
+    // set of values, and every one of them is true on either day — the last
+    // lift, the PR watch, the body weight and the lifetime total are facts
+    // about the lifter, not about which kind of session today happens to be.
+    // Keeping them shared also keeps the ten frames comparable: a difference
+    // between two compositions reads as the composition, not as the data.
+    //
+    // They live as statics rather than as new `HomeV2World` fields on
+    // purpose: adding stored properties to that struct would rewrite both
+    // world literals above (v2 pieces are frozen except for additive
+    // parameters), and nothing here varies per world.
+
+    /// `HomeUpNextStrip` — the kicker carries the when.
+    static let upNextKicker = "NEXT · SAT 9:00 AM"
+    static let upNextTitle = "Lower B with Legs Crew"
+
+    /// `HomeLastLiftTile`.
+    static let lastLiftRoutine = "Push A"
+    static let lastLiftDetail = "Wed · 7,240 lb · 1 PR"
+
+    /// `HomePRWatchTile` — the second line is an invitation, so it is the
+    /// one place a v3 tile spends accent (design language rule 3).
+    static let prWatchLift = "Bench 205"
+    static let prWatchInvitation = "210 is within reach"
+
+    /// `HomeRecoveryStrip`.
+    static let recoveryFresh = "BACK · LEGS"
+    static let recoveryTender = "CHEST"
+    static let recoverySentence = "Back and legs are fresh. Chest is still tender."
+
+    /// `HomeMilestoneTile` — the percentage in the line and the bar's fill
+    /// are the same number stated twice, deliberately: 0.29 is what the bar
+    /// draws, `29% of Mount Fuji` is what it says.
+    static let milestoneTotal = "1.31M lb"
+    static let milestoneLine = "29% of Mount Fuji"
+    static let milestoneProgress = 0.29
+
+    /// `HomeBodyWeightTile`. The change opens with U+2212 MINUS SIGN, not a
+    /// hyphen — it sits beside tabular digits and a hyphen reads as a dash
+    /// at that size.
+    static let bodyWeight = "180.4 lb"
+    static let bodyWeightChange = "−5.8 since July"
+
+    /// `HomeCrewPulseStrip` — Dana is the crew-night fixture's own first
+    /// checked-in lifter (`crewNightAppointments`' Push Crew row says the
+    /// same session), so the two agree on any frame that shows both.
+    static let crewPulseInitials = "DA"
+    static let crewPulseHeadline = "Dana is lifting now"
+    static let crewPulseDetail = "Push Crew · tonight 5:00 PM"
+
+    /// `HomeWeekPlanStrip` — two done, one next, matching the `soloDay`
+    /// week's shape closely enough that a frame carrying both does not
+    /// contradict itself (the plan's three named days are the training days
+    /// of that week; the strip names them where the week strip only counts
+    /// them).
+    static let weekPlan: [HomeWeekPlanStrip.Entry] = [
+        .init(id: 0, label: "TUE PUSH", state: .done),
+        .init(id: 1, label: "THU PULL", state: .done),
+        .init(id: 2, label: "SAT LEGS", state: .next),
+    ]
 }

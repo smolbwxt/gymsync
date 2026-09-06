@@ -79,15 +79,31 @@ struct HomeCalendarCard: View {
 
     let months: [Month]
     let appointments: [Appointment]
+    /// Whether the folded appointment rows render under the dot field.
+    ///
+    /// `true` — Home v2's card, unchanged, itinerary and all: the default
+    /// exists so the four v2 captures keep rendering exactly what the owner
+    /// already judged. `false` — Home v3: the owner asked for the detail
+    /// sessions to be stripped from the bottom of the calendar and written
+    /// out on the page the card opens instead (plan,
+    /// `docs/superpowers/plans/2026-09-06-home-v3-ten-variations.md`,
+    /// "Fixed decisions"). The header's `{n} UPCOMING` pill stays either way
+    /// — the count is still true, it is only the itinerary that moves.
+    var showsAppointments: Bool = true
     /// Tap → the calendar & scheduling page.
     var action: () -> Void = {}
+
+    /// The rows render only when this card is showing its itinerary AND it
+    /// has one. Named once here because the header's chevron is its mirror
+    /// image: the door needs a handle exactly when the rows are gone.
+    private var listVisible: Bool { showsAppointments && !appointments.isEmpty }
 
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 0) {
                 header
                 monthField.padding(.top, 14)
-                if !appointments.isEmpty {
+                if listVisible {
                     appointmentList.padding(.top, 16)
                 }
             }
@@ -120,6 +136,19 @@ struct HomeCalendarCard: View {
                 .foregroundStyle(theme.accent)
                 .frame(width: 32, height: 32)
                 .background(Circle().fill(theme.neutral300))
+
+            // The door's handle. With the itinerary folded away, the rows'
+            // own trailing chevrons go with it and nothing on the card says
+            // it opens anything — so the header grows one (plan, "Fixed
+            // decisions": tap anywhere → the calendar & scheduling page,
+            // where the itinerary is written out). Gated on the same
+            // parameter rather than added unconditionally, so a v2 capture
+            // stays pixel-identical to the frames already judged.
+            if !showsAppointments {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(theme.neutral500)
+            }
         }
     }
 
