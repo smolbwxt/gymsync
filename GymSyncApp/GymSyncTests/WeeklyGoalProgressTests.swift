@@ -404,8 +404,189 @@ final class WeeklyGoalProgressTests: XCTestCase {
         XCTAssertEqual(days.value, 1)
     }
 
+    // MARK: - A5: lift
+
+    private func liftLog(_ exercise: Exercise, weight: Decimal, reps: Int,
+                         failed: Bool = false, dayOffset: Int = 0) -> SetLog {
+        SetLog(id: UUID(), userID: id(9001), sessionID: id(9002),
+               exerciseID: exercise.id, setIndex: 1, reps: reps, weight: weight,
+               rpe: 7, isFailed: failed, isPenalty: false, note: nil,
+               loggedAt: testCalendar.date(byAdding: .day, value: dayOffset,
+                                           to: wednesday)!)
+    }
+
+    private func liftGoal(_ squat: Exercise, targetLbs: Decimal,
+                          byDate: Date? = nil) -> WeeklyGoal {
+        goal(.lift, params: .init(exerciseID: squat.id,
+                                  targetWeightLbs: targetLbs, byDate: byDate))
+    }
+
+    func testLiftMeterRunsFromTheBlockStartNotFromZero() {
+        let squat = exercise(5, "Back Squat", "quads")
+        // 190 x 5 → Epley 190 x (1 + 5/30) = 221.666…
+        let progress = WeeklyGoalProgressMath.liftProgress(
+            goal: liftGoal(squat, targetLbs: 225),
+            blockLogs: [liftLog(squat, weight: 190, reps: 5)],
+            blockStartLbs: 200, unit: .lbs,
+            now: wednesday, calendar: testCalendar)
+
+        XCTAssertEqual(progress.value, 221.666, accuracy: 0.01,
+                       "value is the READABLE current e1RM")
+        XCTAssertEqual(progress.target, 225, accuracy: 0.001)
+        XCTAssertEqual(progress.chips.count, 1)
+        XCTAssertEqual(progress.chips[0].target, 25, accuracy: 0.001,
+                       "the meter's span is target − block start, not target")
+        XCTAssertEqual(progress.chips[0].done, 21.666, accuracy: 0.01)
+        XCTAssertFalse(progress.met)
+        XCTAssertEqual(progress.unitLabel, "lbs")
+    }
+
+    func testLiftWithNoLogsRendersZeroAndDoesNotCrash() {
+        let squat = exercise(5, "Back Squat", "quads")
+        let progress = WeeklyGoalProgressMath.liftProgress(
+            goal: liftGoal(squat, targetLbs: 225), blockLogs: [],
+            blockStartLbs: 200, unit: .lbs,
+            now: wednesday, calendar: testCalendar)
+
+        XCTAssertEqual(progress.value, 0)
+        XCTAssertEqual(progress.target, 225, accuracy: 0.001)
+        XCTAssertEqual(progress.chips[0].done, 0,
+                       "below the floor clamps to an empty meter, never negative")
+        XCTAssertFalse(progress.met)
+    }
+
+    func testLiftBlockStartEqualToTargetDoesNotDivideByZero() {
+        let squat = exercise(5, "Back Squat", "quads")
+        let progress = WeeklyGoalProgressMath.liftProgress(
+            goal: liftGoal(squat, targetLbs: 225), blockLogs: [],
+            blockStartLbs: 225, unit: .lbs,
+            now: wednesday, calendar: testCalendar)
+
+        XCTAssertEqual(progress.chips[0].target, 1,
+                       "no span to fill renders full-or-empty, not 0/0")
+        XCTAssertEqual(progress.chips[0].done, 0)
+        XCTAssertTrue(progress.chips[0].target > 0,
+                      "the meter's denominator is never zero")
+    }
+
+    func testLiftFallsBackToTheEarliestE1RMWhenTheBlockCarriesNoBaseline() {
+        let squat = exercise(5, "Back Squat", "quads")
+        let logs = [liftLog(squat, weight: 180, reps: 5, dayOffset: -3),   // 210
+                    liftLog(squat, weight: 200, reps: 5, dayOffset: 0)]    // 233.33
+        let progress = WeeklyGoalProgressMath.liftProgress(
+            goal: liftGoal(squat, targetLbs: 260), blockLogs: logs,
+            blockStartLbs: nil, unit: .lbs,
+            now: wednesday, calendar: testCalendar)
+
+        // floor = earliest = 210, current = best = 233.33, span = 50
+        XCTAssertEqual(progress.chips[0].target, 50, accuracy: 0.001)
+        XCTAssertEqual(progress.chips[0].done, 23.333, accuracy: 0.01)
+    }
+
+    func testLiftUsesCompletedRepsAndThePlainEpleyVariant() {
+        let squat = exercise(5, "Back Squat", "quads")
+        // A failed single completed nothing and must not set an e1RM; the
+        // clean 200 x 5 must, at the PLAIN estimate (233.33) and not the
+        // RPE-aware one, which at rpe 7 would treat it as an 8-rep set (253.33).
+        let logs = [liftLog(squat, weight: 315, reps: 1, failed: true),
+                    liftLog(squat, weight: 200, reps: 5)]
+        let best = WeeklyGoalProgressMath.bestE1RMPounds(logs: logs,
+                                                         exerciseID: squat.id)
+
+        XCTAssertNotNil(best)
+        XCTAssertEqual(WeeklyGoalProgressTests.double(best ?? 0), 233.333,
+                       accuracy: 0.01,
+                       "a record is what you DID — the plain variant, and no credit for a missed single")
+    }
+
+    func testLiftConvertsTheReadableNumbersToTheAthletesUnit() {
+        let squat = exercise(5, "Back Squat", "quads")
+        let progress = WeeklyGoalProgressMath.liftProgress(
+            goal: liftGoal(squat, targetLbs: 225),
+            blockLogs: [liftLog(squat, weight: 200, reps: 5)],
+            blockStartLbs: 200, unit: .kg,
+            now: wednesday, calendar: testCalendar)
+
+        XCTAssertEqual(progress.unitLabel, "kg")
+        XCTAssertEqual(progress.target, 102.06, accuracy: 0.05, "225 lb in kg")
+        XCTAssertEqual(progress.value, 105.84, accuracy: 0.05, "233.33 lb in kg")
+    }
+
+    func testLiftMetFlipsTheKicker() {
+        let squat = exercise(5, "Back Squat", "quads")
+        let progress = WeeklyGoalProgressMath.liftProgress(
+            goal: liftGoal(squat, targetLbs: 225),
+            blockLogs: [liftLog(squat, weight: 200, reps: 5)],   // 233.33 ≥ 225
+            blockStartLbs: 200, unit: .lbs,
+            now: wednesday, calendar: testCalendar)
+
+        XCTAssertTrue(progress.met)
+        XCTAssertEqual(progress.kicker, "GOAL MET · 4 DAYS LEFT")
+    }
+
+    func testLiftWithoutAnExerciseOrTargetRendersChromeNotAMetZero() {
+        let progress = WeeklyGoalProgressMath.liftProgress(
+            goal: goal(.lift), blockLogs: [], blockStartLbs: nil, unit: .lbs,
+            now: wednesday, calendar: testCalendar)
+
+        XCTAssertTrue(progress.chips.isEmpty)
+        XCTAssertFalse(progress.met)
+        XCTAssertEqual(progress.kicker, "THIS WEEK · COACH'S GOAL")
+    }
+
+    func testWeeksLeftPhrase() {
+        let calendar = testCalendar
+        func phrase(_ dayOffset: Int) -> String? {
+            WeeklyGoalProgressMath.weeksLeftPhrase(
+                to: calendar.date(byAdding: .day, value: dayOffset, to: wednesday),
+                from: wednesday, calendar: calendar)
+        }
+
+        XCTAssertEqual(phrase(15), "3 WEEKS LEFT")
+        XCTAssertEqual(phrase(7), "1 WEEK LEFT")
+        XCTAssertEqual(phrase(1), "1 WEEK LEFT")
+        XCTAssertEqual(phrase(-3), "0 WEEKS LEFT",
+                       "a deadline behind you is 0 weeks, not invented copy")
+        XCTAssertNil(WeeklyGoalProgressMath.weeksLeftPhrase(to: nil, from: wednesday,
+                                                            calendar: calendar))
+    }
+
+    func testLiftRightHandReadIsWeeksWhenTheGoalNamesADate() {
+        let squat = exercise(5, "Back Squat", "quads")
+        let byDate = testCalendar.date(byAdding: .day, value: 15, to: wednesday)!
+        let dated = WeeklyGoalProgressMath.liftProgress(
+            goal: liftGoal(squat, targetLbs: 225, byDate: byDate),
+            blockLogs: [], blockStartLbs: 200, unit: .lbs,
+            now: wednesday, calendar: testCalendar)
+        let undated = WeeklyGoalProgressMath.liftProgress(
+            goal: liftGoal(squat, targetLbs: 225), blockLogs: [],
+            blockStartLbs: 200, unit: .lbs,
+            now: wednesday, calendar: testCalendar)
+
+        XCTAssertEqual(dated.rightHandRead, "3 WEEKS LEFT")
+        XCTAssertEqual(undated.rightHandRead, "4 DAYS LEFT",
+                       "no date falls back to the week's own read")
+    }
+
+    private static func double(_ value: Decimal) -> Double {
+        NSDecimalNumber(decimal: value).doubleValue
+    }
+
+    func testDispatcherRoutesLift() {
+        let squat = exercise(5, "Back Squat", "quads")
+        let progress = WeeklyGoalProgressMath.progress(
+            goal: liftGoal(squat, targetLbs: 225), logs: [], catalog: [:],
+            sessions: [], effectiveWeeklyGoal: 3,
+            blockLogs: [liftLog(squat, weight: 190, reps: 5)],
+            blockStartLbs: 200, unit: .lbs,
+            now: wednesday, calendar: testCalendar)
+
+        XCTAssertEqual(progress.chips.count, 1)
+        XCTAssertEqual(progress.unitLabel, "lbs")
+    }
+
     func testDispatcherReturnsChromeForKindsNotYetImplemented() {
-        for kind in [WeeklyGoalKind.distance, .sessionsOfType, .lift] {
+        for kind in [WeeklyGoalKind.distance, .sessionsOfType] {
             let progress = WeeklyGoalProgressMath.progress(
                 goal: goal(kind), logs: [], catalog: [:], sessions: [],
                 effectiveWeeklyGoal: 3, now: wednesday, calendar: testCalendar)
