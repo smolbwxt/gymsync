@@ -312,7 +312,7 @@ enum HomeV2Fixtures {
     // "maybe above the join with code, we display the weekly muscle group
     // goals, or whatever goal the coach is tracking as a strip?"
 
-    /// `HomeCoachTargetsStrip`'s four groups, the addendum plan's own values:
+    /// `HomeWeeklyGoalStrip`'s four groups, the addendum plan's own values:
     /// chest 8/12, back 10/12, legs 6/12 — the one furthest behind, so the
     /// one NEXT — and arms 8/8, the one already MET. Exactly one of each, so
     /// the two states the strip can show are both on screen in one frame,
@@ -323,12 +323,32 @@ enum HomeV2Fixtures {
     /// the BLOCK, not about which kind of session today happens to be, and
     /// keeping it shared keeps the two placements comparable — the
     /// difference between 08a and 08b then reads as the placement.
-    static let coachTargets: [HomeCoachTargetsStrip.Target] = [
-        .init(id: 0, name: "CHEST", done: 8, target: 12, isNext: false),
-        .init(id: 1, name: "BACK", done: 10, target: 12, isNext: false),
-        .init(id: 2, name: "LEGS", done: 6, target: 12, isNext: true),
-        .init(id: 3, name: "ARMS", done: 8, target: 8, isNext: false),
+    ///
+    /// Retyped from the strip's own `Target` to `WeeklyGoalProgress.Chip` in
+    /// task 0.3 (the strip now takes ONE pre-resolved progress value rather
+    /// than a list of targets). The four numbers are untouched, which is
+    /// what makes the 08a/08b frames byte-identical to the approved ones;
+    /// the ids are gone because the chip row keys on position now.
+    static let coachTargets: [WeeklyGoalProgress.Chip] = [
+        .init(name: "CHEST", done: 8, target: 12, isNext: false),
+        .init(name: "BACK", done: 10, target: 12, isNext: false),
+        .init(name: "LEGS", done: 6, target: 12, isNext: true),
+        .init(name: "ARMS", done: 8, target: 8, isNext: false),
     ]
+
+    /// The whole strip input for the two addendum frames, assembled from the
+    /// two fixtures around it.
+    ///
+    /// The kicker is the strip's OWN former hardcoded line, kept verbatim:
+    /// task 0.3 moved the words out of the view and into `progress`, and the
+    /// proof that the move changed nothing is that these frames still render
+    /// what the owner approved. Production's kicker says `COACH'S GOAL` (the
+    /// design's copy, `StubWeeklyGoalRepository`); an approved frame is not
+    /// the place to ship a copy change.
+    static let coachTargetsProgress = WeeklyGoalProgress(
+        chips: coachTargets,
+        rightHandRead: crewNightSessionsLeft,
+        kicker: "THIS WEEK · COACH'S TARGETS")
 
     /// The kicker row's right-hand read, one value per world. It is that
     /// world's `weeklyGoal - daysDone` and NOTHING else: both addendum

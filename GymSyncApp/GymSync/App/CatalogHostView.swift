@@ -1765,7 +1765,7 @@ struct CatalogHostView: View {
     // -addendum-targets-strip.md`). The owner, on the ten: "variation 8 of
     // the Home Screen is great. Maybe above the join with code, we display
     // the weekly muscle group goals, or whatever goal the coach is tracking
-    // as a strip?" — so both of these ARE 08, with `HomeCoachTargetsStrip`
+    // as a strip?" — so both of these ARE 08, with `HomeWeeklyGoalStrip`
     // inserted at the two placements that answer the "maybe", and the crew
     // night is their world because it is 08's.
     //
