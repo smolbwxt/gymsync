@@ -164,8 +164,8 @@ struct CalendarSwipeRow<Content: View>: View {
             .background(alignment: .trailing) {
                 if editable {
                     HStack(spacing: 0) {
-                        action("MOVE", tint: theme.accent) { onMove?() }
-                        action("CANCEL", tint: Color.gsHex(0xE05252)) { onCancel?() }
+                        action("MOVE", tint: theme.neutral300) { onMove?() }
+                        action("CANCEL", tint: theme.neutral400) { onCancel?() }
                     }
                     .frame(width: actionsWidth)
                 }
@@ -214,6 +214,20 @@ struct CalendarSwipeRow<Content: View>: View {
             }
     }
 
+    /// Raised-face neutrals, not accent and not red.
+    ///
+    /// Design language §2: "Red is for errors only", and accent is spent on
+    /// "the one primary action per screen" — which on this page is
+    /// `SCHEDULE A SESSION`. §4 states the rest plainly: "One button in
+    /// accent (or gold), everything else the raised face." A revealed swipe
+    /// action is not exempt from that just because it is usually off screen.
+    /// `FriendsView`'s destructive red is a weaker precedent than it looks,
+    /// because the platform draws it and this does not.
+    ///
+    /// CANCEL is told apart by its word and by sitting at the far edge —
+    /// where a destructive swipe action always sits — rather than by a
+    /// colour the language reserves for errors. It is a step lighter than
+    /// MOVE so the pair reads as two things, not one wide button.
     private func action(_ label: String, tint: Color, run: @escaping () -> Void) -> some View {
         Button {
             close()
@@ -222,7 +236,7 @@ struct CalendarSwipeRow<Content: View>: View {
             Text(label)
                 .font(GSFont.bold(11, relativeTo: .caption2))
                 .kerning(1.1)
-                .foregroundStyle(theme.bg)
+                .foregroundStyle(theme.text)
                 .frame(width: actionWidth)
                 .frame(maxHeight: .infinity)
                 .background(tint)
