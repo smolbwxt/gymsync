@@ -304,4 +304,49 @@ enum HomeV2Fixtures {
         .init(id: 1, label: "THU PULL", state: .done),
         .init(id: 2, label: "SAT LEGS", state: .next),
     ]
+
+    // MARK: Home v3 addendum — Coach's targets
+    //
+    // The owner, on variation 08 (plan:
+    // `docs/superpowers/plans/2026-09-06-home-v3-addendum-targets-strip.md`):
+    // "maybe above the join with code, we display the weekly muscle group
+    // goals, or whatever goal the coach is tracking as a strip?"
+
+    /// `HomeCoachTargetsStrip`'s four groups, the addendum plan's own values:
+    /// chest 8/12, back 10/12, legs 6/12 — the one furthest behind, so the
+    /// one NEXT — and arms 8/8, the one already MET. Exactly one of each, so
+    /// the two states the strip can show are both on screen in one frame,
+    /// which is the whole reason a mockup exists.
+    ///
+    /// SHARED by both worlds, for the same reason the last lift and the PR
+    /// watch are: what a block asks of a lifter this week is a fact about
+    /// the BLOCK, not about which kind of session today happens to be, and
+    /// keeping it shared keeps the two placements comparable — the
+    /// difference between 08a and 08b then reads as the placement.
+    static let coachTargets: [HomeCoachTargetsStrip.Target] = [
+        .init(id: 0, name: "CHEST", done: 8, target: 12, isNext: false),
+        .init(id: 1, name: "BACK", done: 10, target: 12, isNext: false),
+        .init(id: 2, name: "LEGS", done: 6, target: 12, isNext: true),
+        .init(id: 3, name: "ARMS", done: 8, target: 8, isNext: false),
+    ]
+
+    /// The kicker row's right-hand read, one value per world — the plan's
+    /// own numbers.
+    ///
+    /// This counts SESSIONS still to be trained in the block's week; the
+    /// streak tile beside it counts DAYS against the weekly goal. They are
+    /// different questions with different answers (a 4-day goal can be met
+    /// on the next day while the block still has two sessions programmed),
+    /// which is why the number here is not `weeklyGoal - daysDone`.
+    ///
+    /// A value that names a stretch of THIS week cannot be shared, for the
+    /// reason :160-168 gives in full for the calendar's rows: the two worlds
+    /// disagree about what is left of the week.
+    static let crewNightSessionsLeft = "2 SESSIONS LEFT"
+
+    /// The solo day's read. No composition uses it today — both addendum
+    /// frames render the crew night, following variation 08 — but it exists
+    /// so a solo composition can take the strip later without inheriting
+    /// another world's week, the same reason `crewNightUpNext` exists.
+    static let soloDaySessionsLeft = "1 SESSION LEFT"
 }
