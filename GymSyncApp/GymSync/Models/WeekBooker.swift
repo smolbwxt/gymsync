@@ -97,6 +97,20 @@ enum WeekBooker {
                     exerciseCount: nil)
             }
         }
+
+        // 3. The week now has sessions on it, so it can have a GOAL
+        //    (Stream A task A11). Detection reads the routines this booking
+        //    just handed out, which is why it runs after the loop and not
+        //    before it.
+        //
+        //    PROPOSE ONLY: `writeDetectedGoal` consults
+        //    `WeeklyGoalWriteRule` and leaves a `source = user` row exactly
+        //    as it is — booking a week must never silently replace a goal
+        //    the athlete set for it. Best-effort, like every other Coach
+        //    write here: a failure costs the goal, never the booking.
+        await LiveWeeklyGoalRepository()
+            .writeDetectedGoal(weekStart: WeekMath.weekStartString(window.start))
+
         return booked
     }
 

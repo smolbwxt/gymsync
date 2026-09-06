@@ -196,6 +196,39 @@ struct LiveWeeklyGoalRepository: WeeklyGoalRepository {
             unit: unit)
     }
 
+    /// What Coach WOULD set, for the Coach tile's line. Writes nothing, ever
+    /// — this is the whole of owner answer 3's "propose" half: when the
+    /// athlete has set this week's goal themselves, Coach's only recourse is
+    /// a sentence they can accept in the editor.
+    ///
+    /// A named path rather than a call to `detect` at the tile, so that
+    /// "Coach proposes" is greppable and a future write can never be added
+    /// to it by accident.
+    func propose(weekStart: String) async -> WeeklyGoal? {
+        await detect(weekStart: weekStart)
+    }
+
+    /// COACH'S WRITE PATH (task A11). Detects this week's goal and persists
+    /// it only when `WeeklyGoalWriteRule` allows — no row, or a row Coach
+    /// itself wrote. A `source = user` row is left exactly as it is.
+    ///
+    /// Returns the goal now in effect for the week (the athlete's, if theirs
+    /// stood), or nil when nothing could be read or derived. Best-effort
+    /// like every other Coach write: it never throws and never blocks the
+    /// booking or the build that called it.
+    @discardableResult
+    func writeDetectedGoal(weekStart: String) async -> WeeklyGoal? {
+        let existing = await goal(weekStart: weekStart)
+        guard let detected = await detect(weekStart: weekStart) else { return existing }
+        guard WeeklyGoalWriteRule.shouldOverwrite(existing: existing,
+                                                  detected: detected) else {
+            AppLogger.db.info("weekly goal left alone for \(weekStart, privacy: .public) — the athlete set it")
+            return existing
+        }
+        await upsert(detected)
+        return detected
+    }
+
     // MARK: - Progress
 
     /// Only what THIS kind needs is fetched. A `days` goal has no business

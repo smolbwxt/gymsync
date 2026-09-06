@@ -217,6 +217,23 @@ enum ProgramBuilder {
         // were assembled — never the merely eligible.
         await TrainingRulesRepository.markApplied(inputs.appliedRuleIDs)
 
+        // ── 9. This week's goal (Stream A task A11) ──────────────────
+        // A block always arrives with its goal, so Home is never a fresh
+        // block over an empty strip.
+        //
+        // LAST, and that placement is the point: this file's header calls
+        // the order of writes load-bearing, and detection reads the
+        // enrollment and the day routines that steps 5 and 7 just wrote.
+        // Run any earlier and it would derive a goal from the block being
+        // replaced.
+        //
+        // PROPOSE ONLY: `writeDetectedGoal` leaves a `source = user` row
+        // alone (WeeklyGoalWriteRule) — building a block must not silently
+        // replace a goal the athlete set for this week. Best-effort, like
+        // every other write after step 5's deliverable.
+        await LiveWeeklyGoalRepository()
+            .writeDetectedGoal(weekStart: WeekMath.weekStartString())
+
         return Outcome(program: program, durationWeeks: duration)
     }
 
