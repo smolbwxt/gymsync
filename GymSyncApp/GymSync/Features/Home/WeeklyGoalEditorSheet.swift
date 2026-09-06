@@ -43,6 +43,17 @@ struct WeeklyGoalEditorSheet: View {
         /// cannot both explain that Coach set this goal and ask to change
         /// the one you set instead.
         let sentence: String
+        /// The goal Coach is actually proposing — the levers, not just the
+        /// kind.
+        ///
+        /// `ACCEPT` seeds them. Without this a proposal was only a kind: a
+        /// person who accepted "Coach suggests muscle sets" landed on six
+        /// rows reading zero, which is not a suggestion, and one tap on the
+        /// primary would have written a goal with no targets. Empty here is
+        /// legal — the levers keep whatever they held and the primary stays
+        /// disabled until they say something — but a proposal worth showing
+        /// carries its numbers.
+        var params: WeeklyGoalParams = WeeklyGoalParams()
     }
 
     /// One row of the lift picker: the block's focus lifts first, then the
@@ -224,7 +235,7 @@ struct WeeklyGoalEditorSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: 0) {
-                    Button { kind = proposal.kind } label: {
+                    Button { accept(proposal) } label: {
                         Text("ACCEPT")
                             .font(GSFont.bold(12, relativeTo: .caption))
                             .tracking(1.0)
@@ -608,8 +619,22 @@ struct WeeklyGoalEditorSheet: View {
     /// button on the sheet (rule 4). Stacked rather than side by side: the
     /// primary's label is twenty-one characters and half a phone is not
     /// enough of a button for it.
+    ///
+    /// The primary is GATED on the chosen kind being complete, and says why
+    /// rather than only going dim — a disabled button with no reason is a
+    /// dead end, and the two reachable degenerate goals (muscle sets with no
+    /// groups, a lift with no lift) are both one tap away from a state the
+    /// person can fix.
     private var footer: some View {
         VStack(spacing: 8) {
+            if let incompleteReason = incompleteReason {
+                Text(incompleteReason)
+                    .font(GSFont.body(12, relativeTo: .footnote))
+                    .foregroundStyle(theme.neutral500)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             Button { Task { await letCoachSetIt() } } label: {
                 Text("LET COACH SET IT")
                     .font(GSFont.bold(13, relativeTo: .subheadline))
@@ -630,7 +655,7 @@ struct WeeklyGoalEditorSheet: View {
                     .padding(.vertical, 13)
             }
             .buttonStyle(.gs3D(face: theme.accent, cornerRadius: GSMetrics.radiusSm))
-            .disabled(saving)
+            .disabled(saving || incompleteReason != nil)
         }
         .padding(.horizontal, 16)
         .padding(.top, 10)
@@ -645,6 +670,37 @@ struct WeeklyGoalEditorSheet: View {
     /// spells "mi" or "lb" itself.
     private var unit: WeightUnit { ThemeStore.shared.weightUnit }
 
+    /// Why the primary is disabled, or nil when the goal is complete.
+    ///
+    /// Two kinds can be under-specified, and both were reachable:
+    ///
+    ///   * **muscle sets with no groups.** The rows seed only from the
+    ///     EXISTING goal's params, so switching to `MUSCLE SETS` from any
+    ///     other kind leaves all six at zero — the path `ACCEPT` opened
+    ///     before proposals carried their levers. `params()` would have
+    ///     written `muscleTargets = [:]`, which the strip renders as a
+    ///     kicker row over an empty chip row.
+    ///   * **a lift with no lift.** `exerciseID` is nil when the block has
+    ///     no focus lifts and the catalog has not returned; a goal with a
+    ///     target weight, a date and no exercise is one Stream A cannot
+    ///     compute an e1RM against.
+    ///
+    /// `distance`, `sessionsOfType` and `days` cannot be incomplete: every
+    /// lever they use is seeded to a legal value and the steppers are
+    /// bounded away from zero.
+    private var incompleteReason: String? {
+        switch kind {
+        case .muscleSets:
+            return muscleTargets.values.contains { $0 > 0 }
+                ? nil
+                : "Give at least one muscle group a target."
+        case .lift:
+            return exerciseID == nil ? "Pick the lift this goal is about." : nil
+        case .distance, .sessionsOfType, .days:
+            return nil
+        }
+    }
+
     /// Focus lifts first, then the catalog with the focus lifts removed so
     /// nothing appears twice, then a display cap.
     private var visibleLifts: [LiftOption] {
@@ -657,6 +713,44 @@ struct WeeklyGoalEditorSheet: View {
     }
 
     // MARK: - Writes
+
+    /// `ACCEPT` — select the kind Coach proposed AND seed the levers it
+    /// proposed with it. Still no save: propose-only means the person is
+    /// left in front of the levers with `SAVE THIS WEEK'S GOAL` the only
+    /// thing that commits (owner answer 3).
+    ///
+    /// Seeding is what makes accepting an answer rather than a jump. Before
+    /// it, accepting "Coach suggests muscle sets" landed on six rows reading
+    /// zero — a suggestion with nothing in it, one tap from a goal with no
+    /// targets. A field the proposal does not carry is left alone rather
+    /// than reset, so accepting cannot wipe a lever the person already set.
+    ///
+    /// `days` seeds nothing on purpose: that number is the profile's, and a
+    /// proposal does not get to move it (`dayLevers`).
+    private func accept(_ proposal: Proposal) {
+        kind = proposal.kind
+        let params = proposal.params
+
+        switch proposal.kind {
+        case .muscleSets:
+            let seeded = Self.seedMuscleTargets(params)
+            if !seeded.isEmpty { muscleTargets = seeded }
+        case .distance:
+            if let activity = params.activity { self.activity = activity }
+            if let target = params.distanceTarget {
+                distanceTarget = Self.seedInt(target, default: distanceTarget)
+            }
+        case .sessionsOfType:
+            if let sessionType = params.sessionType { self.sessionType = sessionType }
+            if let count = params.count { sessionCount = max(1, min(14, count)) }
+        case .days:
+            break
+        case .lift:
+            if let exerciseID = params.exerciseID { self.exerciseID = exerciseID }
+            if let weight = params.targetWeightLbs { targetWeightLbs = weight }
+            if let byDate = params.byDate { self.byDate = max(byDate, today) }
+        }
+    }
 
     private func save() async {
         saving = true

@@ -216,9 +216,16 @@ enum WeeklyGoalFixtures {
         setAt: editorToday)
 
     /// Coach's standing suggestion. One sentence, and it names what it would
-    /// switch the week to rather than gesturing at a change — `ACCEPT`
-    /// selects `kind`, and nothing lands until the person saves.
+    /// switch the week to rather than gesturing at a change.
+    ///
+    /// It carries its LEVERS as well as its kind — the same four targets
+    /// `editorGoal` holds, which are the same four every strip frame reads —
+    /// so `ACCEPT` lands on a filled-in goal rather than on six rows reading
+    /// zero. Nothing saves on accept: `ACCEPT` seeds, `SAVE THIS WEEK'S
+    /// GOAL` commits (owner answer 3).
     static let editorProposal = WeeklyGoalEditorSheet.Proposal(
         kind: .muscleSets,
-        sentence: "Coach suggests muscle sets this week — your block is asking for volume, not one lift.")
+        sentence: "Coach suggests muscle sets this week — your block is asking for volume, not one lift.",
+        params: WeeklyGoalParams(muscleTargets: ["chest": 12, "back": 12,
+                                                 "legs": 12, "arms": 8]))
 }
