@@ -190,8 +190,11 @@ struct HomeV3StripsView: View {
             HomeCoachLine(sentence: world.coachSentence)
                 .homeV3Strip()
 
-            HomeUpNextStrip(kicker: HomeV2Fixtures.upNextKicker,
-                            title: HomeV2Fixtures.upNextTitle)
+            // The SOLO day's next row, not the crew night's: this strip only
+            // ever renders on a solo frame, and that world's calendar shows
+            // Today / Tue / Thu with no Saturday anywhere in it.
+            HomeUpNextStrip(kicker: HomeV2Fixtures.soloDayUpNext.kicker,
+                            title: HomeV2Fixtures.soloDayUpNext.title)
                 .homeV3Block()
 
             HomeV3Calendar(world: world)
@@ -258,8 +261,11 @@ struct HomeV3TileLineView: View {
             HomeV3Calendar(world: world)
                 .homeV3Strip()
 
-            HomeUpNextStrip(kicker: HomeV2Fixtures.upNextKicker,
-                            title: HomeV2Fixtures.upNextTitle)
+            // The SOLO day's next row, not the crew night's: this strip only
+            // ever renders on a solo frame, and that world's calendar shows
+            // Today / Tue / Thu with no Saturday anywhere in it.
+            HomeUpNextStrip(kicker: HomeV2Fixtures.soloDayUpNext.kicker,
+                            title: HomeV2Fixtures.soloDayUpNext.title)
                 .homeV3Foot()
         }
     }
@@ -445,8 +451,11 @@ struct HomeV3MinimalView: View {
             HomeV3Calendar(world: world)
                 .homeV3Strip()
 
-            HomeUpNextStrip(kicker: HomeV2Fixtures.upNextKicker,
-                            title: HomeV2Fixtures.upNextTitle)
+            // The SOLO day's next row, not the crew night's: this strip only
+            // ever renders on a solo frame, and that world's calendar shows
+            // Today / Tue / Thu with no Saturday anywhere in it.
+            HomeUpNextStrip(kicker: HomeV2Fixtures.soloDayUpNext.kicker,
+                            title: HomeV2Fixtures.soloDayUpNext.title)
                 .homeV3Foot()
         }
     }

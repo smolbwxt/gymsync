@@ -212,25 +212,53 @@ enum HomeV2Fixtures {
 
     // MARK: Home v3
     //
-    // The eight new pieces' values, verbatim from the v3 plan's "New pieces"
-    // table (`docs/superpowers/plans/2026-09-06-home-v3-ten-variations.md`).
+    // The eight new pieces' values, from the v3 plan's "New pieces" table
+    // (`docs/superpowers/plans/2026-09-06-home-v3-ten-variations.md`) —
+    // verbatim except for UP NEXT, which carries a controller waiver granted
+    // in review round 1 and is explained where it is declared below.
     //
-    // These are SHARED by both worlds rather than split crew/solo the way
-    // `crewNightAppointments`/`soloDayAppointments` are: the plan gives one
-    // set of values, and every one of them is true on either day — the last
-    // lift, the PR watch, the body weight and the lifetime total are facts
-    // about the lifter, not about which kind of session today happens to be.
-    // Keeping them shared also keeps the ten frames comparable: a difference
-    // between two compositions reads as the composition, not as the data.
+    // Most are SHARED by both worlds: the last lift, the PR watch, the body
+    // weight and the lifetime total are facts about the LIFTER, not about
+    // which kind of session today happens to be, and keeping them shared
+    // keeps the ten frames comparable — a difference between two
+    // compositions then reads as the composition rather than as the data.
+    //
+    // A value that names a DAY cannot be shared, because the two worlds
+    // disagree about the days: that is the same reason the calendar's rows
+    // are already split into `crewNightAppointments`/`soloDayAppointments`
+    // (:160-168 makes the argument in full).
     //
     // They live as statics rather than as new `HomeV2World` fields on
     // purpose: adding stored properties to that struct would rewrite both
     // world literals above (v2 pieces are frozen except for additive
-    // parameters), and nothing here varies per world.
+    // parameters).
 
-    /// `HomeUpNextStrip` — the kicker carries the when.
-    static let upNextKicker = "NEXT · SAT 9:00 AM"
-    static let upNextTitle = "Lower B with Legs Crew"
+    /// `HomeUpNextStrip`'s two strings, kept together as one value so the
+    /// when and the session can never drift apart — which is exactly what
+    /// they did in round 1, when a single shared pair told the crew world's
+    /// Saturday story on three solo-day frames whose calendar shows Today,
+    /// Tue and Thu and no Saturday at all.
+    struct UpNext {
+        /// The when, e.g. `NEXT · TUE 5:00 PM`.
+        let kicker: String
+        /// The session, e.g. `Push B with Push Crew`.
+        let title: String
+    }
+
+    /// The crew night's next — `crewNightAppointments`' second row, the Legs
+    /// Crew Saturday, which is the plan's own verbatim value. No composition
+    /// uses it today (the strip appears only on the solo frames 02, 04 and
+    /// 10), but it exists so a crew composition can take the strip later
+    /// without inheriting another world's day.
+    static let crewNightUpNext = UpNext(kicker: "NEXT · SAT 9:00 AM",
+                                        title: "Lower B with Legs Crew")
+
+    /// The solo day's next — `soloDayAppointments`' second row. Today's row
+    /// on that day IS the hero's own Pull A, from the block, with no time
+    /// set, so the next thing wearing a clock is Tuesday's Push Crew
+    /// session: the row the calendar still marks COMMIT.
+    static let soloDayUpNext = UpNext(kicker: "NEXT · TUE 5:00 PM",
+                                      title: "Push B with Push Crew")
 
     /// `HomeLastLiftTile`.
     static let lastLiftRoutine = "Push A"
