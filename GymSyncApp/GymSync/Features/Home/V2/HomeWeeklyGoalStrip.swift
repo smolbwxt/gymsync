@@ -86,20 +86,53 @@ struct HomeWeeklyGoalStrip: View {
         .accessibilityLabel(accessibilityText)
     }
 
-    /// Two cases ship in this commit — the muscle-sets reading and the
-    /// no-goal invitation — because they are the two Stream B composes
-    /// against on day one. The other four kinds are Stream C's (task C1),
-    /// and an `EmptyView` is the honest placeholder: a strip that guessed at
-    /// a distance reading would be a design decision made by a scaffold.
+    /// The chrome EVERY kind shares — the kicker row, then that kind's
+    /// reading — hoisted here out of the muscle-sets body.
+    ///
+    /// Hoisting is this task's whole point, and it answers the Task 0
+    /// review's first finding. The switch used to sit inside `body`'s
+    /// padding, `surface` fill and 14 pt clip with a `default:` arm
+    /// returning `EmptyView()`, so a `days` or a `distance` goal painted a
+    /// full-width blank tappable bar carrying the accessibility label
+    /// "This week's goal." and nothing else. Two changes make that state
+    /// unreachable:
+    ///
+    ///   * the switch below is EXHAUSTIVE over `WeeklyGoalKind` with **no**
+    ///     `default:`, so a sixth kind is a compile error rather than a
+    ///     blank strip;
+    ///   * the kicker row renders for every kind, so even an arm that has
+    ///     nothing to draw yet still says what the strip is, how much week
+    ///     is left, and that it opens.
+    ///
+    /// `kind == nil` keeps the invitation alone, without the kicker: there
+    /// is no week's goal to name yet, and a kicker over an invitation would
+    /// state a goal the user has not got.
     @ViewBuilder
     private var content: some View {
-        switch kind {
-        case .some(.muscleSets):
-            muscleSetsBody
-        case .none:
+        if let kind = kind {
+            VStack(alignment: .leading, spacing: 10) {
+                kickerRow
+                reading(for: kind)
+            }
+        } else {
             invitation
-        default:
-            EmptyView()   // Stream C fills this in (task C1).
+        }
+    }
+
+    /// One arm per kind, in `WeeklyGoalKind`'s own declaration order.
+    ///
+    /// The four empty arms are task **C2**'s (the design's §B table); C1 is
+    /// the switch and the shared chrome. The Task 0 shell's marker named C1
+    /// for both, which the review corrected: C1 is this structure, C2 is the
+    /// renderings.
+    @ViewBuilder
+    private func reading(for kind: WeeklyGoalKind) -> some View {
+        switch kind {
+        case .muscleSets:     chipRow
+        case .distance:       EmptyView()   // task C2
+        case .sessionsOfType: EmptyView()   // task C2
+        case .days:           EmptyView()   // task C2
+        case .lift:           EmptyView()   // task C2
         }
     }
 
@@ -110,14 +143,15 @@ struct HomeWeeklyGoalStrip: View {
     /// twice (heavy and light weeks) so the name alone cannot key the row,
     /// and the array is rebuilt whole on every refresh so its order IS its
     /// identity.
-    private var muscleSetsBody: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            kickerRow
-
-            HStack(spacing: 8) {
-                ForEach(Array(progress.chips.enumerated()), id: \.offset) { _, chip in
-                    chipView(chip)
-                }
+    ///
+    /// The row is the same `HStack(spacing: 8)` the shell shipped, one level
+    /// shallower now that the `VStack` and the kicker above it belong to
+    /// every kind. Nothing inside it moved, which is what keeps the approved
+    /// 08a/08b frames byte-identical through this task.
+    private var chipRow: some View {
+        HStack(spacing: 8) {
+            ForEach(Array(progress.chips.enumerated()), id: \.offset) { _, chip in
+                chipView(chip)
             }
         }
     }
