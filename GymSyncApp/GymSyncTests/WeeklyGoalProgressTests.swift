@@ -146,11 +146,14 @@ final class WeeklyGoalProgressTests: XCTestCase {
 
     // MARK: - A4 fixtures
 
-    /// A calendar with a fixed timezone and `firstWeekday`, so "this week"
-    /// is the same week on every machine that runs these.
+    /// A calendar with a fixed timezone, `firstWeekday` and LOCALE, so
+    /// "this week" is the same week — and its day letters the same letters —
+    /// on every machine that runs these. The locale is pinned because
+    /// `weekdayLetters` reads `veryShortWeekdaySymbols`, which is localised.
     private var testCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "America/New_York")!
+        calendar.locale = Locale(identifier: "en_US")
         calendar.firstWeekday = 1
         return calendar
     }
@@ -168,6 +171,17 @@ final class WeeklyGoalProgressTests: XCTestCase {
                    weekStartString: WeekMath.weekStartString(wednesday, calendar: testCalendar),
                    kind: kind, params: params, source: source,
                    setAt: wednesday)
+    }
+
+    /// A session on the books but not yet done — `scheduledFor` set,
+    /// `completedAt` nil.
+    private func scheduledSession(dayOffset: Int) -> WorkoutSession {
+        let when = testCalendar.date(byAdding: .day, value: dayOffset, to: wednesday)!
+        return WorkoutSession(id: UUID(), routineID: nil, organizerID: id(9001),
+                              state: "scheduled", startedAt: nil, completedAt: nil,
+                              createdAt: wednesday, groupID: nil, roomCode: nil,
+                              scheduledFor: when, seriesID: nil,
+                              currentTurnUserID: nil, currentTurnStartedAt: nil)
     }
 
     private func session(completedDaysFromWednesday offset: Int) -> WorkoutSession {
@@ -834,6 +848,115 @@ final class WeeklyGoalProgressTests: XCTestCase {
             now: wednesday, calendar: testCalendar)
 
         XCTAssertEqual(progress.value, 0)
+    }
+
+    // MARK: - The subject-chip contract (Stream C, controller 2026-09-06)
+
+    func testDistanceEmitsOneSubjectChipNamedForTheActivity() {
+        let progress = WeeklyGoalProgressMath.distanceProgress(
+            goal: distanceGoal("bike", target: 15), metres: 15_000, unit: .lbs,
+            now: wednesday, calendar: testCalendar)
+
+        XCTAssertEqual(progress.chips.count, 1)
+        XCTAssertEqual(progress.chips[0].name, "BIKE",
+                       "the strip picks figure.outdoor.cycle from this name")
+        XCTAssertEqual(progress.chips[0].done, progress.value)
+        XCTAssertEqual(progress.chips[0].target, progress.target)
+        XCTAssertFalse(progress.chips[0].isNext)
+    }
+
+    func testSessionsOfTypeEmitsOneSubjectChipNamedForTheType() {
+        let bike = exercise(10, "Assault Bike", "quads", category: "cardio")
+        let cardio = routine(24, "Cardio Engine")
+        let progress = WeeklyGoalProgressMath.sessionsOfTypeProgress(
+            goal: goal(.sessionsOfType, params: .init(sessionType: "hiit", count: 3)),
+            sessions: [sessionOf(cardio)], routines: [cardio.id: cardio],
+            routineExercises: [cardio.id: [routineRow(cardio, bike, position: 1)]],
+            catalog: catalog([bike]), now: wednesday, calendar: testCalendar)
+
+        XCTAssertEqual(progress.chips.count, 1)
+        XCTAssertEqual(progress.chips[0].name, "HIIT",
+                       "the strip prints this noun after the count")
+        XCTAssertEqual(progress.chips[0].target, 3)
+    }
+
+    func testLiftSubjectChipIsNamedForTheExercise() {
+        let squat = exercise(5, "Back Squat", "quads")
+        let progress = WeeklyGoalProgressMath.progress(
+            goal: liftGoal(squat, targetLbs: 225), logs: [],
+            catalog: catalog([squat]), sessions: [], effectiveWeeklyGoal: 3,
+            blockLogs: [liftLog(squat, weight: 190, reps: 5)],
+            blockStartLbs: 200, unit: .lbs,
+            now: wednesday, calendar: testCalendar)
+
+        XCTAssertEqual(progress.chips[0].name, "Back Squat",
+                       "the dispatcher reads the name out of the catalog it already has")
+    }
+
+    func testDaysEmitsSevenChipsInTheDeviceCalendarsWeekOrder() {
+        // firstWeekday 1 → the week runs Sunday…Saturday.
+        let progress = WeeklyGoalProgressMath.daysProgress(
+            goal: goal(.days), sessions: [], effectiveWeeklyGoal: 4,
+            now: wednesday, calendar: testCalendar)
+
+        XCTAssertEqual(progress.chips.count, 7)
+        XCTAssertEqual(progress.chips.map(\.name), ["S", "M", "T", "W", "T", "F", "S"])
+    }
+
+    func testDaysChipsMarkTrainedBookedAndToday() {
+        let sessions = [
+            session(completedDaysFromWednesday: -1),                 // Tuesday, trained
+            scheduledSession(dayOffset: 2),                          // Friday, booked
+        ]
+        let progress = WeeklyGoalProgressMath.daysProgress(
+            goal: goal(.days), sessions: sessions, effectiveWeeklyGoal: 4,
+            now: wednesday, calendar: testCalendar)
+
+        // Sun Mon Tue Wed Thu Fri Sat  →  index 2 = Tuesday, 3 = Wednesday, 5 = Friday
+        XCTAssertEqual(progress.chips[2].done, 1, "Tuesday was trained")
+        XCTAssertEqual(progress.chips[2].target, 1, "a trained day counts as booked too")
+        XCTAssertEqual(progress.chips[5].done, 0, "Friday has not happened")
+        XCTAssertEqual(progress.chips[5].target, 1, "Friday is on the books")
+        XCTAssertEqual(progress.chips[0].done, 0)
+        XCTAssertEqual(progress.chips[0].target, 0, "Sunday is neither")
+
+        let today = progress.chips.filter(\.isNext)
+        XCTAssertEqual(today.count, 1, "exactly one chip is today")
+        XCTAssertEqual(progress.chips[3].isNext, true, "and it is Wednesday")
+    }
+
+    func testDaysChipDoneNeverExceedsItsTarget() {
+        let progress = WeeklyGoalProgressMath.daysProgress(
+            goal: goal(.days),
+            sessions: [session(completedDaysFromWednesday: 0)],
+            effectiveWeeklyGoal: 4, now: wednesday, calendar: testCalendar)
+
+        XCTAssertTrue(progress.chips.allSatisfy { $0.done <= $0.target })
+    }
+
+    func testMetGoalsLeaveTheRightHandReadEmpty() {
+        // The met kicker already ends in "{n} DAYS LEFT"; printing it twice
+        // on one line is the defect this rule closes.
+        let bench = exercise(1, "Bench Press", "chest")
+        let muscleSets = WeeklyGoalProgressMath.muscleSetsProgress(
+            goal: goal(.muscleSets, params: .init(muscleTargets: ["chest": 2])),
+            logs: [log(bench, reps: 8), log(bench, reps: 8, index: 2)],
+            catalog: catalog([bench]), now: wednesday, calendar: testCalendar)
+        let days = WeeklyGoalProgressMath.daysProgress(
+            goal: goal(.days), sessions: [session(completedDaysFromWednesday: 0)],
+            effectiveWeeklyGoal: 1, now: wednesday, calendar: testCalendar)
+        let distance = WeeklyGoalProgressMath.distanceProgress(
+            goal: distanceGoal("run", target: 1), metres: 15_000, unit: .lbs,
+            now: wednesday, calendar: testCalendar)
+
+        XCTAssertTrue(muscleSets.met)
+        XCTAssertEqual(muscleSets.rightHandRead, "")
+        XCTAssertTrue(days.met)
+        XCTAssertEqual(days.rightHandRead, "")
+        XCTAssertTrue(distance.met)
+        XCTAssertEqual(distance.rightHandRead, "")
+        XCTAssertEqual(days.kicker, "GOAL MET · 4 DAYS LEFT",
+                       "the kicker still carries the number")
     }
 
     func testDispatcherRoutesDistance() {

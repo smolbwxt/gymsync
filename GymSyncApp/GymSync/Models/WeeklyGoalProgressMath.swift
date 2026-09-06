@@ -108,6 +108,33 @@ enum WeeklyGoalProgressMath {
         return source == .user ? "THIS WEEK · YOUR GOAL" : "THIS WEEK · COACH'S GOAL"
     }
 
+    /// The strip's right-hand read — and EMPTY once the goal is met
+    /// (controller ruling, 2026-09-06). The met kicker already ends in
+    /// `{n} DAYS LEFT`, and the strip would otherwise print the same phrase
+    /// twice on one line.
+    static func rightHandRead(met: Bool, phrase: String) -> String {
+        met ? "" : phrase
+    }
+
+    /// The week's seven day letters, in the DEVICE calendar's own order —
+    /// starting at `calendar.firstWeekday`, so a Sunday-first athlete reads
+    /// S M T W T F S and a Monday-first one reads M T W T F S S. Taken from
+    /// `veryShortWeekdaySymbols` rather than hard-coded, which is also what
+    /// keeps the letters right in a non-English locale.
+    static func weekdayLetters(_ now: Date = .now,
+                               calendar: Calendar = .current) -> [String] {
+        let start = WeekMath.startOfWeek(now, calendar: calendar)
+        let symbols = calendar.veryShortWeekdaySymbols
+        return (0..<7).map { offset in
+            guard let day = calendar.date(byAdding: .day, value: offset, to: start) else {
+                return ""
+            }
+            let weekday = calendar.component(.weekday, from: day)
+            guard symbols.indices.contains(weekday - 1) else { return "" }
+            return String(symbols[weekday - 1].prefix(1)).uppercased()
+        }
+    }
+
     // MARK: - A4: muscleSets
 
     /// The four-chip row.
@@ -168,7 +195,8 @@ enum WeeklyGoalProgressMath {
 
         return WeeklyGoalProgress(chips: chips,
                                   met: met,
-                                  rightHandRead: daysLeftPhrase(daysLeft),
+                                  rightHandRead: rightHandRead(met: met,
+                                                               phrase: daysLeftPhrase(daysLeft)),
                                   kicker: kicker(source: goal.source, met: met,
                                                  daysLeft: daysLeft))
     }
@@ -181,11 +209,24 @@ enum WeeklyGoalProgressMath {
     /// `target` is `Profile.effectiveWeeklyGoal` — the ANTI-GOALPOST value
     /// (`Profile.swift:88`), where a goal edited mid-week governs from next
     /// week and this week keeps the number it started with. `params.count`
-    /// is deliberately NOT read here even though the detector and the editor
-    /// both write it: the streak tile renders `effectiveWeeklyGoal`, and the
-    /// design's agreement law says the strip and the tile describe the same
-    /// week. Reading the mirror instead of the source is precisely how those
-    /// two numbers would come to disagree.
+    /// is NEVER read here, and after the controller's ruling of 2026-09-06
+    /// nothing writes it for this kind either: the profile's weekly session
+    /// goal is the single source of truth. The streak tile renders
+    /// `effectiveWeeklyGoal`, and the design's agreement law says the strip
+    /// and the tile describe the same week — a mirror in `params` is
+    /// precisely how those two numbers would come to disagree.
+    ///
+    /// SEVEN DAY CHIPS, in the device calendar's week order, are the
+    /// reading's subject (Stream C's subject-chip contract): `done >= 1`
+    /// means trained, `target >= 1` means booked, and exactly one chip is
+    /// `isNext` — today. Stream C maps those onto `HomeWeekStrip.Day.State`,
+    /// so Home's two week readouts are literally the same chips.
+    ///
+    /// `sessions` may carry SCHEDULED sessions as well as completed ones:
+    /// `distinctTrainingDays` ignores anything without a `completedAt`, and
+    /// the booked half of each chip reads `scheduledFor`. A day that was
+    /// trained counts as booked too, so a chip's `done` can never exceed its
+    /// `target`.
     static func daysProgress(goal: WeeklyGoal,
                              sessions: [WorkoutSession],
                              effectiveWeeklyGoal: Int,
@@ -197,10 +238,30 @@ enum WeeklyGoalProgressMath {
         let met = done >= target
         let daysLeft = WeekMath.daysRemaining(in: now, from: now, calendar: calendar)
 
-        return WeeklyGoalProgress(value: done,
+        let weekStart = WeekMath.startOfWeek(now, calendar: calendar)
+        let letters = weekdayLetters(now, calendar: calendar)
+        let chips: [WeeklyGoalProgress.Chip] = (0..<7).map { offset in
+            let day = calendar.date(byAdding: .day, value: offset, to: weekStart) ?? weekStart
+            let trained = sessions.contains { session in
+                guard let completedAt = session.completedAt else { return false }
+                return calendar.isDate(completedAt, inSameDayAs: day)
+            }
+            let booked = trained || sessions.contains { session in
+                guard let scheduledFor = session.scheduledFor else { return false }
+                return calendar.isDate(scheduledFor, inSameDayAs: day)
+            }
+            return .init(name: letters.indices.contains(offset) ? letters[offset] : "",
+                         done: trained ? 1 : 0,
+                         target: booked ? 1 : 0,
+                         isNext: calendar.isDate(day, inSameDayAs: now))
+        }
+
+        return WeeklyGoalProgress(chips: chips,
+                                  value: done,
                                   target: target,
                                   met: met,
-                                  rightHandRead: daysLeftPhrase(daysLeft),
+                                  rightHandRead: rightHandRead(met: met,
+                                                               phrase: daysLeftPhrase(daysLeft)),
                                   kicker: kicker(source: goal.source, met: met,
                                                  daysLeft: daysLeft))
     }
@@ -273,11 +334,16 @@ enum WeeklyGoalProgressMath {
     /// block's starting e1RM, because a lifter who opened a block at 205
     /// and is chasing 225 has not "completed 91% of a goal". That floor has
     /// nowhere to live in the frozen `WeeklyGoalProgress`, so it is carried
-    /// as the single `Chip`: `done` and `target` are the SPAN above the
-    /// floor, which is exactly the meter's geometry, while `value` and
-    /// `target` on the progress itself stay the readable pair. Stream C
-    /// task C2 renders the meter from that chip; if it renders `value /
-    /// target` instead, the meter ignores the block start — reconcile at I1.
+    /// as the single SUBJECT CHIP: `done` and `target` are the SPAN above
+    /// the floor, which is exactly the meter's geometry, while `value` and
+    /// `target` on the progress itself stay the readable pair. Stream C's
+    /// C2 reads `chips.first` for exactly this, and its report names this
+    /// same shape — `(name: <lift name>, done: current − blockStart,
+    /// target: target − blockStart)` — so the two halves now agree.
+    ///
+    /// The chip's `name` is the lift's own name. C's rendering does not
+    /// print it, but a chip that names nothing is a row nobody can debug,
+    /// and the editor's "A LIFT" branch has the name to hand.
     ///
     /// The floor is `ProgramEnrollment.baselineValue(for:)`
     /// (`ProgramEnrollment.swift:74`) when the active block carries one,
@@ -290,11 +356,12 @@ enum WeeklyGoalProgressMath {
                              blockLogs: [SetLog],
                              blockStartLbs: Decimal?,
                              unit: WeightUnit,
+                             exerciseName: String = "",
                              now: Date = .now,
                              calendar: Calendar = .current) -> WeeklyGoalProgress {
         let daysLeft = WeekMath.daysRemaining(in: now, from: now, calendar: calendar)
-        let rightHandRead = weeksLeftPhrase(to: goal.params.byDate, from: now,
-                                            calendar: calendar)
+        let deadline = weeksLeftPhrase(to: goal.params.byDate, from: now,
+                                       calendar: calendar)
             ?? daysLeftPhrase(daysLeft)
 
         // No exercise and no target is a goal that was never finished being
@@ -302,7 +369,7 @@ enum WeeklyGoalProgressMath {
         guard let exerciseID = goal.params.exerciseID,
               let targetLbs = goal.params.targetWeightLbs, targetLbs > 0 else {
             return WeeklyGoalProgress(unitLabel: unit.label,
-                                      rightHandRead: rightHandRead,
+                                      rightHandRead: deadline,
                                       kicker: kicker(source: goal.source, met: false,
                                                      daysLeft: daysLeft))
         }
@@ -315,18 +382,18 @@ enum WeeklyGoalProgressMath {
 
         let spanLbs = targetLbs - floorLbs
         let meter: WeeklyGoalProgress.Chip = spanLbs > 0
-            ? .init(name: "E1RM",
+            ? .init(name: exerciseName,
                     done: max(0, double(currentLbs - floorLbs)),
                     target: double(spanLbs),
                     isNext: false)
-            : .init(name: "E1RM", done: met ? 1 : 0, target: 1, isNext: false)
+            : .init(name: exerciseName, done: met ? 1 : 0, target: 1, isNext: false)
 
         return WeeklyGoalProgress(chips: [meter],
                                   value: double(Units.fromPounds(currentLbs, to: unit)),
                                   target: double(Units.fromPounds(targetLbs, to: unit)),
                                   unitLabel: unit.label,
                                   met: met,
-                                  rightHandRead: rightHandRead,
+                                  rightHandRead: rightHandRead(met: met, phrase: deadline),
                                   kicker: kicker(source: goal.source, met: met,
                                                  daysLeft: daysLeft))
     }
@@ -400,6 +467,10 @@ enum WeeklyGoalProgressMath {
     /// Sessions are counted, not signals: `sessionCounts` answers once per
     /// session, so a routine named "HIIT" whose exercises are also all
     /// cardio still moves the number by one.
+    ///
+    /// One SUBJECT CHIP names the type (`HIIT` / `MOBILITY` / `CARDIO` /
+    /// `CLASS`) — Stream C prints that noun after the count, and `value` and
+    /// `target` alone cannot say which kind of session was meant.
     static func sessionsOfTypeProgress(goal: WeeklyGoal,
                                        sessions: [WorkoutSession],
                                        routines: [UUID: Routine],
@@ -425,11 +496,15 @@ enum WeeklyGoalProgressMath {
         }.count)
 
         let met = target > 0 && done >= target
+        let subject = WeeklyGoalProgress.Chip(name: type.uppercased(), done: done,
+                                              target: target, isNext: false)
 
-        return WeeklyGoalProgress(value: done,
+        return WeeklyGoalProgress(chips: [subject],
+                                  value: done,
                                   target: target,
                                   met: met,
-                                  rightHandRead: daysLeftPhrase(daysLeft),
+                                  rightHandRead: rightHandRead(met: met,
+                                                               phrase: daysLeftPhrase(daysLeft)),
                                   kicker: kicker(source: goal.source, met: met,
                                                  daysLeft: daysLeft))
     }
@@ -462,6 +537,11 @@ enum WeeklyGoalProgressMath {
     /// DENIED path and the NO-DATA path are the same path — HealthKit never
     /// discloses a read denial, so 0 metres is the only honest answer to
     /// both, and the strip renders `0 / 15 mi` rather than an error.
+    ///
+    /// One SUBJECT CHIP names the activity (`RUN` / `BIKE` / `ROW` /
+    /// `WALK`), which is what Stream C picks the glyph from — `figure.run`,
+    /// `figure.outdoor.cycle`, `figure.rower`, `figure.walk`. Without it
+    /// every distance goal would draw a runner.
     static func distanceProgress(goal: WeeklyGoal,
                                  metres: Double,
                                  unit: WeightUnit,
@@ -471,12 +551,17 @@ enum WeeklyGoalProgressMath {
         let value = distanceValue(metres: max(0, metres), unit: unit)
         let target = goal.params.distanceTarget ?? 0
         let met = target > 0 && value >= target
+        let subject = WeeklyGoalProgress.Chip(
+            name: (goal.params.activity ?? "").uppercased(),
+            done: value, target: target, isNext: false)
 
-        return WeeklyGoalProgress(value: value,
+        return WeeklyGoalProgress(chips: [subject],
+                                  value: value,
                                   target: target,
                                   unitLabel: distanceUnitLabel(unit),
                                   met: met,
-                                  rightHandRead: daysLeftPhrase(daysLeft),
+                                  rightHandRead: rightHandRead(met: met,
+                                                               phrase: daysLeftPhrase(daysLeft)),
                                   kicker: kicker(source: goal.source, met: met,
                                                  daysLeft: daysLeft))
     }
@@ -517,9 +602,12 @@ enum WeeklyGoalProgressMath {
                                 effectiveWeeklyGoal: effectiveWeeklyGoal,
                                 now: now, calendar: calendar)
         case .lift:
+            // The lift's own name for the subject chip, from the catalog the
+            // caller already loaded — never a second fetch.
+            let name = goal.params.exerciseID.flatMap { catalog[$0]?.name } ?? ""
             return liftProgress(goal: goal, blockLogs: blockLogs,
                                 blockStartLbs: blockStartLbs, unit: unit,
-                                now: now, calendar: calendar)
+                                exerciseName: name, now: now, calendar: calendar)
         case .sessionsOfType:
             return sessionsOfTypeProgress(
                 goal: goal, sessions: sessions, routines: routines,

@@ -142,13 +142,25 @@ enum WeeklyGoalDetector {
                     distanceTarget: Double(profile.daysPerWeek) * perDay))
 
             case .powerRFD, .boneDensity, .mobility, .sportPrep, .generalHealth:
-                return goal(.days, WeeklyGoalParams(count: effectiveWeeklyGoal))
+                return goal(.days, daysParams())
             }
         }
 
         // ── Rule 3: nothing known ────────────────────────────────────────
-        return goal(.days, WeeklyGoalParams(count: effectiveWeeklyGoal))
+        return goal(.days, daysParams())
     }
+
+    /// A `days` goal carries NO `count` (controller ruling, 2026-09-06).
+    ///
+    /// `Profile.effectiveWeeklyGoal` is the single source of truth for how
+    /// many days a week the athlete is aiming at: the streak tile renders
+    /// it, `WeeklyGoalProgressMath.daysProgress` reads it, and the editor's
+    /// `days` stepper writes it back to the profile — the design's own "one
+    /// source of truth" for that stepper. A mirror in `params.count` could
+    /// only ever go stale the moment the streak sheet edited the profile,
+    /// and the strip and the tile would then disagree about the same week.
+    /// So the parameter payload for this kind is deliberately empty.
+    private static func daysParams() -> WeeklyGoalParams { WeeklyGoalParams() }
 
     // MARK: - muscleSets targets
 

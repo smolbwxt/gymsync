@@ -85,7 +85,8 @@ final class WeeklyGoalDetectorTests: XCTestCase {
     func testDetectionNeverReturnsNilAndAlwaysStampsCoach() {
         let goal = detect()
         XCTAssertEqual(goal.kind, .days)
-        XCTAssertEqual(goal.params.count, 3)
+        XCTAssertNil(goal.params.count,
+                     "a days goal carries no count — Profile.effectiveWeeklyGoal is the only source")
         XCTAssertEqual(goal.source, .coach,
                        "a detected goal is always Coach's — that is what makes A11's propose-only rule enforceable")
         XCTAssertEqual(goal.userID, userID)
@@ -93,10 +94,11 @@ final class WeeklyGoalDetectorTests: XCTestCase {
         XCTAssertEqual(goal.setAt, now)
     }
 
-    func testRuleThreeWithEveryInputEmptyReturnsDaysAtThePassedGoal() {
+    func testRuleThreeWithEveryInputEmptyReturnsDays() {
         let goal = detect(effectiveWeeklyGoal: 5)
         XCTAssertEqual(goal.kind, .days)
-        XCTAssertEqual(goal.params.count, 5)
+        XCTAssertEqual(goal.params, WeeklyGoalParams(),
+                       "an empty payload: the target lives on the profile, not in params")
     }
 
     func testDetectionIsDeterministic() {
@@ -190,7 +192,7 @@ final class WeeklyGoalDetectorTests: XCTestCase {
                           trainingProfile: profile([.mobility]), effectiveWeeklyGoal: 4)
 
         XCTAssertEqual(goal.kind, .days)
-        XCTAssertEqual(goal.params.count, 4)
+        XCTAssertNil(goal.params.count)
     }
 
     func testAnEndedBlockIsNoBlock() {
@@ -265,7 +267,7 @@ final class WeeklyGoalDetectorTests: XCTestCase {
                          .sportPrep, .generalHealth] {
             let goal = detect(trainingProfile: profile([goalKind]), effectiveWeeklyGoal: 3)
             XCTAssertEqual(goal.kind, .days, "\(goalKind)")
-            XCTAssertEqual(goal.params.count, 3, "\(goalKind)")
+            XCTAssertNil(goal.params.count, "\(goalKind)")
         }
     }
 
