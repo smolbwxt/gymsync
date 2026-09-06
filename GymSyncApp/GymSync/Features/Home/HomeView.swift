@@ -74,6 +74,9 @@ struct HomeView: View {
     /// this is a local push — deliberately NOT an `AppState.PendingRoute`
     /// case, which is the push deep-link enum and this is not one.
     @State private var showCoach = false
+    /// The enrolled block, for the Coach tile's week line. nil = no block,
+    /// and the tile drops to the next rung of its precedence.
+    @State private var activeProgram: ProgramEnrollment?
     /// The calendar card's destination (design §C).
     @State private var showCalendarPage = false
 
@@ -602,22 +605,101 @@ struct HomeView: View {
         .padding(.bottom, 12)
     }
 
-    /// Coach's line on the tile — one sentence, first person (design
-    /// language rule 7).
-    ///
-    /// Task B1 ships the static invitation, which is the last rung of the
-    /// precedence the plan sets out; task **B3** adds the rungs above it
-    /// (today's routine, the block's week, and — once Stream A's repository
-    /// can propose — a proposed change to a user-set goal).
+    // MARK: - The Coach tile (task B3)
+    //
+    // NO EXISTING "HOME COACH SENTENCE" PATH WAS FOUND, so this task decides
+    // one. Grepped: `BlockProgression` (`Models/BlockProgression.swift:40`)
+    // is per-lift and returns `Decision`/`CoachNote`, not a Home line;
+    // `CoachHomeView` builds its own from the thread. The precedence below
+    // is the plan's, first rung that produces text:
+    //
+    //   (a) a proposed change to a user-set goal — ABSENT. The plan names
+    //       `WeeklyGoalRepository.propose(_:)`, which the Task 0 interface
+    //       does not have (`goal`, `progress`, `save`, `clearToCoach`), and
+    //       Stream A owns that file. It arrives at integration I1; the rung
+    //       is written here as a comment rather than invented as a guess.
+    //   (b) today's routine, as a first-person line;
+    //   (c) the block's week;
+    //   (d) a static invitation.
+    //
+    // One sentence, first person, Coach's own voice (design language rule 7).
+
     private var coachSentence: String {
-        "Tell me how the week's going and I'll shape the next one."
+        if let line = todaysRoutineSentence { return line }
+        if let line = blockWeekSentence { return line }
+        return "Tell me how the week's going and I'll shape the next one."
     }
 
-    /// The accent count badge. `nil` — no badge at all — until there is a
-    /// real unread count to show. `coach_chat_threads`
-    /// (`20260824000005_coach_chat_threads.sql`) carries none, and a badge
-    /// that always reads `1` is worse than no badge (design language rule 4:
-    /// badges point, they do not shout).
+    /// (b) "Pull A today — take 185 × 8, then we climb."
+    ///
+    /// The routine is whatever `ProgramToday.resolveRoutine` settled on, so
+    /// the tile and the one button are talking about the same lift. The
+    /// generator names its routines `Coach · Pull A`; the prefix is Coach's
+    /// own signature and reads wrong inside Coach's own sentence, so it goes.
+    private var todaysRoutineSentence: String? {
+        guard let routine = todaysRoutine else { return nil }
+        let name = routine.name.hasPrefix("Coach · ")
+            ? String(routine.name.dropFirst("Coach · ".count))
+            : routine.name
+        // The first prescribed working weight, when the block wrote one.
+        let opener = todaysRoutineExercises.first { exercise in
+            guard let weight = exercise.targetWeight else { return false }
+            return !weight.trimmingCharacters(in: .whitespaces).isEmpty
+        }
+        guard let opener, let weight = opener.targetWeight else {
+            return "\(name) today. Log the sets and I'll take it from there."
+        }
+        guard let reps = repsLabel(for: opener) else {
+            return "\(name) today — take \(weight), then we climb."
+        }
+        return "\(name) today — take \(weight) × \(reps), then we climb."
+    }
+
+    /// The prescription's rep target: the generated range if it has one, the
+    /// legacy text otherwise, and nothing at all for a cardio or to-failure
+    /// row — neither of which reads as `× n`.
+    private func repsLabel(for exercise: RoutineExercise) -> String? {
+        if exercise.targetFailure || exercise.cardioMinutes != nil { return nil }
+        if let low = exercise.targetRepsLow {
+            guard let high = exercise.targetRepsHigh, high != low else { return "\(low)" }
+            return "\(low)-\(high)"
+        }
+        guard let reps = exercise.targetReps?.trimmingCharacters(in: .whitespaces),
+              !reps.isEmpty else { return nil }
+        return reps
+    }
+
+    /// (c) "Week 2 of 6. 3 days on the books."
+    ///
+    /// The week is counted from the enrollment's own start day and clamped
+    /// to the block's length — a block a lifter has run past its last week
+    /// says "week 6 of 6", never "week 8 of 6". The days are the sessions
+    /// already scheduled inside the week the streak tile is counting, so the
+    /// two agree.
+    private var blockWeekSentence: String? {
+        guard let program = activeProgram, program.endedAt == nil, program.weeks > 0 else { return nil }
+        let calendar = Calendar.current
+        let elapsed = calendar.dateComponents([.day],
+                                              from: calendar.startOfDay(for: program.startedOn),
+                                              to: calendar.startOfDay(for: .now)).day ?? 0
+        let week = min(max(1, elapsed / 7 + 1), program.weeks)
+        let booked = Set(upcomingSessions.compactMap { session -> Date? in
+            guard let when = session.scheduledFor,
+                  calendar.isDate(when, equalTo: .now, toGranularity: .weekOfYear)
+            else { return nil }
+            return calendar.startOfDay(for: when)
+        }).count
+        guard booked > 0 else { return "Week \(week) of \(program.weeks). Nothing on the books yet." }
+        return "Week \(week) of \(program.weeks). \(booked) \(booked == 1 ? "day" : "days") on the books."
+    }
+
+    /// The accent count badge. `nil` — no badge at all.
+    ///
+    /// `coach_chat_threads` (`20260824000005_coach_chat_threads.sql`) carries
+    /// NO unread count, and none of `CoachChat`'s functions returns one. A
+    /// badge that always reads `1` is worse than no badge (design language
+    /// rule 4: badges point, they do not shout), so this does not invent a
+    /// number. It becomes a real count the day the column exists.
     private var coachWaiting: Int? { nil }
 
     /// `{Name} is lifting now` — the design's copy, verbatim.
@@ -1088,10 +1170,11 @@ struct HomeView: View {
         lastRefreshedAt = .now
         let userID = appState.currentProfile?.id
 
-        // Single parallel batch: all 8 fetches are declared up front so they
-        // all start together (cost = max of all 8, not wave1 + wave2). Each
-        // fetch keeps the same best-effort isolation as before — failures
-        // are swallowed independently and stale data is left in place.
+        // Single parallel batch: every fetch is declared up front so they
+        // all start together (cost = max of them all, not wave1 + wave2).
+        // Each fetch keeps the same best-effort isolation as before —
+        // failures are swallowed independently and stale data is left in
+        // place. Home v3's own fetches join this batch and nowhere else.
         async let sessionsFetch  = SessionRepository.upcoming()
         async let groupsFetch    = GroupRepository.myGroups()
         async let historyFetch   = fetchHistory(userID: userID)
@@ -1100,6 +1183,7 @@ struct HomeView: View {
         async let profileFetch   = fetchProfile(userID: userID)
         async let campaignsFetch = fetchActiveCampaigns(userID: userID)
         async let streakFetch    = fetchStreak(userID: userID)
+        async let programFetch   = fetchActiveProgram(userID: userID)
 
         // Perf (user report 2026-07-25: "things load incrementally over a
         // fraction of a second"): every `await` is a suspension point, so
@@ -1117,6 +1201,7 @@ struct HomeView: View {
         let refreshedProfile = await profileFetch
         let campaigns       = await campaignsFetch
         let streak          = await streakFetch
+        let program         = await programFetch
 
         // ── single commit (no awaits until after this block) ──
         if let sessions { upcomingSessions = sessions }
@@ -1127,6 +1212,7 @@ struct HomeView: View {
         if let refreshedProfile { profile = refreshedProfile }
         activeCampaigns = campaigns ?? []
         if let streak { userStreak = streak }
+        activeProgram = program
         statsLoading = false
 
         // Commit signal for the next actionable group session (Phase B,
@@ -1239,6 +1325,15 @@ struct HomeView: View {
     private func fetchStreak(userID: UUID?) async -> UserStreak? {
         guard let userID else { return nil }
         return (try? await StreakRepository.userStreak(userID: userID)) ?? nil
+    }
+
+    /// The enrolled block, for the Coach tile's week line (task B3). Same
+    /// double-wrap flattening as `fetchStreak` — `active()` throws AND
+    /// returns an optional. `userID` is only a signed-in gate here;
+    /// `ProgramRepository.active()` scopes itself to the current user.
+    private func fetchActiveProgram(userID: UUID?) async -> ProgramEnrollment? {
+        guard userID != nil else { return nil }
+        return (try? await ProgramRepository.active()) ?? nil
     }
 
     private func fetchOwnedRoutines(userID: UUID?) async -> [Routine]? {
