@@ -244,3 +244,12 @@ Master run (build → seeded screenshots → TestFlight deploy) being watched. V
 
 ### 2026-09-05 ~23:50 UTC — Home v2 both ways, implemented and rendered
 Owner rulings recorded (sign-in accent exception kept; HR zones = data colour; buttons not required caps). Home v2 built as real SwiftUI catalog screens (`Features/Home/V2/`, ids `home-v2-tiles`, `home-v2-strips`, `home-v2-tiles-solo-day`, `home-v2-strips-crew-night`; FLOOR 75), PR #29 merged (catalog-only). Four CI frames verified and sent as two cards (crew night A|B, solo day A|B). Awaiting the owner's pick (A, B, or a mix) before any production wiring.
+
+### 2026-09-06 — Home v3 ten variations rendered; congruence plan + milestone catalog delivered; Earth ring in pass 3
+Home v3 (PR #31 merged, catalog-only): ids home-v3-01…10, eight new pieces, calendar rows removed (card = door). Five two-up cards sent; owner to pick pieces for the final composition. Congruence plan (48 tasks) and milestone catalog (30 rungs) merged as docs (PR #30) and sent. Earth-ring render: pass 1 hose-like + half occluded → pass 2 thin halo at 68° → pass 3 (ring radius 1.24 R, elevation 62°) so the ring clears the silhouette; pending.
+
+### 2026-09-06 — Home composition converging
+Owner picked variation 08 and proposed a weekly-targets strip. Built as "Coach's targets this week" (renders whatever the block tracks; per-muscle sets default; met = green, next = accent ring) in two placements (PR #32 merged, ids home-v3-08a/08b, FLOOR 87). Card sent; controller recommends 08a (above the calendar, for the fold). After the owner's placement call: write the production Home wiring plan (B5): HomeView adopts the one button + solo row, streak tile | Coach tile, crew pulse (when live), targets strip, calendar card as a door, join code; plus the Calendar & scheduling page (itinerary, series, block days, campaign deadlines).
+
+### 2026-09-06 — Home decided; weekly goal system designed
+Owner: 08a (strip above the calendar); crew pulse only when a friend is live; the strip is "your goal this week" (muscle sets for strength goals, else miles / HIIT sessions / …; Coach detects, user edits via tap → levers, Coach can set). Design: `docs/superpowers/specs/2026-09-06-home-v3-production-and-weekly-goal-design.md` — Home v3 production composition, WeeklyGoal (muscleSets · distance · sessionsOfType · days · lift; source coach|user; derived when absent), the goal editor, the calendar & scheduling page, three phases (Phase 1 ships Home with muscleSets + days and no crew pulse). Awaiting owner review.
