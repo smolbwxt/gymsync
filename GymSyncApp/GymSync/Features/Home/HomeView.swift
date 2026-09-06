@@ -898,97 +898,20 @@ struct HomeView: View {
 
     // MARK: - The calendar card's data
     //
-    // `HomeCalendarCard` takes fixture-shaped values (a month's length, its
-    // leading blanks, day NUMBERS) rather than `Date`s, because the catalog
-    // frames have to render identically whatever day CI runs on. Production
-    // has real dates, so this is where they are flattened — from the same
-    // three arrays `TrainingCalendarWidget` took, on the same dot semantics.
-    //
-    // Task B5 lifts both of these into a testable `HomeCalendarCardModel`.
+    // The mapping lives in `HomeCalendarCardModel` so it can be tested
+    // without a view (task B7), and so Stream D's calendar page draws its
+    // grid from the SAME function — the door and the room must not
+    // disagree about which day was trained.
 
     private var calendarMonths: [HomeCalendarCard.Month] {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: .now)
-        guard let thisMonthStart = calendar.date(from: calendar.dateComponents([.year, .month], from: today))
-        else { return [] }
-
-        // Trained: the same fallback chain the production dot field used —
-        // completed, else started, else scheduled.
-        let trainedDays = Set(historySessions.compactMap { session -> Date? in
-            guard let when = session.completedAt ?? session.startedAt ?? session.scheduledFor else { return nil }
-            return calendar.startOfDay(for: when)
-        })
-        let plannedDays = Set(upcomingSessions.compactMap { session -> Date? in
-            session.scheduledFor.map { calendar.startOfDay(for: $0) }
-        })
-
-        return [-1, 0, 1].compactMap { offset -> HomeCalendarCard.Month? in
-            guard let monthStart = calendar.date(byAdding: .month, value: offset, to: thisMonthStart)
-            else { return nil }
-            let dayCount = calendar.range(of: .day, in: .month, for: monthStart)?.count ?? 30
-            // Leading blanks before day 1, relative to the locale's week
-            // start — `firstWeekday` is honoured, same as the old field.
-            let leading = (calendar.component(.weekday, from: monthStart) - calendar.firstWeekday + 7) % 7
-            var trained: Set<Int> = []
-            var planned: Set<Int> = []
-            for dayIndex in 0..<dayCount {
-                guard let day = calendar.date(byAdding: .day, value: dayIndex, to: monthStart) else { continue }
-                if trainedDays.contains(day) { trained.insert(dayIndex + 1) }
-                if plannedDays.contains(day) { planned.insert(dayIndex + 1) }
-            }
-            let parts = calendar.dateComponents([.year, .month], from: monthStart)
-            return HomeCalendarCard.Month(
-                id: "\(parts.year ?? 0)-\(parts.month ?? 0)",
-                label: monthStart.formatted(.dateTime.month(.abbreviated)).uppercased(),
-                dayCount: dayCount,
-                leadingBlanks: leading,
-                trained: trained,
-                planned: planned,
-                today: offset == 0 ? calendar.component(.day, from: today) : nil,
-                position: offset < 0 ? .past : (offset == 0 ? .current : .future)
-            )
-        }
+        HomeCalendarCardModel.months(completed: historySessions,
+                                     upcoming: upcomingSessions)
     }
 
-    /// Every upcoming session, so the header's `{n} UPCOMING` count is the
-    /// same number the old widget showed. The ROWS these describe do not
-    /// render on Home any more (`showsAppointments: false`) — they are
-    /// written out on the calendar page — but the card still counts them.
-    ///
-    /// `status` is deliberately `nil`: Home fetches a commitment only for
-    /// the NEXT group session (`nextCommitStatus`), and a per-row chip built
-    /// from one session's answer would be a guess about the others.
     private var calendarAppointments: [HomeCalendarCard.Appointment] {
-        upcomingSessions.enumerated().map { index, session in
-            let group = session.groupID.flatMap { gid in groups.first(where: { $0.id == gid }) }
-            let day: String
-            if let when = session.scheduledFor {
-                day = Calendar.current.isDateInToday(when)
-                    ? "Today"
-                    : when.formatted(.dateTime.weekday(.abbreviated))
-            } else {
-                day = session.state.replacingOccurrences(of: "_", with: " ").capitalized
-            }
-            return HomeCalendarCard.Appointment(
-                id: index,
-                day: day,
-                time: session.scheduledFor.map { $0.formatted(.dateTime.hour().minute()) } ?? "No time set",
-                initials: group.map { initials(of: $0.name) } ?? "You",
-                tint: group.map { GSGroupColor.color(for: $0.id) },
-                ink: group.map { GSGroupColor.onColor(for: $0.id) },
-                title: routineLabel(for: session),
-                subtitle: group?.name ?? "Solo",
-                repeats: session.seriesID != nil,
-                status: nil
-            )
-        }
-    }
-
-    /// Two-letter crew tile, the `TrainingCalendarWidget.initials` idiom.
-    private func initials(of name: String) -> String {
-        name.split(separator: " ").prefix(2)
-            .map { String($0.prefix(1)).uppercased() }
-            .joined()
+        HomeCalendarCardModel.appointments(upcoming: upcomingSessions,
+                                           groups: groups,
+                                           title: { routineLabel(for: $0) })
     }
 
     // MARK: - Campaigns carousel (Phase C Task 2)
