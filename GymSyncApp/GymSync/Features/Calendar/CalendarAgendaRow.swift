@@ -179,7 +179,12 @@ struct CalendarSwipeRow<Content: View>: View {
     @ViewBuilder
     private var row: some View {
         if editable {
-            face.gesture(drag)
+            // SIMULTANEOUS: a plain `.gesture` on a row inside a vertical
+            // `ScrollView` can swallow the drag that should have scrolled
+            // the page. `drag` ignores a mostly-vertical translation, so
+            // sharing costs nothing and the page keeps scrolling under a
+            // finger that happens to start on a row.
+            face.simultaneousGesture(drag)
         } else {
             face
         }

@@ -99,7 +99,7 @@ struct CalendarSchedulingView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 12) {
                 // The `{Month} {Year}` SUBTITLE the proof draws under the
                 // title — not a kicker. It sits directly beneath the large
                 // `Calendar` the nav bar renders, which is why the nav title
@@ -113,7 +113,13 @@ struct CalendarSchedulingView: View {
                 CalendarMonthGrid(month: resolved.month,
                                   legendCrewColor: resolved.legendCrewColor,
                                   onSelectDay: daySelection)
-                    .gesture(monthSwipe)
+                    // SIMULTANEOUS, not exclusive: this sits inside a
+                    // vertical `ScrollView`, and a plain `.gesture` here can
+                    // swallow the drag that should have scrolled the page —
+                    // including the swipe the second catalog capture needs.
+                    // `monthSwipe` acts only on a mostly-horizontal drag, so
+                    // sharing costs nothing.
+                    .simultaneousGesture(monthSwipe)
 
                 agendaCard
 
@@ -123,12 +129,21 @@ struct CalendarSchedulingView: View {
                 ForEach(resolved.campaigns) { campaign in
                     CalendarCampaignRowView(row: campaign)
                 }
-
-                scheduleButton
             }
             .padding(16)
         }
         .background(theme.bg)
+        // The one primary is PINNED, not appended. On a page whose grid and
+        // agenda already fill a screen it would otherwise sit below the fold
+        // — unreachable without a scroll, and absent from the capture that
+        // is supposed to prove it exists (plan constraint 7).
+        .safeAreaInset(edge: .bottom) {
+            scheduleButton
+                .padding(.horizontal, 16)
+                .padding(.top, 10)
+                .padding(.bottom, 8)
+                .background(theme.bg)
+        }
         .navigationTitle("Calendar")
         // `.large`, so the page opens under the big left-aligned `Calendar`
         // the v7 proof draws, with the month line as its subtitle. It
@@ -219,8 +234,8 @@ struct CalendarSchedulingView: View {
                     .multilineTextAlignment(.trailing)
             }
             .padding(.horizontal, 16)
-            .padding(.top, 16)
-            .padding(.bottom, 12)
+            .padding(.top, 14)
+            .padding(.bottom, 10)
 
             if resolved.agenda.isEmpty {
                 Text("Nothing on the books this week.")

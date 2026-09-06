@@ -463,7 +463,35 @@ final class ScreenshotTests: XCTestCase {
     // The page the calendar card is a door onto (Stream D). Rendered from a
     // fixture world — no clock, no repository — so the frame is comparable
     // against the v7 proof and against itself on any run day.
-    func testCatalogCalendarScheduling()     { captureCatalog("calendar-scheduling") }
+    //
+    // TWO captures from ONE catalog id, which is why this does not go
+    // through `captureCatalog`. The page is taller than a phone: the month
+    // card and the week's agenda fill the first screen, so the block row,
+    // the campaign row and the pinned primary — everything task D4 and plan
+    // D2 item 6 build — are only provable from a second frame taken at the
+    // bottom. `-2` is a second ATTACHMENT, not a second id: the enum, the
+    // documented id list and `FLOOR` are all untouched, and `parity_diff.js`
+    // simply reports it as an unmapped capture (a warning, not a failure).
+    func testCatalogCalendarScheduling() {
+        let app = XCUIApplication()
+        var env = app.launchEnvironment
+        env["UITEST_CATALOG"] = "calendar-scheduling"
+        app.launchEnvironment = env
+        app.launch()
+        // Same budget and same reasoning as `captureCatalog` — a catalog
+        // launch bypasses `RootView`, so there is no synchronization point
+        // and this sleep is the screen's whole render budget.
+        Thread.sleep(forTimeInterval: catalogRenderBudget)
+        attachScreenshot(app, named: "app-calendar-scheduling.png")
+
+        // To the bottom. Both of the page's drag gestures are
+        // `simultaneousGesture` and ignore a mostly-vertical translation, so
+        // a swipe that lands on the grid or on an agenda row still scrolls.
+        app.swipeUp()
+        app.swipeUp()
+        Thread.sleep(forTimeInterval: catalogRenderBudget)
+        attachScreenshot(app, named: "app-calendar-scheduling-2.png")
+    }
 
     // MARK: - Seeded deep-screen captures
     //

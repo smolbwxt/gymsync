@@ -65,8 +65,10 @@ struct CalendarMonthGrid: View {
 
     /// Cell face; the column slot is whatever the row's width divides into
     /// seven, so the grid fills its card at any width without measuring.
-    private let cell: CGFloat = 40
-    private let cellRadius: CGFloat = 12
+    /// 36, matched to the proof's own cell — a 40 pt cell over six rows put
+    /// the agenda a further 24 pt down a page that is already tall.
+    private let cell: CGFloat = 36
+    private let cellRadius: CGFloat = 11
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {

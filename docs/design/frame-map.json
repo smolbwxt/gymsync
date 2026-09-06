@@ -189,6 +189,7 @@
   },
   "calendar-scheduling": {
     "frame": 92,
-    "title": "Calendar & scheduling page"
+    "title": "Calendar & scheduling page",
+    "note": "two captures from this one id: app-calendar-scheduling (the header, month and week) and app-calendar-scheduling-2 (scrolled to the bottom: block row, campaign row, pinned primary). The -2 attachment has no frame-map entry of its own by design."
   }
 }
