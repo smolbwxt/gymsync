@@ -274,14 +274,23 @@ struct HomeWeeklyGoalStrip: View {
     //     one for `lift`, and the same pair the reading prints for
     //     everything else.
     //
-    // It is optional in both directions. With no subject chip every kind
-    // still renders: the glyph falls back to `figure.run` (detection's own
-    // default activity), the noun is dropped, and the meter measures
-    // `value` against `target`. The contract is recorded here and in
-    // `streamC-report.md` so A5/A6/A7 can fill the slot rather than guess
-    // at it, and so a `muscleSets` chip array — where `chips.first` is
-    // CHEST, not a subject — never reaches these bodies: `muscleSets` has
-    // its own arm and never asks for one.
+    // It is optional in both directions, and where it is absent the strip
+    // shows an ABSENCE rather than a guess. No subject chip means no glyph
+    // — not `figure.run` over a bike goal — and, for `lift`, an unfilled
+    // meter rather than the 91 % a raw 205 / 225 draws on a block's first
+    // day. Both of those were plausible-looking WRONG answers, which is a
+    // harder failure to catch in a design round than a visible gap.
+    // `distance` and `sessionsOfType` still fall back to `value` over
+    // `target`, because for those two that IS the honest fraction, and the
+    // noun is simply dropped.
+    //
+    // `days` does not depend on this slot at all — see `daysBody`.
+    //
+    // The contract is recorded here, in `streamC-report.md`, and (as of the
+    // stream's first review) in the I1 hand-off, so A5/A6/A7 fill the slot
+    // rather than guess at it. A `muscleSets` chip array — where
+    // `chips.first` is CHEST, not a subject — never reaches these bodies:
+    // `muscleSets` has its own arm and never asks for one.
 
     /// The reading's subject, when the caller supplied one.
     private var subject: WeeklyGoalProgress.Chip? { progress.chips.first }
@@ -296,6 +305,11 @@ struct HomeWeeklyGoalStrip: View {
         if let subject = subject, subject.target > 0 {
             return Self.clamped(subject.done / subject.target)
         }
+        // A lift's meter is measured from where the BLOCK started, and only
+        // the subject chip carries that. Without it the honest drawing is an
+        // empty track: `value / target` would report a 205 → 225 goal as
+        // 91 % done on the day the block opened.
+        if case .some(.lift) = kind { return 0 }
         guard progress.target > 0 else { return 0 }
         return Self.clamped(progress.value / progress.target)
     }
@@ -369,9 +383,11 @@ struct HomeWeeklyGoalStrip: View {
             meter(fill: meterFraction, met: progress.met)
 
             HStack(spacing: 7) {
-                Image(systemName: activityGlyph)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(theme.neutral500)
+                if let activityGlyph = activityGlyph {
+                    Image(systemName: activityGlyph)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(theme.neutral500)
+                }
 
                 Text(valueOverTarget(unitLabel))
                     .font(GSFont.bold(13, relativeTo: .subheadline))
@@ -383,17 +399,21 @@ struct HomeWeeklyGoalStrip: View {
         }
     }
 
-    /// The four activities `WeeklyGoalParams.activity` documents, and
-    /// `figure.run` for anything else — detection's own default when it
-    /// reaches for a distance goal (`WeeklyGoalDetector` rule 2,
-    /// `distance(run)`), so the fallback is the commonest case rather than a
-    /// question mark.
-    private var activityGlyph: String {
+    /// The four activities `WeeklyGoalParams.activity` documents, and **nil**
+    /// for anything else.
+    ///
+    /// Nil rather than `figure.run`. A default glyph looks like an answer:
+    /// a bike goal whose subject chip has not arrived would draw a runner,
+    /// and nothing on the strip would say the app does not know. The reading
+    /// beside it (`9.4 / 15 mi`) is true on its own, so the honest rendering
+    /// of a missing activity is no activity.
+    private var activityGlyph: String? {
         switch (subject?.name ?? "").lowercased() {
+        case "run":  return "figure.run"
         case "bike": return "figure.outdoor.cycle"
         case "row":  return "figure.rower"
         case "walk": return "figure.walk"
-        default:     return "figure.run"
+        default:     return nil
         }
     }
 
@@ -473,11 +493,29 @@ struct HomeWeeklyGoalStrip: View {
     /// it is `HomeStreakTile`'s `daysDone / goal`, resolved upstream by A4
     /// from the same week, and it is a different fact from the kicker row's
     /// "3 DAYS LEFT" rather than a second telling of it.
+    ///
+    /// **This kind never depends on the subject-chip contract.** `days` is
+    /// the one non-`muscleSets` kind the design's own phasing ships in
+    /// Phase 1, and its entire rendering used to be the chips — so a Stream
+    /// A that populated `value`/`target` and left `chips` empty, exactly as
+    /// the frozen interface reads, would have reopened the blank-bar failure
+    /// C1 exists to retire. With no chips the row is drawn from the FRACTION
+    /// instead: seven chips, the first `value` of them filled. Rendered that
+    /// way it says how many days are in the bank, which is what `value`
+    /// means, and it does not claim WHICH days — the per-day shape and
+    /// today's ring are exactly what only `chips` can carry.
     private var daysBody: some View {
         HStack(spacing: 8) {
             HStack(spacing: 6) {
-                ForEach(Array(progress.chips.enumerated()), id: \.offset) { _, chip in
-                    HomeWeekDayChip(letter: chip.name, state: Self.dayState(chip))
+                if progress.chips.isEmpty {
+                    ForEach(Array(Self.weekLetters.enumerated()), id: \.offset) { index, letter in
+                        HomeWeekDayChip(letter: letter,
+                                        state: index < daysDone ? .done : .empty)
+                    }
+                } else {
+                    ForEach(Array(progress.chips.enumerated()), id: \.offset) { _, chip in
+                        HomeWeekDayChip(letter: chip.name, state: Self.dayState(chip))
+                    }
                 }
             }
 
@@ -496,6 +534,33 @@ struct HomeWeeklyGoalStrip: View {
         if chip.done >= 1 { return .done }
         if chip.target >= 1 { return .planned }
         return .empty
+    }
+
+    /// Days in the bank, clamped to a week — the count the fraction-driven
+    /// row fills.
+    private var daysDone: Int {
+        guard progress.value.isFinite else { return 0 }
+        return max(0, min(7, Int(progress.value.rounded())))
+    }
+
+    /// The week's letters in the DEVICE calendar's order, for the row that
+    /// has no chips to take them from.
+    ///
+    /// `Calendar.current`, not a hard-coded `M T W T F S S`: `WeekMath`'s own
+    /// doc comment records the deliberate departure from ISO — Home's week is
+    /// the device's week, honouring the user's `firstWeekday` — and a strip
+    /// that labelled a Sunday-first week starting on Monday would contradict
+    /// the streak tile beside it. Localized, because
+    /// `veryShortWeekdaySymbols` is.
+    ///
+    /// No frame reaches this: every `days` fixture carries chips. It is the
+    /// live fallback only.
+    private static var weekLetters: [String] {
+        let calendar = Calendar.current
+        let symbols = calendar.veryShortWeekdaySymbols
+        guard symbols.count == 7 else { return ["M", "T", "W", "T", "F", "S", "S"] }
+        let offset = max(0, min(6, calendar.firstWeekday - 1))
+        return Array(symbols[offset...]) + Array(symbols[..<offset])
     }
 
     // MARK: - lift
