@@ -603,6 +603,17 @@ struct HomeWeeklyGoalStrip: View {
     /// thing on the strip when there is nothing to read yet. One line, so
     /// the strip keeps a strip's height and the page below it does not jump
     /// when the first goal lands.
+    ///
+    /// **No chevron, deliberately.** The chevron lives on `kickerRow`, which
+    /// this branch omits — so frame 89 is the one state with no door handle
+    /// at the trailing edge. The `›` the design puts INSIDE the copy is the
+    /// affordance here, and it is the design's own choice of one: the line
+    /// reads "Set a goal for this week ›" precisely because there is nothing
+    /// else on the strip for a chevron to sit beside. Two arrows on a
+    /// fourteen-word strip would be the louder mistake. This is also the one
+    /// element of the shell the controller froze byte-identical to task 0.3
+    /// (Stream C brief, ruling 1), so changing it is not this stream's call
+    /// even where the argument is close.
     private var invitation: some View {
         Text("Set a goal for this week ›")
             .font(GSFont.bold(13.5, relativeTo: .subheadline))

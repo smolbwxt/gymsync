@@ -169,6 +169,18 @@ enum WeeklyGoalFixtures {
     /// The Monday of the fixture week, in the DATE column's own format.
     static let editorWeekStart = "2026-08-31"
 
+    /// The profile's standing weekly session goal — the number the `days`
+    /// stepper seeds from and edits. Four, matching `HomeV2Fixtures
+    /// .crewNight.weeklyGoal`, so a frame showing the days lever and a frame
+    /// showing the streak tile agree.
+    static let editorWeeklySessionGoal = 4
+
+    /// The display unit, pinned. Both editor frames render `MILES` and `lb`
+    /// on any simulator rather than on whichever settings row the capturing
+    /// account happens to carry — the last input that was a global read
+    /// rather than a value.
+    static let editorUnit: WeightUnit = .lbs
+
     static let benchPressID = UUID(uuidString: "00000000-0000-0000-0000-0000000000b1") ?? UUID()
     static let backSquatID = UUID(uuidString: "00000000-0000-0000-0000-0000000000b2") ?? UUID()
     static let deadliftID = UUID(uuidString: "00000000-0000-0000-0000-0000000000b3") ?? UUID()

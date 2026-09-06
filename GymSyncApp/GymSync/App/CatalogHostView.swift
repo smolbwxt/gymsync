@@ -1883,9 +1883,11 @@ struct CatalogHostView: View {
         WeeklyGoalEditorSheet(goal: WeeklyGoalFixtures.editorGoal,
                               userID: WeeklyGoalFixtures.editorUserID,
                               weekStart: WeeklyGoalFixtures.editorWeekStart,
+                              weeklySessionGoal: WeeklyGoalFixtures.editorWeeklySessionGoal,
                               focusLifts: WeeklyGoalFixtures.focusLifts,
                               loadsCatalog: false,
-                              today: WeeklyGoalFixtures.editorToday)
+                              today: WeeklyGoalFixtures.editorToday,
+                              unitOverride: WeeklyGoalFixtures.editorUnit)
     }
 
     private var content_homeGoalEditorLift: some View {
@@ -1893,9 +1895,11 @@ struct CatalogHostView: View {
                               userID: WeeklyGoalFixtures.editorUserID,
                               weekStart: WeeklyGoalFixtures.editorWeekStart,
                               proposal: WeeklyGoalFixtures.editorProposal,
+                              weeklySessionGoal: WeeklyGoalFixtures.editorWeeklySessionGoal,
                               focusLifts: WeeklyGoalFixtures.focusLifts,
                               loadsCatalog: false,
-                              today: WeeklyGoalFixtures.editorToday)
+                              today: WeeklyGoalFixtures.editorToday,
+                              unitOverride: WeeklyGoalFixtures.editorUnit)
     }
 }
 

@@ -26,9 +26,10 @@ import SwiftUI
 /// lift rows.
 ///
 /// Hermetic by construction. Every input arrives through the initializer —
-/// the goal, the repository, the proposal, the focus lifts, and the clock —
-/// so a catalog capture is a value, not a fetch. `loadsCatalog: false` is the
-/// one switch a frame needs; with it the sheet makes no network call at all.
+/// the goal, the repository, the proposal, the profile's standing weekly
+/// goal, the focus lifts, the clock and the display unit — so a catalog
+/// capture is a value, not a fetch. `loadsCatalog: false` is the one switch a
+/// frame needs; with it the sheet makes no network call at all.
 struct WeeklyGoalEditorSheet: View {
 
     // MARK: - Inputs
@@ -102,6 +103,16 @@ struct WeeklyGoalEditorSheet: View {
     /// The clock, injected. Stamps `setAt` on a save and frames the by-date
     /// picker; a fixture value makes the whole sheet deterministic.
     var today: Date = .now
+    /// The display unit, for a frame that must not read a global.
+    ///
+    /// Nil — the shipping default — reads `ThemeStore.shared.weightUnit`,
+    /// which is the live setting and the right answer on a device. It is
+    /// overridable because frames 90 and 91 were otherwise the one input
+    /// this sheet did not receive: today they render `MILES` and `lb`
+    /// because a fresh simulator has no cached settings row and the store
+    /// falls back to `.lbs`, which is deterministic by accident rather than
+    /// by construction.
+    var unitOverride: WeightUnit? = nil
     /// Called with the goal that now stands — the saved one, the re-derived
     /// one after `LET COACH SET IT`, or nil if that derivation produced
     /// nothing.
@@ -143,6 +154,7 @@ struct WeeklyGoalEditorSheet: View {
          focusLifts: [LiftOption] = [],
          loadsCatalog: Bool = true,
          today: Date = .now,
+         unitOverride: WeightUnit? = nil,
          onSaved: @escaping (WeeklyGoal?) -> Void = { _ in }) {
         self.goal = goal
         self.userID = userID
@@ -153,6 +165,7 @@ struct WeeklyGoalEditorSheet: View {
         self.focusLifts = focusLifts
         self.loadsCatalog = loadsCatalog
         self.today = today
+        self.unitOverride = unitOverride
         self.onSaved = onSaved
 
         // Every lever is seeded, including the ones this goal's kind does
@@ -174,7 +187,10 @@ struct WeeklyGoalEditorSheet: View {
         _dayCount = State(initialValue: Self.clampDays(weeklySessionGoal))
         _exerciseID = State(initialValue: params.exerciseID ?? focusLifts.first?.id)
         _targetWeightLbs = State(initialValue: params.targetWeightLbs ?? 225)
-        _byDate = State(initialValue: params.byDate ?? Self.defaultByDate(from: today))
+        // Clamped forward: the picker's range is `today...`, and a goal whose
+        // by-date has already passed would otherwise seed the selection
+        // outside its own range — an ill-defined state on a real stale row.
+        _byDate = State(initialValue: max(params.byDate ?? Self.defaultByDate(from: today), today))
     }
 
     // MARK: - Vocabulary
@@ -667,8 +683,9 @@ struct WeeklyGoalEditorSheet: View {
 
     /// One read of the unit setting for the whole sheet —
     /// `AnchorEntryView.unit`'s idiom (:37), and the reason no label here
-    /// spells "mi" or "lb" itself.
-    private var unit: WeightUnit { ThemeStore.shared.weightUnit }
+    /// spells "mi" or "lb" itself. An injected `unitOverride` wins, so a
+    /// frame can be a value rather than a global.
+    private var unit: WeightUnit { unitOverride ?? ThemeStore.shared.weightUnit }
 
     /// Why the primary is disabled, or nil when the goal is complete.
     ///
@@ -794,6 +811,17 @@ struct WeeklyGoalEditorSheet: View {
     /// The footer's other half: delete the row and let detection re-derive
     /// it. `source` goes back to `.coach`, which is what makes Coach free to
     /// write this week again.
+    ///
+    /// **This one cannot report a failure, and that is the interface, not an
+    /// oversight.** `clearToCoach` returns `WeeklyGoal?` and does not throw
+    /// (`WeeklyGoalRepository` is `async` with no `throws` on purpose — every
+    /// Home fetch in this app is best-effort). So a nil means either "the row
+    /// is gone and detection produced nothing" or "the network dropped", and
+    /// nothing here can tell them apart. Rather than invent an error message
+    /// that might be a lie, it hands `onSaved(nil)` back and dismisses: Home
+    /// re-reads on its next refresh, and the strip shows whatever actually
+    /// stands. If the two ever need distinguishing, the protocol has to say
+    /// so first — that is Stream A's file, and I1's call.
     private func letCoachSetIt() async {
         saving = true
         defer { saving = false }
