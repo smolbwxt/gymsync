@@ -433,6 +433,25 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogHomeV2TilesSoloDay()     { captureCatalog("home-v2-tiles-solo-day") }
     func testCatalogHomeV2StripsCrewNight()  { captureCatalog("home-v2-strips-crew-night") }
 
+    // Home v3 (home-v3 ten-variations plan): ten compositions of the settled
+    // kit, five on the crew night and five on the solo day. Same reason the
+    // v2 four exist — the owner asked for mockups, and the CI artifact is the
+    // only way a design round sees a screen before TestFlight — except that
+    // these ten are meant to be looked at TOGETHER, so the plan's own
+    // verification step pairs them into five two-up cards (01|02, 03|04,
+    // 05|06, 07|08, 09|10). Ids are ordered so that pairing is just the
+    // sorted list.
+    func testCatalogHomeV301Tiles()          { captureCatalog("home-v3-01-tiles") }
+    func testCatalogHomeV302Strips()         { captureCatalog("home-v3-02-strips") }
+    func testCatalogHomeV303WeekTiles()      { captureCatalog("home-v3-03-week-tiles") }
+    func testCatalogHomeV304TileLine()       { captureCatalog("home-v3-04-tile-line") }
+    func testCatalogHomeV305Recovery()       { captureCatalog("home-v3-05-recovery") }
+    func testCatalogHomeV306Milestone()      { captureCatalog("home-v3-06-milestone") }
+    func testCatalogHomeV307Body()           { captureCatalog("home-v3-07-body") }
+    func testCatalogHomeV308Crew()           { captureCatalog("home-v3-08-crew") }
+    func testCatalogHomeV309Plan()           { captureCatalog("home-v3-09-plan") }
+    func testCatalogHomeV310Minimal()        { captureCatalog("home-v3-10-minimal") }
+
     // MARK: - Seeded deep-screen captures
     //
     // Reachable via the deterministic `ci_test_user_2` fixture world (Task 3,

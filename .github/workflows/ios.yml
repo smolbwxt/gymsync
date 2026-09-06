@@ -333,7 +333,7 @@ jobs:
         if: always()
         run: |
           SCREENS="$RUNNER_TEMP/screens"
-          FLOOR=75
+          FLOOR=85
           # `|| true` + the `:-0` default for the same `set -eo pipefail`
           # reason as the simulator picker above: a missing $SCREENS makes
           # `find` exit 1, which would kill the step before it printed the
