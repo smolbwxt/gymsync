@@ -42,10 +42,19 @@ struct HomeSoloRow: View {
 
     private var rowHeight: CGFloat { HomeV2Metrics.soloPillFace + HomeV2Metrics.lip }
 
-    /// Two whole bodies rather than one with the pill conditionally omitted:
-    /// an `if` inside the `HStack` would put a `_ConditionalContent` in the
-    /// approved frames' layout, and this piece's whole contract is that the
-    /// catalog path is untouched.
+    /// Two whole shapes, not one shape with a hole in it. The pill's
+    /// presence is a property of the CALL SITE — a crew primary keeps the
+    /// escape hatch, a solo primary does not — so the row reads better as
+    /// two named bodies than as an `HStack` with a conditional first child.
+    ///
+    /// (This `if` is itself a `_ConditionalContent`; that is fine, and it is
+    /// not what protects the approved frames. What protects them is that all
+    /// three catalog call sites — `HomeV3Variations.swift:78-79`,
+    /// `HomeV2TilesView.swift:33-34`, `HomeV2StripsView.swift:110-111` — are
+    /// already wrapped in `if world.primary.isCrewState` and pass
+    /// `burpeesOwed:` only, so every frame takes the default and renders
+    /// `fullRow`, which is the pre-existing body verbatim. `counterOnly` is
+    /// unreachable from any fixture.)
     @ViewBuilder
     var body: some View {
         if showsStartPill { fullRow } else { counterOnly }
