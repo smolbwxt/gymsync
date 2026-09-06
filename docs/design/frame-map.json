@@ -186,5 +186,9 @@
   "home-v3-10-minimal": {
     "frame": 80,
     "title": "Home v3 - 10 minimal (solo day)"
+  },
+  "calendar-scheduling": {
+    "frame": 92,
+    "title": "Calendar & scheduling page"
   }
 }

@@ -460,6 +460,11 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogHomeV309Plan()           { captureCatalog("home-v3-09-plan") }
     func testCatalogHomeV310Minimal()        { captureCatalog("home-v3-10-minimal") }
 
+    // The page the calendar card is a door onto (Stream D). Rendered from a
+    // fixture world — no clock, no repository — so the frame is comparable
+    // against the v7 proof and against itself on any run day.
+    func testCatalogCalendarScheduling()     { captureCatalog("calendar-scheduling") }
+
     // MARK: - Seeded deep-screen captures
     //
     // Reachable via the deterministic `ci_test_user_2` fixture world (Task 3,

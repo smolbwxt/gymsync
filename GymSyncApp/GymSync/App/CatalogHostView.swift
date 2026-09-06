@@ -94,6 +94,8 @@ enum CatalogScreen: String, CaseIterable {
     case homeV3_08bTargetsAboveJoin = "home-v3-08b-targets-above-join"
     case homeV3Plan = "home-v3-09-plan"
     case homeV3Minimal = "home-v3-10-minimal"
+    /// The page Home's calendar card is a door onto (Stream D, frame 92).
+    case calendarScheduling = "calendar-scheduling"
 }
 
 struct CatalogHostView: View {
@@ -174,6 +176,7 @@ struct CatalogHostView: View {
             case .homeV3_08bTargetsAboveJoin: content_homeV3TargetsAboveJoin
             case .homeV3Plan:                 content_homeV3Plan
             case .homeV3Minimal:              content_homeV3Minimal
+            case .calendarScheduling:         content_calendarScheduling
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1788,6 +1791,101 @@ struct CatalogHostView: View {
     private var content_homeV3Minimal: some View {
         HomeV3MinimalView(world: HomeV2Fixtures.soloDay)
     }
+
+    // MARK: - Calendar & scheduling page (Stream D, frame 92)
+    //
+    // The page Home's calendar card opens, rendered from the v7 proof's own
+    // content (`04-calendar-scheduling-new-page.png`) so the capture and the
+    // frame the owner judged are comparable side by side.
+    //
+    // HERMETIC, and not by accident — the whole reason
+    // `CalendarSchedulingView` grew a `world` parameter. With one present it
+    // renders the resolved values below and never opens a socket, and every
+    // model object behind a destination (`session`, `enrollment`,
+    // `campaign`) is nil, so no row on this frame can push a lobby, delete a
+    // session, or install a swipe gesture. No `Date.now` anywhere: the days
+    // are fixture INTEGERS, the labels are fixture STRINGS, and the frame
+    // renders identically whatever day CI runs on.
+    //
+    // Wrapped in a `NavigationStack` for the same reason
+    // `content_campaignDetailJoined` is: the page sets `.navigationTitle`
+    // and a trailing toolbar item, both no-ops without one.
+    //
+    // Crew colours are `HomeV2Fixtures`' own picks, so the crew that reads
+    // as Push Crew on a Home frame reads as Push Crew here too: palette[4]
+    // (vermilion) for Push Crew's Tuesdays, palette[2] (reddish purple) for
+    // Legs Crew's Saturdays.
+    private var content_calendarScheduling: some View {
+        NavigationStack {
+            CalendarSchedulingView(completedSessions: [], upcomingSessions: [], groups: [],
+                                   world: Self.calendarFixtureWorld)
+        }
+    }
+
+    private static let calendarPushCrew = GSGroupColor.palette[4]
+    private static let calendarLegsCrew = GSGroupColor.palette[2]
+
+    /// September 2026 as the proof draws it: trained 1, 3, 4; yours 5, 7, 11,
+    /// 18, 20; crew 6, 9, 13, 16; today 5; the first row — this week — boxed.
+    ///
+    /// `leadingBlanks: 0` and a Monday-first header are the PROOF's grid, not
+    /// September 2026's real one (the 1st was a Tuesday). The frame exists to
+    /// be compared against the mock the owner judged, and the arithmetic that
+    /// places a real month is production's, exercised by `derivedWorld`.
+    private static let calendarFixtureWorld = CalendarWorld(
+        month: CalendarMonthGrid.Month(
+            label: "SEPTEMBER 2026",
+            weekdayLabels: ["M", "T", "W", "T", "F", "S", "S"],
+            dayCount: 30,
+            leadingBlanks: 0,
+            trained: [1, 3, 4],
+            scheduled: [5, 7, 11, 18, 20],
+            crew: [6: calendarLegsCrew, 9: calendarPushCrew,
+                   13: calendarLegsCrew, 16: calendarPushCrew],
+            today: 5,
+            selectedWeek: [1, 2, 3, 4, 5, 6, 7]
+        ),
+        legendCrewColor: calendarLegsCrew,
+        agenda: [
+            CalendarAgendaItem(
+                id: UUID(uuidString: "00000000-0000-0000-0000-0000000000C1")!,
+                dayNumber: 5, weekday: "FRI",
+                title: "Push A · 5:00 PM", repeats: false,
+                subtitle: "Push Crew · Powerhouse · you're in",
+                status: .checkedIn, session: nil
+            ),
+            CalendarAgendaItem(
+                id: UUID(uuidString: "00000000-0000-0000-0000-0000000000C2")!,
+                dayNumber: 6, weekday: "SAT",
+                title: "Lower B · 9:00 AM", repeats: true,
+                subtitle: "Legs Crew · repeats weekly",
+                status: nil, session: nil
+            ),
+            CalendarAgendaItem(
+                id: UUID(uuidString: "00000000-0000-0000-0000-0000000000C3")!,
+                dayNumber: 7, weekday: "SUN",
+                title: "Pull A · 10:00 AM", repeats: false,
+                subtitle: "Solo · from your block",
+                status: nil, session: nil
+            ),
+            CalendarAgendaItem(
+                id: UUID(uuidString: "00000000-0000-0000-0000-0000000000C4")!,
+                dayNumber: 9, weekday: "TUE",
+                title: "Push B · 5:00 PM", repeats: false,
+                subtitle: "Push Crew · commit closes Mon 5 PM",
+                status: .commit, session: nil
+            ),
+        ],
+        block: CalendarBlockRow(text: "Coach block · week 2 of 6 · Tue, Thu, Sat",
+                                enrollment: nil, weeks: []),
+        campaigns: [
+            CalendarCampaignRow(
+                id: UUID(uuidString: "00000000-0000-0000-0000-0000000000CA")!,
+                text: "Fall Volume campaign · ends Sep 30 · you're at 61%",
+                campaign: nil
+            ),
+        ]
+    )
 }
 
 // MARK: - Profile fixture
