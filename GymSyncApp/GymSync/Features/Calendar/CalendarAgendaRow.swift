@@ -60,7 +60,7 @@ struct CalendarAgendaRowView: View {
             }
             .frame(width: 38)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 5) {
                     Text(item.title)
                         .font(GSFont.bold(14.5, relativeTo: .subheadline))
@@ -88,8 +88,11 @@ struct CalendarAgendaRowView: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(theme.neutral500)
         }
+        // 9, not 12, and 2 pt between the two lines rather than 3: the
+        // proof's agenda rows run about 52 pt, and a four-row week has to
+        // read as a list rather than as four stacked cards.
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.vertical, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
     }
