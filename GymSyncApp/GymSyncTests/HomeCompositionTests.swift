@@ -112,7 +112,13 @@ final class HomeCompositionTests: XCTestCase {
                                        timeLabel: "5:00 PM")
         let state = HomeOneButtonResolver.state(next: input, todaysRoutineName: "Pull A")
         XCTAssertEqual(state.line1, "CHECK-IN OPENS 45m")
-        XCTAssertEqual(state.line2, "YOU'RE IN")
+        // `ON THE BOOKS`, not the old `YOU'RE IN`: the state's own subtitle
+        // makes no claim about commitment, because the commit chip beside it
+        // is the only thing on that button allowed to speak about that.
+        // `testCheckInOpensSubtitleMakesNoClaimAboutCommitment` owns the
+        // reasoning; this line keeps the countdown's two lines asserted
+        // together.
+        XCTAssertEqual(state.line2, "ON THE BOOKS")
         XCTAssertEqual(faceName(state), "raised", "the countdown is quiet — it is not an act-now signal")
         XCTAssertTrue(state.isCrewState)
     }
