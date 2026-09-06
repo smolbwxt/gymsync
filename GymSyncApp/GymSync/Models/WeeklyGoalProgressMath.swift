@@ -434,19 +434,64 @@ enum WeeklyGoalProgressMath {
                                                  daysLeft: daysLeft))
     }
 
+    // MARK: - A7: distance
+
+    /// Metres in one mile, exactly. The international mile is defined as
+    /// 1609.344 m, so this is a definition rather than a measurement.
+    static let metresPerMile = 1609.344
+
+    /// `mi` with pounds, `km` with kilograms — owner answer 2. The distance
+    /// unit is not a separate setting; it follows the one unit switch the
+    /// app already has.
+    static func distanceUnitLabel(_ unit: WeightUnit) -> String {
+        unit == .lbs ? "mi" : "km"
+    }
+
+    /// Metres -> the athlete's distance unit. HealthKit answers in metres
+    /// and `params.distanceTarget` is already stored in the athlete's own
+    /// unit, so this is the one conversion between them.
+    static func distanceValue(metres: Double, unit: WeightUnit) -> Double {
+        unit == .lbs ? metres / metresPerMile : metres / 1000
+    }
+
+    /// `9.4 / 15 mi`.
+    ///
+    /// Pure: the caller does the HealthKit read (`HealthKitBridge
+    /// .distanceMeters(activity:from:to:)`) and passes metres in. That
+    /// keeps the arithmetic testable with no store, and it means the
+    /// DENIED path and the NO-DATA path are the same path — HealthKit never
+    /// discloses a read denial, so 0 metres is the only honest answer to
+    /// both, and the strip renders `0 / 15 mi` rather than an error.
+    static func distanceProgress(goal: WeeklyGoal,
+                                 metres: Double,
+                                 unit: WeightUnit,
+                                 now: Date = .now,
+                                 calendar: Calendar = .current) -> WeeklyGoalProgress {
+        let daysLeft = WeekMath.daysRemaining(in: now, from: now, calendar: calendar)
+        let value = distanceValue(metres: max(0, metres), unit: unit)
+        let target = goal.params.distanceTarget ?? 0
+        let met = target > 0 && value >= target
+
+        return WeeklyGoalProgress(value: value,
+                                  target: target,
+                                  unitLabel: distanceUnitLabel(unit),
+                                  met: met,
+                                  rightHandRead: daysLeftPhrase(daysLeft),
+                                  kicker: kicker(source: goal.source, met: met,
+                                                 daysLeft: daysLeft))
+    }
+
     // MARK: - A4: the dispatcher
 
     /// One entry point per goal, so `LiveWeeklyGoalRepository` (A12) never
     /// switches on `kind` itself.
     ///
-    /// A kind whose math has not landed yet returns the strip's CHROME —
-    /// the right kicker and right-hand read with no numbers — rather than a
-    /// zeroed progress that would render as "0 of 0, met". Task A7 fills the
-    /// last arm.
+    /// All five kinds route from here.
     ///
     /// `logs` are THIS WEEK's; `blockLogs` are the active block's, which the
     /// `lift` kind needs because an e1RM is a block-long fact rather than a
-    /// weekly one. `unit` is passed rather than read from
+    /// weekly one. `distanceMetres` is what the caller's HealthKit read
+    /// returned for the week. `unit` is passed rather than read from
     /// `ThemeStore.shared` so this file stays pure; its `.lbs` default is
     /// only ever reachable for the kinds whose `unitLabel` is `""` anyway.
     static func progress(goal: WeeklyGoal,
@@ -460,6 +505,7 @@ enum WeeklyGoalProgressMath {
                          routines: [UUID: Routine] = [:],
                          routineExercises: [UUID: [RoutineExercise]] = [:],
                          healthWorkoutTypesByDay: [Date: Set<String>] = [:],
+                         distanceMetres: Double = 0,
                          now: Date = .now,
                          calendar: Calendar = .current) -> WeeklyGoalProgress {
         switch goal.kind {
@@ -481,10 +527,8 @@ enum WeeklyGoalProgressMath {
                 healthWorkoutTypesByDay: healthWorkoutTypesByDay,
                 now: now, calendar: calendar)
         case .distance:
-            let daysLeft = WeekMath.daysRemaining(in: now, from: now, calendar: calendar)
-            return WeeklyGoalProgress(rightHandRead: daysLeftPhrase(daysLeft),
-                                      kicker: kicker(source: goal.source, met: false,
-                                                     daysLeft: daysLeft))
+            return distanceProgress(goal: goal, metres: distanceMetres, unit: unit,
+                                    now: now, calendar: calendar)
         }
     }
 }

@@ -762,15 +762,87 @@ final class WeeklyGoalProgressTests: XCTestCase {
         XCTAssertEqual(progress.target, 3)
     }
 
-    func testDispatcherReturnsChromeForKindsNotYetImplemented() {
-        for kind in [WeeklyGoalKind.distance] {
-            let progress = WeeklyGoalProgressMath.progress(
-                goal: goal(kind), logs: [], catalog: [:], sessions: [],
-                effectiveWeeklyGoal: 3, now: wednesday, calendar: testCalendar)
+    // MARK: - A7: distance
 
-            XCTAssertEqual(progress.kicker, "THIS WEEK · COACH'S GOAL", "\(kind)")
-            XCTAssertEqual(progress.rightHandRead, "4 DAYS LEFT", "\(kind)")
-            XCTAssertFalse(progress.met, "\(kind) must not read as met before its math lands")
-        }
+    private func distanceGoal(_ activity: String, target: Double) -> WeeklyGoal {
+        goal(.distance, params: .init(activity: activity, distanceTarget: target))
+    }
+
+    func testDistanceConvertsMetresToMilesWithPounds() {
+        // 15 000 m = 9.3206 mi against a 15 mi target.
+        let progress = WeeklyGoalProgressMath.distanceProgress(
+            goal: distanceGoal("run", target: 15), metres: 15_000, unit: .lbs,
+            now: wednesday, calendar: testCalendar)
+
+        XCTAssertEqual(progress.value, 9.3206, accuracy: 0.001)
+        XCTAssertEqual(progress.target, 15)
+        XCTAssertEqual(progress.unitLabel, "mi")
+        XCTAssertFalse(progress.met)
+    }
+
+    func testDistanceConvertsMetresToKilometresWithKilograms() {
+        let progress = WeeklyGoalProgressMath.distanceProgress(
+            goal: distanceGoal("run", target: 20), metres: 15_000, unit: .kg,
+            now: wednesday, calendar: testCalendar)
+
+        XCTAssertEqual(progress.value, 15, accuracy: 0.0001)
+        XCTAssertEqual(progress.unitLabel, "km")
+    }
+
+    func testDistanceUnitFollowsTheWeightSetting() {
+        XCTAssertEqual(WeeklyGoalProgressMath.distanceUnitLabel(.lbs), "mi")
+        XCTAssertEqual(WeeklyGoalProgressMath.distanceUnitLabel(.kg), "km")
+        XCTAssertEqual(WeeklyGoalProgressMath.distanceValue(metres: 1609.344, unit: .lbs),
+                       1, accuracy: 0.000_001, "the mile is defined, not measured")
+        XCTAssertEqual(WeeklyGoalProgressMath.distanceValue(metres: 1000, unit: .kg),
+                       1, accuracy: 0.000_001)
+    }
+
+    func testDistanceDeniedOrEmptyReadsZeroNotNil() {
+        // HealthKit never discloses a read denial, so "denied" and "no data"
+        // are the same 0 metres — and the strip must render 0 / 15 mi.
+        let progress = WeeklyGoalProgressMath.distanceProgress(
+            goal: distanceGoal("run", target: 15), metres: 0, unit: .lbs,
+            now: wednesday, calendar: testCalendar)
+
+        XCTAssertEqual(progress.value, 0)
+        XCTAssertEqual(progress.target, 15)
+        XCTAssertFalse(progress.met)
+        XCTAssertEqual(progress.rightHandRead, "4 DAYS LEFT")
+    }
+
+    func testDistanceMetFlipsTheKicker() {
+        let progress = WeeklyGoalProgressMath.distanceProgress(
+            goal: distanceGoal("run", target: 9), metres: 15_000, unit: .lbs,
+            now: wednesday, calendar: testCalendar)
+
+        XCTAssertTrue(progress.met)
+        XCTAssertEqual(progress.kicker, "GOAL MET · 4 DAYS LEFT")
+    }
+
+    func testDistanceWithNoTargetIsNotMet() {
+        let progress = WeeklyGoalProgressMath.distanceProgress(
+            goal: goal(.distance, params: .init(activity: "run")),
+            metres: 15_000, unit: .lbs, now: wednesday, calendar: testCalendar)
+
+        XCTAssertFalse(progress.met, "0 target is a goal never finished being set")
+    }
+
+    func testDistanceNeverGoesNegative() {
+        let progress = WeeklyGoalProgressMath.distanceProgress(
+            goal: distanceGoal("run", target: 15), metres: -500, unit: .lbs,
+            now: wednesday, calendar: testCalendar)
+
+        XCTAssertEqual(progress.value, 0)
+    }
+
+    func testDispatcherRoutesDistance() {
+        let progress = WeeklyGoalProgressMath.progress(
+            goal: distanceGoal("run", target: 15), logs: [], catalog: [:],
+            sessions: [], effectiveWeeklyGoal: 3, unit: .lbs,
+            distanceMetres: 15_000, now: wednesday, calendar: testCalendar)
+
+        XCTAssertEqual(progress.value, 9.3206, accuracy: 0.001)
+        XCTAssertEqual(progress.unitLabel, "mi")
     }
 }

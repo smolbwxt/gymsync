@@ -26,6 +26,148 @@ enum HealthKitBridge {
         )
     }
 
+    // MARK: - Weekly goal: workouts + distance (Stream A task A7)
+
+    /// The three read types the weekly goal's `distance` and
+    /// `sessionsOfType` kinds need, behind their OWN authorization request.
+    ///
+    /// A SEPARATE REQUEST ON PURPOSE (controller ruling, 2026-09-06), not an
+    /// addition to `requestPermission()`'s read set: this is asked only when
+    /// the athlete actually sets a `distance` or `sessionsOfType` goal, never
+    /// at launch. A permission sheet naming workouts and distance to someone
+    /// who has not asked for a miles goal is a prompt with no answer in it —
+    /// and the more types the launch prompt lists, the more likely the whole
+    /// sheet is dismissed, taking heart rate and nutrition down with it.
+    ///
+    /// `toShare` is empty: the workout WRITE scope is already held by
+    /// `requestPermission()` and re-requesting it here would re-prompt.
+    ///
+    /// HealthKit never reveals a DENIAL for read types (by design — that
+    /// would itself leak health information), so this returning without
+    /// throwing means the sheet was answered, not that access was granted.
+    /// Every reader below therefore treats "no samples" and "denied" as the
+    /// same thing, which is also what makes them safe to call unconditionally.
+    static func requestWorkoutAndDistancePermission() async throws {
+        guard HKHealthStore.isHealthDataAvailable() else { return }
+        try await store.requestAuthorization(
+            toShare: [],
+            read: [HKObjectType.workoutType(),
+                   HKQuantityType(.distanceWalkingRunning),
+                   HKQuantityType(.distanceCycling)]
+        )
+    }
+
+    /// The goal editor's four activities, mapped to HealthKit's own types.
+    /// Pure, so the mapping is testable without a store. An activity string
+    /// this app has never heard of maps to nil and counts nothing, rather
+    /// than silently matching every workout.
+    static func activityType(for activity: String) -> HKWorkoutActivityType? {
+        switch activity.lowercased() {
+        case "run":  return .running
+        case "bike": return .cycling
+        case "row":  return .rowing
+        case "walk": return .walking
+        default:     return nil
+        }
+    }
+
+    /// Every workout in the window, from ANY source in Apple Health — the
+    /// same reasoning `heartRateStats` gives for reading rather than only
+    /// writing: a Garmin/Polar/Whoop run syncs into Health, and a weekly
+    /// mileage goal that ignored it would be wrong for most runners.
+    ///
+    /// Best-effort: `[]` on no availability, no permission, or any error.
+    static func workouts(from start: Date, to end: Date) async -> [HKWorkout] {
+        guard HKHealthStore.isHealthDataAvailable() else { return [] }
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end)
+        return await withCheckedContinuation { continuation in
+            let query = HKSampleQuery(sampleType: HKObjectType.workoutType(),
+                                      predicate: predicate,
+                                      limit: HKObjectQueryNoLimit,
+                                      sortDescriptors: nil) { _, samples, _ in
+                continuation.resume(returning: (samples as? [HKWorkout]) ?? [])
+            }
+            store.execute(query)
+        }
+    }
+
+    /// The raw distance samples for one activity's distance type, in the
+    /// window. `[]` for an unknown activity, and for every failure path.
+    ///
+    /// Kept alongside `distanceMeters` below because the two answer
+    /// different questions: this one is every distance sample the phone or
+    /// watch recorded, which is what a future "you walked 3 mi outside your
+    /// workouts" read would want; `distanceMeters` is the goal's own number.
+    static func distances(activity: String, from start: Date,
+                          to end: Date) async -> [HKQuantitySample] {
+        guard HKHealthStore.isHealthDataAvailable() else { return [] }
+        let identifier: HKQuantityTypeIdentifier
+        switch activityType(for: activity) {
+        case .cycling: identifier = .distanceCycling
+        case .running, .walking: identifier = .distanceWalkingRunning
+        default: return []   // rowing has no distance type in this read set
+        }
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end)
+        return await withCheckedContinuation { continuation in
+            let query = HKSampleQuery(sampleType: HKQuantityType(identifier),
+                                      predicate: predicate,
+                                      limit: HKObjectQueryNoLimit,
+                                      sortDescriptors: nil) { _, samples, _ in
+                continuation.resume(returning: (samples as? [HKQuantitySample]) ?? [])
+            }
+            store.execute(query)
+        }
+    }
+
+    /// Metres covered in workouts of one activity during the window — the
+    /// number behind a `distance` goal.
+    ///
+    /// Summed from the WORKOUTS' own `totalDistance` rather than from raw
+    /// distance samples, because a workout's total is the figure its
+    /// recording app stands behind; summing samples would double-count a
+    /// run that a watch recorded alongside the phone. `totalDistance` is
+    /// only populated when the distance read types are authorized, which is
+    /// why `requestWorkoutAndDistancePermission` asks for all three.
+    ///
+    /// 0 when nothing matched, when the activity is unknown, and when
+    /// permission was never granted — never nil, so the strip renders
+    /// `0 / 15 mi` rather than an error.
+    static func distanceMeters(activity: String, from start: Date,
+                               to end: Date) async -> Double {
+        guard let type = activityType(for: activity) else { return 0 }
+        return await workouts(from: start, to: end)
+            .filter { $0.workoutActivityType == type }
+            .reduce(0.0) { $0 + ($1.totalDistance?.doubleValue(for: .meter()) ?? 0) }
+    }
+
+    /// The map `WeeklyGoalProgressMath.sessionCounts` reads to let a real
+    /// HealthKit workout outrank a routine-name guess (task A6): day ->
+    /// the `sessionsOfType` tags recorded that day.
+    ///
+    /// Only the two HealthKit activity types that map cleanly onto this
+    /// app's type vocabulary are tagged. `hiit` and `class` are deliberately
+    /// absent even though `.highIntensityIntervalTraining` exists, because
+    /// this app's `hiit` means "a routine the athlete calls HIIT", and
+    /// equating the two would make a Peloton class satisfy a goal about
+    /// their own programming.
+    static func workoutTypeTagsByDay(from start: Date, to end: Date,
+                                     calendar: Calendar = .current) async -> [Date: Set<String>] {
+        var tags: [Date: Set<String>] = [:]
+        for workout in await workouts(from: start, to: end) {
+            let tag: String
+            switch workout.workoutActivityType {
+            case .running, .cycling, .rowing, .walking, .elliptical, .stairClimbing:
+                tag = "cardio"
+            case .yoga, .flexibility, .mindAndBody, .preparationAndRecovery:
+                tag = "mobility"
+            default:
+                continue
+            }
+            tags[calendar.startOfDay(for: workout.startDate), default: []].insert(tag)
+        }
+        return tags
+    }
+
     static func duration(from start: Date, to end: Date) -> TimeInterval {
         max(0, end.timeIntervalSince(start))
     }
