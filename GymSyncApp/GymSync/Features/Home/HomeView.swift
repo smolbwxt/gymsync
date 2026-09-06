@@ -7,12 +7,11 @@ struct HomeView: View {
 
     // MARK: - Injected repositories (production plan, Task 0's interface)
     //
-    // Defaulted, so `HomeView()` at `RootView.swift:495` is unchanged and a
-    // test or a preview can hand in its own. Integration task **I1** swaps
-    // these defaults for Stream A's live implementations; until then Home is
-    // correct rather than half-built — an empty friends repository IS the
-    // shipping state of the crew pulse (owner ruling 2), and the stub goal
-    // repository renders the design's own fixture numbers.
+    // Integration task **I1** swaps these defaults for Stream A's live
+    // implementations; until then Home is correct rather than half-built —
+    // an empty friends repository IS the shipping state of the crew pulse
+    // (owner ruling 2), and the stub goal repository renders the design's
+    // own fixture numbers.
 
     /// Who from the crew is lifting right now.
     var friendsRepository: any FriendsLiveRepository = EmptyFriendsLiveRepository()
@@ -663,12 +662,36 @@ struct HomeView: View {
     /// The strip's own chrome — `surface` fill, 14 pt radius, 12 pt padding
     /// — with the kicker legible and the chips redacted. Built here rather
     /// than inside `HomeWeeklyGoalStrip` because that piece is frozen for
-    /// Stream C; the geometry below is a copy of its own, so the two states
-    /// are the same height and nothing moves when the numbers arrive.
+    /// Stream C; the geometry below is a copy of its own, so the strip does
+    /// not move when the numbers arrive.
     ///
     /// The kicker reads `THIS WEEK` alone: whose goal it is — Coach's or
     /// yours — is exactly what has not been fetched yet, and a placeholder
     /// that guessed would flicker into a different word.
+    ///
+    /// WHICH HEIGHT THIS COPIES, AND WHY IT IS THE CHIP ROW'S. The strip has
+    /// two landing heights: a reading (a chip row) and the no-goal
+    /// invitation, which is a single 13.5 pt line
+    /// (`HomeWeeklyGoalStrip.invitation`). A skeleton can only match one of
+    /// them, and it matches the reading, because:
+    ///
+    ///   * the design calls the no-goal state "only possible before first
+    ///     detection", and Coach's own detection has no empty outcome —
+    ///     rule 3 falls back to `days` at `Profile.effectiveWeeklyGoal`
+    ///     ("never empty"). Once Stream A's live repository lands, a lifter
+    ///     who reaches the invitation at all is a lifter Coach has not yet
+    ///     run for;
+    ///   * `goalLoaded` never returns to false, so the skeleton is shown at
+    ///     most ONCE per launch — a later pull-to-refresh keeps the loaded
+    ///     strip and rides SwiftUI's own refresh spinner.
+    ///
+    /// So the residual jump is: one launch, one user, one state the system is
+    /// designed not to produce. **Hand-off to I1 / Stream C:** the complete
+    /// fix is one line in `HomeWeeklyGoalStrip.invitation` — give it the chip
+    /// row's height (`.frame(minHeight:)` on the invitation `Text`, matching
+    /// a chip's 9 pt name + 7 + 4 pt meter + 7 + 12 pt fraction plus its 8 pt
+    /// vertical padding) — which cannot be done from here without editing a
+    /// piece Stream C owns, and which no approved frame renders.
     private var goalStripSkeleton: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
