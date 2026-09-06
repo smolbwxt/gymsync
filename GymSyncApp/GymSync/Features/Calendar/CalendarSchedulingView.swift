@@ -253,7 +253,12 @@ struct CalendarSchedulingView: View {
                     .padding(.bottom, 16)
             } else {
                 ForEach(Array(painted.agenda.enumerated()), id: \.element.id) { index, item in
-                    Rectangle().fill(theme.divider).frame(height: 1)
+                    // BETWEEN rows only. The proof draws no hairline under
+                    // the section header, and one there reads as a rule
+                    // under a title rather than as a list separator.
+                    if index > 0 {
+                        Rectangle().fill(theme.divider).frame(height: 1)
+                    }
                     agendaRow(item)
                     if index == painted.agenda.count - 1 {
                         Color.clear.frame(height: 4)
