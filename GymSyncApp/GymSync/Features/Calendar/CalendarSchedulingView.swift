@@ -69,6 +69,11 @@ struct CalendarSchedulingView: View {
     @State private var lobbySessionID: UUID?
     /// The row being MOVED — opens the scheduler preloaded from it.
     @State private var moveTarget: WorkoutSession?
+    /// The active block, for the `Coach block · week n of m` row.
+    @State private var activeEnrollment: ProgramEnrollment?
+    /// One row per JOINED active campaign. Built in `refresh()` rather than
+    /// derived, because the percentage needs an await.
+    @State private var campaignRows: [CalendarCampaignRow] = []
 
     private var completed: [WorkoutSession] { refreshedCompleted ?? completedSessions }
     private var upcoming: [WorkoutSession] { refreshedUpcoming ?? upcomingSessions }
@@ -91,8 +96,12 @@ struct CalendarSchedulingView: View {
 
                 agendaCard
 
-                // Stream D — D4: the block's days and campaign deadlines on
-                // the same timeline.
+                if let block = resolved.block {
+                    CalendarBlockRowView(row: block)
+                }
+                ForEach(resolved.campaigns) { campaign in
+                    CalendarCampaignRowView(row: campaign)
+                }
 
                 scheduleButton
             }
@@ -334,7 +343,51 @@ struct CalendarSchedulingView: View {
         )
         return CalendarWorld(month: month,
                              legendCrewColor: legendCrew,
-                             agenda: agendaItems(todayStart: todayStart, cal: cal))
+                             agenda: agendaItems(todayStart: todayStart, cal: cal),
+                             block: blockRow(todayStart: todayStart, cal: cal),
+                             campaigns: campaignRows)
+    }
+
+    // MARK: The block
+
+    /// `Coach block · week 2 of 6 · Tue, Thu, Sat`, or nothing at all when
+    /// there is no active enrollment (design §C: absent, not empty).
+    ///
+    /// `n` of `m` from the enrollment's own start date and its template's
+    /// week count, through `ProgramMath.currentWeek` — the same call
+    /// `ProgramScheduleView.load()` makes (:592-594), so the page and the
+    /// program screen can never disagree about which week you are in.
+    private func blockRow(todayStart: Date, cal: Calendar) -> CalendarBlockRow? {
+        guard let enrollment = activeEnrollment,
+              let weeks = enrollment.template?.weeks, !weeks.isEmpty else { return nil }
+        let week = ProgramMath.currentWeek(startedOn: enrollment.startedOn,
+                                           weeks: weeks.count,
+                                           now: todayStart)
+        var parts = ["Coach block", "week \(week) of \(weeks.count)"]
+        let days = blockWeekdays(todayStart: todayStart, cal: cal)
+        if !days.isEmpty { parts.append(days.joined(separator: ", ")) }
+        return CalendarBlockRow(text: parts.joined(separator: " · "),
+                                enrollment: enrollment,
+                                weeks: weeks)
+    }
+
+    /// The block's training days, READ from the sessions it actually booked
+    /// this week rather than assumed — the rule `BlockCalendarView`'s own
+    /// header states ("the app does not guess which weekdays you train").
+    /// `WeekBooker` books a block's days as solo sessions against the
+    /// `Coach · …` routines (WeekBooker.swift:41-44), which is the signal.
+    private func blockWeekdays(todayStart: Date, cal: Calendar) -> [String] {
+        guard let week = cal.dateInterval(of: .weekOfYear, for: todayStart) else { return [] }
+        var byColumn: [Int: String] = [:]
+        for session in upcoming {
+            guard session.groupID == nil,
+                  let when = session.scheduledFor, when >= week.start, when < week.end,
+                  let name = session.routineID.flatMap({ routinesByID[$0] })?.name,
+                  name.hasPrefix("Coach · ") else { continue }
+            let column = (cal.component(.weekday, from: when) - cal.firstWeekday + 7) % 7
+            byColumn[column] = when.formatted(.dateTime.weekday(.abbreviated))
+        }
+        return byColumn.keys.sorted().compactMap { byColumn[$0] }
     }
 
     // MARK: The week's agenda
@@ -454,6 +507,41 @@ struct CalendarSchedulingView: View {
             }
             await loadCommitments(userID: userID)
         }
+        activeEnrollment = try? await ProgramRepository.active()
+        await loadCampaigns()
+    }
+
+    /// One row per JOINED active campaign — the same two calls
+    /// `HomeView.fetchActiveCampaigns` (:1488) and `loadCampaignJoinState`
+    /// (:1501) already make, and the same bound on them (the campaign
+    /// design's own scale note: one or two active campaigns at a time).
+    /// Unjoined discovery stays on Home's carousel.
+    @MainActor
+    private func loadCampaigns() async {
+        guard let result = try? await CampaignRepository.activeAndUpcoming() else { return }
+        let active = result.active
+        guard !active.isEmpty else {
+            campaignRows = []
+            return
+        }
+        let joined = (try? await CampaignRepository.myParticipations(campaignIDs: active.map(\.id))) ?? []
+        var rows: [CalendarCampaignRow] = []
+        for campaign in active where joined.contains(campaign.id) {
+            let progress = try? await CampaignRepository.myProgress(campaignID: campaign.id)
+            var parts = ["\(campaign.name) campaign",
+                         "ends \(campaign.endsAt.formatted(.dateTime.month(.abbreviated).day()))"]
+            // Silent when the campaign has no recognized individual target —
+            // `fractionComplete` returns nil there, which is distinct from 0
+            // and must not be printed as "you're at 0%".
+            if let fraction = CampaignProgressMath.fractionComplete(progress: progress,
+                                                                    target: campaign.individualTarget) {
+                parts.append("you're at \(Int((fraction * 100).rounded()))%")
+            }
+            rows.append(CalendarCampaignRow(id: campaign.id,
+                                            text: parts.joined(separator: " · "),
+                                            campaign: campaign))
+        }
+        campaignRows = rows
     }
 
     /// Your answer on each of THIS WEEK's crew sessions.
@@ -494,4 +582,8 @@ struct CalendarWorld {
     var legendCrewColor: Color
     /// This week's timeline, in time order.
     var agenda: [CalendarAgendaItem] = []
+    /// The active block's row, absent when there is no active enrollment.
+    var block: CalendarBlockRow? = nil
+    /// One row per joined active campaign.
+    var campaigns: [CalendarCampaignRow] = []
 }
