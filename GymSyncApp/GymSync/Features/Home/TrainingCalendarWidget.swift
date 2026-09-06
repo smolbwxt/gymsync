@@ -89,28 +89,53 @@ struct TrainingCalendarWidget: View {
         return days
     }
 
-    private struct MonthGroup: Identifiable {
-        let id: Date          // month start
-        let label: String
-        let days: [Date]
-    }
-
     /// v5 (user feedback 2026-07-23): previous / CURRENT / next month — the
     /// current month sits centered, straddled by its neighbors, and renders
     /// its FULL shape (no truncation at today; future days are dimmer, and
     /// days with a scheduled upcoming session are marked in the accent).
-    private var monthGroups: [MonthGroup] {
+    ///
+    /// v7 (task D1): this is now a PROJECTION onto `TrainingMonthField.Month`
+    /// rather than a field of its own — the widget keeps the `Calendar` truth
+    /// (which day is today, which real dates were trained) and hands the
+    /// shared field the integers it draws with. Every rule the old private
+    /// field applied survives the projection unchanged:
+    ///   * `position` reproduces `day > today`: last month is entirely past,
+    ///     next month entirely future, and the current month splits on its
+    ///     own `today` day number;
+    ///   * `today` is set on the current month only, which is the only month
+    ///     whose dates could ever have equalled `today` before;
+    ///   * `trained`/`planned` are the same `Set<Date>` membership tests, run
+    ///     against the same generated day dates, recorded as day numbers.
+    private var fieldMonths: [TrainingMonthField.Month] {
         let cal = Calendar.current
         let today = cal.startOfDay(for: .now)
+        let trained = trainedDays
+        let upcoming = upcomingDays
         guard let thisMonthStart = cal.date(from: cal.dateComponents([.year, .month], from: today)) else { return [] }
         return [-1, 0, 1].compactMap { offset in
             guard let monthStart = cal.date(byAdding: .month, value: offset, to: thisMonthStart) else { return nil }
             let dayCount = cal.range(of: .day, in: .month, for: monthStart)?.count ?? 30
             let days = (0..<dayCount).compactMap { cal.date(byAdding: .day, value: $0, to: monthStart) }
-            return MonthGroup(
-                id: monthStart,
+            var trainedDayNumbers: Set<Int> = []
+            var plannedDayNumbers: Set<Int> = []
+            for day in days {
+                let number = cal.component(.day, from: day)
+                if trained.contains(day) { trainedDayNumbers.insert(number) }
+                if upcoming.contains(day) { plannedDayNumbers.insert(number) }
+            }
+            let position: TrainingMonthField.Month.Position =
+                offset < 0 ? .past : (offset == 0 ? .current : .future)
+            return TrainingMonthField.Month(
+                id: "\(cal.component(.year, from: monthStart))-\(cal.component(.month, from: monthStart))",
                 label: monthStart.formatted(.dateTime.month(.abbreviated)),
-                days: days
+                dayCount: dayCount,
+                leadingBlanks: days.first.map { first in
+                    (cal.component(.weekday, from: first) - cal.firstWeekday + 7) % 7
+                } ?? 0,
+                trained: trainedDayNumbers,
+                planned: plannedDayNumbers,
+                today: offset == 0 ? cal.component(.day, from: today) : nil,
+                position: position
             )
         }
     }
@@ -132,87 +157,22 @@ struct TrainingCalendarWidget: View {
     /// `onGeometryChange` corrects it on first layout.
     @State private var fieldWidth: CGFloat = 326
 
-    private var gutter: CGFloat { 12 }
-    /// Per-weekday column slot: three months × 7 columns + two gutters.
-    private var unit: CGFloat { max(8, (fieldWidth - 2 * gutter) / 21) }
-
+    /// The shared field (task D1), fed this widget's measured width.
+    ///
+    /// The geometry observation stays HERE and rides on the outside of the
+    /// field rather than moving into it: the field is what gets measured
+    /// either way (`.frame(maxWidth: .infinity)` is applied inside it, and
+    /// the accessibility modifiers between do not affect layout), so the
+    /// width this reads is the same width the old private field read — and
+    /// `TrainingMonthField` stays free of state, which is what lets the
+    /// catalog's callers render it hermetically at the default 326.
     private var monthGroupedField: some View {
-        let trained = trainedDays
-        let upcoming = upcomingDays
-        let today = Calendar.current.startOfDay(for: .now)
-        return HStack(alignment: .top, spacing: gutter) {
-            ForEach(monthGroups) { month in
-                VStack(alignment: .center, spacing: 10) {
-                    Text(month.label)
-                        .font(GSFont.bodyMedium(11, relativeTo: .caption2))
-                        .foregroundStyle(theme.neutral500)
-                    monthGrid(month, trained: trained, upcoming: upcoming, today: today)
-                }
+        TrainingMonthField(months: fieldMonths, fieldWidth: fieldWidth)
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.width
+            } action: { width in
+                if width > 0 { fieldWidth = width }
             }
-        }
-        .frame(maxWidth: .infinity)
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.width
-        } action: { width in
-            if width > 0 { fieldWidth = width }
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Training calendar — last month, this month, next month")
-    }
-
-    /// One month as a true mini-calendar: 7 weekday columns × week rows,
-    /// day 1 offset to its actual weekday (locale first-weekday respected).
-    /// Dot semantics: trained = bright · scheduled upcoming = accent ·
-    /// past untrained = neutral400 · future = neutral300 (dimmer) ·
-    /// today = accent halo.
-    private func monthGrid(_ month: MonthGroup, trained: Set<Date>, upcoming: Set<Date>, today: Date) -> some View {
-        let cal = Calendar.current
-        // Leading blanks before day 1 (0-6), relative to the locale's week start.
-        let offset = month.days.first.map { first in
-            (cal.component(.weekday, from: first) - cal.firstWeekday + 7) % 7
-        } ?? 0
-        let cellCount = offset + month.days.count
-        let weekRows = Int(ceil(Double(cellCount) / 7.0))
-        // v6: dots fill their column slots — no fixed sizes, no dead space.
-        return VStack(alignment: .leading, spacing: unit * 0.42) {
-            ForEach(0..<weekRows, id: \.self) { row in
-                HStack(spacing: 0) {
-                    ForEach(0..<7, id: \.self) { column in
-                        let dayIdx = row * 7 + column - offset
-                        Group {
-                            if dayIdx >= 0 && dayIdx < month.days.count {
-                                dot(for: month.days[dayIdx], trained: trained, upcoming: upcoming, today: today)
-                            } else {
-                                Color.clear
-                            }
-                        }
-                        .frame(width: unit, height: unit * 0.7)
-                    }
-                }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func dot(for day: Date, trained: Set<Date>, upcoming: Set<Date>, today: Date) -> some View {
-        let isTrained = trained.contains(day)
-        let isUpcoming = upcoming.contains(day)
-        let isFuture = day > today
-        let fill: Color = isTrained ? theme.text
-            : isUpcoming ? theme.accent
-            : isFuture ? theme.neutral300      // future: dimmer
-            : theme.neutral400                 // past untrained
-        let size: CGFloat = (isTrained || isUpcoming) ? unit * 0.68 : unit * 0.52
-        Circle()
-            .fill(fill)
-            .frame(width: size, height: size)
-            // Today: faint accent halo so "now" is findable in the field.
-            .overlay(
-                day == today
-                    ? Circle().strokeBorder(theme.accent.opacity(0.8), lineWidth: 1.2)
-                        .frame(width: unit * 0.95, height: unit * 0.95)
-                    : nil
-            )
     }
 
     // MARK: Upcoming rows
