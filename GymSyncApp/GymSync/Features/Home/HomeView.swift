@@ -14,9 +14,25 @@ struct HomeView: View {
     // own fixture numbers.
 
     /// Who from the crew is lifting right now.
-    var friendsRepository: any FriendsLiveRepository = EmptyFriendsLiveRepository()
+    let friendsRepository: any FriendsLiveRepository
     /// This week's goal and its progress.
-    var goalRepository: any WeeklyGoalRepository = StubWeeklyGoalRepository()
+    let goalRepository: any WeeklyGoalRepository
+
+    /// Declared EXPLICITLY, not left to the synthesised memberwise init.
+    ///
+    /// `HomeView` has private stored properties, so its memberwise init is
+    /// `private` too. Defaulted `var`s therefore kept `HomeView()` compiling
+    /// at `RootView.swift:495` — that is the no-argument default initializer
+    /// — while making the injection unreachable from every other file, which
+    /// is the opposite of what an injection point is for. This init is
+    /// internal, so a test, a preview or I1's own call site can hand in a
+    /// repository; both parameters keep their defaults, so `HomeView()` is
+    /// unchanged.
+    init(friendsRepository: any FriendsLiveRepository = EmptyFriendsLiveRepository(),
+         goalRepository: any WeeklyGoalRepository = StubWeeklyGoalRepository()) {
+        self.friendsRepository = friendsRepository
+        self.goalRepository = goalRepository
+    }
 
     @State private var upcomingSessions: [WorkoutSession] = []
     @State private var groups: [GymGroup] = []
