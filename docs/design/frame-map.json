@@ -171,6 +171,14 @@
     "frame": 78,
     "title": "Home v3 - 08 crew (crew night)"
   },
+  "home-v3-08a-targets-above-calendar": {
+    "frame": 81,
+    "title": "Home v3 - 08a targets above calendar (crew night)"
+  },
+  "home-v3-08b-targets-above-join": {
+    "frame": 82,
+    "title": "Home v3 - 08b targets above join (crew night)"
+  },
   "home-v3-09-plan": {
     "frame": 79,
     "title": "Home v3 - 09 plan (solo day)"

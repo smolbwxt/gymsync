@@ -29,6 +29,16 @@ import SwiftUI
 // Ten views in one file because they are assemblies, not logic: each is a
 // list of pieces with page margins, and ten near-identical files would hide
 // the only thing worth reading here, which is the differences between them.
+//
+// ADDENDUM (plan: `docs/superpowers/plans/2026-09-06-home-v3-addendum
+// -targets-strip.md`) — twelve now, because the owner picked 08 and asked
+// for one more strip on it: "variation 8 of the Home Screen is great. Maybe
+// above the join with code, we display the weekly muscle group goals, or
+// whatever goal the coach is tracking as a strip?" So 08a and 08b are
+// variation 08 with `HomeCoachTargetsStrip` inserted, and the ONLY thing
+// that differs between them is where it sits — above the calendar, or above
+// the join card as the owner phrased it. They are a two-up pair of their
+// own: what is being judged is the fold, not the strip.
 
 // MARK: - Shared scaffolding
 
@@ -392,6 +402,91 @@ struct HomeV3CrewView: View {
                 .homeV3Block()
 
             HomeV3Calendar(world: world)
+                .homeV3Block()
+
+            HomeV2JoinCodeCard()
+        }
+    }
+}
+
+// MARK: - 08a · targets above the calendar (crew night)
+
+/// `home-v3-08a-targets-above-calendar` — 08 with Coach's targets between
+/// the crew pulse and the calendar, so the page answers "what the week asks
+/// of you" while the reader is still at the top of it and the calendar's
+/// "when" lands straight after.
+///
+/// The crew pulse takes `homeV3Strip()` here where 08 gives it
+/// `homeV3Block()`. That is the spacing law these compositions already
+/// follow rather than a new decision: the 2 pt-tighter gap goes BEFORE a
+/// strip (02 and 05 pair their strips that way; 04 and 10 tighten even the
+/// calendar card when a strip follows it), and what follows the pulse here
+/// is the targets strip.
+struct HomeV3TargetsAboveCalendarView: View {
+    let world: HomeV2World
+
+    var body: some View {
+        HomeV3Frame(world: world) {
+            HomeV3TilePair {
+                HomeStreakTile(streak: world.streak,
+                               daysDone: world.daysDone,
+                               goal: world.weeklyGoal)
+                HomeCoachTile(sentence: world.coachSentence,
+                              waiting: world.coachWaiting)
+            }
+            .homeV3Block()
+
+            HomeCrewPulseStrip(initials: HomeV2Fixtures.crewPulseInitials,
+                               headline: HomeV2Fixtures.crewPulseHeadline,
+                               detail: HomeV2Fixtures.crewPulseDetail)
+                .homeV3Strip()
+
+            HomeCoachTargetsStrip(targets: HomeV2Fixtures.coachTargets,
+                                  sessionsLeft: HomeV2Fixtures.crewNightSessionsLeft)
+                .homeV3Block()
+
+            HomeV3Calendar(world: world)
+                .homeV3Block()
+
+            HomeV2JoinCodeCard()
+        }
+    }
+}
+
+// MARK: - 08b · targets above the join card (crew night)
+
+/// `home-v3-08b-targets-above-join` — the owner's own placement: under the
+/// calendar, above join-with-code. The page then ends on what the week still
+/// owes instead of on a form field, and on a small device the strip sits
+/// below the fold. Which of those two facts matters more is exactly what
+/// this frame and 08a exist to ask.
+///
+/// The calendar takes `homeV3Strip()` here for the reason 04 and 10 give it
+/// the same modifier: the tighter gap goes before a strip.
+struct HomeV3TargetsAboveJoinView: View {
+    let world: HomeV2World
+
+    var body: some View {
+        HomeV3Frame(world: world) {
+            HomeV3TilePair {
+                HomeStreakTile(streak: world.streak,
+                               daysDone: world.daysDone,
+                               goal: world.weeklyGoal)
+                HomeCoachTile(sentence: world.coachSentence,
+                              waiting: world.coachWaiting)
+            }
+            .homeV3Block()
+
+            HomeCrewPulseStrip(initials: HomeV2Fixtures.crewPulseInitials,
+                               headline: HomeV2Fixtures.crewPulseHeadline,
+                               detail: HomeV2Fixtures.crewPulseDetail)
+                .homeV3Block()
+
+            HomeV3Calendar(world: world)
+                .homeV3Strip()
+
+            HomeCoachTargetsStrip(targets: HomeV2Fixtures.coachTargets,
+                                  sessionsLeft: HomeV2Fixtures.crewNightSessionsLeft)
                 .homeV3Block()
 
             HomeV2JoinCodeCard()

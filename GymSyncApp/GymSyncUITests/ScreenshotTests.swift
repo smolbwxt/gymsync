@@ -449,6 +449,14 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogHomeV306Milestone()      { captureCatalog("home-v3-06-milestone") }
     func testCatalogHomeV307Body()           { captureCatalog("home-v3-07-body") }
     func testCatalogHomeV308Crew()           { captureCatalog("home-v3-08-crew") }
+    // The 08 addendum (home-v3 addendum targets-strip plan): 08 with Coach's
+    // targets strip above the calendar, and 08 with it above join-with-code
+    // as the owner phrased it. These two are their own two-up pair — the
+    // composition is identical and only the strip's position differs, so the
+    // frame the owner is judging is the fold. Ids sort between 08 and 09,
+    // keeping the sorted list the documented one.
+    func testCatalogHomeV308aTargetsAboveCalendar() { captureCatalog("home-v3-08a-targets-above-calendar") }
+    func testCatalogHomeV308bTargetsAboveJoin()     { captureCatalog("home-v3-08b-targets-above-join") }
     func testCatalogHomeV309Plan()           { captureCatalog("home-v3-09-plan") }
     func testCatalogHomeV310Minimal()        { captureCatalog("home-v3-10-minimal") }
 
