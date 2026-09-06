@@ -274,16 +274,25 @@ struct CalendarSchedulingView: View {
     /// session behind it. A fixture row has none, so the swipe is not
     /// installed and the tap goes nowhere — a catalog frame must not be able
     /// to open a lobby or delete anything.
+    @ViewBuilder
     private func agendaRow(_ item: CalendarAgendaItem) -> some View {
         CalendarSwipeRow(onMove: moveAction(for: item),
                          onCancel: cancelAction(for: item)) {
-            Button {
-                if let session = item.session { lobbySessionID = session.id }
-            } label: {
+            // A row with no live session behind it is drawn DIRECTLY, not
+            // wrapped in a disabled `Button` — the same rule the grid's
+            // cells follow. A disabled button is a rendering decision as
+            // well as an interaction one, and a fixture frame must not risk
+            // coming back dimmed.
+            if let session = item.session {
+                Button {
+                    lobbySessionID = session.id
+                } label: {
+                    CalendarAgendaRowView(item: item)
+                }
+                .buttonStyle(.plain)
+            } else {
                 CalendarAgendaRowView(item: item)
             }
-            .buttonStyle(.plain)
-            .disabled(item.session == nil)
         }
     }
 
