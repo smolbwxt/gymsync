@@ -145,11 +145,17 @@ Opened by tapping anywhere on the calendar card. From the v7 proof:
 - **Phase 3 — crew pulse.** A `friends_live` RPC (friends' sessions in `in_progress`, RLS-safe), the
   strip wired to it, refreshed on Home's existing cadence and on the live-session channel.
 
-## What needs the owner
+## Owner answers (2026-09-06) — binding
 
-1. Which muscle groups the `muscleSets` kind rolls up to (proposal: chest, back, shoulders, legs, arms,
-   core — six; the strip shows the four largest targets).
-2. `distance` unit follows the app's lb/kg setting (mi with lb, km with kg) unless you want a separate
-   preference.
-3. Whether Coach may change a user-set goal mid-week (proposal: never; propose only).
-4. Phase 1 scope as written, or wait to ship Home until Phase 3 so the crew pulse is in from day one.
+1. **Major muscle groups**, and **secondary muscles must be credited correctly**: a set counts fully
+   toward the exercise's primary group and partially toward each secondary group (proposal: 0.5 set per
+   secondary group, capped so one set never credits more than 1.0 in total across secondaries; the
+   plan fixes the exact weights from the exercise catalog's primary/secondary fields). Groups: chest,
+   back, shoulders, legs, arms, core; the strip shows the four largest targets.
+2. **Metric and imperial**: `distance` follows the app's unit setting (mi with lb, km with kg).
+3. **Propose only**: Coach never overwrites a user-set goal; it proposes through the Coach line, and
+   the user accepts in the editor.
+4. **Build all three phases and ship in one release.** Development is **paired**: the backend/model
+   stream (goal table, derivation, friends-live RPC, HealthKit read) and the UI streams (Home wiring,
+   goal editor, calendar page) run in parallel worktrees against an interface fixed first, and
+   integrate at the end. Nothing user-facing merges until the whole is verified through CI captures.
