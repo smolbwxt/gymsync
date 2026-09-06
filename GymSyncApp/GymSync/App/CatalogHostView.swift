@@ -86,6 +86,12 @@ enum CatalogScreen: String, CaseIterable {
     case homeV3Milestone = "home-v3-06-milestone"
     case homeV3Body = "home-v3-07-body"
     case homeV3Crew = "home-v3-08-crew"
+    // The 08 addendum — the same composition with Coach's targets strip in
+    // the two placements the owner's "maybe above the join with code" leaves
+    // open. Ids sort between 08 and 09 so the documented list stays the
+    // sorted list.
+    case homeV3_08aTargetsAboveCalendar = "home-v3-08a-targets-above-calendar"
+    case homeV3_08bTargetsAboveJoin = "home-v3-08b-targets-above-join"
     case homeV3Plan = "home-v3-09-plan"
     case homeV3Minimal = "home-v3-10-minimal"
 }
@@ -164,6 +170,8 @@ struct CatalogHostView: View {
             case .homeV3Milestone:            content_homeV3Milestone
             case .homeV3Body:                 content_homeV3Body
             case .homeV3Crew:                 content_homeV3Crew
+            case .homeV3_08aTargetsAboveCalendar: content_homeV3TargetsAboveCalendar
+            case .homeV3_08bTargetsAboveJoin: content_homeV3TargetsAboveJoin
             case .homeV3Plan:                 content_homeV3Plan
             case .homeV3Minimal:              content_homeV3Minimal
             }
@@ -1751,6 +1759,26 @@ struct CatalogHostView: View {
 
     private var content_homeV3Crew: some View {
         HomeV3CrewView(world: HomeV2Fixtures.crewNight)
+    }
+
+    // The 08 addendum (plan: `docs/superpowers/plans/2026-09-06-home-v3
+    // -addendum-targets-strip.md`). The owner, on the ten: "variation 8 of
+    // the Home Screen is great. Maybe above the join with code, we display
+    // the weekly muscle group goals, or whatever goal the coach is tracking
+    // as a strip?" — so both of these ARE 08, with `HomeCoachTargetsStrip`
+    // inserted at the two placements that answer the "maybe", and the crew
+    // night is their world because it is 08's.
+    //
+    // Same authority note as the ten above: no proof frame yet, and
+    // `docs/design/frame-map.json` continues the reserved range (81-82,
+    // after the ten's 71-80).
+
+    private var content_homeV3TargetsAboveCalendar: some View {
+        HomeV3TargetsAboveCalendarView(world: HomeV2Fixtures.crewNight)
+    }
+
+    private var content_homeV3TargetsAboveJoin: some View {
+        HomeV3TargetsAboveJoinView(world: HomeV2Fixtures.crewNight)
     }
 
     private var content_homeV3Plan: some View {

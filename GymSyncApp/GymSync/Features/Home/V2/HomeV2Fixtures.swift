@@ -304,4 +304,54 @@ enum HomeV2Fixtures {
         .init(id: 1, label: "THU PULL", state: .done),
         .init(id: 2, label: "SAT LEGS", state: .next),
     ]
+
+    // MARK: Home v3 addendum — Coach's targets
+    //
+    // The owner, on variation 08 (plan:
+    // `docs/superpowers/plans/2026-09-06-home-v3-addendum-targets-strip.md`):
+    // "maybe above the join with code, we display the weekly muscle group
+    // goals, or whatever goal the coach is tracking as a strip?"
+
+    /// `HomeCoachTargetsStrip`'s four groups, the addendum plan's own values:
+    /// chest 8/12, back 10/12, legs 6/12 — the one furthest behind, so the
+    /// one NEXT — and arms 8/8, the one already MET. Exactly one of each, so
+    /// the two states the strip can show are both on screen in one frame,
+    /// which is the whole reason a mockup exists.
+    ///
+    /// SHARED by both worlds, for the same reason the last lift and the PR
+    /// watch are: what a block asks of a lifter this week is a fact about
+    /// the BLOCK, not about which kind of session today happens to be, and
+    /// keeping it shared keeps the two placements comparable — the
+    /// difference between 08a and 08b then reads as the placement.
+    static let coachTargets: [HomeCoachTargetsStrip.Target] = [
+        .init(id: 0, name: "CHEST", done: 8, target: 12, isNext: false),
+        .init(id: 1, name: "BACK", done: 10, target: 12, isNext: false),
+        .init(id: 2, name: "LEGS", done: 6, target: 12, isNext: true),
+        .init(id: 3, name: "ARMS", done: 8, target: 8, isNext: false),
+    ]
+
+    /// The kicker row's right-hand read, one value per world. It is that
+    /// world's `weeklyGoal - daysDone` and NOTHING else: both addendum
+    /// frames put this strip on the same page as `HomeStreakTile`, and a
+    /// page may not tell two stories about one week — the law :160-168
+    /// states for the calendar's rows, and the one round 1 enforced on UP
+    /// NEXT.
+    ///
+    /// The crew night has 3 of its 4 in the bank (`crewNight.daysDone`), so
+    /// one session is left, and the word is singular because the count is.
+    static let crewNightSessionsLeft = "1 SESSION LEFT"
+
+    /// The solo day has met its 4 of 4, so no session is left this week to
+    /// move these numbers with. No composition uses this today — both
+    /// addendum frames render the crew night, following variation 08 — but
+    /// it exists so a solo composition can take the strip later without
+    /// inheriting another world's week, the same reason `crewNightUpNext`
+    /// exists.
+    ///
+    /// Deliberately NOT `GOAL MET`, which is `HomeWeekStrip`'s own tail and
+    /// means the SESSION goal there. The goal in view on THIS strip is
+    /// Coach's targets, and three of those four are unmet (chest 8/12, back
+    /// 10/12, legs 6/12) — those words here would congratulate the reader
+    /// in front of the evidence against them.
+    static let soloDaySessionsLeft = "0 SESSIONS LEFT"
 }

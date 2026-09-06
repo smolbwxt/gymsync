@@ -64,6 +64,8 @@ final class CatalogScreenTests: XCTestCase {
             "home-v3-06-milestone",
             "home-v3-07-body",
             "home-v3-08-crew",
+            "home-v3-08a-targets-above-calendar",
+            "home-v3-08b-targets-above-join",
             "home-v3-09-plan",
             "home-v3-10-minimal",
         ]
