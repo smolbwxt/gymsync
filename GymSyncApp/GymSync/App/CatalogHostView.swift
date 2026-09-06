@@ -1828,6 +1828,21 @@ struct CatalogHostView: View {
     /// September 2026 as the proof draws it: trained 1, 3, 4; yours 5, 7, 11,
     /// 18, 20; crew 6, 9, 13, 16; today 5; the first row — this week — boxed.
     ///
+    /// THREE cells will differ from the mock in a side-by-side, all on
+    /// purpose, so nobody goes looking for them in the code (review F8):
+    ///   * day 5 — the mock fills it white and rings it purple; here it is
+    ///     today, so it wears an accent ring (yours) inside a `theme.text`
+    ///     halo (today) on an unfilled boxed cell. A filled cell means
+    ///     TRAINED in this grid's own legend, and 5 is not.
+    ///   * day 13 — the mock rings it cyan, which in the legend means YOU;
+    ///     plan D5's fixture list puts 13 in the CREW set, and the plan is
+    ///     the binding text.
+    ///   * the ring hues — the mock uses purple and cyan. `GSGroupColor` is
+    ///     the Okabe-Ito palette, so Legs Crew is reddish-purple `#CC79A7`
+    ///     and Push Crew vermilion `#D55E00`. Matching the mock's hues would
+    ///     mean giving these two crews different colours here than they wear
+    ///     on every Home frame, which is the more expensive lie.
+    ///
     /// `leadingBlanks: 0` and a Monday-first header are the PROOF's grid, not
     /// September 2026's real one (the 1st was a Tuesday). The frame exists to
     /// be compared against the mock the owner judged, and the arithmetic that
