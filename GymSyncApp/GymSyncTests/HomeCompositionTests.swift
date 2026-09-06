@@ -129,6 +129,34 @@ final class HomeCompositionTests: XCTestCase {
         XCTAssertEqual(state.line1, "START · PULL A")
     }
 
+    // MARK: - The button's own copy
+
+    /// The subtitle must make NO claim about commitment: the commit chip
+    /// beside it is the only thing on that button allowed to speak about it,
+    /// and the old `YOU'RE IN` literal contradicted a `COMMIT ›` or
+    /// `YOU'RE OUT` chip outright.
+    func testCheckInOpensSubtitleMakesNoClaimAboutCommitment() {
+        XCTAssertEqual(HomeOneButtonState.checkInOpens("45m").line2, "ON THE BOOKS")
+    }
+
+    /// The approved 08a/08b frames render this exact string
+    /// (`HomeV2Fixtures.crewNight.primary`). Pinned so the non-empty join
+    /// below can never redraw them.
+    func testCheckInSubtitleIsUnchangedForTheFixtureWorld() {
+        let state = HomeOneButtonState.checkIn(crew: "Push Crew", routine: "Push A", time: "5:00 PM")
+        XCTAssertEqual(state.line2, "PUSH CREW · PUSH A · 5:00 PM · OPEN NOW")
+    }
+
+    /// A live crew session can carry a NULL `scheduled_for`. The subtitle
+    /// must close the gap rather than render
+    /// `PUSH CREW · PUSH A ·  · OPEN NOW`.
+    func testCheckInSubtitleDropsAnEmptyComponent() {
+        let noTime = HomeOneButtonState.checkIn(crew: "Push Crew", routine: "Push A", time: "")
+        XCTAssertEqual(noTime.line2, "PUSH CREW · PUSH A · OPEN NOW")
+        let blank = HomeOneButtonState.checkIn(crew: "Push Crew", routine: "Push A", time: "   ")
+        XCTAssertEqual(blank.line2, "PUSH CREW · PUSH A · OPEN NOW")
+    }
+
     // MARK: - The calendar card's mapping
 
     /// Pinned so the assertions below are arithmetic, not a coin flip on the

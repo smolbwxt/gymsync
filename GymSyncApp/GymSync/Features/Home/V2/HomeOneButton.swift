@@ -94,6 +94,22 @@ enum HomeOneButtonState {
         }
     }
 
+    /// The button's own subtitle, knowing nothing about commitment.
+    ///
+    /// `.checkInOpens` reads `ON THE BOOKS` — the fact, not a claim about
+    /// whether the lifter has said yes. It used to read `YOU'RE IN`, which
+    /// was safe only while nothing else on the button spoke about
+    /// commitment; the moment the commit chip landed beside it (production
+    /// plan task B1), an uncommitted lifter got `YOU'RE IN` above a
+    /// `COMMIT ›` chip and one who had declined got it above `YOU'RE OUT`.
+    /// `HomeOneButton.subtitle` overrides this line whenever a chip is
+    /// present, so the two can never contradict each other; the catalog,
+    /// which passes no chip, reads the neutral fact.
+    ///
+    /// `.checkIn` joins only its NON-EMPTY components. A live crew session
+    /// can carry a NULL `scheduled_for`, which would otherwise render
+    /// `PUSH CREW · PUSH A ·  · OPEN NOW`. Every fixture passes three
+    /// non-empty values, so the approved frames are unchanged.
     var line2: String {
         switch self {
         case .startRoutine:
@@ -101,9 +117,12 @@ enum HomeOneButtonState {
         case .startWorkout:
             return "ROUTINES · FREESTYLE · BUILD ONE"
         case .checkInOpens:
-            return "YOU'RE IN"
+            return "ON THE BOOKS"
         case .checkIn(let crew, let routine, let time):
-            return "\(crew.uppercased()) · \(routine.uppercased()) · \(time.uppercased()) · OPEN NOW"
+            let parts = [crew, routine, time]
+                .map { $0.trimmingCharacters(in: .whitespaces).uppercased() }
+                .filter { !$0.isEmpty }
+            return (parts + ["OPEN NOW"]).joined(separator: " · ")
         case .joinSession(let startedAt):
             return "STARTED \(startedAt) · YOU'RE LATE"
         }
@@ -157,14 +176,27 @@ struct HomeOneButton: View {
             .accessibilityLabel(accessibilityText)
     }
 
-    private var accessibilityText: String {
-        let base = "\(state.line1). \(state.line2)"
+    /// The subtitle actually rendered.
+    ///
+    /// On `.checkInOpens` it is DERIVED FROM THE COMMIT CHIP, so the line and
+    /// the chip beside it state one fact rather than two. Everywhere else —
+    /// and everywhere in the catalog, which passes no chip — it is the
+    /// state's own line, unchanged.
+    private var subtitle: String {
+        guard case .checkInOpens = state, let commitChip else { return state.line2 }
         switch commitChip {
-        case nil:          return base
-        case .commit:      return base + ". You haven't committed yet."
-        case .committed:   return base + ". You're in."
-        case .out:         return base + ". You're out."
+        case .commit:    return "YOU HAVEN'T SAID YET"
+        case .committed: return "YOU'RE IN"
+        case .out:       return "YOU'RE OUT"
         }
+    }
+
+    /// One truthful sentence. The chip is not appended: `subtitle` already
+    /// speaks for it, and reading the same fact twice — once as "YOU'RE IN"
+    /// and once as "You haven't committed yet" — is exactly the contradiction
+    /// this pairing exists to prevent.
+    private var accessibilityText: String {
+        "\(state.line1). \(subtitle)"
     }
 
     private var buttonFace: some View {
@@ -175,7 +207,7 @@ struct HomeOneButton: View {
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-            Text(state.line2)
+            Text(subtitle)
                 .font(GSFont.bold(10, relativeTo: .caption2))
                 .tracking(1.2)
                 .monospacedDigit()
