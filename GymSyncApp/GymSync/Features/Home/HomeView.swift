@@ -463,6 +463,20 @@ struct HomeView: View {
                         },
                         onOpenLedger: { showBurpeeLedger = true }
                     )
+                } else if burpeesOwed > 0 {
+                    // The debt follows the lifter into the SOLO states, where
+                    // the pill does not. The Home inventory (§1d) records the
+                    // all-groups burpee roll-up as living only on Home —
+                    // `CrewRoomView` shows one group's ledger — and the
+                    // lifter this would otherwise hide from is exactly the
+                    // one who owes and has nothing on the books. Rule 5 keeps
+                    // the PILL away (the button above is already the start
+                    // action); it says nothing about a status readout.
+                    HomeSoloRow(
+                        burpeesOwed: burpeesOwed,
+                        showsStartPill: false,
+                        onOpenLedger: { showBurpeeLedger = true }
+                    )
                 }
             }
             .padding(.horizontal, 16)
