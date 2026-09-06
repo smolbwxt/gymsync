@@ -242,7 +242,16 @@ enum WeeklyGoalProgressMath {
                                     isNext: index == nextIndex)
         }
 
-        let met = !chips.isEmpty && chips.allSatisfy { $0.done >= $0.target }
+        // MET NEEDS AT LEAST ONE REAL TARGET. `allSatisfy` is vacuously true
+        // for a row of 0-target chips, and a 0 target is genuinely
+        // reachable — through the editor's steppers, and through a
+        // `volume_targets` row at `weekly_sets = 0` (a deload, a flagged
+        // joint) which survives the titration path into `muscleTargets`
+        // intact. Without this an athlete who trained nothing opens Home to
+        // GOAL MET. The `!chips.isEmpty` guard was the same instinct one
+        // step short.
+        let met = chips.contains { $0.target > 0 }
+            && chips.allSatisfy { $0.done >= $0.target }
         let daysLeft = WeekMath.daysRemaining(in: now, from: now, calendar: calendar)
 
         return WeeklyGoalProgress(chips: chips,
