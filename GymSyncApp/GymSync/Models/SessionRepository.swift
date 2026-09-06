@@ -498,8 +498,29 @@ enum SessionRepository {
     /// inner join on my participant rows rather than a two-step id fan-out,
     /// and a bounded `limit`. NO `scheduled_for` floor — a live session may
     /// carry a NULL `scheduled_for` (`startSolo` sets none), and filtering on
-    /// it would drop exactly the rows this exists to find. Ordered by
-    /// `started_at` so the longest-running session is first.
+    /// it would drop exactly the rows this exists to find.
+    ///
+    /// NEWEST FIRST, AND NOTHING OLDER THAN SIX HOURS. Both bounds exist
+    /// because `in_progress` is a state nothing ever leaves on its own:
+    /// there is no reaper, and `20260716000003_push_cron.sql:169-199` only
+    /// NOTIFIES at 30 and 60 minutes idle — it never transitions the row. A
+    /// session nobody ends stays live indefinitely, so without these two
+    /// lines it would own Home's one button for days, which is the exact
+    /// class of bug the 30-minute missed cutoff was introduced for (user
+    /// feedback 2026-07-24, "the gold shimmer ran forever on missed
+    /// events"). Descending order fixes the preference too: when two
+    /// sessions are live, the one that just started is the one worth
+    /// resuming, not the stalest.
+    ///
+    /// Six hours, per the controller's ruling: no real gym session outlasts
+    /// it, and an abandoned one still has the lobby's own resume and end
+    /// paths — this bound governs what Home OFFERS, not what exists.
+    ///
+    /// The floor also excludes an `in_progress` row whose `started_at` is
+    /// NULL. That combination is a data anomaly rather than a live session
+    /// (`startSolo` sets it at insert; the `start_session` RPC sets it
+    /// server-side), and a row that cannot say when it began cannot be aged
+    /// out — so leaving it out is the honest reading of "live right now".
     ///
     /// Returns solo sessions too. Home only routes the CREW ones (a live
     /// solo session has its own recovery surface — `AppState.liveSoloSession`
@@ -510,12 +531,14 @@ enum SessionRepository {
             throw GymSyncError.unauthorized
         }
         do {
+            let floor = Date.now.addingTimeInterval(-6 * 3600)
             let sessions: [WorkoutSession] = try await client
                 .from("sessions")
                 .select("*, session_participants!inner(user_id)")
                 .eq("session_participants.user_id", value: userID.uuidString)
                 .eq("state", value: "in_progress")
-                .order("started_at", ascending: true)
+                .gte("started_at", value: ISO8601DateFormatter().string(from: floor))
+                .order("started_at", ascending: false)
                 .limit(limit)
                 .execute().value
             return sessions

@@ -915,6 +915,12 @@ struct HomeView: View {
     /// `nextActionableSession`'s existing `state == "in_progress"` disjunct
     /// win without touching that predicate.
     ///
+    /// Within the live half, NEWEST first: `liveForCurrentUser()` orders
+    /// `started_at` descending and floors it at six hours, so the button
+    /// offers the session that just started rather than the stalest one, and
+    /// a session nobody ever ended ages out of the button on its own. That
+    /// bound lives in the read rather than here so Stream D inherits it.
+    ///
     /// The two arrays cannot overlap: `SessionRepository.upcoming()` filters
     /// to the PRE-workout states and `liveForCurrentUser()` to `in_progress`
     /// alone, so no session can appear in both and no de-duplication is

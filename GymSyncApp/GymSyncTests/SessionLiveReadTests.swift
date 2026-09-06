@@ -56,4 +56,40 @@ final class SessionLiveReadTests: XCTestCase {
         XCTAssertFalse(live.contains { $0.id == session.id },
                        "a scheduled session has not started — it must not read as live")
     }
+
+    /// THE SIX-HOUR FLOOR. `in_progress` is a state nothing leaves on its
+    /// own — there is no reaper, and the push cron only notifies at 30 and
+    /// 60 minutes idle without ever transitioning the row — so a session
+    /// nobody ends would otherwise own Home's one button for days.
+    ///
+    /// The factories cannot back-date `started_at`: `startSolo` stamps
+    /// `Date()` at insert and takes no override
+    /// (`SessionRepository.swift:26-40`). So the test ages the row itself,
+    /// through the client. That is not a back door — the sessions table's
+    /// "organizer or participant can update session" policy
+    /// (`20260709000006_create_sessions.sql:61-67`) covers exactly this
+    /// account on exactly this row, and `SessionEngineTests` already reaches
+    /// for the raw client the same way. The teardown block registered by the
+    /// factory still owns the deletion.
+    func testALiveSessionOlderThanSixHoursAgesOutOfTheRead() async throws {
+        let session = try await makeTempSoloSession()
+
+        // Still live, still mine, but started seven hours ago.
+        let stale = Date.now.addingTimeInterval(-7 * 3600)
+        try await SupabaseService.shared.client
+            .from("sessions")
+            .update(["started_at": ISO8601DateFormatter().string(from: stale)])
+            .eq("id", value: session.id.uuidString)
+            .execute()
+
+        let live = try await SessionRepository.liveForCurrentUser()
+        XCTAssertFalse(live.contains { $0.id == session.id },
+                       "a session that has been in_progress for seven hours is abandoned, not live")
+
+        // And the state itself is untouched — this is a read bound, not a
+        // reaper. The row is still there for the lobby's own resume and end
+        // paths; only Home stops offering it.
+        let row = try await SessionRepository.session(id: session.id)
+        XCTAssertEqual(row?.state, "in_progress")
+    }
 }
