@@ -987,7 +987,11 @@ struct HomeWeeklyGoalStrip: View {
     }
 
     /// `47 minutes 10 seconds`, and the seconds dropped when there are none.
-    private static func spokenClock(_ seconds: Double) -> String {
+    ///
+    /// Internal rather than private so it can be tested (review finding 6):
+    /// it is the one string on this strip a sighted reviewer never sees, so
+    /// a screenshot cannot be its proof.
+    static func spokenClock(_ seconds: Double) -> String {
         guard seconds.isFinite, seconds >= 0, seconds < 360_000 else { return "—" }
         let whole = Int(seconds.rounded())
         let minutes = whole / 60
