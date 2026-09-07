@@ -131,9 +131,23 @@ struct CreateGroupView: View {
                             .foregroundStyle(.red)
                             .padding(.horizontal, 16)
                             .padding(.top, 8)
+                            .padding(.bottom, 16)
                     }
-
-                    // Create button
+                }
+            }
+            .background(theme.bg)
+            .scrollContentBackground(.hidden)
+            // The one primary, genuinely pinned (review B1 F7): it used to be
+            // the last child of this ScrollView, so with a long friends list —
+            // or the keyboard up over the name field — submitting cost a
+            // scroll that the deleted toolbar "Create" did not. Same shape as
+            // ScheduleSessionView's pinned CTA: divider, button, bg, in a
+            // bottom safeAreaInset (which also insets the scroll content, so
+            // nothing hides behind it). Action, style, label and disabled
+            // condition are unchanged.
+            .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 0) {
+                    GSDivider()
                     Button {
                         Task { await create() }
                     } label: {
@@ -146,13 +160,11 @@ struct CreateGroupView: View {
                     .buttonStyle(GSPrimaryButtonStyle())
                     .frame(maxWidth: .infinity)
                     .padding(.horizontal, 16)
-                    .padding(.top, 24)
-                    .padding(.bottom, 32)
+                    .padding(.vertical, 12)
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isCreating)
                 }
+                .background(theme.bg)
             }
-            .background(theme.bg)
-            .scrollContentBackground(.hidden)
             .navigationTitle("New Group")
             // One primary per screen (design language §4): the toolbar's
             // "Create" was a second accent button calling the same `create()`
