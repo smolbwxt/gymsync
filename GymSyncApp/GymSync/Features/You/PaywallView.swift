@@ -65,14 +65,13 @@ struct PaywallView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
                 } else if store.products.isEmpty {
-                    Button {
-                    } label: {
-                        Text("Coming soon")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(GSPrimaryButtonStyle(fontSize: 15, verticalPadding: 13))
-                    .disabled(true)
-                    .opacity(0.6)
+                    // A status is not a button (design language §4): the
+                    // disabled slab pretended to be the screen's primary.
+                    Text("Nothing to buy yet — Pro opens when the store does.")
+                        .font(GSFont.body(13, relativeTo: .subheadline))
+                        .foregroundStyle(theme.neutral500)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
                 } else {
                     VStack(spacing: 8) {
                         ForEach(store.products, id: \.id) { product in
@@ -88,6 +87,9 @@ struct PaywallView: View {
                                 }
                                 .frame(maxWidth: .infinity)
                             }
+                            // TODO(design): rule 4 — one primary. Yearly stays
+                            // GSPrimaryButtonStyle; Monthly becomes .gs3D(face: theme.raised3DFace, lip: theme.raised3DLip)
+                            // when a StoreKit fixture exists to prove it.
                             .buttonStyle(GSPrimaryButtonStyle(fontSize: 15, verticalPadding: 13))
                         }
                         Button {
@@ -125,14 +127,17 @@ struct PaywallView: View {
     private func featureRow(_ feature: Monetization.Feature, icon: String,
                             title: String, detail: String) -> some View {
         HStack(alignment: .top, spacing: 12) {
+            // Accent discipline (design language §2/§4): four accent glyphs
+            // and one accent title become ONE accent glyph — the row the
+            // gate sent the user here for. Every title stays `text`.
             Image(systemName: icon)
                 .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(theme.accent)
+                .foregroundStyle(highlight == feature ? theme.accent : theme.neutral500)
                 .frame(width: 26)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(GSFont.bold(14, relativeTo: .subheadline))
-                    .foregroundStyle(highlight == feature ? theme.accent700 : theme.text)
+                    .foregroundStyle(theme.text)
                 Text(detail)
                     .font(GSFont.body(12, relativeTo: .caption))
                     .foregroundStyle(theme.neutral500)
