@@ -1913,24 +1913,26 @@ struct GSVoiceConnectedToast: View {
         HStack(spacing: 10) {
             Image(systemName: "checkmark")
                 .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(theme.bg)
+                .foregroundStyle(Color.gsSuccess)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text("Voice connected")
                     .font(GSFont.bold(14, relativeTo: .headline))
-                    .foregroundStyle(theme.bg)
+                    .foregroundStyle(theme.text)
                 if let groupName {
                     Text("You're in the room with \(groupName)")
                         .font(GSFont.body(11, relativeTo: .caption))
-                        .foregroundStyle(theme.bg.opacity(0.9))
+                        .foregroundStyle(theme.neutral500)
                 }
             }
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
-        .background(theme.accent)
-        .cornerRadius(GSMetrics.radiusSm)   // redesign: rounded banner
+        // Presence, not an action: a neutral raised strip with a green
+        // check, never a solid-accent slab (design language: accent is for
+        // the thing you can act on, green means present).
+        .gs3DCard(cornerRadius: GSMetrics.radiusSm, lipHeight: 5)
         .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
     }
 }
