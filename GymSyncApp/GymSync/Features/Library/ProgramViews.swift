@@ -48,14 +48,16 @@ struct ProgramCard: View {
                     .foregroundStyle(theme.text)
 
                 if complete {
+                    // Green means done (design language §2).
                     Text("Complete — see your results")
                         .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
-                        .foregroundStyle(theme.accent700)
+                        .foregroundStyle(Color.gsSuccess)
                 } else {
                     HStack(spacing: 6) {
+                        // A state line is metadata, not an invitation.
                         Text("Week \(week) of \(enrollment.weeks)")
                             .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
-                            .foregroundStyle(theme.accent700)
+                            .foregroundStyle(theme.neutral500)
                         if weekSpec?.isDeload == true {
                             Text("· Deload")
                                 .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
@@ -110,9 +112,11 @@ struct ProgramTemplateCard: View {
                 .font(GSFont.body(13, relativeTo: .subheadline))
                 .foregroundStyle(theme.neutral500)
                 .lineLimit(2)
+            // Metadata, not an act (design language §2) — no accent action on
+            // this card for it to compete with.
             Text("\(template.weeks.count) weeks · \(template.sessionsPerWeek) sessions/wk")
                 .font(GSFont.bodyMedium(12, relativeTo: .caption))
-                .foregroundStyle(theme.accent700)
+                .foregroundStyle(theme.neutral500)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
@@ -600,9 +604,11 @@ struct ProgramTemplateDetailView: View {
             Text(template.summary)
                 .font(GSFont.body(14, relativeTo: .body))
                 .foregroundStyle(theme.neutral500)
+            // Metadata line — muted, so the screen's Start CTA stays the one
+            // accent thing (design language §2).
             Text("\(template.weeks.count) weeks · \(template.sessionsPerWeek) sessions/wk")
                 .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
-                .foregroundStyle(theme.accent700)
+                .foregroundStyle(theme.neutral500)
         }
         .padding(.horizontal, 16)
     }
@@ -689,9 +695,11 @@ struct ProgramTemplateDetailView: View {
                     .font(GSFont.bodyMedium(14, relativeTo: .body))
                     .foregroundStyle(theme.neutral500)
                 Spacer()
+                // The chevron beside it already signals tappability, so the
+                // empty state does not need accent (design language §2).
                 Text(selection?.name ?? "Choose…")
                     .font(GSFont.bodyMedium(14, relativeTo: .body))
-                    .foregroundStyle(selection == nil ? theme.accent700 : theme.text)
+                    .foregroundStyle(selection == nil ? theme.neutral700 : theme.text)
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(theme.neutral500)
