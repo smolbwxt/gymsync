@@ -7,11 +7,13 @@ struct HomeView: View {
 
     // MARK: - Injected repositories (production plan, Task 0's interface)
     //
-    // Integration task **I1** swaps these defaults for Stream A's live
-    // implementations; until then Home is correct rather than half-built —
-    // an empty friends repository IS the shipping state of the crew pulse
-    // (owner ruling 2), and the stub goal repository renders the design's
-    // own fixture numbers.
+    // I1 swaps these defaults for Stream A's live implementations: an empty
+    // friends repository WAS the shipping state of the crew pulse (owner
+    // ruling 2) only until a live one existed, and the stub goal repository
+    // rendered the design's own fixture numbers only until Stream A's did.
+    // Both stubs stay in the codebase — the catalog's fixture frames still
+    // construct `HomeView`-adjacent pieces against them directly — but
+    // production Home now defaults to the real reads.
 
     /// Who from the crew is lifting right now.
     let friendsRepository: any FriendsLiveRepository
@@ -28,8 +30,8 @@ struct HomeView: View {
     /// internal, so a test, a preview or I1's own call site can hand in a
     /// repository; both parameters keep their defaults, so `HomeView()` is
     /// unchanged.
-    init(friendsRepository: any FriendsLiveRepository = EmptyFriendsLiveRepository(),
-         goalRepository: any WeeklyGoalRepository = StubWeeklyGoalRepository()) {
+    init(friendsRepository: any FriendsLiveRepository = LiveFriendsLiveRepository(),
+         goalRepository: any WeeklyGoalRepository = LiveWeeklyGoalRepository()) {
         self.friendsRepository = friendsRepository
         self.goalRepository = goalRepository
     }
@@ -75,6 +77,18 @@ struct HomeView: View {
     @State private var nextCommitStatus: SessionCommitment.Status?
     /// Weekly-goal editor sheet for the intraweek streak widget.
     @State private var showGoalSheet = false
+    /// The goal strip's own destination (I1: `WeeklyGoalSheet` -> Stream C's
+    /// `WeeklyGoalEditorSheet`, C3). `WeeklyGoalSheet`/`showGoalSheet` above
+    /// stays exactly as it is — the streak tile still opens it, and the
+    /// `days` kind writes the same field, which is the point.
+    @State private var showGoalEditor = false
+    /// Snapshotted the moment the editor opens, not read live from `profile`
+    /// inside the `.sheet` builder (review-stream-C-r1.md nit 3): the sheet
+    /// seeds its stepper from this value once and re-reads it at save time
+    /// to decide whether the stepper moved, so a parent re-render that
+    /// refreshes `profile` while the sheet is open must not shift that
+    /// baseline out from under it.
+    @State private var goalEditorWeeklySessionGoal = 3
     @State private var profile: Profile?
     @State private var todaysRoutine: Routine?
     @State private var todaysRoutineExercises: [RoutineExercise] = []
@@ -222,14 +236,40 @@ struct HomeView: View {
             }
             // The weekly-goal editor, moved off `weeklyGoalWidget` (deleted
             // with the wide streak card) and onto the page root — it is the
-            // tap target of BOTH `HomeStreakTile` and, until Stream C's
-            // editor lands, `HomeWeeklyGoalStrip`.
+            // tap target of `HomeStreakTile` (I1: the strip now opens
+            // `WeeklyGoalEditorSheet` below instead; this sheet and the
+            // `days` kind it writes stay exactly as they are — same field,
+            // which is the point).
             .sheet(isPresented: $showGoalSheet) {
                 // The editor seeds from the STANDING goal (what next week
                 // will be), not the effective one — that's the value being
                 // edited.
                 WeeklyGoalSheet(initial: profile?.weeklySessionGoal ?? 3) { updated in
                     profile = updated
+                }
+            }
+            // I1 (C3): the goal strip's own destination. `userID` is
+            // re-checked here rather than trusted from the tap (the tap
+            // already gated on it) purely so a signed-out edge case renders
+            // nothing rather than a half-built sheet; `weeklySessionGoal`
+            // deliberately does NOT read `profile` here — see
+            // `goalEditorWeeklySessionGoal`'s own doc comment.
+            .sheet(isPresented: $showGoalEditor) {
+                if let userID = appState.currentProfile?.id {
+                    WeeklyGoalEditorSheet(goal: weeklyGoal,
+                                         userID: userID,
+                                         weekStart: WeekMath.weekStartString(),
+                                         repository: goalRepository,
+                                         weeklySessionGoal: goalEditorWeeklySessionGoal) { updated in
+                        weeklyGoal = updated
+                        Task {
+                            if let updated {
+                                goalProgress = await goalRepository.progress(for: updated)
+                            } else {
+                                goalProgress = WeeklyGoalProgress()
+                            }
+                        }
+                    }
                 }
             }
             // Coach's front door. Reachable elsewhere only from the You
@@ -652,9 +692,10 @@ struct HomeView: View {
     ///   * **goal present** — the kind's reading.
     ///   * **no goal** — `kind: nil`, the invitation line.
     ///
-    /// Until Stream C's `WeeklyGoalEditorSheet` lands the tap opens the
-    /// existing weekly-goal sheet, so the strip is never inert; integration
-    /// task I1 swaps the destination.
+    /// I1: the tap opens Stream C's `WeeklyGoalEditorSheet` —
+    /// `goalEditorWeeklySessionGoal` is snapshotted here, at tap time, not
+    /// read live from `profile` inside the sheet's own builder (see that
+    /// property's doc comment).
     ///
     /// THE AGREEMENT LAW: `goalProgress.rightHandRead` and
     /// `HomeStreakTile`'s `daysDone/goal` describe the same week. Nothing
@@ -665,7 +706,9 @@ struct HomeView: View {
         Group {
             if goalLoaded {
                 HomeWeeklyGoalStrip(kind: weeklyGoal?.kind, progress: goalProgress) {
-                    showGoalSheet = true
+                    guard appState.currentProfile?.id != nil else { return }
+                    goalEditorWeeklySessionGoal = profile?.weeklySessionGoal ?? 3
+                    showGoalEditor = true
                 }
             } else {
                 goalStripSkeleton
