@@ -94,6 +94,19 @@ enum CatalogScreen: String, CaseIterable {
     case homeV3_08bTargetsAboveJoin = "home-v3-08b-targets-above-join"
     case homeV3Plan = "home-v3-09-plan"
     case homeV3Minimal = "home-v3-10-minimal"
+    // The weekly goal (home-v3 production plan, Stream C): the strip in all
+    // five kinds plus its two other states, and the editor the strip opens,
+    // in both of its header branches. See `content_homeGoalStripMuscleSets`
+    // for the whole story.
+    case homeGoalStripMuscleSets = "home-goal-strip-muscle-sets"
+    case homeGoalStripDistance = "home-goal-strip-distance"
+    case homeGoalStripSessions = "home-goal-strip-sessions"
+    case homeGoalStripDays = "home-goal-strip-days"
+    case homeGoalStripLift = "home-goal-strip-lift"
+    case homeGoalStripMet = "home-goal-strip-met"
+    case homeGoalStripEmpty = "home-goal-strip-empty"
+    case homeGoalEditor = "home-goal-editor"
+    case homeGoalEditorLift = "home-goal-editor-lift"
     /// The page Home's calendar card is a door onto (Stream D, frame 92).
     case calendarScheduling = "calendar-scheduling"
 }
@@ -176,6 +189,15 @@ struct CatalogHostView: View {
             case .homeV3_08bTargetsAboveJoin: content_homeV3TargetsAboveJoin
             case .homeV3Plan:                 content_homeV3Plan
             case .homeV3Minimal:              content_homeV3Minimal
+            case .homeGoalStripMuscleSets:    content_homeGoalStripMuscleSets
+            case .homeGoalStripDistance:      content_homeGoalStripDistance
+            case .homeGoalStripSessions:      content_homeGoalStripSessions
+            case .homeGoalStripDays:          content_homeGoalStripDays
+            case .homeGoalStripLift:          content_homeGoalStripLift
+            case .homeGoalStripMet:           content_homeGoalStripMet
+            case .homeGoalStripEmpty:         content_homeGoalStripEmpty
+            case .homeGoalEditor:             content_homeGoalEditor
+            case .homeGoalEditorLift:         content_homeGoalEditorLift
             case .calendarScheduling:         content_calendarScheduling
             }
         }
@@ -1790,6 +1812,97 @@ struct CatalogHostView: View {
 
     private var content_homeV3Minimal: some View {
         HomeV3MinimalView(world: HomeV2Fixtures.soloDay)
+    }
+
+    // MARK: - The weekly goal (Stream C)
+    //
+    // Plan: `docs/superpowers/plans/2026-09-06-home-v3-production-plan.md`,
+    // task C4. Design: the production-and-weekly-goal design's §B.
+    //
+    // The owner's third ruling on Home v3 was that the strip is "your goal
+    // this week", not "muscle-group sets" — muscle sets is right for a
+    // strength block, and a week of miles or of HIIT sessions gets its own
+    // reading. That turned one strip into five, and five renderings that
+    // exist only in a plan are five decisions nobody has seen. These seven
+    // ids are all of them, plus the two states that are not kinds at all:
+    // the met week, and the week before Coach has detected anything.
+    //
+    // Two more for the editor the strip opens, capturing its two HEADER
+    // branches rather than two of its five lever sets: `home-goal-editor`
+    // carries the design's standing copy line on a Coach-set goal;
+    // `home-goal-editor-lift` carries a Coach PROPOSAL and its `ACCEPT` on a
+    // user-set one, which is the only kind of goal a proposal can exist
+    // against (owner answer 3 — Coach may ask, never overwrite). The lever
+    // sets are visible one chip-tap apart in a build; the branch that
+    // decides whether Coach is explaining or asking is not.
+    //
+    // Hermetic, like every catalog id: `WeeklyGoalFixtures` holds integers,
+    // strings and two fixed epoch seconds, and the editor is handed
+    // `loadsCatalog: false` so the one network call it can make is off.
+    // Nothing here reads `AppState`, a repository or the clock.
+    //
+    // Proof authority: `docs/design/frame-map.json` continues the free range
+    // the plan reserves (83-91, after the addendum's 81-82), so
+    // `parity_diff.js` logs `skip <id>: no proof frame` until something is
+    // rendered into `docs/design/mockups/` — the same posture the v3 ten and
+    // the 08 addendum ship with. FLOOR is NOT bumped here: integration task
+    // I3 bumps it once, for all ten new ids, because a stream branch that
+    // raises the floor before its ids exist on the integration branch turns
+    // CI red for the other three streams.
+
+    private var content_homeGoalStripMuscleSets: some View {
+        WeeklyGoalStripFrame(kind: .muscleSets, progress: WeeklyGoalFixtures.muscleSets)
+    }
+
+    private var content_homeGoalStripDistance: some View {
+        WeeklyGoalStripFrame(kind: .distance, progress: WeeklyGoalFixtures.distance)
+    }
+
+    private var content_homeGoalStripSessions: some View {
+        WeeklyGoalStripFrame(kind: .sessionsOfType, progress: WeeklyGoalFixtures.sessions)
+    }
+
+    private var content_homeGoalStripDays: some View {
+        WeeklyGoalStripFrame(kind: .days, progress: WeeklyGoalFixtures.days)
+    }
+
+    private var content_homeGoalStripLift: some View {
+        WeeklyGoalStripFrame(kind: .lift, progress: WeeklyGoalFixtures.lift)
+    }
+
+    private var content_homeGoalStripMet: some View {
+        WeeklyGoalStripFrame(kind: .muscleSets, progress: WeeklyGoalFixtures.met)
+    }
+
+    /// The one state where `kind` is nil — the week before Coach has
+    /// detected anything, which is the only week the invitation line can be
+    /// seen in. `.init()` rather than a fixture: the strip renders no
+    /// numbers here, and passing some would suggest it might.
+    private var content_homeGoalStripEmpty: some View {
+        WeeklyGoalStripFrame(kind: nil, progress: WeeklyGoalProgress())
+    }
+
+    private var content_homeGoalEditor: some View {
+        WeeklyGoalEditorSheet(goal: WeeklyGoalFixtures.editorGoal,
+                              userID: WeeklyGoalFixtures.editorUserID,
+                              weekStart: WeeklyGoalFixtures.editorWeekStart,
+                              weeklySessionGoal: WeeklyGoalFixtures.editorWeeklySessionGoal,
+                              focusLifts: WeeklyGoalFixtures.focusLifts,
+                              loadsCatalog: false,
+                              today: WeeklyGoalFixtures.editorToday,
+                              unitOverride: WeeklyGoalFixtures.editorUnit)
+    }
+
+    private var content_homeGoalEditorLift: some View {
+        WeeklyGoalEditorSheet(goal: WeeklyGoalFixtures.editorLiftGoal,
+                              userID: WeeklyGoalFixtures.editorUserID,
+                              weekStart: WeeklyGoalFixtures.editorWeekStart,
+                              proposal: WeeklyGoalFixtures.editorProposal,
+                              weeklySessionGoal: WeeklyGoalFixtures.editorWeeklySessionGoal,
+                              focusLifts: WeeklyGoalFixtures.focusLifts,
+                              loadsCatalog: false,
+                              today: WeeklyGoalFixtures.editorToday,
+                              unitOverride: WeeklyGoalFixtures.editorUnit)
     }
 
     // MARK: - Calendar & scheduling page (Stream D, frame 92)

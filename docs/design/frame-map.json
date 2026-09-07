@@ -187,6 +187,42 @@
     "frame": 80,
     "title": "Home v3 - 10 minimal (solo day)"
   },
+  "home-goal-strip-muscle-sets": {
+    "frame": 83,
+    "title": "Weekly goal strip - muscle sets"
+  },
+  "home-goal-strip-distance": {
+    "frame": 84,
+    "title": "Weekly goal strip - distance"
+  },
+  "home-goal-strip-sessions": {
+    "frame": 85,
+    "title": "Weekly goal strip - sessions of a type"
+  },
+  "home-goal-strip-days": {
+    "frame": 86,
+    "title": "Weekly goal strip - days"
+  },
+  "home-goal-strip-lift": {
+    "frame": 87,
+    "title": "Weekly goal strip - a lift"
+  },
+  "home-goal-strip-met": {
+    "frame": 88,
+    "title": "Weekly goal strip - goal met"
+  },
+  "home-goal-strip-empty": {
+    "frame": 89,
+    "title": "Weekly goal strip - no goal yet"
+  },
+  "home-goal-editor": {
+    "frame": 90,
+    "title": "Weekly goal editor - muscle sets"
+  },
+  "home-goal-editor-lift": {
+    "frame": 91,
+    "title": "Weekly goal editor - a lift"
+  },
   "calendar-scheduling": {
     "frame": 92,
     "title": "Calendar & scheduling page",

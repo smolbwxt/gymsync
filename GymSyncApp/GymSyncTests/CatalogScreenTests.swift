@@ -68,6 +68,18 @@ final class CatalogScreenTests: XCTestCase {
             "home-v3-08b-targets-above-join",
             "home-v3-09-plan",
             "home-v3-10-minimal",
+            // The weekly goal (home-v3 production plan, Stream C): the
+            // strip's five kinds plus met and empty, and the editor's two
+            // header branches.
+            "home-goal-strip-muscle-sets",
+            "home-goal-strip-distance",
+            "home-goal-strip-sessions",
+            "home-goal-strip-days",
+            "home-goal-strip-lift",
+            "home-goal-strip-met",
+            "home-goal-strip-empty",
+            "home-goal-editor",
+            "home-goal-editor-lift",
             "calendar-scheduling",
         ]
         for id in ids {
