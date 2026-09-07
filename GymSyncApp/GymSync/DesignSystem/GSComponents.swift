@@ -195,6 +195,7 @@ public enum GSTagStyle {
     case accent   // accent100 fill, accent text
     case neutral  // neutral300 fill, neutral700 text
     case outline  // transparent fill, neutral400 border, neutral700 text
+    case success  // gsSuccessSoft fill, gsSuccess text — done / live / present
 }
 
 public struct GSTag: View {
@@ -228,6 +229,7 @@ public struct GSTag: View {
         case .accent:   return theme.accent
         case .neutral:  return theme.neutral700
         case .outline:  return theme.neutral700
+        case .success:  return .gsSuccess
         }
     }
 
@@ -236,6 +238,7 @@ public struct GSTag: View {
         case .accent:   return theme.accent100
         case .neutral:  return theme.neutral300
         case .outline:  return Color.clear
+        case .success:  return .gsSuccessSoft
         }
     }
 }
