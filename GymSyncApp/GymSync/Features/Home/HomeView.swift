@@ -686,12 +686,36 @@ struct HomeView: View {
         if let friend = friendsLive.first {
             HomeCrewPulseStrip(initials: friend.initials,
                                headline: crewPulseHeadline(friend),
-                               detail: crewPulseDetail(friend)) {
-                openFriendLive(friend)
-            }
+                               detail: crewPulseDetail(friend),
+                               action: crewPulseAction(friend))
             .padding(.horizontal, 16)
             .padding(.bottom, 10)
         }
+    }
+
+    /// The row's tap, or **nil where there is nowhere for it to land** (final
+    /// review finding 4).
+    ///
+    /// Two cases where there is not, and the row is then drawn with no
+    /// chevron and no button around it:
+    ///
+    ///   * a **solo** friend — `friend.groupID == nil`, the row
+    ///     `crewPulseDetail` renders as `Solo` and the one `friends_live`'s
+    ///     `show_solo_workouts` gate exists to admit. You cannot be a
+    ///     participant in someone else's solo session, so there is no lobby,
+    ///     and there is no crew room either;
+    ///   * a crew you are **not a member of**. `groups` SELECT RLS requires
+    ///     CURRENT membership, so `.chat(groupID:)` would push a room the
+    ///     caller cannot read. `groups` here is `GroupRepository.myGroups()`,
+    ///     which is that membership.
+    ///
+    /// Both used to be a full-width `Button` that did nothing and said
+    /// nothing. This does not invent a destination for them — the friend's
+    /// profile was the alternative offered and it is a different feature.
+    private func crewPulseAction(_ friend: FriendLive) -> (() -> Void)? {
+        guard let groupID = friend.groupID,
+              groups.contains(where: { $0.id == groupID }) else { return nil }
+        return { openFriendLive(friend) }
     }
 
     /// This week's goal, in three states (the design's, plus the plan's
@@ -925,6 +949,10 @@ struct HomeView: View {
 
     /// Tap on the crew pulse: that session's LOBBY when you are one of its
     /// participants, the crew room otherwise.
+    ///
+    /// Only reached for a row `crewPulseAction` gave an action to — a crew
+    /// session in a crew you belong to — so the `groupID` guard at the foot is
+    /// now belt-and-braces rather than the silent no-op it used to be.
     ///
     /// Participation is asked at TAP TIME rather than carried on
     /// `FriendLive`, for two reasons. `SessionRepository.upcoming()` filters
