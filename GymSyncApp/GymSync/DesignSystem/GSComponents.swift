@@ -1592,7 +1592,36 @@ struct PTTDockRow: View {
             .gs3DCard(cornerRadius: 999,
                       lipHeight: 5,
                       face: isTransmitting ? theme.accent : nil)
+            // Round-2 F12: the pill had no accessibility label on any path.
+            // `.contain`, NOT `.ignore`: the unavailable pill holds a real
+            // RETRY Button, and ignoring children would hide it from
+            // VoiceOver — trading one accessibility gap for a worse one.
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(pillCopy)
     }
+
+    /// What the pill currently says, as one string — the SAME constants the
+    /// bars render, so VoiceOver can never drift from the visible copy.
+    private var pillCopy: String {
+        switch voice.state {
+        case .micDenied:   return Self.deniedCopy
+        case .unavailable: return Self.unavailableCopy
+        case .connecting:  return Self.connectingCopy
+        case .idle, .connected:
+            return isTransmitting ? Self.transmittingCopy : Self.idleCopy
+        }
+    }
+
+    // The pill's five lines of copy, declared once. Each is rendered by its
+    // bar below AND read by `pillCopy` above; there is no second vocabulary
+    // for VoiceOver to fall out of sync with. (The app ships no
+    // `.strings`/`.xcstrings` catalog, so moving these from literals into
+    // constants changes no localization behaviour.)
+    private static let idleCopy = "HOLD TO TALK"
+    private static let transmittingCopy = "TALKING · RELEASE TO STOP"
+    private static let connectingCopy = "Connecting voice…"
+    private static let unavailableCopy = "Voice is offline — check your connection"
+    private static let deniedCopy = "Mic access off — turn on in Settings"
 
     // MARK: Interactive row (idle/muted/open/held — ONE stable view identity)
     //
@@ -1688,7 +1717,7 @@ struct PTTDockRow: View {
     /// by live audio levels" honesty note applies).
     private var idleBar: some View {
         HStack(spacing: 8) {
-            Text("HOLD TO TALK")
+            Text(Self.idleCopy)
                 .font(GSFont.bold(13, relativeTo: .body))
                 .tracking(1.1)
                 .foregroundStyle(theme.text)
@@ -1699,7 +1728,7 @@ struct PTTDockRow: View {
     /// Transmitting, hands-free (tap-toggled open). ONE line, ink on the
     /// accent face. Kept as its own symbol — see `holdingBar`.
     private var openBar: some View {
-        Text("TALKING · RELEASE TO STOP")
+        Text(Self.transmittingCopy)
             .font(GSFont.bold(13, relativeTo: .body))
             .tracking(1.1)
             .foregroundStyle(theme.bg)
@@ -1713,7 +1742,7 @@ struct PTTDockRow: View {
     /// muted -> transmitting flip, and collapsing the branch would change it
     /// mid-press.
     private var holdingBar: some View {
-        Text("TALKING · RELEASE TO STOP")
+        Text(Self.transmittingCopy)
             .font(GSFont.bold(13, relativeTo: .body))
             .tracking(1.1)
             .foregroundStyle(theme.bg)
@@ -1724,7 +1753,7 @@ struct PTTDockRow: View {
             ProgressView()
                 .controlSize(.small)
                 .tint(theme.accent)
-            Text("Connecting voice…")
+            Text(Self.connectingCopy)
                 .font(GSFont.bold(13, relativeTo: .body))
                 .foregroundStyle(theme.text)
         }
@@ -1743,7 +1772,7 @@ struct PTTDockRow: View {
             Image(systemName: "mic.slash")
                 .font(.system(size: 15, weight: .regular))
                 .foregroundStyle(theme.neutral500)
-            Text("Voice is offline — check your connection")
+            Text(Self.unavailableCopy)
                 .font(GSFont.bold(13, relativeTo: .body))
                 .foregroundStyle(theme.text)
             Spacer(minLength: 0)
@@ -1791,7 +1820,7 @@ struct PTTDockRow: View {
             Image(systemName: "mic.slash")
                 .font(.system(size: 17, weight: .regular))
                 .foregroundStyle(theme.accent)
-            Text("Mic access off — turn on in Settings")
+            Text(Self.deniedCopy)
                 .font(GSFont.bold(14, relativeTo: .body))
                 .foregroundStyle(theme.text)
             Spacer()
@@ -1954,9 +1983,14 @@ struct GSVoiceConnectedToast: View {
                     .font(GSFont.bold(14, relativeTo: .headline))
                     .foregroundStyle(theme.text)
                 if let groupName {
+                    // neutral800, not neutral500 — the same raised3DFace
+                    // contrast rule the coach-mark body now follows.
+                    // neutral500 measured 2.13:1 on Onyx against this face;
+                    // neutral800 measures 8.91:1, the only neutral clearing
+                    // WCAG AA (4.5:1) on every palette.
                     Text("You're in the room with \(groupName)")
                         .font(GSFont.body(11, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral500)
+                        .foregroundStyle(theme.neutral800)
                 }
             }
             Spacer(minLength: 0)
