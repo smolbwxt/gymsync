@@ -55,16 +55,24 @@ protocol BlockGoalRepository: Sendable {
 /// check a frame without reading the code under it.
 ///
 ///   * **the goal** — metric `liftOneRepMax`, target 225 lb on exercise
-///     `…b4`, by date **2026-10-18**, preset `strength`, source `user`
-///     (the athlete set it at the door), no outcome. Ids `…b1` user,
-///     `…b2` goal, `…b3` enrollment, `…b4` exercise. Created
-///     **2026-08-24**.
+///     `…b4`, by date **Sunday 2026-10-18**, preset `strength`, source
+///     `user` (the athlete set it at the door), no outcome. Ids `…b1` user,
+///     `…b2` goal, `…b3` enrollment, `…b4` exercise. Created **Monday
+///     2026-08-24**. Both dates are built from components at midnight UTC
+///     (see `utcDate`), never from an epoch literal.
 ///   * **the ladder** — eight rungs, week-starts `2026-08-23` through
 ///     `2026-10-11`, targets **190, 195, 200, 205, 210, 175, 220, 225** lb.
 ///     Statuses: weeks 1–2 `met`, week 3 `current`, weeks 4–8 `ahead` —
 ///     exactly one `current`, which is what makes "week 3" true on every
 ///     surface at once. Week 6's 175 is the WAVE'S DELOAD, shown as what it
 ///     is (spec §3.2) rather than smoothed away.
+///
+///     **THE MILESTONE FALLS THE DAY AFTER THE LAST RUNG'S WEEK, and that
+///     is not an off-by-one.** The eight training weeks run Sunday
+///     2026-08-23 through Saturday 2026-10-17; the milestone is Sunday
+///     2026-10-18, the morning the block closes over into. A date-carrying
+///     milestone means "by the end of the block", so the last week is a week
+///     the athlete still has, not one already spent.
 ///   * **the page** — headline `Bench 225 by Oct 18`, date line
 ///     `Sunday 18 October`, Coach's line `On track`, `reachesMilestone`
 ///     true, week 3 of 8, source `user`. Eight rows, one per rung, worded
@@ -83,10 +91,34 @@ struct StubBlockGoalRepository: BlockGoalRepository {
     static let fixtureEnrollmentID = UUID(uuidString: "00000000-0000-0000-0000-0000000000b3") ?? UUID()
     static let fixtureExerciseID = UUID(uuidString: "00000000-0000-0000-0000-0000000000b4") ?? UUID()
 
-    /// 2026-08-24T12:00:00Z — the block's start. A fixture, not a clock.
-    static let fixtureCreatedAt = Date(timeIntervalSince1970: 1_787_745_600)
-    /// 2026-10-18T12:00:00Z — the milestone date the spec names.
-    static let fixtureByDate = Date(timeIntervalSince1970: 1_792_411_200)
+    /// **2026-08-24, a Monday** — the block's start. A fixture, not a clock.
+    static let fixtureCreatedAt = utcDate(year: 2026, month: 8, day: 24)
+    /// **2026-10-18, a SUNDAY** — the milestone date the spec names, and the
+    /// date `fixturePage.dateLine` spells out as `Sunday 18 October`.
+    static let fixtureByDate = utcDate(year: 2026, month: 10, day: 18)
+
+    /// A calendar date at midnight UTC, built from its COMPONENTS rather
+    /// than from an epoch literal.
+    ///
+    /// The two literals this replaced were wrong, silently, and had been
+    /// restated as the fixture's contract in the doc block above without
+    /// anyone converting them back: `1_787_745_600` is 2026-08-**26** (a
+    /// Wednesday) where the comment claimed the 24th, and `1_792_411_200` is
+    /// 2026-10-**19** (a Monday) where both the comment and the page's own
+    /// `dateLine` say Sunday the 18th. Nothing in the app would have caught
+    /// it until a stream stopped hard-coding the date line and formatted
+    /// `fixtureGoal.byDate` instead — at which point the frame would have
+    /// read "Monday 19 October" beside a headline saying "Oct 18", and the
+    /// formatter would have been blamed.
+    ///
+    /// An epoch is unreadable and therefore unreviewable. Components are
+    /// both, and `BlockGoalModelTests` now pins the weekday as well.
+    private static func utcDate(year: Int, month: Int, day: Int) -> Date {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+        return calendar.date(from: DateComponents(year: year, month: month, day: day))
+            ?? Date(timeIntervalSince1970: 0)
+    }
 
     static let fixtureGoal = BlockGoal(
         id: fixtureGoalID, userID: fixtureUserID, enrollmentID: fixtureEnrollmentID,

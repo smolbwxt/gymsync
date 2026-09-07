@@ -90,4 +90,42 @@ final class BlockGoalModelTests: XCTestCase {
         XCTAssertEqual(page?.rows.filter(\.isDeload).count, 1,
                        "the wave's deload is a rung, not smoothed away")
     }
+
+    /// THE FIXTURE'S DATES ARE PART OF ITS CONTRACT (controller ruling 3),
+    /// and until this test existed nothing checked them: both were epoch
+    /// literals, both were wrong — the created-at by two days, the milestone
+    /// by one — and both had been restated as prose in the stub's own doc
+    /// block. The page hard-codes `Sunday 18 October`, so the first stream to
+    /// format `fixtureGoal.byDate` instead would have rendered "Monday 19
+    /// October" beside a headline saying "Oct 18", and its formatter would
+    /// have taken the blame.
+    ///
+    /// UTC, because that is the calendar the fixture is built in — reading it
+    /// through a device-local calendar would make this test's answer depend
+    /// on the simulator's timezone, which is the class of thing a fixture
+    /// exists to remove.
+    func testTheFixtureMilestoneIsTheSundayThePageSaysItIs() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+
+        let milestone = calendar.dateComponents([.year, .month, .day, .weekday],
+                                                from: StubBlockGoalRepository.fixtureByDate)
+        XCTAssertEqual(milestone.year, 2026)
+        XCTAssertEqual(milestone.month, 10)
+        XCTAssertEqual(milestone.day, 18)
+        XCTAssertEqual(milestone.weekday, 1,
+                       "18 October 2026 is a SUNDAY — the page's own date line says so")
+        XCTAssertEqual(StubBlockGoalRepository.fixturePage.dateLine, "Sunday 18 October")
+        XCTAssertTrue(StubBlockGoalRepository.fixturePage.headline.contains("Oct 18"),
+                      "the headline and the date line must name one day")
+        XCTAssertEqual(StubBlockGoalRepository.fixtureGoal.byDate,
+                       StubBlockGoalRepository.fixtureByDate)
+
+        let start = calendar.dateComponents([.year, .month, .day, .weekday],
+                                            from: StubBlockGoalRepository.fixtureCreatedAt)
+        XCTAssertEqual(start.year, 2026)
+        XCTAssertEqual(start.month, 8)
+        XCTAssertEqual(start.day, 24)
+        XCTAssertEqual(start.weekday, 2, "24 August 2026 is a Monday")
+    }
 }
