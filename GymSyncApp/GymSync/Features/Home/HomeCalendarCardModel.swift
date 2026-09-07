@@ -14,9 +14,17 @@ import SwiftUI
 // it is a pure function of its inputs so it can be tested without a view —
 // `HomeCompositionTests` (task B7) does exactly that.
 //
-// Stream D reuses this for the calendar page's own grid (task D1): the page
-// and the door it opens must draw the same dots, and two mappings would
-// eventually disagree about which day was trained.
+// THE CALENDAR PAGE DOES NOT CALL THIS (final review finding 9 — this
+// comment used to claim it did). `CalendarSchedulingView.derivedWorld` builds
+// its own `CalendarMonthGrid.Month` from its own trained / scheduled / crew
+// loops, because the page needs one month with the crew split out where the
+// card needs three with them merged. What task D1 actually extracted and
+// shared is `TrainingMonthField`, which the page does not use either.
+//
+// So two mappings DO exist, and they agree today only because both date a
+// trained day by the same `completedAt ?? startedAt ?? scheduledFor` chain.
+// That is the invariant to hold if either side is edited; the plan's own
+// "does not decide" list carries the merge as a follow-up.
 enum HomeCalendarCardModel {
 
     /// Previous / current / next month, the three the card renders.
