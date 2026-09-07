@@ -603,8 +603,10 @@ struct GSInitialsAvatar: View {
     let avatarURL: URL?
     var size: CGFloat = 34
     /// Redesign (spec §4): GROUP avatars carry the group's identity color
-    /// (`GSGroupColor`), independent of the user's accent. `nil` keeps the
-    /// pre-redesign accent fill for non-group callers.
+    /// (`GSGroupColor`), independent of the user's accent. Passing `fill:`/
+    /// `ink:` is the OPT-IN — the default is now neutral (neutral400 tile,
+    /// `text` ink), because an avatar is an identity, not the screen's one
+    /// accent act (design language §2, accent-discipline sweep 2026-09-06).
     var fill: Color? = nil
     var ink: Color? = nil
 
@@ -650,9 +652,9 @@ struct GSInitialsAvatar: View {
     private var initialsView: some View {
         Text(initialsText)
             .font(GSFont.bold(size * 0.31, relativeTo: .caption))
-            .foregroundStyle(ink ?? theme.bg)
+            .foregroundStyle(ink ?? theme.text)
             .frame(width: size, height: size)
-            .background(fill ?? theme.accent)
+            .background(fill ?? theme.neutral400)
     }
 }
 
