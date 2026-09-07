@@ -752,36 +752,19 @@ struct LobbyView: View {
 
     // MARK: - Change Time Sheet
 
+    /// Extracted to `Features/Sessions/SessionTimeSheet.swift` so the
+    /// calendar & scheduling page's swipe-to-MOVE renders the same control
+    /// instead of a second one (Stream D fix round 1, F1). Chrome only: the
+    /// sheet still calls back into `applyReschedule()` here, so what SAVE
+    /// does on this screen — reschedule, reload, then EventKit sync with
+    /// this screen's own `routineInfo` — is unchanged, and so is every
+    /// pixel of the sheet.
     private var changeTimeSheet: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    DatePicker(
-                        "New time",
-                        selection: $changeTimeDate,
-                        in: Date()...,
-                        displayedComponents: [.date, .hourAndMinute]
-                    )
-                    .tint(theme.accent)
-                }
-                .listRowBackground(theme.surface)
-            }
-            .scrollContentBackground(.hidden)
-            .background(theme.bg)
-            .navigationTitle("Change Time")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { showChangeTimeSheet = false }
-                        .foregroundStyle(theme.neutral700)
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { Task { await applyReschedule() } }
-                        .font(GSFont.bold(14, relativeTo: .body))
-                        .foregroundStyle(theme.accent700)
-                }
-            }
-        }
+        SessionTimeSheet(
+            date: $changeTimeDate,
+            onCancel: { showChangeTimeSheet = false },
+            onSave: { Task { await applyReschedule() } }
+        )
     }
 
     // MARK: - Room code banner

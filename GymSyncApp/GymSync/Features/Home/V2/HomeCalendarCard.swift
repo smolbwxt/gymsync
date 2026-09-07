@@ -11,42 +11,27 @@ import SwiftUI
 /// HomeView.swift:856-862, and for the same reason: a `Button` inside a
 /// `Button`'s label is a gesture-conflict hazard).
 ///
-/// The dot field is `TrainingCalendarWidget.monthGroupedField` (:139) rebuilt
-/// on the same constants — 12 pt gutters, a 21-column unit, `unit * 0.42` row
-/// spacing, dots at `unit * 0.68` (trained/planned) and `unit * 0.52`
-/// (otherwise), today haloed at `unit * 0.95` — because that widget's field is
-/// `private` and this build does not edit it. Two differences, both to keep a
-/// catalog capture hermetic:
-///   * days are fixture INTEGERS (month length + leading blanks + the trained
-///     / planned sets) rather than `Calendar`-derived `Date`s, so the field
-///     renders identically whatever day CI runs on;
-///   * `fieldWidth` is the constant 326 — the same value the production widget
-///     SEEDS its measured width with, and the exact inner width of this card at
-///     the page's 16 pt margins on a standard iPhone — rather than being
-///     measured, so no geometry observation is needed.
+/// The dot field is `TrainingMonthField` (task D1), the ONE field production
+/// and this card now share. This card used to carry its own copy of it,
+/// rebuilt on the same constants because `TrainingCalendarWidget`'s field was
+/// `private` and that build could not edit it; D1 removed that constraint and
+/// deleted the copy. Nothing about what this card RENDERS changed: the shared
+/// field is the copy, moved — same constants, same model, and `fieldWidth`
+/// still defaults to 326 here (the production widget's own seed value, and the
+/// exact inner width of this card at the page's 16 pt margins on a standard
+/// iPhone), so no geometry observation is needed and a catalog capture stays
+/// hermetic.
 struct HomeCalendarCard: View {
     @Environment(\.gsTheme) private var theme
 
     /// One month of the field. Positions are fixture values, not dates.
-    struct Month: Identifiable {
-        /// Where this month sits relative to today — decides whether an
-        /// untrained day reads as past (neutral400) or future (neutral300).
-        enum Position { case past, current, future }
-
-        let id: String
-        /// Short month label, e.g. `AUG`.
-        let label: String
-        let dayCount: Int
-        /// Blank cells before day 1, 0-6 (day 1's weekday column).
-        let leadingBlanks: Int
-        /// Days trained — bright.
-        let trained: Set<Int>
-        /// Days with something scheduled — accent.
-        let planned: Set<Int>
-        /// Today's day-of-month, when this is the current month.
-        let today: Int?
-        let position: Position
-    }
+    ///
+    /// The type moved to `TrainingMonthField` in task D1 (production needs it
+    /// too now). The alias keeps `HomeCalendarCard.Month(...)` compiling at
+    /// every fixture call site — the name the catalog worlds were written
+    /// against — without a rename sweep through frames the owner has already
+    /// judged.
+    typealias Month = TrainingMonthField.Month
 
     /// One folded appointment row: `Today 5:00 PM · PC · Push A · Push Crew ·
     /// IN ›`, 44 pt tall.
@@ -153,81 +138,12 @@ struct HomeCalendarCard: View {
     }
 
     // MARK: Month dot field
-
-    private static let gutter: CGFloat = 12
-    /// See the type's doc comment: the production widget's own seed value, and
-    /// this card's inner width at the page's 16 pt margins.
-    private static let fieldWidth: CGFloat = 326
-    /// Per-weekday column slot: three months × 7 columns + two gutters.
-    private static var unit: CGFloat { max(8, (fieldWidth - 2 * gutter) / 21) }
+    //
+    // The shared field at its hermetic default width (326) — see the type's
+    // doc comment for why this card does not measure.
 
     private var monthField: some View {
-        HStack(alignment: .top, spacing: Self.gutter) {
-            ForEach(months) { month in
-                VStack(alignment: .center, spacing: 10) {
-                    Text(month.label)
-                        .font(GSFont.bodyMedium(11, relativeTo: .caption2))
-                        .foregroundStyle(theme.neutral500)
-                    grid(month)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Training calendar — last month, this month, next month")
-    }
-
-    /// One month as a true mini-calendar: 7 weekday columns × week rows, day 1
-    /// offset to its weekday column.
-    private func grid(_ month: Month) -> some View {
-        let cellCount = month.leadingBlanks + month.dayCount
-        let weekRows = Int(ceil(Double(cellCount) / 7.0))
-        return VStack(alignment: .leading, spacing: Self.unit * 0.42) {
-            ForEach(0..<weekRows, id: \.self) { row in
-                HStack(spacing: 0) {
-                    ForEach(0..<7, id: \.self) { column in
-                        let day = row * 7 + column - month.leadingBlanks + 1
-                        Group {
-                            if day >= 1 && day <= month.dayCount {
-                                dot(day, in: month)
-                            } else {
-                                Color.clear
-                            }
-                        }
-                        .frame(width: Self.unit, height: Self.unit * 0.7)
-                    }
-                }
-            }
-        }
-    }
-
-    /// Dot semantics, unchanged from the production field: trained = bright ·
-    /// scheduled = accent · past untrained = neutral400 · future = neutral300
-    /// (dimmer) · today = accent halo.
-    private func dot(_ day: Int, in month: Month) -> some View {
-        let isTrained = month.trained.contains(day)
-        let isPlanned = month.planned.contains(day)
-        let isToday = month.today == day
-        let isFuture: Bool
-        switch month.position {
-        case .past:    isFuture = false
-        case .current: isFuture = month.today.map { day > $0 } ?? false
-        case .future:  isFuture = true
-        }
-        let fill: Color = isTrained ? theme.text
-            : isPlanned ? theme.accent
-            : isFuture ? theme.neutral300
-            : theme.neutral400
-        let size: CGFloat = (isTrained || isPlanned) ? Self.unit * 0.68 : Self.unit * 0.52
-        return Circle()
-            .fill(fill)
-            .frame(width: size, height: size)
-            .overlay(
-                isToday
-                    ? Circle().strokeBorder(theme.accent.opacity(0.8), lineWidth: 1.2)
-                        .frame(width: Self.unit * 0.95, height: Self.unit * 0.95)
-                    : nil
-            )
+        TrainingMonthField(months: months)
     }
 
     // MARK: Folded appointments

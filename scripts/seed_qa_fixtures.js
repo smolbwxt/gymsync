@@ -87,6 +87,19 @@ async function ensureSessionLive(session, startedAt) {
   session.state = 'in_progress';
 }
 
+// I2 (home-v3-production plan / brief-integration.md): the same week rule
+// `WeekMath.startOfWeek` uses in Swift — the DEVICE calendar's week, not
+// ISO — mirrored in UTC, since Node has no Foundation `Calendar`. The CI
+// simulator's locale is en_US, whose first day is SUNDAY (`firstWeekday`
+// 1), so this walks `now` back to the most recent UTC Sunday midnight.
+// `getUTCDay()`: 0 = Sunday already, so no rotation is needed the way a
+// Monday-first week would require.
+function currentWeekStartSunday(now = new Date()) {
+  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  d.setUTCDate(d.getUTCDate() - d.getUTCDay());
+  return d.toISOString().slice(0, 10); // yyyy-MM-dd, weekly_goals.week_start's shape
+}
+
 // WHO IS WHO (corrected 2026-09-05, from the DB and the repo secrets):
 // the seeded world's OWNER is whoever `--username` names — supplied by the
 // CI_TEST_USERNAME secret as `ci_test_user`, which is the account CI
@@ -944,6 +957,55 @@ async function main() {
     `campaign_progress?select=sessions_completed,workouts_completed,volume_lifted&campaign_id=eq.${campaign.id}&user_id=eq.${me.id}`);
   console.log(`  campaign_progress: sessions_completed=${progressRow?.sessions_completed ?? '?'}, ` +
     `workouts_completed=${progressRow?.workouts_completed ?? '?'}, volume_lifted=${progressRow?.volume_lifted ?? '?'}`);
+
+  // --- weekly goal: I2, home-v3-production plan/brief-integration.md ------
+  // `app-tab-home` renders the goal strip's INVITATION when `me` (the
+  // account CI actually signs in as and unit-tests as) has no
+  // `weekly_goals` row for the current week — this block gives it a real
+  // one so the capture shows a genuine muscle-sets reading instead.
+  //
+  // NOTE on production visibility, per this file's own header (:27-36):
+  // this row is genuinely live in the shared Supabase project, not an
+  // isolated test copy — and it is inert for real users the same way every
+  // other fixture above is: scoped to one account by `user_id`, and RLS
+  // ("owner reads own weekly goal", `20260906000001_weekly_goals.sql`)
+  // means nobody else can read it.
+  //
+  // week_start, computed at RUN TIME (this step runs on every screenshot
+  // job, and the week rolls) with the SAME rule `WeekMath.startOfWeek` uses
+  // in Swift — the device calendar's week, honouring `firstWeekday` — not
+  // ISO. The CI simulator's locale is en_US, whose first day is SUNDAY, so
+  // `currentWeekStartSunday` below mirrors that in UTC (Node has no
+  // Foundation `Calendar`); this can skew by a few hours right at a
+  // Saturday/Sunday-midnight boundary, the same honestly-accepted skew
+  // every other UTC-stamped fixture in this file already carries, and it
+  // does not cross a week boundary any other time.
+  //
+  // Upserts on `(user_id, week_start)` — the table's own PK — rather than
+  // this file's usual delete-then-insert: every OTHER week's row is real
+  // goal history this script must not touch (unlike every table above,
+  // which this account owns exclusively). A mid-week re-run converges to
+  // the same row.
+  //
+  // `kind`/`params` match `HomeV2Fixtures.coachTargets` (CHEST/BACK/LEGS
+  // 12, ARMS 8, `targetSource: "routines"`) — the same four targets the
+  // catalog's own muscle-sets fixture renders — so this account's shape
+  // agrees with the catalog frames. `done` is deliberately NOT written
+  // here: `LiveWeeklyGoalRepository.progress(for:)` computes it from this
+  // account's real completed sessions, which is the whole point of a LIVE
+  // repository read rather than a second fixture.
+  const weekStart = currentWeekStartSunday();
+  await rest('weekly_goals', { method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates' },
+    body: JSON.stringify({
+      user_id: me.id,
+      week_start: weekStart,
+      kind: 'muscle_sets',
+      source: 'coach',
+      params: { muscleTargets: { chest: 12, back: 12, legs: 12, arms: 8 },
+               targetSource: 'routines' },
+    }) });
+  console.log(`  weekly goal: muscle_sets for week ${weekStart}`);
 
   console.log('\ndone — QA fixture world seeded (idempotent).');
 }

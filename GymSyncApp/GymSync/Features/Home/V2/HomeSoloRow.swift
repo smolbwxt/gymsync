@@ -20,6 +20,21 @@ struct HomeSoloRow: View {
     @Environment(\.gsTheme) private var theme
 
     let burpeesOwed: Int
+    /// Whether the `START SOLO WORKOUT` pill renders.
+    ///
+    /// ADDITIVE and defaulted to `true`, so every catalog call site
+    /// (`HomeV3Frame`, `HomeV2TilesView`, `HomeV2StripsView` — all three pass
+    /// `burpeesOwed:` only, all three already gated on
+    /// `world.primary.isCrewState`) takes the `fullRow` branch below and
+    /// renders byte-identically to the frames the owner approved.
+    ///
+    /// Production passes `false` in the two SOLO button states. The pill has
+    /// no job there — the one button above IS the start action, and a second
+    /// door to the same room is what rule 5 forbids — but the burpee counter
+    /// does: the Home inventory (§1d) records the all-groups debt roll-up as
+    /// living ONLY on Home, and the lifter it would otherwise hide from is
+    /// precisely the one who owes and has nothing booked.
+    var showsStartPill: Bool = true
     /// Tap → the routine picker (`RoutinePickerSheet` in production).
     var onStartSolo: () -> Void = {}
     /// Tap → the burpee ledger of the group carrying the most debt.
@@ -27,7 +42,25 @@ struct HomeSoloRow: View {
 
     private var rowHeight: CGFloat { HomeV2Metrics.soloPillFace + HomeV2Metrics.lip }
 
+    /// Two whole shapes, not one shape with a hole in it. The pill's
+    /// presence is a property of the CALL SITE — a crew primary keeps the
+    /// escape hatch, a solo primary does not — so the row reads better as
+    /// two named bodies than as an `HStack` with a conditional first child.
+    ///
+    /// (This `if` is itself a `_ConditionalContent`; that is fine, and it is
+    /// not what protects the approved frames. What protects them is that all
+    /// three catalog call sites — `HomeV3Variations.swift:78-79`,
+    /// `HomeV2TilesView.swift:33-34`, `HomeV2StripsView.swift:110-111` — are
+    /// already wrapped in `if world.primary.isCrewState` and pass
+    /// `burpeesOwed:` only, so every frame takes the default and renders
+    /// `fullRow`, which is the pre-existing body verbatim. `counterOnly` is
+    /// unreachable from any fixture.)
+    @ViewBuilder
     var body: some View {
+        if showsStartPill { fullRow } else { counterOnly }
+    }
+
+    private var fullRow: some View {
         HStack(spacing: 10) {
             Button(action: onStartSolo) {
                 Text("START SOLO WORKOUT")
@@ -51,6 +84,22 @@ struct HomeSoloRow: View {
         // One fixed row height so the pill and the counter stand
         // shoulder-to-shoulder, both seams on the same line.
         .frame(height: rowHeight)
+    }
+
+    /// The counter alone, at the leading edge on the row's own height — the
+    /// same widget, the same 96 pt, the same seam, just without the pill it
+    /// usually stands beside. It is a status readout under the primary, so
+    /// it does not stretch: a 96 pt counter says "you owe 12"; a full-width
+    /// one would read as a second button.
+    @ViewBuilder
+    private var counterOnly: some View {
+        if burpeesOwed > 0 {
+            HStack(spacing: 0) {
+                burpeeWidget
+                Spacer(minLength: 0)
+            }
+            .frame(height: rowHeight)
+        }
     }
 
     /// Fixed width so the pill's concession is a predictable amount rather

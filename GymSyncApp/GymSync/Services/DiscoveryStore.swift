@@ -23,8 +23,16 @@ import Foundation
 
 /// One never-pressed control worth pointing at. Deliberately a small,
 /// curated list: highlighting everything highlights nothing.
+///
+/// `homeSchedule` ("disc.home.schedule.v1") was REMOVED with Home v3: its
+/// only control, `HomeView.scheduleWidget`, is gone and scheduling now lives
+/// on the calendar page. A target nothing can press never clears, and
+/// `hasNew(in:)` would have parked a permanent dot on the Home tab icon —
+/// exactly the "dot that outlives its reason" this file's own header warns
+/// about. The stale `UserDefaults` bool is left behind rather than migrated:
+/// it is one orphan bool, and `allCases` no longer names it, so nothing
+/// reads it again.
 enum DiscoveryTarget: String, CaseIterable, Identifiable {
-    case homeSchedule     = "disc.home.schedule.v1"
     case libraryDiscover  = "disc.library.discover.v1"
     case libraryCampaigns = "disc.library.campaigns.v1"
     case socialLocal      = "disc.social.local.v1"
@@ -43,7 +51,6 @@ enum DiscoveryTarget: String, CaseIterable, Identifiable {
     /// re-highlighted.
     var tab: AppState.Tab {
         switch self {
-        case .homeSchedule:             return .home
         case .libraryDiscover:          return .you
         // Three-tab restructure (2026-08-12): Campaigns/Programs browse
         // moved behind You's PROGRAMS widget — the dot follows it. Raw
@@ -58,7 +65,6 @@ enum DiscoveryTarget: String, CaseIterable, Identifiable {
     /// Short name for the QA tools row.
     var label: String {
         switch self {
-        case .homeSchedule:     return "Schedule widget (new)"
         case .libraryDiscover:  return "Discover widget (new)"
         case .libraryCampaigns: return "Campaigns row (new)"
         case .socialLocal:      return "Local hubs (new)"

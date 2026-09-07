@@ -94,6 +94,21 @@ enum CatalogScreen: String, CaseIterable {
     case homeV3_08bTargetsAboveJoin = "home-v3-08b-targets-above-join"
     case homeV3Plan = "home-v3-09-plan"
     case homeV3Minimal = "home-v3-10-minimal"
+    // The weekly goal (home-v3 production plan, Stream C): the strip in all
+    // five kinds plus its two other states, and the editor the strip opens,
+    // in both of its header branches. See `content_homeGoalStripMuscleSets`
+    // for the whole story.
+    case homeGoalStripMuscleSets = "home-goal-strip-muscle-sets"
+    case homeGoalStripDistance = "home-goal-strip-distance"
+    case homeGoalStripSessions = "home-goal-strip-sessions"
+    case homeGoalStripDays = "home-goal-strip-days"
+    case homeGoalStripLift = "home-goal-strip-lift"
+    case homeGoalStripMet = "home-goal-strip-met"
+    case homeGoalStripEmpty = "home-goal-strip-empty"
+    case homeGoalEditor = "home-goal-editor"
+    case homeGoalEditorLift = "home-goal-editor-lift"
+    /// The page Home's calendar card is a door onto (Stream D, frame 92).
+    case calendarScheduling = "calendar-scheduling"
 }
 
 struct CatalogHostView: View {
@@ -174,6 +189,16 @@ struct CatalogHostView: View {
             case .homeV3_08bTargetsAboveJoin: content_homeV3TargetsAboveJoin
             case .homeV3Plan:                 content_homeV3Plan
             case .homeV3Minimal:              content_homeV3Minimal
+            case .homeGoalStripMuscleSets:    content_homeGoalStripMuscleSets
+            case .homeGoalStripDistance:      content_homeGoalStripDistance
+            case .homeGoalStripSessions:      content_homeGoalStripSessions
+            case .homeGoalStripDays:          content_homeGoalStripDays
+            case .homeGoalStripLift:          content_homeGoalStripLift
+            case .homeGoalStripMet:           content_homeGoalStripMet
+            case .homeGoalStripEmpty:         content_homeGoalStripEmpty
+            case .homeGoalEditor:             content_homeGoalEditor
+            case .homeGoalEditorLift:         content_homeGoalEditorLift
+            case .calendarScheduling:         content_calendarScheduling
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1765,7 +1790,7 @@ struct CatalogHostView: View {
     // -addendum-targets-strip.md`). The owner, on the ten: "variation 8 of
     // the Home Screen is great. Maybe above the join with code, we display
     // the weekly muscle group goals, or whatever goal the coach is tracking
-    // as a strip?" — so both of these ARE 08, with `HomeCoachTargetsStrip`
+    // as a strip?" — so both of these ARE 08, with `HomeWeeklyGoalStrip`
     // inserted at the two placements that answer the "maybe", and the crew
     // night is their world because it is 08's.
     //
@@ -1788,6 +1813,214 @@ struct CatalogHostView: View {
     private var content_homeV3Minimal: some View {
         HomeV3MinimalView(world: HomeV2Fixtures.soloDay)
     }
+
+    // MARK: - The weekly goal (Stream C)
+    //
+    // Plan: `docs/superpowers/plans/2026-09-06-home-v3-production-plan.md`,
+    // task C4. Design: the production-and-weekly-goal design's §B.
+    //
+    // The owner's third ruling on Home v3 was that the strip is "your goal
+    // this week", not "muscle-group sets" — muscle sets is right for a
+    // strength block, and a week of miles or of HIIT sessions gets its own
+    // reading. That turned one strip into five, and five renderings that
+    // exist only in a plan are five decisions nobody has seen. These seven
+    // ids are all of them, plus the two states that are not kinds at all:
+    // the met week, and the week before Coach has detected anything.
+    //
+    // Two more for the editor the strip opens, capturing its two HEADER
+    // branches rather than two of its five lever sets: `home-goal-editor`
+    // carries the design's standing copy line on a Coach-set goal;
+    // `home-goal-editor-lift` carries a Coach PROPOSAL and its `ACCEPT` on a
+    // user-set one, which is the only kind of goal a proposal can exist
+    // against (owner answer 3 — Coach may ask, never overwrite). The lever
+    // sets are visible one chip-tap apart in a build; the branch that
+    // decides whether Coach is explaining or asking is not.
+    //
+    // Hermetic, like every catalog id: `WeeklyGoalFixtures` holds integers,
+    // strings and two fixed epoch seconds, and the editor is handed
+    // `loadsCatalog: false` so the one network call it can make is off.
+    // Nothing here reads `AppState`, a repository or the clock.
+    //
+    // Proof authority: `docs/design/frame-map.json` continues the free range
+    // the plan reserves (83-91, after the addendum's 81-82), so
+    // `parity_diff.js` logs `skip <id>: no proof frame` until something is
+    // rendered into `docs/design/mockups/` — the same posture the v3 ten and
+    // the 08 addendum ship with. FLOOR is NOT bumped here: integration task
+    // I3 bumps it once, for all ten new ids, because a stream branch that
+    // raises the floor before its ids exist on the integration branch turns
+    // CI red for the other three streams.
+
+    private var content_homeGoalStripMuscleSets: some View {
+        WeeklyGoalStripFrame(kind: .muscleSets, progress: WeeklyGoalFixtures.muscleSets)
+    }
+
+    private var content_homeGoalStripDistance: some View {
+        WeeklyGoalStripFrame(kind: .distance, progress: WeeklyGoalFixtures.distance)
+    }
+
+    private var content_homeGoalStripSessions: some View {
+        WeeklyGoalStripFrame(kind: .sessionsOfType, progress: WeeklyGoalFixtures.sessions)
+    }
+
+    private var content_homeGoalStripDays: some View {
+        WeeklyGoalStripFrame(kind: .days, progress: WeeklyGoalFixtures.days)
+    }
+
+    private var content_homeGoalStripLift: some View {
+        WeeklyGoalStripFrame(kind: .lift, progress: WeeklyGoalFixtures.lift)
+    }
+
+    private var content_homeGoalStripMet: some View {
+        WeeklyGoalStripFrame(kind: .muscleSets, progress: WeeklyGoalFixtures.met)
+    }
+
+    /// The one state where `kind` is nil — the week before Coach has
+    /// detected anything, which is the only week the invitation line can be
+    /// seen in. `.init()` rather than a fixture: the strip renders no
+    /// numbers here, and passing some would suggest it might.
+    private var content_homeGoalStripEmpty: some View {
+        WeeklyGoalStripFrame(kind: nil, progress: WeeklyGoalProgress())
+    }
+
+    private var content_homeGoalEditor: some View {
+        WeeklyGoalEditorSheet(goal: WeeklyGoalFixtures.editorGoal,
+                              userID: WeeklyGoalFixtures.editorUserID,
+                              weekStart: WeeklyGoalFixtures.editorWeekStart,
+                              weeklySessionGoal: WeeklyGoalFixtures.editorWeeklySessionGoal,
+                              focusLifts: WeeklyGoalFixtures.focusLifts,
+                              loadsCatalog: false,
+                              today: WeeklyGoalFixtures.editorToday,
+                              unitOverride: WeeklyGoalFixtures.editorUnit)
+    }
+
+    private var content_homeGoalEditorLift: some View {
+        WeeklyGoalEditorSheet(goal: WeeklyGoalFixtures.editorLiftGoal,
+                              userID: WeeklyGoalFixtures.editorUserID,
+                              weekStart: WeeklyGoalFixtures.editorWeekStart,
+                              proposal: WeeklyGoalFixtures.editorProposal,
+                              weeklySessionGoal: WeeklyGoalFixtures.editorWeeklySessionGoal,
+                              focusLifts: WeeklyGoalFixtures.focusLifts,
+                              loadsCatalog: false,
+                              today: WeeklyGoalFixtures.editorToday,
+                              unitOverride: WeeklyGoalFixtures.editorUnit)
+    }
+
+    // MARK: - Calendar & scheduling page (Stream D, frame 92)
+    //
+    // The page Home's calendar card opens, rendered from the v7 proof's own
+    // content (`04-calendar-scheduling-new-page.png`) so the capture and the
+    // frame the owner judged are comparable side by side.
+    //
+    // HERMETIC, and not by accident — the whole reason
+    // `CalendarSchedulingView` grew a `world` parameter. With one present it
+    // renders the resolved values below and never opens a socket, and every
+    // model object behind a destination (`session`, `enrollment`,
+    // `campaign`) is nil, so no row on this frame can push a lobby, delete a
+    // session, or install a swipe gesture. No `Date.now` anywhere: the days
+    // are fixture INTEGERS, the labels are fixture STRINGS, and the frame
+    // renders identically whatever day CI runs on.
+    //
+    // Wrapped in a `NavigationStack` for the same reason
+    // `content_campaignDetailJoined` is: the page sets `.navigationTitle`
+    // and a trailing toolbar item, both no-ops without one.
+    //
+    // Crew colours are `HomeV2Fixtures`' own picks, so the crew that reads
+    // as Push Crew on a Home frame reads as Push Crew here too: palette[4]
+    // (vermilion) for Push Crew's Tuesdays, palette[2] (reddish purple) for
+    // Legs Crew's Saturdays.
+    private var content_calendarScheduling: some View {
+        NavigationStack {
+            CalendarSchedulingView(completedSessions: [], upcomingSessions: [], groups: [],
+                                   world: Self.calendarFixtureWorld)
+        }
+    }
+
+    private static let calendarPushCrew = GSGroupColor.palette[4]
+    private static let calendarLegsCrew = GSGroupColor.palette[2]
+
+    /// September 2026 as the proof draws it: trained 1, 3, 4; yours 5, 7, 11,
+    /// 18, 20; crew 6, 9, 13, 16; today 5; the first row — this week — boxed.
+    ///
+    /// THREE cells will differ from the mock in a side-by-side, all on
+    /// purpose, so nobody goes looking for them in the code (review F8):
+    ///   * day 5 — the mock fills it white and rings it purple; here it is
+    ///     today, so it wears an accent ring (yours) inside a `theme.text`
+    ///     halo (today) on an unfilled boxed cell. A filled cell means
+    ///     TRAINED in this grid's own legend, and 5 is not.
+    ///   * day 13 — the mock rings it cyan, which in the legend means YOU;
+    ///     plan D5's fixture list puts 13 in the CREW set, and the plan is
+    ///     the binding text.
+    ///   * the ring hues — the mock uses purple and cyan. `GSGroupColor` is
+    ///     the Okabe-Ito palette, so Legs Crew is reddish-purple `#CC79A7`
+    ///     and Push Crew vermilion `#D55E00`. Matching the mock's hues would
+    ///     mean giving these two crews different colours here than they wear
+    ///     on every Home frame, which is the more expensive lie.
+    ///
+    /// `leadingBlanks: 0` and a Monday-first header are the PROOF's grid, not
+    /// September 2026's real one (the 1st was a Tuesday). The frame exists to
+    /// be compared against the mock the owner judged, and the arithmetic that
+    /// places a real month is production's, exercised by `derivedWorld`.
+    private static let calendarFixtureWorld = CalendarWorld(
+        month: CalendarMonthGrid.Month(
+            label: "September 2026",
+            weekdayLabels: ["M", "T", "W", "T", "F", "S", "S"],
+            dayCount: 30,
+            leadingBlanks: 0,
+            trained: [1, 3, 4],
+            scheduled: [5, 7, 11, 18, 20],
+            crew: [6: calendarLegsCrew, 9: calendarPushCrew,
+                   13: calendarLegsCrew, 16: calendarPushCrew],
+            today: 5,
+            selectedWeek: [1, 2, 3, 4, 5, 6, 7]
+        ),
+        legendCrewColor: calendarLegsCrew,
+        agenda: [
+            CalendarAgendaItem(
+                id: UUID(uuidString: "00000000-0000-0000-0000-0000000000C1")!,
+                dayNumber: 5, weekday: "FRI",
+                title: "Push A · 5:00 PM", repeats: false,
+                subtitle: "Push Crew · Powerhouse · you're in",
+                status: .checkedIn, session: nil
+            ),
+            CalendarAgendaItem(
+                id: UUID(uuidString: "00000000-0000-0000-0000-0000000000C2")!,
+                dayNumber: 6, weekday: "SAT",
+                title: "Lower B · 9:00 AM", repeats: true,
+                subtitle: "Legs Crew · repeats weekly",
+                status: nil, session: nil
+            ),
+            CalendarAgendaItem(
+                id: UUID(uuidString: "00000000-0000-0000-0000-0000000000C3")!,
+                dayNumber: 7, weekday: "SUN",
+                title: "Pull A · 10:00 AM", repeats: false,
+                subtitle: "Solo · from your block",
+                status: nil, session: nil
+            ),
+            // I4 fix-forward: was dayNumber 9/TUE, outside `selectedWeek`
+            // (1...7) — `agendaItems(weekStart:)` is a strict calendar week
+            // in production, so a real world can never list a row past its
+            // own boxed week. Moved onto day 7 alongside C3: two sessions on
+            // the same Sunday (a solo morning lift, a crew evening one) is a
+            // realistic day, unlike an agenda row a real week could not
+            // produce.
+            CalendarAgendaItem(
+                id: UUID(uuidString: "00000000-0000-0000-0000-0000000000C4")!,
+                dayNumber: 7, weekday: "SUN",
+                title: "Push B · 5:00 PM", repeats: false,
+                subtitle: "Push Crew · commit closes Sat 5 PM",
+                status: .commit, session: nil
+            ),
+        ],
+        block: CalendarBlockRow(text: "Coach block · week 2 of 6 · Tue, Thu, Sat",
+                                enrollment: nil, weeks: []),
+        campaigns: [
+            CalendarCampaignRow(
+                id: UUID(uuidString: "00000000-0000-0000-0000-0000000000CA")!,
+                text: "Fall Volume campaign · ends Sep 30 · you're at 61%",
+                campaign: nil
+            ),
+        ]
+    )
 }
 
 // MARK: - Profile fixture

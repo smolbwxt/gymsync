@@ -35,7 +35,7 @@ import SwiftUI
 // for one more strip on it: "variation 8 of the Home Screen is great. Maybe
 // above the join with code, we display the weekly muscle group goals, or
 // whatever goal the coach is tracking as a strip?" So 08a and 08b are
-// variation 08 with `HomeCoachTargetsStrip` inserted, and the ONLY thing
+// variation 08 with `HomeWeeklyGoalStrip` inserted, and the ONLY thing
 // that differs between them is where it sits — above the calendar, or above
 // the join card as the owner phrased it. They are a two-up pair of their
 // own: what is being judged is the fold, not the strip.
@@ -441,8 +441,8 @@ struct HomeV3TargetsAboveCalendarView: View {
                                detail: HomeV2Fixtures.crewPulseDetail)
                 .homeV3Strip()
 
-            HomeCoachTargetsStrip(targets: HomeV2Fixtures.coachTargets,
-                                  sessionsLeft: HomeV2Fixtures.crewNightSessionsLeft)
+            HomeWeeklyGoalStrip(kind: .muscleSets,
+                                progress: HomeV2Fixtures.coachTargetsProgress)
                 .homeV3Block()
 
             HomeV3Calendar(world: world)
@@ -485,8 +485,8 @@ struct HomeV3TargetsAboveJoinView: View {
             HomeV3Calendar(world: world)
                 .homeV3Strip()
 
-            HomeCoachTargetsStrip(targets: HomeV2Fixtures.coachTargets,
-                                  sessionsLeft: HomeV2Fixtures.crewNightSessionsLeft)
+            HomeWeeklyGoalStrip(kind: .muscleSets,
+                                progress: HomeV2Fixtures.coachTargetsProgress)
                 .homeV3Block()
 
             HomeV2JoinCodeCard()
