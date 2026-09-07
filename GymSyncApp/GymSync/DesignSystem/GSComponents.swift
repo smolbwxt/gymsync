@@ -1985,9 +1985,13 @@ struct GSVoiceCoachMark: View {
                 Text("Tap or hold to talk")
                     .font(GSFont.bold(15, relativeTo: .headline))
                     .foregroundStyle(theme.text)
+                // First-run instructional copy at 12pt — it exists to be
+                // READ, so it carries neutral800, the only neutral that
+                // clears WCAG AA (4.5:1) against `raised3DFace` on EVERY
+                // palette. `theme.neutral500` measured 2.13:1 on Onyx here.
                 Text("You're muted until you open your mic. Tap to keep it open hands-free, or hold for walkie-talkie. Nothing is recorded.")
                     .font(GSFont.body(12, relativeTo: .caption))
-                    .foregroundStyle(theme.neutral500)
+                    .foregroundStyle(theme.neutral800)
                 Button(action: onDismiss) {
                     Text("Got it")
                         .font(GSFont.bold(12, relativeTo: .caption))
