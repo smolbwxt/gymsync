@@ -1996,11 +1996,18 @@ struct CatalogHostView: View {
                 subtitle: "Solo · from your block",
                 status: nil, session: nil
             ),
+            // I4 fix-forward: was dayNumber 9/TUE, outside `selectedWeek`
+            // (1...7) — `agendaItems(weekStart:)` is a strict calendar week
+            // in production, so a real world can never list a row past its
+            // own boxed week. Moved onto day 7 alongside C3: two sessions on
+            // the same Sunday (a solo morning lift, a crew evening one) is a
+            // realistic day, unlike an agenda row a real week could not
+            // produce.
             CalendarAgendaItem(
                 id: UUID(uuidString: "00000000-0000-0000-0000-0000000000C4")!,
-                dayNumber: 9, weekday: "TUE",
+                dayNumber: 7, weekday: "SUN",
                 title: "Push B · 5:00 PM", repeats: false,
-                subtitle: "Push Crew · commit closes Mon 5 PM",
+                subtitle: "Push Crew · commit closes Sat 5 PM",
                 status: .commit, session: nil
             ),
         ],
