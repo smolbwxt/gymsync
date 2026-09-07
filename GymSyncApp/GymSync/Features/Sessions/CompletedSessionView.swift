@@ -246,11 +246,23 @@ struct CompletedSessionView: View {
                     .foregroundStyle(theme.text)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
-                    .frame(minHeight: 44)
-                    .background(theme.surface)
+                    // 37 pt face + the style's 7 pt lip = the same 44 pt
+                    // footprint this control had, the way GSPrimaryButtonStyle
+                    // documents the floor for extruded controls.
+                    .frame(minHeight: 44 - 7)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                // Review B1 F9: T1.7's `bg.opacity(0.15) -> theme.surface`
+                // mapping gave this tappable a face DARKER than the raised
+                // header it sits on (onyx: surface #16181D under
+                // raised3DFace #2A303A), so it read as a recess — and design
+                // language §1 forbids `surface` as a face outright. It is the
+                // sinking raised pair now: the style paints face and lip, so
+                // the label sheds its own fill (a flat fill over the face
+                // would hide the extrusion) and keeps its 44 pt footprint as
+                // face + lip.
+                .buttonStyle(.gs3D(face: theme.raised3DFace, lip: theme.raised3DLip,
+                                   cornerRadius: GSMetrics.radiusSm))
             }
 
             if liveSession.durationWasEdited {
