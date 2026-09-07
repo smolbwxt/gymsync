@@ -207,6 +207,12 @@ struct CreateGroupView: View {
                 .frame(width: 44, height: 44)
                 .clipped()
         } else {
+            // No `fill:`/`ink:` here, deliberately (review B1 F6): the crew
+            // identity colour is `GSGroupColor.color(for: group.id)`, and this
+            // group has no id yet — it is created on submit (see `create()`).
+            // There is nothing stable to key the palette on, so the preview
+            // keeps GSInitialsAvatar's neutral default and picks up its real
+            // colour the moment the crew exists.
             GSInitialsAvatar(
                 name: name.trimmingCharacters(in: .whitespaces).isEmpty
                     ? "New Group" : name,
