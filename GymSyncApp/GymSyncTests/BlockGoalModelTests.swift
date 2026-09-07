@@ -71,4 +71,23 @@ final class BlockGoalModelTests: XCTestCase {
         XCTAssertEqual(goal.updatedAt, now)
         XCTAssertNil(goal.outcome)
     }
+
+    // MARK: - The stub (task 0.4)
+
+    func testTheStubIsHermeticAndConsistent() async {
+        let repository = StubBlockGoalRepository()
+        let goal = await repository.activeGoal()
+        let ladder = await repository.ladder(goalID: StubBlockGoalRepository.fixtureGoalID)
+        let page = await repository.page(goalID: StubBlockGoalRepository.fixtureGoalID)
+
+        XCTAssertEqual(goal?.id, StubBlockGoalRepository.fixtureGoalID)
+        XCTAssertEqual(ladder?.rungs.count, 8, "eight rungs for an eight-week block")
+        XCTAssertEqual(page?.rows.count, ladder?.rungs.count,
+                       "the page has one row per rung — the fixtures cannot describe two blocks")
+        XCTAssertEqual(page?.weekCount, ladder?.rungs.count)
+        XCTAssertEqual(ladder?.rungs.filter { $0.status == .current }.count, 1,
+                       "exactly one current rung")
+        XCTAssertEqual(page?.rows.filter(\.isDeload).count, 1,
+                       "the wave's deload is a rung, not smoothed away")
+    }
 }
