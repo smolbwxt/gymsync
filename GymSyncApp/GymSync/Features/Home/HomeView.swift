@@ -116,6 +116,13 @@ struct HomeView: View {
     /// Everything the goal strip renders, already resolved upstream — no
     /// view on this page does goal arithmetic.
     @State private var goalProgress: WeeklyGoalProgress = .init()
+    /// Coach's standing suggestion for a goal the athlete set themselves —
+    /// owner answer 3's "propose" half (final review finding 2). Non-nil only
+    /// when this week's row is `source = user` AND Coach's own detection says
+    /// something meaningfully different (`WeeklyGoalProposalRule`). It is the
+    /// Coach tile's rung (a) and the editor's `proposal:`; nothing stores it,
+    /// so it simply stops being true when either side changes.
+    @State private var goalProposal: WeeklyGoalEditorSheet.Proposal?
     /// False until the first goal fetch lands, whatever it found. Gates the
     /// strip's SKELETON — the difference between "no goal yet" (the
     /// invitation) and "we haven't asked yet" (a shape, not a gap).
@@ -260,8 +267,14 @@ struct HomeView: View {
                                          userID: userID,
                                          weekStart: WeekMath.weekStartString(),
                                          repository: goalRepository,
+                                         proposal: goalProposal,
                                          weeklySessionGoal: goalEditorWeeklySessionGoal) { updated in
                         weeklyGoal = updated
+                        // Whatever now stands is the answer to the question
+                        // Coach asked, so the standing proposal is spent. The
+                        // next refresh re-derives one if there is still a
+                        // difference worth naming.
+                        goalProposal = nil
                         Task {
                             if let updated {
                                 goalProgress = await goalRepository.progress(for: updated)
@@ -805,11 +818,14 @@ struct HomeView: View {
     // `CoachHomeView` builds its own from the thread. The precedence below
     // is the plan's, first rung that produces text:
     //
-    //   (a) a proposed change to a user-set goal — ABSENT. The plan names
-    //       `WeeklyGoalRepository.propose(_:)`, which the Task 0 interface
-    //       does not have (`goal`, `progress`, `save`, `clearToCoach`), and
-    //       Stream A owns that file. It arrives at integration I1; the rung
-    //       is written here as a comment rather than invented as a guess.
+    //   (a) a proposed change to a user-set goal — WIRED (final review
+    //       finding 2). `fetchWeeklyGoal` asks
+    //       `WeeklyGoalRepository.propose(weekStart:)` whenever this week's
+    //       row is `source = user`, and `WeeklyGoalProposalRule` decides
+    //       whether Coach's reading differs enough to say anything. It sits
+    //       at the top of the precedence because it is the one rung the
+    //       athlete can ACT on: the same `Proposal` is handed to
+    //       `WeeklyGoalEditorSheet`, where ACCEPT switches the levers to it.
     //   (b) today's routine, as a first-person line;
     //   (c) the block's week;
     //   (d) a static invitation.
@@ -817,6 +833,7 @@ struct HomeView: View {
     // One sentence, first person, Coach's own voice (design language rule 7).
 
     private var coachSentence: String {
+        if let proposal = goalProposal { return proposal.sentence }
         if let line = todaysRoutineSentence { return line }
         if let line = blockWeekSentence { return line }
         return "Tell me how the week's going and I'll shape the next one."
@@ -1399,6 +1416,7 @@ struct HomeView: View {
         friendsLive = friends
         weeklyGoal = goal.goal
         goalProgress = goal.progress
+        goalProposal = goal.proposal
         goalLoaded = true
         statsLoading = false
 
@@ -1558,17 +1576,55 @@ struct HomeView: View {
     /// below is the second half, `WeeklyGoalWriteRule.shouldDetectOnRead` the
     /// first.
     ///
+    /// **AND COACH ASKS HERE** (final review finding 2). When the row that
+    /// stands is the athlete's own, `WeeklyGoalWriteRule` correctly freezes
+    /// Coach out of writing — and owner answer 3's other half is that it may
+    /// still propose. `propose(weekStart:)` derives what Coach would set,
+    /// writes nothing, and `WeeklyGoalProposalRule` decides whether the
+    /// difference is worth a sentence. Stateless by ruling: no storage, no
+    /// dismissal, recomputed every refresh.
+    ///
+    /// THE COST, NAMED. `propose` is a full detection — the same six reads
+    /// `detect` makes — and it runs on every refresh of a `user` week. It is
+    /// the price of computing the answer rather than storing it; a `coach`
+    /// week (which is most of them, and every week Coach itself filled) pays
+    /// nothing.
+    ///
     /// Signed out returns the empty progress, which renders the invitation —
     /// never an error and never a stuck skeleton.
-    private func fetchWeeklyGoal(userID: UUID?) async -> (goal: WeeklyGoal?, progress: WeeklyGoalProgress) {
-        guard userID != nil else { return (nil, WeeklyGoalProgress()) }
+    private func fetchWeeklyGoal(userID: UUID?) async -> (goal: WeeklyGoal?,
+                                                          progress: WeeklyGoalProgress,
+                                                          proposal: WeeklyGoalEditorSheet.Proposal?) {
+        guard userID != nil else { return (nil, WeeklyGoalProgress(), nil) }
         let week = WeekMath.weekStartString()
         var standing = await goalRepository.goal(weekStart: week)
         if standing == nil {
             standing = await goalRepository.detectIfMissing(weekStart: week)
         }
-        guard let goal = standing else { return (nil, WeeklyGoalProgress()) }
-        return (goal, await goalRepository.progress(for: goal))
+        guard let goal = standing else { return (nil, WeeklyGoalProgress(), nil) }
+        let progress = await goalRepository.progress(for: goal)
+        guard goal.source == .user,
+              let coach = await goalRepository.propose(weekStart: week) else {
+            return (goal, progress, nil)
+        }
+        // The display unit is `ThemeStore`'s, read the way
+        // `LiveWeeklyGoalRepository.detect` reads it — the store is
+        // MainActor-isolated and this fetch is not.
+        let unit = await MainActor.run { ThemeStore.shared.weightUnit }
+        return (goal, progress, coachProposal(user: goal, coach: coach, unit: unit))
+    }
+
+    /// Coach's suggestion as the editor's own input, or nothing at all when
+    /// the two readings agree closely enough to leave the athlete alone.
+    /// `WeeklyGoalProposalRule` owns the threshold; this only shapes it.
+    private func coachProposal(user: WeeklyGoal,
+                               coach: WeeklyGoal,
+                               unit: WeightUnit) -> WeeklyGoalEditorSheet.Proposal? {
+        guard WeeklyGoalProposalRule.isMeaningful(user: user, coach: coach) else { return nil }
+        return WeeklyGoalEditorSheet.Proposal(
+            kind: coach.kind,
+            sentence: WeeklyGoalProposalRule.sentence(for: coach, unit: unit),
+            params: coach.params)
     }
 
     private func fetchOwnedRoutines(userID: UUID?) async -> [Routine]? {

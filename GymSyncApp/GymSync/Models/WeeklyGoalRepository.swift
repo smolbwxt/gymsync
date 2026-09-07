@@ -27,23 +27,29 @@ protocol WeeklyGoalRepository: Sendable {
     /// Detect and persist this week's goal when the read above found none
     /// (final review finding 1). Returns the goal now in effect.
     func detectIfMissing(weekStart: String) async -> WeeklyGoal?
+
+    /// What Coach WOULD set for `weekStart`, for the Coach tile's line —
+    /// owner answer 3's "propose" half (final review finding 2).
+    /// **Writes nothing, ever.**
+    func propose(weekStart: String) async -> WeeklyGoal?
 }
 
-/// A repository that cannot detect, does not detect.
+/// A repository that cannot detect, does not detect — and does not propose.
 ///
 /// nil is exactly the right answer for every FIXTURE binding:
-/// `StubWeeklyGoalRepository` already returns a goal from
-/// `goal(weekStart:)`, so Home never asks it — and if a future stub ever did
-/// return nil, this default guarantees a catalog frame still cannot reach a
-/// clock, a detector or a write. Only `LiveWeeklyGoalRepository` overrides
-/// it.
+/// `StubWeeklyGoalRepository` returns a `coach` goal from
+/// `goal(weekStart:)`, so Home never asks it either question — and if a
+/// future stub ever did return a `user` row or nil, these defaults guarantee
+/// a catalog frame still cannot reach a clock, a detector or a write. Only
+/// `LiveWeeklyGoalRepository` overrides them.
 ///
-/// Declared as a REQUIREMENT with a default rather than as an extension-only
-/// member, so the call dispatches through the witness table: Home holds an
+/// Declared as REQUIREMENTS with defaults rather than as extension-only
+/// members, so the calls dispatch through the witness table: Home holds an
 /// `any WeeklyGoalRepository`, and an extension-only method on an existential
 /// would silently run the default even against the live repository.
 extension WeeklyGoalRepository {
     func detectIfMissing(weekStart: String) async -> WeeklyGoal? { nil }
+    func propose(weekStart: String) async -> WeeklyGoal? { nil }
 }
 
 /// What the strip renders. Kind-agnostic on purpose: the strip switches on
