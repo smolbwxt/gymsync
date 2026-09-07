@@ -145,6 +145,16 @@ struct LiveWeeklyGoalRepository: WeeklyGoalRepository, WeeklyGoalCoachWriter {
 
     /// Removes this week's row and writes nothing back. `clearToCoach`'s
     /// first half, and the only way a test can undo what it wrote.
+    ///
+    /// **INTERNAL ONLY BECAUSE `WeeklyGoalLiveRepositoryTests` NEEDS IT** for
+    /// teardown (final review finding 10; `upsert` went `private` in the same
+    /// pass, having no such caller). It is NOT a production door: nothing
+    /// outside this file may write or delete a `weekly_goals` row except
+    /// through `save` (the athlete's own, always `source = user`),
+    /// `clearToCoach`, `writeDetectedGoal` or `detectIfMissing` — and the
+    /// last two consult `WeeklyGoalWriteRule` first, which is the whole of
+    /// owner answer 3. A future caller that deletes a row here to write over
+    /// it would route around that rule without ever mentioning it.
     func deleteRow(weekStart: String) async {
         guard let userID = await SupabaseService.shared.currentUserID() else { return }
         do {
@@ -161,8 +171,14 @@ struct LiveWeeklyGoalRepository: WeeklyGoalRepository, WeeklyGoalCoachWriter {
 
     /// Writes a row exactly as given. Shared by `save` and by A11's Coach
     /// write path, which has already decided it is allowed to write.
+    ///
+    /// **PRIVATE** (final review finding 10). `WeeklyGoalWriteRule`'s whole
+    /// premise is that one function consults `source` before any Coach write;
+    /// an internal `upsert` let a future caller put a `coach` row over a
+    /// `user` one without ever passing through it. No test calls it, so the
+    /// seam costs nothing.
     @discardableResult
-    func upsert(_ goal: WeeklyGoal) async -> Bool {
+    private func upsert(_ goal: WeeklyGoal) async -> Bool {
         do {
             try await client
                 .from("weekly_goals")
