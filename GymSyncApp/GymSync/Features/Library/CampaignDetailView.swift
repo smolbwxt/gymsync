@@ -307,34 +307,23 @@ struct CampaignDetailView: View {
         }
     }
 
+    // The shared `GSLeaderboardRow` (DesignSystem/GSComponents.swift). The
+    // caller's own row still answers "where am I?" at a glance, but with the
+    // neutral tint every other board uses — the accent-soft fill (and its
+    // conditional corner radius) is retired with the accent-discipline sweep
+    // 2026-09-06, since a rank is not the screen's act.
     private func leaderboardRow(rank: Int, row: CampaignLeaderboardRow) -> some View {
-        // Redesign (deep-screens proof): the caller's own row is highlighted
-        // with an accent-soft rounded fill so "where am I?" answers at a glance.
         let isMe = row.userID == myParticipation?.userID
-        return HStack(spacing: 10) {
-            Text("\(rank)")
-                .font(GSFont.heading(15, relativeTo: .body))
-                .foregroundStyle(rank == 1 ? theme.accent : theme.neutral700)
-                .frame(width: 18, alignment: .leading)
-
-            GSInitialsAvatar(name: row.username, avatarURL: row.avatarURL, size: 32)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(isMe ? "You" : row.username)
-                    .font(GSFont.bold(13, relativeTo: .body))
-                    .foregroundStyle(theme.text)
-                Text("\(formattedNumber(Units.fromPounds(row.volumeLifted, to: ThemeStore.shared.weightUnit))) \(ThemeStore.shared.weightUnit.label)")
-                    .font(GSFont.body(11, relativeTo: .caption))
-                    .foregroundStyle(theme.neutral500)
-            }
-
-            Spacer()
+        let unit = ThemeStore.shared.weightUnit
+        return GSLeaderboardRow(
+            rank: rank,
+            name: row.username,
+            avatarURL: row.avatarURL,
+            subtitle: "\(formattedNumber(Units.fromPounds(row.volumeLifted, to: unit))) \(unit.label)",
+            isYou: isMe
+        ) {
+            EmptyView()
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(isMe ? theme.accent100 : Color.clear)
-        .cornerRadius(isMe ? 12 : 0)
-        .padding(.horizontal, isMe ? 8 : 0)
     }
 
     // MARK: - Join / Leave CTA

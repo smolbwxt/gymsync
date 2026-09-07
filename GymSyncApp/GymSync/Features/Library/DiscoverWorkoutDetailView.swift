@@ -558,36 +558,25 @@ struct DiscoverWorkoutDetailView: View {
         .buttonStyle(.plain)
     }
 
+    // The shared `GSLeaderboardRow` (DesignSystem/GSComponents.swift).
+    // `horizontalPadding: 0` because this screen's whole VStack already
+    // carries the 16 pt inset; `nameSymbol` keeps Flow 6's "edited" indicator
+    // (`:836`) beside the name — session duration was corrected post-hoc,
+    // time_seconds stays locked to the original. SF pencil (emoji sweep §7).
     private func leaderboardRow(rank: Int, entry: LeaderboardEntryRow) -> some View {
-        HStack(spacing: 10) {
-            Text("\(rank)")
-                .font(GSFont.heading(15, relativeTo: .body))
-                .foregroundStyle(rank == 1 ? theme.accent : theme.neutral700)
-                .frame(width: 20, alignment: .leading)
-
-            GSInitialsAvatar(name: entry.username, avatarURL: entry.avatarURL, size: 32)
-
-            Text(entry.username)
-                .font(GSFont.bold(13, relativeTo: .body))
-                .foregroundStyle(theme.text)
-
-            if entry.isEdited {
-                // Flow 6 (`:836`): an "edited" indicator next to the entry —
-                // session duration was corrected post-hoc, time_seconds stays
-                // locked to the original. SF pencil (emoji sweep, spec §7).
-                Image(systemName: "pencil")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(theme.neutral500)
-                    .accessibilityLabel("Edited")
-            }
-
-            Spacer()
-
+        GSLeaderboardRow(
+            rank: rank,
+            name: entry.username,
+            avatarURL: entry.avatarURL,
+            rankWidth: 20,
+            horizontalPadding: 0,
+            nameSymbol: entry.isEdited ? "pencil" : nil,
+            nameSymbolLabel: "Edited"
+        ) {
             Text(metricValueText(entry))
                 .font(GSFont.body(12, relativeTo: .caption))
                 .foregroundStyle(theme.neutral500)
         }
-        .padding(.vertical, 10)
     }
 
     /// Optimistic star toggle — reverts on failure.

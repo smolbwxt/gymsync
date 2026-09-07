@@ -625,6 +625,124 @@ public struct GSStatTile: View {
     }
 }
 
+// MARK: - GSLeaderboardRow
+
+/// The one leaderboard row. Rank is never accent (design language §2: accent is
+/// the primary action, an invitation, the current pager item, the live talk pill —
+/// a rank number is none of those). "You" is marked by the neutral tint the recap
+/// screens already established, never by colour on the number.
+///
+/// Replaces six independent copies of the same shape that had each invented the
+/// same non-compliant decoration (accent rank for #1, accent avatar tile):
+/// `TopLiftersView.leaderboardRow`, `CampaignDetailView.leaderboardRow`,
+/// `DiscoverWorkoutDetailView.leaderboardRow`, `GroupRecapView.leaderboardRow`,
+/// `CompletedSessionView.participantRow`, `SessionRecapView.participantRow`.
+public struct GSLeaderboardRow<Trailing: View>: View {
+    @Environment(\.gsTheme) private var theme
+
+    private let rank: Int
+    private let name: String
+    private let avatarURL: URL?
+    private let initials: String?
+    private let subtitle: String?
+    private let isYou: Bool
+    private let rankWidth: CGFloat
+    private let horizontalPadding: CGFloat
+    private let nameSymbol: String?
+    private let nameSymbolLabel: String?
+    // Built eagerly, matching `GSCard`'s idiom in this file — the closure
+    // stays non-escaping.
+    private let trailing: Trailing
+
+    /// `name` is the lifter's own name — the row prints "You" itself when
+    /// `isYou`, so the avatar keeps that lifter's initials either way.
+    ///
+    /// `initials` overrides the avatar's name-derived initials for a caller
+    /// whose model already carries them (`GroupRecapView.LeaderboardRow`).
+    ///
+    /// `rankWidth` / `horizontalPadding` exist only so the six rows this
+    /// component replaced keep their exact metrics: 18 pt is the common rank
+    /// column, and a screen whose section already carries a 16 pt inset passes
+    /// `horizontalPadding: 0`.
+    ///
+    /// `nameSymbol` draws one SF Symbol directly after the name (the Discover
+    /// board's "edited" pencil).
+    public init(
+        rank: Int,
+        name: String,
+        avatarURL: URL? = nil,
+        initials: String? = nil,
+        subtitle: String? = nil,
+        isYou: Bool = false,
+        rankWidth: CGFloat = 18,
+        horizontalPadding: CGFloat = 16,
+        nameSymbol: String? = nil,
+        nameSymbolLabel: String? = nil,
+        @ViewBuilder trailing: () -> Trailing
+    ) {
+        self.rank = rank
+        self.name = name
+        self.avatarURL = avatarURL
+        self.initials = initials
+        self.subtitle = subtitle
+        self.isYou = isYou
+        self.rankWidth = rankWidth
+        self.horizontalPadding = horizontalPadding
+        self.nameSymbol = nameSymbol
+        self.nameSymbolLabel = nameSymbolLabel
+        self.trailing = trailing()
+    }
+
+    public var body: some View {
+        HStack(spacing: 10) {
+            Text("\(rank)")
+                .font(GSFont.heading(15, relativeTo: .body))
+                .foregroundStyle(theme.neutral700)
+                .frame(width: rankWidth, alignment: .leading)
+
+            avatar
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(isYou ? "You" : name)
+                        .font(GSFont.bold(13, relativeTo: .body))
+                        .foregroundStyle(theme.text)
+                        .lineLimit(1)
+                    if let nameSymbol {
+                        Image(systemName: nameSymbol)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(theme.neutral500)
+                            .accessibilityLabel(nameSymbolLabel ?? nameSymbol)
+                    }
+                }
+                if let subtitle {
+                    Text(subtitle)
+                        .font(GSFont.body(11, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral500)
+                }
+            }
+
+            Spacer()
+
+            trailing
+        }
+        .padding(.horizontal, horizontalPadding)
+        .padding(.vertical, 10)
+        // The cross-screen "which row is me" token GroupRecapView and
+        // TopLiftersView already documented as the precedent.
+        .background(isYou ? theme.neutral400.opacity(0.2) : Color.clear)
+    }
+
+    @ViewBuilder
+    private var avatar: some View {
+        if let initials {
+            GSInitialsAvatar(initials: initials, avatarURL: avatarURL, size: 32)
+        } else {
+            GSInitialsAvatar(name: name, avatarURL: avatarURL, size: 32)
+        }
+    }
+}
+
 // MARK: - GSMiniTrendCard
 //
 // Compact sparkline trend card: uppercase tracked kicker + optional delta

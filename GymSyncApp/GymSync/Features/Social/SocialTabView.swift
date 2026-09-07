@@ -631,6 +631,19 @@ struct GSInitialsAvatar: View {
         self.ink = ink
     }
 
+    /// Precomputed-initials overload (2026-09-06): the doc comment above
+    /// dropped this while nothing needed it. `GSLeaderboardRow` does —
+    /// `GroupRecapView.LeaderboardRow` carries its own `initials` alongside a
+    /// display name that is literally "You" for the caller's row, so deriving
+    /// initials from that name would print "Y" where the crew sees "AJ".
+    init(initials: String, avatarURL: URL? = nil, size: CGFloat = 34, fill: Color? = nil, ink: Color? = nil) {
+        self.initialsText = initials
+        self.avatarURL = avatarURL
+        self.size = size
+        self.fill = fill
+        self.ink = ink
+    }
+
     var body: some View {
         // Redesign: rounded avatar tile (was zero-radius square).
         Group {

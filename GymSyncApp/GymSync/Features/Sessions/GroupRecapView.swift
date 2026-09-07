@@ -360,49 +360,25 @@ struct GroupRecapView: View {
         }
     }
 
+    // The shared `GSLeaderboardRow` (DesignSystem/GSComponents.swift) — this
+    // file's own copy of that shape (and its accent #1 rank + accent avatar
+    // tile) retires with the accent-discipline sweep 2026-09-06. The row's
+    // "You" highlight is the same neutral token as before; `initials:` keeps
+    // this board's precomputed initials, which its display name ("You" for the
+    // caller) could not produce.
     private func leaderboardRow(rank: Int, row: LeaderboardRow) -> some View {
-        HStack(spacing: 10) {
-            Text("\(rank)")
-                .font(GSFont.heading(15, relativeTo: .body))
-                .foregroundStyle(rank == 1 ? theme.accent : theme.neutral700)
-                .frame(width: 18, alignment: .leading)
-
-            ZStack {
-                Rectangle()
-                    .fill(rank == 1 ? theme.accent : theme.neutral400)
-                    .frame(width: 32, height: 32)
-                Text(row.initials)
-                    .font(GSFont.bold(11, relativeTo: .caption2))
-                    .foregroundStyle(theme.bg)
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(row.name)
-                    .font(GSFont.bold(13, relativeTo: .body))
-                    .foregroundStyle(theme.text)
-
-                HStack(spacing: 6) {
-                    Text(row.volumeText)
-                        .font(GSFont.body(11, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral500)
-                    if row.prCount > 0 {
-                        Text("· \(row.prCount) PR\(row.prCount == 1 ? "" : "s")")
-                            .font(GSFont.body(11, relativeTo: .caption))
-                            .foregroundStyle(theme.neutral500)
-                    }
-                }
-            }
-
-            Spacer()
-
+        GSLeaderboardRow(
+            rank: rank,
+            name: row.name,
+            initials: row.initials,
+            subtitle: row.prCount > 0
+                ? "\(row.volumeText) · \(row.prCount) PR\(row.prCount == 1 ? "" : "s")"
+                : row.volumeText,
+            isYou: row.isYou
+        ) {
+            // Kudos emoji are content (design language §2), so the chip stays.
             GSTag(text: "💪 \(kudosCounts[row.id, default: 0])", style: .accent)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        // "You" row highlight (proof-frame-08.png's tinted second row) —
-        // exact hex isn't specified anywhere, this is a system-styling call
-        // using an existing theme token rather than a new literal color.
-        .background(row.isYou ? theme.neutral400.opacity(0.2) : Color.clear)
     }
 
     // MARK: - YOUR PR THIS SESSION card (SessionRecapView.yourPRCallout's idiom)

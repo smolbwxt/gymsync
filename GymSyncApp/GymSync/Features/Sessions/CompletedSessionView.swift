@@ -306,45 +306,22 @@ struct CompletedSessionView: View {
 
     // MARK: - Participant row
 
+    // The shared `GSLeaderboardRow` (DesignSystem/GSComponents.swift) — the
+    // local rank/initials-tile block (accent for #1) retires with the
+    // accent-discipline sweep 2026-09-06, and the avatar becomes the app's one
+    // avatar component, so a lifter with a photo now shows it here too.
     private func participantRow(rank: Int, stat: ParticipantStats) -> some View {
-        HStack(spacing: 10) {
-            Text("\(rank)")
-                .font(GSFont.heading(15, relativeTo: .body))
-                .foregroundStyle(rank == 1 ? theme.accent : theme.neutral700)
-                .frame(width: 18, alignment: .leading)
-
-            let initials = String(stat.profile.username.prefix(2)).uppercased()
-            ZStack {
-                Rectangle()
-                    .fill(rank == 1 ? theme.accent : theme.neutral400)
-                    .frame(width: 32, height: 32)
-                Text(initials)
-                    .font(GSFont.bold(11, relativeTo: .caption2))
-                    .foregroundStyle(theme.bg)
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(stat.profile.username)
-                    .font(GSFont.bold(13, relativeTo: .body))
-                    .foregroundStyle(theme.text)
-
-                HStack(spacing: 6) {
-                    Text("\(stat.setCount) sets")
-                        .font(GSFont.body(11, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral500)
-                    if stat.volume > 0 {
-                        Text("·")
-                            .foregroundStyle(theme.neutral500)
-                            .font(GSFont.body(11, relativeTo: .caption))
-                        Text("\(formatVolume(Units.fromPounds(stat.volume, to: ThemeStore.shared.weightUnit))) \(ThemeStore.shared.weightUnit.label)")
-                            .font(GSFont.body(11, relativeTo: .caption))
-                            .foregroundStyle(theme.neutral500)
-                    }
-                }
-            }
-
-            Spacer()
-
+        let unit = ThemeStore.shared.weightUnit
+        var subtitle = "\(stat.setCount) sets"
+        if stat.volume > 0 {
+            subtitle += " · \(formatVolume(Units.fromPounds(stat.volume, to: unit))) \(unit.label)"
+        }
+        return GSLeaderboardRow(
+            rank: rank,
+            name: stat.profile.username,
+            avatarURL: stat.profile.avatarURL,
+            subtitle: subtitle
+        ) {
             VStack(alignment: .trailing, spacing: 4) {
                 let prs = prCount(for: stat.participant.userID)
                 if prs > 0 {
@@ -359,8 +336,6 @@ struct CompletedSessionView: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
     }
 
     private func prCount(for userID: UUID) -> Int {
