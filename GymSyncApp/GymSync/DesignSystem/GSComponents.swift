@@ -1554,13 +1554,23 @@ struct PTTDockRow: View {
     //
     // The bar's chrome IS the control now: a full-width extruded pill —
     // radius 999 (the chips radius) on a 5pt lip (the tile lip) — filled
-    // with the theme's neutral raised pair at rest and SOLID ACCENT while
-    // transmitting, so the object you press is the object that goes live.
-    // The old `theme.surface` fill + `theme.divider` stroke are gone (the
-    // lip delineates, same reasoning as `GS3DCardStyle` retiring the card
-    // stroke). `mic()` is `EmptyView()` on the interactive path; only the
-    // non-interactive connecting/unavailable states still lead with a
+    // with the theme's neutral raised pair at rest and a SOLID ACCENT face
+    // while transmitting, so the object you press is the object that goes
+    // live. The old `theme.surface` fill + `theme.divider` stroke are gone
+    // (the lip delineates, same reasoning as `GS3DCardStyle` retiring the
+    // card stroke). `mic()` is `EmptyView()` on the interactive path; only
+    // the non-interactive connecting/unavailable states still lead with a
     // circle.
+    //
+    // Round-1 F2: the lip is now the SYSTEM's, not hand-rolled. Passing
+    // `face:` through to `.gs3DCard` means an accent face derives its lip
+    // the way every other accent extrusion in the app does — face over
+    // black 0.45 (`GS3DCardChrome.lipLayer` / `GS3DButtonStyle.lipLayer`) —
+    // and a nil face falls back to the theme's neutral raised pair. Before
+    // this, face and lip were BOTH `theme.accent` while transmitting, so
+    // the most-pressed control in the app was the only extrusion that went
+    // flat when it activated — and a flat extrusion is this language's word
+    // for "pressed", which is precisely backwards on a hands-free state.
 
     private func micAndBar<Mic: View, Bar: View>(
         @ViewBuilder mic: () -> Mic,
@@ -1570,11 +1580,9 @@ struct PTTDockRow: View {
             mic()
             bar()
                 .frame(maxWidth: .infinity, minHeight: 44)
-                .background(RoundedRectangle(cornerRadius: 999)
-                    .fill(isTransmitting ? theme.accent : theme.raised3DFace))
-                .padding(.bottom, 5)
-                .background(RoundedRectangle(cornerRadius: 999)
-                    .fill(isTransmitting ? theme.accent : theme.raised3DLip))
+                .gs3DCard(cornerRadius: 999,
+                          lipHeight: 5,
+                          face: isTransmitting ? theme.accent : nil)
         }
     }
 
