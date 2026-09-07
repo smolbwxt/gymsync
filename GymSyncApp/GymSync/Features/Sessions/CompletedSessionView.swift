@@ -79,7 +79,10 @@ struct CompletedSessionView: View {
             VStack(alignment: .leading, spacing: 0) {
 
                 // ── HEADER ────────────────────────────────────────────────
+                // 16 pt inset (accent-discipline sweep 2026-09-06): the header
+                // is a raised object now, not full-bleed page chrome.
                 headerSection
+                    .padding(.horizontal, 16)
                     .padding(.bottom, 14)
 
                 // Full-screen spinner only while the participant list is
@@ -203,6 +206,10 @@ struct CompletedSessionView: View {
 
     // MARK: - Header
 
+    // Accent discipline (design language §1/§2, 2026-09-06): the full-bleed
+    // accent slab becomes the app's static extruded card — an object, not
+    // page chrome — and the ink inverts. Every number and copy line is
+    // unchanged.
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .top) {
@@ -210,11 +217,11 @@ struct CompletedSessionView: View {
                     Text("DURATION")
                         .font(GSFont.bold(10, relativeTo: .caption2))
                         .tracking(1.4)
-                        .foregroundStyle(theme.bg.opacity(0.85))
+                        .foregroundStyle(theme.neutral500)
 
                     Text(durationString)
                         .font(.custom("Archivo-Bold", size: 34).monospacedDigit())
-                        .foregroundStyle(theme.bg)
+                        .foregroundStyle(theme.text)
                         .lineLimit(1)
                 }
 
@@ -229,11 +236,11 @@ struct CompletedSessionView: View {
                         Text("Edit")
                             .font(GSFont.bold(12, relativeTo: .caption))
                     }
-                    .foregroundStyle(theme.bg)
+                    .foregroundStyle(theme.text)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .frame(minHeight: 44)
-                    .background(theme.bg.opacity(0.15))
+                    .background(theme.surface)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -243,13 +250,13 @@ struct CompletedSessionView: View {
                 Text(auditLineText)
                     .font(GSFont.body(11, relativeTo: .caption))
                     .italic()
-                    .foregroundStyle(theme.bg.opacity(0.8))
+                    .foregroundStyle(theme.neutral500)
                     .padding(.top, 2)
             }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.accent)
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd, lipHeight: 7)
     }
 
     // MARK: - Aggregate stats row

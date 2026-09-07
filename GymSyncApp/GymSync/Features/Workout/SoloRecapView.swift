@@ -246,22 +246,26 @@ struct SoloRecapView: View {
         .padding(.top, 14)
     }
 
-    // Canvas: accent hero block — routine kicker, duration hero (52pt), subline, 3-cell stat row.
+    // Hero block — routine kicker, duration hero (52pt), subline, 3-cell stat
+    // row. Accent discipline (design language §1/§2, 2026-09-06): the
+    // full-bleed accent fill becomes the app's static extruded card, and the
+    // ink inverts (the numbers and copy are unchanged) so the one accent
+    // control on this screen is the Done button.
     private var hero: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(kicker)
                 .font(GSFont.bodyMedium(10, relativeTo: .caption2))
                 .tracking(1.4)
-                .foregroundStyle(theme.bg.opacity(0.85))
+                .foregroundStyle(theme.neutral500)
 
             Text(durationText)
                 .font(GSFont.heading(52, relativeTo: .largeTitle))
                 .tracking(-0.4)
-                .foregroundStyle(theme.bg)
+                .foregroundStyle(theme.text)
 
             Text(subline)
                 .font(GSFont.body(12, relativeTo: .caption))
-                .foregroundStyle(theme.bg.opacity(0.9))
+                .foregroundStyle(theme.neutral500)
 
             HStack(spacing: 8) {
                 heroStatCell(value: totalLbsText, label: "TOTAL \(unit.label.uppercased())")
@@ -272,19 +276,18 @@ struct SoloRecapView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.accent)
-        .cornerRadius(GSMetrics.radiusMd)   // redesign: rounded accent surface
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd, lipHeight: 7)
     }
 
     private func heroStatCell(value: String, label: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(value)
                 .font(GSFont.bold(20, relativeTo: .title3))
-                .foregroundStyle(theme.bg)
+                .foregroundStyle(theme.text)
             Text(label)
                 .font(GSFont.bold(9, relativeTo: .caption2))
                 .tracking(1.0)
-                .foregroundStyle(theme.bg.opacity(0.85))
+                .foregroundStyle(theme.neutral500)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

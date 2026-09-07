@@ -299,41 +299,43 @@ struct GroupRecapView: View {
             Text(kicker)
                 .font(GSFont.bold(10, relativeTo: .caption2))
                 .tracking(1.4)
-                .foregroundStyle(theme.bg.opacity(0.85))
+                .foregroundStyle(theme.neutral500)
 
             Text(durationText)
                 .font(.custom("Archivo-Bold", size: 52).monospacedDigit())
-                .foregroundStyle(theme.bg)
+                .foregroundStyle(theme.text)
                 .lineLimit(1)
 
             Text(subline)
                 .font(GSFont.body(12, relativeTo: .footnote))
-                .foregroundStyle(theme.bg.opacity(0.9))
+                .foregroundStyle(theme.neutral500)
 
             HStack(spacing: 0) {
                 heroStatCell(value: totalLbsText, label: "TOTAL \(unit.label.uppercased())")
-                Rectangle().fill(theme.bg.opacity(0.3)).frame(width: 1, height: 32)
+                Rectangle().fill(theme.divider).frame(width: 1, height: 32)
                 heroStatCell(value: "\(setCount)", label: "SETS")
-                Rectangle().fill(theme.bg.opacity(0.3)).frame(width: 1, height: 32)
+                Rectangle().fill(theme.divider).frame(width: 1, height: 32)
                 heroStatCell(value: "\(prCount)", label: "PRS")
             }
             .padding(.top, 12)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.accent)
-        .cornerRadius(GSMetrics.radiusMd)   // redesign: rounded accent surface
+        // Accent discipline (design language §1/§2, 2026-09-06): the
+        // full-bleed accent fill becomes the app's static extruded card and
+        // the ink inverts. Every number and copy line is unchanged.
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd, lipHeight: 7)
     }
 
     private func heroStatCell(value: String, label: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(value)
                 .font(GSFont.heading(20, relativeTo: .title2))
-                .foregroundStyle(theme.bg)
+                .foregroundStyle(theme.text)
             Text(label)
                 .font(GSFont.bold(9, relativeTo: .caption2))
                 .tracking(0.6)
-                .foregroundStyle(theme.bg.opacity(0.85))
+                .foregroundStyle(theme.neutral500)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 4)
