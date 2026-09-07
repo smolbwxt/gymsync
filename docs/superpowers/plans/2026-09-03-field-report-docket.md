@@ -273,3 +273,11 @@ Owner on build 863: "The home looks good." Three asks and one question:
   card are extruded. Intentional by the rule's letter; the owner's read — that the goal is its own idea, not a
   line under the tiles — is a legitimate reading of "one raised object per idea". Owner to rule: keep the strip,
   or promote it to a small extruded card (radius 16). Promoting changes the two approved 08a/08b baselines.
+
+### 2026-09-07 — owner on the B1 proof cards: "a very focused round for the social cards"
+Owner approved congruence B1's cards ("otherwise looks good") and asked for a dedicated design round on the
+SOCIAL CARDS — the Crews tab's crew card and "outside the box" rows (`app-tab-social`), the pump-feed post
+cards (`app-pump-feed-post`), and the venue hub's rows (`app-venue-hub`). Not a congruence recolour: a focused
+composition pass (what a social card says, in what order, with which one action), to be run as its own
+brainstorm → proof-cards round after goal-first programming's Task 0 is under review. Queued behind: the
+lobby + group-session simplification round (still unasked), the #6 crash (needs a log).
