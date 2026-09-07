@@ -78,13 +78,16 @@ final class WeeklyGoalLiveRepositoryTests: XCTestCase {
 
         await repository.save(goal(week, userID: userID))
         // A different kind entirely — the upsert must replace, not collide
-        // with the primary key.
-        await repository.save(goal(week, userID: userID, kind: .distance,
-                                   params: .init(activity: "run", distanceTarget: 15)))
+        // with the primary key. `.lift`, not `.distance` or
+        // `.sessionsOfType`: `save(_:)` requests HealthKit authorization for
+        // those two kinds, and a unit test must never raise that sheet — on
+        // the CI simulator it hangs build-test to its 45-minute timeout.
+        await repository.save(goal(week, userID: userID, kind: .lift,
+                                   params: .init(exerciseID: UUID(), targetWeightLbs: 225)))
 
         let read = await repository.goal(weekStart: week)
-        XCTAssertEqual(read?.kind, .distance)
-        XCTAssertEqual(read?.params.distanceTarget, 15)
+        XCTAssertEqual(read?.kind, .lift)
+        XCTAssertEqual(read?.params.targetWeightLbs, 225)
         XCTAssertNil(read?.params.muscleTargets,
                      "the second save replaced the payload rather than merging into it")
     }

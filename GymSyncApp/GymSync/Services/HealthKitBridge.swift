@@ -84,7 +84,10 @@ enum HealthKitBridge {
         do {
             let status = try await store.statusForAuthorizationRequest(
                 toShare: [], read: weeklyGoalReadTypes)
-            return status == .shouldRequest
+            // Only `.unnecessary` means the ask has happened. `.unknown` is
+            // HealthKit declining to say, and a read it cannot vouch for
+            // must render CONNECT HEALTH rather than a number.
+            return status != .unnecessary
         } catch {
             AppLogger.health.error("weekly goal health status failed: \(error.localizedDescription, privacy: .public)")
             return true

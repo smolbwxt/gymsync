@@ -13,6 +13,16 @@ final class WeeklyGoalDetectorTests: XCTestCase {
     private let userID = UUID(uuidString: "00000000-0000-0000-0000-0000000000a1")!
     private let weekStart = "2026-09-06"
     private let now = Date(timeIntervalSince1970: 1_788_696_000)
+    /// Sunday-first and UTC, pinned: `now` is a Sunday, so under a Monday-first
+    /// host calendar "tomorrow" would fall in the NEXT week and the week-routine
+    /// tests would flip with the machine they run on. The detector takes the
+    /// calendar as a parameter for exactly this reason.
+    private let calendar: Calendar = {
+        var c = Calendar(identifier: .gregorian)
+        c.firstWeekday = 1
+        c.timeZone = TimeZone(identifier: "UTC")!
+        return c
+    }()
 
     private func id(_ n: Int) -> UUID {
         UUID(uuidString: String(format: "00000000-0000-0000-0000-%012d", n))!
@@ -355,7 +365,7 @@ final class WeeklyGoalDetectorTests: XCTestCase {
     // MARK: - The WEEK's routines, never the library
 
     private func completedSession(_ routine: Routine, dayOffset: Int) -> WorkoutSession {
-        let when = Calendar.current.date(byAdding: .day, value: dayOffset, to: now)!
+        let when = calendar.date(byAdding: .day, value: dayOffset, to: now)!
         return WorkoutSession(id: UUID(), routineID: routine.id, organizerID: userID,
                               state: "completed", startedAt: when, completedAt: when,
                               createdAt: when, groupID: nil, roomCode: nil,
@@ -364,7 +374,7 @@ final class WeeklyGoalDetectorTests: XCTestCase {
     }
 
     private func bookedSession(_ routine: Routine, dayOffset: Int) -> WorkoutSession {
-        let when = Calendar.current.date(byAdding: .day, value: dayOffset, to: now)!
+        let when = calendar.date(byAdding: .day, value: dayOffset, to: now)!
         return WorkoutSession(id: UUID(), routineID: routine.id, organizerID: userID,
                               state: "scheduled", startedAt: nil, completedAt: nil,
                               createdAt: now, groupID: nil, roomCode: nil,
@@ -397,7 +407,7 @@ final class WeeklyGoalDetectorTests: XCTestCase {
         let weekRoutines = WeeklyGoalDetector.routinesForWeek(
             library: library,
             sessions: [completedSession(push, dayOffset: 0)],
-            now: now, calendar: .current)
+            now: now, calendar: calendar)
 
         XCTAssertEqual(weekRoutines.map(\.id), [push.id])
 
@@ -415,7 +425,7 @@ final class WeeklyGoalDetectorTests: XCTestCase {
         let push = routine(10, "Push")
         let weekRoutines = WeeklyGoalDetector.routinesForWeek(
             library: [push], sessions: [bookedSession(push, dayOffset: 1)],
-            now: now, calendar: .current)
+            now: now, calendar: calendar)
 
         XCTAssertEqual(weekRoutines.map(\.id), [push.id])
     }
@@ -424,7 +434,7 @@ final class WeeklyGoalDetectorTests: XCTestCase {
         let push = routine(10, "Push")
         let weekRoutines = WeeklyGoalDetector.routinesForWeek(
             library: [push], sessions: [completedSession(push, dayOffset: -21)],
-            now: now, calendar: .current)
+            now: now, calendar: calendar)
 
         XCTAssertTrue(weekRoutines.isEmpty)
     }
@@ -436,7 +446,7 @@ final class WeeklyGoalDetectorTests: XCTestCase {
                                        roomCode: nil, scheduledFor: nil, seriesID: nil,
                                        currentTurnUserID: nil, currentTurnStartedAt: nil)
         XCTAssertTrue(WeeklyGoalDetector.weekRoutineIDs(sessions: [freestyle],
-                                                        now: now, calendar: .current)
+                                                        now: now, calendar: calendar)
                           .isEmpty)
     }
 
