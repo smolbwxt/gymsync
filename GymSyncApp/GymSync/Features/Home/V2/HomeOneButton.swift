@@ -94,6 +94,22 @@ enum HomeOneButtonState {
         }
     }
 
+    /// The button's own subtitle, knowing nothing about commitment.
+    ///
+    /// `.checkInOpens` reads `ON THE BOOKS` — the fact, not a claim about
+    /// whether the lifter has said yes. It used to read `YOU'RE IN`, which
+    /// was safe only while nothing else on the button spoke about
+    /// commitment; the moment the commit chip landed beside it (production
+    /// plan task B1), an uncommitted lifter got `YOU'RE IN` above a
+    /// `COMMIT ›` chip and one who had declined got it above `YOU'RE OUT`.
+    /// `HomeOneButton.subtitle` overrides this line whenever a chip is
+    /// present, so the two can never contradict each other; the catalog,
+    /// which passes no chip, reads the neutral fact.
+    ///
+    /// `.checkIn` joins only its NON-EMPTY components. A live crew session
+    /// can carry a NULL `scheduled_for`, which would otherwise render
+    /// `PUSH CREW · PUSH A ·  · OPEN NOW`. Every fixture passes three
+    /// non-empty values, so the approved frames are unchanged.
     var line2: String {
         switch self {
         case .startRoutine:
@@ -101,13 +117,34 @@ enum HomeOneButtonState {
         case .startWorkout:
             return "ROUTINES · FREESTYLE · BUILD ONE"
         case .checkInOpens:
-            return "YOU'RE IN"
+            return "ON THE BOOKS"
         case .checkIn(let crew, let routine, let time):
-            return "\(crew.uppercased()) · \(routine.uppercased()) · \(time.uppercased()) · OPEN NOW"
+            let parts = [crew, routine, time]
+                .map { $0.trimmingCharacters(in: .whitespaces).uppercased() }
+                .filter { !$0.isEmpty }
+            return (parts + ["OPEN NOW"]).joined(separator: " · ")
         case .joinSession(let startedAt):
             return "STARTED \(startedAt) · YOU'RE LATE"
         }
     }
+}
+
+/// The glance-level commit status of the crew session the `.checkInOpens`
+/// state is counting down to.
+///
+/// Production only. It exists because the Home inventory
+/// (`.superpowers/sdd/2026-09-04-investigations/screen-inventory-2.md` §1d)
+/// calls the commit chip "the only glance-level commit status" in the app —
+/// committing itself lives on the crew room's board — and the countdown card
+/// that used to carry it (`HomeView.countdownBody`) is gone. It rides the
+/// one button's own navigation rather than being a nested `Button`, the same
+/// call `HomeView.commitControl` made and for the same reason (a `Button`
+/// inside a `Button`'s label is a gesture-conflict hazard).
+enum HomeOneButtonCommitChip {
+    /// You haven't said yet.
+    case commit
+    case committed
+    case out
 }
 
 /// Home's one primary (design language rule 4: one primary per screen). A
@@ -119,6 +156,15 @@ struct HomeOneButton: View {
     @Environment(\.gsTheme) private var theme
 
     let state: HomeOneButtonState
+    /// The commit chip on the trailing edge, or `nil` for no chip at all.
+    ///
+    /// ADDITIVE, defaulted to `nil`, exactly like
+    /// `HomeCalendarCard.showsAppointments`: every catalog call site
+    /// (`HomeV3Frame`, `HomeV2TilesView`, `HomeV2StripsView`) omits it and
+    /// renders byte-identically to the frames the owner approved — the `nil`
+    /// path adds a zero-width `.padding(.trailing, 0)` and an empty overlay,
+    /// neither of which changes layout.
+    var commitChip: HomeOneButtonCommitChip?
     var action: () -> Void = {}
 
     var body: some View {
@@ -127,7 +173,30 @@ struct HomeOneButton: View {
                                         lipHeight: HomeV2Metrics.lip,
                                         face: faceColor))
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(state.line1). \(state.line2)")
+            .accessibilityLabel(accessibilityText)
+    }
+
+    /// The subtitle actually rendered.
+    ///
+    /// On `.checkInOpens` it is DERIVED FROM THE COMMIT CHIP, so the line and
+    /// the chip beside it state one fact rather than two. Everywhere else —
+    /// and everywhere in the catalog, which passes no chip — it is the
+    /// state's own line, unchanged.
+    private var subtitle: String {
+        guard case .checkInOpens = state, let commitChip else { return state.line2 }
+        switch commitChip {
+        case .commit:    return "YOU HAVEN'T SAID YET"
+        case .committed: return "YOU'RE IN"
+        case .out:       return "YOU'RE OUT"
+        }
+    }
+
+    /// One truthful sentence. The chip is not appended: `subtitle` already
+    /// speaks for it, and reading the same fact twice — once as "YOU'RE IN"
+    /// and once as "You haven't committed yet" — is exactly the contradiction
+    /// this pairing exists to prevent.
+    private var accessibilityText: String {
+        "\(state.line1). \(subtitle)"
     }
 
     private var buttonFace: some View {
@@ -138,7 +207,7 @@ struct HomeOneButton: View {
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-            Text(state.line2)
+            Text(subtitle)
                 .font(GSFont.bold(10, relativeTo: .caption2))
                 .tracking(1.2)
                 .monospacedDigit()
@@ -148,11 +217,51 @@ struct HomeOneButton: View {
                 .foregroundStyle(secondaryInk)
         }
         .padding(.horizontal, 14)
+        // Reserves the chip's lane so the centred copy never runs under it.
+        // Zero — a layout no-op — whenever there is no chip.
+        .padding(.trailing, commitChip == nil ? 0 : 96)
         .frame(maxWidth: .infinity)
         .frame(height: HomeV2Metrics.oneButtonFace)
         .foregroundStyle(primaryInk)
         .background(goldGradient)
+        .overlay(alignment: .trailing) { commitChipView }
         .contentShape(Rectangle())
+    }
+
+    /// The chip itself — `HomeView.commitControl`'s three faces, character
+    /// for character, sized to a trailing lane instead of the countdown
+    /// card's full width.
+    @ViewBuilder
+    private var commitChipView: some View {
+        switch commitChip {
+        case .none:
+            EmptyView()
+        case .commit:
+            Text("COMMIT ›")
+                .font(GSFont.bold(11, relativeTo: .caption))
+                .kerning(0.8)
+                .foregroundStyle(theme.bg)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .gs3DCard(cornerRadius: 10, lipHeight: 4, face: theme.accent)
+                .padding(.trailing, 12)
+        case .committed:
+            HStack(spacing: 5) {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 9, weight: .bold))
+                Text("YOU'RE IN")
+                    .font(GSFont.bold(10, relativeTo: .caption2))
+                    .kerning(1.1)
+            }
+            .foregroundStyle(Color.gsHex(0x2FA45C))
+            .padding(.trailing, 14)
+        case .out:
+            Text("YOU'RE OUT")
+                .font(GSFont.bold(10, relativeTo: .caption2))
+                .kerning(1.1)
+                .foregroundStyle(HomeV2Gold.top)
+                .padding(.trailing, 14)
+        }
     }
 
     /// `nil` = the theme's tuned neutral raised pair (`GS3DCardChrome`'s

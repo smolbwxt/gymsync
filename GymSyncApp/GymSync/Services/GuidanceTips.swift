@@ -96,16 +96,26 @@ enum GuidanceTip: String, CaseIterable, Identifiable {
 // these safe. Home replaces the old single .home tip; a lifter who saw
 // that tip still gets the tour once (three of its four steps are new).
 enum GuidanceTours {
-    static let home = GuidanceTour(id: "tour.home.v1", steps: [
+    /// **v2** — Home v3 (production plan task B2). The id is BUMPED rather
+    /// than edited in place: `hasBeenSeen` is keyed on it, so a changed step
+    /// list under the old id would leave every lifter who already walked v1
+    /// on a tour that points at a widget which no longer exists.
+    ///
+    /// `tour.home.schedule` is deleted with `scheduleWidget` — that job
+    /// moved to the calendar card's `+` and the calendar page. The freed
+    /// step goes to the weekly goal strip, the one genuinely new thing on
+    /// the page. The walk is now: the button, the goal, the calendar, the
+    /// streak.
+    static let home = GuidanceTour(id: "tour.home.v2", steps: [
         .init(anchorKey: GuidanceTip.home.rawValue,
               title: "Start here",
               message: "Start a workout any time — run one of your routines or go freeform."),
-        .init(anchorKey: "tour.home.schedule",
-              title: "Put a lift on the books",
-              message: "Schedule sessions for yourself or a crew — group lifts can repeat weekly on the days you pick."),
+        .init(anchorKey: "tour.home.goal",
+              title: "Your goal this week",
+              message: "Coach sets a goal each week — muscle sets, miles, sessions or days. Tap the strip to change it."),
         .init(anchorKey: "tour.home.calendar",
               title: "Your training calendar",
-              message: "Everything on the books lands here: your solo sessions and every crew session anyone schedules."),
+              message: "Everything on the books lands here — tap it to open the calendar, where you schedule and move sessions."),
         .init(anchorKey: "tour.home.streak",
               title: "Defend the streak",
               message: "Train each week and the streak grows. Check in when you arrive so your gym time counts."),

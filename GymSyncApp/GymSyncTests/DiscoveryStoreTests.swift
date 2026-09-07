@@ -42,7 +42,9 @@ final class DiscoveryStoreTests: XCTestCase {
     /// deliberately persists one bool per target rather than a single array
     /// under one key so this holds.
     func testStorageKeyIsTheTargetRawValue() {
-        let target = DiscoveryTarget.homeSchedule
+        // Was `.homeSchedule` until Home v3 removed that target with the
+        // widget it pointed at; any target proves the same invariant.
+        let target = DiscoveryTarget.socialFeed
         DiscoveryStore.shared.markPressed(target)
         XCTAssertTrue(UserDefaults.standard.bool(forKey: target.rawValue))
         DiscoveryStore.shared.unmark(target)
