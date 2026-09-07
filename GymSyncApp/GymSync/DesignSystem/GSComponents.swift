@@ -1717,10 +1717,27 @@ struct PTTDockRow: View {
         }
     }
 
+    /// Says what happened and how to fix it, matching `deniedRow`'s shape
+    /// (glyph + one sentence + a trailing affordance) instead of the bare
+    /// "Voice unavailable" label that named a state and offered nothing.
+    /// The retry ACTION already exists on `GSVoiceUnavailableBanner.retry`,
+    /// which the caller shows above the dock — this is the matching LABEL;
+    /// no second retry path is wired here.
     private var unavailableBar: some View {
-        Text("Voice unavailable")
-            .font(GSFont.bold(13, relativeTo: .body))
-            .foregroundStyle(theme.neutral500)
+        HStack(spacing: 10) {
+            Image(systemName: "mic.slash")
+                .font(.system(size: 15, weight: .regular))
+                .foregroundStyle(theme.neutral500)
+            Text("Voice is offline — check your connection")
+                .font(GSFont.bold(13, relativeTo: .body))
+                .foregroundStyle(theme.text)
+            Spacer(minLength: 0)
+            Text("RETRY")
+                .font(GSFont.bold(11, relativeTo: .caption))
+                .tracking(1.1)
+                .foregroundStyle(theme.accent700)
+        }
+        .padding(.horizontal, 12)
     }
 
     // MARK: Mic denied — entire row becomes one "open Settings" button
