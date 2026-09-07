@@ -168,6 +168,13 @@ enum WeeklyGoalProgressMath {
     /// only has to stop `0 mi` from meaning two different things.
     static let connectHealthRead = "CONNECT HEALTH"
 
+    /// What a `benchmark` goal says in place of a deadline while the athlete
+    /// has never run the workout. Its sibling above: a state that would
+    /// otherwise have to be inferred from a number is said in words instead,
+    /// because the number it would be inferred from (`0:00`) means something
+    /// else entirely on a clock.
+    static let noAttemptRead = "NO ATTEMPT YET"
+
     /// The week's seven day letters, in the DEVICE calendar's own order —
     /// starting at `calendar.firstWeekday`, so a Sunday-first athlete reads
     /// S M T W T F S and a Monday-first one reads M T W T F S S. Taken from
@@ -867,9 +874,20 @@ enum WeeklyGoalProgressMath {
     /// current best IS the floor, which draws an empty meter — the honest
     /// reading of "you have run it once and not beaten it yet".
     ///
-    /// No attempt at all is not a zero. `47:10` and `0:00` are both times,
-    /// and a `0:00` would read as the best benchmark ever run, so the arm
-    /// with no attempt renders the target and an empty meter instead.
+    /// **NO ATTEMPT AT ALL IS NOT A ZERO** — and enforcing that takes three
+    /// things, not one (review finding 2; the doc used to claim it while the
+    /// strip printed `0:00 → 45:00`). `47:10` and `0:00` are both times, and
+    /// a `0:00` reads as the best benchmark ever run. So the no-attempt arm
+    /// gives an empty meter, `value: 0` as the SIGNAL that there is no time
+    /// to print — `HomeWeeklyGoalStrip.benchmarkLine` draws an em dash for
+    /// it, never a clock — and a right-hand read of `NO ATTEMPT YET` rather
+    /// than a deadline. That is `connectHealthRead`'s shape exactly: a state
+    /// is SAID, never shown as a number that means something else.
+    ///
+    /// It is not a rare arm. The dispatcher and the live repository both
+    /// pass `bestSeconds: nil` until Stream A5 lands its reader, so every
+    /// benchmark row takes this path between A2 and A5 — and after A5, every
+    /// athlete who has not yet run the workout still does.
     static func benchmarkProgress(goal: WeeklyGoal,
                                   bestSeconds: Int?,
                                   startSeconds: Int? = nil,
@@ -892,7 +910,7 @@ enum WeeklyGoalProgressMath {
                                                     target: 1, isNext: false)],
                                       value: 0,
                                       target: Double(targetSeconds),
-                                      rightHandRead: deadline,
+                                      rightHandRead: noAttemptRead,
                                       kicker: kicker(source: goal.source, met: false,
                                                      daysLeft: daysLeft))
         }

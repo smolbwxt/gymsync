@@ -796,12 +796,30 @@ struct HomeWeeklyGoalStrip: View {
     /// benchmark without its workout's name is a pair of times nobody can
     /// place — and is simply dropped when it does not, exactly as
     /// `sessionsLine` drops its noun.
-    private var benchmarkLine: String {
-        let read = "\(WeeklyGoalProgressMath.clock(progress.value))"
-            + " → \(WeeklyGoalProgressMath.clock(progress.target))"
-        guard let name = subject?.name, !name.isEmpty else { return read }
+    ///
+    /// **AN UNRUN BENCHMARK PRINTS AN EM DASH, NEVER `0:00`** (review
+    /// finding 2). `0:00` is a legal time and reads as the fastest anyone has
+    /// ever gone, so a benchmark nobody has attempted must not be able to
+    /// spell itself that way — the guard belongs on the READING, not only on
+    /// the meter. `benchmarkProgress` signals the state with `value: 0` (no
+    /// real attempt is zero seconds) and says `NO ATTEMPT YET` on the kicker
+    /// row beside this.
+    ///
+    /// `static` and internal for the reason `recoveryCompanionLine` is: a
+    /// SwiftUI body is not unit-testable in this target, and this string is
+    /// where finding 2's defect lived. It needs no unit label — a clock is
+    /// its own unit — so unlike the other readings it is a pure function of
+    /// `progress` alone and can be pinned exactly.
+    static func benchmarkReading(_ progress: WeeklyGoalProgress) -> String {
+        let best = progress.value > 0
+            ? WeeklyGoalProgressMath.clock(progress.value)
+            : "—"
+        let read = best + " → \(WeeklyGoalProgressMath.clock(progress.target))"
+        guard let name = progress.chips.first?.name, !name.isEmpty else { return read }
         return name + " " + read
     }
+
+    private var benchmarkLine: String { Self.benchmarkReading(progress) }
 
     // MARK: - No goal yet
 
@@ -933,8 +951,14 @@ struct HomeWeeklyGoalStrip: View {
         case .benchmark:
             // SPOKEN AS TIME, not as a clock face: `47:10` is read out as
             // "forty-seven ten" by some voices and as a ratio by others.
-            let read = "\(Self.spokenClock(progress.value)) towards "
-                + Self.spokenClock(progress.target)
+            //
+            // And an unrun benchmark is spoken as unrun, mirroring the
+            // rendered em dash (review finding 2) — "zero seconds towards
+            // forty-five minutes" would be the same false record read aloud.
+            let aim = Self.spokenClock(progress.target)
+            let read = progress.value > 0
+                ? "\(Self.spokenClock(progress.value)) towards \(aim)"
+                : "not run yet, aiming for \(aim)"
             guard let name = subject?.name, !name.isEmpty else { return read }
             return "\(name), " + read
         }
