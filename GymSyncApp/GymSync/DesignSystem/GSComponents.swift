@@ -1446,9 +1446,15 @@ struct PTTDockRow: View {
     /// auto-muted by release").
     @State private var isHeldTransmitOwnedByThisPress = false
 
-    /// When the current held transmission started — feeds the holding bar's
-    /// live elapsed timer (`Text(timerInterval:)`, UI-side only). Set exactly
-    /// when ownership is claimed, cleared exactly when it's released/reset.
+    /// When the current held transmission started. Set exactly when
+    /// ownership is claimed, cleared exactly when it's released/reset.
+    ///
+    /// WRITTEN-ONLY since B4/T4.1: it fed the holding bar's live elapsed
+    /// timer (`Text(timerInterval:)`), and the rule now specifies one line,
+    /// so that timer is gone and nothing reads this. Kept because the plan's
+    /// do-not-delete list names "any `@State` on the type"; retiring it (with
+    /// `otherParticipantNames`, dead for the same reason) is a named
+    /// follow-up, not an accident.
     @State private var heldStartedAt: Date?
 
     /// The in-flight `beginTransmit()` attempt kicked off by the current
