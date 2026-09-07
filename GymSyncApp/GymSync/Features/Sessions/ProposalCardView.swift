@@ -115,10 +115,10 @@ struct ProposalCardView: View {
             Text("Approved")
                 .font(GSFont.bold(10, relativeTo: .caption2))
                 .tracking(0.4)
-                .foregroundStyle(Color.green)
+                .foregroundStyle(Color.gsSuccess)
                 .padding(.horizontal, 6)
                 .padding(.vertical, 2)
-                .background(Color.green.opacity(0.12))
+                .background(Color.gsSuccessSoft)
         case .vetoed:
             Text("Vetoed")
                 .font(GSFont.bold(10, relativeTo: .caption2))
@@ -159,7 +159,7 @@ struct ProposalCardView: View {
     @ViewBuilder
     private var rowBackground: some View {
         switch proposal.status {
-        case .approved:  theme.accent100
+        case .approved:  Color.gsSuccessSoft
         case .vetoed:    theme.neutral100
         default:         theme.surface
         }

@@ -960,7 +960,7 @@ struct LobbyView: View {
 
                 // Presence online dot
                 Circle()
-                    .fill(presenceSet.contains(item.participant.userID) ? Color.green : theme.neutral400)
+                    .fill(presenceSet.contains(item.participant.userID) ? Color.gsSuccess : theme.neutral400)
                     .frame(width: 9, height: 9)
                     .overlay(Circle().strokeBorder(theme.bg, lineWidth: 1.5))
                     .offset(x: 3, y: 3)
