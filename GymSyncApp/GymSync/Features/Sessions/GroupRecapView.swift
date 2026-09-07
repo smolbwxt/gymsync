@@ -213,7 +213,11 @@ struct GroupRecapView: View {
                         PumpCheckComposerCard(context: pumpCheck)
                             .padding(.horizontal, 16)
                     }
+                    // 16 pt inset (review B1 F4): the hero is a raised object
+                    // now, so it needs margins for its lip to read — matching
+                    // SoloRecapView and CompletedSessionView.
                     hero
+                        .padding(.horizontal, 16)
                     // Coach card after the numbers, same placement law as
                     // the solo recap: the computed observation is the
                     // debrief's own advertisement, every workout.

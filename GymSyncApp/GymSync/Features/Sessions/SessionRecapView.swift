@@ -154,7 +154,11 @@ struct SessionRecapView: View {
                     }
 
                     // ── HERO BANNER ──────────────────────────────────────
+                    // 16 pt inset (review B1 F4): the hero is a raised object
+                    // now, so it needs margins for its lip to read — matching
+                    // SoloRecapView and CompletedSessionView.
                     heroBanner
+                        .padding(.horizontal, 16)
                         .padding(.bottom, 14)
 
                     // ── PER-PARTICIPANT ──────────────────────────────────
