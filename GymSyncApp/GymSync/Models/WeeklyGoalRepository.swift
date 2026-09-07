@@ -23,6 +23,27 @@ protocol WeeklyGoalRepository: Sendable {
     func progress(for goal: WeeklyGoal) async -> WeeklyGoalProgress
     @discardableResult func save(_ goal: WeeklyGoal) async -> Bool   // source = .user
     func clearToCoach(weekStart: String) async -> WeeklyGoal?        // LET COACH SET IT: delete + re-derive
+
+    /// Detect and persist this week's goal when the read above found none
+    /// (final review finding 1). Returns the goal now in effect.
+    func detectIfMissing(weekStart: String) async -> WeeklyGoal?
+}
+
+/// A repository that cannot detect, does not detect.
+///
+/// nil is exactly the right answer for every FIXTURE binding:
+/// `StubWeeklyGoalRepository` already returns a goal from
+/// `goal(weekStart:)`, so Home never asks it — and if a future stub ever did
+/// return nil, this default guarantees a catalog frame still cannot reach a
+/// clock, a detector or a write. Only `LiveWeeklyGoalRepository` overrides
+/// it.
+///
+/// Declared as a REQUIREMENT with a default rather than as an extension-only
+/// member, so the call dispatches through the witness table: Home holds an
+/// `any WeeklyGoalRepository`, and an extension-only method on an existential
+/// would silently run the default even against the live repository.
+extension WeeklyGoalRepository {
+    func detectIfMissing(weekStart: String) async -> WeeklyGoal? { nil }
 }
 
 /// What the strip renders. Kind-agnostic on purpose: the strip switches on

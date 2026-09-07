@@ -16,8 +16,9 @@ import Foundation
 // writing. `20260906000001_weekly_goals.sql`'s header says the same thing
 // from the other side.
 //
-// One function, so both write paths cannot drift, and pure, so the rule is
-// three unit tests rather than an integration story.
+// Two pure functions — may Coach WRITE over what is there, and may a READ
+// trigger detection at all — so every write path consults one implementation
+// and the rules are unit tests rather than an integration story.
 
 enum WeeklyGoalWriteRule {
 
@@ -39,6 +40,33 @@ enum WeeklyGoalWriteRule {
     static func shouldOverwrite(existing: WeeklyGoal?, detected: WeeklyGoal) -> Bool {
         guard let existing else { return true }
         return existing.source == .coach
+    }
+
+    /// May a READ of `weekStart` trigger detection (final review finding 1)?
+    ///
+    /// The design's rule 3 says a week is "never empty", but until this
+    /// existed nothing in the app ran detection except `WeekBooker.book` and
+    /// `ProgramBuilder.build` — so an athlete with no active block who never
+    /// booked a week saw the strip's invitation forever. Home's fetch asks
+    /// this question when its read comes back empty.
+    ///
+    /// - a row already exists → **no**. Detection fills an absence; it does
+    ///   not second-guess a row, and `shouldOverwrite` is the rule that
+    ///   governs the row that IS there.
+    /// - not the current week → **no**, and this is the half that is easy to
+    ///   get wrong. Reading a week is not a reason to WRITE it: only the
+    ///   week Home is actually rendering may be filled from a read, so a
+    ///   future week stays `WeekBooker`'s to stamp at booking time and a
+    ///   past week is never back-filled by someone scrolling to it.
+    /// - otherwise → **yes**.
+    ///
+    /// Pure, and separate from the fetch that acts on it, so both halves of
+    /// the rule are unit tests rather than an integration story.
+    static func shouldDetectOnRead(existing: WeeklyGoal?,
+                                   weekStart: String,
+                                   currentWeekStart: String) -> Bool {
+        guard existing == nil else { return false }
+        return weekStart == currentWeekStart
     }
 }
 

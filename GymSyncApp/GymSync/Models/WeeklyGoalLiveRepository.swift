@@ -257,6 +257,41 @@ struct LiveWeeklyGoalRepository: WeeklyGoalRepository, WeeklyGoalCoachWriter {
     @discardableResult
     func writeDetectedGoal(weekStart: String) async -> WeeklyGoal? {
         let existing = await goal(weekStart: weekStart)
+        return await writeDetected(weekStart: weekStart, existing: existing)
+    }
+
+    /// DETECT ON READ (final review finding 1). Home's fetch calls this when
+    /// `goal(weekStart:)` came back nil, and it is the reason a lifter with
+    /// no block and no booked week now sees a goal at all: before it,
+    /// `writeDetectedGoal`'s only callers were `WeekBooker.book` and
+    /// `ProgramBuilder.build`, so the design's rule 3 ("never empty") had no
+    /// production trigger and the strip's invitation was the permanent state
+    /// for most accounts.
+    ///
+    /// THE ROW IS RE-READ HERE rather than taken from the caller's nil, and
+    /// that read is the point: between Home's fetch and this call a booking
+    /// or a build may have written the very row this is about to derive, and
+    /// `WeeklyGoalWriteRule` can only protect a `user` row it has been shown.
+    /// It costs one extra round trip on a week with no goal, and exactly
+    /// nothing on every week that has one — which, after the first successful
+    /// write, is every week.
+    ///
+    /// Detection runs at most once per fetch: this makes one attempt and
+    /// returns, so a week that cannot be written (offline) renders the
+    /// invitation and is retried on the next refresh rather than looped on.
+    func detectIfMissing(weekStart: String) async -> WeeklyGoal? {
+        let existing = await goal(weekStart: weekStart)
+        guard WeeklyGoalWriteRule.shouldDetectOnRead(
+                existing: existing,
+                weekStart: weekStart,
+                currentWeekStart: WeekMath.weekStartString()) else { return existing }
+        return await writeDetected(weekStart: weekStart, existing: existing)
+    }
+
+    /// The gated write both paths share, so "Coach may not overwrite you"
+    /// has one implementation rather than two that can drift.
+    private func writeDetected(weekStart: String,
+                               existing: WeeklyGoal?) async -> WeeklyGoal? {
         guard let detected = await detect(weekStart: weekStart) else { return existing }
         guard WeeklyGoalWriteRule.shouldOverwrite(existing: existing,
                                                   detected: detected) else {

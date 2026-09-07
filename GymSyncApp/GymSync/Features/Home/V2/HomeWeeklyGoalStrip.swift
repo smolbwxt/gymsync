@@ -604,6 +604,14 @@ struct HomeWeeklyGoalStrip: View {
     /// the strip keeps a strip's height and the page below it does not jump
     /// when the first goal lands.
     ///
+    /// **WHEN IT IS ACTUALLY SEEN, in the merged tree.** Not "every week
+    /// Coach has not run for": `HomeView.fetchWeeklyGoal` detects on an empty
+    /// read (final review finding 1) and the detector's rule 3 has no empty
+    /// outcome, so what is left is signed out, a read that failed, a row this
+    /// build cannot decode (`WeeklyGoalRow.model` answers nil for an unknown
+    /// kind or source) and the one refresh in which the derive or its write
+    /// did not land. Those are the states this line speaks for.
+    ///
     /// **No chevron, deliberately.** The chevron lives on `kickerRow`, which
     /// this branch omits — so frame 89 is the one state with no door handle
     /// at the trailing edge. The `›` the design puts INSIDE the copy is the

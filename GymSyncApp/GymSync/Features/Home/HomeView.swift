@@ -737,20 +737,19 @@ struct HomeView: View {
     ///   * the design calls the no-goal state "only possible before first
     ///     detection", and Coach's own detection has no empty outcome —
     ///     rule 3 falls back to `days` at `Profile.effectiveWeeklyGoal`
-    ///     ("never empty"). Once Stream A's live repository lands, a lifter
-    ///     who reaches the invitation at all is a lifter Coach has not yet
-    ///     run for;
+    ///     ("never empty"). `fetchWeeklyGoal` runs that detection on an empty
+    ///     read (final review finding 1), so the invitation is now what a
+    ///     lifter sees only until the first detect lands — signed out, or
+    ///     the one refresh where the derive or its write did not;
     ///   * `goalLoaded` never returns to false, so the skeleton is shown at
     ///     most ONCE per launch — a later pull-to-refresh keeps the loaded
     ///     strip and rides SwiftUI's own refresh spinner.
     ///
-    /// So the residual jump is: one launch, one user, one state the system is
-    /// designed not to produce. **Hand-off to I1 / Stream C:** the complete
-    /// fix is one line in `HomeWeeklyGoalStrip.invitation` — give it the chip
-    /// row's height (`.frame(minHeight:)` on the invitation `Text`, matching
-    /// a chip's 9 pt name + 7 + 4 pt meter + 7 + 12 pt fraction plus its 8 pt
-    /// vertical padding) — which cannot be done from here without editing a
-    /// piece Stream C owns, and which no approved frame renders.
+    /// So the residual jump is: one launch, one user, one state the system
+    /// now actively fills. It is CLOSED at the other end besides — controller
+    /// ruling 3 gave `HomeWeeklyGoalStrip.invitation` this same chip-row
+    /// height (`minHeight: 55`), so the two landing heights agree and the
+    /// page does not move when the first goal arrives.
     private var goalStripSkeleton: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
@@ -1544,13 +1543,31 @@ struct HomeView: View {
     /// The week key comes from `WeekMath`, the one definition of "this week"
     /// on this page; the streak tile counts the same one.
     ///
+    /// **DETECTION RUNS HERE** (final review finding 1). An empty read is not
+    /// the end of the fetch: it is the state the design's rule 3 exists to
+    /// fill ("never empty"), and until this call existed nothing in the app
+    /// ran detection outside `WeekBooker.book` and `ProgramBuilder.build` —
+    /// so an athlete with no active block who never booked a week saw the
+    /// strip's invitation forever. `detectIfMissing` derives the week's goal,
+    /// writes it with `source = coach` through `WeeklyGoalWriteRule`, and
+    /// hands back what now stands; a repository that cannot detect (the stub,
+    /// and every catalog binding) answers nil and the invitation renders
+    /// exactly as before.
+    ///
+    /// Only the CURRENT week, and only when signed in — the `userID` gate
+    /// below is the second half, `WeeklyGoalWriteRule.shouldDetectOnRead` the
+    /// first.
+    ///
     /// Signed out returns the empty progress, which renders the invitation —
     /// never an error and never a stuck skeleton.
     private func fetchWeeklyGoal(userID: UUID?) async -> (goal: WeeklyGoal?, progress: WeeklyGoalProgress) {
         guard userID != nil else { return (nil, WeeklyGoalProgress()) }
-        guard let goal = await goalRepository.goal(weekStart: WeekMath.weekStartString()) else {
-            return (nil, WeeklyGoalProgress())
+        let week = WeekMath.weekStartString()
+        var standing = await goalRepository.goal(weekStart: week)
+        if standing == nil {
+            standing = await goalRepository.detectIfMissing(weekStart: week)
         }
+        guard let goal = standing else { return (nil, WeeklyGoalProgress()) }
         return (goal, await goalRepository.progress(for: goal))
     }
 
