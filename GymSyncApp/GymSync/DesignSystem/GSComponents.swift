@@ -1988,20 +1988,24 @@ struct GSVoiceCoachMark: View {
 // volume/mute is REAL, wired through `VoiceRoomService.setLocalMute(_:
 // forParticipantIdentity:)` (item 4's roster/mute service extension) —
 // LiveKit's client-side per-participant playback volume. The mic-level
-// meter and both toggles are honestly NOT backed by anything real:
-// `VoiceRoomService` exposes no input-level metering API (same
-// limitation `GSTalkingBars`' own doc comment already names for the
-// roster "talking" bars) and no noise-suppression/monitor-toggle control
-// exists anywhere in `VoiceRoomConnecting`/`AudioSessionManager` — building
-// fake-functioning toggles would be dishonest, so they're rendered as the
-// frame specifies but documented here (and in `accepted-deviations.json`)
-// as chrome-only pending a real backing API. `presentationDetents`/sheet
-// wrapping is the caller's job — this is just the sheet's content.
+// meter is honestly NOT backed by anything real: `VoiceRoomService`
+// exposes no input-level metering API (same limitation `GSTalkingBars`'
+// own doc comment already names for the roster "talking" bars) — it is
+// rendered as the frame specifies but documented here (and in
+// `accepted-deviations.json`) as chrome-only pending a real backing API.
+// It draws in `theme.neutral700`, not accent: a readout, not an action.
+// `presentationDetents`/sheet wrapping is the caller's job — this is just
+// the sheet's content.
 //
-// Fix wave 1 (reviewer Finding F5): "documented in a code comment" wasn't
-// enough — the two toggles were visually indistinguishable from real,
-// working controls. Both are now `.disabled(true)` with a "Coming soon"
-// caption under each title (see the toggles' own inline comment below).
+// TOGGLES REMOVED (design congruence B4/T4.3, 2026-09): the frame's
+// "Noise suppression" and "Hear my own voice" rows are gone, along with
+// their two `@State` vars. No noise-suppression/monitor-toggle control
+// exists anywhere in `VoiceRoomConnecting`/`AudioSessionManager`, so they
+// were `.disabled(true)` "Coming soon" chrome backed by nothing — dead
+// weight in a sheet whose other controls are real. Re-add them the day
+// there is an API behind them. `accepted-deviations.json`'s
+// `voice-mixer-sheet` entry records the removal in place of the old
+// disabled-toggle note.
 
 struct GSVoiceMixerSheet: View {
     @Environment(\.gsTheme) private var theme
@@ -2012,9 +2016,6 @@ struct GSVoiceMixerSheet: View {
     let participants: [(identity: String, name: String)]
     let mutedIdentities: Set<String>
     let onToggleMute: (String) -> Void
-
-    @State private var noiseSuppression = true
-    @State private var hearOwnVoice = false
 
     var body: some View {
         ScrollView {
@@ -2034,55 +2035,14 @@ struct GSVoiceMixerSheet: View {
                     HStack(spacing: 2) {
                         ForEach(0..<12, id: \.self) { i in
                             Rectangle()
-                                .fill(i < 7 ? theme.accent : theme.surface)
+                                // A readout, not an action: the lit segments
+                                // are neutral ink, never accent.
+                                .fill(i < 7 ? theme.neutral700 : theme.surface)
                                 .overlay(i < 7 ? nil : RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
                                 .frame(height: 20)
                         }
                     }
                 }
-
-                // Toggles — chrome-only, see type doc comment. Fix wave 1
-                // (reviewer Finding F5): rendered per the frame but
-                // previously indistinguishable from a real, working
-                // control. Now `.disabled(true)` (structurally
-                // non-interactive, not just visually) + a small "Coming
-                // soon" caption under each title — same toggle-row-with-
-                // inline-caption shape `YouTabView.soloPrivacyRow`/
-                // `calendarSyncRow` already establish for a title+caption
-                // pair beside a toggle (`Features/You/YouTabView.swift:311-336,
-                // 528-549`) — plus an overall dimmed opacity so the whole
-                // block reads as inert at a glance. `accepted-deviations.json`'s
-                // `voice-mixer-sheet` entry records this as the deviation.
-                VStack(spacing: 0) {
-                    Toggle(isOn: $noiseSuppression) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Noise suppression")
-                                .font(GSFont.bold(14, relativeTo: .body))
-                                .foregroundStyle(theme.text)
-                            Text("Coming soon")
-                                .font(GSFont.body(11, relativeTo: .caption2))
-                                .foregroundStyle(theme.neutral500)
-                        }
-                    }
-                    .disabled(true)
-                    .padding(12)
-                    GSDivider()
-                    Toggle(isOn: $hearOwnVoice) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Hear my own voice")
-                                .font(GSFont.bold(14, relativeTo: .body))
-                                .foregroundStyle(theme.neutral500)
-                            Text("Coming soon")
-                                .font(GSFont.body(11, relativeTo: .caption2))
-                                .foregroundStyle(theme.neutral500)
-                        }
-                    }
-                    .disabled(true)
-                    .padding(12)
-                }
-                .opacity(0.6)
-                .tint(theme.accent)
-                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
 
                 if !participants.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
@@ -2130,7 +2090,9 @@ struct GSVoiceMixerSheet: View {
                 .frame(height: 5)
                 .overlay(alignment: .leading) {
                     if !isMuted {
-                        Rectangle().fill(theme.accent)
+                        // Track fill is a readout — neutral. Accent survives
+                        // in this row only on the ACTIVE mute state below.
+                        Rectangle().fill(theme.neutral700)
                     }
                 }
 
