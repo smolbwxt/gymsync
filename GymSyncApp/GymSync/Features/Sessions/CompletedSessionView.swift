@@ -345,9 +345,14 @@ struct CompletedSessionView: View {
                 if stat.penaltyReps > 0 {
                     // Emoji sweep (spec §7): the flame implied the burpee
                     // penalty — say it plainly instead.
+                    //
+                    // Muted (review B1 F5): a penalty line is a readout, not
+                    // an action (design language §2), and SessionRecapView's
+                    // sibling run already reads neutral since T1.4 — these two
+                    // screens are parallel by construction and must agree.
                     Text("late · \(stat.penaltyReps) burpees")
                         .font(GSFont.body(10, relativeTo: .caption2))
-                        .foregroundStyle(theme.accent700)
+                        .foregroundStyle(theme.neutral500)
                 }
             }
         }
