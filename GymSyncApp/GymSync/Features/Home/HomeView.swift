@@ -268,8 +268,15 @@ struct HomeView: View {
                                          weekStart: WeekMath.weekStartString(),
                                          repository: goalRepository,
                                          proposal: goalProposal,
-                                         weeklySessionGoal: goalEditorWeeklySessionGoal) { updated in
+                                         weeklySessionGoal: goalEditorWeeklySessionGoal) { updated, updatedProfile in
                         weeklyGoal = updated
+                        // The `days` lever writes `profiles
+                        // .weekly_session_goal`, the same column
+                        // `WeeklyGoalSheet` edits — so take the profile it
+                        // hands back, exactly as that sheet's own callback
+                        // does (final review finding 5). Without this the two
+                        // editors of one number disagree until Home refreshes.
+                        if let updatedProfile { profile = updatedProfile }
                         // Whatever now stands is the answer to the question
                         // Coach asked, so the standing proposal is spent. The
                         // next refresh re-derives one if there is still a

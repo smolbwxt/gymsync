@@ -116,7 +116,16 @@ struct WeeklyGoalEditorSheet: View {
     /// Called with the goal that now stands — the saved one, the re-derived
     /// one after `LET COACH SET IT`, or nil if that derivation produced
     /// nothing.
-    var onSaved: (WeeklyGoal?) -> Void = { _ in }
+    /// **AND THE PROFILE, when the `days` lever wrote one** (final review
+    /// finding 5). The `days` kind's number is `profiles.weekly_session_goal`
+    /// — one column, two editors — and `WeeklyGoalSheet` hands its caller the
+    /// updated `Profile` back (`HomeView.swift`'s `onSaved { profile =
+    /// updated }`). This one used to discard it, so saving 5 here left Home's
+    /// `profile` at the old value: reopen the sheet in the same visit and the
+    /// stepper seeded from the stale number and would write it back. nil
+    /// whenever no profile write happened, which is every other kind and a
+    /// `days` save that did not move the stepper.
+    var onSaved: (WeeklyGoal?, Profile?) -> Void = { _, _ in }
 
     // MARK: - State
 
@@ -155,7 +164,7 @@ struct WeeklyGoalEditorSheet: View {
          loadsCatalog: Bool = true,
          today: Date = .now,
          unitOverride: WeightUnit? = nil,
-         onSaved: @escaping (WeeklyGoal?) -> Void = { _ in }) {
+         onSaved: @escaping (WeeklyGoal?, Profile?) -> Void = { _, _ in }) {
         self.goal = goal
         self.userID = userID
         self.weekStart = weekStart
@@ -813,11 +822,17 @@ struct WeeklyGoalEditorSheet: View {
         // Best-effort, like every other Coach-adjacent write: a goal that
         // saved must not be reported as a failure because a second, slower
         // write did not land.
+        //
+        // The updated `Profile` is HANDED BACK rather than dropped (final
+        // review finding 5): Home holds one, `WeeklyGoalSheet` already
+        // returns one for this same column, and the two editors of one number
+        // have to leave the caller holding the same number.
+        var updatedProfile: Profile? = nil
         if kind == .days, dayCount != Self.clampDays(weeklySessionGoal) {
-            _ = try? await ProfileRepository.updateWeeklySessionGoal(dayCount)
+            updatedProfile = try? await ProfileRepository.updateWeeklySessionGoal(dayCount)
         }
 
-        onSaved(edited)
+        onSaved(edited, updatedProfile)
         dismiss()
     }
 
@@ -831,7 +846,7 @@ struct WeeklyGoalEditorSheet: View {
     /// Home fetch in this app is best-effort). So a nil means either "the row
     /// is gone and detection produced nothing" or "the network dropped", and
     /// nothing here can tell them apart. Rather than invent an error message
-    /// that might be a lie, it hands `onSaved(nil)` back and dismisses: Home
+    /// that might be a lie, it hands `onSaved(nil, nil)` back and dismisses: Home
     /// re-reads on its next refresh, and the strip shows whatever actually
     /// stands. If the two ever need distinguishing, the protocol has to say
     /// so first — that is Stream A's file, and I1's call.
@@ -841,7 +856,9 @@ struct WeeklyGoalEditorSheet: View {
         errorText = nil
 
         let derived = await repository.clearToCoach(weekStart: weekStart)
-        onSaved(derived)
+        // No profile write on this path — LET COACH SET IT re-derives the
+        // goal row and never touches `profiles.weekly_session_goal`.
+        onSaved(derived, nil)
         dismiss()
     }
 
