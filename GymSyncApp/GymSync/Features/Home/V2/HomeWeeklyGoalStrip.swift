@@ -610,17 +610,22 @@ struct HomeWeeklyGoalStrip: View {
     /// affordance here, and it is the design's own choice of one: the line
     /// reads "Set a goal for this week ›" precisely because there is nothing
     /// else on the strip for a chevron to sit beside. Two arrows on a
-    /// fourteen-word strip would be the louder mistake. This is also the one
-    /// element of the shell the controller froze byte-identical to task 0.3
-    /// (Stream C brief, ruling 1), so changing it is not this stream's call
-    /// even where the argument is close.
+    /// fourteen-word strip would be the louder mistake.
+    ///
+    /// **`minHeight: 55`** (I1, controller ruling 3 / streamB-report.md
+    /// finding 4): `HomeView.goalStripSkeleton` copies this strip's CHIP-ROW
+    /// height, not the invitation's — see that skeleton's own doc comment
+    /// for why — so a lifter with no goal yet got a page jump the very
+    /// first time `goalLoaded` flips true. 55 is a chip's own height: 9 pt
+    /// name + 7 pt spacing + 4 pt meter + 7 pt spacing + 12 pt fraction
+    /// (= 39), plus the chip's 8 pt top and 8 pt bottom padding (= 16).
     private var invitation: some View {
         Text("Set a goal for this week ›")
             .font(GSFont.bold(13.5, relativeTo: .subheadline))
             .foregroundStyle(theme.accent)
             .lineLimit(1)
             .minimumScaleFactor(0.8)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 55, alignment: .leading)
     }
 
     // MARK: - Accessibility
