@@ -1321,34 +1321,39 @@ struct GSExpandingRing: View {
 // types, so this type and its properties are deliberately NOT `public`, same
 // access-level reasoning).
 //
-// SHAPE (blessed frames, 2026-07-14 review round — these override the older
-// canvas's merged rectangular row): a round 44pt mic BUTTON beside a
-// SEPARATE bordered status bar (`docs/design/sections/2026-07-curation.dc.html`
-// frame 1's dock row + the coach-mark frame in `2026-07-live-voice.dc.html`).
+// SHAPE (design congruence B4, 2026-09 — supersedes the 2026-07-14 blessed
+// frames' two-object dock of a round mic BUTTON beside a SEPARATE bordered
+// status bar): the interactive control is ONE neutral raised pill. The rule
+// is that a talk control is one object, and that the object carrying the
+// transmitting state is the one you press — the old dock inverted it (the
+// mic circle went accent while the pill stayed neutral) and showed a second
+// "YOU'RE LIVE" hero above the dock.
 // Per state:
-//   .idle / .connected(.muted)  -> secondary-style round mic (accent stroke,
-//       accent glyph) + bar "Tap to talk · hold to talk live"
-//   .connected(.transmitting), toggled open -> accent-FILLED round mic + one
-//       gsRing + bar "MIC OPEN · TAP TO MUTE" over sub-caption "Tap toggles ·
-//       press-and-hold for walkie-talkie" (live-voice frame 2)
-//   .connected(.transmitting), held -> accent-filled round mic + TWO gsRings
-//       (0.7s stagger) + bar "HOLDING · {elapsed} — RELEASE TO STOP" with a
-//       LIVE elapsed timer (live-voice frame 1; timer is UI-side only —
-//       Text(timerInterval:), zero service-side timers)
-//   .connecting -> dimmed secondary mic + spinner bar "Connecting voice…"
-//   .unavailable -> dashed muted mic + muted bar (pairs with
+//   .idle / .connected(.muted)  -> raised3DFace pill on raised3DLip,
+//       "HOLD TO TALK" + a small accent `GSTalkingBars` waveform at rest
+//   .connected(.transmitting), toggled open OR held -> SOLID ACCENT pill,
+//       one line, "TALKING · RELEASE TO STOP" in theme.bg ink. (openBar and
+//       holdingBar stay separate symbols so `interactiveRow`'s branch
+//       structure — and the gesture host's identity — never changes.)
+//   .connecting -> dimmed spinner bar "Connecting voice…" in the same pill,
+//       still beside its own round mic
+//   .unavailable -> muted bar in the same pill (pairs with
 //       `GSVoiceUnavailableBanner`, shown by the caller above the dock)
 //   .micDenied -> the whole row is a single full-width open-Settings button
 //       (unchanged from the earlier canvas live-dock frame; the blessed
 //       frames don't redraw denied)
 //
+// The round mic survives ONLY in `compact: true` (the my-turn page's 56pt
+// sound rail, which has no room for a pill) — `interactiveMicCore` is
+// unchanged and still carries its own gesture there.
+//
 // OPEN-vs-HELD is DERIVED, not stored: `.connected(.transmitting)` renders
 // the holding UI iff `isHeldTransmitOwnedByThisPress` (this press began and
-// owns the walkie-talkie transmission) and the open UI otherwise. A fresh
-// view instance (e.g. Lobby -> live-session push, where the room connection
-// deliberately survives) therefore correctly shows "MIC OPEN · TAP TO MUTE"
-// for a transmission it didn't start — the only way to be transmitting with
-// no finger down is hands-free.
+// owns the walkie-talkie transmission) and the open UI otherwise. The two
+// now read the SAME line ("TALKING · RELEASE TO STOP" — the rule specifies
+// one line), so the distinction is no longer visible; the branch is kept
+// because it is what holds the gesture host's view identity stable across
+// the muted -> transmitting flip (see `interactiveRow`).
 //
 // GESTURE (Task 4 AMENDMENT, 2026-07-14 — overrides the brief's hold-only
 // text): the mic supports BOTH tap-to-toggle (mic stays open hands-free
@@ -1363,9 +1368,13 @@ struct GSExpandingRing: View {
 struct PTTDockRow: View {
     @Environment(\.gsTheme) private var theme
 
-    /// Other participants' display names, for the transmit hero's "N
-    /// listening" caption (Phase O Task 5 item 5 — designer follow-up
-    /// frames, `docs/design/sections/2026-07-live-voice.dc.html`).
+    /// Other participants' display names. B4/T4.1 deleted the transmit hero
+    /// that consumed them ("N listening"), so nothing reads this today; the
+    /// property and its three call sites are kept as-is because removing it
+    /// would be an API change outside that task's visual scope.
+    ///
+    /// Original contract (Phase O Task 5 item 5 — designer follow-up frames,
+    /// `docs/design/sections/2026-07-live-voice.dc.html`):
     /// `VoiceRoomService` only knows LiveKit identity strings (UUIDs),
     /// never usernames, so this must be threaded in from whichever view
     /// already has real `Profile` data (`LobbyView.participants` /
@@ -1461,12 +1470,6 @@ struct PTTDockRow: View {
     private var fullDock: some View {
         VStack(spacing: 0) {
             GSDivider()
-            // Transmit hero (Phase O Task 5 item 5) — shown above the dock
-            // itself while actively transmitting, matching the designer
-            // follow-up frames' "YOU'RE LIVE"/mic-open hero moment.
-            if isTransmitting {
-                transmitHero
-            }
             Group {
                 switch voice.state {
                 case .micDenied:
@@ -1513,50 +1516,14 @@ struct PTTDockRow: View {
         }
     }
 
-    // MARK: Transmit hero (Phase O Task 5 item 5)
+    // MARK: Transmit hero — REMOVED (design congruence B4/T4.1)
     //
-    // docs/design/sections/2026-07-live-voice.dc.html frames 1 ("Talking ·
-    // hold") and 2 ("Mic open · tap") both show a full hero moment above
-    // the dock while actively transmitting — waveform, "YOU'RE LIVE"/mic-
-    // open headline, "The crew can hear you" + who's listening. This is
-    // the reusable core only (headline + waveform + listening caption) —
-    // the frames' own top status bar/turn card are page-level chrome each
-    // caller (LobbyView/GroupSessionLiveView) already renders above
-    // wherever it places `PTTDockRow`, not this component's concern.
-    //
-    // Waveform: reuses `GSTalkingBars` (its own doc comment's "purely
-    // decorative, not driven by live audio levels" honesty note applies
-    // here too — `VoiceRoomService` exposes no metering API) at a larger
-    // size rather than building a second bespoke waveform view; the
-    // frames' own waveform is an 11-bar version of the exact same idea.
-
-    private var transmitHero: some View {
-        VStack(spacing: 10) {
-            Text(isHeldTransmitOwnedByThisPress ? "YOU'RE LIVE" : "MIC OPEN · HANDS-FREE")
-                .font(GSFont.bold(12, relativeTo: .caption))
-                .tracking(1.6)
-                .foregroundStyle(theme.accent700)
-
-            GSTalkingBars(color: theme.accent, barWidth: 6, maxHeight: 56)
-
-            VStack(spacing: 2) {
-                Text("The crew can hear you")
-                    .font(GSFont.bold(18, relativeTo: .title3))
-                    .foregroundStyle(theme.text)
-                if !otherParticipantNames.isEmpty {
-                    Text("\(otherParticipantNames.joined(separator: " · ")) listening")
-                        .font(GSFont.body(12, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral500)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
-        .padding(.horizontal, 12)
-        .background(theme.bg)
-    }
+    // A `transmitHero` used to render above the dock while transmitting
+    // (the 2026-07 follow-up frames' "YOU'RE LIVE" moment: big waveform,
+    // headline, "N listening"). The talk control is ONE object now, and the
+    // pill itself carries the transmitting state, so the hero was the second
+    // object the rule forbids. Deleted rather than hidden — there is no
+    // flag that brings it back.
 
     private var isTransmitting: Bool {
         if case .connected(.transmitting) = voice.state { return true }
@@ -1570,7 +1537,17 @@ struct PTTDockRow: View {
                         onRelease: handleRelease)
     }
 
-    // MARK: Row scaffold — round mic + separate bordered status bar
+    // MARK: Row scaffold — the raised talk pill (+ an optional leading mic)
+    //
+    // The bar's chrome IS the control now: a full-width extruded pill —
+    // radius 999 (the chips radius) on a 5pt lip (the tile lip) — filled
+    // with the theme's neutral raised pair at rest and SOLID ACCENT while
+    // transmitting, so the object you press is the object that goes live.
+    // The old `theme.surface` fill + `theme.divider` stroke are gone (the
+    // lip delineates, same reasoning as `GS3DCardStyle` retiring the card
+    // stroke). `mic()` is `EmptyView()` on the interactive path; only the
+    // non-interactive connecting/unavailable states still lead with a
+    // circle.
 
     private func micAndBar<Mic: View, Bar: View>(
         @ViewBuilder mic: () -> Mic,
@@ -1580,8 +1557,11 @@ struct PTTDockRow: View {
             mic()
             bar()
                 .frame(maxWidth: .infinity, minHeight: 44)
-                .background(theme.surface)
-                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
+                .background(RoundedRectangle(cornerRadius: 999)
+                    .fill(isTransmitting ? theme.accent : theme.raised3DFace))
+                .padding(.bottom, 5)
+                .background(RoundedRectangle(cornerRadius: 999)
+                    .fill(isTransmitting ? theme.accent : theme.raised3DLip))
         }
     }
 
@@ -1595,10 +1575,14 @@ struct PTTDockRow: View {
     // mid-press, the in-progress long-press would be cancelled with it, and
     // the release callback could never fire — stranding the mic open with
     // no press left to end it. Conditional CHILDREN (rings, bar copy) may
-    // change freely across the flip; the gesture-carrying ZStack itself must
-    // keep its structural identity.
+    // change freely across the flip; the gesture-carrying view itself must
+    // keep its structural identity. B4/T4.1 moved that gesture from the mic
+    // ZStack onto the pill on the NON-compact path — the law is unchanged,
+    // only its host: `interactiveRow` applies `.modifier(pressGesture)`
+    // unconditionally to one `micAndBar(...)`, so nothing is swapped.
+    // Compact mode still hosts it on `interactiveMicCore`'s ZStack.
     //
-    // Mic visual: 44pt round (curation frame 1's dock size) — secondary
+    // Mic visual (compact only, now): 44pt round — secondary
     // style (accent stroke, accent glyph) while muted; accent-filled with
     // expanding gsRings while transmitting (1 ring = toggled open, 2 with
     // the frames' 0.7s stagger = held).
@@ -1632,9 +1616,15 @@ struct PTTDockRow: View {
         .modifier(pressGesture)
     }
 
+    /// The pill IS the control (B4/T4.1): the mic slot is `EmptyView()` on
+    /// this path, and the gesture that used to live on the circle moves onto
+    /// the pill — `.contentShape(Rectangle())` + `.modifier(pressGesture)`
+    /// applied here, unconditionally, so the press behaviour is identical
+    /// and the gesture host keeps ONE structural identity across the
+    /// muted -> transmitting flip (see the doc comment above).
     private var interactiveRow: some View {
         micAndBar(mic: {
-            interactiveMicCore
+            EmptyView()
         }, bar: {
             if isTransmitting {
                 if isHeldTransmitOwnedByThisPress {
@@ -1646,6 +1636,8 @@ struct PTTDockRow: View {
                 idleBar
             }
         })
+        .contentShape(Rectangle())
+        .modifier(pressGesture)
     }
 
     // MARK: Non-interactive mic variants
@@ -1677,48 +1669,41 @@ struct PTTDockRow: View {
 
     // MARK: Status bar variants
 
+    /// The pill at rest: the instruction plus a small accent waveform.
+    /// `GSTalkingBars` is the app's ONE waveform — reused here rather than
+    /// drawing a second kind (its own doc comment's "decorative, not driven
+    /// by live audio levels" honesty note applies).
     private var idleBar: some View {
-        Text("Tap to talk · hold to talk live")
-            .font(GSFont.bold(13, relativeTo: .body))
-            .foregroundStyle(theme.text.opacity(0.6))
+        HStack(spacing: 8) {
+            Text("HOLD TO TALK")
+                .font(GSFont.bold(13, relativeTo: .body))
+                .tracking(1.1)
+                .foregroundStyle(theme.text)
+            GSTalkingBars(color: theme.accent, barWidth: 3, maxHeight: 14)
+        }
     }
 
-    /// "MIC OPEN · TAP TO MUTE" + REQUIRED sub-caption, per live-voice
-    /// frame 2's dock (`:216,223`).
+    /// Transmitting, hands-free (tap-toggled open). ONE line, ink on the
+    /// accent face. Kept as its own symbol — see `holdingBar`.
     private var openBar: some View {
-        VStack(spacing: 2) {
-            Text("MIC OPEN · TAP TO MUTE")
-                .font(GSFont.bold(12, relativeTo: .caption))
-                .tracking(1.0)
-                .foregroundStyle(theme.accent700)
-            Text("Tap toggles · press-and-hold for walkie-talkie")
-                .font(GSFont.body(10, relativeTo: .caption2))
-                .foregroundStyle(theme.neutral500)
-        }
-        .padding(.vertical, 6)
+        Text("TALKING · RELEASE TO STOP")
+            .font(GSFont.bold(13, relativeTo: .body))
+            .tracking(1.1)
+            .foregroundStyle(theme.bg)
     }
 
-    /// "HOLDING · {elapsed} — RELEASE TO STOP" with a live counting-up
-    /// timer, per live-voice frame 1's dock (`:138`). Composed as sibling
-    /// Texts in an HStack (not Text concatenation) so the timer-styled Text
-    /// keeps its own self-updating rendering. UI-side only — no Timer, no
-    /// service involvement (same doctrine as the chess clock's
-    /// `Text(_, style: .timer)`).
+    /// Transmitting, held (walkie-talkie). Identical label to `openBar` —
+    /// the rule specifies one line, so the live elapsed timer and the
+    /// separate "HOLDING" copy are gone. Deliberately still a SEPARATE
+    /// computed property: `interactiveRow`'s three-way branch is what keeps
+    /// the gesture-bearing view's structural identity stable across the
+    /// muted -> transmitting flip, and collapsing the branch would change it
+    /// mid-press.
     private var holdingBar: some View {
-        HStack(spacing: 0) {
-            Text("HOLDING · ")
-            if let heldStartedAt {
-                Text(timerInterval: heldStartedAt...Date.distantFuture,
-                     countsDown: false, showsHours: false)
-                    .monospacedDigit()
-            }
-            Text(" — RELEASE TO STOP")
-        }
-        .font(GSFont.bold(12, relativeTo: .caption))
-        .tracking(0.5)
-        .foregroundStyle(theme.accent700)
-        .lineLimit(1)
-        .minimumScaleFactor(0.8)
+        Text("TALKING · RELEASE TO STOP")
+            .font(GSFont.bold(13, relativeTo: .body))
+            .tracking(1.1)
+            .foregroundStyle(theme.bg)
     }
 
     private var connectingBar: some View {
