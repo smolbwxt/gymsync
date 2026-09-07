@@ -214,10 +214,17 @@ struct CompletedSessionView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
+                    // neutral800, not neutral500 — the same raised3DFace
+                    // contrast rule GSComponents' voice-connected toast and
+                    // coach mark already follow. neutral500 measures 2.13:1 on
+                    // Onyx against this face; neutral800 measures 8.91:1, the
+                    // only neutral clearing WCAG AA (4.5:1) on every palette.
+                    // These runs are the smallest type on the card, so the
+                    // large-text 3:1 relaxation does not apply.
                     Text("DURATION")
                         .font(GSFont.bold(10, relativeTo: .caption2))
                         .tracking(1.4)
-                        .foregroundStyle(theme.neutral500)
+                        .foregroundStyle(theme.neutral800)
 
                     Text(durationString)
                         .font(.custom("Archivo-Bold", size: 34).monospacedDigit())
@@ -250,7 +257,8 @@ struct CompletedSessionView: View {
                 Text(auditLineText)
                     .font(GSFont.body(11, relativeTo: .caption))
                     .italic()
-                    .foregroundStyle(theme.neutral500)
+                    // 11 pt on a raised face — see the neutral800 note above.
+                    .foregroundStyle(theme.neutral800)
                     .padding(.top, 2)
             }
         }

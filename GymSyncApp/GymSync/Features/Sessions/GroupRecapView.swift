@@ -296,10 +296,16 @@ struct GroupRecapView: View {
 
     private var hero: some View {
         VStack(alignment: .leading, spacing: 4) {
+            // neutral800, not neutral500 — the same raised3DFace contrast rule
+            // GSComponents' voice-connected toast and coach mark already
+            // follow. neutral500 measures 2.13:1 on Onyx against this face;
+            // neutral800 measures 8.91:1, the only neutral clearing WCAG AA
+            // (4.5:1) on every palette. These runs are the smallest type on
+            // the card, so the large-text 3:1 relaxation does not apply.
             Text(kicker)
                 .font(GSFont.bold(10, relativeTo: .caption2))
                 .tracking(1.4)
-                .foregroundStyle(theme.neutral500)
+                .foregroundStyle(theme.neutral800)
 
             Text(durationText)
                 .font(.custom("Archivo-Bold", size: 52).monospacedDigit())
@@ -308,7 +314,7 @@ struct GroupRecapView: View {
 
             Text(subline)
                 .font(GSFont.body(12, relativeTo: .footnote))
-                .foregroundStyle(theme.neutral500)
+                .foregroundStyle(theme.neutral800)
 
             HStack(spacing: 0) {
                 heroStatCell(value: totalLbsText, label: "TOTAL \(unit.label.uppercased())")
@@ -335,7 +341,8 @@ struct GroupRecapView: View {
             Text(label)
                 .font(GSFont.bold(9, relativeTo: .caption2))
                 .tracking(0.6)
-                .foregroundStyle(theme.neutral500)
+                // 9 pt on a raised face — see the neutral800 note on `hero`.
+                .foregroundStyle(theme.neutral800)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 4)
