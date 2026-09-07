@@ -124,7 +124,14 @@ enum GoalPreset: String, Codable, CaseIterable, Sendable {
 
     /// Does the door ask for a date? Maintenance and Recovery do not — they
     /// are "held for the block" (spec §2.1: `byDate == nil`), and asking for
-    /// one would invent a deadline for a goal that has none.
+    /// one would invent a deadline for a goal that has none. **Nor does
+    /// Consistency**, whose milestone spec §2.3 gives as "days per week, held
+    /// for N weeks" — a count held, not a date met.
+    ///
+    /// The comment used to name two where the code excluded three (review
+    /// finding 8). The CODE was right; the comment is what Stream C's door
+    /// reads, and `BlockGoalModelTests` now pins all three rather than the two
+    /// the plan's own test asserted.
     var asksForDate: Bool {
         switch self {
         case .maintenance, .recovery, .consistency: return false

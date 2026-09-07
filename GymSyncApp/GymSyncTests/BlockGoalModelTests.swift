@@ -53,7 +53,14 @@ final class BlockGoalModelTests: XCTestCase {
         XCTAssertEqual(GoalPreset.recovery.metric, .stretchingExercisesPerWeek)
         XCTAssertFalse(GoalPreset.maintenance.asksForDate)
         XCTAssertFalse(GoalPreset.recovery.asksForDate)
+        // The THIRD dateless preset (review finding 8): spec §2.3 gives
+        // Consistency's milestone as "days per week, held for N weeks" — a
+        // count held, not a date met. The code always excluded it and only
+        // the comment disagreed, so nothing pinned it.
+        XCTAssertFalse(GoalPreset.consistency.asksForDate)
         XCTAssertTrue(GoalPreset.strength.asksForDate)
+        XCTAssertEqual(GoalPreset.allCases.filter { !$0.asksForDate }.count, 3,
+                       "exactly three presets are held rather than dated")
     }
 
     func testDraftBecomesAGoalWithItsEnrollment() {
