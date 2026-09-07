@@ -195,12 +195,18 @@ struct SocialTabView: View {
                                             .foregroundStyle(theme.neutral500)
                                     }
                                     Spacer()
+                                    // Badges point, they do not shout (design
+                                    // language §4): ONE small accent count in
+                                    // the corner of the widget that has
+                                    // something waiting. The plain friend
+                                    // count returns when nothing is pending.
                                     if pendingCount > 0 {
                                         GSTag(text: "\(pendingCount) new", style: .accent)
+                                    } else {
+                                        Text("\(friendCount)")
+                                            .font(GSFont.body(14, relativeTo: .subheadline))
+                                            .foregroundStyle(theme.neutral500)
                                     }
-                                    Text("\(friendCount)")
-                                        .font(GSFont.body(14, relativeTo: .subheadline))
-                                        .foregroundStyle(theme.neutral500)
                                     Image(systemName: "chevron.right")
                                         .font(.system(size: 13, weight: .semibold))
                                         .foregroundStyle(theme.neutral500)
