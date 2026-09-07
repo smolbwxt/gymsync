@@ -68,6 +68,7 @@ final class CatalogScreenTests: XCTestCase {
             "home-v3-08b-targets-above-join",
             "home-v3-09-plan",
             "home-v3-10-minimal",
+            "calendar-scheduling",
         ]
         for id in ids {
             XCTAssertNotNil(CatalogScreen(rawValue: id), "missing catalog case: \(id)")
