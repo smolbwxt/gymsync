@@ -333,7 +333,19 @@ jobs:
         if: always()
         run: |
           SCREENS="$RUNNER_TEMP/screens"
-          FLOOR=87
+          # I3 (home-v3-production plan/brief-integration.md): 87 -> 97.
+          # This floor has always tracked the ScreenshotTests test-METHOD
+          # count 1:1 (87 methods at the prior value), not the raw capture
+          # count, because until now every method attached exactly one
+          # screenshot. Stream C adds nine methods (`captureCatalog`, one
+          # capture each, frames 83-91) and Stream D adds one
+          # (testCatalogCalendarScheduling, frame 92) — 97 methods total.
+          # D's method is the one exception: it attaches TWO captures
+          # (app-calendar-scheduling and its -2 scroll proof), so the true
+          # export count will be >= 98. The floor stays 97 = the method/id
+          # count, one below that true minimum, rather than hard-coding the
+          # one-test exception into the arithmetic here.
+          FLOOR=97
           # `|| true` + the `:-0` default for the same `set -eo pipefail`
           # reason as the simulator picker above: a missing $SCREENS makes
           # `find` exit 1, which would kill the step before it printed the
