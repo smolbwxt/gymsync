@@ -681,12 +681,276 @@ enum WeeklyGoalProgressMath {
                                                  daysLeft: daysLeft))
     }
 
+    // MARK: - Goal-first phase 1: recovery, body weight, volume, benchmark
+    //
+    // Spec: docs/superpowers/specs/2026-09-07-goal-first-programming-design
+    // .md §4. The four kinds a block goal's ladder materialises into.
+    //
+    // PURE, and each takes its measured value as a PARAMETER rather than
+    // reading it. That is this file's own law, and for two of them it is
+    // also global constraint 5: a HealthKit-backed reader may never be
+    // reachable from a unit test, because `requestPermission` presents a
+    // system sheet that hangs the simulator run. The readers themselves —
+    // the stretching count, the LISS minutes, the scale, the week's tonnage,
+    // the benchmark's clock — are Stream A task A5's.
+
+    /// The recovery companion chip's name once Apple Health has answered.
+    /// The strip prints `120 / 150 LISS min` from the chip's numbers; this
+    /// name is what makes the row debuggable and what a VoiceOver reading
+    /// has to work from.
+    static let lissChipName = "LISS"
+
+    /// `4 / 6 stretches`, with `120 / 150 LISS min` under it.
+    ///
+    /// RECOVERY IS ONE GOAL WITH TWO METRICS, and the PRIMARY is the
+    /// stretching count — what the block actually schedules (spec §2.3).
+    /// Controller ruling 1 on task 0.3 settles the split: the primary owns
+    /// `value`, `target`, `met` and the right-hand read; the LISS minutes
+    /// ride beside it as their own chip.
+    ///
+    /// The chips are the contract, in this order and no other:
+    ///
+    ///   * `chips[0]` — the SUBJECT, named `STRETCHES`, carrying the meter's
+    ///     `done`/`target`. `HomeWeeklyGoalStrip`'s subject-chip contract
+    ///     reads `chips.first`, so this is the same slot every other
+    ///     non-`muscleSets` kind fills, and the reading is the existing
+    ///     full-width meter with a different subject — no new geometry.
+    ///   * `chips[1]` — the COMPANION, carrying the minutes.
+    ///
+    /// **`0 min` MUST NEVER MEAN "Health is not connected"** (controller
+    /// ruling 1, and the same ruling `distanceProgress` already carries,
+    /// pointed at the companion). LISS minutes come from Apple Health and
+    /// nowhere else, so an unasked permission produces a perfect, silent
+    /// zero. While `healthNeedsConnecting` is true the companion chip is
+    /// NAMED `CONNECT HEALTH` and its `done` is zeroed, and
+    /// `HomeWeeklyGoalStrip.recoveryCompanionLine(_:)` prints that name in
+    /// place of a fraction.
+    ///
+    /// The RIGHT-HAND READ stays the week's, not Health's: the stretching
+    /// count is the app's own record and reads whether or not Health has
+    /// ever been asked, so replacing the whole strip's read on the
+    /// companion's account would hide a number this app measured itself —
+    /// the same position `sessionsOfTypeProgress` takes and for the same
+    /// reason.
+    static func recoveryProgress(goal: WeeklyGoal,
+                                 stretchingExercisesDone: Int,
+                                 lissMinutesDone: Int,
+                                 healthNeedsConnecting: Bool = false,
+                                 now: Date = .now,
+                                 calendar: Calendar = .current) -> WeeklyGoalProgress {
+        let daysLeft = WeekMath.daysRemaining(in: now, from: now, calendar: calendar)
+        let done = Double(max(0, stretchingExercisesDone))
+        let target = Double(max(0, goal.params.count ?? 0))
+        let met = target > 0 && done >= target
+
+        let subject = WeeklyGoalProgress.Chip(name: "STRETCHES", done: done,
+                                              target: target, isNext: false)
+        let lissTarget = Double(max(0, goal.params.lissMinutes ?? 0))
+        let companion = WeeklyGoalProgress.Chip(
+            name: healthNeedsConnecting ? connectHealthRead : lissChipName,
+            done: healthNeedsConnecting ? 0 : Double(max(0, lissMinutesDone)),
+            target: lissTarget,
+            isNext: false)
+
+        return WeeklyGoalProgress(chips: [subject, companion],
+                                  value: done,
+                                  target: target,
+                                  met: met,
+                                  rightHandRead: rightHandRead(met: met,
+                                                               phrase: daysLeftPhrase(daysLeft)),
+                                  kicker: kicker(source: goal.source, met: met,
+                                                 daysLeft: daysLeft))
+    }
+
+    /// `183 → 178 lb`, over a meter that starts where the BLOCK started.
+    ///
+    /// The same geometry `liftProgress` uses, and for the same reason: an
+    /// athlete who opened a block at 183 chasing 178 has not "completed
+    /// 97 % of a goal". The floor has nowhere to live in the frozen
+    /// `WeeklyGoalProgress`, so it rides as the SUBJECT CHIP — `done` and
+    /// `target` there are the SPAN above the floor, which is exactly the
+    /// meter's geometry, while `value` and `target` on the progress itself
+    /// stay the readable pair in the athlete's own unit.
+    ///
+    /// LOSING AND GAINING ARE BOTH GOALS. The direction comes from the
+    /// milestone's side of the floor, and the span is the absolute distance,
+    /// so a cut (183 → 178) and a bulk (178 → 183) fill the meter the same
+    /// way. Moving the WRONG way reads as an empty meter rather than as
+    /// negative progress.
+    ///
+    /// No scale reading and no target is a goal that was never finished
+    /// being set: the chrome renders, not a zero that reads as met.
+    static func bodyWeightProgress(goal: WeeklyGoal,
+                                   currentLbs: Decimal?,
+                                   blockStartLbs: Decimal?,
+                                   unit: WeightUnit,
+                                   now: Date = .now,
+                                   calendar: Calendar = .current) -> WeeklyGoalProgress {
+        let daysLeft = WeekMath.daysRemaining(in: now, from: now, calendar: calendar)
+        let deadline = weeksLeftPhrase(to: goal.params.byDate, from: now,
+                                       calendar: calendar)
+            ?? daysLeftPhrase(daysLeft)
+
+        guard let targetLbs = goal.params.bodyWeightLbs, targetLbs > 0,
+              let currentLbs, currentLbs > 0 else {
+            return WeeklyGoalProgress(unitLabel: unit.label,
+                                      rightHandRead: deadline,
+                                      kicker: kicker(source: goal.source, met: false,
+                                                     daysLeft: daysLeft))
+        }
+
+        let floorLbs = blockStartLbs ?? currentLbs
+        let losing = targetLbs < floorLbs
+        let met = losing ? currentLbs <= targetLbs : currentLbs >= targetLbs
+
+        let spanLbs = abs(double(targetLbs - floorLbs))
+        let travelled = max(0, (losing ? -1 : 1) * double(currentLbs - floorLbs))
+        let meter: WeeklyGoalProgress.Chip = spanLbs > 0
+            ? .init(name: "WEIGHT", done: min(travelled, spanLbs),
+                    target: spanLbs, isNext: false)
+            : .init(name: "WEIGHT", done: met ? 1 : 0, target: 1, isNext: false)
+
+        return WeeklyGoalProgress(chips: [meter],
+                                  value: double(Units.fromPounds(currentLbs, to: unit)),
+                                  target: double(Units.fromPounds(targetLbs, to: unit)),
+                                  unitLabel: unit.label,
+                                  met: met,
+                                  rightHandRead: rightHandRead(met: met, phrase: deadline),
+                                  kicker: kicker(source: goal.source, met: met,
+                                                 daysLeft: daysLeft))
+    }
+
+    /// `62,400 / 100,000 lb` — the week's tonnage rung.
+    ///
+    /// Both numbers are converted into the athlete's unit at this edge, the
+    /// way every other weight in this file is: `volumeLbs` is stored in
+    /// canonical pounds (`Models/Units.swift:7-12`) and a kg lifter reads
+    /// kilograms.
+    ///
+    /// A cumulative-volume week starts genuinely at zero, so unlike a lift
+    /// or a body weight there is no floor to measure from — `value` over
+    /// `target` IS the honest fraction, and the subject chip carries the
+    /// same pair rather than a span.
+    static func volumeProgress(goal: WeeklyGoal,
+                               volumeLbs: Double,
+                               unit: WeightUnit,
+                               now: Date = .now,
+                               calendar: Calendar = .current) -> WeeklyGoalProgress {
+        let daysLeft = WeekMath.daysRemaining(in: now, from: now, calendar: calendar)
+        let target = Units.fromPounds(max(0, goal.params.volumeLbs ?? 0), to: unit)
+        let value = Units.fromPounds(max(0, volumeLbs), to: unit)
+        let met = target > 0 && value >= target
+
+        return WeeklyGoalProgress(chips: [.init(name: "VOLUME", done: value,
+                                                target: target, isNext: false)],
+                                  value: value,
+                                  target: target,
+                                  unitLabel: unit.label,
+                                  met: met,
+                                  rightHandRead: rightHandRead(met: met,
+                                                               phrase: daysLeftPhrase(daysLeft)),
+                                  kicker: kicker(source: goal.source, met: met,
+                                                 daysLeft: daysLeft))
+    }
+
+    /// `47:10 → 45:00`, and LOWER IS BETTER.
+    ///
+    /// `value` and `target` are SECONDS; the strip formats them as a clock.
+    /// A benchmark is the one goal in this file whose number falls, so `met`
+    /// is `best <= target` rather than the other way round, and the meter is
+    /// measured DOWNWARD from the athlete's own first attempt: the seconds
+    /// shaved, over the seconds there were to shave. Without that floor a
+    /// 47:10 against a 45:00 target would draw a meter more than full.
+    ///
+    /// `startSeconds` is the first recorded attempt inside the block, the
+    /// exact counterpart of `liftProgress`' `blockStartLbs`. With none, the
+    /// current best IS the floor, which draws an empty meter — the honest
+    /// reading of "you have run it once and not beaten it yet".
+    ///
+    /// No attempt at all is not a zero. `47:10` and `0:00` are both times,
+    /// and a `0:00` would read as the best benchmark ever run, so the arm
+    /// with no attempt renders the target and an empty meter instead.
+    static func benchmarkProgress(goal: WeeklyGoal,
+                                  bestSeconds: Int?,
+                                  startSeconds: Int? = nil,
+                                  routineName: String = "",
+                                  now: Date = .now,
+                                  calendar: Calendar = .current) -> WeeklyGoalProgress {
+        let daysLeft = WeekMath.daysRemaining(in: now, from: now, calendar: calendar)
+        let deadline = weeksLeftPhrase(to: goal.params.byDate, from: now,
+                                       calendar: calendar)
+            ?? daysLeftPhrase(daysLeft)
+
+        guard let targetSeconds = goal.params.targetSeconds, targetSeconds > 0 else {
+            return WeeklyGoalProgress(rightHandRead: deadline,
+                                      kicker: kicker(source: goal.source, met: false,
+                                                     daysLeft: daysLeft))
+        }
+
+        guard let bestSeconds, bestSeconds > 0 else {
+            return WeeklyGoalProgress(chips: [.init(name: routineName, done: 0,
+                                                    target: 1, isNext: false)],
+                                      value: 0,
+                                      target: Double(targetSeconds),
+                                      rightHandRead: deadline,
+                                      kicker: kicker(source: goal.source, met: false,
+                                                     daysLeft: daysLeft))
+        }
+
+        let met = bestSeconds <= targetSeconds
+        let floorSeconds = startSeconds ?? bestSeconds
+        let span = Double(floorSeconds - targetSeconds)
+        let shaved = Double(floorSeconds - bestSeconds)
+        let meter: WeeklyGoalProgress.Chip = span > 0
+            ? .init(name: routineName, done: min(max(0, shaved), span),
+                    target: span, isNext: false)
+            : .init(name: routineName, done: met ? 1 : 0, target: 1, isNext: false)
+
+        return WeeklyGoalProgress(chips: [meter],
+                                  value: Double(bestSeconds),
+                                  target: Double(targetSeconds),
+                                  met: met,
+                                  rightHandRead: rightHandRead(met: met, phrase: deadline),
+                                  kicker: kicker(source: goal.source, met: met,
+                                                 daysLeft: daysLeft))
+    }
+
+    /// `100,000` — a whole number with thousands separators, grouped by
+    /// hand rather than by a `NumberFormatter`.
+    ///
+    /// POSIX by construction, for the reason `HomeWeeklyGoalStrip.number`
+    /// gives about `String(format:)`: a locale-aware grouping separator is a
+    /// full stop in half of Europe, and a screenshot diff must not depend on
+    /// which simulator locale CI happened to boot. Tonnage is the one
+    /// reading in this system big enough to need it, and the volume strip
+    /// and Coach's volume sentence must not spell it two ways.
+    static func groupedNumber(_ value: Double) -> String {
+        guard value.isFinite, abs(value) < 1e12 else { return "—" }
+        let whole = Int(value.rounded())
+        let digits = String(abs(whole))
+        var grouped = ""
+        for (offset, character) in digits.reversed().enumerated() {
+            if offset > 0 && offset % 3 == 0 { grouped.append(",") }
+            grouped.append(character)
+        }
+        return (whole < 0 ? "-" : "") + String(grouped.reversed())
+    }
+
+    /// `47:10` — minutes and seconds, minutes unbounded (a 90-minute
+    /// benchmark reads `90:00` rather than rolling into hours, because that
+    /// is how every athlete writes a workout time down).
+    static func clock(_ seconds: Double) -> String {
+        guard seconds.isFinite, seconds >= 0, seconds < 360_000 else { return "—" }
+        let whole = Int(seconds.rounded())
+        return String(format: "%d:%02d", whole / 60, whole % 60)
+    }
+
     // MARK: - A4: the dispatcher
 
     /// One entry point per goal, so `LiveWeeklyGoalRepository` (A12) never
     /// switches on `kind` itself.
     ///
-    /// All five kinds route from here.
+    /// All nine kinds route from here.
     ///
     /// `logs` are THIS WEEK's; `blockLogs` are the active block's, which the
     /// `lift` kind needs because an e1RM is a block-long fact rather than a
@@ -735,6 +999,35 @@ enum WeeklyGoalProgressMath {
             return distanceProgress(goal: goal, metres: distanceMetres, unit: unit,
                                     healthNeedsConnecting: healthNeedsConnecting,
                                     now: now, calendar: calendar)
+
+        // ── goal-first programming phase 1 ────────────────────────────────
+        //
+        // THEIR READERS ARE STREAM A TASK A5's. This dispatcher's signature
+        // is the shipped one and widening it is A5's job, so each arm below
+        // calls the kind's pure function with the value it has — which today
+        // is none — rather than inventing a number or reaching for a store.
+        //
+        // NOTHING IN THIS BUILD CAN REACH THEM. A row of one of these kinds
+        // has to be written first, and `weekly_goals.kind`'s CHECK
+        // constraint is not widened until task A2 (global constraint 10:
+        // migrations are applied at a controller gate). Until then the live
+        // insert is rejected by the column, so no `recovery`, `bodyWeight`,
+        // `volume` or `benchmark` row exists to dispatch on.
+        case .recovery:
+            return recoveryProgress(goal: goal,
+                                    stretchingExercisesDone: 0, lissMinutesDone: 0,
+                                    healthNeedsConnecting: healthNeedsConnecting,
+                                    now: now, calendar: calendar)
+        case .bodyWeight:
+            return bodyWeightProgress(goal: goal, currentLbs: nil, blockStartLbs: nil,
+                                      unit: unit, now: now, calendar: calendar)
+        case .volume:
+            return volumeProgress(goal: goal, volumeLbs: 0, unit: unit,
+                                  now: now, calendar: calendar)
+        case .benchmark:
+            let name = goal.params.routineID.flatMap { routines[$0]?.name } ?? ""
+            return benchmarkProgress(goal: goal, bestSeconds: nil, startSeconds: nil,
+                                     routineName: name, now: now, calendar: calendar)
         }
     }
 }

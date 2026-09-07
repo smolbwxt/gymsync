@@ -423,6 +423,53 @@ struct LiveWeeklyGoalRepository: WeeklyGoalRepository, WeeklyGoalCoachWriter {
                 goal: goal, metres: await metres, unit: unit,
                 healthNeedsConnecting: await needsConnecting,
                 now: now, calendar: calendar)
+
+        // ── goal-first programming phase 1 (plan task 0.3) ────────────────
+        //
+        // CLOSED, NOT FETCHED. Task 0 is the interface four streams fork
+        // against; the READS behind these four kinds — the stretching count,
+        // the LISS minutes, the scale, the week's tonnage, the benchmark's
+        // clock — are Stream A task A5's, and a guess at them here would be
+        // exactly the second opinion this file exists to avoid.
+        //
+        // Unreachable today either way: a row of one of these kinds cannot
+        // be inserted until `weekly_goals.kind`'s CHECK constraint is
+        // widened (task A2, applied at a controller gate per global
+        // constraint 10), so `goal.kind` cannot arrive here as one of them.
+        // Each arm still routes through the kind's own pure function, so A5
+        // fills in an argument rather than inventing an arm.
+        case .recovery:
+            // The one read this arm CAN honestly make today: whether Health
+            // has ever been asked. Without it the companion chip would say
+            // `0 min` where it means "not connected" (controller ruling 1).
+            let recoveryNeedsConnecting =
+                await HealthKitBridge.weeklyGoalHealthNeedsConnecting()
+            return WeeklyGoalProgressMath.recoveryProgress(
+                goal: goal, stretchingExercisesDone: 0, lissMinutesDone: 0,
+                healthNeedsConnecting: recoveryNeedsConnecting,
+                now: now, calendar: calendar)
+
+        case .bodyWeight:
+            return WeeklyGoalProgressMath.bodyWeightProgress(
+                goal: goal, currentLbs: nil, blockStartLbs: nil, unit: unit,
+                now: now, calendar: calendar)
+
+        case .volume:
+            return WeeklyGoalProgressMath.volumeProgress(
+                goal: goal, volumeLbs: 0, unit: unit, now: now, calendar: calendar)
+
+        case .benchmark:
+            // The routine's NAME is the benchmark's subject chip, and it is
+            // readable now — the library is already keyed by id for
+            // `sessionsOfType`, so this costs the fetch that arm costs and
+            // nothing new.
+            var benchmarkName = ""
+            if let routineID = goal.params.routineID {
+                benchmarkName = await routinesByID(userID: userID)[routineID]?.name ?? ""
+            }
+            return WeeklyGoalProgressMath.benchmarkProgress(
+                goal: goal, bestSeconds: nil, startSeconds: nil,
+                routineName: benchmarkName, now: now, calendar: calendar)
         }
     }
 

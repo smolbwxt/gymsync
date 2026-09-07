@@ -78,6 +78,16 @@ enum WeeklyGoalProposalRule {
 
         case .days, .sessionsOfType:
             return false
+
+        // The same position, for the same reason, on the four goal-first
+        // kinds (plan task 0.3): every number in them is one the athlete
+        // stated — a stretching count, a scale reading, a tonnage, a time —
+        // and Coach does not get a second opinion about a number it was
+        // told. So for these four a proposal is only ever "a different kind
+        // entirely", which the `user.kind == coach.kind` guard above has
+        // already answered.
+        case .recovery, .bodyWeight, .volume, .benchmark:
+            return false
         }
     }
 
@@ -118,6 +128,31 @@ enum WeeklyGoalProposalRule {
             }
             let weight = number(double(Units.fromPounds(lbs, to: unit)))
             return "Coach suggests a lift target of \(weight) \(unit.label) this week."
+
+        // ── goal-first programming phase 1 (plan task 0.3) ────────────────
+        // One line each, in Coach's voice: first person is the Coach TILE's
+        // register (design rule 7); these are the sentences that replace the
+        // editor's copy line, and they keep the shipped "Coach suggests …"
+        // opening every arm above uses.
+        case .recovery:
+            let count = coach.params.count ?? 0
+            let minutes = coach.params.lissMinutes ?? 0
+            return "Coach suggests \(count) stretching sessions and \(minutes) easy minutes this week."
+
+        case .bodyWeight:
+            guard let lbs = coach.params.bodyWeightLbs else {
+                return "Coach suggests making this week about your body weight."
+            }
+            let weight = number(double(Units.fromPounds(lbs, to: unit)))
+            return "Coach suggests a body-weight target of \(weight) \(unit.label) this week."
+
+        case .volume:
+            let tonnage = WeeklyGoalProgressMath.groupedNumber(
+                Units.fromPounds(coach.params.volumeLbs ?? 0, to: unit))
+            return "Coach suggests \(tonnage) \(unit.label) moved this week."
+
+        case .benchmark:
+            return "Coach suggests putting this week behind one benchmark."
         }
     }
 
