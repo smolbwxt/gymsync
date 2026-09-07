@@ -333,13 +333,24 @@ struct HomeWeeklyGoalStrip: View {
         // yet. All three fall back to an empty track rather than to a
         // plausible-looking wrong answer.
         //
-        // Written as three `if case`s rather than a `switch` with a
-        // `default:`: this file's law is that a new kind is a COMPILE ERROR,
-        // and a `default:` here — even on an optional — is the shape that
-        // quietly absorbs the next one.
-        if case .some(.lift) = kind { return 0 }
-        if case .some(.bodyWeight) = kind { return 0 }
-        if case .some(.benchmark) = kind { return 0 }
+        // AN EXHAUSTIVE SWITCH OVER THE OPTIONAL, no `default:` (review
+        // finding 5). This was three `if case`s, on the reasoning that a
+        // `default:` is the shape that quietly absorbs the next kind — true,
+        // but it took the wrong way out of it: a chain of `if case`s absorbs
+        // the next kind just as silently, and this is the one place in the
+        // file where absorbing it costs a WRONG NUMBER rather than a blank.
+        // Phase 2's `vo2Max` and phase 3's `patternLoadPercent` both have
+        // span-above-a-floor geometry, and either would have fallen through
+        // to `value / target` and drawn a plausible, confident, wrong meter.
+        // Spelling every case out makes it a compile error, which is what
+        // `unitLabel` twenty lines below already does.
+        switch kind {
+        case .some(.lift), .some(.bodyWeight), .some(.benchmark):
+            return 0
+        case .some(.muscleSets), .some(.distance), .some(.sessionsOfType),
+             .some(.days), .some(.recovery), .some(.volume), .none:
+            break
+        }
         guard progress.target > 0 else { return 0 }
         return Self.clamped(progress.value / progress.target)
     }
