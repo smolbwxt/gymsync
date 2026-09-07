@@ -1941,24 +1941,28 @@ struct GSVoiceCoachMark: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Tap or hold to talk")
                     .font(GSFont.bold(15, relativeTo: .headline))
-                    .foregroundStyle(theme.bg)
+                    .foregroundStyle(theme.text)
                 Text("You're muted until you open your mic. Tap to keep it open hands-free, or hold for walkie-talkie. Nothing is recorded.")
                     .font(GSFont.body(12, relativeTo: .caption))
-                    .foregroundStyle(theme.bg.opacity(0.85))
+                    .foregroundStyle(theme.neutral500)
                 Button(action: onDismiss) {
                     Text("Got it")
                         .font(GSFont.bold(12, relativeTo: .caption))
-                        .foregroundStyle(theme.text)
+                        .foregroundStyle(theme.bg)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
-                        .background(theme.bg)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.gs3D(face: theme.accent,
+                                   cornerRadius: GSMetrics.radiusSm,
+                                   lipHeight: 4))
                 .padding(.top, 6)
             }
             .padding(14)
-            .background(theme.text)
-            .cornerRadius(GSMetrics.radiusSm)   // redesign: rounded banner
+            // The popover wears the app's own raised face, not an inverted
+            // white slab (`theme.text` as a fill read as a foreign object on
+            // the Onyx palettes). The modifier clips, so the explicit
+            // cornerRadius is gone with it.
+            .gs3DCard(cornerRadius: GSMetrics.radiusSm)
 
             // Pointer triangle toward the mic dock below (frame's downward-
             // pointing bubble tail) — a local `Path`, not a new reusable
@@ -1970,7 +1974,7 @@ struct GSVoiceCoachMark: View {
                 path.addLine(to: CGPoint(x: 9, y: 9))
                 path.closeSubpath()
             }
-            .fill(theme.text)
+            .fill(theme.raised3DFace)
             .frame(width: 18, height: 9)
             .padding(.leading, 36)
         }
