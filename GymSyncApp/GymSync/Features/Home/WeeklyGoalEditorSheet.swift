@@ -755,7 +755,12 @@ struct WeeklyGoalEditorSheet: View {
         case .distance:
             if let activity = params.activity { self.activity = activity }
             if let target = params.distanceTarget {
-                distanceTarget = Self.seedInt(target, default: distanceTarget)
+                // I1 (review-stream-C-r1.md residual nit 2): clamped to the
+                // stepper's own 1...200 range (`:380`) — `seedInt` alone only
+                // rejects non-finite/non-positive/`>= 1_000` values, which
+                // left a 201...999 proposal writing a value the stepper
+                // itself can never reach or step back down from.
+                distanceTarget = max(1, min(200, Self.seedInt(target, default: distanceTarget)))
             }
         case .sessionsOfType:
             if let sessionType = params.sessionType { self.sessionType = sessionType }
@@ -764,7 +769,15 @@ struct WeeklyGoalEditorSheet: View {
             break
         case .lift:
             if let exerciseID = params.exerciseID { self.exerciseID = exerciseID }
-            if let weight = params.targetWeightLbs { targetWeightLbs = weight }
+            // I1 (residual nit 2): the weight stepper (`:555`) has no upper
+            // bound of its own — `canIncrease` is unconditionally `true` —
+            // so the only real invariant to enforce here is the one the
+            // stepper's own `canDecrease` gate enforces: positive and
+            // finite. An unvalidated proposal could otherwise write zero,
+            // negative, NaN or infinite pounds.
+            if let weight = params.targetWeightLbs, weight.isFinite, weight > 0 {
+                targetWeightLbs = weight
+            }
             if let byDate = params.byDate { self.byDate = max(byDate, today) }
         }
     }
