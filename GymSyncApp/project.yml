@@ -166,7 +166,15 @@ targets:
         UIBackgroundModes:
           - audio
         ITSAppUsesNonExemptEncryption: false
-        NSHealthShareUsageDescription: "Gym Sync writes your completed workouts to Apple Health so they appear in your Activity ring."
+        # SHARE = READ. This key carried a WRITE sentence and had been wrong
+        # since the 2026-07-27 heart-rate read; the weekly goal's distance
+        # and sessions kinds (Stream A task A7) widen that read to workouts
+        # and distance, so it now describes what it actually asks for. The
+        # UPDATE key below keeps the write sentence, which is correct for it.
+        # The WATCH target's own two strings are deliberately untouched — its
+        # read is a different, narrower purpose and its comment records why
+        # the key exists at all.
+        NSHealthShareUsageDescription: "Gym Sync reads your workouts, distance and heart rate from Apple Health so your weekly goal counts the miles and sessions you log with other apps and watches."
         NSHealthUpdateUsageDescription: "Gym Sync writes your completed workouts to Apple Health so they appear in your Activity ring."
         NSLocationWhenInUseUsageDescription: "Gym Sync uses your location to confirm you're at your home gym during check-in."
         NSCalendarsFullAccessUsageDescription: "Gym Sync adds your scheduled sessions to your calendar when you turn on calendar sync in the You tab."

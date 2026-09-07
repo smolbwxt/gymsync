@@ -62,4 +62,23 @@ final class HealthKitBridgeTests: XCTestCase {
         XCTAssertNotEqual(predicateA.predicateFormat, predicateB.predicateFormat)
         XCTAssertTrue(predicateA.predicateFormat.contains(sessionA.uuidString))
     }
+
+    // MARK: - Weekly goal distance read (Stream A task A7 — pure mapping)
+
+    func testActivityTypeMapsTheGoalEditorsFourActivities() {
+        XCTAssertEqual(HealthKitBridge.activityType(for: "run"), .running)
+        XCTAssertEqual(HealthKitBridge.activityType(for: "bike"), .cycling)
+        XCTAssertEqual(HealthKitBridge.activityType(for: "row"), .rowing)
+        XCTAssertEqual(HealthKitBridge.activityType(for: "walk"), .walking)
+    }
+
+    func testActivityTypeIsCaseInsensitive() {
+        XCTAssertEqual(HealthKitBridge.activityType(for: "RUN"), .running)
+        XCTAssertEqual(HealthKitBridge.activityType(for: "Bike"), .cycling)
+    }
+
+    func testUnknownActivityMapsToNilRatherThanMatchingEverything() {
+        XCTAssertNil(HealthKitBridge.activityType(for: "swim"))
+        XCTAssertNil(HealthKitBridge.activityType(for: ""))
+    }
 }
