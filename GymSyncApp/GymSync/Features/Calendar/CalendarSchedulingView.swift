@@ -232,7 +232,10 @@ struct CalendarSchedulingView: View {
             Text(errorText ?? "")
         }
         .navigationDestination(item: $lobbySessionID) { id in
-            if let session = upcoming.first(where: { $0.id == id }) {
+            // `timeline`, not `upcoming`: a LIVE row is an agenda item too, and
+            // `upcoming()` excludes `in_progress` — resolving from it pushed a
+            // blank screen for exactly the row the LIVE pill invites you to tap.
+            if let session = timeline.first(where: { $0.id == id }) {
                 // `.id` — session-identity pin, the rule every lobby push in
                 // this app follows (`HomeView.navigateToJoined`'s destination
                 // comment has the field-bug story).
