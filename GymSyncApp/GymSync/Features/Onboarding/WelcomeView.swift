@@ -86,7 +86,8 @@ struct WelcomeView: View {
 
     private var badge: some View {
         ZStack {
-            Rectangle().fill(theme.accent).frame(width: 60, height: 60)
+            // Done badge — green means done (design language), not accent.
+            Rectangle().fill(Color.gsSuccess).frame(width: 60, height: 60)
             Image(systemName: "checkmark")
                 .font(.system(size: 30, weight: .bold))
                 .foregroundColor(theme.bg)

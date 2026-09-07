@@ -3001,7 +3001,11 @@ struct GroupSessionLiveView: View {
             // Dossier §A.2 confirms the exact insertion point: between
             // the HYPE strip and the bottom action bar.
             if isVoiceEligible {
-                PTTDockRow(otherParticipantNames: otherParticipantNames)
+                // Same retry closure the degraded banner above receives, so
+                // the dock's RETRY and the banner's Retry are one action and
+                // cannot disagree.
+                PTTDockRow(otherParticipantNames: otherParticipantNames,
+                           onRetry: { Task { await VoiceRoomService.shared.retry() } })
             }
             // ── BOTTOM ACTION BAR ────────────────────────────────────
             // My turn → pinned "Log Set & Pass" CTA (per proof, lives OUTSIDE the

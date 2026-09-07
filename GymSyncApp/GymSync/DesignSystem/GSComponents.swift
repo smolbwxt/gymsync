@@ -195,6 +195,7 @@ public enum GSTagStyle {
     case accent   // accent100 fill, accent text
     case neutral  // neutral300 fill, neutral700 text
     case outline  // transparent fill, neutral400 border, neutral700 text
+    case success  // gsSuccessSoft fill, gsSuccess text — done / live / present
 }
 
 public struct GSTag: View {
@@ -228,6 +229,7 @@ public struct GSTag: View {
         case .accent:   return theme.accent
         case .neutral:  return theme.neutral700
         case .outline:  return theme.neutral700
+        case .success:  return .gsSuccess
         }
     }
 
@@ -236,6 +238,7 @@ public struct GSTag: View {
         case .accent:   return theme.accent100
         case .neutral:  return theme.neutral300
         case .outline:  return Color.clear
+        case .success:  return .gsSuccessSoft
         }
     }
 }
@@ -1318,34 +1321,40 @@ struct GSExpandingRing: View {
 // types, so this type and its properties are deliberately NOT `public`, same
 // access-level reasoning).
 //
-// SHAPE (blessed frames, 2026-07-14 review round — these override the older
-// canvas's merged rectangular row): a round 44pt mic BUTTON beside a
-// SEPARATE bordered status bar (`docs/design/sections/2026-07-curation.dc.html`
-// frame 1's dock row + the coach-mark frame in `2026-07-live-voice.dc.html`).
+// SHAPE (design congruence B4, 2026-09 — supersedes the 2026-07-14 blessed
+// frames' two-object dock of a round mic BUTTON beside a SEPARATE bordered
+// status bar): the interactive control is ONE neutral raised pill. The rule
+// is that a talk control is one object, and that the object carrying the
+// transmitting state is the one you press — the old dock inverted it (the
+// mic circle went accent while the pill stayed neutral) and showed a second
+// "YOU'RE LIVE" hero above the dock.
 // Per state:
-//   .idle / .connected(.muted)  -> secondary-style round mic (accent stroke,
-//       accent glyph) + bar "Tap to talk · hold to talk live"
-//   .connected(.transmitting), toggled open -> accent-FILLED round mic + one
-//       gsRing + bar "MIC OPEN · TAP TO MUTE" over sub-caption "Tap toggles ·
-//       press-and-hold for walkie-talkie" (live-voice frame 2)
-//   .connected(.transmitting), held -> accent-filled round mic + TWO gsRings
-//       (0.7s stagger) + bar "HOLDING · {elapsed} — RELEASE TO STOP" with a
-//       LIVE elapsed timer (live-voice frame 1; timer is UI-side only —
-//       Text(timerInterval:), zero service-side timers)
-//   .connecting -> dimmed secondary mic + spinner bar "Connecting voice…"
-//   .unavailable -> dashed muted mic + muted bar (pairs with
-//       `GSVoiceUnavailableBanner`, shown by the caller above the dock)
-//   .micDenied -> the whole row is a single full-width open-Settings button
-//       (unchanged from the earlier canvas live-dock frame; the blessed
-//       frames don't redraw denied)
+//   .idle / .connected(.muted)  -> raised3DFace pill on raised3DLip,
+//       "HOLD TO TALK" + a small accent `GSTalkingBars` waveform at rest
+//   .connected(.transmitting), toggled open OR held -> SOLID ACCENT pill,
+//       one line, "TALKING · RELEASE TO STOP" in theme.bg ink. (openBar and
+//       holdingBar stay separate symbols so `interactiveRow`'s branch
+//       structure — and the gesture host's identity — never changes.)
+//   .connecting -> dimmed spinner bar "Connecting voice…" in the same pill
+//   .unavailable -> muted bar in the same pill, plus a RETRY button when the
+//       caller supplied `onRetry` (pairs with `GSVoiceUnavailableBanner`,
+//       shown by the caller above the dock)
+//   .micDenied -> the same pill, wrapped in one open-Settings Button
+//
+// EVERY non-compact state is exactly one object (round-1 item 3): the
+// scaffold's old leading `mic:` slot and the dimmed circles that filled it
+// on connecting/unavailable are gone, and micDenied no longer draws its own
+// bordered rectangle. The round mic survives ONLY in `compact: true` (the my-turn page's 56pt
+// sound rail, which has no room for a pill) — `interactiveMicCore` is
+// unchanged and still carries its own gesture there.
 //
 // OPEN-vs-HELD is DERIVED, not stored: `.connected(.transmitting)` renders
 // the holding UI iff `isHeldTransmitOwnedByThisPress` (this press began and
-// owns the walkie-talkie transmission) and the open UI otherwise. A fresh
-// view instance (e.g. Lobby -> live-session push, where the room connection
-// deliberately survives) therefore correctly shows "MIC OPEN · TAP TO MUTE"
-// for a transmission it didn't start — the only way to be transmitting with
-// no finger down is hands-free.
+// owns the walkie-talkie transmission) and the open UI otherwise. The two
+// now read the SAME line ("TALKING · RELEASE TO STOP" — the rule specifies
+// one line), so the distinction is no longer visible; the branch is kept
+// because it is what holds the gesture host's view identity stable across
+// the muted -> transmitting flip (see `interactiveRow`).
 //
 // GESTURE (Task 4 AMENDMENT, 2026-07-14 — overrides the brief's hold-only
 // text): the mic supports BOTH tap-to-toggle (mic stays open hands-free
@@ -1360,9 +1369,13 @@ struct GSExpandingRing: View {
 struct PTTDockRow: View {
     @Environment(\.gsTheme) private var theme
 
-    /// Other participants' display names, for the transmit hero's "N
-    /// listening" caption (Phase O Task 5 item 5 — designer follow-up
-    /// frames, `docs/design/sections/2026-07-live-voice.dc.html`).
+    /// Other participants' display names. B4/T4.1 deleted the transmit hero
+    /// that consumed them ("N listening"), so nothing reads this today; the
+    /// property and its three call sites are kept as-is because removing it
+    /// would be an API change outside that task's visual scope.
+    ///
+    /// Original contract (Phase O Task 5 item 5 — designer follow-up frames,
+    /// `docs/design/sections/2026-07-live-voice.dc.html`):
     /// `VoiceRoomService` only knows LiveKit identity strings (UUIDs),
     /// never usernames, so this must be threaded in from whichever view
     /// already has real `Profile` data (`LobbyView.participants` /
@@ -1383,9 +1396,22 @@ struct PTTDockRow: View {
     /// the full hero remains the non-compact experience.
     let compact: Bool
 
-    init(otherParticipantNames: [String] = [], compact: Bool = false) {
+    /// What the `.unavailable` pill's RETRY affordance does — the SAME
+    /// closure the caller already hands `GSVoiceUnavailableBanner`, so both
+    /// affordances drive one action and cannot disagree.
+    ///
+    /// `nil` (the default, and what `CatalogHostView`'s bare `PTTDockRow()`
+    /// gets) means the word RETRY is **not rendered at all**. A label that
+    /// reads RETRY and does nothing is a lie, and it would spend accent on a
+    /// non-action; an absent affordance is honest. See `unavailableBar`.
+    let onRetry: (() -> Void)?
+
+    init(otherParticipantNames: [String] = [],
+         compact: Bool = false,
+         onRetry: (() -> Void)? = nil) {
         self.otherParticipantNames = otherParticipantNames
         self.compact = compact
+        self.onRetry = onRetry
     }
 
     /// Monotonic per-press identity. Bumped on every press-down; captured by
@@ -1420,9 +1446,15 @@ struct PTTDockRow: View {
     /// auto-muted by release").
     @State private var isHeldTransmitOwnedByThisPress = false
 
-    /// When the current held transmission started — feeds the holding bar's
-    /// live elapsed timer (`Text(timerInterval:)`, UI-side only). Set exactly
-    /// when ownership is claimed, cleared exactly when it's released/reset.
+    /// When the current held transmission started. Set exactly when
+    /// ownership is claimed, cleared exactly when it's released/reset.
+    ///
+    /// WRITTEN-ONLY since B4/T4.1: it fed the holding bar's live elapsed
+    /// timer (`Text(timerInterval:)`), and the rule now specifies one line,
+    /// so that timer is gone and nothing reads this. Kept because the plan's
+    /// do-not-delete list names "any `@State` on the type"; retiring it (with
+    /// `otherParticipantNames`, dead for the same reason) is a named
+    /// follow-up, not an accident.
     @State private var heldStartedAt: Date?
 
     /// The in-flight `beginTransmit()` attempt kicked off by the current
@@ -1458,20 +1490,14 @@ struct PTTDockRow: View {
     private var fullDock: some View {
         VStack(spacing: 0) {
             GSDivider()
-            // Transmit hero (Phase O Task 5 item 5) — shown above the dock
-            // itself while actively transmitting, matching the designer
-            // follow-up frames' "YOU'RE LIVE"/mic-open hero moment.
-            if isTransmitting {
-                transmitHero
-            }
             Group {
                 switch voice.state {
                 case .micDenied:
                     deniedRow
                 case .unavailable:
-                    micAndBar(mic: { unavailableMic }, bar: { unavailableBar })
+                    talkPill { unavailableBar }
                 case .connecting:
-                    micAndBar(mic: { connectingMic }, bar: { connectingBar })
+                    talkPill { connectingBar }
                         .opacity(0.75)
                 case .idle, .connected:
                     interactiveRow
@@ -1510,50 +1536,14 @@ struct PTTDockRow: View {
         }
     }
 
-    // MARK: Transmit hero (Phase O Task 5 item 5)
+    // MARK: Transmit hero — REMOVED (design congruence B4/T4.1)
     //
-    // docs/design/sections/2026-07-live-voice.dc.html frames 1 ("Talking ·
-    // hold") and 2 ("Mic open · tap") both show a full hero moment above
-    // the dock while actively transmitting — waveform, "YOU'RE LIVE"/mic-
-    // open headline, "The crew can hear you" + who's listening. This is
-    // the reusable core only (headline + waveform + listening caption) —
-    // the frames' own top status bar/turn card are page-level chrome each
-    // caller (LobbyView/GroupSessionLiveView) already renders above
-    // wherever it places `PTTDockRow`, not this component's concern.
-    //
-    // Waveform: reuses `GSTalkingBars` (its own doc comment's "purely
-    // decorative, not driven by live audio levels" honesty note applies
-    // here too — `VoiceRoomService` exposes no metering API) at a larger
-    // size rather than building a second bespoke waveform view; the
-    // frames' own waveform is an 11-bar version of the exact same idea.
-
-    private var transmitHero: some View {
-        VStack(spacing: 10) {
-            Text(isHeldTransmitOwnedByThisPress ? "YOU'RE LIVE" : "MIC OPEN · HANDS-FREE")
-                .font(GSFont.bold(12, relativeTo: .caption))
-                .tracking(1.6)
-                .foregroundStyle(theme.accent700)
-
-            GSTalkingBars(color: theme.accent, barWidth: 6, maxHeight: 56)
-
-            VStack(spacing: 2) {
-                Text("The crew can hear you")
-                    .font(GSFont.bold(18, relativeTo: .title3))
-                    .foregroundStyle(theme.text)
-                if !otherParticipantNames.isEmpty {
-                    Text("\(otherParticipantNames.joined(separator: " · ")) listening")
-                        .font(GSFont.body(12, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral500)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
-        .padding(.horizontal, 12)
-        .background(theme.bg)
-    }
+    // A `transmitHero` used to render above the dock while transmitting
+    // (the 2026-07 follow-up frames' "YOU'RE LIVE" moment: big waveform,
+    // headline, "N listening"). The talk control is ONE object now, and the
+    // pill itself carries the transmitting state, so the hero was the second
+    // object the rule forbids. Deleted rather than hidden — there is no
+    // flag that brings it back.
 
     private var isTransmitting: Bool {
         if case .connected(.transmitting) = voice.state { return true }
@@ -1567,20 +1557,71 @@ struct PTTDockRow: View {
                         onRelease: handleRelease)
     }
 
-    // MARK: Row scaffold — round mic + separate bordered status bar
+    // MARK: Row scaffold — the raised talk pill, and nothing else
+    //
+    // The bar's chrome IS the control: a full-width extruded pill —
+    // radius 999 (the chips radius) on a 5pt lip (the tile lip) — filled
+    // with the theme's neutral raised pair at rest and a SOLID ACCENT face
+    // while transmitting, so the object you press is the object that goes
+    // live. The old `theme.surface` fill + `theme.divider` stroke are gone
+    // (the lip delineates, same reasoning as `GS3DCardStyle` retiring the
+    // card stroke).
+    //
+    // Round-1 item 3: EVERY non-compact state is now exactly one object.
+    // The scaffold used to take a leading `mic:` slot, and connecting /
+    // unavailable still filled it with a dimmed circle — two objects on a
+    // control whose whole rule is one. The slot is gone with them (nothing
+    // passed anything but `EmptyView()` after T4.1), and `deniedRow` — which
+    // never went through this scaffold at all — now wears the same pill.
+    // `compactMic` is untouched and keeps `interactiveMicCore`'s circle: the
+    // 56pt sound rail has no room for a pill.
+    //
+    // Round-1 F2: the lip is now the SYSTEM's, not hand-rolled. Passing
+    // `face:` through to `.gs3DCard` means an accent face derives its lip
+    // the way every other accent extrusion in the app does — face over
+    // black 0.45 (`GS3DCardChrome.lipLayer` / `GS3DButtonStyle.lipLayer`) —
+    // and a nil face falls back to the theme's neutral raised pair. Before
+    // this, face and lip were BOTH `theme.accent` while transmitting, so
+    // the most-pressed control in the app was the only extrusion that went
+    // flat when it activated — and a flat extrusion is this language's word
+    // for "pressed", which is precisely backwards on a hands-free state.
 
-    private func micAndBar<Mic: View, Bar: View>(
-        @ViewBuilder mic: () -> Mic,
-        @ViewBuilder bar: () -> Bar
-    ) -> some View {
-        HStack(spacing: 8) {
-            mic()
-            bar()
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .background(theme.surface)
-                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
+    private func talkPill<Bar: View>(@ViewBuilder _ bar: () -> Bar) -> some View {
+        bar()
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .gs3DCard(cornerRadius: 999,
+                      lipHeight: 5,
+                      face: isTransmitting ? theme.accent : nil)
+            // Round-2 F12: the pill had no accessibility label on any path.
+            // `.contain`, NOT `.ignore`: the unavailable pill holds a real
+            // RETRY Button, and ignoring children would hide it from
+            // VoiceOver — trading one accessibility gap for a worse one.
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(pillCopy)
+    }
+
+    /// What the pill currently says, as one string — the SAME constants the
+    /// bars render, so VoiceOver can never drift from the visible copy.
+    private var pillCopy: String {
+        switch voice.state {
+        case .micDenied:   return Self.deniedCopy
+        case .unavailable: return Self.unavailableCopy
+        case .connecting:  return Self.connectingCopy
+        case .idle, .connected:
+            return isTransmitting ? Self.transmittingCopy : Self.idleCopy
         }
     }
+
+    // The pill's five lines of copy, declared once. Each is rendered by its
+    // bar below AND read by `pillCopy` above; there is no second vocabulary
+    // for VoiceOver to fall out of sync with. (The app ships no
+    // `.strings`/`.xcstrings` catalog, so moving these from literals into
+    // constants changes no localization behaviour.)
+    private static let idleCopy = "HOLD TO TALK"
+    private static let transmittingCopy = "TALKING · RELEASE TO STOP"
+    private static let connectingCopy = "Connecting voice…"
+    private static let unavailableCopy = "Voice is offline — check your connection"
+    private static let deniedCopy = "Mic access off — turn on in Settings"
 
     // MARK: Interactive row (idle/muted/open/held — ONE stable view identity)
     //
@@ -1592,19 +1633,25 @@ struct PTTDockRow: View {
     // mid-press, the in-progress long-press would be cancelled with it, and
     // the release callback could never fire — stranding the mic open with
     // no press left to end it. Conditional CHILDREN (rings, bar copy) may
-    // change freely across the flip; the gesture-carrying ZStack itself must
-    // keep its structural identity.
+    // change freely across the flip; the gesture-carrying view itself must
+    // keep its structural identity. B4/T4.1 moved that gesture from the mic
+    // ZStack onto the pill on the NON-compact path — the law is unchanged,
+    // only its host: `interactiveRow` applies `.modifier(pressGesture)`
+    // unconditionally to one `talkPill(...)`, so nothing is swapped.
+    // Compact mode still hosts it on `interactiveMicCore`'s ZStack.
     //
-    // Mic visual: 44pt round (curation frame 1's dock size) — secondary
+    // Mic visual (compact only, now): 44pt round — secondary
     // style (accent stroke, accent glyph) while muted; accent-filled with
     // expanding gsRings while transmitting (1 ring = toggled open, 2 with
     // the frames' 0.7s stagger = held).
 
-    /// The gesture-bearing mic ZStack, shared verbatim by `interactiveRow`
-    /// and compact mode. Pure extraction (2026-07-30) — content is
-    /// byte-identical to what `interactiveRow`'s mic closure inlined before;
-    /// each call site uses it under a fixed `compact` value, so the
-    /// structural-identity law in `interactiveRow`'s doc comment holds.
+    /// The gesture-bearing mic ZStack. `compactMic` is its ONLY call site
+    /// now: B4/T4.1 took the circle off the non-compact path and round-1
+    /// item 3 removed the scaffold slot the other states filled, so this
+    /// renders exclusively in the my-turn page's 56pt sound rail. Content is
+    /// still byte-identical to the 2026-07-30 extraction, and `compact` is
+    /// fixed per call site, so the structural-identity law in
+    /// `interactiveRow`'s doc comment holds for the gesture it carries here.
     private var interactiveMicCore: some View {
         ZStack {
             if isTransmitting {
@@ -1629,10 +1676,14 @@ struct PTTDockRow: View {
         .modifier(pressGesture)
     }
 
+    /// The pill IS the control (B4/T4.1): the mic slot is `EmptyView()` on
+    /// this path, and the gesture that used to live on the circle moves onto
+    /// the pill — `.contentShape(Rectangle())` + `.modifier(pressGesture)`
+    /// applied here, unconditionally, so the press behaviour is identical
+    /// and the gesture host keeps ONE structural identity across the
+    /// muted -> transmitting flip (see the doc comment above).
     private var interactiveRow: some View {
-        micAndBar(mic: {
-            interactiveMicCore
-        }, bar: {
+        talkPill {
             if isTransmitting {
                 if isHeldTransmitOwnedByThisPress {
                     holdingBar
@@ -1642,29 +1693,17 @@ struct PTTDockRow: View {
             } else {
                 idleBar
             }
-        })
-    }
-
-    // MARK: Non-interactive mic variants
-
-    private var connectingMic: some View {
-        ZStack {
-            Circle().fill(theme.bg)
-            Circle().strokeBorder(theme.accent, lineWidth: 1)
-            micGlyph(color: theme.accent)
         }
-        .frame(width: 44, height: 44)
+        .contentShape(Rectangle())
+        .modifier(pressGesture)
     }
 
-    private var unavailableMic: some View {
-        ZStack {
-            Circle().strokeBorder(theme.neutral400, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-            Image(systemName: "mic.slash")
-                .font(.system(size: 17, weight: .regular))
-                .foregroundStyle(theme.neutral500)
-        }
-        .frame(width: 44, height: 44)
-    }
+    // MARK: Mic glyph
+    //
+    // `connectingMic` and `unavailableMic` — the two dimmed 44pt circles the
+    // scaffold used to lead with — were deleted by round-1 item 3 (one
+    // object per non-compact state). `compactMic` builds its own inert
+    // circles inline and still needs this glyph.
 
     private func micGlyph(color: Color, size: CGFloat = 18) -> some View {
         Image(systemName: "mic")
@@ -1674,48 +1713,41 @@ struct PTTDockRow: View {
 
     // MARK: Status bar variants
 
+    /// The pill at rest: the instruction plus a small accent waveform.
+    /// `GSTalkingBars` is the app's ONE waveform — reused here rather than
+    /// drawing a second kind (its own doc comment's "decorative, not driven
+    /// by live audio levels" honesty note applies).
     private var idleBar: some View {
-        Text("Tap to talk · hold to talk live")
-            .font(GSFont.bold(13, relativeTo: .body))
-            .foregroundStyle(theme.text.opacity(0.6))
+        HStack(spacing: 8) {
+            Text(Self.idleCopy)
+                .font(GSFont.bold(13, relativeTo: .body))
+                .tracking(1.1)
+                .foregroundStyle(theme.text)
+            GSTalkingBars(color: theme.accent, barWidth: 3, maxHeight: 14)
+        }
     }
 
-    /// "MIC OPEN · TAP TO MUTE" + REQUIRED sub-caption, per live-voice
-    /// frame 2's dock (`:216,223`).
+    /// Transmitting, hands-free (tap-toggled open). ONE line, ink on the
+    /// accent face. Kept as its own symbol — see `holdingBar`.
     private var openBar: some View {
-        VStack(spacing: 2) {
-            Text("MIC OPEN · TAP TO MUTE")
-                .font(GSFont.bold(12, relativeTo: .caption))
-                .tracking(1.0)
-                .foregroundStyle(theme.accent700)
-            Text("Tap toggles · press-and-hold for walkie-talkie")
-                .font(GSFont.body(10, relativeTo: .caption2))
-                .foregroundStyle(theme.neutral500)
-        }
-        .padding(.vertical, 6)
+        Text(Self.transmittingCopy)
+            .font(GSFont.bold(13, relativeTo: .body))
+            .tracking(1.1)
+            .foregroundStyle(theme.bg)
     }
 
-    /// "HOLDING · {elapsed} — RELEASE TO STOP" with a live counting-up
-    /// timer, per live-voice frame 1's dock (`:138`). Composed as sibling
-    /// Texts in an HStack (not Text concatenation) so the timer-styled Text
-    /// keeps its own self-updating rendering. UI-side only — no Timer, no
-    /// service involvement (same doctrine as the chess clock's
-    /// `Text(_, style: .timer)`).
+    /// Transmitting, held (walkie-talkie). Identical label to `openBar` —
+    /// the rule specifies one line, so the live elapsed timer and the
+    /// separate "HOLDING" copy are gone. Deliberately still a SEPARATE
+    /// computed property: `interactiveRow`'s three-way branch is what keeps
+    /// the gesture-bearing view's structural identity stable across the
+    /// muted -> transmitting flip, and collapsing the branch would change it
+    /// mid-press.
     private var holdingBar: some View {
-        HStack(spacing: 0) {
-            Text("HOLDING · ")
-            if let heldStartedAt {
-                Text(timerInterval: heldStartedAt...Date.distantFuture,
-                     countsDown: false, showsHours: false)
-                    .monospacedDigit()
-            }
-            Text(" — RELEASE TO STOP")
-        }
-        .font(GSFont.bold(12, relativeTo: .caption))
-        .tracking(0.5)
-        .foregroundStyle(theme.accent700)
-        .lineLimit(1)
-        .minimumScaleFactor(0.8)
+        Text(Self.transmittingCopy)
+            .font(GSFont.bold(13, relativeTo: .body))
+            .tracking(1.1)
+            .foregroundStyle(theme.bg)
     }
 
     private var connectingBar: some View {
@@ -1723,19 +1755,60 @@ struct PTTDockRow: View {
             ProgressView()
                 .controlSize(.small)
                 .tint(theme.accent)
-            Text("Connecting voice…")
+            Text(Self.connectingCopy)
                 .font(GSFont.bold(13, relativeTo: .body))
                 .foregroundStyle(theme.text)
         }
     }
 
+    /// Says what happened and how to fix it, matching `deniedRow`'s shape
+    /// (glyph + one sentence + a trailing affordance) instead of the bare
+    /// "Voice unavailable" label that named a state and offered nothing.
+    ///
+    /// RETRY is a real Button running `onRetry` — the same closure the caller
+    /// gives `GSVoiceUnavailableBanner`, so the two affordances can never
+    /// disagree about what retry means. When `onRetry` is nil the word is not
+    /// rendered: accent on an inert control would be a lie twice over.
     private var unavailableBar: some View {
-        Text("Voice unavailable")
-            .font(GSFont.bold(13, relativeTo: .body))
-            .foregroundStyle(theme.neutral500)
+        HStack(spacing: 10) {
+            Image(systemName: "mic.slash")
+                .font(.system(size: 15, weight: .regular))
+                .foregroundStyle(theme.neutral500)
+            Text(Self.unavailableCopy)
+                .font(GSFont.bold(13, relativeTo: .body))
+                .foregroundStyle(theme.text)
+            Spacer(minLength: 0)
+            if let onRetry {
+                Button(action: onRetry) {
+                    Text("RETRY")
+                        .font(GSFont.bold(11, relativeTo: .caption))
+                        .tracking(1.1)
+                        .foregroundStyle(theme.accent700)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 12)
+        // Restores the vertical breathing room the pre-pill row carried in
+        // its own chrome: `minHeight: 44` alone lets copy taller than the
+        // floor (this sentence wraps to two lines on narrow widths) sit
+        // flush against the capsule.
+        .padding(.vertical, 8)
     }
 
-    // MARK: Mic denied — entire row becomes one "open Settings" button
+    // MARK: Mic denied — the pill itself is the "open Settings" button
+    //
+    // Round-1 item 3: this row used to bypass the scaffold entirely and draw
+    // its own full-width `theme.bg` rectangle with an accent stroke — a
+    // second chrome vocabulary in the one place the dock has no pill. It now
+    // wears the same `talkPill`, wrapped in the same Button. ONLY the chrome
+    // changed: copy, both glyphs, their sizes and colours, and the
+    // openSettingsURLString action are untouched. The accent mic glyph stays
+    // accent deliberately — unlike `.unavailable`, this row IS the one
+    // primary action on the dock, so accent is legal here. The horizontal
+    // inset moves 16 -> 12 to match its sibling `unavailableBar` inside the
+    // same pill.
 
     private var deniedRow: some View {
         Button {
@@ -1743,26 +1816,30 @@ struct PTTDockRow: View {
                 UIApplication.shared.open(url)
             }
         } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "mic.slash")
-                    .font(.system(size: 17, weight: .regular))
-                    .foregroundStyle(theme.accent)
-                Text("Mic access off — turn on in Settings")
-                    .font(GSFont.bold(14, relativeTo: .body))
-                    .foregroundStyle(theme.text)
-                Spacer()
-                Image(systemName: "arrow.up.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(theme.accent700)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 13)
-            .frame(minHeight: 44)
-            .background(theme.bg)
-            .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.accent, lineWidth: 1))
-            .contentShape(Rectangle())
+            talkPill { deniedBar }
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    private var deniedBar: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "mic.slash")
+                .font(.system(size: 17, weight: .regular))
+                .foregroundStyle(theme.accent)
+            Text(Self.deniedCopy)
+                .font(GSFont.bold(14, relativeTo: .body))
+                .foregroundStyle(theme.text)
+            Spacer()
+            Image(systemName: "arrow.up.right")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(theme.accent700)
+        }
+        .padding(.horizontal, 12)
+        // Same restoration as `unavailableBar`: the row used to carry
+        // `.padding(.vertical, 13)` in its own chrome, which went with the
+        // bordered rectangle.
+        .padding(.vertical, 8)
     }
 
     // MARK: - Gesture handlers
@@ -1910,24 +1987,31 @@ struct GSVoiceConnectedToast: View {
         HStack(spacing: 10) {
             Image(systemName: "checkmark")
                 .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(theme.bg)
+                .foregroundStyle(Color.gsSuccess)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text("Voice connected")
                     .font(GSFont.bold(14, relativeTo: .headline))
-                    .foregroundStyle(theme.bg)
+                    .foregroundStyle(theme.text)
                 if let groupName {
+                    // neutral800, not neutral500 — the same raised3DFace
+                    // contrast rule the coach-mark body now follows.
+                    // neutral500 measured 2.13:1 on Onyx against this face;
+                    // neutral800 measures 8.91:1, the only neutral clearing
+                    // WCAG AA (4.5:1) on every palette.
                     Text("You're in the room with \(groupName)")
                         .font(GSFont.body(11, relativeTo: .caption))
-                        .foregroundStyle(theme.bg.opacity(0.9))
+                        .foregroundStyle(theme.neutral800)
                 }
             }
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
-        .background(theme.accent)
-        .cornerRadius(GSMetrics.radiusSm)   // redesign: rounded banner
+        // Presence, not an action: a neutral raised strip with a green
+        // check, never a solid-accent slab (design language: accent is for
+        // the thing you can act on, green means present).
+        .gs3DCard(cornerRadius: GSMetrics.radiusSm, lipHeight: 5)
         .shadow(color: .black.opacity(0.25), radius: 12, y: 4)
     }
 }
@@ -1951,24 +2035,32 @@ struct GSVoiceCoachMark: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Tap or hold to talk")
                     .font(GSFont.bold(15, relativeTo: .headline))
-                    .foregroundStyle(theme.bg)
+                    .foregroundStyle(theme.text)
+                // First-run instructional copy at 12pt — it exists to be
+                // READ, so it carries neutral800, the only neutral that
+                // clears WCAG AA (4.5:1) against `raised3DFace` on EVERY
+                // palette. `theme.neutral500` measured 2.13:1 on Onyx here.
                 Text("You're muted until you open your mic. Tap to keep it open hands-free, or hold for walkie-talkie. Nothing is recorded.")
                     .font(GSFont.body(12, relativeTo: .caption))
-                    .foregroundStyle(theme.bg.opacity(0.85))
+                    .foregroundStyle(theme.neutral800)
                 Button(action: onDismiss) {
                     Text("Got it")
                         .font(GSFont.bold(12, relativeTo: .caption))
-                        .foregroundStyle(theme.text)
+                        .foregroundStyle(theme.bg)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
-                        .background(theme.bg)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.gs3D(face: theme.accent,
+                                   cornerRadius: GSMetrics.radiusSm,
+                                   lipHeight: 4))
                 .padding(.top, 6)
             }
             .padding(14)
-            .background(theme.text)
-            .cornerRadius(GSMetrics.radiusSm)   // redesign: rounded banner
+            // The popover wears the app's own raised face, not an inverted
+            // white slab (`theme.text` as a fill read as a foreign object on
+            // the Onyx palettes). The modifier clips, so the explicit
+            // cornerRadius is gone with it.
+            .gs3DCard(cornerRadius: GSMetrics.radiusSm)
 
             // Pointer triangle toward the mic dock below (frame's downward-
             // pointing bubble tail) — a local `Path`, not a new reusable
@@ -1980,7 +2072,7 @@ struct GSVoiceCoachMark: View {
                 path.addLine(to: CGPoint(x: 9, y: 9))
                 path.closeSubpath()
             }
-            .fill(theme.text)
+            .fill(theme.raised3DFace)
             .frame(width: 18, height: 9)
             .padding(.leading, 36)
         }
@@ -1994,20 +2086,24 @@ struct GSVoiceCoachMark: View {
 // volume/mute is REAL, wired through `VoiceRoomService.setLocalMute(_:
 // forParticipantIdentity:)` (item 4's roster/mute service extension) —
 // LiveKit's client-side per-participant playback volume. The mic-level
-// meter and both toggles are honestly NOT backed by anything real:
-// `VoiceRoomService` exposes no input-level metering API (same
-// limitation `GSTalkingBars`' own doc comment already names for the
-// roster "talking" bars) and no noise-suppression/monitor-toggle control
-// exists anywhere in `VoiceRoomConnecting`/`AudioSessionManager` — building
-// fake-functioning toggles would be dishonest, so they're rendered as the
-// frame specifies but documented here (and in `accepted-deviations.json`)
-// as chrome-only pending a real backing API. `presentationDetents`/sheet
-// wrapping is the caller's job — this is just the sheet's content.
+// meter is honestly NOT backed by anything real: `VoiceRoomService`
+// exposes no input-level metering API (same limitation `GSTalkingBars`'
+// own doc comment already names for the roster "talking" bars) — it is
+// rendered as the frame specifies but documented here (and in
+// `accepted-deviations.json`) as chrome-only pending a real backing API.
+// It draws in `theme.neutral700`, not accent: a readout, not an action.
+// `presentationDetents`/sheet wrapping is the caller's job — this is just
+// the sheet's content.
 //
-// Fix wave 1 (reviewer Finding F5): "documented in a code comment" wasn't
-// enough — the two toggles were visually indistinguishable from real,
-// working controls. Both are now `.disabled(true)` with a "Coming soon"
-// caption under each title (see the toggles' own inline comment below).
+// TOGGLES REMOVED (design congruence B4/T4.3, 2026-09): the frame's
+// "Noise suppression" and "Hear my own voice" rows are gone, along with
+// their two `@State` vars. No noise-suppression/monitor-toggle control
+// exists anywhere in `VoiceRoomConnecting`/`AudioSessionManager`, so they
+// were `.disabled(true)` "Coming soon" chrome backed by nothing — dead
+// weight in a sheet whose other controls are real. Re-add them the day
+// there is an API behind them. `accepted-deviations.json`'s
+// `voice-mixer-sheet` entry records the removal in place of the old
+// disabled-toggle note.
 
 struct GSVoiceMixerSheet: View {
     @Environment(\.gsTheme) private var theme
@@ -2018,9 +2114,6 @@ struct GSVoiceMixerSheet: View {
     let participants: [(identity: String, name: String)]
     let mutedIdentities: Set<String>
     let onToggleMute: (String) -> Void
-
-    @State private var noiseSuppression = true
-    @State private var hearOwnVoice = false
 
     var body: some View {
         ScrollView {
@@ -2040,55 +2133,14 @@ struct GSVoiceMixerSheet: View {
                     HStack(spacing: 2) {
                         ForEach(0..<12, id: \.self) { i in
                             Rectangle()
-                                .fill(i < 7 ? theme.accent : theme.surface)
+                                // A readout, not an action: the lit segments
+                                // are neutral ink, never accent.
+                                .fill(i < 7 ? theme.neutral700 : theme.surface)
                                 .overlay(i < 7 ? nil : RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
                                 .frame(height: 20)
                         }
                     }
                 }
-
-                // Toggles — chrome-only, see type doc comment. Fix wave 1
-                // (reviewer Finding F5): rendered per the frame but
-                // previously indistinguishable from a real, working
-                // control. Now `.disabled(true)` (structurally
-                // non-interactive, not just visually) + a small "Coming
-                // soon" caption under each title — same toggle-row-with-
-                // inline-caption shape `YouTabView.soloPrivacyRow`/
-                // `calendarSyncRow` already establish for a title+caption
-                // pair beside a toggle (`Features/You/YouTabView.swift:311-336,
-                // 528-549`) — plus an overall dimmed opacity so the whole
-                // block reads as inert at a glance. `accepted-deviations.json`'s
-                // `voice-mixer-sheet` entry records this as the deviation.
-                VStack(spacing: 0) {
-                    Toggle(isOn: $noiseSuppression) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Noise suppression")
-                                .font(GSFont.bold(14, relativeTo: .body))
-                                .foregroundStyle(theme.text)
-                            Text("Coming soon")
-                                .font(GSFont.body(11, relativeTo: .caption2))
-                                .foregroundStyle(theme.neutral500)
-                        }
-                    }
-                    .disabled(true)
-                    .padding(12)
-                    GSDivider()
-                    Toggle(isOn: $hearOwnVoice) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Hear my own voice")
-                                .font(GSFont.bold(14, relativeTo: .body))
-                                .foregroundStyle(theme.neutral500)
-                            Text("Coming soon")
-                                .font(GSFont.body(11, relativeTo: .caption2))
-                                .foregroundStyle(theme.neutral500)
-                        }
-                    }
-                    .disabled(true)
-                    .padding(12)
-                }
-                .opacity(0.6)
-                .tint(theme.accent)
-                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
 
                 if !participants.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
@@ -2136,7 +2188,9 @@ struct GSVoiceMixerSheet: View {
                 .frame(height: 5)
                 .overlay(alignment: .leading) {
                     if !isMuted {
-                        Rectangle().fill(theme.accent)
+                        // Track fill is a readout — neutral. Accent survives
+                        // in this row only on the ACTIVE mute state below.
+                        Rectangle().fill(theme.neutral700)
                     }
                 }
 

@@ -66,11 +66,12 @@ struct HomeWeeklyGoalStrip: View {
 
     /// The one green this codebase uses (`HomeStreakTile`, `HomeWeekStrip`,
     /// `HomeRecoveryStrip`, `HomeCalendarCard`'s `IN` chip) — here in its
-    /// "done" job. Deliberately NOT a `Color.gsSuccess` token: that token
-    /// does not exist on this branch, and minting one inside a catalog piece
-    /// would put a design-system definition in the last place anyone would
-    /// look for it.
-    private static let green = Color.gsHex(0x2FA45C)
+    /// "done" job. This used to hard-code `0x2FA45C` because no token
+    /// existed; B7/T7.1 minted `Color.gsSuccess` at exactly that hex in
+    /// `GSAccent.swift`, where a design-system definition belongs, so this
+    /// alias now points at the token. Same colour, byte for byte — the
+    /// frozen Home frames must not move.
+    private static let green = Color.gsSuccess
 
     var body: some View {
         Button(action: action) {

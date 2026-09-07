@@ -253,7 +253,14 @@ struct CatalogHostView: View {
         }
         return VStack(spacing: 0) {
             Spacer()
-            PTTDockRow()
+            // `onRetry:` is non-nil so `voice-unavailable` captures the pill
+            // the way BOTH live call sites render it (LobbyView and
+            // GroupSessionLiveView each pass a real retry closure). A bare
+            // `PTTDockRow()` captured the nil branch — a state no user ever
+            // sees, with the RETRY button suppressed. A no-op is the right
+            // fixture body here: the catalog forces states through
+            // `debugSetState` and has no room to actually rejoin.
+            PTTDockRow(onRetry: {})
                 .onAppear { VoiceRoomService.shared.debugSetState(state) }
         }
     }

@@ -212,7 +212,7 @@ struct ProgramLedgerView: View {
                         .font(GSFont.bold(10, relativeTo: .caption2))
                         .tracking(0.8)
                         .foregroundStyle(enrollment.endedReason == "completed"
-                                         ? theme.accent : theme.neutral500)
+                                         ? Color.gsSuccess : theme.neutral500)
                 }
                 Spacer()
                 if buildingAAR == enrollment.id {

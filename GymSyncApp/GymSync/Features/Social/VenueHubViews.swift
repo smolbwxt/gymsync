@@ -539,6 +539,12 @@ struct VenueHubView: View {
                 } else {
                     ForEach(presentMembers) { member in
                         HStack(spacing: 10) {
+                            // Presence dot — green means present (design
+                            // language). Same 9pt circle LobbyView's roster
+                            // row uses for the identical signal.
+                            Circle()
+                                .fill(Color.gsSuccess)
+                                .frame(width: 9, height: 9)
                             GSInitialsAvatar(name: usernameFor(member.userID), size: 32)
                             Text(usernameFor(member.userID))
                                 .font(GSFont.bodyMedium(14, relativeTo: .body))

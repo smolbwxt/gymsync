@@ -121,7 +121,7 @@ struct CoachRulesView: View {
             Text(statusLine(rule))
                 .font(GSFont.bold(10, relativeTo: .caption2))
                 .tracking(0.8)
-                .foregroundStyle(rule.appliedAt != nil ? theme.accent : theme.neutral500)
+                .foregroundStyle(rule.appliedAt != nil ? Color.gsSuccess : theme.neutral500)
 
             HStack(spacing: 10) {
                 // WAITING ON YOU gets its verdict buttons HERE too — the

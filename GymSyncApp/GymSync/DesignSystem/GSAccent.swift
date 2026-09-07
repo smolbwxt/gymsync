@@ -71,6 +71,12 @@ public extension Color {
             opacity: alpha
         )
     }
+
+    /// Green = done or present (design language §2). One hex on every palette —
+    /// like plate colours this is data colour, not a themed accent token.
+    static let gsSuccess = Color.gsHex(0x2FA45C)
+    /// 12% wash of `gsSuccess`, for tag/row fills.
+    static let gsSuccessSoft = Color.gsHex(0x2FA45C, 0.12)
 }
 
 private struct GSAccentKey: EnvironmentKey {

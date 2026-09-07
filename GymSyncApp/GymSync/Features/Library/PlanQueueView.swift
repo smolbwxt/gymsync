@@ -91,7 +91,7 @@ struct PlanQueueSection: View {
             Spacer()
             if entry.status != "queued" {
                 GSTag(text: entry.status == "active" ? "Active" : "Done",
-                      style: entry.status == "active" ? .accent : .neutral)
+                      style: entry.status == "active" ? .success : .neutral)
             }
         }
         .padding(.horizontal, 12)
