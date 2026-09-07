@@ -20,11 +20,32 @@ import Foundation
 /// column cannot drift apart silently.
 ///
 /// EVERY SWITCH OVER THIS ENUM IS EXHAUSTIVE WITH NO `default:` ARM, on
-/// purpose — `HomeWeeklyGoalStrip.swift:102-105` says exactly why: a new
-/// kind must be a compile error rather than a blank strip. Ten such switches
-/// exist (the strip's two, the editor's five, the progress dispatcher, the
-/// live repository, and the proposal rule's two); adding a case here breaks
-/// the build until all of them are closed, which is the point.
+/// purpose — `HomeWeeklyGoalStrip.swift`'s `content` says exactly why: a new
+/// kind must be a compile error rather than a blank strip. Adding a case
+/// here breaks the build until every one of them is closed, which is the
+/// point.
+///
+/// **THIRTEEN SUCH SWITCHES, ACROSS TWELVE SITES**, grep-verified rather
+/// than remembered (this count was wrong twice — the plan said nine sites,
+/// the first implementation said ten switches, and both undercounts sent a
+/// reader looking one site short of the end, which is exactly how
+/// `unitLabel` shipped a silent `default:` in the first place):
+///
+///   * `HomeWeeklyGoalStrip` — **four**: `reading(for:)`, `meterFraction`,
+///     `unitLabel`, `spokenReading(for:)`. The last three switch over the
+///     OPTIONAL kind and spell `.none` out rather than taking a `default:`.
+///   * `WeeklyGoalEditorSheet` — **five**: `chipLabel(_:unit:)`, `levers`,
+///     `incompleteReason`, `accept(_:)` (over `proposal.kind`), `params()`.
+///   * `WeeklyGoalProgressMath.progress(goal:…)` — the dispatcher.
+///   * `LiveWeeklyGoalRepository.progress(for:)`.
+///   * `WeeklyGoalProposalRule` — **one site, two switches**:
+///     `isMeaningful(user:coach:)` and `sentence(for:unit:)`.
+///
+/// Twelve of the thirteen are the compiler's own proof. `meterFraction` was
+/// the thirteenth and used to be an `if case` chain, which would have
+/// absorbed a new kind silently and drawn a wrong meter for it; it is a
+/// closed switch now, so nothing on this list can be added to without being
+/// told.
 enum WeeklyGoalKind: String, Codable, CaseIterable, Sendable {
     case muscleSets = "muscle_sets"
     case distance

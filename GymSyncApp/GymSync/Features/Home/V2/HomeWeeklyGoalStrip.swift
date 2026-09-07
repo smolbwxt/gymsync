@@ -100,8 +100,9 @@ struct HomeWeeklyGoalStrip: View {
     /// unreachable:
     ///
     ///   * the switch below is EXHAUSTIVE over `WeeklyGoalKind` with **no**
-    ///     `default:`, so a sixth kind is a compile error rather than a
-    ///     blank strip;
+    ///     `default:`, so a tenth kind is a compile error rather than a
+    ///     blank strip — and it is one of four in this file and thirteen in
+    ///     the app, which `WeeklyGoalKind`'s own doc comment lists;
     ///   * the kicker row renders for every kind, so even an arm that has
     ///     nothing to draw yet still says what the strip is, how much week
     ///     is left, and that it opens.
