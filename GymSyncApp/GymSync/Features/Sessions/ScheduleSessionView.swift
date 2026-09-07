@@ -186,20 +186,15 @@ struct ScheduleSessionView: View {
             .navigationTitle("Schedule")
             .scrollDismissesKeyboard(.interactively)
             .navigationBarTitleDisplayMode(.inline)
+            // One primary per screen (design language §4): the toolbar's
+            // "Next" was a second accent button calling the same `schedule()`
+            // as the pinned CTA above, so it is deleted rather than demoted —
+            // no action is lost.
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                         .font(GSFont.bold(14, relativeTo: .body))
                         .foregroundStyle(theme.neutral700)
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Next") { Task { await schedule() } }
-                        .font(GSFont.bold(14, relativeTo: .body))
-                        .foregroundStyle(
-                            (isScheduleButtonDisabled || isScheduling)
-                                ? theme.neutral500 : theme.accent
-                        )
-                        .disabled(isScheduleButtonDisabled || isScheduling)
                 }
             }
             .task { await loadData() }

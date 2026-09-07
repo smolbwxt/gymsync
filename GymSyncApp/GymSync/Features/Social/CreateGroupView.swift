@@ -154,19 +154,14 @@ struct CreateGroupView: View {
             .background(theme.bg)
             .scrollContentBackground(.hidden)
             .navigationTitle("New Group")
+            // One primary per screen (design language §4): the toolbar's
+            // "Create" was a second accent button calling the same `create()`
+            // as the body's pinned "Create Group", so it is deleted rather
+            // than demoted — no action is lost.
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                         .foregroundStyle(theme.neutral700)
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") { Task { await create() } }
-                        .font(GSFont.bold(14, relativeTo: .body))
-                        .foregroundStyle(
-                            name.trimmingCharacters(in: .whitespaces).isEmpty || isCreating
-                                ? theme.neutral500 : theme.accent
-                        )
-                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isCreating)
                 }
             }
             .task {
