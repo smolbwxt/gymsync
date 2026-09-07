@@ -1395,9 +1395,22 @@ struct PTTDockRow: View {
     /// the full hero remains the non-compact experience.
     let compact: Bool
 
-    init(otherParticipantNames: [String] = [], compact: Bool = false) {
+    /// What the `.unavailable` pill's RETRY affordance does — the SAME
+    /// closure the caller already hands `GSVoiceUnavailableBanner`, so both
+    /// affordances drive one action and cannot disagree.
+    ///
+    /// `nil` (the default, and what `CatalogHostView`'s bare `PTTDockRow()`
+    /// gets) means the word RETRY is **not rendered at all**. A label that
+    /// reads RETRY and does nothing is a lie, and it would spend accent on a
+    /// non-action; an absent affordance is honest. See `unavailableBar`.
+    let onRetry: (() -> Void)?
+
+    init(otherParticipantNames: [String] = [],
+         compact: Bool = false,
+         onRetry: (() -> Void)? = nil) {
         self.otherParticipantNames = otherParticipantNames
         self.compact = compact
+        self.onRetry = onRetry
     }
 
     /// Monotonic per-press identity. Bumped on every press-down; captured by
@@ -1720,9 +1733,11 @@ struct PTTDockRow: View {
     /// Says what happened and how to fix it, matching `deniedRow`'s shape
     /// (glyph + one sentence + a trailing affordance) instead of the bare
     /// "Voice unavailable" label that named a state and offered nothing.
-    /// The retry ACTION already exists on `GSVoiceUnavailableBanner.retry`,
-    /// which the caller shows above the dock — this is the matching LABEL;
-    /// no second retry path is wired here.
+    ///
+    /// RETRY is a real Button running `onRetry` — the same closure the caller
+    /// gives `GSVoiceUnavailableBanner`, so the two affordances can never
+    /// disagree about what retry means. When `onRetry` is nil the word is not
+    /// rendered: accent on an inert control would be a lie twice over.
     private var unavailableBar: some View {
         HStack(spacing: 10) {
             Image(systemName: "mic.slash")
@@ -1732,10 +1747,16 @@ struct PTTDockRow: View {
                 .font(GSFont.bold(13, relativeTo: .body))
                 .foregroundStyle(theme.text)
             Spacer(minLength: 0)
-            Text("RETRY")
-                .font(GSFont.bold(11, relativeTo: .caption))
-                .tracking(1.1)
-                .foregroundStyle(theme.accent700)
+            if let onRetry {
+                Button(action: onRetry) {
+                    Text("RETRY")
+                        .font(GSFont.bold(11, relativeTo: .caption))
+                        .tracking(1.1)
+                        .foregroundStyle(theme.accent700)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(.horizontal, 12)
     }

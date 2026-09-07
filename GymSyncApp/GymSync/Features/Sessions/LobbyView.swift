@@ -308,7 +308,11 @@ struct LobbyView: View {
                 // matching how GroupSessionLiveView already stacks its own
                 // soundboard dock above its bottom action bar.
                 if isVoiceEligible {
-                    PTTDockRow(otherParticipantNames: otherParticipantNames)
+                    // Same retry closure the degraded banner above receives,
+                    // so the dock's RETRY and the banner's Retry are one
+                    // action and cannot disagree.
+                    PTTDockRow(otherParticipantNames: otherParticipantNames,
+                               onRetry: { Task { await VoiceRoomService.shared.retry() } })
                 }
                 actionBar
             }
