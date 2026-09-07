@@ -49,8 +49,12 @@ struct ReportSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
+                    // Accent discipline (design language §2): an escape hatch
+                    // is never accent. After submit the same button becomes
+                    // "Done" — then it IS the screen's only act, so it earns
+                    // the accent.
                     Button(didSubmit ? "Done" : "Cancel") { dismiss() }
-                        .foregroundStyle(theme.accent)
+                        .foregroundStyle(didSubmit ? theme.accent : theme.neutral700)
                 }
                 if !didSubmit {
                     ToolbarItem(placement: .confirmationAction) {

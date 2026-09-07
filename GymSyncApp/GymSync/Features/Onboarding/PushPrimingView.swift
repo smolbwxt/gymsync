@@ -152,11 +152,14 @@ struct PushPrimingView: View {
                     .foregroundColor(theme.text.opacity(0.5))
             }
         } else {
+            // Accent discipline (design language §2/§4): the badge is
+            // decoration, not the act — it reads as a raised face so
+            // "Turn on notifications" is the screen's one accent thing.
             ZStack {
-                Rectangle().fill(theme.accent).frame(width: 60, height: 60)
+                Rectangle().fill(theme.raised3DFace).frame(width: 60, height: 60)
                 Image(systemName: "bell")
                     .font(.system(size: 30, weight: .regular))
-                    .foregroundColor(theme.bg)
+                    .foregroundColor(theme.text)
             }
         }
     }
@@ -191,7 +194,7 @@ struct PushPrimingView: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "checkmark")
                 .font(.system(size: 18, weight: .bold))
-                .foregroundColor(theme.accent700)
+                .foregroundColor(theme.neutral700)
             Text(text)
                 .font(GSFont.body(14, relativeTo: .body))
                 .foregroundColor(theme.text)
@@ -250,7 +253,13 @@ struct PushPrimingView: View {
                         Button {
                             advance()
                         } label: {
-                            Text("Continue").frame(maxWidth: .infinity)
+                            // Escape hatch, not the act: GSGhostButtonStyle
+                            // paints its label accent, so the Text overrides
+                            // it (innermost wins) and "Open Settings" stays
+                            // the one accent control on the denied state.
+                            Text("Continue")
+                                .foregroundStyle(theme.neutral700)
+                                .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(GSGhostButtonStyle())
                         .frame(minHeight: 44)
@@ -273,7 +282,10 @@ struct PushPrimingView: View {
                     Button {
                         advance()
                     } label: {
-                        Text("Not now").frame(maxWidth: .infinity)
+                        // Same escape-hatch override as "Continue" above.
+                        Text("Not now")
+                            .foregroundStyle(theme.neutral700)
+                            .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(GSGhostButtonStyle())
                     .frame(minHeight: 44)

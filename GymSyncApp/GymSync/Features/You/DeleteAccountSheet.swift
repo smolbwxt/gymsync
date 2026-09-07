@@ -62,7 +62,7 @@ struct DeleteAccountSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                        .foregroundStyle(theme.accent)
+                        .foregroundStyle(theme.neutral700)
                         .disabled(isDeleting)
                 }
             }
