@@ -78,11 +78,18 @@ The registry is open — the owner's ruling is that five kinds are too restricti
 | `sessionsOfTypePerWeek(type)` | inferred session type (`sessionsOfTypeProgress`) | sessions/week |
 | `lissMinutesPerWeek` | **NEW** — HealthKit workouts of walking / cycling / rowing / elliptical at low intensity, or app sessions whose routine is cardio-only | minutes/week |
 | `stretchingExercisesPerWeek` | **NEW** — count of logged exercises whose catalog category is mobility/stretch, or of completed mobility circuits | count/week |
+| `bodyWeight` | the app's own body-weight log (`BodyWeightLogSheet`, the stats tile) plus HealthKit body mass | lb / kg |
+| `cumulativeVolume` | pounds moved, summed from `set_logs` — the number the plate milestone catalog already counts | lb / kg total |
+| `benchmarkTime(routineID)` | duration of completed sessions of a named routine ("Murph") | seconds |
+| `liftRepsAtLoad(exerciseID, load)` | reps logged at or above a fixed load, from `set_logs` | reps |
+| `zone2MinutesPerWeek` | **phase 2** — minutes at low heart-rate intensity from the watch's heart-rate samples | minutes/week |
+| `vo2Max` | **phase 2** — HealthKit's VO2 max estimate | ml/kg/min |
+| `skillReps(movement)` | **phase 3** — reps of a bodyweight movement at full expression, from `set_logs`; needs catalog progression chains | reps |
+| `patternLoadPercent(pattern)` | **phase 3** — load on a movement pattern relative to the pre-injury baseline, from e1RM history; needs a pain check-in | % |
 
-A metric that cannot be read on this device (Health not connected) renders `CONNECT HEALTH`, never `0`, per the
-shipped rule. Body-weight and skill metrics (first pull-up, handstand) are **not** in the launch registry — they
-need a weigh-in source and progression ladders the catalog does not carry. The registry is designed so they slot in
-as entries, without changing the door.
+A metric that cannot be read on this device (Health not connected, no watch) renders `CONNECT HEALTH` (or the
+device it needs), never `0`, per the shipped rule. The registry is open by design: a new goal is a new row here
+plus a ladder rule, and the door does not change.
 
 ### 2.3 Presets
 
@@ -95,12 +102,24 @@ Presets are goals over the registry with a default ladder shape. All free.
 | **Endurance** | `weeklyDistance(activity)` | an activity, weekly distance or an event distance, a date | +10 % a week, down week every fourth |
 | **Consistency** | `trainingDaysPerWeek` | days per week, held for N weeks | +1 day every two weeks until the target holds |
 | **Conditioning** | `sessionsOfTypePerWeek(type)` | a type and a weekly count | same ramp as Consistency |
-| **Maintenance** | `weeklyMuscleSets(all major groups)` | none — "hold the recommended numbers" | flat at the recommended volumes (`volume_targets`, else the generator's bands) |
+| **Maintenance** | `weeklyMuscleSets` for **every major group** (owner ruling) | none — "hold the recommended numbers" | flat at the recommended volumes (`volume_targets`, else the generator's bands), all major groups |
 | **Recovery** | `lissMinutesPerWeek` + `stretchingExercisesPerWeek` | none — a recovery block of N weeks | flat or gently descending; LISS minutes and a stretching count per week |
+| **Body composition** | `bodyWeight` | a target weight and a date, or a rate | rate of change: lose 0.5–1 % a week, gain 0.25–0.5 % a week; the block's cardio and volume passes follow |
+| **Volume** | `cumulativeVolume` | a total by a date ("move 100,000 lb this block") | weekly tonnage rising to the total; lights the plate milestone catalog on the way |
+| **Benchmark** | `benchmarkTime(routine)` | a named routine and a time ("Murph under 45 min") | time descends across the block; ties to the community campaigns' curated workouts |
+| **Rep strength** | `liftRepsAtLoad(lift, load)` | a lift, a load, a rep count ("10 at 225") | a Strength variant on the same prescribed loading; the top-set rep target is the rung |
+| **Zone 2** (phase 2) | `zone2MinutesPerWeek` | minutes a week | +10 % a week, down week every fourth |
+| **Aerobic fitness** (phase 2) | `vo2Max` | a VO2 max and a test date | slow ramp; the milestone is a test day |
+| **Skill** (phase 3) | `skillReps(movement)` | a movement and a rep count ("first strict pull-up", "five dips") | a progression chain of regressions: assisted → negatives → partials → full |
+| **Return to training** (phase 3) | `patternLoadPercent(pattern)` | a pattern and a return date | rebuild from a percentage to 100 % over N weeks, gated by pain check-ins |
 
 Recovery is the one preset with two metrics. It is still **one goal**: the primary metric is
 `stretchingExercisesPerWeek` (what the block schedules), LISS minutes is its companion read, shown on the same rung.
 Nothing else in the design changes for it.
+
+**All presets are free.** The door offers every preset the current phase has shipped, from launch (owner ruling:
+Recovery is not held back). Rep strength appears as a second lever on the Strength card ("a max" or "reps at a
+load"), not as an eighth tile.
 
 ### 2.4 Coach-guided goals (pro)
 
@@ -193,9 +212,18 @@ Mapping from metric to the shipped `WeeklyGoalKind`:
 | `trainingDaysPerWeek` | `days` | none (the profile's weekly goal is the number, per the shipped rule — the ladder writes the profile's weekly session goal through its existing deferral) |
 | `sessionsOfTypePerWeek` | `sessionsOfType` | `sessionType`, `count` |
 | `stretchingExercisesPerWeek` (+ LISS) | **`recovery` (NEW kind)** | `count` = stretching exercises, `lissMinutes` (NEW field) |
+| `bodyWeight` | **`bodyWeight` (NEW)** | `bodyWeightLbs` (NEW field, canonical pounds) = the rung |
+| `cumulativeVolume` | **`volume` (NEW)** | `volumeLbs` (NEW field) = the week's tonnage rung |
+| `benchmarkTime` | **`benchmark` (NEW)** | `routineID` (NEW field), `targetSeconds` (NEW field) |
+| `liftRepsAtLoad` | `lift` | `exerciseID`, `targetWeightLbs` = the load, `targetReps` (NEW field) |
+| `zone2MinutesPerWeek` (phase 2) | **`zone2` (NEW)** | `minutes` (NEW field) |
+| `vo2Max` (phase 2) | **`aerobic` (NEW)** | `vo2Max` (NEW field) |
+| `skillReps` (phase 3) | **`skill` (NEW)** | `exerciseID`, `targetReps`, `progressionStep` (NEW field) |
+| `patternLoadPercent` (phase 3) | **`returnToTraining` (NEW)** | `pattern` (NEW field), `percentOfBaseline` (NEW field) |
 
-`WeeklyGoalKind` gains one case (`recovery`) and `WeeklyGoalParams` two fields (`lissMinutes`, `goalID`), all
-additive. `weekly_goals` gains `goal_id uuid` and `rung_index int` (nullable, additive) so a row knows the ladder
+`WeeklyGoalKind` gains the cases above phase by phase and `WeeklyGoalParams` the named fields plus `goalID`, all
+additive; every new kind renders through the strip's existing subject-chip contract (one chip named for the
+subject, done/target on the meter) and the goal editor gains one lever card per kind. `weekly_goals` gains `goal_id uuid` and `rung_index int` (nullable, additive) so a row knows the ladder
 it belongs to; a row with `goal_id = null` is a standalone weekly goal exactly as today.
 
 An athlete's edit of this week's row (the shipped editor) is an **override of the rung**: the row becomes
@@ -299,20 +327,26 @@ gets a full goal, a full ladder, and Coach's adaptive re-laddering and proposals
 
 ## 10. Phases
 
-- **Phase 1 — the door, the ladder, five presets + Maintenance.** `BlockGoal`, the registry for the five shipped
-  metrics, presets Strength / Muscle / Endurance / Consistency / Conditioning / Maintenance, the goal screen, the
-  goal as a generator input, the ladder read-out for Strength and Muscle, ramp rules for the other three, the
-  ladder page, the strip's block kicker, weekly materialisation into `weekly_goals`, adaptive re-laddering,
-  migration of existing enrollments, tables and pgTAP. Ships in one PR with proof cards before merge.
-- **Phase 2 — Recovery + Coach-guided goals.** The two NEW readers (LISS minutes, stretching count), the `recovery`
-  kind, the pro consult path that binds a `BlockGoal`, and Coach's date/target proposals surfaced on the ladder.
-- **Phase 3 — block end.** Outcome check, the recap, the ledger's outcomes, the seeded next goal.
+- **Phase 1 — the door, the ladder, eleven presets.** `BlockGoal`, the registry for the shipped metrics plus the
+  four cheap additions (body weight, cumulative volume, benchmark time, reps at a load) and Recovery's two new
+  readers (LISS minutes, stretching count); presets Strength (with Rep strength as its second lever) / Muscle /
+  Endurance / Consistency / Conditioning / Maintenance (all major groups) / Recovery / Body composition / Volume /
+  Benchmark; the goal screen; the goal as a generator input; the ladder read-out for Strength, Rep strength and
+  Muscle; ramp rules for the rest; the ladder page; the strip's block kicker; weekly materialisation into
+  `weekly_goals` (new kinds `recovery`, `bodyWeight`, `volume`, `benchmark`); adaptive re-laddering; migration of
+  existing enrollments; tables and pgTAP; Coach's date/target proposals on the ladder. Ships in one PR with proof
+  cards before merge.
+- **Phase 2 — the watch metrics + Coach-guided goals.** Zone 2 and Aerobic fitness (heart-rate and VO2 max
+  readers, kinds `zone2`, `aerobic`), and the pro consult path that binds a `BlockGoal`.
+- **Phase 3 — block end, Skill, Return to training.** Outcome check, the recap, the ledger's outcomes, the seeded
+  next goal; catalog progression chains for Skill; the pain check-in and `patternLoadPercent` for Return to
+  training.
 
 ## 11. What this design does not decide
 
-1. The exact set of "major muscle groups" a Maintenance goal holds, and whether `volume_targets` or the generator's
-   bands are the recommended numbers when both exist (the Home v3 plan left the two accountings unreconciled; this
-   design reads whichever the block was built from and says so on the ladder).
+1. Whether `volume_targets` or the generator's bands are the recommended numbers for Maintenance when both exist
+   (the Home v3 plan left the two accountings unreconciled; this design reads whichever the block was built from
+   and says so on the ladder). Which groups count as "major" is `MuscleGroup`'s rollup, as shipped.
 2. How LISS is detected without Health (heart-rate zones need the watch; without it, a cardio-only routine counts).
 3. Whether the legacy `CoachWizardView` is retired or routed through the goal screen (the plan decides after
    reading its remaining call sites).
@@ -334,3 +368,8 @@ gets a full goal, a full ladder, and Coach's adaptive re-laddering and proposals
 7. **Talking to Coach to identify the right goal and ladder is a pro feature.**
 8. **Re-laddering is adaptive (option 1):** Coach re-ladders from actuals weekly; the milestone and its date belong
    to the athlete; Coach proposes date moves and never makes them.
+9. **Maintenance holds the recommended volumes for every major group.**
+10. **All presets are free and offered from launch**, Recovery included.
+11. **Eight more goals join the registry**, phased by what the app can already measure: Body composition, Volume,
+    Benchmark and Rep strength in phase 1; Zone 2 and Aerobic fitness in phase 2 with the watch; Skill and Return
+    to training in phase 3 with the catalog chains and pain check-ins they need.
