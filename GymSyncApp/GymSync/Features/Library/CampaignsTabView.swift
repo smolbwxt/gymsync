@@ -93,7 +93,7 @@ struct CampaignsTabView: View {
                             NavigationLink {
                                 CampaignDetailView(campaign: campaign)
                             } label: {
-                                campaignRow(campaign, trailing: "Active")
+                                campaignRow(campaign, trailing: "Active", trailingIsActive: true)
                             }
                             .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusMd))
                             .padding(.horizontal, 16)
@@ -241,7 +241,10 @@ struct CampaignsTabView: View {
     // 3D pass (2026-08): chrome comes from the NavigationLink's
     // `.gs3DCardStyle` — this is the LABEL only (the old internal GSCard
     // would have painted flat surface over the extruded face).
-    private func campaignRow(_ campaign: Campaign, trailing: String) -> some View {
+    // `trailingIsActive` (design congruence B7): green means done or present,
+    // so ONLY the live "Active" trailing word is coloured — a countdown or
+    // "Ended" is a meta line and stays muted.
+    private func campaignRow(_ campaign: Campaign, trailing: String, trailingIsActive: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("CAMPAIGN")
                 .font(GSFont.bodyMedium(11, relativeTo: .caption2))
@@ -265,7 +268,7 @@ struct CampaignsTabView: View {
                     .foregroundStyle(theme.neutral500)
                 Text(trailing)
                     .font(GSFont.bodyMedium(12, relativeTo: .caption))
-                    .foregroundStyle(theme.accent700)
+                    .foregroundStyle(trailingIsActive ? Color.gsSuccess : theme.neutral500)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

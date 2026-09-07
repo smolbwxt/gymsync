@@ -168,7 +168,7 @@ struct CampaignDetailView: View {
     }
 
     private var windowStateTagStyle: GSTagStyle {
-        campaign.windowState() == .active ? .accent : .neutral
+        campaign.windowState() == .active ? .success : .neutral
     }
 
     // MARK: - Curated workout list (Flow 8 :867 — closes the header's own
@@ -270,7 +270,7 @@ struct CampaignDetailView: View {
                         .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
                         .foregroundStyle(theme.text)
                     if CampaignProgressMath.isComplete(progress: myProgress, target: campaign.individualTarget) {
-                        GSTag(text: "Completed", style: .accent)   // emoji sweep (spec §7): accent tag alone signals success
+                        GSTag(text: "Completed", style: .success)
                     }
                 }
             } else {
