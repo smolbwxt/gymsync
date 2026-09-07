@@ -255,7 +255,9 @@ struct DiscoverWorkoutDetailView: View {
             if let metrics = workout.scoringMetrics, !metrics.isEmpty {
                 HStack(spacing: 6) {
                     ForEach(metrics, id: \.self) { metric in
-                        GSTag(text: DiscoverView.metricLabel(metric), style: .accent)
+                        // Matches DiscoverView.swift's own `.neutral` for the
+                        // same chips (design language §2).
+                        GSTag(text: DiscoverView.metricLabel(metric), style: .neutral)
                     }
                 }
             }
@@ -312,7 +314,8 @@ struct DiscoverWorkoutDetailView: View {
                     // re-snap in the user's unit grid for display.
                     Text("~\(Units.format(pounds: Decimal(projected), unit: ThemeStore.shared.weightUnit)) for you")
                         .font(GSFont.bold(11.5, relativeTo: .caption2))
-                        .foregroundStyle(theme.accent)
+                        // A readout, not an act (design language §2).
+                        .foregroundStyle(theme.neutral500)
                 }
             }
             if ex != nil {
@@ -547,12 +550,21 @@ struct DiscoverWorkoutDetailView: View {
         } label: {
             Text(metric.label)
                 .font(GSFont.bodyMedium(12, relativeTo: .subheadline))
-                .foregroundStyle(isSelected ? theme.bg : theme.text)
+                .foregroundStyle(theme.text)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 7)
                 .frame(minHeight: 44)
                 .frame(maxWidth: .infinity)
-                .background(isSelected ? theme.accent : Color.clear)
+                // Accent discipline (design language §2): the selected
+                // segment's solid accent block was heavier than the screen's
+                // primary. The face marks the segment; a 2 pt accent underline
+                // marks the CURRENT item — the one legal accent use here.
+                .background(isSelected ? theme.raised3DFace : Color.clear)
+                .overlay(alignment: .bottom) {
+                    if isSelected {
+                        Rectangle().fill(theme.accent).frame(height: 2)
+                    }
+                }
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

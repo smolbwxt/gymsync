@@ -216,7 +216,8 @@ struct CampaignDetailView: View {
                         .font(GSFont.bold(14, relativeTo: .subheadline))
                         .foregroundStyle(theme.text)
                     if workout.isFeatured {
-                        GSTag(text: "FEATURED", style: .accent)
+                        // Decorative label, not an act (design language §2).
+                        GSTag(text: "FEATURED", style: .neutral)
                     }
                 }
                 Text("by \(workout.ownerUsername)")
