@@ -2,7 +2,8 @@ import SwiftUI
 
 // Canvas: Log Set card — bottom sheet with:
 //   • Reps stepper  (−  value  +)  border: divider color
-//   • Weight stepper (−  value  +)  border: accent color when PR candidate
+//   • Weight stepper (−  value  +)  border: divider color (accent discipline
+//     sweep 2026-09-06 — an input is furniture, not the screen's one act)
 //   • RPE segmented bar (10 cells, filled up to selection in accent200, active cell in accent)
 //   • Fail + Save Set action row
 // Slider is replaced by the segmented-bar per canvas design.
@@ -121,8 +122,11 @@ struct LogSetSheet: View {
                             // exercise's default — entry parses in this.
                             label: "Weight (\(unit.label))",
                             value: $weight,
-                            borderColor: theme.accent,        // Canvas: accent border on weight
-                            valueColor: theme.accent700,      // Canvas: accent700 for weight value
+                            // Accent discipline (design language §2): an input
+                            // is furniture — flat and neutral, matching Reps
+                            // above. "Save Set" is this sheet's one accent act.
+                            borderColor: theme.divider,
+                            valueColor: theme.text,
                             keyboard: .decimalPad,
                             // Equipment-aware step (owner 2026-08-14):
                             // machines move a whole peg, not 2.5.
@@ -352,9 +356,15 @@ func stepperCell(
     onIncrement: @escaping () -> Void
 ) -> some View {
     VStack(alignment: .leading, spacing: 5) {
-        Text(label)
-            .font(GSFont.body(11, relativeTo: .caption))
+        // Design language §3: a field label is a caps kicker in `muted`.
+        // Uppercased for display only — `.accessibilityLabel(label)` below
+        // and the two stepper buttons keep reading the un-uppercased text.
+        Text(label.uppercased())
+            .font(GSFont.bold(11, relativeTo: .caption))
+            .tracking(1.1)
             .foregroundStyle(theme.neutral500)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
 
         // Canvas: bordered row — minus button | value | plus button, height 48
         HStack(spacing: 0) {
@@ -384,7 +394,9 @@ func stepperCell(
             Button(action: onIncrement) {
                 Text("+")
                     .font(.system(size: 22, weight: .light))
-                    .foregroundStyle(theme.accent)
+                    // Accent discipline (design language §2): a stepper is
+                    // furniture, not the screen's act — it matches the `−`.
+                    .foregroundStyle(theme.neutral700)
                     .frame(width: 56, height: 48)
                     .contentShape(Rectangle())
             }

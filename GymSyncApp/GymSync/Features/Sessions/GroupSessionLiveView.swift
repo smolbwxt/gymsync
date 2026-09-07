@@ -3611,8 +3611,10 @@ struct GroupSessionLiveView: View {
                     // default — commitInlineLog parses in this.
                     label: "Weight (\(ThemeStore.shared.weightUnit.label))",
                     value: $logWeight,
-                    borderColor: theme.accent,
-                    valueColor: theme.accent700,
+                    // Accent discipline (design language §2): the weight cell
+                    // matches Reps beside it — flat, neutral furniture.
+                    borderColor: theme.divider,
+                    valueColor: theme.text,
                     keyboard: .decimalPad,
                     onDecrement: { decrementDecimal(&logWeight, step: turnTunerStep) },
                     onIncrement: { incrementDecimal(&logWeight, step: turnTunerStep) }
