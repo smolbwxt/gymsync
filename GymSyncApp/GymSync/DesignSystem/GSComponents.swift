@@ -1645,11 +1645,13 @@ struct PTTDockRow: View {
     // expanding gsRings while transmitting (1 ring = toggled open, 2 with
     // the frames' 0.7s stagger = held).
 
-    /// The gesture-bearing mic ZStack, shared verbatim by `interactiveRow`
-    /// and compact mode. Pure extraction (2026-07-30) — content is
-    /// byte-identical to what `interactiveRow`'s mic closure inlined before;
-    /// each call site uses it under a fixed `compact` value, so the
-    /// structural-identity law in `interactiveRow`'s doc comment holds.
+    /// The gesture-bearing mic ZStack. `compactMic` is its ONLY call site
+    /// now: B4/T4.1 took the circle off the non-compact path and round-1
+    /// item 3 removed the scaffold slot the other states filled, so this
+    /// renders exclusively in the my-turn page's 56pt sound rail. Content is
+    /// still byte-identical to the 2026-07-30 extraction, and `compact` is
+    /// fixed per call site, so the structural-identity law in
+    /// `interactiveRow`'s doc comment holds for the gesture it carries here.
     private var interactiveMicCore: some View {
         ZStack {
             if isTransmitting {
@@ -1788,6 +1790,11 @@ struct PTTDockRow: View {
             }
         }
         .padding(.horizontal, 12)
+        // Restores the vertical breathing room the pre-pill row carried in
+        // its own chrome: `minHeight: 44` alone lets copy taller than the
+        // floor (this sentence wraps to two lines on narrow widths) sit
+        // flush against the capsule.
+        .padding(.vertical, 8)
     }
 
     // MARK: Mic denied — the pill itself is the "open Settings" button
@@ -1829,6 +1836,10 @@ struct PTTDockRow: View {
                 .foregroundStyle(theme.accent700)
         }
         .padding(.horizontal, 12)
+        // Same restoration as `unavailableBar`: the row used to carry
+        // `.padding(.vertical, 13)` in its own chrome, which went with the
+        // bordered rectangle.
+        .padding(.vertical, 8)
     }
 
     // MARK: - Gesture handlers
