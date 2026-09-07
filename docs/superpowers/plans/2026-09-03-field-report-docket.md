@@ -253,3 +253,23 @@ Owner picked variation 08 and proposed a weekly-targets strip. Built as "Coach's
 
 ### 2026-09-06 — Home decided; weekly goal system designed
 Owner: 08a (strip above the calendar); crew pulse only when a friend is live; the strip is "your goal this week" (muscle sets for strength goals, else miles / HIIT sessions / …; Coach detects, user edits via tap → levers, Coach can set). Design: `docs/superpowers/specs/2026-09-06-home-v3-production-and-weekly-goal-design.md` — Home v3 production composition, WeeklyGoal (muscleSets · distance · sessionsOfType · days · lift; source coach|user; derived when absent), the goal editor, the calendar & scheduling page, three phases (Phase 1 ships Home with muscleSets + days and no crew pulse). Awaiting owner review.
+
+### 2026-09-07 — Home v3 shipped (PR #35 → master 4ebaf54, TestFlight 863); owner round 11
+Owner on build 863: "The home looks good." Three asks and one question:
+- **Programming depth (NEW, owner):** "flesh out the programming more thoroughly" — Coach's block/program
+  generation (`ProgramGenerator`, `ProgramBuilder`, `WeekBooker`) is the subject. Controller note: architectural;
+  brainstorm → spec first. Touches the two muscle-set accountings the Home v3 plan left unreconciled
+  (`ProgramGenerator.weeklyMuscleSets` vs the goal strip's rollup), `volume_targets` vs summed `targetSets`, and
+  the missing `session_type` column. Scope to settle with the owner: periodisation, exercise selection rules,
+  progression/titration, deloads, and how a program explains itself.
+- **Design-language sweep for every page (owner asks whether it is on the docket):** it is —
+  `docs/superpowers/plans/2026-09-06-design-congruence-plan.md` (48 tasks, batches, delivered 2026-09-06) is
+  built from the 71-screen audit and is waiting on the owner's go plus its listed decisions. Nothing from it has
+  been built yet, which is why the pre-session lobby still looks untouched. The lobby also has a SEPARATE,
+  larger item: "simplify the group session + pregame lobby" (2026-09-03, architectural, overlaps the #6 crash
+  suspect `GroupSessionLiveView`) — the congruence pass is cosmetic and must not pre-empt that redesign.
+- **Goal strip colour (owner question):** the weekly-goal strip is a flat strip on `surface` (design rule:
+  strips, 14 pt, for lines that belong to the card above them) while the streak/Coach tiles and the calendar
+  card are extruded. Intentional by the rule's letter; the owner's read — that the goal is its own idea, not a
+  line under the tiles — is a legitimate reading of "one raised object per idea". Owner to rule: keep the strip,
+  or promote it to a small extruded card (radius 16). Promoting changes the two approved 08a/08b baselines.
