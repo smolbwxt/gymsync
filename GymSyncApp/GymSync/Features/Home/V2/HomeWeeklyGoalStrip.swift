@@ -703,16 +703,26 @@ struct HomeWeeklyGoalStrip: View {
     /// that does not name a LISS target says nothing about LISS, which is a
     /// different fact from a target the athlete has not met.
     ///
+    /// **NO TARGET IS CHECKED FIRST, BEFORE CONNECT HEALTH** (review finding
+    /// 3). The two guards used to run the other way round, and
+    /// `recoveryProgress` names the chip `CONNECT HEALTH` whenever Health is
+    /// unconnected — whether or not the goal tracks LISS at all. So a rung
+    /// carrying only a stretching count, on a phone with Health unasked,
+    /// prompted the athlete to connect Health **for a metric its goal does
+    /// not measure**: the same absence-versus-zero confusion controller
+    /// ruling 1 exists to prevent, pointed the other way. The editor always
+    /// writes a clamped `lissMinutes >= 15`, so the sheet cannot reach it; a
+    /// ladder-materialised rung (task A13) writing only `count` can.
+    ///
     /// `static` and internal so `WeeklyGoalRecoveryReadingTests` can put the
     /// ruling under a test — a SwiftUI body is not unit-testable here, and
-    /// the two strings this line can be are exactly what the ruling is
-    /// about. `HomeOneButtonResolver` is the same posture.
+    /// the strings this line can be are exactly what the ruling is about.
+    /// `HomeOneButtonResolver` is the same posture.
     static func recoveryCompanionLine(_ companion: WeeklyGoalProgress.Chip?) -> String? {
-        guard let companion else { return nil }
+        guard let companion, companion.target > 0 else { return nil }
         if companion.name == WeeklyGoalProgressMath.connectHealthRead {
             return WeeklyGoalProgressMath.connectHealthRead
         }
-        guard companion.target > 0 else { return nil }
         return "\(number(companion.done)) / \(number(companion.target)) LISS min"
     }
 

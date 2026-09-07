@@ -733,6 +733,13 @@ enum WeeklyGoalProgressMath {
     /// `HomeWeeklyGoalStrip.recoveryCompanionLine(_:)` prints that name in
     /// place of a fraction.
     ///
+    /// That naming is unconditional on purpose — this function does not know
+    /// whether the athlete has been asked about a metric the goal skips — so
+    /// **the renderer drops the whole line when `lissTarget == 0`, checking
+    /// that before the name** (review finding 3). Without that order a rung
+    /// carrying only a stretching count would prompt for Health on behalf of
+    /// a metric its goal does not measure.
+    ///
     /// The RIGHT-HAND READ stays the week's, not Health's: the stretching
     /// count is the app's own record and reads whether or not Health has
     /// ever been asked, so replacing the whole strip's read on the

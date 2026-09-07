@@ -127,4 +127,30 @@ final class WeeklyGoalRecoveryReadingTests: XCTestCase {
                      "a recovery goal that asks for no minutes says nothing about them")
         XCTAssertNil(HomeWeeklyGoalStrip.recoveryCompanionLine(nil))
     }
+
+    /// Review finding 3. The two guards used to run the other way round —
+    /// the CONNECT HEALTH name was checked before the target — so a rung
+    /// carrying only a stretching count prompted the athlete to connect
+    /// Health **for a metric its goal does not measure**. Reachable from a
+    /// ladder-materialised rung (task A13), which writes `count` and no
+    /// `lissMinutes`; unreachable from the editor, which always writes a
+    /// clamped `lissMinutes >= 15`. The old test missed it by leaving
+    /// `healthNeedsConnecting` at its `false` default.
+    func testNoLissTargetNeverPromptsForHealthEvenWhenItIsUnconnected() {
+        let progress = WeeklyGoalProgressMath.recoveryProgress(
+            goal: recoveryGoal(stretches: 6, liss: 0),
+            stretchingExercisesDone: 4, lissMinutesDone: 0,
+            healthNeedsConnecting: true,
+            now: wednesday, calendar: testCalendar)
+
+        XCTAssertEqual(progress.chips.last?.target, 0)
+        XCTAssertNil(HomeWeeklyGoalStrip.recoveryCompanionLine(progress.chips.last),
+                     "no LISS target means no LISS line — Health has nothing to be connected for")
+
+        // The primary is untouched, exactly as when Health IS being asked
+        // about: the stretching count is the app's own record.
+        XCTAssertEqual(progress.value, 4)
+        XCTAssertEqual(progress.target, 6)
+        XCTAssertEqual(progress.rightHandRead, "4 DAYS LEFT")
+    }
 }
