@@ -23,10 +23,11 @@ import SwiftUI
 /// as a kicker, a 4 pt meter, the fraction under it. Two of the four say
 /// something more —
 ///
-///   * **met** (`done >= target`): the fraction and the meter fill go green.
-///     Rule 2's green means done, and finishing a target is the only "done"
-///     a chip of this kind has. The NAME stays as it is: a green kicker over
-///     a green number states one fact twice.
+///   * **met** (`target > 0 && done >= target`): the fraction and the meter
+///     fill go green. Rule 2's green means done, and finishing a target is
+///     the only "done" a chip of this kind has. The NAME stays as it is: a
+///     green kicker over a green number states one fact twice. The `target
+///     > 0` half is finding 12's: a chip that asks for nothing is not met.
 ///   * **next** (the group furthest behind — exactly one): a 1.5 pt accent
 ///     ring, the same invitation `HomeWeekStrip` puts on today and
 ///     `HomeWeekPlanStrip` on the next session. The owner trains by "what's
@@ -199,7 +200,14 @@ struct HomeWeeklyGoalStrip: View {
     /// "9/12", never "8.5/12" — the half-set is real accounting, not a
     /// number anyone counts in the gym.
     private func chipView(_ chip: WeeklyGoalProgress.Chip) -> some View {
-        let met = chip.done >= chip.target
+        // MET NEEDS AT LEAST ONE REAL TARGET (final review finding 12). A
+        // plain `done >= target` is TRUE for a 0-target chip, so a group
+        // nobody is asking for drew a green `0/0` and read as finished.
+        // `WeeklyGoalProgressMath.muscleSetsProgress` guards the strip-level
+        // `met` against exactly this and says why; the per-chip colour did
+        // not get the same guard. Reachable through the editor's 0-stepper
+        // and through a `volume_targets` deload row at `weekly_sets = 0`.
+        let met = chip.target > 0 && chip.done >= chip.target
         return VStack(alignment: .leading, spacing: 7) {
             Text(chip.name)
                 .font(GSFont.bold(9, relativeTo: .caption2))
