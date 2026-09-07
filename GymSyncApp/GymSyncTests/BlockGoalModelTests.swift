@@ -128,4 +128,27 @@ final class BlockGoalModelTests: XCTestCase {
         XCTAssertEqual(start.day, 24)
         XCTAssertEqual(start.weekday, 2, "24 August 2026 is a Monday")
     }
+
+    /// Review finding 7: the stub's ids were `…b1/…b2/…b3`, which is
+    /// `WeeklyGoalFixtures`' bench/squat/deadlift — so the stub's USER and
+    /// the catalog's BENCH PRESS were the same id, and the stub's bench goal
+    /// pointed at `…b4`, a lift the fixture world does not have. Ruling 3
+    /// says these two fixtures describe ONE world; this pins the part of
+    /// that a screenshot cannot show.
+    func testTheStubsBenchGoalIsTheFixtureWorldsBenchPress() {
+        XCTAssertEqual(StubBlockGoalRepository.fixtureGoal.target.exerciseID,
+                       WeeklyGoalFixtures.benchPressID,
+                       "a bench milestone must point at the catalog's bench press")
+        XCTAssertTrue(StubBlockGoalRepository.fixturePage.headline.contains("Bench"))
+
+        let ids: Set<UUID> = [StubBlockGoalRepository.fixtureUserID,
+                              StubBlockGoalRepository.fixtureGoalID,
+                              StubBlockGoalRepository.fixtureEnrollmentID]
+        XCTAssertEqual(ids.count, 3, "three distinct ids")
+        XCTAssertTrue(ids.isDisjoint(with: [WeeklyGoalFixtures.benchPressID,
+                                            WeeklyGoalFixtures.backSquatID,
+                                            WeeklyGoalFixtures.deadliftID,
+                                            WeeklyGoalFixtures.editorUserID]),
+                      "and none of them is one of the fixture world's lifts or its athlete")
+    }
 }

@@ -54,12 +54,15 @@ protocol BlockGoalRepository: Sendable {
 /// implementation detail, and they are written out here so a reviewer can
 /// check a frame without reading the code under it.
 ///
-///   * **the goal** — metric `liftOneRepMax`, target 225 lb on exercise
-///     `…b4`, by date **Sunday 2026-10-18**, preset `strength`, source
-///     `user` (the athlete set it at the door), no outcome. Ids `…b1` user,
-///     `…b2` goal, `…b3` enrollment, `…b4` exercise. Created **Monday
-///     2026-08-24**. Both dates are built from components at midnight UTC
-///     (see `utcDate`), never from an epoch literal.
+///   * **the goal** — metric `liftOneRepMax`, target 225 lb on
+///     `WeeklyGoalFixtures.benchPressID`, by date **Sunday 2026-10-18**,
+///     preset `strength`, source `user` (the athlete set it at the door), no
+///     outcome. Ids `…c1` user, `…c2` goal, `…c3` enrollment; the exercise is
+///     the FIXTURE WORLD'S OWN BENCH PRESS by reference, so the stub's bench
+///     goal and the catalog's bench press are one lift rather than two that
+///     read alike. Created **Monday 2026-08-24**. Both dates are built from
+///     components at midnight UTC (see `utcDate`), never from an epoch
+///     literal.
 ///   * **the ladder** — eight rungs, week-starts `2026-08-23` through
 ///     `2026-10-11`, targets **190, 195, 200, 205, 210, 175, 220, 225** lb.
 ///     Statuses: weeks 1–2 `met`, week 3 `current`, weeks 4–8 `ahead` —
@@ -86,10 +89,29 @@ protocol BlockGoalRepository: Sendable {
 struct StubBlockGoalRepository: BlockGoalRepository {
 
     /// Fixed ids, so nothing in a screenshot diff moves between runs.
-    static let fixtureUserID = UUID(uuidString: "00000000-0000-0000-0000-0000000000b1") ?? UUID()
-    static let fixtureGoalID = UUID(uuidString: "00000000-0000-0000-0000-0000000000b2") ?? UUID()
-    static let fixtureEnrollmentID = UUID(uuidString: "00000000-0000-0000-0000-0000000000b3") ?? UUID()
-    static let fixtureExerciseID = UUID(uuidString: "00000000-0000-0000-0000-0000000000b4") ?? UUID()
+    ///
+    /// **THE `…c` RANGE, NOT `…b`** (review finding 7). These three were
+    /// `…b1/…b2/…b3`, which is `WeeklyGoalFixtures`' bench/squat/deadlift —
+    /// so the stub's *user* and the catalog's *bench press* were the same
+    /// id, and a Stream D builder resolving `goal.target.exerciseID` against
+    /// the fixture world would have got the fixture athlete or nothing at
+    /// all. `…c4` is already `WeeklyGoalFixtures.editorUserID`; `c1`–`c3`
+    /// were free.
+    static let fixtureUserID = UUID(uuidString: "00000000-0000-0000-0000-0000000000c1") ?? UUID()
+    static let fixtureGoalID = UUID(uuidString: "00000000-0000-0000-0000-0000000000c2") ?? UUID()
+    static let fixtureEnrollmentID = UUID(uuidString: "00000000-0000-0000-0000-0000000000c3") ?? UUID()
+
+    /// **THE FIXTURE WORLD'S OWN BENCH PRESS**, by reference rather than by
+    /// a literal that happens to match.
+    ///
+    /// The stub's goal is a bench goal ("Bench 225 by Oct 18") and the
+    /// catalog's bench press is `WeeklyGoalFixtures.benchPressID`. They used
+    /// to be different lifts, which is the whole of what ruling 3's "one
+    /// world" is against: a frame could show a bench milestone above a lift
+    /// picker with the bench unselected and nothing would look wrong.
+    /// Pointing at the constant rather than copying its digits means
+    /// renumbering that world moves this with it.
+    static let fixtureExerciseID = WeeklyGoalFixtures.benchPressID
 
     /// **2026-08-24, a Monday** — the block's start. A fixture, not a clock.
     static let fixtureCreatedAt = utcDate(year: 2026, month: 8, day: 24)
