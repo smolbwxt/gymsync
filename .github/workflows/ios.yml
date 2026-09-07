@@ -333,19 +333,20 @@ jobs:
         if: always()
         run: |
           SCREENS="$RUNNER_TEMP/screens"
-          # I3 (home-v3-production plan/brief-integration.md): 87 -> 97.
-          # This floor has always tracked the ScreenshotTests test-METHOD
-          # count 1:1 (87 methods at the prior value), not the raw capture
-          # count, because until now every method attached exactly one
-          # screenshot. Stream C adds nine methods (`captureCatalog`, one
-          # capture each, frames 83-91) and Stream D adds one
-          # (testCatalogCalendarScheduling, frame 92) — 97 methods total.
-          # D's method is the one exception: it attaches TWO captures
-          # (app-calendar-scheduling and its -2 scroll proof), so the true
-          # export count will be >= 98. The floor stays 97 = the method/id
-          # count, one below that true minimum, rather than hard-coding the
-          # one-test exception into the arithmetic here.
-          FLOOR=97
+          # I3 (home-v3-production plan/brief-integration.md): 87 -> 97;
+          # final review finding 7: 97 -> 98.
+          # THE FLOOR IS THE NUMBER OF CAPTURES WE EXPECT, NOT THE NUMBER OF
+          # IDS. It used to track the ScreenshotTests test-METHOD count 1:1
+          # (87 methods at the prior value) because every method attached
+          # exactly one screenshot. That stopped being true: Stream C adds
+          # nine methods (`captureCatalog`, one capture each, frames 83-91)
+          # and Stream D adds one (testCatalogCalendarScheduling, frame 92)
+          # that attaches TWO — app-calendar-scheduling and its -2 scroll
+          # proof — so 97 methods export 98 files. At 97 the guard still
+          # passed if app-calendar-scheduling-2 stopped being produced, which
+          # is precisely the `.simultaneousGesture` regression that capture
+          # exists to catch.
+          FLOOR=98
           # `|| true` + the `:-0` default for the same `set -eo pipefail`
           # reason as the simulator picker above: a missing $SCREENS makes
           # `find` exit 1, which would kill the step before it printed the
