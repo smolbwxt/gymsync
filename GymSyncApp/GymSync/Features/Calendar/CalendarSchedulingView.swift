@@ -67,6 +67,13 @@ struct CalendarSchedulingView: View {
     /// the caller's arrays first and never blanks while it re-reads.
     @State private var refreshedUpcoming: [WorkoutSession]?
     @State private var refreshedCompleted: [WorkoutSession]?
+    /// The caller's own sessions that are RUNNING right now (final review
+    /// finding 6). `upcoming()` filters to the PRE-workout states, so a
+    /// session that started used to vanish from THIS WEEK and from the grid
+    /// until it completed — on the page whose whole promise (design language
+    /// rule 4) is that everything on the timeline is here and editable.
+    /// Filled by `refresh()` only; a catalog world never reaches it.
+    @State private var liveSessions: [WorkoutSession] = []
     /// Your own routines, for the agenda's titles — the same list and the
     /// same `"Workout"` fallback `HomeView.routineLabel(for:)` uses (:1599).
     @State private var routinesByID: [UUID: Routine] = [:]
@@ -92,6 +99,25 @@ struct CalendarSchedulingView: View {
 
     private var completed: [WorkoutSession] { refreshedCompleted ?? completedSessions }
     private var upcoming: [WorkoutSession] { refreshedUpcoming ?? upcomingSessions }
+
+    /// Everything on the week's timeline: what is booked, and what is live
+    /// right now — the union `HomeView.actionableSessions` already makes for
+    /// the one button, applied to the page (finding 6).
+    ///
+    /// The two arrays cannot overlap: `upcoming()` filters to the PRE-workout
+    /// states and `liveForCurrentUser()` to `in_progress` alone, so no
+    /// de-duplication is needed. Live first, so a running session heads the
+    /// day it belongs to.
+    private var timeline: [WorkoutSession] { liveSessions + upcoming }
+
+    /// Where a session sits on the timeline. A live one is dated by when it
+    /// STARTED — `startSolo` leaves `scheduled_for` NULL, so a live row has
+    /// no other anchor — and everything else by when it is booked.
+    private func timelineDate(_ session: WorkoutSession) -> Date? {
+        session.state == "in_progress"
+            ? (session.startedAt ?? session.scheduledFor)
+            : session.scheduledFor
+    }
 
     /// What the page draws: the injected world, or the one derived from the
     /// sessions in hand. One render path, two sources.
@@ -303,6 +329,11 @@ struct CalendarSchedulingView: View {
     /// PostgREST `UPDATE` that RLS filters to zero rows returns SUCCESS, so
     /// offering MOVE to a participant would be an affordance that silently
     /// does nothing.
+    /// A LIVE row is excluded by this state list, and that is the whole of
+    /// "a live row is never swipeable" (finding 6): MOVE and CANCEL make no
+    /// sense for a session already under way, and both `moveAction` and
+    /// `cancelAction` return nil without it, so `CalendarSwipeRow` never
+    /// installs the drag.
     private func canMove(_ session: WorkoutSession) -> Bool {
         session.organizerID == selfID
             && (session.state == "scheduled" || session.state == "lobby_open")
@@ -510,8 +541,8 @@ struct CalendarSchedulingView: View {
 
         var scheduled: Set<Int> = []
         var crew: [Int: Color] = [:]
-        for session in upcoming {
-            guard let when = session.scheduledFor,
+        for session in timeline {
+            guard let when = timelineDate(session),
                   let day = dayNumber(of: when, inMonthOf: monthStart, cal: cal) else { continue }
             if let groupID = session.groupID {
                 crew[day] = GSGroupColor.color(for: groupID)
@@ -581,9 +612,9 @@ struct CalendarSchedulingView: View {
     private func blockWeekdays(weekStart: Date, cal: Calendar) -> [String] {
         guard let week = cal.dateInterval(of: .weekOfYear, for: weekStart) else { return [] }
         var byColumn: [Int: String] = [:]
-        for session in upcoming {
+        for session in timeline {
             guard session.groupID == nil,
-                  let when = session.scheduledFor, when >= week.start, when < week.end,
+                  let when = timelineDate(session), when >= week.start, when < week.end,
                   let name = session.routineID.flatMap({ routinesByID[$0] })?.name,
                   name.hasPrefix("Coach · ") else { continue }
             let column = (cal.component(.weekday, from: when) - cal.firstWeekday + 7) % 7
@@ -594,14 +625,15 @@ struct CalendarSchedulingView: View {
 
     // MARK: The week's agenda
     //
-    // Scheduled sessions only — history is not editable from here, and this
-    // list's whole promise (design rule 4) is that everything on it opens
-    // where it can be changed.
+    // Scheduled AND LIVE sessions — history is not editable from here, and
+    // this list's whole promise (design rule 4) is that everything on it opens
+    // where it can be changed. A live row opens its lobby like any other and
+    // is simply not swipeable (see `canMove`).
 
     private func agendaItems(weekStart: Date, cal: Calendar) -> [CalendarAgendaItem] {
         guard let week = cal.dateInterval(of: .weekOfYear, for: weekStart) else { return [] }
-        let inWeek: [(session: WorkoutSession, when: Date)] = upcoming.compactMap { session in
-            guard let when = session.scheduledFor, when >= week.start, when < week.end else { return nil }
+        let inWeek: [(session: WorkoutSession, when: Date)] = timeline.compactMap { session in
+            guard let when = timelineDate(session), when >= week.start, when < week.end else { return nil }
             return (session, when)
         }
         return inWeek
@@ -629,8 +661,14 @@ struct CalendarSchedulingView: View {
         // Ternary by design (`SessionCommitment`'s own header): no row means
         // you have not said, which is the COMMIT state; an explicit OUT is
         // not a pill, because there is nothing to show up to.
+        //
+        // LIVE OUTRANKS BOTH (finding 6). A running session is not asking you
+        // to commit and is past confirming that you are in; it states what is
+        // happening, so it takes the pill and the other two do not apply.
         var status: CalendarAgendaItem.Status?
-        if group != nil {
+        if session.state == "in_progress" {
+            status = .live
+        } else if group != nil {
             let mine = commitmentBySession[session.id]
             if mine == .committed {
                 status = .checkedIn
@@ -688,6 +726,13 @@ struct CalendarSchedulingView: View {
         guard world == nil else { return }
         if let rows = try? await SessionRepository.upcoming() {
             refreshedUpcoming = rows
+        }
+        // Assigned unconditionally on success AND cleared on an empty result,
+        // the posture `HomeView.refresh()` takes for the same read: a session
+        // that ENDED must stop claiming a row, and "nothing is live" is a real
+        // answer here rather than a failed fetch.
+        if let rows = try? await SessionRepository.liveForCurrentUser() {
+            liveSessions = rows
         }
         if let userID = appState.currentProfile?.id {
             // 60 is what `HomeView` already passes for the same widget's

@@ -12,6 +12,10 @@ struct CalendarAgendaItem: Identifiable {
     enum Status {
         /// You have committed. Green means present (design language rule 2).
         case checkedIn
+        /// The session is RUNNING right now (final review finding 6). Green
+        /// for the same reason `checkedIn` is: being mid-workout is a state
+        /// of done-ness, not an invitation, and rule 2 gives green that job.
+        case live
         /// You have not said yet — committing happens on the crew board.
         case commit
     }
@@ -97,28 +101,29 @@ struct CalendarAgendaRowView: View {
         .contentShape(Rectangle())
     }
 
-    /// The same two chips `HomeCalendarCard.chip` draws, at the same values —
-    /// the door and the room must not disagree about whether you are in.
+    /// The same chips `HomeCalendarCard.chip` draws, at the same values — the
+    /// door and the room must not disagree about whether you are in. `LIVE`
+    /// wears `IN`'s exact geometry and `IN`'s green; only the word differs.
     @ViewBuilder
     private func pill(_ status: CalendarAgendaItem.Status) -> some View {
         switch status {
-        case .checkedIn:
-            Text("IN")
-                .font(GSFont.bold(10, relativeTo: .caption2))
-                .kerning(1.1)
-                .foregroundStyle(Color.gsHex(0x2FA45C))
-                .padding(.horizontal, 9)
-                .padding(.vertical, 5)
-                .background(Capsule().fill(Color.gsHex(0x2FA45C).opacity(0.16)))
-        case .commit:
-            Text("COMMIT")
-                .font(GSFont.bold(10, relativeTo: .caption2))
-                .kerning(1.1)
-                .foregroundStyle(theme.accent)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 5)
-                .background(Capsule().fill(theme.accent.opacity(0.16)))
+        case .checkedIn: chip("IN", tint: Self.green)
+        case .live:      chip("LIVE", tint: Self.green)
+        case .commit:    chip("COMMIT", tint: theme.accent)
         }
+    }
+
+    /// The one green this codebase uses, in its "present" job.
+    private static let green = Color.gsHex(0x2FA45C)
+
+    private func chip(_ text: String, tint: Color) -> some View {
+        Text(text)
+            .font(GSFont.bold(10, relativeTo: .caption2))
+            .kerning(1.1)
+            .foregroundStyle(tint)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(Capsule().fill(tint.opacity(0.16)))
     }
 }
 
