@@ -439,6 +439,60 @@ final class WeeklyGoalDetectorTests: XCTestCase {
         XCTAssertTrue(weekRoutines.isEmpty)
     }
 
+    // MARK: - A booked FUTURE week gets that week's routines (finding 3)
+
+    /// THE DEFECT THIS PINS: `detect(weekStart:)` bound `let now = Date()`
+    /// and passed it to `routinesForWeek`, so `weekStart` was only the row
+    /// key. `WeekBooker.book` writes forward — every `BlockCalendarView` call
+    /// site books a future week — so week N+1's row was stamped with week N's
+    /// routines, and nothing re-derived it afterwards.
+    ///
+    /// The fix is `WeekMath.date(fromWeekStartString:)` feeding `now`, and
+    /// this is that `now` doing its job: the same library and the same
+    /// sessions, read once as this week and once as the week after, must
+    /// answer with different routines.
+    func testAFutureWeekResolvesToThatWeeksRoutines() {
+        let push = routine(10, "Push")
+        let legs = routine(11, "Legs")
+        let library = [push, legs]
+        // `push` is trained THIS week; `legs` is on the books for the NEXT
+        // one (day 8 — `now` is a Sunday under a Sunday-first calendar, so
+        // day 7 is already the next week's first day).
+        let sessions = [completedSession(push, dayOffset: 0),
+                        bookedSession(legs, dayOffset: 8)]
+
+        let thisWeek = WeeklyGoalDetector.routinesForWeek(
+            library: library, sessions: sessions, now: now, calendar: calendar)
+        XCTAssertEqual(thisWeek.map(\.id), [push.id])
+
+        let nextWeekStart = calendar.date(byAdding: .day, value: 7, to: now)!
+        let nextWeek = WeeklyGoalDetector.routinesForWeek(
+            library: library, sessions: sessions, now: nextWeekStart,
+            calendar: calendar)
+        XCTAssertEqual(nextWeek.map(\.id), [legs.id],
+                       "a week booked forward derives from ITS routines, not today's")
+    }
+
+    /// The parse `detect` relies on to get from the row key back to the week.
+    func testAWeekStartStringRoundTripsToItsOwnMonday() {
+        let start = WeekMath.startOfWeek(now, calendar: calendar)
+        let key = WeekMath.weekStartString(now, calendar: calendar)
+        XCTAssertEqual(WeekMath.date(fromWeekStartString: key, calendar: calendar), start)
+
+        // A future key parses to a date inside that future week — the whole
+        // point of threading it through detection.
+        let nextKey = WeekMath.weekStartString(
+            calendar.date(byAdding: .day, value: 7, to: now)!, calendar: calendar)
+        let parsed = WeekMath.date(fromWeekStartString: nextKey, calendar: calendar)
+        XCTAssertNotNil(parsed)
+        if let parsed {
+            XCTAssertEqual(WeekMath.weekStartString(parsed, calendar: calendar), nextKey)
+        }
+
+        XCTAssertNil(WeekMath.date(fromWeekStartString: "not-a-date", calendar: calendar))
+        XCTAssertNil(WeekMath.date(fromWeekStartString: "2026-09", calendar: calendar))
+    }
+
     func testASessionWithNoRoutineContributesNoRoutineID() {
         let freestyle = WorkoutSession(id: UUID(), routineID: nil, organizerID: userID,
                                        state: "completed", startedAt: now,

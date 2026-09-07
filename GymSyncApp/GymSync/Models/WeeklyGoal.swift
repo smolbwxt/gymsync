@@ -107,6 +107,31 @@ enum WeekMath {
                       parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
     }
 
+    /// The inverse of `weekStartString(_:)`: midnight, in `calendar`'s
+    /// timezone, of the day that string names.
+    ///
+    /// Parsed from the digits rather than through a `DateFormatter`, for the
+    /// same reason the formatting side is built from components — no locale,
+    /// no calendar and no caching question between the DATE column and the
+    /// day it means. nil for anything that is not `yyyy-MM-dd`, which is a
+    /// value this app never writes but a hand-typed one might be.
+    ///
+    /// `detect(weekStart:)` is why this exists (final review finding 3): a
+    /// week's goal must be derived from THAT week's routines, and the only
+    /// thing the caller has is the row key.
+    static func date(fromWeekStartString value: String,
+                     calendar: Calendar = .current) -> Date? {
+        let parts = value.split(separator: "-")
+        guard parts.count == 3,
+              let year = Int(parts[0]), let month = Int(parts[1]),
+              let day = Int(parts[2]) else { return nil }
+        var components = DateComponents()
+        components.year = year
+        components.month = month
+        components.day = day
+        return calendar.date(from: components)
+    }
+
     /// Days left in `week`, counting today — 7 on the week's first day, 1 on
     /// its last. This is the number behind `1 DAY LEFT` / `3 DAYS LEFT`, and
     /// it must come from the same week the streak tile counts, which is why

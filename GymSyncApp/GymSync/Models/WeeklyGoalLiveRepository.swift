@@ -180,11 +180,27 @@ struct LiveWeeklyGoalRepository: WeeklyGoalRepository, WeeklyGoalCoachWriter {
     /// What Coach would set for `weekStart`, fetching the detector's inputs.
     /// Writes NOTHING — the propose-only path (A11) and `clearToCoach` both
     /// build on this.
+    ///
+    /// **`now` IS THE WEEK BEING DETECTED, NOT TODAY** (final review finding
+    /// 3). `weekStart` used to be only the row key: everything that decides
+    /// what the goal IS — `routinesForWeek`, the detector's own `now:` — read
+    /// `Date()`. `WeekBooker.book` calls `writeDetectedGoal` with a FUTURE
+    /// week (`BlockCalendarView` books forward), so week N+1's row was
+    /// stamped with week N's routines and week N's cardio judgment, and
+    /// nothing ever re-derived it. Parsing the week back out of its own key
+    /// is what makes the row about the week it belongs to.
+    ///
+    /// The FETCHES are not week-scoped and do not need to be:
+    /// `SessionRepository.upcoming()` is ordered soonest-first with no
+    /// horizon, so a week booked three weeks out is in the same page as this
+    /// one, and `weekRoutineIDs` is what narrows either to the right seven
+    /// days. `Date()` remains the fallback for a `weekStart` that will not
+    /// parse — a value this app never writes.
     func detect(weekStart: String) async -> WeeklyGoal? {
         guard let userID = await SupabaseService.shared.currentUserID() else { return nil }
         let unit = await MainActor.run { ThemeStore.shared.weightUnit }
         let calendar = Calendar.current
-        let now = Date()
+        let now = WeekMath.date(fromWeekStartString: weekStart, calendar: calendar) ?? Date()
 
         async let enrollment = try? await ProgramRepository.active()
         async let trainingProfile = try? await TrainingProfileRepository.load()
