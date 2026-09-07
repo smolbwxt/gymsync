@@ -1335,15 +1335,16 @@ struct GSExpandingRing: View {
 //       one line, "TALKING · RELEASE TO STOP" in theme.bg ink. (openBar and
 //       holdingBar stay separate symbols so `interactiveRow`'s branch
 //       structure — and the gesture host's identity — never changes.)
-//   .connecting -> dimmed spinner bar "Connecting voice…" in the same pill,
-//       still beside its own round mic
-//   .unavailable -> muted bar in the same pill (pairs with
-//       `GSVoiceUnavailableBanner`, shown by the caller above the dock)
-//   .micDenied -> the whole row is a single full-width open-Settings button
-//       (unchanged from the earlier canvas live-dock frame; the blessed
-//       frames don't redraw denied)
+//   .connecting -> dimmed spinner bar "Connecting voice…" in the same pill
+//   .unavailable -> muted bar in the same pill, plus a RETRY button when the
+//       caller supplied `onRetry` (pairs with `GSVoiceUnavailableBanner`,
+//       shown by the caller above the dock)
+//   .micDenied -> the same pill, wrapped in one open-Settings Button
 //
-// The round mic survives ONLY in `compact: true` (the my-turn page's 56pt
+// EVERY non-compact state is exactly one object (round-1 item 3): the
+// scaffold's old leading `mic:` slot and the dimmed circles that filled it
+// on connecting/unavailable are gone, and micDenied no longer draws its own
+// bordered rectangle. The round mic survives ONLY in `compact: true` (the my-turn page's 56pt
 // sound rail, which has no room for a pill) — `interactiveMicCore` is
 // unchanged and still carries its own gesture there.
 //
@@ -1488,9 +1489,9 @@ struct PTTDockRow: View {
                 case .micDenied:
                     deniedRow
                 case .unavailable:
-                    micAndBar(mic: { unavailableMic }, bar: { unavailableBar })
+                    talkPill { unavailableBar }
                 case .connecting:
-                    micAndBar(mic: { connectingMic }, bar: { connectingBar })
+                    talkPill { connectingBar }
                         .opacity(0.75)
                 case .idle, .connected:
                     interactiveRow
@@ -1550,17 +1551,24 @@ struct PTTDockRow: View {
                         onRelease: handleRelease)
     }
 
-    // MARK: Row scaffold — the raised talk pill (+ an optional leading mic)
+    // MARK: Row scaffold — the raised talk pill, and nothing else
     //
-    // The bar's chrome IS the control now: a full-width extruded pill —
+    // The bar's chrome IS the control: a full-width extruded pill —
     // radius 999 (the chips radius) on a 5pt lip (the tile lip) — filled
     // with the theme's neutral raised pair at rest and a SOLID ACCENT face
     // while transmitting, so the object you press is the object that goes
     // live. The old `theme.surface` fill + `theme.divider` stroke are gone
     // (the lip delineates, same reasoning as `GS3DCardStyle` retiring the
-    // card stroke). `mic()` is `EmptyView()` on the interactive path; only
-    // the non-interactive connecting/unavailable states still lead with a
-    // circle.
+    // card stroke).
+    //
+    // Round-1 item 3: EVERY non-compact state is now exactly one object.
+    // The scaffold used to take a leading `mic:` slot, and connecting /
+    // unavailable still filled it with a dimmed circle — two objects on a
+    // control whose whole rule is one. The slot is gone with them (nothing
+    // passed anything but `EmptyView()` after T4.1), and `deniedRow` — which
+    // never went through this scaffold at all — now wears the same pill.
+    // `compactMic` is untouched and keeps `interactiveMicCore`'s circle: the
+    // 56pt sound rail has no room for a pill.
     //
     // Round-1 F2: the lip is now the SYSTEM's, not hand-rolled. Passing
     // `face:` through to `.gs3DCard` means an accent face derives its lip
@@ -1572,18 +1580,12 @@ struct PTTDockRow: View {
     // flat when it activated — and a flat extrusion is this language's word
     // for "pressed", which is precisely backwards on a hands-free state.
 
-    private func micAndBar<Mic: View, Bar: View>(
-        @ViewBuilder mic: () -> Mic,
-        @ViewBuilder bar: () -> Bar
-    ) -> some View {
-        HStack(spacing: 8) {
-            mic()
-            bar()
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .gs3DCard(cornerRadius: 999,
-                          lipHeight: 5,
-                          face: isTransmitting ? theme.accent : nil)
-        }
+    private func talkPill<Bar: View>(@ViewBuilder _ bar: () -> Bar) -> some View {
+        bar()
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .gs3DCard(cornerRadius: 999,
+                      lipHeight: 5,
+                      face: isTransmitting ? theme.accent : nil)
     }
 
     // MARK: Interactive row (idle/muted/open/held — ONE stable view identity)
@@ -1600,7 +1602,7 @@ struct PTTDockRow: View {
     // keep its structural identity. B4/T4.1 moved that gesture from the mic
     // ZStack onto the pill on the NON-compact path — the law is unchanged,
     // only its host: `interactiveRow` applies `.modifier(pressGesture)`
-    // unconditionally to one `micAndBar(...)`, so nothing is swapped.
+    // unconditionally to one `talkPill(...)`, so nothing is swapped.
     // Compact mode still hosts it on `interactiveMicCore`'s ZStack.
     //
     // Mic visual (compact only, now): 44pt round — secondary
@@ -1644,9 +1646,7 @@ struct PTTDockRow: View {
     /// and the gesture host keeps ONE structural identity across the
     /// muted -> transmitting flip (see the doc comment above).
     private var interactiveRow: some View {
-        micAndBar(mic: {
-            EmptyView()
-        }, bar: {
+        talkPill {
             if isTransmitting {
                 if isHeldTransmitOwnedByThisPress {
                     holdingBar
@@ -1656,31 +1656,17 @@ struct PTTDockRow: View {
             } else {
                 idleBar
             }
-        })
+        }
         .contentShape(Rectangle())
         .modifier(pressGesture)
     }
 
-    // MARK: Non-interactive mic variants
-
-    private var connectingMic: some View {
-        ZStack {
-            Circle().fill(theme.bg)
-            Circle().strokeBorder(theme.accent, lineWidth: 1)
-            micGlyph(color: theme.accent)
-        }
-        .frame(width: 44, height: 44)
-    }
-
-    private var unavailableMic: some View {
-        ZStack {
-            Circle().strokeBorder(theme.neutral400, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-            Image(systemName: "mic.slash")
-                .font(.system(size: 17, weight: .regular))
-                .foregroundStyle(theme.neutral500)
-        }
-        .frame(width: 44, height: 44)
-    }
+    // MARK: Mic glyph
+    //
+    // `connectingMic` and `unavailableMic` — the two dimmed 44pt circles the
+    // scaffold used to lead with — were deleted by round-1 item 3 (one
+    // object per non-compact state). `compactMic` builds its own inert
+    // circles inline and still needs this glyph.
 
     private func micGlyph(color: Color, size: CGFloat = 18) -> some View {
         Image(systemName: "mic")
@@ -1769,7 +1755,18 @@ struct PTTDockRow: View {
         .padding(.horizontal, 12)
     }
 
-    // MARK: Mic denied — entire row becomes one "open Settings" button
+    // MARK: Mic denied — the pill itself is the "open Settings" button
+    //
+    // Round-1 item 3: this row used to bypass the scaffold entirely and draw
+    // its own full-width `theme.bg` rectangle with an accent stroke — a
+    // second chrome vocabulary in the one place the dock has no pill. It now
+    // wears the same `talkPill`, wrapped in the same Button. ONLY the chrome
+    // changed: copy, both glyphs, their sizes and colours, and the
+    // openSettingsURLString action are untouched. The accent mic glyph stays
+    // accent deliberately — unlike `.unavailable`, this row IS the one
+    // primary action on the dock, so accent is legal here. The horizontal
+    // inset moves 16 -> 12 to match its sibling `unavailableBar` inside the
+    // same pill.
 
     private var deniedRow: some View {
         Button {
@@ -1777,26 +1774,26 @@ struct PTTDockRow: View {
                 UIApplication.shared.open(url)
             }
         } label: {
-            HStack(spacing: 10) {
-                Image(systemName: "mic.slash")
-                    .font(.system(size: 17, weight: .regular))
-                    .foregroundStyle(theme.accent)
-                Text("Mic access off — turn on in Settings")
-                    .font(GSFont.bold(14, relativeTo: .body))
-                    .foregroundStyle(theme.text)
-                Spacer()
-                Image(systemName: "arrow.up.right")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(theme.accent700)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 13)
-            .frame(minHeight: 44)
-            .background(theme.bg)
-            .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.accent, lineWidth: 1))
-            .contentShape(Rectangle())
+            talkPill { deniedBar }
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    private var deniedBar: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "mic.slash")
+                .font(.system(size: 17, weight: .regular))
+                .foregroundStyle(theme.accent)
+            Text("Mic access off — turn on in Settings")
+                .font(GSFont.bold(14, relativeTo: .body))
+                .foregroundStyle(theme.text)
+            Spacer()
+            Image(systemName: "arrow.up.right")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(theme.accent700)
+        }
+        .padding(.horizontal, 12)
     }
 
     // MARK: - Gesture handlers
