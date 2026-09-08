@@ -206,6 +206,41 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
         }
     }
 
+    /// Everything the ladder page renders, already worded (task A12).
+    ///
+    /// The wording is `LadderMath.page`'s, never this file's: one place chooses
+    /// the ladder's words, so the page, the schedule card and Coach's line
+    /// cannot spell one rung three ways.
+    ///
+    /// The block's own facts come from the ENROLLMENT'S TEMPLATE — its deload
+    /// weeks and its per-week notes — rather than from a re-run of the
+    /// generator, for the reason `LadderReadout`'s template door states in full.
+    func page(goalID: UUID) async -> LadderPageModel? {
+        guard let goal = await goal(id: goalID),
+              let ladder = await ladder(goalID: goalID) else { return nil }
+        let calendar = Calendar.current
+        let unit = await MainActor.run { ThemeStore.shared.weightUnit }
+        let template = (try? await ProgramRepository.active())?.template
+
+        var liftName = ""
+        if let exerciseID = goal.target.exerciseID {
+            liftName = (try? await ExerciseRepository.fetch(id: exerciseID))?.name ?? ""
+        }
+
+        // ONE `rungSets` FOR THE WHOLE LADDER, because that is the signature the
+        // plan fixes. The block's weeks can each prescribe their own set count
+        // (`march-to-1rm` runs 3 × 5 down to 2 × 1), so this passes the first
+        // week's and a per-week spelling is an I1 question, not a silent
+        // approximation: recorded rather than papered over.
+        return LadderMath.page(
+            goal: goal, ladder: ladder, liftName: liftName,
+            rungSets: template?.weeks.first?.sets ?? 3,
+            notesByWeek: LadderReadout.notesByWeek(template: template),
+            deloadWeeks: LadderReadout.constraints(template: template,
+                                                   unit: unit).deloadWeeks,
+            unit: unit, now: Date(), calendar: calendar)
+    }
+
     // MARK: - Write
 
     /// The athlete editing their own milestone or date. ALWAYS `source = .user`

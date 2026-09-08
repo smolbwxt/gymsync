@@ -190,4 +190,143 @@ final class LadderMathTests: XCTestCase {
         XCTAssertNotNil(LadderMath.rung(in: eight, weekStart: "2026-09-13"))
         XCTAssertNil(LadderMath.rung(in: eight, weekStart: "2027-01-03"))
     }
+
+    // MARK: - A12: the ladder page's model (spec §6)
+    //
+    // THE DATES COME FROM `StubBlockGoalRepository`'s constants, not from epoch
+    // literals. The plan's snippets used `1_792_411_200`, which is 2026-10-**19**
+    // — the very literal Task 0's re-review replaced for being unreadable and
+    // wrong — so a test written around it would have asserted "by Oct 18"
+    // against a date that says the 19th and blamed the formatter.
+
+    private let pageCalendar = Calendar(identifier: .gregorian)
+    /// 2026-09-10, inside the fixture ladder's third week.
+    private let pageNow = Date(timeIntervalSince1970: 1_789_000_000)
+
+    private func strengthGoal(target: GoalTarget, byDate: Date?,
+                              preset: GoalPreset? = .strength,
+                              source: WeeklyGoalSource = .user,
+                              metric: GoalMetric = .liftOneRepMax,
+                              id: UUID = UUID()) -> BlockGoal {
+        BlockGoal(id: id, userID: UUID(), enrollmentID: UUID(), metric: metric,
+                  target: target, byDate: byDate, preset: preset, source: source,
+                  outcome: nil, outcomeValue: nil,
+                  createdAt: Date(timeIntervalSince1970: 0),
+                  updatedAt: Date(timeIntervalSince1970: 0))
+    }
+
+    func testAStrengthPageIsHeadlinedByTheMilestoneItself() {
+        let bench = UUID()
+        let goal = strengthGoal(
+            target: GoalTarget(exerciseID: bench, targetWeightLbs: 225),
+            byDate: StubBlockGoalRepository.fixtureByDate)
+        let page = LadderMath.page(
+            goal: goal, ladder: StubBlockGoalRepository.fixtureLadder,
+            liftName: "Bench", rungSets: 3, notesByWeek: [:], unit: .lbs,
+            now: pageNow, calendar: pageCalendar)
+
+        XCTAssertEqual(page.headline, "Bench 225 by Oct 18")
+        XCTAssertEqual(page.dateLine, "Sunday 18 October",
+                       "the date line spells out the day the headline abbreviates")
+        XCTAssertEqual(page.rows.count, 8)
+        XCTAssertEqual(page.weekCount, 8)
+        XCTAssertEqual(page.weekNumber, 3, "exactly one rung is current")
+        XCTAssertEqual(page.source, .user)
+        XCTAssertEqual(page.coachLine, "On track")
+        XCTAssertTrue(page.reachesMilestone)
+    }
+
+    func testALadderThatFallsShortSaysSoAndNamesTheNumber() {
+        var ladder = StubBlockGoalRepository.fixtureLadder
+        ladder.rungs[7].target.targetWeightLbs = 218     // the spec's own example
+        let goal = strengthGoal(target: GoalTarget(targetWeightLbs: 225),
+                                byDate: StubBlockGoalRepository.fixtureByDate,
+                                id: ladder.goalID)
+        let page = LadderMath.page(
+            goal: goal, ladder: ladder, liftName: "Bench", rungSets: 3,
+            notesByWeek: [:], unit: .lbs, now: pageNow, calendar: pageCalendar)
+
+        XCTAssertFalse(page.reachesMilestone)
+        XCTAssertTrue(page.coachLine.contains("218"),
+                      "the ladder never lies about the gap")
+        XCTAssertTrue(page.coachLine.contains("move the date?"),
+                      "Coach PROPOSES — nothing is written here")
+    }
+
+    func testAHeldForTheBlockGoalHasNoDateLine() {
+        let goal = strengthGoal(
+            target: GoalTarget(muscleTargets: ["chest": 12, "back": 14]),
+            byDate: nil, preset: .maintenance, source: .coach,
+            metric: .weeklyMuscleSets)
+        let page = LadderMath.page(
+            goal: goal, ladder: StubBlockGoalRepository.fixtureLadder,
+            liftName: "", rungSets: 3, notesByWeek: [:], unit: .lbs,
+            now: pageNow, calendar: pageCalendar)
+
+        XCTAssertEqual(page.dateLine, "")
+        XCTAssertEqual(page.coachLine, "Held for the block.")
+        XCTAssertEqual(page.headline, "Hold the recommended volumes")
+        XCTAssertTrue(page.reachesMilestone,
+                      "a goal with no date cannot fall short of one")
+    }
+
+    func testADeloadRungCarriesItsFlagAndTheGeneratorsOwnNote() {
+        var ladder = StubBlockGoalRepository.fixtureLadder
+        ladder.rungs[5].status = .ahead
+        let goal = strengthGoal(target: GoalTarget(targetWeightLbs: 225),
+                                byDate: nil, source: .coach, id: ladder.goalID)
+        let page = LadderMath.page(
+            goal: goal, ladder: ladder, liftName: "Bench", rungSets: 2,
+            notesByWeek: [5: "Deload — move fast, leave fresh."],
+            deloadWeeks: [5], unit: .lbs, now: pageNow, calendar: pageCalendar)
+
+        XCTAssertTrue(page.rows[5].isDeload)
+        XCTAssertEqual(page.rows[5].note, "Deload — move fast, leave fresh.")
+        XCTAssertNil(page.rows[5].implication,
+                     "a deload's e1RM reads as a setback; the number is true and "
+                     + "the sentence it forms is not")
+        XCTAssertEqual(page.rows.filter(\.isDeload).count, 1)
+        XCTAssertNotNil(page.rows[4].implication, "an ordinary rung still implies one")
+    }
+
+    /// Every metric words a rung, and none of them says "—" for a target that
+    /// has its number. A metric added without a spelling would print an em dash
+    /// on the ladder page and nobody would see it until a screenshot.
+    func testEveryMetricWordsItsOwnRung() {
+        let targets: [GoalMetric: GoalTarget] = [
+            .liftOneRepMax: GoalTarget(targetWeightLbs: 200, targetReps: 5),
+            .liftRepsAtLoad: GoalTarget(targetWeightLbs: 225, targetReps: 8),
+            .weeklyMuscleSets: GoalTarget(muscleTargets: ["chest": 12]),
+            .weeklyDistance: GoalTarget(activity: "run", distance: 12),
+            .trainingDaysPerWeek: GoalTarget(days: 4),
+            .sessionsOfTypePerWeek: GoalTarget(sessionType: "hiit", sessions: 3),
+            .lissMinutesPerWeek: GoalTarget(lissMinutes: 150, stretchingExercises: 4),
+            .stretchingExercisesPerWeek: GoalTarget(lissMinutes: 120,
+                                                    stretchingExercises: 6),
+            .bodyWeight: GoalTarget(bodyWeightLbs: 183, bodyWeightRatePercent: -0.75),
+            .cumulativeVolume: GoalTarget(volumeLbs: 12_500),
+            .benchmarkTime: GoalTarget(routineID: UUID(), targetSeconds: 2_800),
+        ]
+        XCTAssertEqual(targets.count, GoalMetric.allCases.count)
+
+        for metric in GoalMetric.allCases {
+            guard let target = targets[metric] else {
+                return XCTFail("\(metric.rawValue) has no fixture")
+            }
+            let goal = strengthGoal(target: target, byDate: nil, preset: nil,
+                                    source: .coach, metric: metric)
+            let ladder = Ladder(
+                goalID: goal.id,
+                rungs: [.init(weekIndex: 0, weekStartString: "2026-09-06",
+                              target: target, status: .current)],
+                derivedAt: Date(timeIntervalSince1970: 0))
+            let page = LadderMath.page(goal: goal, ladder: ladder, liftName: "Bench",
+                                       rungSets: 3, notesByWeek: [:], unit: .lbs,
+                                       now: pageNow, calendar: pageCalendar)
+            XCTAssertEqual(page.rows.count, 1, metric.rawValue)
+            XCTAssertNotEqual(page.rows.first?.targetText, "—",
+                              "\(metric.rawValue) must word its own rung")
+            XCTAssertFalse(page.headline.isEmpty, "\(metric.rawValue) headline")
+        }
+    }
 }

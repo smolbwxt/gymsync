@@ -302,3 +302,291 @@ extension LadderMath {
         ladder.rungs.first { $0.weekStartString == weekStart }
     }
 }
+
+// MARK: - A12: the ladder page's model (spec §6)
+//
+// **THE ONLY PLACE THE LADDER'S WORDS ARE CHOSEN.** The page, the schedule card
+// and Coach's line all render from `LadderPageModel`, so one rung cannot be
+// spelled three ways. A view that formatted a `GoalTarget` itself would be a
+// second opinion about what the week asks for.
+//
+// PURE, and it takes `now` and the `calendar` for the reason
+// `WeeklyGoalProgressMath` does: a page whose week number came from `Date.now`
+// could not be tested and could not be captured.
+extension LadderMath {
+
+    /// Everything the ladder page renders, already worded.
+    ///
+    /// `reachesMilestone` is `reached(metric:measured:target:)` applied to the
+    /// LAST RUNG against the MILESTONE. When it is false the coach line becomes
+    /// the proposal — and NOTHING IS WRITTEN. Spec §3.5's whole point is that
+    /// Coach proposes the date move and the athlete accepts it.
+    static func page(goal: BlockGoal, ladder: Ladder, liftName: String,
+                     rungSets: Int, notesByWeek: [Int: String],
+                     deloadWeeks: Set<Int> = [], unit: WeightUnit,
+                     now: Date, calendar: Calendar) -> LadderPageModel {
+        var model = LadderPageModel()
+        model.source = goal.source
+        model.weekCount = ladder.rungs.count
+
+        model.rows = ladder.rungs.map { rung in
+            let isDeload = deloadWeeks.contains(rung.weekIndex)
+            let (text, implication) = rungText(metric: goal.metric, target: rung.target,
+                                               sets: rungSets, unit: unit)
+            return LadderRow(
+                weekNumber: rung.weekIndex + 1,
+                weekStartString: rung.weekStartString,
+                targetText: text,
+                // A DELOAD ROW CARRIES NO IMPLICATION. "≈ 197 e1RM" under a
+                // week the block deliberately made light reads as a setback;
+                // the number is true and the sentence it forms is not.
+                implication: isDeload ? nil : implication,
+                status: rung.status,
+                isDeload: isDeload,
+                note: notesByWeek[rung.weekIndex])
+        }
+
+        // The week the athlete is ON is the one rung marked `current`. Falling
+        // back to `now`'s own week key covers a ladder that has not been
+        // re-laddered yet; falling back to 1 covers a block that has not started.
+        let currentWeekKey = WeekMath.weekStartString(now, calendar: calendar)
+        model.weekNumber = (ladder.rungs.first { $0.status == .current }
+            ?? ladder.rungs.first { $0.weekStartString == currentWeekKey })
+            .map { $0.weekIndex + 1} ?? 1
+
+        let dated = goal.byDate
+        model.dateLine = dated.map { longDate($0, calendar: calendar) } ?? ""
+        model.headline = headline(goal: goal, liftName: liftName, unit: unit,
+                                  calendar: calendar)
+
+        // A GOAL WITH NO DATE CANNOT FALL SHORT OF ONE. `reachesMilestone` asks
+        // whether the ladder still arrives BY THE DATE (spec §6), so a
+        // held-for-the-block goal is true by construction rather than by
+        // measuring a milestone it does not have.
+        if dated == nil {
+            model.reachesMilestone = true
+            model.coachLine = "Held for the block."
+            return model
+        }
+
+        let last = ladder.rungs.last
+        model.reachesMilestone = last.map {
+            reached(metric: goal.metric, measured: $0.target, target: goal.target)
+        } ?? false
+        if model.reachesMilestone {
+            model.coachLine = "On track"
+        } else {
+            // NAMES THE NUMBER. "This ladder reaches 218 — move the date?" is
+            // the spec's own wording, and the point of it is that the ladder
+            // never lies about the gap: it says where it actually arrives.
+            let reach = last.map { bareNumber(metric: goal.metric, target: $0.target,
+                                              unit: unit) } ?? ""
+            model.coachLine = reach.isEmpty
+                ? "This ladder does not reach the milestone — move the date?"
+                : "This ladder reaches \(reach) — move the date?"
+        }
+        return model
+    }
+
+    // MARK: - Wording
+
+    /// The milestone as the headline — spec §6's table, verbatim where it
+    /// gives the copy.
+    private static func headline(goal: BlockGoal, liftName: String,
+                                 unit: WeightUnit, calendar: Calendar) -> String {
+        // HELD FOR THE BLOCK gets its own two sentences, because "12 chest sets
+        // a week by Oct 18" would put a deadline on a goal that has none.
+        if goal.byDate == nil {
+            switch goal.preset {
+            case .maintenance: return "Hold the recommended volumes"
+            case .recovery:    return "A recovery block"
+            default: break
+            }
+        }
+        let subject = headlineSubject(goal: goal, liftName: liftName, unit: unit)
+        guard let byDate = goal.byDate else { return subject }
+        return "\(subject) by \(shortDate(byDate, calendar: calendar))"
+    }
+
+    private static func headlineSubject(goal: BlockGoal, liftName: String,
+                                        unit: WeightUnit) -> String {
+        let target = goal.target
+        switch goal.metric {
+        case .liftOneRepMax:
+            let load = target.targetWeightLbs
+                .map { Units.wholeNumber(pounds: $0, unit: unit) } ?? ""
+            return [liftName, load].filter { !$0.isEmpty }.joined(separator: " ")
+        case .liftRepsAtLoad:
+            let load = (target.loadLbs ?? target.targetWeightLbs)
+                .map { Units.wholeNumber(pounds: $0, unit: unit) } ?? ""
+            let reps = target.targetReps.map { "\($0)" } ?? ""
+            let at = [reps, load].filter { !$0.isEmpty }.joined(separator: " at ")
+            return [liftName, at].filter { !$0.isEmpty }.joined(separator: " ")
+        case .weeklyMuscleSets:
+            guard let biggest = largestGroup(target.muscleTargets) else {
+                return "Weekly volume"
+            }
+            return "\(biggest.sets) \(biggest.group) sets a week"
+        case .weeklyDistance:
+            let label = WeeklyGoalProgressMath.distanceUnitLabel(unit)
+            let value = target.distance.map { WeeklyGoalProgressMath.groupedNumber($0) } ?? ""
+            let activity = (target.activity ?? "").isEmpty ? "" : " \(target.activity ?? "")"
+            return "\(value) \(label) a week\(activity)".trimmingCharacters(in: .whitespaces)
+        case .trainingDaysPerWeek:
+            let days = target.days ?? 0
+            return "\(days) \(days == 1 ? "day" : "days") a week"
+        case .sessionsOfTypePerWeek:
+            let count = target.sessions ?? 0
+            let type = (target.sessionType ?? "").uppercased()
+            return "\(count) \(type) a week".replacingOccurrences(of: "  ", with: " ")
+        case .lissMinutesPerWeek:
+            return "\(target.lissMinutes ?? 0) LISS min a week"
+        case .stretchingExercisesPerWeek:
+            let count = target.stretchingExercises ?? 0
+            return "\(count) \(count == 1 ? "stretch" : "stretches") a week"
+        case .bodyWeight:
+            return target.bodyWeightLbs
+                .map { Units.formatBodyWeight(pounds: $0, unit: unit) } ?? "Body weight"
+        case .cumulativeVolume:
+            let value = target.volumeLbs.map {
+                WeeklyGoalProgressMath.groupedNumber(Units.fromPounds($0, to: unit))
+            } ?? ""
+            return "\(value) \(unit.label) moved"
+        case .benchmarkTime:
+            return target.targetSeconds
+                .map { WeeklyGoalProgressMath.clock(Double($0)) } ?? "A benchmark"
+        }
+    }
+
+    /// One rung, worded — and its implication when the number implies something
+    /// the text does not say.
+    private static func rungText(metric: GoalMetric, target: GoalTarget,
+                                 sets: Int,
+                                 unit: WeightUnit) -> (String, String?) {
+        switch metric {
+        case .liftOneRepMax, .liftRepsAtLoad:
+            // ONE FUNCTION, on both surfaces — `LadderReadout.strengthRungText`
+            // is what the schedule card prints too.
+            let spelled = LadderReadout.strengthRungText(target, sets: sets, unit: unit)
+            return (spelled.text, spelled.implication)
+        case .weeklyMuscleSets:
+            let groups = (target.muscleTargets ?? [:])
+                .sorted { lhs, rhs in
+                    lhs.value != rhs.value ? lhs.value > rhs.value : lhs.key < rhs.key
+                }
+                .map { "\($0.value) \($0.key)" }
+            return (groups.isEmpty ? "—" : groups.joined(separator: " · "), nil)
+        case .weeklyDistance:
+            guard let distance = target.distance else { return ("—", nil) }
+            return ("\(WeeklyGoalProgressMath.groupedNumber(distance)) "
+                    + WeeklyGoalProgressMath.distanceUnitLabel(unit), nil)
+        case .trainingDaysPerWeek:
+            guard let days = target.days else { return ("—", nil) }
+            return ("\(days) \(days == 1 ? "day" : "days")", nil)
+        case .sessionsOfTypePerWeek:
+            guard let count = target.sessions else { return ("—", nil) }
+            return ("\(count) \((target.sessionType ?? "").uppercased())"
+                        .trimmingCharacters(in: .whitespaces), nil)
+        case .lissMinutesPerWeek, .stretchingExercisesPerWeek:
+            // ONE RUNG, TWO NUMBERS — Recovery is one goal with two metrics
+            // (spec §2.3) and the row says both, in the order `LadderRow`'s own
+            // doc comment gives.
+            var parts: [String] = []
+            if let minutes = target.lissMinutes { parts.append("\(minutes) LISS min") }
+            if let count = target.stretchingExercises {
+                parts.append("\(count) \(count == 1 ? "stretch" : "stretches")")
+            }
+            return (parts.isEmpty ? "—" : parts.joined(separator: " · "), nil)
+        case .bodyWeight:
+            guard let pounds = target.bodyWeightLbs else { return ("—", nil) }
+            let rate = target.bodyWeightRatePercent
+                .map { String(format: "%@%.2f %%/wk", $0 < 0 ? "" : "+", $0) }
+            return (Units.formatBodyWeight(pounds: pounds, unit: unit), rate)
+        case .cumulativeVolume:
+            guard let pounds = target.volumeLbs else { return ("—", nil) }
+            return ("\(WeeklyGoalProgressMath.groupedNumber(Units.fromPounds(pounds, to: unit)))"
+                    + " \(unit.label)", nil)
+        case .benchmarkTime:
+            guard let seconds = target.targetSeconds else { return ("—", nil) }
+            return (WeeklyGoalProgressMath.clock(Double(seconds)), nil)
+        }
+    }
+
+    /// The bare number a coach line names — "218", "12 mi", "46:40".
+    private static func bareNumber(metric: GoalMetric, target: GoalTarget,
+                                   unit: WeightUnit) -> String {
+        switch metric {
+        case .liftOneRepMax, .liftRepsAtLoad:
+            return (target.targetWeightLbs ?? target.loadLbs)
+                .map { Units.wholeNumber(pounds: $0, unit: unit) } ?? ""
+        case .weeklyMuscleSets:
+            return largestGroup(target.muscleTargets).map { "\($0.sets) \($0.group)" } ?? ""
+        case .weeklyDistance:
+            return target.distance.map {
+                "\(WeeklyGoalProgressMath.groupedNumber($0)) "
+                    + WeeklyGoalProgressMath.distanceUnitLabel(unit)
+            } ?? ""
+        case .trainingDaysPerWeek:
+            return target.days.map { "\($0)" } ?? ""
+        case .sessionsOfTypePerWeek:
+            return target.sessions.map { "\($0)" } ?? ""
+        case .lissMinutesPerWeek:
+            return target.lissMinutes.map { "\($0) min" } ?? ""
+        case .stretchingExercisesPerWeek:
+            return target.stretchingExercises.map { "\($0)" } ?? ""
+        case .bodyWeight:
+            return target.bodyWeightLbs
+                .map { Units.formatBodyWeight(pounds: $0, unit: unit) } ?? ""
+        case .cumulativeVolume:
+            return target.volumeLbs.map {
+                WeeklyGoalProgressMath.groupedNumber(Units.fromPounds($0, to: unit))
+            } ?? ""
+        case .benchmarkTime:
+            return target.targetSeconds.map { WeeklyGoalProgressMath.clock(Double($0)) } ?? ""
+        }
+    }
+
+    /// The group a muscle headline names: the largest target, ties broken by
+    /// `MuscleGroup.allCases` order so the headline cannot reshuffle between
+    /// two renders of the same goal.
+    private static func largestGroup(_ targets: [String: Int]?)
+        -> (group: String, sets: Int)? {
+        let order = Dictionary(uniqueKeysWithValues:
+            MuscleGroup.allCases.enumerated().map { ($0.element.rawValue, $0.offset) })
+        return (targets ?? [:])
+            .sorted { lhs, rhs in
+                if lhs.value != rhs.value { return lhs.value > rhs.value }
+                return (order[lhs.key] ?? .max) < (order[rhs.key] ?? .max)
+            }
+            .first
+            .map { (group: $0.key, sets: $0.value) }
+    }
+
+    // MARK: - Dates
+    //
+    // **`en_US_POSIX`, DELIBERATELY.** Every other string this file produces is
+    // an English literal — "On track", "Held for the block.", "a week" — so a
+    // locale-aware month name would be the single translated word on an
+    // otherwise English page. When this app is localised the whole page moves
+    // together; until then one locale for one page is the honest choice, and it
+    // is also what makes "Bench 225 by Oct 18" assertable in a test.
+
+    /// "Oct 18" — the headline's date.
+    private static func shortDate(_ date: Date, calendar: Calendar) -> String {
+        formatter("MMM d", calendar: calendar).string(from: date)
+    }
+
+    /// "Sunday 18 October" — the page's own date line.
+    private static func longDate(_ date: Date, calendar: Calendar) -> String {
+        formatter("EEEE d MMMM", calendar: calendar).string(from: date)
+    }
+
+    private static func formatter(_ format: String, calendar: Calendar) -> DateFormatter {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = format
+        return formatter
+    }
+}
