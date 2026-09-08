@@ -329,4 +329,126 @@ final class LadderMathTests: XCTestCase {
             XCTAssertFalse(page.headline.isEmpty, "\(metric.rawValue) headline")
         }
     }
+
+    // MARK: - A13: blocks that predate goals (spec §5.4)
+
+    /// `ProgramEnrollment` is `Decodable`-ONLY (`ProgramEnrollment.swift:26`),
+    /// so the fixture goes through JSON — the way a row actually arrives. A
+    /// hand-built value could not drift from the wire shape because it could
+    /// not exist.
+    private func enrollment(focus: ProgramFocus, baseline: [String: Double],
+                            weeks: Int = 8) -> ProgramEnrollment {
+        let focusJSON = String(data: try! JSONEncoder().encode(focus),
+                               encoding: .utf8)!
+        let baselineJSON = String(data: try! JSONEncoder().encode(baseline),
+                                  encoding: .utf8)!
+        let json = """
+        {"id":"\(UUID().uuidString)","user_id":"\(UUID().uuidString)",
+         "template_slug":"coach-fixture","focus":\(focusJSON),
+         "baseline":\(baselineJSON),
+         "started_on":"2026-08-23","weeks":\(weeks),
+         "ended_at":null,"ended_reason":null,
+         "created_at":"2026-08-23T12:00:00Z"}
+        """
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try! decoder.decode(ProgramEnrollment.self, from: Data(json.utf8))
+    }
+
+    /// 2026-08-25, inside the fixture block's first week.
+    private let detectNow = Date(timeIntervalSince1970: 1_787_745_600)
+
+    func testAFocusLiftWithABaselineDetectsAStrengthGoalFivePercentUp() {
+        let bench = UUID()
+        let draft = LadderMath.detectedGoal(
+            enrollment: enrollment(focus: ProgramFocus(exerciseIDs: [bench]),
+                                   baseline: [bench.uuidString.lowercased(): 200]),
+            volumeTargets: [], effectiveWeeklyGoal: 3, unit: .lbs,
+            now: detectNow, calendar: Calendar(identifier: .gregorian))
+
+        XCTAssertEqual(draft.metric, .liftOneRepMax)
+        XCTAssertEqual(draft.target.exerciseID, bench)
+        XCTAssertEqual(draft.target.targetWeightLbs, 210,
+                       "200 × 1.05, rounded on the 5 lb grid — the same step "
+                       + "WeeklyGoalDetector.liftTarget takes, called not re-derived")
+        XCTAssertEqual(draft.source, .coach)
+        XCTAssertNil(draft.preset, "this goal was not chosen at a door")
+        XCTAssertNotNil(draft.byDate, "the block's end is the milestone date")
+    }
+
+    func testAMuscleGroupFocusDetectsWeeklyMuscleSets() {
+        let draft = LadderMath.detectedGoal(
+            enrollment: enrollment(focus: ProgramFocus(muscleGroup: "chest"),
+                                   baseline: [:]),
+            volumeTargets: [VolumeTarget(muscle: "chest", weeklySets: 14, reason: nil)],
+            effectiveWeeklyGoal: 3, unit: .lbs,
+            now: detectNow, calendar: Calendar(identifier: .gregorian))
+
+        XCTAssertEqual(draft.metric, .weeklyMuscleSets)
+        XCTAssertEqual(draft.target.muscleTargets?["chest"], 14,
+                       "the titration is read first when it has a row")
+    }
+
+    func testAMuscleFocusWithNoTitrationFallsBackToTheBlocksPrescription() {
+        let draft = LadderMath.detectedGoal(
+            enrollment: enrollment(focus: ProgramFocus(muscleGroup: "chest"),
+                                   baseline: [:]),
+            volumeTargets: [], effectiveWeeklyGoal: 3,
+            prescribedMuscleSets: ["chest": 11], unit: .lbs,
+            now: detectNow, calendar: Calendar(identifier: .gregorian))
+
+        XCTAssertEqual(draft.metric, .weeklyMuscleSets)
+        XCTAssertEqual(draft.target.muscleTargets?["chest"], 11,
+                       "the block's own prescribed sets, when the search has said nothing")
+    }
+
+    func testAMuscleFocusWithNeitherNumberDoesNotInventOne() {
+        let draft = LadderMath.detectedGoal(
+            enrollment: enrollment(focus: ProgramFocus(muscleGroup: "chest"),
+                                   baseline: [:]),
+            volumeTargets: [], effectiveWeeklyGoal: 4, unit: .lbs,
+            now: detectNow, calendar: Calendar(identifier: .gregorian))
+
+        XCTAssertEqual(draft.metric, .trainingDaysPerWeek,
+                       "no titration and no prescription means no number to name — "
+                       + "the days floor, not a target invented here")
+        XCTAssertEqual(draft.target.days, 4)
+    }
+
+    func testAnEnrollmentWithNeitherFallsToDaysAndNeverToNil() {
+        let draft = LadderMath.detectedGoal(
+            enrollment: enrollment(focus: ProgramFocus(), baseline: [:]),
+            volumeTargets: [], effectiveWeeklyGoal: 5, unit: .lbs,
+            now: detectNow, calendar: Calendar(identifier: .gregorian))
+
+        XCTAssertEqual(draft.metric, .trainingDaysPerWeek)
+        XCTAssertEqual(draft.target.days, 5,
+                       "the same never-empty floor WeeklyGoalDetector's rule 3 is")
+    }
+
+    /// A focus lift with NO baseline is not a strength goal: there is nothing to
+    /// add 5 % to, and inventing a milestone off a number that does not exist is
+    /// the one thing the detector must never do.
+    func testAFocusLiftWithNoBaselineFallsThrough() {
+        let draft = LadderMath.detectedGoal(
+            enrollment: enrollment(focus: ProgramFocus(exerciseIDs: [UUID()]),
+                                   baseline: [:]),
+            volumeTargets: [], effectiveWeeklyGoal: 3, unit: .lbs,
+            now: detectNow, calendar: Calendar(identifier: .gregorian))
+
+        XCTAssertEqual(draft.metric, .trainingDaysPerWeek)
+    }
+
+    /// The milestone date is the BLOCK'S END, and it is the same arithmetic
+    /// `WeeklyGoalDetector.blockEnd` does — asserted against that function
+    /// rather than against a literal, so the two cannot drift.
+    func testTheDetectedMilestoneDateIsTheBlocksOwnEnd() throws {
+        let calendar = Calendar(identifier: .gregorian)
+        let block = enrollment(focus: ProgramFocus(), baseline: [:], weeks: 6)
+        let draft = LadderMath.detectedGoal(
+            enrollment: block, volumeTargets: [], effectiveWeeklyGoal: 3,
+            unit: .lbs, now: detectNow, calendar: calendar)
+        let expected = try XCTUnwrap(WeeklyGoalDetector.blockEnd(block, calendar: calendar))
+        XCTAssertEqual(draft.byDate, expected)
+    }
 }

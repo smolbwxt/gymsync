@@ -737,3 +737,145 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
         return Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     }
 }
+
+// MARK: - A13: blocks that predate goals (spec §5.4)
+
+extension LiveBlockGoalRepository {
+
+    /// Derive and persist a goal for a block that predates goals — and, for a
+    /// block that already HAS one, bring its ladder up to date.
+    ///
+    /// Mirrors `LiveWeeklyGoalRepository.detectIfMissing` exactly: the read
+    /// happens, the rule decides, ONE attempt is made and the caller moves on,
+    /// so an offline launch renders the block without a ladder and retries next
+    /// refresh rather than looping.
+    ///
+    /// **PLAN ITEM 6, THE CONTROLLER'S RULING, IS THE FIRST BRANCH.** A block
+    /// that already carries a goal is NOT re-derived — the milestone belongs to
+    /// the athlete and Coach may not restate it. What Coach does instead is what
+    /// it is allowed to do: re-ladder the remaining rungs from actuals, and
+    /// materialise this week's rung into `weekly_goals` (which itself defers to
+    /// `WeeklyGoalWriteRule` and leaves the athlete's own week alone).
+    ///
+    /// `source = .coach` on a fresh derivation, which is what makes the
+    /// athlete's later edit on the ladder page an override Coach must respect
+    /// (owner decision 8).
+    ///
+    /// The ladder is derived and persisted IMMEDIATELY after the goal, so a
+    /// migrated block has rungs on its first Home load rather than an empty page.
+    @discardableResult
+    func detectGoalIfMissing(enrollment: ProgramEnrollment) async -> BlockGoal? {
+        let calendar = Calendar.current
+        let now = Date()
+        let currentWeek = WeekMath.weekStartString(now, calendar: calendar)
+
+        if let existing = await goal(enrollmentID: enrollment.id) {
+            await reLadder(goalID: existing.id)
+            await materialiseRung(goalID: existing.id, weekStart: currentWeek)
+            return existing
+        }
+
+        guard let userID = await SupabaseService.shared.currentUserID() else { return nil }
+        let unit = await MainActor.run { ThemeStore.shared.weightUnit }
+        let volumeTargets = (try? await VolumeTargetRepository.all()) ?? []
+        let weeklyGoal = await effectiveWeeklyGoal(userID: userID)
+        // Only fetched for a muscle-focused block: everything else answers from
+        // the enrollment alone, and this is three round trips.
+        let prescribed = enrollment.focus.muscleGroup == nil
+            ? [:]
+            : await prescribedMuscleSets(userID: userID, calendar: calendar)
+
+        let draft = LadderMath.detectedGoal(
+            enrollment: enrollment, volumeTargets: volumeTargets,
+            effectiveWeeklyGoal: weeklyGoal, prescribedMuscleSets: prescribed,
+            unit: unit, now: now, calendar: calendar)
+        let goal = BlockGoal(draft: draft, userID: userID,
+                             enrollmentID: enrollment.id, now: now)
+        guard await saveDetected(goal) else { return nil }
+
+        await deriveLadder(goal: goal, enrollment: enrollment, unit: unit,
+                           calendar: calendar, now: now)
+        await materialiseRung(goalID: goal.id, weekStart: currentWeek)
+        return goal
+    }
+
+    /// The first ladder for a block that had none.
+    ///
+    /// A strength goal reads its rungs off the block's OWN template weeks
+    /// (`LadderReadout.strengthRungs(template:…)`, which goes through
+    /// `ProgramMath.targetWeight` — the function the program card prints).
+    /// Everything else ramps. Either way the rungs land `ahead` except the week
+    /// the athlete is in, which `LadderMath.statuses` marks `current` by the
+    /// same law that marks it on every later refresh.
+    private func deriveLadder(goal: BlockGoal, enrollment: ProgramEnrollment,
+                              unit: WeightUnit, calendar: Calendar,
+                              now: Date) async {
+        let weekKeys = LadderMath.weekStartStrings(from: enrollment.startedOn,
+                                                   count: max(1, enrollment.weeks),
+                                                   calendar: calendar)
+        guard !weekKeys.isEmpty else { return }
+        let template = enrollment.template
+        var targets: [GoalTarget] = []
+
+        if goal.metric == .liftOneRepMax, let exerciseID = goal.target.exerciseID,
+           let baseline = enrollment.baselineValue(for: exerciseID),
+           let readOut = LadderReadout.strengthRungs(template: template,
+                                                     exerciseID: exerciseID,
+                                                     baselineE1RMLbs: baseline),
+           readOut.count == weekKeys.count {
+            targets = readOut
+        } else {
+            targets = LadderRules.rule(for: goal.metric).rungs(
+                current: GoalTarget(), target: goal.target, weeks: weekKeys.count,
+                constraints: LadderReadout.constraints(template: template, unit: unit))
+        }
+        guard targets.count == weekKeys.count else { return }
+
+        let raw = zip(weekKeys.enumerated(), targets).map { pair, target in
+            LadderRung(weekIndex: pair.offset, weekStartString: pair.element,
+                       target: target, status: .ahead)
+        }
+        let rungs = LadderMath.statuses(
+            rungs: raw, metric: goal.metric, measuredByWeek: [:],
+            currentWeekStart: WeekMath.weekStartString(now, calendar: calendar))
+        await saveLadder(Ladder(goalID: goal.id, rungs: rungs, derivedAt: now))
+    }
+
+    /// The BLOCK'S own prescribed sets per group, when the titration has
+    /// nothing to say.
+    ///
+    /// THE WEEK'S ROUTINES, not the whole library — `routinesForWeek` is what
+    /// narrows it, for the reason `LiveWeeklyGoalRepository.detect` records: a
+    /// five-routine library summed into a week's targets is a target nobody
+    /// prescribed. The arithmetic is `WeeklyGoalDetector.routineTargets`, the
+    /// same six-group credit progress is measured with.
+    private func prescribedMuscleSets(userID: UUID,
+                                      calendar: Calendar) async -> [String: Int] {
+        let library = (try? await RoutineRepository.fetchAll(ownerID: userID)) ?? []
+        let sessions = (try? await SessionRepository.upcoming(limit: 50)) ?? []
+        let history = (try? await SessionRepository.history(userID: userID,
+                                                            limit: 50)) ?? []
+        let weekRoutines = WeeklyGoalDetector.routinesForWeek(
+            library: library, sessions: sessions + history,
+            now: Date(), calendar: calendar)
+        guard !weekRoutines.isEmpty else { return [:] }
+        let rows = (try? await RoutineRepository
+            .exercisesForRoutines(ids: weekRoutines.map(\.id))) ?? []
+        let catalog = (try? await ExerciseRepository.fetchAll()) ?? []
+        let byID = Dictionary(catalog.map { ($0.id, $0) },
+                              uniquingKeysWith: { first, _ in first })
+        let byGroup = WeeklyGoalDetector.routineTargets(
+            weekRoutines: weekRoutines,
+            routineExercises: Dictionary(grouping: rows, by: \.routineID),
+            catalog: byID)
+        return Dictionary(uniqueKeysWithValues: byGroup.map { ($0.key.rawValue, $0.value) })
+    }
+
+    /// The anti-goalpost weekly days number, with the app's own default when
+    /// there is no profile to read — the same 3 `LiveWeeklyGoalRepository` and
+    /// `HomeView.weeklyGoalWidget` both fall back to.
+    private func effectiveWeeklyGoal(userID: UUID) async -> Int {
+        let profile = try? await ProfileRepository.fetch(userID: userID)
+        return profile?.effectiveWeeklyGoal ?? 3
+    }
+}

@@ -590,3 +590,76 @@ extension LadderMath {
         return formatter
     }
 }
+
+// MARK: - A13: blocks that predate goals (spec §5.4)
+
+extension LadderMath {
+
+    /// The goal a block that predates goals gets, derived from the
+    /// enrollment's OWN evidence and nothing else.
+    ///
+    /// **THIS IS A13'S FUNCTION AND IT LANDS BESIDE B4'S `detectedGoal(profile:)`
+    /// RATHER THAN ON TOP OF IT.** The two answer different questions and
+    /// overload on their parameters, exactly as that one's doc comment says:
+    /// B4's is what `ProgramBuilder.build(goal:)` receives when nothing was
+    /// chosen at a door, and this one is what an ALREADY-BUILT block gets on
+    /// first Home load.
+    ///
+    /// `source = .coach`, which is what makes the athlete's later edit on the
+    /// ladder page an override Coach must respect (owner decision 8), and
+    /// `preset` is nil because this goal was not chosen at a door.
+    ///
+    /// The derivation, in the order it is tried:
+    ///   * `focus.exerciseIDs.first` WITH a `baseline` → `liftOneRepMax` at
+    ///     `WeeklyGoalDetector.liftTarget` — the same baseline + 5 %, rounded in
+    ///     the athlete's own unit, that the weekly detector takes. CALLED, not
+    ///     re-derived: two functions for "next milestone on a lift" is how the
+    ///     ladder and the strip come to disagree by 5 lb.
+    ///   * `focus.muscleGroup` → `weeklyMuscleSets` for that group, from
+    ///     `volume_targets` when the titration has a row for it and from the
+    ///     block's own prescribed sets otherwise.
+    ///   * anything else → `trainingDaysPerWeek` at `Profile.effectiveWeeklyGoal`
+    ///     — the same NEVER-RETURNS-NIL floor `WeeklyGoalDetector`'s rule 3 is,
+    ///     for the same reason: a block with no goal is the state this function
+    ///     exists to end.
+    ///
+    /// `prescribedMuscleSets` is defaulted so the pure call reads exactly as the
+    /// plan writes it. A muscle focus with NEITHER a titration row NOR a
+    /// prescription falls through to the days floor rather than naming a number
+    /// nobody set — the ladder would otherwise open on a target invented here.
+    static func detectedGoal(enrollment: ProgramEnrollment,
+                             volumeTargets: [VolumeTarget],
+                             effectiveWeeklyGoal: Int,
+                             prescribedMuscleSets: [String: Int] = [:],
+                             unit: WeightUnit,
+                             now: Date,
+                             calendar: Calendar) -> BlockGoalDraft {
+        let byDate = WeeklyGoalDetector.blockEnd(enrollment, calendar: calendar)
+
+        if let exerciseID = enrollment.focus.exerciseIDs?.first,
+           let baseline = enrollment.baselineValue(for: exerciseID), baseline > 0 {
+            let target = WeeklyGoalDetector.liftTarget(fromBaselineLbs: baseline,
+                                                       unit: unit)
+            return BlockGoalDraft(
+                metric: .liftOneRepMax,
+                target: GoalTarget(exerciseID: exerciseID, targetWeightLbs: target),
+                byDate: byDate, preset: nil, source: .coach)
+        }
+
+        if let muscle = enrollment.focus.muscleGroup,
+           let group = MuscleGroup.group(muscle) {
+            let titrated = WeeklyGoalDetector.titratedTargets(volumeTargets)
+            let sets = titrated[group] ?? prescribedMuscleSets[group.rawValue]
+            if let sets, sets > 0 {
+                return BlockGoalDraft(
+                    metric: .weeklyMuscleSets,
+                    target: GoalTarget(muscleTargets: [group.rawValue: sets]),
+                    byDate: byDate, preset: nil, source: .coach)
+            }
+        }
+
+        return BlockGoalDraft(metric: .trainingDaysPerWeek,
+                              target: GoalTarget(days: max(1, effectiveWeeklyGoal)),
+                              byDate: byDate, preset: nil, source: .coach)
+    }
+}
