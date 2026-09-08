@@ -125,3 +125,88 @@ enum LadderMath {
         return out
     }
 }
+
+// MARK: - A10: the current rung becomes the week's goal
+
+extension LadderMath {
+
+    /// Spec §4: the shipped weekly goal IS the materialised current rung.
+    ///
+    /// `source = .coach` on purpose and by rule: this is a Coach write, which
+    /// `WeeklyGoalWriteRule.shouldOverwrite` permits over no row and over
+    /// Coach's own — and refuses over a row the athlete set, which is exactly
+    /// the rung-override the design wants (§4: "an athlete's edit of this
+    /// week's row is an override of the rung").
+    ///
+    /// nil when the metric has no weekly shape — there is none in phase 1, and
+    /// the `nil` return exists so phase 2's `vo2Max` (a test day, not a week)
+    /// has somewhere honest to land.
+    static func weeklyGoal(from rung: LadderRung, goal: BlockGoal,
+                           userID: UUID, now: Date) -> WeeklyGoal? {
+        var params = WeeklyGoalParams()
+        params.goalID = goal.id
+        params.byDate = goal.byDate
+        let kind: WeeklyGoalKind
+
+        switch goal.metric {
+        case .liftOneRepMax:
+            kind = .lift
+            params.exerciseID = rung.target.exerciseID ?? goal.target.exerciseID
+            params.targetWeightLbs = rung.target.targetWeightLbs
+        case .liftRepsAtLoad:
+            kind = .lift
+            params.exerciseID = rung.target.exerciseID ?? goal.target.exerciseID
+            params.targetWeightLbs = rung.target.loadLbs ?? goal.target.loadLbs
+            params.targetReps = rung.target.targetReps
+        case .weeklyMuscleSets:
+            kind = .muscleSets
+            params.muscleTargets = rung.target.muscleTargets
+            // Where the number came from, for the strip's own provenance —
+            // "block" is a third value beside the shipped "titration" and
+            // "routines", and it is the truthful one here: this target is the
+            // block's prescribed volume, not the search's and not a template's.
+            params.targetSource = "block"
+        case .weeklyDistance:
+            kind = .distance
+            params.activity = rung.target.activity ?? goal.target.activity
+            params.distanceTarget = rung.target.distance
+        case .trainingDaysPerWeek:
+            // NO `count` (the controller's 2026-09-06 ruling, which
+            // `WeeklyGoalDetector.daysParams` records): the profile's weekly
+            // session goal is the single source of truth for this number, and a
+            // mirror in `params` is precisely how the strip and the streak tile
+            // would come to disagree. The rung's own days number reaches the
+            // athlete through the ladder page, not through this row.
+            kind = .days
+        case .sessionsOfTypePerWeek:
+            kind = .sessionsOfType
+            params.sessionType = rung.target.sessionType ?? goal.target.sessionType
+            params.count = rung.target.sessions
+        case .stretchingExercisesPerWeek, .lissMinutesPerWeek:
+            // ONE goal, two metrics (spec §2.3). Whichever of the pair the goal
+            // names, the row carries both numbers, because the strip renders
+            // them on one rung.
+            kind = .recovery
+            params.count = rung.target.stretchingExercises
+            params.lissMinutes = rung.target.lissMinutes
+        case .bodyWeight:
+            kind = .bodyWeight
+            params.bodyWeightLbs = rung.target.bodyWeightLbs
+        case .cumulativeVolume:
+            kind = .volume
+            params.volumeLbs = rung.target.volumeLbs
+        case .benchmarkTime:
+            kind = .benchmark
+            params.routineID = rung.target.routineID ?? goal.target.routineID
+            params.targetSeconds = rung.target.targetSeconds
+        }
+
+        return WeeklyGoal(userID: userID, weekStartString: rung.weekStartString,
+                          kind: kind, params: params, source: .coach, setAt: now)
+    }
+
+    /// The rung for a week, or nil when the block does not cover it.
+    static func rung(in ladder: Ladder, weekStart: String) -> LadderRung? {
+        ladder.rungs.first { $0.weekStartString == weekStart }
+    }
+}
