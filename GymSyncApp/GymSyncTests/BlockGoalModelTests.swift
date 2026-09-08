@@ -123,6 +123,17 @@ final class BlockGoalModelTests: XCTestCase {
         XCTAssertEqual(milestone.weekday, 1,
                        "18 October 2026 is a SUNDAY — the page's own date line says so")
         XCTAssertEqual(StubBlockGoalRepository.fixturePage.dateLine, "Sunday 18 October")
+
+        // A device-local read must agree with the UTC one in the timezones the
+        // simulator actually runs in: the fixture is anchored at noon UTC for
+        // exactly this reason (re-review of Task 0, finding 1 reopened).
+        for zone in ["America/Los_Angeles", "America/New_York", "Europe/London", "Asia/Tokyo"] {
+            var local = Calendar(identifier: .gregorian)
+            local.timeZone = TimeZone(identifier: zone)!
+            let day = local.dateComponents([.day, .weekday], from: StubBlockGoalRepository.fixtureByDate)
+            XCTAssertEqual(day.day, 18, "\(zone) must still read the 18th")
+            XCTAssertEqual(day.weekday, 1, "\(zone) must still read Sunday")
+        }
         XCTAssertTrue(StubBlockGoalRepository.fixturePage.headline.contains("Oct 18"),
                       "the headline and the date line must name one day")
         XCTAssertEqual(StubBlockGoalRepository.fixtureGoal.byDate,

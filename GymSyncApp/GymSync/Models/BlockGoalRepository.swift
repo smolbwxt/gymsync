@@ -61,7 +61,7 @@ protocol BlockGoalRepository: Sendable {
 ///     the FIXTURE WORLD'S OWN BENCH PRESS by reference, so the stub's bench
 ///     goal and the catalog's bench press are one lift rather than two that
 ///     read alike. Created **Monday 2026-08-24**. Both dates are built from
-///     components at midnight UTC (see `utcDate`), never from an epoch
+///     components at noon UTC (see `utcDate`), never from an epoch
 ///     literal.
 ///   * **the ladder** — eight rungs, week-starts `2026-08-23` through
 ///     `2026-10-11`, targets **190, 195, 200, 205, 210, 175, 220, 225** lb.
@@ -138,7 +138,11 @@ struct StubBlockGoalRepository: BlockGoalRepository {
     private static func utcDate(year: Int, month: Int, day: Int) -> Date {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
-        return calendar.date(from: DateComponents(year: year, month: month, day: day))
+        // NOON UTC, not midnight: a device-local formatter in any timezone from
+        // UTC-11 to UTC+11 then still prints the same calendar day, so the
+        // fixture's "Sunday 18 October" survives a simulator in Los Angeles.
+        // (Only UTC+12/+13 — Auckland in October — would roll it to the 19th.)
+        return calendar.date(from: DateComponents(year: year, month: month, day: day, hour: 12))
             ?? Date(timeIntervalSince1970: 0)
     }
 
