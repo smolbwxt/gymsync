@@ -42,6 +42,22 @@ enum WeeklyGoalWriteRule {
         return existing.source == .coach
     }
 
+    /// A LADDER WEEK IS NOT DETECTION'S TO FILL.
+    ///
+    /// `WeekBooker.book` calls `writeDetectedGoal` after every booking, and
+    /// `WeeklyGoalWriteRule.shouldOverwrite` says yes to a `coach` row — which
+    /// is right for a row Coach's own detector wrote and wrong for a row the
+    /// block's LADDER materialised (task A10, also `source = coach`). Booking a
+    /// week of an active block would otherwise replace week 3's prescribed rung
+    /// with a freshly detected goal, and the strip and the ladder page would
+    /// then disagree about the same seven days.
+    ///
+    /// One question, asked here rather than in `WeekBooker`, because
+    /// `WeekBooker` has no business knowing what a ladder is.
+    static func isLadderWeek(_ existing: WeeklyGoal?) -> Bool {
+        existing?.params.goalID != nil
+    }
+
     /// May a READ of `weekStart` trigger detection (final review finding 1)?
     ///
     /// The design's rule 3 says a week is "never empty", but until this
