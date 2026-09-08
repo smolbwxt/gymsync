@@ -47,21 +47,24 @@ struct HoldLadderRule: LadderRule {
 
 /// Which rule builds which metric's ladder.
 ///
-/// Stream A task A7 replaces every `HoldLadderRule` below with the metric's
+/// Stream A task A7 replaced every `HoldLadderRule` below with the metric's
 /// real ramp, and A8 replaces the three the GENERATOR prescribes
 /// (`liftOneRepMax`, `liftRepsAtLoad`, `weeklyMuscleSets`) with the read-out
 /// — which is not a rule at all but a projection of `Program.weeks`, and is
 /// why those three route through `LadderReadout` at the call site rather than
 /// through here. The stub keeps every metric answerable from Task 0 onward.
 enum LadderRules {
+    /// **A7 re-pointed the BODY of this function; its signature is unchanged.**
+    /// The eight ramp-driven metrics now answer with their real shape
+    /// (`LadderRules+Ramps.swift`), and the three the generator prescribes
+    /// answer `nil` there and fall through to `HoldLadderRule` here — a flat
+    /// ladder is the honest placeholder for a metric whose rungs are READ OFF
+    /// the block at the call site (`LadderReadout`, task A8), never ramped.
+    ///
+    /// Leaving the old all-`Hold` switch in place would have been the worse
+    /// option: every caller would still compile and every ladder would still
+    /// be flat, silently.
     static func rule(for metric: GoalMetric) -> any LadderRule {
-        switch metric {
-        case .liftOneRepMax, .liftRepsAtLoad, .weeklyMuscleSets:
-            return HoldLadderRule()
-        case .weeklyDistance, .trainingDaysPerWeek, .sessionsOfTypePerWeek,
-             .lissMinutesPerWeek, .stretchingExercisesPerWeek, .bodyWeight,
-             .cumulativeVolume, .benchmarkTime:
-            return HoldLadderRule()
-        }
+        rampRule(for: metric) ?? HoldLadderRule()
     }
 }
