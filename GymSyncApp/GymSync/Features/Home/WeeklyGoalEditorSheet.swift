@@ -57,6 +57,28 @@ struct WeeklyGoalEditorSheet: View {
         var params: WeeklyGoalParams = WeeklyGoalParams()
     }
 
+    /// The rung this edit is an OVERRIDE of (goal-first plan, task D3).
+    ///
+    /// Spec §4: "An athlete's edit of this week's row is an override of the
+    /// rung: the row becomes `source = user`, the ladder marks the rung
+    /// `overridden`, re-laddering starts from actuals as before, and Coach's
+    /// propose-only rule protects the override." Almost nothing about the
+    /// editor changes for that to be true — the shipped `save` already writes
+    /// `source = .user` and `WeeklyGoalWriteRule.shouldOverwrite` already
+    /// refuses to let Coach write over it. What the athlete needs is to be
+    /// TOLD which rung they are standing on, which is what this carries.
+    ///
+    /// nil for a standalone weekly goal, which is every row until I2 — and
+    /// which is why `home-goal-editor` and `home-goal-editor-lift` are
+    /// unchanged by this task.
+    struct RungContext: Equatable, Sendable {
+        /// 1-based, what the header prints.
+        let weekNumber: Int
+        let weekCount: Int
+        /// The milestone as the ladder page words it — "Bench 225 by Oct 18".
+        let milestone: String
+    }
+
     /// One row of the lift picker: the block's focus lifts first, then the
     /// catalog. A flat value rather than an `Exercise` so a catalog frame can
     /// build the picker without a repository.
@@ -94,6 +116,10 @@ struct WeeklyGoalEditorSheet: View {
     var repository: any WeeklyGoalRepository = StubWeeklyGoalRepository()
     /// Coach's standing suggestion, when there is one.
     var proposal: Proposal? = nil
+    /// The rung this week's row materialises, when it belongs to a ladder
+    /// (task D3). nil = a standalone weekly goal, and the header keeps the
+    /// shipped standing copy line.
+    var rung: RungContext? = nil
     /// The profile's **standing** weekly session goal — `Profile
     /// .weeklySessionGoal`, what next week will be, which is the value the
     /// streak sheet edits and the value this sheet's `days` stepper edits
@@ -195,6 +221,7 @@ struct WeeklyGoalEditorSheet: View {
          weekStart: String,
          repository: any WeeklyGoalRepository = StubWeeklyGoalRepository(),
          proposal: Proposal? = nil,
+         rung: RungContext? = nil,
          weeklySessionGoal: Int = 3,
          focusLifts: [LiftOption] = [],
          routineOptions: [RoutineOption] = [],
@@ -207,6 +234,7 @@ struct WeeklyGoalEditorSheet: View {
         self.weekStart = weekStart
         self.repository = repository
         self.proposal = proposal
+        self.rung = rung
         self.weeklySessionGoal = weeklySessionGoal
         self.focusLifts = focusLifts
         self.routineOptions = routineOptions
@@ -325,6 +353,17 @@ struct WeeklyGoalEditorSheet: View {
 
                     Spacer(minLength: 0)
                 }
+            } else if let rung = rung {
+                // Task D3. The rung line replaces the standing copy line for
+                // this case only, and sits BELOW the proposal branch: a
+                // proposal is Coach asking about a goal the athlete already
+                // set, which is the one thing on this sheet the athlete can
+                // act on, and a sheet cannot both ask a question and explain
+                // where the answer came from.
+                Text(Self.rungLine(rung))
+                    .font(GSFont.body(13, relativeTo: .subheadline))
+                    .foregroundStyle(theme.neutral700)
+                    .fixedSize(horizontal: false, vertical: true)
             } else {
                 // The design's copy line, verbatim.
                 Text("Coach set this from your block. Change it here; Coach follows your lead for the rest of the week.")
@@ -333,6 +372,17 @@ struct WeeklyGoalEditorSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    /// The rung header's second line, verbatim from the plan.
+    ///
+    /// Straight quotation marks, deliberately: the plan gives the sentence
+    /// verbatim with them, and this line is a contract between the ladder
+    /// page's headline and the editor's header — the two must name one
+    /// milestone in one spelling.
+    static func rungLine(_ rung: RungContext) -> String {
+        "Week \(rung.weekNumber) of \(rung.weekCount) of \"\(rung.milestone)\". "
+            + "Change this week and Coach ladders from where you actually are."
     }
 
     // MARK: - The kinds
@@ -1217,6 +1267,51 @@ struct WeeklyGoalEditorSheet: View {
     /// a number; carrying the old one forward would claim the block chose
     /// targets the person just typed over.
     private func params() -> WeeklyGoalParams {
+        Self.params(kind: kind,
+                    muscleTargets: muscleTargets,
+                    activity: activity,
+                    distanceTarget: distanceTarget,
+                    sessionType: sessionType,
+                    sessionCount: sessionCount,
+                    exerciseID: exerciseID,
+                    targetWeightLbs: targetWeightLbs,
+                    byDate: byDate,
+                    stretchCount: stretchCount,
+                    lissMinutes: lissMinutes,
+                    bodyWeightLbs: bodyWeightLbs,
+                    volumeLbs: Self.double(volumeLbs),
+                    routineID: routineID,
+                    benchmarkSeconds: benchmarkTargetSeconds,
+                    existing: goal)
+    }
+
+    /// The builder itself, lifted out of the view (task D3).
+    ///
+    /// A view-private closure over `@State` cannot be tested, and this is the
+    /// one piece of the editor that must not silently lose data — see the
+    /// `goalID` carry-through at the foot. Every lever arrives as a
+    /// parameter; the instance method above hands in its own state and is the
+    /// only production caller.
+    ///
+    /// The optional levers default to the SAME seeds `init` uses, so a caller
+    /// that names only the kind it cares about gets the editor's own idea of
+    /// that kind rather than a zero.
+    static func params(kind: WeeklyGoalKind,
+                       muscleTargets: [MuscleGroup: Int],
+                       activity: String? = nil,
+                       distanceTarget: Int? = nil,
+                       sessionType: String? = nil,
+                       sessionCount: Int? = nil,
+                       exerciseID: UUID? = nil,
+                       targetWeightLbs: Decimal? = nil,
+                       byDate: Date? = nil,
+                       stretchCount: Int? = nil,
+                       lissMinutes: Int? = nil,
+                       bodyWeightLbs: Decimal? = nil,
+                       volumeLbs: Double? = nil,
+                       routineID: UUID? = nil,
+                       benchmarkSeconds: Int? = nil,
+                       existing: WeeklyGoal?) -> WeeklyGoalParams {
         var params = WeeklyGoalParams()
         switch kind {
         case .muscleSets:
@@ -1226,36 +1321,46 @@ struct WeeklyGoalEditorSheet: View {
             }
             params.muscleTargets = targets
         case .distance:
-            params.activity = activity
-            params.distanceTarget = Double(distanceTarget)
+            params.activity = activity ?? activities[0]
+            params.distanceTarget = Double(distanceTarget ?? 15)
         case .sessionsOfType:
-            params.sessionType = sessionType
-            params.count = sessionCount
+            params.sessionType = sessionType ?? sessionTypes[0]
+            params.count = sessionCount ?? 3
         case .days:
             break
         case .lift:
             params.exerciseID = exerciseID
-            params.targetWeightLbs = targetWeightLbs
+            params.targetWeightLbs = targetWeightLbs ?? 225
             params.byDate = byDate
 
         // Goal-first programming phase 1 (plan task 0.3), each writing only
         // its own keys — spec §4's mapping table, column for column.
-        //
-        // `goalID` is NOT written on this path, on purpose: a save here is
-        // the athlete's own goal for this week, and stamping it with the
-        // ladder's id would claim a rung it is not. The ladder writes its
-        // own rows (task A13) and carries `goalID` there.
         case .recovery:
-            params.count = stretchCount
-            params.lissMinutes = lissMinutes
+            params.count = stretchCount ?? 6
+            params.lissMinutes = lissMinutes ?? 150
         case .bodyWeight:
-            params.bodyWeightLbs = bodyWeightLbs
+            params.bodyWeightLbs = bodyWeightLbs ?? 180
         case .volume:
-            params.volumeLbs = Self.double(volumeLbs)
+            params.volumeLbs = volumeLbs ?? 100_000
         case .benchmark:
             params.routineID = routineID
-            params.targetSeconds = benchmarkTargetSeconds
+            params.targetSeconds = benchmarkSeconds ?? defaultBenchmarkSeconds
         }
+
+        // **AN EDIT IS AN OVERRIDE OF THE RUNG, NOT A DIVORCE FROM IT**
+        // (spec §4, task D3). Every arm above builds a fresh
+        // `WeeklyGoalParams`, so without this line an edit would DROP
+        // `params.goalID` and orphan the row from its ladder — the ladder
+        // would lose the very week it was overridden in. It is carried for
+        // every kind, including a kind SWITCH: the athlete changing this
+        // week's rung from a lift to muscle sets is still overriding that
+        // rung.
+        //
+        // This replaces the previous note here, which said `goalID` was
+        // deliberately never written on this path. That was true while the
+        // ladder had no rows in `weekly_goals` to be attached to; A13 now
+        // materialises them, and the id it stamps has to survive an edit.
+        params.goalID = existing?.params.goalID
         return params
     }
 
