@@ -32,6 +32,72 @@ enum LadderMath {
         }
     }
 
+    /// Has `measured` got to `target` for this metric?
+    ///
+    /// PER METRIC, because "reached" is not one comparison: a benchmark time
+    /// is reached by going DOWN, a body-weight target by going down or up
+    /// depending on the block's own rate, and a muscle-sets target only when
+    /// EVERY group named in it is met. An exhaustive switch, so a new metric
+    /// cannot join the registry without answering the question.
+    ///
+    /// FALSE WHEN THE NUMBER IS MISSING on either side. A milestone that names
+    /// no number has not been reached — it has not been asked yet — and saying
+    /// otherwise is the one answer a ladder must never give.
+    static func reached(metric: GoalMetric, measured: GoalTarget,
+                        target: GoalTarget) -> Bool {
+        switch metric {
+        case .liftOneRepMax:
+            return atLeast(measured.targetWeightLbs, target.targetWeightLbs)
+        case .liftRepsAtLoad:
+            return atLeast(measured.targetReps, target.targetReps)
+        case .weeklyMuscleSets:
+            guard let wanted = target.muscleTargets, !wanted.isEmpty else { return false }
+            let got = measured.muscleTargets ?? [:]
+            return wanted.allSatisfy { (got[$0.key] ?? 0) >= $0.value }
+        case .weeklyDistance:
+            return atLeast(measured.distance, target.distance)
+        case .trainingDaysPerWeek:
+            return atLeast(measured.days, target.days)
+        case .sessionsOfTypePerWeek:
+            return atLeast(measured.sessions, target.sessions)
+        case .lissMinutesPerWeek:
+            return atLeast(measured.lissMinutes, target.lissMinutes)
+        case .stretchingExercisesPerWeek:
+            return atLeast(measured.stretchingExercises, target.stretchingExercises)
+        case .cumulativeVolume:
+            return atLeast(measured.volumeLbs, target.volumeLbs)
+        case .benchmarkTime:
+            // A TIME IS BEATEN BY GOING DOWN.
+            guard let got = measured.targetSeconds, let wanted = target.targetSeconds
+            else { return false }
+            return got <= wanted
+        case .bodyWeight:
+            // DIRECTIONAL, and the direction is the block's own rate: a cut is
+            // reached at or below the number, a gain at or above it. A target
+            // that names no rate is read as a cut — the same reading
+            // `GoalGeneratorMapping.applyPlacement` gives the same preset, so
+            // there is one definition of "body composition" and not two.
+            guard let got = measured.bodyWeightLbs, let wanted = target.bodyWeightLbs
+            else { return false }
+            return (target.bodyWeightRatePercent ?? -1) < 0 ? got <= wanted : got >= wanted
+        }
+    }
+
+    private static func atLeast(_ measured: Decimal?, _ target: Decimal?) -> Bool {
+        guard let measured, let target else { return false }
+        return measured >= target
+    }
+
+    private static func atLeast(_ measured: Int?, _ target: Int?) -> Bool {
+        guard let measured, let target else { return false }
+        return measured >= target
+    }
+
+    private static func atLeast(_ measured: Double?, _ target: Double?) -> Bool {
+        guard let measured, let target else { return false }
+        return measured >= target
+    }
+
     /// The goal a block gets when nobody named one.
     ///
     /// **INTERIM, AND TASK A13 REPLACES IT.** Spec §5.4: "Existing enrollments
