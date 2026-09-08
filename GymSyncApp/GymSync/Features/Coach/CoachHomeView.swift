@@ -278,8 +278,14 @@ struct CoachHomeView: View {
     private func buildFromConsult(_ answers: ConsultAnswers) async {
         guard let userID = appState.currentProfile?.id else { return }
         do {
+            // A GOAL IT IS HANDED, NEVER ONE IT INVENTS. Stream C routes this
+            // door through the goal screen and passes the athlete's own
+            // milestone; until it lands, Coach's detected goal keeps the tree
+            // out of the one state this feature exists to end — a block built
+            // with nothing named.
             _ = try await ProgramBuilder.build(profile: profile, answers: answers,
-                                               catalog: catalog, userID: userID)
+                                               catalog: catalog, userID: userID,
+                                               goal: LadderMath.detectedGoal(profile: profile))
             route = .schedule
         } catch {
             ruleTrouble = ErrorMapping.map(error).errorDescription

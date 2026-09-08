@@ -37,6 +37,43 @@ protocol BlockGoalRepository: Sendable {
     /// other Coach write does.
     @discardableResult
     func materialiseRung(goalID: UUID, weekStart: String) async -> WeeklyGoal?
+    /// Derive this goal's whole ladder from the block that was just generated
+    /// and persist it — `ProgramBuilder.build`'s step 7b (task B4).
+    ///
+    /// THE LADDER IS A READ-OUT OF THE BLOCK (spec §3.1), so this takes the
+    /// `program` and not a target curve: it calls `LadderReadout` for the three
+    /// metrics the generator PRESCRIBES (`liftOneRepMax`, `liftRepsAtLoad`,
+    /// `weeklyMuscleSets`) and `LadderRules.rule(for:)` for the eight it ramps,
+    /// then writes `enrollment.weeks` rungs whose week keys walk forward from
+    /// the block's start (`LadderMath.weekStartStrings(from:count:)`).
+    ///
+    /// **DECLARED IN TASK B4, IMPLEMENTED IN TASK A11.** It is a requirement
+    /// rather than an extension method so that A11's `LiveBlockGoalRepository`
+    /// genuinely OVERRIDES it: an extension-only method would dispatch
+    /// statically through `any BlockGoalRepository` and the live type's version
+    /// would never run. The default below returns nil — every conformer that
+    /// exists today keeps compiling untouched, and a repository that cannot
+    /// derive a ladder says so by returning nothing rather than by not having
+    /// the method.
+    @discardableResult
+    func saveDerivedLadder(goal: BlockGoal,
+                           program: ProgramGenerator.Program,
+                           catalog: [Exercise],
+                           startedOn: Date,
+                           unit: WeightUnit) async -> Ladder?
+}
+
+extension BlockGoalRepository {
+    /// NO LADDER, and that is a legible state rather than a crash: the stub
+    /// stores nothing, and a block whose ladder could not be derived is exactly
+    /// the state task A13's detection fills on the next Home load — the same
+    /// recovery path a migrated block takes.
+    @discardableResult
+    func saveDerivedLadder(goal: BlockGoal,
+                           program: ProgramGenerator.Program,
+                           catalog: [Exercise],
+                           startedOn: Date,
+                           unit: WeightUnit) async -> Ladder? { nil }
 }
 
 // MARK: - The stub

@@ -21,6 +21,10 @@ import Foundation
 //   5. write the new day routines (throws — the deliverable)
 //   6. delete the superseded routines
 //   7. template row → enroll (retires the old enrollment FIRST) → plan
+//  7b. THE GOAL AND ITS LADDER (task B4) — after the enrollment, because a
+//      goal hangs on the block it drives and there is no id before step 7;
+//      before the receipts, because step 9's weekly write reads the ladder
+//      this writes
 //   8. stamp the rules whose levers actually fired
 // Booking is NOT here any more: the program page owns scheduling (owner
 // 2026-08-27: "weeks are extruded buttons... schedule your weeks here").
@@ -44,13 +48,24 @@ enum ProgramBuilder {
 
     /// Generate and commit a block for `profile`. `answers` is the consult
     /// that just ran (nil when building from a stored profile alone) — it
-    /// supplies the block length; the profile supplies everything else.
+    /// supplies the block length when the goal names no date; the profile
+    /// supplies everything else.
+    ///
+    /// **NO BLOCK WITHOUT A GOAL** (spec §5.4, owner decision 4). `goal` is
+    /// REQUIRED and NON-OPTIONAL, and it sits before the two defaulted
+    /// parameters so it cannot be skipped. A default here would let a call
+    /// site keep compiling while silently building a goal-less block, which is
+    /// the entire failure this feature exists to end; a caller that forgets it
+    /// gets a compile error instead, which is the point.
     @MainActor
     static func build(profile loaded: TrainingProfile,
                       answers: ConsultAnswers?,
                       catalog all: [Exercise],
                       userID: UUID,
-                      goalWriter: WeeklyGoalCoachWriter = LiveWeeklyGoalRepository()) async throws -> Outcome {
+                      goal: BlockGoalDraft,
+                      goalWriter: WeeklyGoalCoachWriter = LiveWeeklyGoalRepository(),
+                      blockGoalRepository: any BlockGoalRepository = StubBlockGoalRepository())
+        async throws -> Outcome {
 
         // ── 1. Evidence ──────────────────────────────────────────────
         let standingRules = (try? await TrainingRulesRepository.active()) ?? []
@@ -83,9 +98,17 @@ enum ProgramBuilder {
         }
 
         // ── 2. Generate ──────────────────────────────────────────────
-        // The block length: the consult's date probe when it was
-        // answered, else the same eight weeks the wizard defaulted to.
-        let duration = answers?.durationWeeks ?? 8
+        // THE BLOCK LENGTH COMES FROM THE MILESTONE DATE (spec §5.3, task
+        // B2). A goal that names a date names the block: building past it
+        // wastes weeks, and stopping before it gives up on the milestone.
+        //
+        // A goal with NO date is "held for the block" (spec §2.1) —
+        // Maintenance, Recovery and Consistency — and there the length is
+        // still the athlete's, so the consult's own date probe answers, and
+        // the same eight weeks the wizard defaulted to answer after that.
+        let duration = goal.byDate.map { GoalBlockLength.weeks(byDate: $0) }
+            ?? answers?.durationWeeks
+            ?? GoalBlockLength.defaultWeeks
         // Alias rows never enter selection — the same movement can't be
         // "varied" into itself under a second name.
         let selectable = all.filter { $0.aliasOf == nil }
@@ -120,7 +143,12 @@ enum ProgramBuilder {
             daysSinceLastSession: daysSinceLastSession,
             daysSinceReturn: daysSinceReturn,
             standingRules: standingRules,
-            volumeTargets: volumeTargets)
+            volumeTargets: volumeTargets,
+            // THE GOAL STEERS THE BUILD (task B1): the focus band, the focus
+            // lift where the goal names one, the focus muscles, and the
+            // cardio / mobility placement. Applied last inside
+            // `generatorInputs`, after every profile-derived field.
+            goal: goal)
         inputs.sessionMinutes = loaded.sessionMinutes
         // UNION: RuleIntent.swap stars the lift the athlete asked to
         // switch TO; an assignment here would erase it.
@@ -203,14 +231,47 @@ enum ProgramBuilder {
             sessionsPerWeek: days,
             durationWeeks: duration,
             weeks: weekPlan)
+        var enrollment: ProgramEnrollment?
         if let savedRow, !weekPlan.isEmpty {
-            await enroll(row: savedRow, weeks: weekPlan, program: program,
-                         userID: userID,
-                         config: configSnapshot(profile: profile,
-                                                duration: duration,
-                                                standingRules: standingRules,
-                                                catalog: all))
+            enrollment = await enroll(row: savedRow, weeks: weekPlan, program: program,
+                                      userID: userID,
+                                      config: configSnapshot(profile: profile,
+                                                             duration: duration,
+                                                             standingRules: standingRules,
+                                                             catalog: all))
             _ = try? await TrainingPlanRepository.add(templateID: savedRow.id)
+        }
+
+        // ── 7b. The goal and its ladder ──────────────────────────────
+        // A block exists to serve a goal (owner decision 4), so the goal is
+        // written in the same act that writes the block — not on the next
+        // Home load, and not by a background pass that could fail silently.
+        //
+        // AFTER the enrollment, because `BlockGoal.enrollmentID` is the block
+        // this goal drives and there is no id before step 7. BEFORE the
+        // receipts, because step 9's weekly write reads the ladder this
+        // writes: run it later and the first week of every new block would
+        // carry a detected goal instead of its own rung.
+        //
+        // BEST-EFFORT, like every write after step 5's deliverable: a failure
+        // here costs the ladder, never the block. The athlete then has a block
+        // with no goal, which is exactly the state A13's detection fills on the
+        // next Home load — the same recovery path a migrated block takes.
+        //
+        // The unit is read here rather than inside the repository because this
+        // function is already `@MainActor` and `ThemeStore` is the app's one
+        // cached answer to "which unit does this athlete read in".
+        if let enrollment {
+            let unit = ThemeStore.shared.weightUnit
+            let blockGoal = BlockGoal(draft: goal, userID: userID,
+                                      enrollmentID: enrollment.id)
+            if await blockGoalRepository.save(blockGoal) {
+                await blockGoalRepository.saveDerivedLadder(
+                    goal: blockGoal, program: program, catalog: all,
+                    startedOn: enrollment.startedOn, unit: unit)
+                await blockGoalRepository.materialiseRung(
+                    goalID: blockGoal.id, weekStart: WeekMath.weekStartString())
+            }
         }
 
         // ── 8. Receipts ──────────────────────────────────────────────
@@ -244,11 +305,18 @@ enum ProgramBuilder {
 
     /// Enroll the lifter in the block just generated, so the weekly wave
     /// reaches their prescriptions. Best-effort throughout.
+    ///
+    /// RETURNS THE ENROLLMENT (task B4). It used to discard the result, which
+    /// was fine when nothing downstream needed it; step 7b hangs the block's
+    /// goal on `enrollment.id` and walks its ladder from `enrollment.startedOn`,
+    /// and nil — no template row, no main lifts, a failed insert — means no
+    /// goal is written rather than one written against a block that does not
+    /// exist.
     private static func enroll(row: ProgramTemplateRow,
                                weeks: [ProgramWeek],
                                program: ProgramGenerator.Program,
                                userID: UUID,
-                               config: [String: String]) async {
+                               config: [String: String]) async -> ProgramEnrollment? {
         // RETIRE FIRST: building a program ends the one before it,
         // whether or not the new one enrolls.
         if let active = try? await ProgramRepository.active(), active.endedAt == nil {
@@ -259,7 +327,7 @@ enum ProgramBuilder {
             .flatMap(\.exercises)
             .filter { $0.isMain && $0.cardioZone == nil }
             .map(\.exerciseID)))
-        guard !mainLiftIDs.isEmpty else { return }
+        guard !mainLiftIDs.isEmpty else { return nil }
 
         var baselines: [String: Double] = [:]
         if let since = Calendar.current.date(byAdding: .day, value: -180, to: .now),
@@ -279,7 +347,7 @@ enum ProgramBuilder {
         let template = ProgramTemplate(row: row, weeks: weeks)
         ProgramTemplateStore.shared.register([template])
 
-        _ = try? await ProgramRepository.enroll(
+        return try? await ProgramRepository.enroll(
             template: template,
             focus: ProgramFocus(exerciseIDs: mainLiftIDs),
             baseline: baselines,

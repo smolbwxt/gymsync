@@ -95,8 +95,15 @@ struct ConsultEntryView: View {
             answers, to: profile, catalog: catalog, userID: userID)
         profile = outcome.profile
         do {
+            // A GOAL IT IS HANDED, NEVER ONE IT INVENTS. Stream C routes this
+            // door through the goal screen and passes the athlete's own
+            // milestone; until it lands, Coach's detected goal keeps the tree
+            // out of the one state this feature exists to end — a block built
+            // with nothing named. Derived from the profile the consult JUST
+            // persisted, so it reads what the athlete has this minute said.
             _ = try await ProgramBuilder.build(profile: profile, answers: answers,
-                                               catalog: catalog, userID: userID)
+                                               catalog: catalog, userID: userID,
+                                               goal: LadderMath.detectedGoal(profile: profile))
             onBuilt()
         } catch {
             trouble = ErrorMapping.map(error).errorDescription
