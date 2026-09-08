@@ -396,8 +396,13 @@ extension LadderMath {
                                  unit: WeightUnit, calendar: Calendar) -> String {
         // HELD FOR THE BLOCK gets its own two sentences, because "12 chest sets
         // a week by Oct 18" would put a deadline on a goal that has none.
-        if goal.byDate == nil {
-            switch goal.preset {
+        //
+        // The preset is UNWRAPPED FIRST rather than switched over as an
+        // optional. `HomeWeeklyGoalStrip.unitLabel` spells `.some(...)` for the
+        // same reason; an `if let` reads better here because only two of the
+        // eleven presets have an answer.
+        if goal.byDate == nil, let preset = goal.preset {
+            switch preset {
             case .maintenance: return "Hold the recommended volumes"
             case .recovery:    return "A recovery block"
             default: break
