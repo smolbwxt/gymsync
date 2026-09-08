@@ -535,12 +535,16 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
     private func measuredByWeek(goal: BlockGoal, rungs: [LadderRung],
                                 userID: UUID,
                                 calendar: Calendar) async -> [String: GoalTarget] {
-        let weeks: [(key: String, start: Date, end: Date)] = rungs.compactMap { rung in
+        // The closure's return type and the tuple's labels are BOTH spelled out.
+        // A bare `(rung.weekStartString, start, end)` leans on Swift adding the
+        // labels for you, which it does not reliably do inside a `compactMap`.
+        let weeks: [(key: String, start: Date, end: Date)] = rungs.compactMap {
+            rung -> (key: String, start: Date, end: Date)? in
             guard let start = WeekMath.date(fromWeekStartString: rung.weekStartString,
                                             calendar: calendar),
                   let end = calendar.date(byAdding: .day, value: 7, to: start)
             else { return nil }
-            return (rung.weekStartString, start, end)
+            return (key: rung.weekStartString, start: start, end: end)
         }
         guard let first = weeks.first, let last = weeks.last else { return [:] }
         var out: [String: GoalTarget] = [:]
