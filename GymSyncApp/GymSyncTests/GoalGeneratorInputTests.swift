@@ -117,4 +117,61 @@ final class GoalGeneratorInputTests: XCTestCase {
         XCTAssertEqual(withoutGoal.cardioMinutes, withNilGoal.cardioMinutes)
         XCTAssertEqual(withoutGoal.fillWeekWithRecovery, withNilGoal.fillWeekWithRecovery)
     }
+
+    // MARK: - `generate`'s own seam honours ALL FOUR levers (review finding 5)
+
+    private func handBuilt(_ preset: GoalPreset, target: GoalTarget) -> ProgramGenerator.Inputs {
+        // The call site the plan describes: `Inputs` assembled directly, with
+        // `goal` set, never having passed through `generatorInputs`.
+        var inputs = ProgramGenerator.Inputs(focus: .hypertrophy, daysPerWeek: 4,
+                                             durationWeeks: 8, experience: .intermediate)
+        inputs.goal = draft(preset, target: target)
+        return inputs
+    }
+
+    func testAHandBuiltGoalGetsTheLiftAndTheMusclesAndNotJustTheBand() {
+        let bench = UUID()
+        let resolved = ProgramGenerator.resolvedInputs(
+            handBuilt(.strength, target: GoalTarget(exerciseID: bench, targetWeightLbs: 225)))
+        XCTAssertEqual(resolved.focus, .strength)
+        XCTAssertTrue(resolved.focusExerciseIDs.contains(bench),
+                      "the band alone was a half-honoured goal")
+    }
+
+    func testAHandBuiltRecoveryGoalStillReachesTheRecoveryFill() {
+        let resolved = ProgramGenerator.resolvedInputs(
+            handBuilt(.recovery, target: GoalTarget(lissMinutes: 120,
+                                                    stretchingExercises: 6)))
+        XCTAssertTrue(resolved.fillWeekWithRecovery)
+        XCTAssertGreaterThanOrEqual(resolved.cardioDays, 2)
+        XCTAssertEqual(resolved.focus, .hypertrophy,
+                       "recovery deliberately moves no band, and still places its week")
+    }
+
+    func testResolvingTwiceIsTheSameAsResolvingOnce() {
+        // `generatorInputs` already resolved, then `generate` resolves again:
+        // the second pass must be a no-op, not a second helping.
+        let once = ProgramGenerator.resolvedInputs(
+            handBuilt(.endurance, target: GoalTarget(activity: "run", distance: 15)))
+        let twice = ProgramGenerator.resolvedInputs(once)
+        XCTAssertEqual(once.focus, twice.focus)
+        XCTAssertEqual(once.cardioDays, twice.cardioDays)
+        XCTAssertEqual(once.cardioMinutes, twice.cardioMinutes)
+        XCTAssertEqual(once.focusExerciseIDs, twice.focusExerciseIDs)
+        XCTAssertEqual(once.focusMuscles, twice.focusMuscles)
+        XCTAssertEqual(once.volumeTargets, twice.volumeTargets)
+        XCTAssertEqual(once.fillWeekWithRecovery, twice.fillWeekWithRecovery)
+    }
+
+    func testResolvingAGoalLessInputsChangesNothing() {
+        let inputs = ProgramGenerator.Inputs(focus: .hypertrophy, daysPerWeek: 4,
+                                             durationWeeks: 8, experience: .intermediate)
+        let resolved = ProgramGenerator.resolvedInputs(inputs)
+        XCTAssertNil(resolved.goal)
+        XCTAssertEqual(resolved.focus, inputs.focus)
+        XCTAssertEqual(resolved.cardioDays, inputs.cardioDays)
+        XCTAssertEqual(resolved.cardioMinutes, inputs.cardioMinutes)
+        XCTAssertEqual(resolved.fillWeekWithRecovery, inputs.fillWeekWithRecovery)
+        XCTAssertEqual(resolved.focusExerciseIDs, inputs.focusExerciseIDs)
+    }
 }

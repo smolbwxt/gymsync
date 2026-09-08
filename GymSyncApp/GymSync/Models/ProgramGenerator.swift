@@ -324,24 +324,41 @@ enum ProgramGenerator {
 
     // MARK: Pipeline
 
+    /// The inputs `generate` actually runs on — `inputs` with its goal folded
+    /// in (tasks B1 and B3, spec §5.3).
+    ///
+    /// **ALL FOUR LEVERS, NOT JUST THE BAND.** `generate` used to apply
+    /// `GoalGeneratorMapping.focus(for:)` alone, so a call site that built
+    /// `Inputs` by hand and set `goal` directly got the band and silently *not*
+    /// the focus lift, the focus muscles, the seeded volume targets or the
+    /// cardio and mobility placement — a half-honoured goal, in a file whose own
+    /// comments claimed the goal was honoured. Two paths applying different
+    /// subsets of "the goal" is precisely the drift this stream exists to avoid,
+    /// so there is one path now and this is it.
+    ///
+    /// SAFE TO RUN TWICE, by construction: `apply` is assignment, `formUnion`,
+    /// `max` and a clamp computed from the goal, so
+    /// `TrainingProfile.generatorInputs(…, goal:)` having already run makes this
+    /// a no-op rather than a second helping. Pure, and it RETURNS rather than
+    /// mutating in place, so a test can read every lever without generating a
+    /// program.
+    ///
+    /// A GOAL-LESS BUILD IS UNTOUCHED — the mapping is never consulted when
+    /// `goal` is nil — which is what keeps the golden tests byte identical.
+    static func resolvedInputs(_ inputs: Inputs) -> Inputs {
+        guard let goal = inputs.goal else { return inputs }
+        var resolved = inputs
+        GoalGeneratorMapping.apply(goal, to: &resolved)
+        return resolved
+    }
+
     static func generate(inputs: Inputs, catalog: [CatalogExercise]) -> Program {
-        // THE GOAL'S BAND, before anything reads `focus` (task B1, spec §5.3).
+        // THE GOAL, before anything reads a single field of `inputs`.
         //
-        // FIRST LINE, so the split, the slot templates, selection scoring and
-        // the prescription all ride the goal's focus rather than the profile's
-        // `blockGoal`. `TrainingProfile.generatorInputs(…, goal:)` already
-        // applies the same mapping, so for the door's own path this is a
-        // no-op; it is here for the call site that builds `Inputs` by hand and
-        // sets `goal` directly, which would otherwise carry a goal the
-        // generator never acted on.
-        //
-        // A GOAL-LESS BUILD IS UNTOUCHED — `focus(for:)` is never consulted
-        // when `goal` is nil — which is what keeps the golden tests byte
-        // identical.
-        var inputs = inputs
-        if let goal = inputs.goal, let goalFocus = GoalGeneratorMapping.focus(for: goal) {
-            inputs.focus = goalFocus
-        }
+        // FIRST LINE, so the split, the slot templates, selection scoring, the
+        // prescription and the cardio passes all ride the goal rather than the
+        // profile's `blockGoal`.
+        let inputs = resolvedInputs(inputs)
         // Band override (power_rfd) beats the focus table for prescription
         // SHAPE only — split, slots, and scoring still ride the focus.
         let band = GeneratorScience.applyRepAppetite(
