@@ -2,29 +2,167 @@ import Foundation
 
 // MARK: - LadderMath
 //
-// Spec §3.5 (adaptive re-laddering), §4 (materialisation) and §6 (standing).
-// PURE — the repository fetches, this decides.
+// THE PURE ARITHMETIC OF A LADDER — no clock, no network, no catalog fetch.
 //
-// THE TWO LAWS THIS FILE ENFORCES:
+// **THIS FILE IS STREAM A'S (task A9), AND STREAM B REACHED IT FIRST.** The
+// plan says so in as many words: `LadderMath.weekStartStrings(from:count:)`
+// "is a two-line pure helper this task adds to `LadderMath` (A9's file) —
+// coordinate with Stream A: it lands in whichever branch reaches it first and
+// the other rebases. It is the only symbol the two streams both write."
+// `reached(metric:measured:target:)` joins it in task B5, because
+// `GoalBlockLength.reach(…)` is written verbatim in the plan around a call to
+// it, and `detectedGoal(profile:)` is the stand-in A13 replaces (see its own
+// doc comment). Everything Stream A adds here is additive; nothing below is
+// Stream A's to delete.
+enum LadderMath {
+
+    /// The `count` consecutive week keys a ladder's rungs sit on, walking
+    /// forward one week at a time from the week containing `start`.
+    ///
+    /// `WeekMath`'s device-calendar week, not an ISO one, because that is what
+    /// `weekly_goals.week_start` already means everywhere else in this app —
+    /// a rung and the row it materialises into must name the same seven days.
+    static func weekStartStrings(from start: Date, count: Int,
+                                 calendar: Calendar = .current) -> [String] {
+        guard count > 0 else { return [] }
+        let first = WeekMath.startOfWeek(start, calendar: calendar)
+        return (0..<count).compactMap { index in
+            calendar.date(byAdding: .day, value: index * 7, to: first)
+                .map { WeekMath.weekStartString($0, calendar: calendar) }
+        }
+    }
+
+    /// Has `measured` got to `target` for this metric?
+    ///
+    /// PER METRIC, because "reached" is not one comparison: a benchmark time
+    /// is reached by going DOWN, a body-weight target by going down or up
+    /// depending on the block's own rate, and a muscle-sets target only when
+    /// EVERY group named in it is met. An exhaustive switch, so a new metric
+    /// cannot join the registry without answering the question.
+    ///
+    /// FALSE WHEN THE NUMBER IS MISSING on either side. A milestone that names
+    /// no number has not been reached — it has not been asked yet — and saying
+    /// otherwise is the one answer a ladder must never give.
+    static func reached(metric: GoalMetric, measured: GoalTarget,
+                        target: GoalTarget) -> Bool {
+        switch metric {
+        case .liftOneRepMax:
+            return atLeast(measured.targetWeightLbs, target.targetWeightLbs)
+        case .liftRepsAtLoad:
+            return atLeast(measured.targetReps, target.targetReps)
+        case .weeklyMuscleSets:
+            guard let wanted = target.muscleTargets, !wanted.isEmpty else { return false }
+            let got = measured.muscleTargets ?? [:]
+            return wanted.allSatisfy { (got[$0.key] ?? 0) >= $0.value }
+        case .weeklyDistance:
+            return atLeast(measured.distance, target.distance)
+        case .trainingDaysPerWeek:
+            return atLeast(measured.days, target.days)
+        case .sessionsOfTypePerWeek:
+            return atLeast(measured.sessions, target.sessions)
+        case .lissMinutesPerWeek:
+            return atLeast(measured.lissMinutes, target.lissMinutes)
+        case .stretchingExercisesPerWeek:
+            return atLeast(measured.stretchingExercises, target.stretchingExercises)
+        case .cumulativeVolume:
+            return atLeast(measured.volumeLbs, target.volumeLbs)
+        case .benchmarkTime:
+            // A TIME IS BEATEN BY GOING DOWN.
+            guard let got = measured.targetSeconds, let wanted = target.targetSeconds
+            else { return false }
+            return got <= wanted
+        case .bodyWeight:
+            // DIRECTIONAL, and the direction is the block's own rate: a cut is
+            // reached at or below the number, a gain at or above it. A target
+            // that names no rate is read as a cut — the same reading
+            // `GoalGeneratorMapping.applyPlacement` gives the same preset, so
+            // there is one definition of "body composition" and not two.
+            guard let got = measured.bodyWeightLbs, let wanted = target.bodyWeightLbs
+            else { return false }
+            return (target.bodyWeightRatePercent ?? -1) < 0 ? got <= wanted : got >= wanted
+        }
+    }
+
+    private static func atLeast(_ measured: Decimal?, _ target: Decimal?) -> Bool {
+        guard let measured, let target else { return false }
+        return measured >= target
+    }
+
+    private static func atLeast(_ measured: Int?, _ target: Int?) -> Bool {
+        guard let measured, let target else { return false }
+        return measured >= target
+    }
+
+    private static func atLeast(_ measured: Double?, _ target: Double?) -> Bool {
+        guard let measured, let target else { return false }
+        return measured >= target
+    }
+
+    /// The goal a block gets when nobody named one.
+    ///
+    /// **INTERIM, AND TASK A13 REPLACES IT.** Spec §5.4: "Existing enrollments
+    /// without a goal get a Coach-detected one on first Home load, derived
+    /// from the enrollment's `focus` and `baseline`." A13 owns that function;
+    /// this one answers the different question task B4 has to answer TODAY —
+    /// what does `ProgramBuilder.build(goal:)` receive from the two call sites
+    /// Stream C has not reached yet, so that the tree is never in a state that
+    /// builds an unconsidered block. The two overload on their parameters, so
+    /// A13 lands beside this rather than on top of it.
+    ///
+    /// **CONSISTENCY, DELIBERATELY, AND IT IS THE ONLY SAFE ANSWER HERE.**
+    /// `GoalGeneratorMapping` moves the focus band for eight of the eleven
+    /// presets and places cardio for five of them; a placeholder that picked
+    /// any of those would silently change what the generator builds for every
+    /// athlete who comes through the consult before Stream C lands — a
+    /// Maintenance stand-in would drop a strength athlete into the hypertrophy
+    /// band, a Body-composition one would buy two cardio days nobody asked
+    /// for. `consistency` moves NOTHING (no band override, no placement), and
+    /// it is not a fiction either: a block built with no milestone named is
+    /// still a commitment to train the days the profile says.
+    static func detectedGoal(profile: TrainingProfile) -> BlockGoalDraft {
+        BlockGoalDraft(metric: .trainingDaysPerWeek,
+                       target: GoalTarget(days: profile.daysPerWeek),
+                       byDate: nil,
+                       preset: .consistency,
+                       // COACH'S reading, not the athlete's: nobody chose this
+                       // at a door, so `WeeklyGoalWriteRule` must let the
+                       // athlete's own goal win over it.
+                       source: .coach)
+    }
+}
+
+// MARK: - A9: adaptive re-laddering (spec §3.5)
+//
+// STREAM B REACHED THIS FILE FIRST and the controller's ruling is that Stream A
+// starts from B's copy: everything above is B's and stays exactly as it is —
+// `weekStartStrings`, `reached` and its three `atLeast` overloads, and the
+// interim `detectedGoal(profile:)`. A9's own draft of `reached` was DELETED in
+// favour of B's rather than kept beside it; two answers to "did this week reach
+// its rung" is precisely the drift the ladder cannot survive, and B's is the one
+// `GoalBlockLength.reach` is already written around.
+//
+// THE TWO LAWS THIS SECTION ENFORCES:
 //   1. re-laddering rewrites ONLY rungs whose status is `ahead` or `current`
 //      (spec §8), so a missed week and an overridden week stay visible after
 //      the ladder moves;
 //   2. the milestone and its date are NEVER moved here. When the re-derived
-//      ladder can no longer reach the milestone, `standing` says so and Coach
-//      PROPOSES through the shipped propose channel — it does not write.
-enum LadderMath {
+//      ladder can no longer reach the milestone, standing says so (task A12)
+//      and Coach PROPOSES through the shipped channel — it does not write.
+extension LadderMath {
 
     /// Mark each rung against the week it describes and what was measured.
     ///
-    /// `met` is decided by the metric's own direction: a benchmark TIME is met
-    /// by going lower, everything else by going higher. Getting that backwards
-    /// would paint a whole ladder green for an athlete who got slower.
+    /// The direction question — is a bigger number better? — is not asked here.
+    /// It is `reached(metric:measured:target:)`'s, once, above.
     static func statuses(rungs: [LadderRung], metric: GoalMetric,
                          measuredByWeek: [String: GoalTarget],
                          currentWeekStart: String,
                          overriddenWeeks: Set<String> = []) -> [LadderRung] {
         rungs.map { rung in
             var updated = rung
+            // AN OVERRIDE WINS OVER A READING. The athlete's own edit of that
+            // week IS the record of it (spec §4), including when the numbers
+            // say the rung was met anyway.
             if overriddenWeeks.contains(rung.weekStartString) {
                 updated.status = .overridden
                 return updated
@@ -45,61 +183,15 @@ enum LadderMath {
         }
     }
 
-    /// Did `measured` reach `target` for this metric?
-    static func reached(metric: GoalMetric, measured: GoalTarget,
-                        target: GoalTarget) -> Bool {
-        switch metric {
-        case .benchmarkTime:
-            guard let want = target.targetSeconds, let got = measured.targetSeconds
-            else { return false }
-            return got <= want                     // lower is better
-        case .bodyWeight:
-            guard let want = target.bodyWeightLbs, let got = measured.bodyWeightLbs
-            else { return false }
-            // Direction comes from the goal, not from the number: a cut is met
-            // by going under, a gain by going over. `bodyWeightRatePercent` is
-            // signed by the rule that wrote the rung (A7).
-            let losing = (target.bodyWeightRatePercent ?? 0) < 0
-            return losing ? got <= want : got >= want
-        case .weeklyMuscleSets:
-            let wanted = target.muscleTargets ?? [:]
-            let got = measured.muscleTargets ?? [:]
-            guard !wanted.isEmpty else { return false }
-            return wanted.allSatisfy { (got[$0.key] ?? 0) >= $0.value }
-        case .liftOneRepMax:
-            return compare(measured.targetWeightLbs, target.targetWeightLbs)
-        case .liftRepsAtLoad:
-            guard let want = target.targetReps, let got = measured.targetReps
-            else { return false }
-            return got >= want
-        case .weeklyDistance:
-            return compare(measured.distance, target.distance)
-        case .trainingDaysPerWeek:
-            return compare(measured.days, target.days)
-        case .sessionsOfTypePerWeek:
-            return compare(measured.sessions, target.sessions)
-        case .lissMinutesPerWeek:
-            return compare(measured.lissMinutes, target.lissMinutes)
-        case .stretchingExercisesPerWeek:
-            return compare(measured.stretchingExercises, target.stretchingExercises)
-        case .cumulativeVolume:
-            return compare(measured.volumeLbs, target.volumeLbs)
-        }
-    }
-
-    private static func compare<T: Comparable>(_ measured: T?, _ target: T?) -> Bool {
-        guard let target, let measured else { return false }
-        return measured >= target
-    }
-
     /// Re-derive the remaining rungs from `current` — the MEASURED state, not
     /// last week's rung (spec §3.5: "a missed week does not leave a hole to
     /// catch up; the ladder moves").
     ///
     /// Only `ahead` and `current` rungs are replaced. The rungs already met,
-    /// missed or overridden are returned exactly as they came in, which is
-    /// what makes the ladder page a record of the climb rather than a rolling
-    /// forecast that erases its own history.
+    /// missed or overridden are returned exactly as they came in, which is what
+    /// makes the ladder page a record of the climb rather than a rolling
+    /// forecast that erases its own history. It moves TARGETS and never
+    /// statuses; `statuses(…)` is the only thing that may change one.
     static func reLadder(existing: Ladder, metric: GoalMetric,
                          current: GoalTarget, milestone: GoalTarget,
                          constraints: LadderConstraints,
