@@ -49,6 +49,16 @@ struct ConsultEntryView: View {
     /// today; integration task I1 swaps that destination, one line per host.
     var onBuilt: (UUID?) -> Void
 
+    /// A rule the athlete just gave that could NOT be stored.
+    ///
+    /// `ConsultPersistence.apply` has always returned this and this view has
+    /// always discarded it — a gap that only `CoachHomeView` covered, and only
+    /// for its own copy of the consult, which task C4 has now removed. The
+    /// whole point of the 2026-08-26 fix is that this is never nil in silence:
+    /// if their words did not stick, they are told. So it is reported here,
+    /// which means all four doors report it rather than one.
+    var onRuleTrouble: (String) -> Void = { _ in }
+
     private enum Phase {
         case loading
         case consult
@@ -118,6 +128,7 @@ struct ConsultEntryView: View {
         let outcome = await ConsultPersistence.apply(
             answers, to: profile, catalog: catalog, userID: userID)
         profile = outcome.profile
+        if let ruleTrouble = outcome.ruleTrouble { onRuleTrouble(ruleTrouble) }
         do {
             // ── THE LINE STREAM B'S B4 CHANGES ───────────────────────────
             // It becomes `ProgramBuilder.build(profile:answers:catalog:

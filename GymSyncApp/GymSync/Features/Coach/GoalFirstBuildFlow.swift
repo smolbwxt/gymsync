@@ -24,6 +24,10 @@ import SwiftUI
 struct GoalFirstBuildFlow: View {
 
     var onBuilt: (UUID?) -> Void
+    /// A rule the athlete gave during the consult that could not be stored.
+    /// Passed straight through to the host, which is the screen still on the
+    /// stack when this one unmounts.
+    var onRuleTrouble: (String) -> Void = { _ in }
 
     @Environment(AppState.self) private var appState
     @Environment(\.gsTheme) private var theme
@@ -76,7 +80,8 @@ struct GoalFirstBuildFlow: View {
     @ViewBuilder
     private var consult: some View {
         if let goal {
-            ConsultEntryView(goal: goal, onBuilt: onBuilt)
+            ConsultEntryView(goal: goal, onBuilt: onBuilt,
+                             onRuleTrouble: onRuleTrouble)
                 .background(theme.bg)
                 .navigationBarBackButtonHidden(true)
         }
