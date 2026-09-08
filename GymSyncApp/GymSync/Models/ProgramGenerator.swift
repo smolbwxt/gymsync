@@ -2223,5 +2223,77 @@ enum GoalGeneratorMapping {
                 inputs.focusMuscles = [group]
             }
         }
+
+        // 4. Where the cardio and the mobility go.
+        applyPlacement(goal, to: &inputs)
+    }
+
+    /// The PACE FLOOR behind an endurance goal's minutes: 10 minutes per mile.
+    ///
+    /// **A STATED ASSUMPTION, NOT A MEASUREMENT.** The app has no pace-history
+    /// reader in phase 1 and the spec gives no number, so this is the plan's
+    /// decision written down rather than a fact read off the athlete's log.
+    /// The equivalent metric pace is ~6 min/km, and this seam has no unit —
+    /// `GoalTarget.distance` is "in the athlete's unit" and neither the
+    /// profile nor `Inputs` carries one — so a kilometre athlete's minutes come
+    /// out high and the 20…90 clamp below is what bounds the error. When a
+    /// pace reader lands, this constant is the one line it replaces.
+    static let paceFloorMinutesPerUnitDistance: Double = 10
+
+    /// Conditioning / mobility placement for the ramp metrics (task B3, spec
+    /// §3.4: "The block generator receives the rung as an input where it
+    /// changes the plan — a cardio day placed, a mobility circuit added —
+    /// through the existing conditioning / cardio passes").
+    ///
+    /// THROUGH THE EXISTING PASSES, NOT A NEW ONE. `Inputs` already carries
+    /// `cardioDays`, `cardioMinutes` and `fillWeekWithRecovery`, and `generate`
+    /// already has a dedicated-cardio placement and an active-recovery fill.
+    /// This sets those fields and touches nothing else in the generator.
+    ///
+    /// `max(…)`, NEVER assignment, on the day counts: the athlete's own cardio
+    /// answer from the consult is already in `Inputs`, and a goal must not take
+    /// days away from someone who asked for them. The conditioning cap of four
+    /// bounds the GOAL's ask for the same reason — it is not a ceiling on the
+    /// athlete.
+    ///
+    /// Keyed on the PRESET, like `focus(for:)`: a Coach-guided goal (spec §2.4,
+    /// phase 2) places nothing until Coach can name what it wants.
+    static func applyPlacement(_ goal: BlockGoalDraft,
+                               to inputs: inout ProgramGenerator.Inputs) {
+        switch goal.preset {
+        case .endurance:
+            inputs.cardioDays = max(inputs.cardioDays, 2)
+            if let distance = goal.target.distance, distance > 0 {
+                let weeklyMinutes = distance * paceFloorMinutesPerUnitDistance
+                let perSession = weeklyMinutes / Double(max(1, inputs.cardioDays))
+                inputs.cardioMinutes = min(90, max(20, Int(perSession.rounded())))
+            }
+        case .conditioning:
+            inputs.cardioDays = max(inputs.cardioDays, min(4, goal.target.sessions ?? 0))
+        case .bodyComposition:
+            // CUTTING ONLY. A negative rate is a deficit and the generator's
+            // own weight-loss cardio pass then shapes the days; an explicitly
+            // POSITIVE rate is a gaining block, and buying it two cardio days
+            // it never asked for would work against the goal. No rate at all is
+            // read as the cut — the preset's common case, and the behaviour the
+            // plan's table specifies.
+            if (goal.target.bodyWeightRatePercent ?? -1) < 0 {
+                inputs.cardioDays = max(inputs.cardioDays, 2)
+            }
+        case .recovery:
+            inputs.fillWeekWithRecovery = true
+            inputs.cardioDays = max(inputs.cardioDays, 2)
+            if let liss = goal.target.lissMinutes {
+                inputs.cardioMinutes = min(60, max(20, liss / 2))
+            }
+        case .benchmark:
+            inputs.cardioDays = max(inputs.cardioDays, 1)
+        case .strength, .repStrength, .muscle, .consistency, .maintenance,
+             .volume, .none:
+            // NOTHING, and exhaustively so: a new preset has to come through
+            // this switch and say what it places rather than defaulting into
+            // silence.
+            break
+        }
     }
 }

@@ -55,6 +55,56 @@ final class GoalGeneratorInputTests: XCTestCase {
         XCTAssertEqual(inputs.focusMuscles, ["chest"])
     }
 
+    // MARK: - B3, cardio and mobility placement
+
+    func testAnEnduranceGoalBuysCardioDaysAndMinutesInsideTheClamp() {
+        let inputs = TrainingProfile().generatorInputs(
+            durationWeeks: 8,
+            goal: draft(.endurance, target: GoalTarget(activity: "run", distance: 15)))
+        XCTAssertGreaterThanOrEqual(inputs.cardioDays, 2)
+        XCTAssertTrue((20...90).contains(inputs.cardioMinutes),
+                      "15 mi a week at the 10 min/mi floor over 2 days is 75 min, "
+                      + "and the clamp is what bounds every other answer")
+    }
+
+    func testARecoveryGoalFillsTheWeekWithRecovery() {
+        let inputs = TrainingProfile().generatorInputs(
+            durationWeeks: 6,
+            goal: draft(.recovery, target: GoalTarget(lissMinutes: 120,
+                                                      stretchingExercises: 6)))
+        XCTAssertTrue(inputs.fillWeekWithRecovery)
+        XCTAssertGreaterThanOrEqual(inputs.cardioDays, 2)
+        XCTAssertTrue((20...60).contains(inputs.cardioMinutes))
+    }
+
+    func testAStrengthGoalPlacesNeitherCardioNorRecovery() {
+        let inputs = TrainingProfile().generatorInputs(
+            durationWeeks: 8,
+            goal: draft(.strength, target: GoalTarget(exerciseID: UUID(),
+                                                      targetWeightLbs: 225)))
+        XCTAssertEqual(inputs.cardioDays, 0)
+        XCTAssertFalse(inputs.fillWeekWithRecovery)
+    }
+
+    func testTheAthletesOwnCardioAnswerIsNeverTakenAway() {
+        let inputs = TrainingProfile().generatorInputs(
+            durationWeeks: 8, cardioDays: 3,
+            goal: draft(.endurance, target: GoalTarget(activity: "run", distance: 15)))
+        XCTAssertEqual(inputs.cardioDays, 3,
+                       "a goal must not take days away from someone who asked for them")
+    }
+
+    func testAConditioningGoalIsCappedAtFourDaysButNeverBelowTheAthletes() {
+        let four = TrainingProfile().generatorInputs(
+            durationWeeks: 8,
+            goal: draft(.conditioning, target: GoalTarget(sessionType: "hiit", sessions: 6)))
+        XCTAssertEqual(four.cardioDays, 4, "the goal's own ask is capped at four")
+        let five = TrainingProfile().generatorInputs(
+            durationWeeks: 8, cardioDays: 5,
+            goal: draft(.conditioning, target: GoalTarget(sessionType: "hiit", sessions: 6)))
+        XCTAssertEqual(five.cardioDays, 5, "the cap bounds the GOAL, not the athlete")
+    }
+
     func testNoGoalLeavesEveryInputExactlyAsItWas() {
         let profile = TrainingProfile()
         let withoutGoal = profile.generatorInputs(durationWeeks: 8)
@@ -63,5 +113,8 @@ final class GoalGeneratorInputTests: XCTestCase {
         XCTAssertEqual(withoutGoal.focusExerciseIDs, withNilGoal.focusExerciseIDs)
         XCTAssertEqual(withoutGoal.focusMuscles, withNilGoal.focusMuscles)
         XCTAssertEqual(withoutGoal.volumeTargets, withNilGoal.volumeTargets)
+        XCTAssertEqual(withoutGoal.cardioDays, withNilGoal.cardioDays)
+        XCTAssertEqual(withoutGoal.cardioMinutes, withNilGoal.cardioMinutes)
+        XCTAssertEqual(withoutGoal.fillWeekWithRecovery, withNilGoal.fillWeekWithRecovery)
     }
 }
