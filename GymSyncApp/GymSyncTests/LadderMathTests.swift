@@ -273,6 +273,13 @@ final class LadderMathTests: XCTestCase {
     func testADeloadRungCarriesItsFlagAndTheGeneratorsOwnNote() {
         var ladder = StubBlockGoalRepository.fixtureLadder
         ladder.rungs[5].status = .ahead
+        // THE STUB'S RUNGS CARRY A LOAD AND NO REP TARGET, and a strength rung
+        // needs BOTH to be worded — `LadderReadout.strengthRungText` returns
+        // "—" for a target missing either. The fixture gives them the block's
+        // prescribed fives so this test is about the deload flag rather than
+        // about an unworded row. (Worth knowing at I1: the stub's ladder is not
+        // a valid input to the live page for that reason.)
+        for index in ladder.rungs.indices { ladder.rungs[index].target.targetReps = 5 }
         let goal = strengthGoal(target: GoalTarget(targetWeightLbs: 225),
                                 byDate: nil, source: .coach, id: ladder.goalID)
         let page = LadderMath.page(
@@ -285,6 +292,8 @@ final class LadderMathTests: XCTestCase {
         XCTAssertNil(page.rows[5].implication,
                      "a deload's e1RM reads as a setback; the number is true and "
                      + "the sentence it forms is not")
+        XCTAssertEqual(page.rows[5].targetText, "2 × 5 at 175",
+                       "the deload is spelled as the lighter week it is")
         XCTAssertEqual(page.rows.filter(\.isDeload).count, 1)
         XCTAssertNotNil(page.rows[4].implication, "an ordinary rung still implies one")
     }
