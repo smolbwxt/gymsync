@@ -350,9 +350,9 @@ extension LadderMath {
         // back to `now`'s own week key covers a ladder that has not been
         // re-laddered yet; falling back to 1 covers a block that has not started.
         let currentWeekKey = WeekMath.weekStartString(now, calendar: calendar)
-        model.weekNumber = (ladder.rungs.first { $0.status == .current }
-            ?? ladder.rungs.first { $0.weekStartString == currentWeekKey })
-            .map { $0.weekIndex + 1} ?? 1
+        let currentRung = ladder.rungs.first(where: { $0.status == .current })
+            ?? ladder.rungs.first(where: { $0.weekStartString == currentWeekKey })
+        model.weekNumber = currentRung.map { $0.weekIndex + 1 } ?? 1
 
         let dated = goal.byDate
         model.dateLine = dated.map { longDate($0, calendar: calendar) } ?? ""

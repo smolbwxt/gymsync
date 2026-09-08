@@ -773,7 +773,9 @@ extension LiveBlockGoalRepository {
         let currentWeek = WeekMath.weekStartString(now, calendar: calendar)
 
         if let existing = await goal(enrollmentID: enrollment.id) {
-            await reLadder(goalID: existing.id)
+            // `_ =`: reLadder answers with the ladder it wrote and this path
+            // does not need it — the caller asked for the GOAL.
+            _ = await reLadder(goalID: existing.id)
             await materialiseRung(goalID: existing.id, weekStart: currentWeek)
             return existing
         }
