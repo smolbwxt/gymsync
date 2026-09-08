@@ -209,6 +209,35 @@ enum HealthKitBridge {
         }
     }
 
+    /// Minutes of LOW-INTENSITY STEADY-STATE work in the window (spec §2.2's
+    /// `lissMinutesPerWeek`, NEW).
+    ///
+    /// The activity families, not a heart-rate zone: walking, cycling, rowing,
+    /// elliptical and stair climbing — the five `workoutTags` already treats as
+    /// `cardio`, minus running, which is where LISS stops being low intensity
+    /// for most lifters.
+    ///
+    /// WHAT THIS CANNOT DO, and it is the spec's own open item (§11.2):
+    /// distinguish an easy ride from an interval session. That needs the
+    /// watch's heart-rate samples, which is phase 2's `zone2MinutesPerWeek`.
+    /// Until then a bike is a bike. Stated here rather than papered over, and
+    /// the reason `BlockGoalMetricMath.lissMinutes` also counts a cardio-only
+    /// APP session for an athlete with no Health at all.
+    ///
+    /// Best-effort: 0 on no availability, no permission, or any error — never
+    /// nil, so the ladder renders `0 / 150 min` rather than an error. The
+    /// CONNECT HEALTH read is `weeklyGoalHealthNeedsConnecting()`'s job, as it
+    /// is for distance.
+    static func lissMinutes(from start: Date, to end: Date) async -> Int {
+        let families: Set<HKWorkoutActivityType> = [
+            .walking, .cycling, .rowing, .elliptical, .stairClimbing,
+        ]
+        let seconds = await workouts(from: start, to: end)
+            .filter { families.contains($0.workoutActivityType) }
+            .reduce(0.0) { $0 + $1.duration }
+        return Int((seconds / 60).rounded())
+    }
+
     static func duration(from start: Date, to end: Date) -> TimeInterval {
         max(0, end.timeIntervalSince(start))
     }

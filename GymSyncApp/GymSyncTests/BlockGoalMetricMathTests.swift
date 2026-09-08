@@ -103,4 +103,74 @@ final class BlockGoalMetricMathTests: XCTestCase {
         XCTAssertNil(BlockGoalMetricMath.bestRepsAtLoad(logs: logs, exerciseID: id(9),
                                                         loadLbs: 225))
     }
+
+    // MARK: - A6: Recovery's two readers
+    //
+    // NO HEALTHKIT STORE IS TOUCHED (global constraint 5): `healthMinutes` is a
+    // parameter, so nothing here can raise a permission sheet and hang the
+    // simulator run. `HealthKitBridge.lissMinutes(from:to:)` — the wrapper that
+    // does query the store — is exercised only by the app.
+
+    private func row(_ routineID: UUID, _ exerciseID: UUID) -> RoutineExercise {
+        RoutineExercise(id: UUID(), routineID: routineID, exerciseID: exerciseID,
+                        position: 1, targetSets: 3, targetReps: "10",
+                        targetWeight: nil, restSeconds: 90, notes: nil)
+    }
+
+    func testLissAddsAppCardioSessionsAndNeverDoubleCountsAWatchedOne() {
+        let routineID = id(10)
+        let bike = id(11)
+        let catalog = [bike: exercise(11, category: "cardio", primary: "quads")]
+        let rows = [routineID: [row(routineID, bike)]]
+        let started = Date(timeIntervalSince1970: 10_000)
+        let ended = started.addingTimeInterval(1_800)   // 30 min
+        let ride = session(routineID: routineID, startedAt: started, completedAt: ended)
+
+        let unwatched = BlockGoalMetricMath.lissMinutes(
+            healthMinutes: 60, sessions: [ride], routines: [:],
+            routineExercises: rows, catalog: catalog, healthWorkouts: [])
+        XCTAssertEqual(unwatched, 90, "60 from Health plus the app's own 30")
+
+        let watched = BlockGoalMetricMath.lissMinutes(
+            healthMinutes: 60, sessions: [ride], routines: [:],
+            routineExercises: rows, catalog: catalog,
+            healthWorkouts: [HealthWorkoutTag(type: "cardio", start: started, end: ended)])
+        XCTAssertEqual(watched, 60, "the watch already counted this session")
+    }
+
+    func testCardioOnlyIsStricterThanTheSessionTypeThreshold() {
+        let routineID = id(10)
+        let bike = id(11), bench = id(12)
+        let catalog = [bike: exercise(11, category: "cardio", primary: "quads"),
+                       bench: exercise(12, category: "compound")]
+        let mixed = [routineID: [row(routineID, bike), row(routineID, bench)]]
+        XCTAssertFalse(BlockGoalMetricMath.isCardioOnly(routineID: routineID,
+                                                        routineExercises: mixed,
+                                                        catalog: catalog),
+                       "half cardio is a cardio SESSION, but it is not LISS")
+
+        let cardioOnly = [routineID: [row(routineID, bike)]]
+        XCTAssertTrue(BlockGoalMetricMath.isCardioOnly(routineID: routineID,
+                                                       routineExercises: cardioOnly,
+                                                       catalog: catalog))
+    }
+
+    func testStretchingCountsMovementsNotSets() {
+        let sessionID = id(20)
+        let hamstring = id(21), hip = id(22), bench = id(23)
+        let catalog = [
+            hamstring: exercise(21, category: "mobility", primary: "hamstrings"),
+            hip: exercise(22, category: "mobility", primary: "hip_flexors"),
+            bench: exercise(23, category: "compound"),
+        ]
+        let logs = [
+            log(hamstring, weight: 0, reps: 10, sessionID: sessionID),
+            log(hamstring, weight: 0, reps: 10, sessionID: sessionID),
+            log(hip, weight: 0, reps: 10, sessionID: sessionID),
+            log(bench, weight: 135, reps: 5, sessionID: sessionID),
+            log(hip, weight: 0, reps: 10, penalty: true, sessionID: sessionID),
+        ]
+        XCTAssertEqual(BlockGoalMetricMath.stretchingExerciseCount(logs: logs,
+                                                                   catalog: catalog), 2)
+    }
 }
