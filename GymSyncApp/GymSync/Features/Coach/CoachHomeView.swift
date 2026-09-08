@@ -283,9 +283,12 @@ struct CoachHomeView: View {
             // milestone; until it lands, Coach's detected goal keeps the tree
             // out of the one state this feature exists to end — a block built
             // with nothing named.
-            _ = try await ProgramBuilder.build(profile: profile, answers: answers,
-                                               catalog: catalog, userID: userID,
-                                               goal: LadderMath.detectedGoal(profile: profile))
+            _ = try await ProgramBuilder.build(
+                profile: profile, answers: answers,
+                catalog: catalog, userID: userID,
+                goal: LadderMath.detectedGoal(profile: profile),
+                // I1: swap to LiveBlockGoalRepository (A11)
+                blockGoalRepository: StubBlockGoalRepository())
             route = .schedule
         } catch {
             ruleTrouble = ErrorMapping.map(error).errorDescription

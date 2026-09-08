@@ -101,9 +101,12 @@ struct ConsultEntryView: View {
             // out of the one state this feature exists to end — a block built
             // with nothing named. Derived from the profile the consult JUST
             // persisted, so it reads what the athlete has this minute said.
-            _ = try await ProgramBuilder.build(profile: profile, answers: answers,
-                                               catalog: catalog, userID: userID,
-                                               goal: LadderMath.detectedGoal(profile: profile))
+            _ = try await ProgramBuilder.build(
+                profile: profile, answers: answers,
+                catalog: catalog, userID: userID,
+                goal: LadderMath.detectedGoal(profile: profile),
+                // I1: swap to LiveBlockGoalRepository (A11)
+                blockGoalRepository: StubBlockGoalRepository())
             onBuilt()
         } catch {
             trouble = ErrorMapping.map(error).errorDescription

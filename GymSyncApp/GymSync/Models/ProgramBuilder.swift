@@ -1,4 +1,8 @@
 import Foundation
+// `os`, for the step-7b telemetry below: `AppLogger.db` is an `os.Logger` and
+// its `privacy:` interpolation lives in that module, so a file that logs has to
+// import it rather than inherit it.
+import os
 
 // MARK: - ProgramBuilder
 //
@@ -57,14 +61,26 @@ enum ProgramBuilder {
     /// site keep compiling while silently building a goal-less block, which is
     /// the entire failure this feature exists to end; a caller that forgets it
     /// gets a compile error instead, which is the point.
+    ///
+    /// **`blockGoalRepository` HAS NO DEFAULT EITHER, AND FOR THE SAME REASON.**
+    /// The plan writes `LiveBlockGoalRepository()` there; that type does not
+    /// exist until task A11, and the only conformer today is
+    /// `StubBlockGoalRepository`, whose `save` returns **true**, whose
+    /// `saveDerivedLadder` falls through to the protocol's nil default and whose
+    /// `materialiseRung` returns nil. Defaulted, step 7b would have run its
+    /// entire happy path, written nothing to any table, logged nothing, and made
+    /// "no block without a goal" true at the type level and false in the
+    /// database — with the only trace of it in a commit body. Required, every
+    /// call site names the stub out loud and carries the I1 swap comment, so the
+    /// three lines integration has to change are the three lines a `grep` finds.
     @MainActor
     static func build(profile loaded: TrainingProfile,
                       answers: ConsultAnswers?,
                       catalog all: [Exercise],
                       userID: UUID,
                       goal: BlockGoalDraft,
-                      goalWriter: WeeklyGoalCoachWriter = LiveWeeklyGoalRepository(),
-                      blockGoalRepository: any BlockGoalRepository = StubBlockGoalRepository())
+                      blockGoalRepository: any BlockGoalRepository,
+                      goalWriter: WeeklyGoalCoachWriter = LiveWeeklyGoalRepository())
         async throws -> Outcome {
 
         // ── 1. Evidence ──────────────────────────────────────────────
@@ -287,9 +303,16 @@ enum ProgramBuilder {
             let blockGoal = BlockGoal(draft: goal, userID: userID,
                                       enrollmentID: enrollment.id)
             if await blockGoalRepository.save(blockGoal) {
-                await blockGoalRepository.saveDerivedLadder(
+                let ladder = await blockGoalRepository.saveDerivedLadder(
                     goal: blockGoal, program: program, catalog: all,
                     startedOn: enrollment.startedOn, unit: unit)
+                if ladder == nil {
+                    // HONEST TELEMETRY, and today it fires on every build: the
+                    // stub takes the protocol's nil default, so a block ships
+                    // with a goal row and no rungs. After I1 this line means a
+                    // real derivation failed, which is worth the same log.
+                    AppLogger.db.info("block goal \(blockGoal.id.uuidString, privacy: .public) saved with NO ladder — the repository derived none")
+                }
                 await blockGoalRepository.materialiseRung(
                     goalID: blockGoal.id, weekStart: WeekMath.weekStartString())
             }
