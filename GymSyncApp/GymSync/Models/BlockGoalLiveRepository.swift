@@ -354,7 +354,9 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
             derivedAt: now)
 
         let changed = zip(existing.rungs, fresh.rungs)
-            .filter { $0 != $1 }
+            // `$0.0` / `$0.1`, not `$0` / `$1`: `filter`'s closure takes ONE
+            // element and that element is the pair.
+            .filter { $0.0 != $0.1 }
             .map(\.1)
         await upsertRungs(changed, goalID: goalID)
         return fresh
@@ -409,7 +411,8 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
             AppLogger.db.info("rung left alone for \(weekStart, privacy: .public) — the athlete set that week")
             return existing
         }
-        return await weekly.writeMaterialisedRung(derived) ? derived : existing
+        let written = await weekly.writeMaterialisedRung(derived)
+        return written ? derived : existing
     }
 
     // MARK: - Derivation at build time (task B4's step 7b, implemented here)

@@ -499,8 +499,12 @@ extension LadderMath {
             return (parts.isEmpty ? "—" : parts.joined(separator: " · "), nil)
         case .bodyWeight:
             guard let pounds = target.bodyWeightLbs else { return ("—", nil) }
-            let rate = target.bodyWeightRatePercent
-                .map { String(format: "%@%.2f %%/wk", $0 < 0 ? "" : "+", $0) }
+            let rate = target.bodyWeightRatePercent.map { value -> String in
+                // `%@` with a Swift String bridges on Darwin but does not need
+                // to: the sign is interpolation and only the number is formatted.
+                let sign = value < 0 ? "" : "+"
+                return "\(sign)\(String(format: "%.2f", value)) %/wk"
+            }
             return (Units.formatBodyWeight(pounds: pounds, unit: unit), rate)
         case .cumulativeVolume:
             guard let pounds = target.volumeLbs else { return ("—", nil) }
