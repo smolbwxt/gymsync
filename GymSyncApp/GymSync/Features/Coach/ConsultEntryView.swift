@@ -27,15 +27,15 @@ struct ConsultEntryView: View {
     /// milestone card (`GoalFirstBuildFlow`), so by the time a build starts
     /// there is always a milestone to build to.
     ///
-    /// **IT IS NOT YET AN ARGUMENT TO `ProgramBuilder.build`.** That
-    /// parameter is Stream B's (task B4: `build(profile:answers:catalog:
-    /// userID:goal:)`, which also makes it required and load-bearing), and
-    /// `ProgramBuilder.swift` is B's file — this stream does not touch it.
-    /// Until B4 lands the goal is carried to the call site below and no
-    /// further; `finish()` marks the exact line B4 changes. The consequence
-    /// while both streams are in flight is that a build on THIS branch still
-    /// generates the block it generated before, which is the designed
-    /// intermediate state: B4's step 4 fixes this call site.
+    /// **IT IS NOT YET AN ARGUMENT TO `ProgramBuilder.build` ON THIS
+    /// BRANCH.** Stream B has shipped that parameter — `build(profile:
+    /// answers:catalog:userID:goal:)`, required and non-optional, on
+    /// `origin/feat/goal-first-generator` (2515c0f) — but it does not exist
+    /// HERE, and `ProgramBuilder.swift` is B's file: streams touch disjoint
+    /// file sets and merging B is integration's job. So the goal is carried
+    /// to the call site below and no further, and `finish()` spells out the
+    /// one line integration changes. A build on this branch generates the
+    /// block it generated before, which is the designed intermediate state.
     let goal: BlockGoalDraft
 
     /// The build landed, with the id of the goal row it wrote. The host
