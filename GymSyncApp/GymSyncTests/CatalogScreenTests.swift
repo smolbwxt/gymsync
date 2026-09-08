@@ -81,6 +81,15 @@ final class CatalogScreenTests: XCTestCase {
             "home-goal-editor",
             "home-goal-editor-lift",
             "calendar-scheduling",
+            // Goal-first programming, the door (Stream C): the goal screen
+            // and three milestone cards — the three SHAPES a card can have
+            // (a picker + a load + a date; a segmented switch between two
+            // ways of saying one milestone; one held for the block with no
+            // date at all).
+            "goal-screen",
+            "goal-milestone-strength",
+            "goal-milestone-body-composition",
+            "goal-milestone-recovery",
         ]
         for id in ids {
             XCTAssertNotNil(CatalogScreen(rawValue: id), "missing catalog case: \(id)")

@@ -227,5 +227,21 @@
     "frame": 92,
     "title": "Calendar & scheduling page",
     "note": "two captures from this one id: app-calendar-scheduling (the header, month and week) and app-calendar-scheduling-2 (scrolled to the bottom: block row, campaign row, pinned primary). The -2 attachment has no frame-map entry of its own by design."
+  },
+  "goal-screen": {
+    "frame": 93,
+    "title": "Goal screen - ten presets and the Pro door"
+  },
+  "goal-milestone-strength": {
+    "frame": 94,
+    "title": "Goal milestone - strength"
+  },
+  "goal-milestone-body-composition": {
+    "frame": 95,
+    "title": "Goal milestone - body composition"
+  },
+  "goal-milestone-recovery": {
+    "frame": 96,
+    "title": "Goal milestone - recovery"
   }
 }
