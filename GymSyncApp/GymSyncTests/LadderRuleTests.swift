@@ -57,7 +57,7 @@ final class LadderRuleTests: XCTestCase {
         XCTAssertEqual(rungs[2].days, rungs[1].days, "week 3 is a deload; it holds")
     }
 
-    func testBodyWeightClampsIntoItsBandAndLandsOnTheTarget() {
+    func testBodyWeightClampsIntoItsBandAndLandsOnTheTarget() throws {
         let rule = RateOfChangeLadderRule()
         // 190 -> 178 in 4 weeks is 1.6 %/wk implied: clamped to the 1 % ceiling,
         // so the ladder falls SHORT and says so by not reaching the target.
@@ -74,7 +74,13 @@ final class LadderRuleTests: XCTestCase {
         let steady = rule.rungs(current: GoalTarget(bodyWeightLbs: 190),
                                 target: GoalTarget(bodyWeightLbs: 183),
                                 weeks: 8, constraints: LadderConstraints())
-        XCTAssertEqual(try XCTUnwrap(steady.last?.bodyWeightLbs), 183, accuracy: 0.6)
+        // Compared through the double rather than as a `Decimal` with an
+        // `accuracy:`. Every accuracy assertion in this repo already goes
+        // through `double(…)` (`UnitsAndWarmupTests:17`), and a body weight is
+        // read as a number here, not as a stored quantity.
+        let landed = NSDecimalNumber(decimal: try XCTUnwrap(steady.last?.bodyWeightLbs))
+            .doubleValue
+        XCTAssertEqual(landed, 183, accuracy: 0.6)
 
         let gaining = rule.rungs(current: GoalTarget(bodyWeightLbs: 160),
                                  target: GoalTarget(bodyWeightLbs: 175),
@@ -83,7 +89,7 @@ final class LadderRuleTests: XCTestCase {
                        "gaining rides the 0.25-0.5 % band, not the loss band")
     }
 
-    func testVolumeWeeksSumToTheMilestoneWithAHalfDeload() {
+    func testVolumeWeeksSumToTheMilestoneWithAHalfDeload() throws {
         let rungs = CumulativeLadderRule().rungs(
             current: GoalTarget(volumeLbs: 0), target: GoalTarget(volumeLbs: 100_000),
             weeks: 8, constraints: LadderConstraints(deloadWeeks: [5]))
