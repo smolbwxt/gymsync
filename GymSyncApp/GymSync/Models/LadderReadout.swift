@@ -164,3 +164,72 @@ enum LadderReadout {
         return (text, "≈ \(Units.wholeNumber(pounds: implied, unit: unit)) e1RM")
     }
 }
+
+// MARK: - The block's shape, read off the enrollment's own template (task A11)
+//
+// `strengthRungs(program:…)` above takes the generator's `Program`, which is
+// what Stream B holds AT BUILD TIME. The repository does not: a block is
+// persisted as a `program_enrollments` row plus the template it names, and
+// re-running `ProgramGenerator.generate` months later — against a changed
+// catalog, a changed profile and a changed titration — would be a SECOND
+// OPINION about a block that already happened. So the read-out has a second
+// door, onto facts the block actually stored.
+//
+// `ProgramTemplate.bySlug` resolves BOTH the bundled templates and a
+// Coach-generated block (`ProgramTemplate`'s own extension rebuilds the latter
+// from its persisted rows), so this door covers every enrollment.
+extension LadderReadout {
+
+    /// The deload weeks the template records, 0-based.
+    ///
+    /// `taperWeeks` is empty here, and that is honest rather than lazy:
+    /// `ProgramWeek` carries `isDeload` and nothing else about volume, so a
+    /// taper is not a fact this door can see. The ramps only need the deload.
+    static func constraints(template: ProgramTemplate?,
+                            unit: WeightUnit) -> LadderConstraints {
+        var deloads: Set<Int> = []
+        for (index, week) in (template?.weeks ?? []).enumerated() where week.isDeload {
+            deloads.insert(index)
+        }
+        return LadderConstraints(deloadWeeks: deloads, taperWeeks: [], unit: unit)
+    }
+
+    /// The block's own decision-log line for a week, keyed 0-based — spec §6's
+    /// "so the ladder says why a week is what it is".
+    static func notesByWeek(template: ProgramTemplate?) -> [Int: String] {
+        var out: [Int: String] = [:]
+        for (index, week) in (template?.weeks ?? []).enumerated() {
+            if let note = week.note, !note.isEmpty { out[index] = note }
+        }
+        return out
+    }
+
+    /// Strength rungs from the template's OWN percent-of-baseline weeks, through
+    /// `ProgramMath.targetWeight` — THE SAME FUNCTION THE PROGRAM CARD PRINTS,
+    /// so the ladder and the card cannot show one week two loads.
+    ///
+    /// nil for a volume-driven block (no week carries a percent) and for no
+    /// baseline: a ladder that invented a load would print a number nobody
+    /// prescribed, which is the same refusal `strengthRungs(program:…)` makes
+    /// for a main with no `percentOfMax`.
+    static func strengthRungs(template: ProgramTemplate?, exerciseID: UUID,
+                              baselineE1RMLbs: Decimal) -> [GoalTarget]? {
+        guard let weeks = template?.weeks, !weeks.isEmpty, baselineE1RMLbs > 0,
+              weeks.contains(where: { $0.percentOfBaseline != nil }) else { return nil }
+        var previous: Decimal?
+        return weeks.map { week in
+            var target = GoalTarget(exerciseID: exerciseID)
+            if let percent = week.percentOfBaseline,
+               let pounds = ProgramMath.targetWeight(percentOfBaseline: percent,
+                                                     baseline: baselineE1RMLbs) {
+                previous = Decimal(pounds)
+            }
+            // A TEST WEEK CARRIES NO PERCENT (`march-to-1rm`'s week 8, "work up
+            // to a new heavy single"). It holds the last prescribed load rather
+            // than printing nothing, because the week IS "at least this".
+            target.targetWeightLbs = previous
+            target.targetReps = week.reps
+            return target
+        }
+    }
+}
