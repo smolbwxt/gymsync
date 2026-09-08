@@ -355,10 +355,70 @@ struct LiveWeeklyGoalRepository: WeeklyGoalRepository, WeeklyGoalCoachWriter {
 
     // MARK: - Progress
 
+    /// The kind's own progress, plus the BLOCK CONTEXT when this row belongs to
+    /// a ladder (task A14, spec §6).
+    ///
+    /// ONE EXTRA READ, and only for a row that HAS a `goalID`: a standalone
+    /// weekly goal — every row written before goal-first programming, and every
+    /// row an athlete sets themselves outside a block — pays exactly nothing.
+    ///
+    /// The frozen Home frames are unaffected (global constraint 8): they build
+    /// their `WeeklyGoalProgress` from a literal fixture and never reach this
+    /// type at all.
+    func progress(for goal: WeeklyGoal) async -> WeeklyGoalProgress {
+        var progress = await rawProgress(for: goal)
+        guard let goalID = goal.params.goalID,
+              let context = await blockContext(goalID: goalID,
+                                               weekStart: goal.weekStartString)
+        else { return progress }
+        let now = Date()
+        progress.kicker = WeeklyGoalProgressMath.blockKicker(
+            source: goal.source, met: progress.met,
+            daysLeft: WeekMath.daysRemaining(in: now, from: now, calendar: .current),
+            weekNumber: context.weekNumber, weekCount: context.weekCount)
+        return progress
+    }
+
+    /// Which rung of which ladder this week is — the two numbers `WEEK 3 OF 8`
+    /// needs, in one query.
+    ///
+    /// nil when the ladder has no rung for this week, which is the honest answer
+    /// for a row whose block was re-laddered shorter: the kicker then falls back
+    /// to `THIS WEEK` rather than naming a week the ladder does not have.
+    private func blockContext(goalID: UUID,
+                              weekStart: String) async -> (weekNumber: Int,
+                                                           weekCount: Int)? {
+        struct RungKeyRow: Decodable {
+            let weekIndex: Int
+            /// A DATE column, so a raw String — never through the timestamp
+            /// decoder (`ProgramEnrollment.swift:34-38`).
+            let weekStart: String
+            enum CodingKeys: String, CodingKey {
+                case weekIndex = "week_index"
+                case weekStart = "week_start"
+            }
+        }
+        do {
+            let rows: [RungKeyRow] = try await client
+                .from("block_goal_rungs")
+                .select("week_index, week_start")
+                .eq("goal_id", value: goalID)
+                .order("week_index", ascending: true)
+                .execute().value
+            guard !rows.isEmpty,
+                  let match = rows.first(where: { $0.weekStart == weekStart })
+            else { return nil }
+            return (match.weekIndex + 1, rows.count)
+        } catch {
+            AppLogger.db.error("block_goal_rungs context read failed: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
     /// Only what THIS kind needs is fetched. A `days` goal has no business
     /// paging the 1,300-row exercise catalog, and Home's refresh is a budget
     /// the strip shares with eight other reads.
-    func progress(for goal: WeeklyGoal) async -> WeeklyGoalProgress {
+    private func rawProgress(for goal: WeeklyGoal) async -> WeeklyGoalProgress {
         guard let userID = await SupabaseService.shared.currentUserID() else {
             return WeeklyGoalProgress()
         }

@@ -154,6 +154,25 @@ enum WeeklyGoalProgressMath {
         return source == .user ? "THIS WEEK · YOUR GOAL" : "THIS WEEK · COACH'S GOAL"
     }
 
+    /// The kicker WITH the block behind it (spec §6). `THIS WEEK` becomes
+    /// `WEEK 3 OF 8` when the row belongs to a ladder, and stays `THIS WEEK`
+    /// for a standalone weekly goal — which is what the whole existing
+    /// `kicker(source:met:daysLeft:)` still builds, unchanged and still called
+    /// by every kind that has no block.
+    ///
+    /// The met kicker is untouched: `GOAL MET · {n} DAYS LEFT` is about the
+    /// WEEK, and prefixing a block onto it would put two facts where the strip
+    /// has room for one.
+    static func blockKicker(source: WeeklyGoalSource, met: Bool, daysLeft: Int,
+                            weekNumber: Int?, weekCount: Int?) -> String {
+        if met { return kicker(source: source, met: true, daysLeft: daysLeft) }
+        guard let weekNumber, let weekCount, weekCount > 0 else {
+            return kicker(source: source, met: false, daysLeft: daysLeft)
+        }
+        let whose = source == .user ? "YOUR GOAL" : "COACH'S GOAL"
+        return "WEEK \(weekNumber) OF \(weekCount) · \(whose)"
+    }
+
     /// The strip's right-hand read — and EMPTY once the goal is met
     /// (controller ruling, 2026-09-06). The met kicker already ends in
     /// `{n} DAYS LEFT`, and the strip would otherwise print the same phrase

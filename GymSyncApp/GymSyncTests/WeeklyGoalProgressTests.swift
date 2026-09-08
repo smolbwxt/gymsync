@@ -1152,4 +1152,40 @@ final class WeeklyGoalProgressTests: XCTestCase {
         XCTAssertEqual(progress.value, 9.3206, accuracy: 0.001)
         XCTAssertEqual(progress.unitLabel, "mi")
     }
+
+    // MARK: - A14: the strip's block kicker (spec §6)
+
+    func testTheBlockKickerNamesTheWeekAndWhoseGoalItIs() {
+        XCTAssertEqual(
+            WeeklyGoalProgressMath.blockKicker(source: .coach, met: false, daysLeft: 3,
+                                               weekNumber: 3, weekCount: 8),
+            "WEEK 3 OF 8 · COACH'S GOAL")
+        XCTAssertEqual(
+            WeeklyGoalProgressMath.blockKicker(source: .user, met: false, daysLeft: 3,
+                                               weekNumber: 3, weekCount: 8),
+            "WEEK 3 OF 8 · YOUR GOAL")
+    }
+
+    func testAStandaloneWeekKeepsTheShippedKicker() {
+        XCTAssertEqual(
+            WeeklyGoalProgressMath.blockKicker(source: .coach, met: false, daysLeft: 3,
+                                               weekNumber: nil, weekCount: nil),
+            "THIS WEEK · COACH'S GOAL")
+    }
+
+    func testAMetWeekStillSaysMet() {
+        XCTAssertEqual(
+            WeeklyGoalProgressMath.blockKicker(source: .coach, met: true, daysLeft: 2,
+                                               weekNumber: 3, weekCount: 8),
+            "GOAL MET · 2 DAYS LEFT")
+    }
+
+    /// A block of zero weeks is not a block, and `WEEK 1 OF 0` is not a
+    /// sentence. It falls back to the shipped kicker rather than printing one.
+    func testAZeroWeekBlockFallsBackToTheShippedKicker() {
+        XCTAssertEqual(
+            WeeklyGoalProgressMath.blockKicker(source: .user, met: false, daysLeft: 1,
+                                               weekNumber: 1, weekCount: 0),
+            "THIS WEEK · YOUR GOAL")
+    }
 }
