@@ -29,6 +29,13 @@ private struct WeeklyGoalRow: Codable {
     let kind: String
     let params: WeeklyGoalParams
     let source: String
+    /// `weekly_goals.goal_id` (task A2) — the COLUMN half of the ladder link.
+    /// `params.goalID` is the other half; see `model` for why the column is the
+    /// authority on READ.
+    let goalID: UUID?
+    /// `weekly_goals.rung_index`. Column-only: `WeeklyGoalParams` has no mirror
+    /// for it, so nothing in `WeeklyGoal` carries it and only the writer sets it.
+    let rungIndex: Int?
     let createdAt: Date?
     let updatedAt: Date?
 
@@ -38,16 +45,29 @@ private struct WeeklyGoalRow: Codable {
         case kind
         case params
         case source
+        case goalID = "goal_id"
+        case rungIndex = "rung_index"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
 
-    init(_ goal: WeeklyGoal) {
+    /// `rungIndex` is a WRITE-SIDE argument because `WeeklyGoal` cannot carry it
+    /// — that struct is the frozen Task 0 shape and has no field per column.
+    /// `goal_id` needs no such argument: `params.goalID` already holds it, and
+    /// writing the column FROM the param here is what makes the two halves one
+    /// value written twice, exactly as A2's own COMMENT promises.
+    ///
+    /// Both are optional and both encode only when set, so `save`'s ordinary
+    /// upsert — which passes no rung index and may carry no goal id — omits them
+    /// and leaves whatever the row already had.
+    init(_ goal: WeeklyGoal, rungIndex: Int? = nil) {
         userID = goal.userID
         weekStart = goal.weekStartString
         kind = goal.kind.rawValue
         params = goal.params
         source = goal.source.rawValue
+        goalID = goal.params.goalID
+        self.rungIndex = rungIndex
         createdAt = nil
         updatedAt = nil
     }
@@ -62,7 +82,8 @@ private struct WeeklyGoalRow: Codable {
         return WeeklyGoal(userID: userID,
                           weekStartString: weekStart,
                           kind: kind,
-                          params: params,
+                          params: LiveWeeklyGoalRepository.reconcileLadderLink(
+                              params: params, goalIDColumn: goalID),
                           source: source,
                           // `updated_at` IS `setAt`: the goal's own trigger
                           // bumps it on every edit (A1). The fallbacks are
@@ -184,8 +205,35 @@ struct LiveWeeklyGoalRepository: WeeklyGoalRepository, WeeklyGoalCoachWriter {
     /// door, with the rule named in its own doc comment, is the seam that keeps
     /// that true while still letting the ladder materialise.
     @discardableResult
-    func writeMaterialisedRung(_ goal: WeeklyGoal) async -> Bool {
-        await upsert(goal)
+    func writeMaterialisedRung(_ goal: WeeklyGoal, rungIndex: Int? = nil) async -> Bool {
+        await upsert(goal, rungIndex: rungIndex)
+    }
+
+    /// **THE COLUMN IS THE AUTHORITY ON READ** (Stream B review, cross-stream
+    /// requirement).
+    ///
+    /// The ladder link lives in two places: `weekly_goals.goal_id`, which the
+    /// foreign key and its `ON DELETE SET NULL` need, and `params.goalID`, which
+    /// is what survives into `WeeklyGoal` — a struct with no field per column.
+    /// The client asks `params.goalID` whether a week belongs to a ladder
+    /// (`isLadderWeek`), and JSON does not participate in `ON DELETE SET NULL`.
+    ///
+    /// So when the goal is deleted the column goes NULL and the param does not,
+    /// and without this the week would stay frozen as a ladder week forever —
+    /// pointing at a goal that no longer exists. Clearing the param when the
+    /// column is null makes it a plain weekly goal again, which is exactly what
+    /// spec §4 says a `goal_id = null` row IS.
+    ///
+    /// ONE DIRECTION ONLY. A non-null column does NOT write the param back: an
+    /// athlete who saves a standalone goal over a ladder week has dropped the
+    /// link on purpose, and resurrecting it from a column they never touched
+    /// would undo their own edit.
+    static func reconcileLadderLink(params: WeeklyGoalParams,
+                                    goalIDColumn: UUID?) -> WeeklyGoalParams {
+        guard goalIDColumn == nil else { return params }
+        var cleared = params
+        cleared.goalID = nil
+        return cleared
     }
 
     /// Writes a row exactly as given. Shared by `save` and by A11's Coach
@@ -197,11 +245,12 @@ struct LiveWeeklyGoalRepository: WeeklyGoalRepository, WeeklyGoalCoachWriter {
     /// `user` one without ever passing through it. No test calls it, so the
     /// seam costs nothing.
     @discardableResult
-    private func upsert(_ goal: WeeklyGoal) async -> Bool {
+    private func upsert(_ goal: WeeklyGoal, rungIndex: Int? = nil) async -> Bool {
         do {
             try await client
                 .from("weekly_goals")
-                .upsert(WeeklyGoalRow(goal), onConflict: "user_id,week_start")
+                .upsert(WeeklyGoalRow(goal, rungIndex: rungIndex),
+                        onConflict: "user_id,week_start")
                 .execute()
             return true
         } catch {

@@ -411,7 +411,10 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
             AppLogger.db.info("rung left alone for \(weekStart, privacy: .public) — the athlete set that week")
             return existing
         }
-        let written = await weekly.writeMaterialisedRung(derived)
+        // The rung index goes to the COLUMN — `WeeklyGoalParams` has no mirror
+        // for it, so this is the only place it is written.
+        let written = await weekly.writeMaterialisedRung(derived,
+                                                         rungIndex: rung.weekIndex)
         return written ? derived : existing
     }
 

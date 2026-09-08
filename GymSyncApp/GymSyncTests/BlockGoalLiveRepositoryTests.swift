@@ -187,4 +187,46 @@ final class BlockGoalLiveRepositoryTests: XCTestCase {
         XCTAssertEqual(afterOverride?.kind, .days,
                        "the row still says what the athlete set, not what the rung wanted")
     }
+
+    /// END TO END, against the real `ON DELETE SET NULL`: materialise a rung,
+    /// delete the goal, and the week must come back as a PLAIN weekly goal —
+    /// the row standing, its numbers intact, and `params.goalID` gone.
+    ///
+    /// The column is cleared by the database; the param is cleared by
+    /// `reconcileLadderLink` on the read, because JSON does not participate in a
+    /// foreign key. Without both halves the client's `isLadderWeek` would keep
+    /// saying yes about a goal that no longer exists.
+    func testAWeekOutlivesItsGoalAndStopsBeingALadderWeek() async throws {
+        try await TestAuth.signInIfConfigured()
+        let userID = await SupabaseService.shared.currentUserID()
+        let owner = try XCTUnwrap(userID)
+        let block = try await borrowedBlock()
+
+        let goalID = temporaryGoal(UUID())
+        let week = temporaryWeek("2099-05-03")
+        let saved = await repository.save(goal(goalID, owner: owner,
+                                               enrollmentID: block.id, byDate: nil))
+        XCTAssertTrue(saved)
+
+        let ladder = Ladder(goalID: goalID, rungs: [
+            .init(weekIndex: 4, weekStartString: week,
+                  target: GoalTarget(targetWeightLbs: 215), status: .current),
+        ], derivedAt: Date())
+        let savedLadder = await repository.saveLadder(ladder)
+        XCTAssertTrue(savedLadder)
+
+        let materialised = await repository.materialiseRung(goalID: goalID, weekStart: week)
+        XCTAssertEqual(materialised?.params.goalID, goalID)
+
+        // The goal goes; the week the athlete trained does not.
+        await repository.deleteGoal(id: goalID)
+
+        let after = await weekly.goal(weekStart: week)
+        XCTAssertNotNil(after, "deleting the block goal must not delete the week")
+        XCTAssertEqual(after?.params.targetWeightLbs, 215,
+                       "the week keeps its own numbers")
+        XCTAssertNil(after?.params.goalID,
+                     "a week whose goal is gone is a plain weekly goal again, "
+                     + "not a frozen ladder week")
+    }
 }
