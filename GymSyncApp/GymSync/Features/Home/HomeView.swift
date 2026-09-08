@@ -19,6 +19,12 @@ struct HomeView: View {
     let friendsRepository: any FriendsLiveRepository
     /// This week's goal and its progress.
     let goalRepository: any WeeklyGoalRepository
+    /// The block's goal and its ladder (goal-first plan, task D6).
+    /// `StubBlockGoalRepository` until Stream A's live one lands (I1). It is
+    /// only ever asked anything for an athlete whose week is a materialised
+    /// rung — which is no athlete until I2 stamps `goal_id` on those rows —
+    /// so production Home makes no extra read for it today.
+    let blockGoalRepository: any BlockGoalRepository
 
     /// Declared EXPLICITLY, not left to the synthesised memberwise init.
     ///
@@ -31,9 +37,11 @@ struct HomeView: View {
     /// repository; both parameters keep their defaults, so `HomeView()` is
     /// unchanged.
     init(friendsRepository: any FriendsLiveRepository = LiveFriendsLiveRepository(),
-         goalRepository: any WeeklyGoalRepository = LiveWeeklyGoalRepository()) {
+         goalRepository: any WeeklyGoalRepository = LiveWeeklyGoalRepository(),
+         blockGoalRepository: any BlockGoalRepository = StubBlockGoalRepository()) {
         self.friendsRepository = friendsRepository
         self.goalRepository = goalRepository
+        self.blockGoalRepository = blockGoalRepository
     }
 
     @State private var upcomingSessions: [WorkoutSession] = []
@@ -135,6 +143,10 @@ struct HomeView: View {
     /// `goalStripDestination(for:)`, so the rule the tap follows is the rule
     /// `HomeCompositionTests` asserts rather than a second copy of it.
     @State private var blockGoalID: UUID?
+    /// The block's ladder, when this week is a rung of one. Its only job on
+    /// Home is Coach's line (task D6) — Home does no ladder arithmetic, and
+    /// the strip's numbers still come from `goalProgress` alone.
+    @State private var ladderPage: LadderPageModel?
     /// The pushed ladder page. Deliberately NOT an `AppState.PendingRoute`
     /// case, for the same reason `showCoach` below is not: that enum is the
     /// push DEEP-LINK enum (`App/AppState.swift:70-75`), and this is a local
@@ -927,12 +939,50 @@ struct HomeView: View {
     //   (d) a static invitation.
     //
     // One sentence, first person, Coach's own voice (design language rule 7).
+    //
+    // D6 WIDENS RUNG (a) WITHOUT MOVING THE PRECEDENCE. It now has two
+    // sources, in this order:
+    //
+    //   (a1) a LADDER proposal — the re-derived ladder can no longer reach
+    //        the milestone by its date, so Coach proposes a new one (spec
+    //        §3.5: "Coach proposes a new date (or target) through the propose
+    //        channel"). It leads because it is about the BLOCK, and a
+    //        block-level gap outranks a week-level difference.
+    //   (a2) the shipped weekly proposal (`WeeklyGoalProposalRule`),
+    //        unchanged.
+    //
+    // NOTHING IS WRITTEN. Owner decision 8: Coach proposes date moves and
+    // never makes them. The athlete accepts on the ladder page's own levers.
 
     private var coachSentence: String {
-        if let proposal = goalProposal { return proposal.sentence }
-        if let line = todaysRoutineSentence { return line }
-        if let line = blockWeekSentence { return line }
+        Self.coachSentence(ladderProposal: Self.ladderProposal(from: ladderPage),
+                           goalProposal: goalProposal?.sentence,
+                           todaysRoutine: todaysRoutineSentence,
+                           blockWeek: blockWeekSentence)
+    }
+
+    /// The precedence, as a value — testable without a view, and the only
+    /// statement of it.
+    static func coachSentence(ladderProposal: String?,
+                              goalProposal: String?,
+                              todaysRoutine: String?,
+                              blockWeek: String?) -> String {
+        if let ladderProposal { return ladderProposal }
+        if let goalProposal { return goalProposal }
+        if let todaysRoutine { return todaysRoutine }
+        if let blockWeek { return blockWeek }
         return "Tell me how the week's going and I'll shape the next one."
+    }
+
+    /// Coach's line becomes a PROPOSAL only when the ladder cannot make the
+    /// milestone that was set. A ladder that reaches proposes nothing — "On
+    /// track" is a readout, and putting it at the top of Coach's precedence
+    /// would spend the tile on good news the strip already carries.
+    ///
+    /// An empty `coachLine` is not a sentence, so it proposes nothing either.
+    static func ladderProposal(from page: LadderPageModel?) -> String? {
+        guard let page, !page.reachesMilestone, !page.coachLine.isEmpty else { return nil }
+        return page.coachLine
     }
 
     /// (b) "Pull A today — take 185 × 8, then we climb."
@@ -1518,6 +1568,7 @@ struct HomeView: View {
         goalProgress = goal.progress
         goalProposal = goal.proposal
         blockGoalID = goal.blockGoalID
+        ladderPage = goal.ladder
         goalLoaded = true
         statsLoading = false
 
@@ -1699,28 +1750,39 @@ struct HomeView: View {
     /// `params.goalID` through `goalStripDestination(for:)` so the tap and
     /// the test cannot drift into two rules. nil for a standalone weekly
     /// goal, which is every row until I2.
+    ///
+    /// **AND THE LADDER, WHEN THERE IS ONE** (task D6). One extra read, and
+    /// only for an athlete whose week is a materialised rung — every other
+    /// week skips it entirely. Its only consumer is Coach's line; the strip's
+    /// numbers still come from `progress` alone.
     private func fetchWeeklyGoal(userID: UUID?) async -> (goal: WeeklyGoal?,
                                                           progress: WeeklyGoalProgress,
                                                           proposal: WeeklyGoalEditorSheet.Proposal?,
-                                                          blockGoalID: UUID?) {
-        guard userID != nil else { return (nil, WeeklyGoalProgress(), nil, nil) }
+                                                          blockGoalID: UUID?,
+                                                          ladder: LadderPageModel?) {
+        guard userID != nil else { return (nil, WeeklyGoalProgress(), nil, nil, nil) }
         let week = WeekMath.weekStartString()
         var standing = await goalRepository.goal(weekStart: week)
         if standing == nil {
             standing = await goalRepository.detectIfMissing(weekStart: week)
         }
-        guard let goal = standing else { return (nil, WeeklyGoalProgress(), nil, nil) }
+        guard let goal = standing else { return (nil, WeeklyGoalProgress(), nil, nil, nil) }
         let progress = await goalRepository.progress(for: goal)
         let block = Self.goalStripDestination(for: goal).ladderGoalID
+        var ladder: LadderPageModel?
+        if let block {
+            ladder = await blockGoalRepository.page(goalID: block)
+        }
         guard goal.source == .user,
               let coach = await goalRepository.propose(weekStart: week) else {
-            return (goal, progress, nil, block)
+            return (goal, progress, nil, block, ladder)
         }
         // The display unit is `ThemeStore`'s, read the way
         // `LiveWeeklyGoalRepository.detect` reads it — the store is
         // MainActor-isolated and this fetch is not.
         let unit = await MainActor.run { ThemeStore.shared.weightUnit }
-        return (goal, progress, coachProposal(user: goal, coach: coach, unit: unit), block)
+        return (goal, progress, coachProposal(user: goal, coach: coach, unit: unit),
+                block, ladder)
     }
 
     /// Coach's suggestion as the editor's own input, or nothing at all when

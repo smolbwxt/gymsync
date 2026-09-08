@@ -448,4 +448,67 @@ final class HomeCompositionTests: XCTestCase {
         XCTAssertEqual(HomeView.goalStripDestination(for: weeklyGoal(goalID: goalID)).ladderGoalID,
                        goalID)
     }
+
+    // MARK: - Coach's line carries the ladder's proposal (task D6)
+    //
+    // Spec §6: "Coach's line on Home (rung (a) of `coachSentence`) carries
+    // ladder proposals: a date move, a target change, a rung Coach would
+    // raise." D6 widens what can PRODUCE rung (a); it does not move the
+    // precedence under it, which is what these assertions pin.
+
+    func testCoachsLinePutsTheBlocksGapAboveTheWeeksDifference() {
+        XCTAssertEqual(
+            HomeView.coachSentence(ladderProposal: "This ladder reaches 218 — move the date?",
+                                   goalProposal: "Coach suggests 15 mi of running this week.",
+                                   todaysRoutine: "Pull A today — take 185 × 8, then we climb.",
+                                   blockWeek: "Week 2 of 6. Three days on the books."),
+            "This ladder reaches 218 — move the date?",
+            "a block-level gap outranks a week-level difference")
+    }
+
+    func testTheShippedPrecedenceIsOtherwiseUnchanged() {
+        XCTAssertEqual(
+            HomeView.coachSentence(ladderProposal: nil,
+                                   goalProposal: "Coach suggests 15 mi of running this week.",
+                                   todaysRoutine: "Pull A today.", blockWeek: "Week 2 of 6."),
+            "Coach suggests 15 mi of running this week.")
+        XCTAssertEqual(
+            HomeView.coachSentence(ladderProposal: nil, goalProposal: nil,
+                                   todaysRoutine: "Pull A today.", blockWeek: "Week 2 of 6."),
+            "Pull A today.")
+        XCTAssertEqual(
+            HomeView.coachSentence(ladderProposal: nil, goalProposal: nil,
+                                   todaysRoutine: nil, blockWeek: "Week 2 of 6."),
+            "Week 2 of 6.")
+        XCTAssertEqual(
+            HomeView.coachSentence(ladderProposal: nil, goalProposal: nil,
+                                   todaysRoutine: nil, blockWeek: nil),
+            "Tell me how the week's going and I'll shape the next one.")
+    }
+
+    func testAReachingLadderProposesNothing() {
+        let page = StubBlockGoalRepository.fixturePage      // reachesMilestone == true
+        XCTAssertNil(HomeView.ladderProposal(from: page),
+                     "Coach proposes a date move only when the ladder cannot make the one set")
+    }
+
+    /// A ladder that falls short IS the proposal — spec §3.5's "on this
+    /// ladder you reach 218 by Oct 18", said once, in Coach's own voice.
+    func testALadderThatFallsShortProposesItsOwnLine() {
+        var page = StubBlockGoalRepository.fixturePage
+        page.reachesMilestone = false
+        page.coachLine = "This ladder reaches 218 — move the date?"
+        XCTAssertEqual(HomeView.ladderProposal(from: page),
+                       "This ladder reaches 218 — move the date?")
+    }
+
+    /// No block at all, and a block whose line is empty, both propose
+    /// nothing: an empty string is not a sentence.
+    func testNoLadderAndNoLineProposeNothing() {
+        XCTAssertNil(HomeView.ladderProposal(from: nil))
+        var silent = StubBlockGoalRepository.fixturePage
+        silent.reachesMilestone = false
+        silent.coachLine = ""
+        XCTAssertNil(HomeView.ladderProposal(from: silent))
+    }
 }
