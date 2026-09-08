@@ -650,8 +650,14 @@ struct GoalMilestoneView: View {
         VStack(alignment: .leading, spacing: 10) {
             liftPicker
             loadStepper(title: "AT", pounds: draft.target.loadLbs ?? 0) { next in
-                draft = GoalMilestoneCopy.applying(draft, loadLbs: next,
-                                                   targetWeightLbs: next)
+                // Both, and they are the same number: `loadLbs` is what "reps
+                // at a load" means, and `targetWeightLbs` is the column every
+                // `lift`-kind reader already looks at (spec §4's mapping puts
+                // `liftRepsAtLoad` on the `lift` kind with the load in
+                // `targetWeightLbs`). Declaration order, because Swift wants
+                // its arguments in the order the parameters were written.
+                draft = GoalMilestoneCopy.applying(draft, targetWeightLbs: next,
+                                                   loadLbs: next)
             }
             stepperRow(title: "REPS", value: draft.target.targetReps ?? 1,
                        suffix: (draft.target.targetReps ?? 1) == 1 ? "REP" : "REPS",
