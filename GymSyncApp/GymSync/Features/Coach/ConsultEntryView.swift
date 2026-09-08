@@ -139,13 +139,23 @@ struct ConsultEntryView: View {
             // disjoint file sets, and merging B is integration's job, not
             // this stream's.
             //
-            // At integration this becomes, verbatim:
+            // At integration this becomes, verbatim — the shape B's own two
+            // call sites already have, so the three lines I1 changes are the
+            // three lines a grep for the marker comment finds:
             //
-            //     _ = try await ProgramBuilder.build(profile: profile,
-            //                                        answers: answers,
-            //                                        catalog: catalog,
-            //                                        userID: userID,
-            //                                        goal: goal)
+            //     _ = try await ProgramBuilder.build(
+            //         profile: profile, answers: answers,
+            //         catalog: catalog, userID: userID,
+            //         goal: goal,
+            //         // I1: swap to LiveBlockGoalRepository (A11)
+            //         blockGoalRepository: StubBlockGoalRepository())
+            //
+            // `blockGoalRepository` HAS NO DEFAULT on B's signature either,
+            // deliberately: `LiveBlockGoalRepository` does not exist until task
+            // A11, and a defaulted stub would have let step 7b run its whole
+            // happy path and write nothing — "no block without a goal" true at
+            // the type level and false in the database. So every call site
+            // names the stub out loud and carries that marker.
             //
             // **`goal`, NOT `LadderMath.detectedGoal(profile:)`.** B4 left
             // that consistency draft at both build call sites as a
