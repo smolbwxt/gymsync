@@ -78,6 +78,79 @@ final class ProgramBuilderGoalTests: XCTestCase {
         XCTAssertEqual(materialised, [goal.id])
     }
 
+    private func exercise(_ id: UUID, _ name: String) -> Exercise {
+        Exercise(id: id, name: name, slug: name.lowercased(),
+                 category: "compound", primaryMuscle: "chest",
+                 secondaryMuscles: [], equipment: "barbell",
+                 defaultUnit: "lbs", demoVideoURL: nil)
+    }
+
+    /// THE BLOCK IS RECORDED AS WHAT IT WAS BUILT AS (review finding 1).
+    ///
+    /// The template name, the summary, the `focus_kind` column and the frozen
+    /// config all used to read `profile.generatorFocus`. The goal moves the
+    /// band for eight of the eleven presets, so a hypertrophy-profile athlete
+    /// chasing a bench milestone would have got a STRENGTH block filed as a
+    /// HYPERTROPHY one — on the pages whose whole job is to say what was built.
+    func testAStrengthGoalOnAHypertrophyAthleteRecordsAStrengthBlock() {
+        let bench = UUID()
+        var profile = TrainingProfile()
+        profile.rankedGoals = [.hypertrophy]
+        XCTAssertEqual(profile.generatorFocus, .hypertrophy,
+                       "the athlete's stored profile says hypertrophy")
+
+        let inputs = profile.generatorInputs(
+            durationWeeks: 8,
+            goal: BlockGoalDraft(metric: .liftOneRepMax,
+                                 target: GoalTarget(exerciseID: bench,
+                                                    targetWeightLbs: 225),
+                                 byDate: nil, preset: .strength))
+        XCTAssertEqual(inputs.focus, .strength, "and the goal moved the band")
+
+        let identity = ProgramBuilder.recordedIdentity(
+            focus: inputs.focus, days: profile.daysPerWeek, duration: 8)
+        XCTAssertEqual(identity.name, "Coach · Strength · 3-day")
+        XCTAssertEqual(identity.summary,
+                       "Generated 8-week strength block — 3 lifting days a week.")
+        XCTAssertEqual(identity.focusKind, "strength",
+                       "program_templates.focus_kind must not say hypertrophy")
+
+        let config = ProgramBuilder.configSnapshot(
+            profile: profile, inputs: inputs, duration: 8,
+            standingRules: [], catalog: [exercise(bench, "Bench Press")])
+        XCTAssertEqual(config["goal"], "Strength",
+                       "the frozen snapshot the ledger renders verbatim")
+        XCTAssertEqual(config["focus lifts"], "Bench Press",
+                       "the goal's own lift reaches the provenance drawer")
+
+        // The bug, spelled out: the profile's focus records a different block.
+        XCTAssertNotEqual(
+            identity,
+            ProgramBuilder.recordedIdentity(focus: profile.generatorFocus,
+                                            days: profile.daysPerWeek, duration: 8))
+    }
+
+    func testAGoalLessBuildStillRecordsExactlyWhatItAlwaysDid() {
+        var profile = TrainingProfile()
+        profile.rankedGoals = [.hypertrophy]
+        let inputs = profile.generatorInputs(durationWeeks: 8)
+        let identity = ProgramBuilder.recordedIdentity(
+            focus: inputs.focus, days: profile.daysPerWeek, duration: 8)
+        XCTAssertEqual(identity.name, "Coach · Hypertrophy · 3-day")
+        XCTAssertEqual(identity.focusKind, "hypertrophy")
+        XCTAssertEqual(
+            identity,
+            ProgramBuilder.recordedIdentity(focus: profile.generatorFocus,
+                                            days: profile.daysPerWeek, duration: 8),
+            "with no goal the two readings agree, which is why this went unseen")
+    }
+
+    func testWeightLossKeepsTheColumnsOwnSpelling() {
+        let identity = ProgramBuilder.recordedIdentity(focus: .weightLoss, days: 4, duration: 6)
+        XCTAssertEqual(identity.focusKind, "weight_loss")
+        XCTAssertEqual(identity.name, "Coach · Weight Loss · 4-day")
+    }
+
     func testTheInterimDetectedGoalMovesNothingTheGeneratorReads() {
         // Until Stream C hands the door's own milestone to `build`, both call
         // sites pass `LadderMath.detectedGoal`. It must not quietly rebuild

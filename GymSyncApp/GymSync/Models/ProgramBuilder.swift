@@ -163,7 +163,27 @@ enum ProgramBuilder {
 
         // ── 3. Profile ───────────────────────────────────────────────
         var profile = loaded
-        let focus = profile.generatorFocus
+        // THE BLOCK IS RECORDED AS WHAT IT WAS BUILT AS.
+        //
+        // This one binding stamps everything the block is KNOWN by: the
+        // template's name and summary, the `program_templates.focus_kind`
+        // column, and — through `configSnapshot` — the `goal` line of the
+        // frozen config the provenance drawer and the AAR payload render
+        // verbatim. It used to read `profile.generatorFocus`, which is the
+        // PROFILE'S focus, and the goal moves the band for eight of the eleven
+        // presets: an athlete whose stored profile says hypertrophy, who names
+        // "bench 225 by Oct 18", would have got a block generated in the
+        // STRENGTH band and filed under HYPERTROPHY everywhere — wrong name,
+        // wrong column, and a ledger line contradicting the page whose whole
+        // job is to say truthfully what was built.
+        //
+        // Latent only because both doors pass the `.consistency` placeholder
+        // today; it would have gone live silently the day Stream C landed a
+        // real goal, and `build` is deliberately not unit-tested end to end, so
+        // nothing would have caught it. `inputs` is in scope from step 2 and
+        // generation has already happened, so this is the same value the
+        // generator actually ran on.
+        let focus = inputs.focus
         let days = profile.daysPerWeek
         var carryover = profile.carryover ?? TrainingProfile.Carryover()
         carryover.blockGoalHistory.append(profile.blockGoal)
@@ -222,12 +242,12 @@ enum ProgramBuilder {
         }
 
         // ── 7. Template row → enroll → plan ──────────────────────────
-        let focusKind = focus == .weightLoss ? "weight_loss" : focus.rawValue
+        let identity = recordedIdentity(focus: focus, days: days, duration: duration)
         let weekPlan = ProgramGenerator.weekSummaries(program)
         let savedRow = try? await ProgramTemplateRepository.saveGenerated(
-            name: "Coach · \(label(for: focus.rawValue)) · \(days)-day",
-            summary: "Generated \(duration)-week \(label(for: focus.rawValue).lowercased()) block — \(days) lifting days a week.",
-            focusKind: focusKind,
+            name: identity.name,
+            summary: identity.summary,
+            focusKind: identity.focusKind,
             sessionsPerWeek: days,
             durationWeeks: duration,
             weeks: weekPlan)
@@ -236,6 +256,7 @@ enum ProgramBuilder {
             enrollment = await enroll(row: savedRow, weeks: weekPlan, program: program,
                                       userID: userID,
                                       config: configSnapshot(profile: profile,
+                                                             inputs: inputs,
                                                              duration: duration,
                                                              standingRules: standingRules,
                                                              catalog: all))
@@ -354,18 +375,70 @@ enum ProgramBuilder {
             config: config)
     }
 
+    /// What the block is FILED as — the template row's name and summary and
+    /// the `program_templates.focus_kind` column.
+    ///
+    /// Three strings off ONE focus, in one place, so they cannot disagree with
+    /// each other or with the block. `focus` is `inputs.focus` at the call
+    /// site: the band the generator actually ran on, goal included.
+    ///
+    /// Internal and pure so `ProgramBuilderGoalTests` can assert it — `build`
+    /// does eleven network reads and is not unit-testable, which is exactly why
+    /// the profile's focus sat in these three strings unnoticed.
+    struct RecordedIdentity: Equatable, Sendable {
+        let name: String
+        let summary: String
+        /// The column's own spelling — `weightLoss` is `weight_loss` there.
+        let focusKind: String
+    }
+
+    static func recordedIdentity(focus: GeneratorScience.Focus,
+                                 days: Int, duration: Int) -> RecordedIdentity {
+        let named = label(for: focus.rawValue)
+        return RecordedIdentity(
+            name: "Coach · \(named) · \(days)-day",
+            summary: "Generated \(duration)-week \(named.lowercased()) block — \(days) lifting days a week.",
+            focusKind: focus == .weightLoss ? "weight_loss" : focus.rawValue)
+    }
+
     /// The profile's state at the moment of the build, frozen onto the
     /// enrollment. Human-readable on purpose — the provenance drawer and
     /// the AAR payload render these lines verbatim.
-    private static func configSnapshot(profile: TrainingProfile,
-                                       duration: Int,
-                                       standingRules: [TrainingRule],
-                                       catalog: [Exercise]) -> [String: String] {
+    ///
+    /// **`inputs`, NOT JUST `profile`, FOR THE TWO LINES THE GOAL MOVES.**
+    /// `goal` and `focus lifts` describe the block that was BUILT, and both are
+    /// goal-steered: the band for eight of the eleven presets, and the focus
+    /// lift for any goal naming one. Reading them off the profile would put a
+    /// line in the frozen snapshot that contradicts the block sitting under it,
+    /// on the one page whose job is to say truthfully what was built. Every
+    /// other line here is a profile fact and still reads from the profile.
+    ///
+    /// The MILESTONE itself is deliberately absent: it lives on the
+    /// `block_goals` row, and the ladder page and the ledger word it through
+    /// `LadderReadout`. Spelling it a second time here would make the frozen
+    /// config a rival source of truth for the same sentence.
+    ///
+    /// Internal rather than private so `ProgramBuilderGoalTests` can assert the
+    /// recorded identity directly — `build` itself does eleven network reads
+    /// and is not unit-testable, which is exactly why the wrong focus sat here
+    /// unnoticed.
+    static func configSnapshot(profile: TrainingProfile,
+                               inputs: ProgramGenerator.Inputs,
+                               duration: Int,
+                               standingRules: [TrainingRule],
+                               catalog: [Exercise]) -> [String: String] {
         var config: [String: String] = [:]
-        config["goal"] = label(for: profile.generatorFocus.rawValue)
-        if let ids = profile.focusExerciseIDs, !ids.isEmpty {
-            let names = ids.compactMap { id in catalog.first { $0.id == id }?.name }
-            if !names.isEmpty { config["focus lifts"] = names.joined(separator: ", ") }
+        config["goal"] = label(for: inputs.focus.rawValue)
+        // `inputs.focusExerciseIDs` is already the profile's own focus lifts
+        // UNION the goal's, assembled by `generatorInputs` — the exact set
+        // selection treated as focus. SORTED, because it is a `Set` and a
+        // provenance line that reorders itself between two identical builds is
+        // a line nobody can diff.
+        if !inputs.focusExerciseIDs.isEmpty {
+            let names = inputs.focusExerciseIDs.compactMap { id in
+                catalog.first { $0.id == id }?.name
+            }
+            if !names.isEmpty { config["focus lifts"] = names.sorted().joined(separator: ", ") }
         }
         config["days per week"] = "\(profile.daysPerWeek)"
         config["duration"] = "\(duration) weeks"
