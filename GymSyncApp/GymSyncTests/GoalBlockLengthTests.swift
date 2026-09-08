@@ -112,6 +112,32 @@ final class GoalBlockLengthTests: XCTestCase {
             + "Nov 15 is the date I can build to.")
     }
 
+    /// The pin above has to be REAL, not a runner default (review finding 3).
+    ///
+    /// `dateFormat = "MMM d"` takes its month symbols from `formatter.locale`,
+    /// and setting `formatter.calendar` does not touch it — so until
+    /// `reachSentence` set the locale too, every exact-string assertion in this
+    /// file was green because GitHub's simulators boot `en_US`, not because the
+    /// test controlled anything. Two locales, two sentences, is the proof.
+    func testTheSentenceFollowsTheCalendarsLocaleAndNotTheRunners() {
+        var french = calendar
+        french.locale = Locale(identifier: "fr_FR")
+        let answer = reach(liftRungs((0..<8).map { 170 + $0 * 5 }), milestone: 225,
+                           byDate: day(10, 18), weeklyGain: 5)
+        let english = GoalBlockLength.reachSentence(
+            milestoneText: "Bench 225", byDate: day(10, 18),
+            reach: answer, calendar: calendar)
+        let francais = GoalBlockLength.reachSentence(
+            milestoneText: "Bench 225", byDate: day(10, 18),
+            reach: answer, calendar: french)
+        XCTAssertNotNil(francais)
+        XCTAssertNotEqual(english, francais,
+                          "before the fix both read whatever locale the runner booted")
+        XCTAssertEqual(english?.contains("Oct 18"), true)
+        XCTAssertEqual(francais?.contains("Oct 18"), false,
+                       "a French athlete reads French months in Coach's own sentence")
+    }
+
     func testALadderThatReachesSaysNothingAtAll() {
         let answer = reach(liftRungs([205, 215, 225]), milestone: 225,
                            byDate: day(10, 18), weeklyGain: 5)

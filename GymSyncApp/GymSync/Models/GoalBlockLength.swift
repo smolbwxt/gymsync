@@ -99,6 +99,17 @@ extension GoalBlockLength {
         // dates. One line here, and the sentence names the day the arithmetic
         // used.
         formatter.timeZone = calendar.timeZone
+        // AND THE CALENDAR'S LOCALE, for the identical reason one line up.
+        // `dateFormat = "MMM d"` takes its month SYMBOLS from
+        // `formatter.locale`, which setting `formatter.calendar` does not
+        // touch. Before this line the three tests that pin `Oct 18` and
+        // `Nov 15` character for character were green by RUNNER DEFAULT rather
+        // than by anything they controlled — they set `calendar.locale` and the
+        // formatter ignored it — and would have gone red on any non-English
+        // simulator or developer Mac. `.current` when the calendar names no
+        // locale, which is every production call: the athlete reads their own
+        // months, and only a test hands this a pinned one.
+        formatter.locale = calendar.locale ?? .current
         formatter.dateFormat = "MMM d"
         let asked = byDate.map { " by \(formatter.string(from: $0))" } ?? ""
         let head = "\(milestoneText)\(asked) needs more than this block can safely give"
