@@ -227,5 +227,21 @@
     "frame": 92,
     "title": "Calendar & scheduling page",
     "note": "two captures from this one id: app-calendar-scheduling (the header, month and week) and app-calendar-scheduling-2 (scrolled to the bottom: block row, campaign row, pinned primary). The -2 attachment has no frame-map entry of its own by design."
+  },
+  "ladder-on-track": {
+    "frame": 97,
+    "title": "Ladder page - on track"
+  },
+  "ladder-behind": {
+    "frame": 98,
+    "title": "Ladder page - the ladder falls short"
+  },
+  "ladder-met": {
+    "frame": 99,
+    "title": "Ladder page - milestone met"
+  },
+  "home-goal-strip-block": {
+    "frame": 100,
+    "title": "Weekly goal strip - the block kicker"
   }
 }
