@@ -55,6 +55,28 @@ final class GoalGeneratorInputTests: XCTestCase {
         XCTAssertEqual(inputs.focusMuscles, ["chest"])
     }
 
+    /// A muscle goal never inherits somebody else's focus (review finding 6).
+    ///
+    /// The branch used to handle exactly one group and fall through in silence
+    /// otherwise, so a `focusMuscles` stored from a PREVIOUS block survived into
+    /// a block the goal wanted wider — or wanted unfocused.
+    func testAMuscleGoalNeverInheritsALastBlocksFocusMuscle() {
+        var profile = TrainingProfile()
+        profile.focusMuscles = ["arms"]          // last block's focus, still stored
+        XCTAssertEqual(profile.generatorInputs(durationWeeks: 6).focusMuscles, ["arms"],
+                       "with no goal the stored focus still stands, as it always has")
+
+        let two = profile.generatorInputs(
+            durationWeeks: 6,
+            goal: draft(.muscle, target: GoalTarget(muscleTargets: ["chest": 16,
+                                                                    "back": 18])))
+        XCTAssertEqual(two.focusMuscles, ["chest", "back"])
+
+        let none = profile.generatorInputs(durationWeeks: 6, goal: draft(.muscle))
+        XCTAssertNil(none.focusMuscles,
+                     "a goal naming no group must not silently keep one")
+    }
+
     // MARK: - B3, cardio and mobility placement
 
     func testAnEnduranceGoalBuysCardioDaysAndMinutesInsideTheClamp() {

@@ -2235,9 +2235,20 @@ enum GoalGeneratorMapping {
                 for (group, sets) in goal.target.muscleTargets ?? [:] {
                     inputs.volumeTargets[group] = sets
                 }
-            } else if let targets = goal.target.muscleTargets, targets.count == 1,
-                      let group = targets.keys.first {
-                inputs.focusMuscles = [group]
+            } else {
+                // EVERY GROUP THE GOAL NAMES, and `nil` when it names none.
+                //
+                // This used to handle `targets.count == 1` and fall through
+                // silently otherwise, which left a `focusMuscles` carried over
+                // from a PREVIOUS block in place — narrowing a block the goal
+                // wanted wider, in the one branch of this function that said
+                // nothing about what it did. Spec §2.3 gives Muscle a single
+                // group, so the one-group case is the same value it always was;
+                // this just stops a two-group goal from inheriting somebody
+                // else's focus, and a goal with no groups at all from silently
+                // keeping one.
+                let named = goal.target.muscleTargets.map { Set($0.keys) } ?? []
+                inputs.focusMuscles = named.isEmpty ? nil : named
             }
         }
 
