@@ -130,12 +130,34 @@ struct ConsultEntryView: View {
         profile = outcome.profile
         if let ruleTrouble = outcome.ruleTrouble { onRuleTrouble(ruleTrouble) }
         do {
-            // ── THE LINE STREAM B'S B4 CHANGES ───────────────────────────
-            // It becomes `ProgramBuilder.build(profile:answers:catalog:
-            // userID:goal: goal)`, and `onBuilt` is handed the id of the
-            // `block_goals` row that build wrote. `goal` is already in scope
-            // and already the athlete's own milestone; nothing else here
-            // moves.
+            // ── THE ONE LINE INTEGRATION CHANGES ─────────────────────────
+            //
+            // Stream B is done (`origin/feat/goal-first-generator`, 2515c0f)
+            // and `ProgramBuilder.build` now REQUIRES `goal:`. It is not
+            // passed here because that parameter does not exist on this
+            // branch and `ProgramBuilder.swift` is B's file — streams touch
+            // disjoint file sets, and merging B is integration's job, not
+            // this stream's.
+            //
+            // At integration this becomes, verbatim:
+            //
+            //     _ = try await ProgramBuilder.build(profile: profile,
+            //                                        answers: answers,
+            //                                        catalog: catalog,
+            //                                        userID: userID,
+            //                                        goal: goal)
+            //
+            // **`goal`, NOT `LadderMath.detectedGoal(profile:)`.** B4 left
+            // that consistency draft at both build call sites as a
+            // placeholder "for the call sites Stream C has not reached yet".
+            // This IS that call site, and it has now been reached: the
+            // athlete's own milestone is in scope as `goal`. The other
+            // placeholder lived in `CoachHomeView.buildFromConsult`, which
+            // task C4 deleted outright, so no production path can ship the
+            // stand-in.
+            //
+            // `onBuilt` is then handed the id of the `block_goals` row the
+            // build wrote instead of `nil`.
             _ = try await ProgramBuilder.build(profile: profile, answers: answers,
                                                catalog: catalog, userID: userID)
             onBuilt(nil)
