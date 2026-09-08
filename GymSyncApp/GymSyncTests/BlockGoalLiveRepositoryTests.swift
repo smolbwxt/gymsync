@@ -14,12 +14,28 @@ import XCTest
 /// (`ModerationRepositoryTests.swift:20-27`). Registering BEFORE the write
 /// means a throw mid-test still leaves nothing behind.
 ///
-/// THESE TESTS BORROW THE CI ACCOUNT'S ACTIVE BLOCK rather than creating one,
-/// and skip when there is none: `one_active_program_per_user` is a unique index,
-/// so a test that enrolled would fight whatever block the account already has.
-/// They skip again when that block already carries a goal, because
-/// `UNIQUE (enrollment_id)` is owner decision 2 and a second one is impossible
-/// by design rather than by accident.
+/// **EACH TEST BUILDS ITS OWN BLOCK, AND THAT BLOCK IS ENDED BEFORE IT EVER
+/// EXISTS AS AN ACTIVE ONE.** The first version of this file borrowed the CI
+/// account's active enrollment and skipped when there was none — and there
+/// never is: run 34185975352 skipped all three tests with "no active block on
+/// the CI account", which left the whole of `LiveBlockGoalRepository`
+/// compile-checked and behaviour-unchecked.
+///
+/// The fixture is inserted DIRECTLY rather than through
+/// `ProgramRepository.enroll`, and that is the whole point.
+///
+///   * `enroll` starts training TODAY. `build-test` and the screenshot job run
+///     in PARALLEL on the SAME account (both read `TEST_USER_EMAIL`), so an
+///     enrollment that is active for even one round trip could reach
+///     `app-tab-home` — which is a frozen, owner-approved frame (global
+///     constraint 8). A row written with `ended_at` already set is never active
+///     and `ProgramRepository.active()` can never see it.
+///   * `one_active_program_per_user` is a PARTIAL unique index
+///     (`WHERE ended_at IS NULL`), so an ended block never contends with
+///     whatever the account may have.
+///
+/// `UNIQUE (enrollment_id)` is then satisfied for free: the block is new, so
+/// nothing can already own a goal on it.
 final class BlockGoalLiveRepositoryTests: XCTestCase {
 
     private let repository = LiveBlockGoalRepository()
@@ -40,16 +56,51 @@ final class BlockGoalLiveRepositoryTests: XCTestCase {
         return weekStart
     }
 
-    /// The account's active block, or a skip. Also skips when that block
-    /// already has a goal — see the type's own comment.
-    private func borrowedBlock() async throws -> ProgramEnrollment {
-        let active = try? await ProgramRepository.active()
-        try XCTSkipIf(active == nil, "no active block on the CI account")
-        let block = try XCTUnwrap(active)
-        let existing = await repository.goal(enrollmentID: block.id)
-        try XCTSkipIf(existing != nil,
-                      "this block already carries a goal — UNIQUE (enrollment_id)")
-        return block
+    /// A block of this test's own, ended before it ever existed as an active
+    /// one. See the type's comment for why it is inserted directly.
+    ///
+    /// The delete is registered BEFORE the insert, like every other write here,
+    /// and it cascades: `block_goals.enrollment_id` is `ON DELETE CASCADE`, and
+    /// the rungs cascade from the goal, so one delete cleans all three tables.
+    private func temporaryEndedBlock() async throws -> ProgramEnrollment {
+        // snake_case field names rather than `CodingKeys`, matching
+        // `VolumeTargetRepository.set`'s own local `Upsert` — a throwaway DTO
+        // for one insert does not need the ceremony.
+        struct EndedEnrollment: Encodable {
+            let id: UUID
+            let user_id: UUID
+            let template_slug: String
+            let focus: ProgramFocus
+            let baseline: [String: Double]
+            let started_on: String
+            let weeks: Int
+            let ended_at: String
+            let ended_reason: String
+        }
+
+        let userID = await SupabaseService.shared.currentUserID()
+        let owner = try XCTUnwrap(userID)
+        let id = UUID()
+        addTeardownBlock {
+            _ = try? await SupabaseService.shared.client
+                .from("program_enrollments")
+                .delete()
+                .eq("id", value: id)
+                .execute()
+        }
+
+        // 2099 throughout, and `ended_at` is set in the INSERT itself — there is
+        // no moment at which this row is an active block.
+        let rows: [ProgramEnrollment] = try await SupabaseService.shared.client
+            .from("program_enrollments")
+            .insert(EndedEnrollment(
+                id: id, user_id: owner, template_slug: "march-to-1rm",
+                focus: ProgramFocus(), baseline: [:],
+                started_on: "2099-01-04", weeks: 8,
+                ended_at: "2099-03-01T00:00:00Z", ended_reason: "completed"))
+            .select()
+            .execute().value
+        return try XCTUnwrap(rows.first)
     }
 
     private func goal(_ id: UUID, owner: UUID, enrollmentID: UUID,
@@ -66,7 +117,7 @@ final class BlockGoalLiveRepositoryTests: XCTestCase {
         try await TestAuth.signInIfConfigured()
         let userID = await SupabaseService.shared.currentUserID()
         let owner = try XCTUnwrap(userID)          // never XCTUnwrap(await …)
-        let block = try await borrowedBlock()
+        let block = try await temporaryEndedBlock()
 
         let goalID = temporaryGoal(UUID())
         // 2099, like every other row a live test writes here.
@@ -122,7 +173,7 @@ final class BlockGoalLiveRepositoryTests: XCTestCase {
         try await TestAuth.signInIfConfigured()
         let userID = await SupabaseService.shared.currentUserID()
         let owner = try XCTUnwrap(userID)
-        let block = try await borrowedBlock()
+        let block = try await temporaryEndedBlock()
 
         let firstID = temporaryGoal(UUID())
         // The second id is registered too — if the database ever stopped
@@ -147,7 +198,7 @@ final class BlockGoalLiveRepositoryTests: XCTestCase {
         try await TestAuth.signInIfConfigured()
         let userID = await SupabaseService.shared.currentUserID()
         let owner = try XCTUnwrap(userID)
-        let block = try await borrowedBlock()
+        let block = try await temporaryEndedBlock()
 
         let goalID = temporaryGoal(UUID())
         let week = temporaryWeek("2099-04-05")
@@ -200,7 +251,7 @@ final class BlockGoalLiveRepositoryTests: XCTestCase {
         try await TestAuth.signInIfConfigured()
         let userID = await SupabaseService.shared.currentUserID()
         let owner = try XCTUnwrap(userID)
-        let block = try await borrowedBlock()
+        let block = try await temporaryEndedBlock()
 
         let goalID = temporaryGoal(UUID())
         let week = temporaryWeek("2099-05-03")
