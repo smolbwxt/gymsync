@@ -12,6 +12,11 @@ import SwiftUI
 // ConsultEntryView, which persists the consult BEFORE it builds. This
 // host is now only the landing: the build finishes, the schedule page is
 // pushed.
+//
+// Goal-first programming (plan task C3): the offer opens
+// `GoalFirstBuildFlow` rather than the consult directly, so the onboarding
+// build begins with the goal like every other build (spec §5.4). The
+// landing is unchanged until Stream D's ladder page lands; I1 swaps it.
 struct CoachOfferFlow: View {
     @Environment(\.gsTheme) private var theme
 
@@ -19,7 +24,7 @@ struct CoachOfferFlow: View {
     @State private var landed = false
 
     var body: some View {
-        ConsultEntryView(onBuilt: { landed = true })
+        GoalFirstBuildFlow(onBuilt: { _ in landed = true })
             .background(theme.bg)
             // A PUSH: the flow is this stack's root, so there is nothing
             // to swap the landing into. The athlete lands on their

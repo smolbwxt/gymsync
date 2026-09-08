@@ -20,10 +20,34 @@ struct ConsultEntryView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.gsTheme) private var theme
 
-    /// The build landed. The host decides where the athlete goes — a
-    /// push, a route swap, a sheet dismissal — because that differs per
-    /// host and is the one thing this view must not assume.
-    var onBuilt: () -> Void
+    /// THE MILESTONE THIS BLOCK IS BEING BUILT FOR (spec §5.3, plan task C3).
+    ///
+    /// Non-optional, because "no block without a goal" is owner decision 4:
+    /// the only way to reach this screen is through the goal screen and the
+    /// milestone card (`GoalFirstBuildFlow`), so by the time a build starts
+    /// there is always a milestone to build to.
+    ///
+    /// **IT IS NOT YET AN ARGUMENT TO `ProgramBuilder.build`.** That
+    /// parameter is Stream B's (task B4: `build(profile:answers:catalog:
+    /// userID:goal:)`, which also makes it required and load-bearing), and
+    /// `ProgramBuilder.swift` is B's file — this stream does not touch it.
+    /// Until B4 lands the goal is carried to the call site below and no
+    /// further; `finish()` marks the exact line B4 changes. The consequence
+    /// while both streams are in flight is that a build on THIS branch still
+    /// generates the block it generated before, which is the designed
+    /// intermediate state: B4's step 4 fixes this call site.
+    let goal: BlockGoalDraft
+
+    /// The build landed, with the id of the goal row it wrote. The host
+    /// decides where the athlete goes — a push, a route swap, a sheet
+    /// dismissal — because that differs per host and is the one thing this
+    /// view must not assume.
+    ///
+    /// The id is what lets a host push the ladder page (spec §6) for the goal
+    /// just written. It is `nil` until B4 writes the row, and every host
+    /// currently ignores it and pushes `ProgramScheduleView` exactly as
+    /// today; integration task I1 swaps that destination, one line per host.
+    var onBuilt: (UUID?) -> Void
 
     private enum Phase {
         case loading
@@ -95,9 +119,15 @@ struct ConsultEntryView: View {
             answers, to: profile, catalog: catalog, userID: userID)
         profile = outcome.profile
         do {
+            // ── THE LINE STREAM B'S B4 CHANGES ───────────────────────────
+            // It becomes `ProgramBuilder.build(profile:answers:catalog:
+            // userID:goal: goal)`, and `onBuilt` is handed the id of the
+            // `block_goals` row that build wrote. `goal` is already in scope
+            // and already the athlete's own milestone; nothing else here
+            // moves.
             _ = try await ProgramBuilder.build(profile: profile, answers: answers,
                                                catalog: catalog, userID: userID)
-            onBuilt()
+            onBuilt(nil)
         } catch {
             trouble = ErrorMapping.map(error).errorDescription
         }

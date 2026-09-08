@@ -301,10 +301,8 @@ struct BlockCalendarView: View {
                 // captured enrollment/weeks stay stale - acceptable one
                 // level back - but the athlete's next screen is the block
                 // they just built, not the one they replaced.
-                ConsultEntryView(onBuilt: { freshScheduleAfterBuild = true })
+                GoalFirstBuildFlow(onBuilt: { _ in freshScheduleAfterBuild = true })
                     .background(theme.bg)
-                    .navigationTitle("Plan the next block")
-                    .navigationBarTitleDisplayMode(.inline)
             } label: {
                 Text("PLAN THE NEXT BLOCK")
                     .font(GSFont.bold(13, relativeTo: .subheadline))
