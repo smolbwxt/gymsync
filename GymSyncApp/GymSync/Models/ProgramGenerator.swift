@@ -201,6 +201,19 @@ enum ProgramGenerator {
         /// straight pass-through: nobody has a target until the recovery
         /// probe has told the search something.
         var volumeTargets: [String: Int] = [:]
+        /// The block's goal (spec §5.3). THE BLOCK EXISTS TO SERVE IT.
+        ///
+        /// A DRAFT, not a `BlockGoal`: the goal is composed at the door and the
+        /// enrollment does not exist until `ProgramBuilder` writes it, so the
+        /// only shape available at generation time is the one without an
+        /// enrollment id (`BlockGoalDraft`'s own doc comment).
+        ///
+        /// Optional here and REQUIRED at `ProgramBuilder.build` (task B4). The
+        /// generator is a pure function with golden tests that predate goals
+        /// and must keep passing byte for byte; the DOOR is where "no block
+        /// without a goal" is enforced, because the door is the only way a
+        /// block gets built.
+        var goal: BlockGoalDraft? = nil
     }
 
     struct CatalogExercise {
@@ -312,6 +325,23 @@ enum ProgramGenerator {
     // MARK: Pipeline
 
     static func generate(inputs: Inputs, catalog: [CatalogExercise]) -> Program {
+        // THE GOAL'S BAND, before anything reads `focus` (task B1, spec §5.3).
+        //
+        // FIRST LINE, so the split, the slot templates, selection scoring and
+        // the prescription all ride the goal's focus rather than the profile's
+        // `blockGoal`. `TrainingProfile.generatorInputs(…, goal:)` already
+        // applies the same mapping, so for the door's own path this is a
+        // no-op; it is here for the call site that builds `Inputs` by hand and
+        // sets `goal` directly, which would otherwise carry a goal the
+        // generator never acted on.
+        //
+        // A GOAL-LESS BUILD IS UNTOUCHED — `focus(for:)` is never consulted
+        // when `goal` is nil — which is what keeps the golden tests byte
+        // identical.
+        var inputs = inputs
+        if let goal = inputs.goal, let goalFocus = GoalGeneratorMapping.focus(for: goal) {
+            inputs.focus = goalFocus
+        }
         // Band override (power_rfd) beats the focus table for prescription
         // SHAPE only — split, slots, and scoring still ride the focus.
         let band = GeneratorScience.applyRepAppetite(
@@ -2097,6 +2127,101 @@ enum ProgramGenerator {
                 reps: main.repsLow,
                 isDeload: week.isDeload,
                 note: week.note)
+        }
+    }
+}
+
+// MARK: - GoalGeneratorMapping
+//
+// Spec §5.3: `ProgramGenerator.Inputs` gains `goal`, "which sets the focus
+// band and the focus exercise where the goal names one, the block length
+// from the date, and the conditioning / mobility placement for the ramp
+// metrics."
+//
+// THREE LEVERS AND NO MORE (task B1). The generator's science and its timing
+// constants are not this feature's to move: a goal steers WHICH band, WHICH
+// lift and WHICH muscles, and — through `applyPlacement` (task B3) — where
+// the cardio and the mobility go. Everything else about the block is the
+// same machinery it was before goals existed, which is what lets the golden
+// tests stand unchanged.
+//
+// FILE SCOPE, not nested in `ProgramGenerator`: the mapping is consumed by
+// `TrainingProfile.generatorInputs` and by the door, neither of which should
+// have to spell a namespace to ask what band a goal wants. PURE — no clock,
+// no catalog, no network.
+enum GoalGeneratorMapping {
+
+    /// The training emphasis this goal asks for, or nil for the two presets
+    /// that deliberately ask for none.
+    ///
+    /// AN OPTIONAL RETURN RATHER THAN A DEFAULT, so "no override" is a value
+    /// the caller has to handle rather than a silent fall-through: for
+    /// `consistency` and `recovery` the PROFILE'S own focus stands. Showing
+    /// up more often is not a training emphasis, and a recovery block's shape
+    /// is its cardio and mobility placement (`applyPlacement`), not a rep
+    /// range.
+    ///
+    /// KEYED ON THE PRESET, which is the table spec §2.3 actually writes. A
+    /// goal with no preset is Coach-guided (spec §2.4, phase 2) and gets no
+    /// override: until Coach can name a band, the profile's is the only
+    /// honest answer.
+    static func focus(for goal: BlockGoalDraft) -> GeneratorScience.Focus? {
+        switch goal.preset {
+        case .strength, .repStrength:               return .strength
+        case .muscle, .maintenance, .volume:        return .hypertrophy
+        case .endurance, .conditioning, .benchmark: return .conditioning
+        case .bodyComposition:                      return .weightLoss
+        case .consistency, .recovery:               return nil
+        case .none:                                 return nil
+        }
+    }
+
+    /// Fold `goal` into `inputs` — the whole of what a goal moves.
+    ///
+    /// Called LAST by `TrainingProfile.generatorInputs`, after every
+    /// profile-derived field and after the standing-rule loop, so the goal is
+    /// the strongest voice in the room. That ordering is the design, not an
+    /// accident of where the line sits.
+    static func apply(_ goal: BlockGoalDraft, to inputs: inout ProgramGenerator.Inputs) {
+        inputs.goal = goal
+
+        // 1. The band.
+        if let goalFocus = focus(for: goal) { inputs.focus = goalFocus }
+
+        // 2. The focus lift. A focus lift WINS its main pattern slot outright
+        //    before scoring, which is exactly the promise a "bench 225" goal
+        //    makes.
+        //
+        //    `formUnion`, NEVER assignment: the consult's own focus lifts and
+        //    `RuleIntent.swap`'s starred lift are already in this set, and an
+        //    assignment would erase them — the precise defect
+        //    `TrainingProfile.generatorInputs` records against
+        //    `excludedExerciseIDs`.
+        if goal.metric == .liftOneRepMax || goal.metric == .liftRepsAtLoad,
+           let liftID = goal.target.exerciseID {
+            inputs.focusExerciseIDs.formUnion([liftID])
+        }
+
+        // 3. The muscle group.
+        if goal.metric == .weeklyMuscleSets {
+            if goal.preset == .maintenance {
+                // OWNER DECISION 9: Maintenance is every major group, and nil
+                // is already the generator's own spelling of "all muscle
+                // groups" (`Inputs.focusMuscles`) — the owner's "hit all and
+                // don't think about it again". Set explicitly rather than
+                // left alone, because a profile carrying a stored focus
+                // muscle from a previous block would otherwise narrow a
+                // maintenance block to one group.
+                inputs.focusMuscles = nil
+                // Seed the recommended numbers so `balanceWeeklyVolume`
+                // balances toward THEM rather than toward the band.
+                for (group, sets) in goal.target.muscleTargets ?? [:] {
+                    inputs.volumeTargets[group] = sets
+                }
+            } else if let targets = goal.target.muscleTargets, targets.count == 1,
+                      let group = targets.keys.first {
+                inputs.focusMuscles = [group]
+            }
         }
     }
 }
