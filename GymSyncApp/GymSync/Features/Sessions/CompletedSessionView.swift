@@ -79,7 +79,10 @@ struct CompletedSessionView: View {
             VStack(alignment: .leading, spacing: 0) {
 
                 // ── HEADER ────────────────────────────────────────────────
+                // 16 pt inset (accent-discipline sweep 2026-09-06): the header
+                // is a raised object now, not full-bleed page chrome.
                 headerSection
+                    .padding(.horizontal, 16)
                     .padding(.bottom, 14)
 
                 // Full-screen spinner only while the participant list is
@@ -203,18 +206,29 @@ struct CompletedSessionView: View {
 
     // MARK: - Header
 
+    // Accent discipline (design language §1/§2, 2026-09-06): the full-bleed
+    // accent slab becomes the app's static extruded card — an object, not
+    // page chrome — and the ink inverts. Every number and copy line is
+    // unchanged.
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
+                    // neutral800, not neutral500 — the same raised3DFace
+                    // contrast rule GSComponents' voice-connected toast and
+                    // coach mark already follow. neutral500 measures 2.13:1 on
+                    // Onyx against this face; neutral800 measures 8.91:1, the
+                    // only neutral clearing WCAG AA (4.5:1) on every palette.
+                    // These runs are the smallest type on the card, so the
+                    // large-text 3:1 relaxation does not apply.
                     Text("DURATION")
                         .font(GSFont.bold(10, relativeTo: .caption2))
                         .tracking(1.4)
-                        .foregroundStyle(theme.bg.opacity(0.85))
+                        .foregroundStyle(theme.neutral800)
 
                     Text(durationString)
                         .font(.custom("Archivo-Bold", size: 34).monospacedDigit())
-                        .foregroundStyle(theme.bg)
+                        .foregroundStyle(theme.text)
                         .lineLimit(1)
                 }
 
@@ -229,27 +243,40 @@ struct CompletedSessionView: View {
                         Text("Edit")
                             .font(GSFont.bold(12, relativeTo: .caption))
                     }
-                    .foregroundStyle(theme.bg)
+                    .foregroundStyle(theme.text)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
-                    .frame(minHeight: 44)
-                    .background(theme.bg.opacity(0.15))
+                    // 37 pt face + the style's 7 pt lip = the same 44 pt
+                    // footprint this control had, the way GSPrimaryButtonStyle
+                    // documents the floor for extruded controls.
+                    .frame(minHeight: 44 - 7)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                // Review B1 F9: T1.7's `bg.opacity(0.15) -> theme.surface`
+                // mapping gave this tappable a face DARKER than the raised
+                // header it sits on (onyx: surface #16181D under
+                // raised3DFace #2A303A), so it read as a recess — and design
+                // language §1 forbids `surface` as a face outright. It is the
+                // sinking raised pair now: the style paints face and lip, so
+                // the label sheds its own fill (a flat fill over the face
+                // would hide the extrusion) and keeps its 44 pt footprint as
+                // face + lip.
+                .buttonStyle(.gs3D(face: theme.raised3DFace, lip: theme.raised3DLip,
+                                   cornerRadius: GSMetrics.radiusSm))
             }
 
             if liveSession.durationWasEdited {
                 Text(auditLineText)
                     .font(GSFont.body(11, relativeTo: .caption))
                     .italic()
-                    .foregroundStyle(theme.bg.opacity(0.8))
+                    // 11 pt on a raised face — see the neutral800 note above.
+                    .foregroundStyle(theme.neutral800)
                     .padding(.top, 2)
             }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.accent)
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd, lipHeight: 7)
     }
 
     // MARK: - Aggregate stats row
@@ -306,45 +333,22 @@ struct CompletedSessionView: View {
 
     // MARK: - Participant row
 
+    // The shared `GSLeaderboardRow` (DesignSystem/GSComponents.swift) — the
+    // local rank/initials-tile block (accent for #1) retires with the
+    // accent-discipline sweep 2026-09-06, and the avatar becomes the app's one
+    // avatar component, so a lifter with a photo now shows it here too.
     private func participantRow(rank: Int, stat: ParticipantStats) -> some View {
-        HStack(spacing: 10) {
-            Text("\(rank)")
-                .font(GSFont.heading(15, relativeTo: .body))
-                .foregroundStyle(rank == 1 ? theme.accent : theme.neutral700)
-                .frame(width: 18, alignment: .leading)
-
-            let initials = String(stat.profile.username.prefix(2)).uppercased()
-            ZStack {
-                Rectangle()
-                    .fill(rank == 1 ? theme.accent : theme.neutral400)
-                    .frame(width: 32, height: 32)
-                Text(initials)
-                    .font(GSFont.bold(11, relativeTo: .caption2))
-                    .foregroundStyle(theme.bg)
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(stat.profile.username)
-                    .font(GSFont.bold(13, relativeTo: .body))
-                    .foregroundStyle(theme.text)
-
-                HStack(spacing: 6) {
-                    Text("\(stat.setCount) sets")
-                        .font(GSFont.body(11, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral500)
-                    if stat.volume > 0 {
-                        Text("·")
-                            .foregroundStyle(theme.neutral500)
-                            .font(GSFont.body(11, relativeTo: .caption))
-                        Text("\(formatVolume(Units.fromPounds(stat.volume, to: ThemeStore.shared.weightUnit))) \(ThemeStore.shared.weightUnit.label)")
-                            .font(GSFont.body(11, relativeTo: .caption))
-                            .foregroundStyle(theme.neutral500)
-                    }
-                }
-            }
-
-            Spacer()
-
+        let unit = ThemeStore.shared.weightUnit
+        var subtitle = "\(stat.setCount) sets"
+        if stat.volume > 0 {
+            subtitle += " · \(formatVolume(Units.fromPounds(stat.volume, to: unit))) \(unit.label)"
+        }
+        return GSLeaderboardRow(
+            rank: rank,
+            name: stat.profile.username,
+            avatarURL: stat.profile.avatarURL,
+            subtitle: subtitle
+        ) {
             VStack(alignment: .trailing, spacing: 4) {
                 let prs = prCount(for: stat.participant.userID)
                 if prs > 0 {
@@ -353,14 +357,17 @@ struct CompletedSessionView: View {
                 if stat.penaltyReps > 0 {
                     // Emoji sweep (spec §7): the flame implied the burpee
                     // penalty — say it plainly instead.
+                    //
+                    // Muted (review B1 F5): a penalty line is a readout, not
+                    // an action (design language §2), and SessionRecapView's
+                    // sibling run already reads neutral since T1.4 — these two
+                    // screens are parallel by construction and must agree.
                     Text("late · \(stat.penaltyReps) burpees")
                         .font(GSFont.body(10, relativeTo: .caption2))
-                        .foregroundStyle(theme.accent700)
+                        .foregroundStyle(theme.neutral500)
                 }
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
     }
 
     private func prCount(for userID: UUID) -> Int {

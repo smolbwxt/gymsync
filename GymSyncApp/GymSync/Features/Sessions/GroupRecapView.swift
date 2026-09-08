@@ -213,7 +213,11 @@ struct GroupRecapView: View {
                         PumpCheckComposerCard(context: pumpCheck)
                             .padding(.horizontal, 16)
                     }
+                    // 16 pt inset (review B1 F4): the hero is a raised object
+                    // now, so it needs margins for its lip to read — matching
+                    // SoloRecapView and CompletedSessionView.
                     hero
+                        .padding(.horizontal, 16)
                     // Coach card after the numbers, same placement law as
                     // the solo recap: the computed observation is the
                     // debrief's own advertisement, every workout.
@@ -296,44 +300,53 @@ struct GroupRecapView: View {
 
     private var hero: some View {
         VStack(alignment: .leading, spacing: 4) {
+            // neutral800, not neutral500 — the same raised3DFace contrast rule
+            // GSComponents' voice-connected toast and coach mark already
+            // follow. neutral500 measures 2.13:1 on Onyx against this face;
+            // neutral800 measures 8.91:1, the only neutral clearing WCAG AA
+            // (4.5:1) on every palette. These runs are the smallest type on
+            // the card, so the large-text 3:1 relaxation does not apply.
             Text(kicker)
                 .font(GSFont.bold(10, relativeTo: .caption2))
                 .tracking(1.4)
-                .foregroundStyle(theme.bg.opacity(0.85))
+                .foregroundStyle(theme.neutral800)
 
             Text(durationText)
                 .font(.custom("Archivo-Bold", size: 52).monospacedDigit())
-                .foregroundStyle(theme.bg)
+                .foregroundStyle(theme.text)
                 .lineLimit(1)
 
             Text(subline)
                 .font(GSFont.body(12, relativeTo: .footnote))
-                .foregroundStyle(theme.bg.opacity(0.9))
+                .foregroundStyle(theme.neutral800)
 
             HStack(spacing: 0) {
                 heroStatCell(value: totalLbsText, label: "TOTAL \(unit.label.uppercased())")
-                Rectangle().fill(theme.bg.opacity(0.3)).frame(width: 1, height: 32)
+                Rectangle().fill(theme.divider).frame(width: 1, height: 32)
                 heroStatCell(value: "\(setCount)", label: "SETS")
-                Rectangle().fill(theme.bg.opacity(0.3)).frame(width: 1, height: 32)
+                Rectangle().fill(theme.divider).frame(width: 1, height: 32)
                 heroStatCell(value: "\(prCount)", label: "PRS")
             }
             .padding(.top, 12)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.accent)
-        .cornerRadius(GSMetrics.radiusMd)   // redesign: rounded accent surface
+        // Accent discipline (design language §1/§2, 2026-09-06): the
+        // full-bleed accent fill becomes the app's static extruded card and
+        // the ink inverts. Every number and copy line is unchanged.
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd, lipHeight: 7)
     }
 
     private func heroStatCell(value: String, label: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(value)
                 .font(GSFont.heading(20, relativeTo: .title2))
-                .foregroundStyle(theme.bg)
+                .foregroundStyle(theme.text)
             Text(label)
                 .font(GSFont.bold(9, relativeTo: .caption2))
                 .tracking(0.6)
-                .foregroundStyle(theme.bg.opacity(0.85))
+                // 9 pt on a raised face — see the neutral800 note on `hero`.
+                .foregroundStyle(theme.neutral800)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 4)
@@ -360,49 +373,25 @@ struct GroupRecapView: View {
         }
     }
 
+    // The shared `GSLeaderboardRow` (DesignSystem/GSComponents.swift) — this
+    // file's own copy of that shape (and its accent #1 rank + accent avatar
+    // tile) retires with the accent-discipline sweep 2026-09-06. The row's
+    // "You" highlight is the same neutral token as before; `initials:` keeps
+    // this board's precomputed initials, which its display name ("You" for the
+    // caller) could not produce.
     private func leaderboardRow(rank: Int, row: LeaderboardRow) -> some View {
-        HStack(spacing: 10) {
-            Text("\(rank)")
-                .font(GSFont.heading(15, relativeTo: .body))
-                .foregroundStyle(rank == 1 ? theme.accent : theme.neutral700)
-                .frame(width: 18, alignment: .leading)
-
-            ZStack {
-                Rectangle()
-                    .fill(rank == 1 ? theme.accent : theme.neutral400)
-                    .frame(width: 32, height: 32)
-                Text(row.initials)
-                    .font(GSFont.bold(11, relativeTo: .caption2))
-                    .foregroundStyle(theme.bg)
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(row.name)
-                    .font(GSFont.bold(13, relativeTo: .body))
-                    .foregroundStyle(theme.text)
-
-                HStack(spacing: 6) {
-                    Text(row.volumeText)
-                        .font(GSFont.body(11, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral500)
-                    if row.prCount > 0 {
-                        Text("· \(row.prCount) PR\(row.prCount == 1 ? "" : "s")")
-                            .font(GSFont.body(11, relativeTo: .caption))
-                            .foregroundStyle(theme.neutral500)
-                    }
-                }
-            }
-
-            Spacer()
-
+        GSLeaderboardRow(
+            rank: rank,
+            name: row.name,
+            initials: row.initials,
+            subtitle: row.prCount > 0
+                ? "\(row.volumeText) · \(row.prCount) PR\(row.prCount == 1 ? "" : "s")"
+                : row.volumeText,
+            isYou: row.isYou
+        ) {
+            // Kudos emoji are content (design language §2), so the chip stays.
             GSTag(text: "💪 \(kudosCounts[row.id, default: 0])", style: .accent)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        // "You" row highlight (proof-frame-08.png's tinted second row) —
-        // exact hex isn't specified anywhere, this is a system-styling call
-        // using an existing theme token rather than a new literal color.
-        .background(row.isYou ? theme.neutral400.opacity(0.2) : Color.clear)
     }
 
     // MARK: - YOUR PR THIS SESSION card (SessionRecapView.yourPRCallout's idiom)

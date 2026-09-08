@@ -82,53 +82,39 @@ struct TopLiftersView: View {
         .task { await load() }
     }
 
-    // GroupRecapView.leaderboardRow's shape (rank/avatar/name/metric/You-
-    // highlight), reused per this file's header comment.
+    // The shared `GSLeaderboardRow` (DesignSystem/GSComponents.swift) —
+    // rank/avatar/name/sub-line/trailing/You-highlight — replacing this file's
+    // own copy of that shape (accent-discipline sweep 2026-09-06). The row
+    // prints "You" itself from `isYou`, so the avatar still reads the real
+    // username's initials.
     private func leaderboardRow(rank: Int, profile: Profile) -> some View {
         let isYou = profile.id == appState.currentProfile?.id
-        return HStack(spacing: 10) {
-            Text("\(rank)")
-                .font(GSFont.heading(15, relativeTo: .body))
-                .foregroundStyle(rank == 1 ? theme.accent : theme.neutral700)
-                .frame(width: 24, alignment: .leading)
-
-            GSInitialsAvatar(name: profile.username, avatarURL: profile.avatarURL, size: 32)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(isYou ? "You" : profile.username)
-                    .font(GSFont.bold(13, relativeTo: .body))
-                    .foregroundStyle(theme.text)
-                    .lineLimit(1)
-                // Redesign (2026-07-23, "more metrics"): member-since — one of
-                // the profile's PUBLIC fields. Deliberately derived from public
-                // data only: session/PR counts are private-by-RLS aggregates,
-                // and a leaderboard must not become a privacy leak.
-                Text("since \(profile.createdAt.formatted(.dateTime.month(.abbreviated).year()))")
-                    .font(GSFont.body(10.5, relativeTo: .caption2))
-                    .foregroundStyle(theme.neutral500)
-            }
-
-            Spacer()
-
+        let unit = ThemeStore.shared.weightUnit
+        return GSLeaderboardRow(
+            rank: rank,
+            name: profile.username,
+            avatarURL: profile.avatarURL,
+            // Redesign (2026-07-23, "more metrics"): member-since — one of
+            // the profile's PUBLIC fields. Deliberately derived from public
+            // data only: session/PR counts are private-by-RLS aggregates,
+            // and a leaderboard must not become a privacy leak.
+            subtitle: "since \(profile.createdAt.formatted(.dateTime.month(.abbreviated).year()))",
+            isYou: isYou,
+            rankWidth: 24
+        ) {
             VStack(alignment: .trailing, spacing: 2) {
-                let unit = ThemeStore.shared.weightUnit
                 Text("\(StatMath.compactNumber(Units.fromPounds(profile.lifetimeVolumeLifted, to: unit))) \(unit.label)")
                     .font(GSFont.bold(13, relativeTo: .caption))
                     .foregroundStyle(theme.text)
                     .monospacedDigit()
+                // Accent discipline (design language §2): a readout is not an
+                // act — all five rows used to carry this line in accent.
                 Text("≈ \(StatMath.compactNumber(Units.fromPounds(avgWeeklyVolume(profile), to: unit))) \(unit.label)/wk")
                     .font(GSFont.body(10.5, relativeTo: .caption2))
-                    .foregroundStyle(theme.accent)
+                    .foregroundStyle(theme.neutral500)
                     .monospacedDigit()
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        // Same "You" tint token GroupRecapView.leaderboardRow uses — see that
-        // file's comment: exact hex isn't specified anywhere (no canvas frame
-        // for this screen either), a system-styling call using an existing
-        // theme token rather than a new literal color.
-        .background(isYou ? theme.neutral400.opacity(0.2) : Color.clear)
     }
 
     /// Average weekly volume — lifetime volume over full weeks since the

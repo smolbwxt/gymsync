@@ -255,7 +255,9 @@ struct DiscoverWorkoutDetailView: View {
             if let metrics = workout.scoringMetrics, !metrics.isEmpty {
                 HStack(spacing: 6) {
                     ForEach(metrics, id: \.self) { metric in
-                        GSTag(text: DiscoverView.metricLabel(metric), style: .accent)
+                        // Matches DiscoverView.swift's own `.neutral` for the
+                        // same chips (design language §2).
+                        GSTag(text: DiscoverView.metricLabel(metric), style: .neutral)
                     }
                 }
             }
@@ -312,7 +314,8 @@ struct DiscoverWorkoutDetailView: View {
                     // re-snap in the user's unit grid for display.
                     Text("~\(Units.format(pounds: Decimal(projected), unit: ThemeStore.shared.weightUnit)) for you")
                         .font(GSFont.bold(11.5, relativeTo: .caption2))
-                        .foregroundStyle(theme.accent)
+                        // A readout, not an act (design language §2).
+                        .foregroundStyle(theme.neutral500)
                 }
             }
             if ex != nil {
@@ -547,47 +550,45 @@ struct DiscoverWorkoutDetailView: View {
         } label: {
             Text(metric.label)
                 .font(GSFont.bodyMedium(12, relativeTo: .subheadline))
-                .foregroundStyle(isSelected ? theme.bg : theme.text)
+                .foregroundStyle(theme.text)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 7)
                 .frame(minHeight: 44)
                 .frame(maxWidth: .infinity)
-                .background(isSelected ? theme.accent : Color.clear)
+                // Accent discipline (design language §2): the selected
+                // segment's solid accent block was heavier than the screen's
+                // primary. The face marks the segment; a 2 pt accent underline
+                // marks the CURRENT item — the one legal accent use here.
+                .background(isSelected ? theme.raised3DFace : Color.clear)
+                .overlay(alignment: .bottom) {
+                    if isSelected {
+                        Rectangle().fill(theme.accent).frame(height: 2)
+                    }
+                }
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
 
+    // The shared `GSLeaderboardRow` (DesignSystem/GSComponents.swift).
+    // `horizontalPadding: 0` because this screen's whole VStack already
+    // carries the 16 pt inset; `nameSymbol` keeps Flow 6's "edited" indicator
+    // (`:836`) beside the name — session duration was corrected post-hoc,
+    // time_seconds stays locked to the original. SF pencil (emoji sweep §7).
     private func leaderboardRow(rank: Int, entry: LeaderboardEntryRow) -> some View {
-        HStack(spacing: 10) {
-            Text("\(rank)")
-                .font(GSFont.heading(15, relativeTo: .body))
-                .foregroundStyle(rank == 1 ? theme.accent : theme.neutral700)
-                .frame(width: 20, alignment: .leading)
-
-            GSInitialsAvatar(name: entry.username, avatarURL: entry.avatarURL, size: 32)
-
-            Text(entry.username)
-                .font(GSFont.bold(13, relativeTo: .body))
-                .foregroundStyle(theme.text)
-
-            if entry.isEdited {
-                // Flow 6 (`:836`): an "edited" indicator next to the entry —
-                // session duration was corrected post-hoc, time_seconds stays
-                // locked to the original. SF pencil (emoji sweep, spec §7).
-                Image(systemName: "pencil")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(theme.neutral500)
-                    .accessibilityLabel("Edited")
-            }
-
-            Spacer()
-
+        GSLeaderboardRow(
+            rank: rank,
+            name: entry.username,
+            avatarURL: entry.avatarURL,
+            rankWidth: 20,
+            horizontalPadding: 0,
+            nameSymbol: entry.isEdited ? "pencil" : nil,
+            nameSymbolLabel: "Edited"
+        ) {
             Text(metricValueText(entry))
                 .font(GSFont.body(12, relativeTo: .caption))
                 .foregroundStyle(theme.neutral500)
         }
-        .padding(.vertical, 10)
     }
 
     /// Optimistic star toggle — reverts on failure.

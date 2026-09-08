@@ -154,7 +154,11 @@ struct SessionRecapView: View {
                     }
 
                     // ── HERO BANNER ──────────────────────────────────────
+                    // 16 pt inset (review B1 F4): the hero is a raised object
+                    // now, so it needs margins for its lip to read — matching
+                    // SoloRecapView and CompletedSessionView.
                     heroBanner
+                        .padding(.horizontal, 16)
                         .padding(.bottom, 14)
 
                     // ── PER-PARTICIPANT ──────────────────────────────────
@@ -289,29 +293,35 @@ struct SessionRecapView: View {
 
     private var heroBanner: some View {
         VStack(alignment: .leading, spacing: 4) {
+            // neutral800, not neutral500 — the same raised3DFace contrast rule
+            // GSComponents' voice-connected toast and coach mark already
+            // follow. neutral500 measures 2.13:1 on Onyx against this face;
+            // neutral800 measures 8.91:1, the only neutral clearing WCAG AA
+            // (4.5:1) on every palette. These runs are the smallest type on
+            // the card, so the large-text 3:1 relaxation does not apply.
             Text(heroKicker)
                 .font(GSFont.bold(10, relativeTo: .caption2))
                 .tracking(1.4)
-                .foregroundStyle(theme.bg.opacity(0.85))
+                .foregroundStyle(theme.neutral800)
 
             Text(durationString)
                 .font(.custom("Archivo-Bold", size: 52).monospacedDigit())
-                .foregroundStyle(theme.bg)
+                .foregroundStyle(theme.text)
                 .lineLimit(1)
 
             Text("\(dateString) · \(participants.count) lifter\(participants.count == 1 ? "" : "s")")
                 .font(GSFont.body(12, relativeTo: .footnote))
-                .foregroundStyle(theme.bg.opacity(0.9))
+                .foregroundStyle(theme.neutral800)
 
             // Aggregate stats row
             HStack(spacing: 0) {
                 statPill(value: formatVolume(Units.fromPounds(totalVolume, to: unit)), label: "TOTAL \(unit.label.uppercased())")
                 Rectangle()
-                    .fill(theme.bg.opacity(0.3))
+                    .fill(theme.divider)
                     .frame(width: 1, height: 32)
                 statPill(value: "\(totalSets)", label: "SETS")
                 Rectangle()
-                    .fill(theme.bg.opacity(0.3))
+                    .fill(theme.divider)
                     .frame(width: 1, height: 32)
                 statPill(value: "\(totalPRCount)", label: "PRS")
             }
@@ -319,19 +329,22 @@ struct SessionRecapView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.accent)
-        .cornerRadius(GSMetrics.radiusMd)   // redesign: rounded accent surface
+        // Accent discipline (design language §1/§2, 2026-09-06): the
+        // full-bleed accent fill becomes the app's static extruded card and
+        // the ink inverts. Every number and copy line is unchanged.
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd, lipHeight: 7)
     }
 
     private func statPill(value: String, label: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(value)
                 .font(GSFont.heading(20, relativeTo: .title2))
-                .foregroundStyle(theme.bg)
+                .foregroundStyle(theme.text)
             Text(label)
                 .font(GSFont.bold(9, relativeTo: .caption2))
                 .tracking(0.6)
-                .foregroundStyle(theme.bg.opacity(0.85))
+                // 9 pt on a raised face — see the neutral800 note on the hero.
+                .foregroundStyle(theme.neutral800)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 4)
@@ -339,62 +352,31 @@ struct SessionRecapView: View {
 
     // MARK: - Participant row
 
+    // The shared `GSLeaderboardRow` (DesignSystem/GSComponents.swift) — the
+    // local rank/initials-tile block (accent for #1) retires with the
+    // accent-discipline sweep 2026-09-06, and the avatar becomes the app's one
+    // avatar component, so a lifter with a photo now shows it here too. The
+    // meta line is one muted sentence: the penalty-reps run no longer breaks
+    // into accent (a readout is not the screen's act, design language §2).
     private func participantRow(rank: Int, stat: ParticipantStats) -> some View {
-        HStack(spacing: 10) {
-            // Rank
-            Text("\(rank)")
-                .font(GSFont.heading(15, relativeTo: .body))
-                .foregroundStyle(rank == 1 ? theme.accent : theme.neutral700)
-                .frame(width: 18, alignment: .leading)
-
-            // Avatar
-            let initials = String(stat.profile.username.prefix(2)).uppercased()
-            ZStack {
-                Rectangle()
-                    .fill(rank == 1 ? theme.accent : theme.neutral400)
-                    .frame(width: 32, height: 32)
-                Text(initials)
-                    .font(GSFont.bold(11, relativeTo: .caption2))
-                    .foregroundStyle(theme.bg)
-            }
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(stat.profile.username)
-                    .font(GSFont.bold(13, relativeTo: .body))
-                    .foregroundStyle(theme.text)
-
-                HStack(spacing: 6) {
-                    Text("\(stat.setCount) sets")
-                        .font(GSFont.body(11, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral500)
-                    if stat.volume > 0 {
-                        Text("·")
-                            .foregroundStyle(theme.neutral500)
-                            .font(GSFont.body(11, relativeTo: .caption))
-                        Text("\(formatVolume(Units.fromPounds(stat.volume, to: unit))) \(unit.label)")
-                            .font(GSFont.body(11, relativeTo: .caption))
-                            .foregroundStyle(theme.neutral500)
-                    }
-                    if stat.penaltyReps > 0 {
-                        Text("·")
-                            .foregroundStyle(theme.neutral500)
-                            .font(GSFont.body(11, relativeTo: .caption))
-                        Text("\(stat.penaltyReps) penalty reps")
-                            .font(GSFont.body(11, relativeTo: .caption))
-                            .foregroundStyle(theme.accent700)
-                    }
-                }
-            }
-
-            Spacer()
-
+        var subtitle = "\(stat.setCount) sets"
+        if stat.volume > 0 {
+            subtitle += " · \(formatVolume(Units.fromPounds(stat.volume, to: unit))) \(unit.label)"
+        }
+        if stat.penaltyReps > 0 {
+            subtitle += " · \(stat.penaltyReps) penalty reps"
+        }
+        return GSLeaderboardRow(
+            rank: rank,
+            name: stat.profile.username,
+            avatarURL: stat.profile.avatarURL,
+            subtitle: subtitle
+        ) {
             let prs = prCount(for: stat.participant.userID)
             if prs > 0 {
                 GSTag(text: "\(prs) PR\(prs == 1 ? "" : "s")", style: .accent)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
     }
 
     // MARK: - Helpers

@@ -38,8 +38,10 @@ struct BodyWeightLogSheet: View {
                     theme: theme,
                     label: "Weight (\(unit.label))",
                     value: $weight,
-                    borderColor: theme.accent,
-                    valueColor: theme.accent700,
+                    // Accent discipline (design language §2): the field is
+                    // furniture — flat and neutral; "Save" is the one act.
+                    borderColor: theme.divider,
+                    valueColor: theme.text,
                     keyboard: .decimalPad,
                     onDecrement: { decrementDecimal(&weight) },
                     onIncrement: { incrementDecimal(&weight) }
@@ -63,7 +65,7 @@ struct BodyWeightLogSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                        .foregroundStyle(theme.accent)
+                        .foregroundStyle(theme.neutral700)
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { Task { await submit() } }

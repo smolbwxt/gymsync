@@ -43,12 +43,33 @@ struct PushPrimingView: View {
     /// path (including normal debug builds); compiled out of release
     /// entirely.
     var catalogSkipCheckInitialState = false
+
+    /// Debug-only: the catalog's forced authorization status (screen catalog
+    /// only, via the fixture init below). `isDenied` reads THIS instead of the
+    /// live singleton when it is set.
+    ///
+    /// Why the singleton alone was not enough (CI runs through 34162992089):
+    /// forcing `PushReceiver.shared.authorizationStatus = .denied` in the
+    /// fixture init did reach the first render, but `body`'s
+    /// `.onChange(of: scenePhase)` fires the moment the app becomes active on
+    /// launch, and `handleForegroundReturn()` — whose whole job is "did they
+    /// grant it while they were away?" — is gated on `isDenied`, so the
+    /// forced status was TRUE, it refreshed from
+    /// UNUserNotificationCenter, and the simulator's real `.notDetermined`
+    /// overwrote it. `app-onboarding-push-denied` therefore captured the
+    /// PRE-PROMPT body, byte-for-byte the same screen as
+    /// `app-onboarding-push-priming`. A view-local status cannot be raced by
+    /// that refresh. Compiled out of release entirely.
+    var catalogForcedStatus: UNAuthorizationStatus?
     #endif
 
     private var pushReceiver: PushReceiver { PushReceiver.shared }
 
     private var isDenied: Bool {
-        pushReceiver.authorizationStatus == .denied
+        #if DEBUG
+        if let catalogForcedStatus { return catalogForcedStatus == .denied }
+        #endif
+        return pushReceiver.authorizationStatus == .denied
     }
 
     // Fix wave 1 (Task 6 review, scope correction from CI run 29679007547 on
@@ -111,6 +132,11 @@ struct PushPrimingView: View {
         }
         .onChange(of: scenePhase) {
             guard scenePhase == .active else { return }
+            #if DEBUG
+            // Same catalog guard as `.task` above: this fires on launch, and
+            // `handleForegroundReturn()` would refresh the forced status away.
+            if catalogSkipCheckInitialState { return }
+            #endif
             Task { await handleForegroundReturn() }
         }
     }
@@ -152,11 +178,14 @@ struct PushPrimingView: View {
                     .foregroundColor(theme.text.opacity(0.5))
             }
         } else {
+            // Accent discipline (design language §2/§4): the badge is
+            // decoration, not the act — it reads as a raised face so
+            // "Turn on notifications" is the screen's one accent thing.
             ZStack {
-                Rectangle().fill(theme.accent).frame(width: 60, height: 60)
+                Rectangle().fill(theme.raised3DFace).frame(width: 60, height: 60)
                 Image(systemName: "bell")
                     .font(.system(size: 30, weight: .regular))
-                    .foregroundColor(theme.bg)
+                    .foregroundColor(theme.text)
             }
         }
     }
@@ -191,7 +220,7 @@ struct PushPrimingView: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "checkmark")
                 .font(.system(size: 18, weight: .bold))
-                .foregroundColor(theme.accent700)
+                .foregroundColor(theme.neutral700)
             Text(text)
                 .font(GSFont.body(14, relativeTo: .body))
                 .foregroundColor(theme.text)
@@ -250,7 +279,13 @@ struct PushPrimingView: View {
                         Button {
                             advance()
                         } label: {
-                            Text("Continue").frame(maxWidth: .infinity)
+                            // Escape hatch, not the act: GSGhostButtonStyle
+                            // paints its label accent, so the Text overrides
+                            // it (innermost wins) and "Open Settings" stays
+                            // the one accent control on the denied state.
+                            Text("Continue")
+                                .foregroundStyle(theme.neutral700)
+                                .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(GSGhostButtonStyle())
                         .frame(minHeight: 44)
@@ -273,7 +308,10 @@ struct PushPrimingView: View {
                     Button {
                         advance()
                     } label: {
-                        Text("Not now").frame(maxWidth: .infinity)
+                        // Same escape-hatch override as "Continue" above.
+                        Text("Not now")
+                            .foregroundStyle(theme.neutral700)
+                            .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(GSGhostButtonStyle())
                     .frame(minHeight: 44)
@@ -359,6 +397,10 @@ extension PushPrimingView {
     init(catalogAuthorizationStatus status: UNAuthorizationStatus) {
         self.init(isOnboarding: true)
         PushReceiver.shared.debugSetAuthorizationStatus(status)
+        // The singleton alone lost the race with the launch-time
+        // scenePhase refresh — see `catalogForcedStatus` for the full
+        // account. The view-local copy is what `isDenied` actually reads.
+        catalogForcedStatus = status
         catalogSkipCheckInitialState = true
     }
 }

@@ -670,7 +670,10 @@ struct VenueHubView: View {
             .background(theme.surface)
             .clipShape(Capsule())
             .overlay(
-                Capsule().strokeBorder(theme.accent, lineWidth: 1)
+                // Accent discipline (design language §2): a static readout
+                // carries no accent — the owner's tappable chips above keep
+                // theirs, because that IS a real on-state.
+                Capsule().strokeBorder(theme.divider, lineWidth: 1)
             )
     }
 

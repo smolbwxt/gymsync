@@ -303,7 +303,13 @@ struct HomeGymSetupView: View {
                 Button {
                     handleSkip()
                 } label: {
+                    // Accent discipline (design language §2/§4): the escape
+                    // hatch is muted so "Set Home Gym" is the screen's one
+                    // accent act. GSGhostButtonStyle paints its label accent,
+                    // so the override lives on the Text (innermost wins) —
+                    // the shared style keeps its other call sites.
                     Text(isOnboarding ? "Skip" : "Cancel")
+                        .foregroundStyle(theme.neutral700)
                 }
                 .buttonStyle(GSGhostButtonStyle())
                 .frame(minHeight: 44)

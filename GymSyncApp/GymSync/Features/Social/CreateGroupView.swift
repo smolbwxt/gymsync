@@ -131,9 +131,23 @@ struct CreateGroupView: View {
                             .foregroundStyle(.red)
                             .padding(.horizontal, 16)
                             .padding(.top, 8)
+                            .padding(.bottom, 16)
                     }
-
-                    // Create button
+                }
+            }
+            .background(theme.bg)
+            .scrollContentBackground(.hidden)
+            // The one primary, genuinely pinned (review B1 F7): it used to be
+            // the last child of this ScrollView, so with a long friends list —
+            // or the keyboard up over the name field — submitting cost a
+            // scroll that the deleted toolbar "Create" did not. Same shape as
+            // ScheduleSessionView's pinned CTA: divider, button, bg, in a
+            // bottom safeAreaInset (which also insets the scroll content, so
+            // nothing hides behind it). Action, style, label and disabled
+            // condition are unchanged.
+            .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 0) {
+                    GSDivider()
                     Button {
                         Task { await create() }
                     } label: {
@@ -146,27 +160,20 @@ struct CreateGroupView: View {
                     .buttonStyle(GSPrimaryButtonStyle())
                     .frame(maxWidth: .infinity)
                     .padding(.horizontal, 16)
-                    .padding(.top, 24)
-                    .padding(.bottom, 32)
+                    .padding(.vertical, 12)
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isCreating)
                 }
+                .background(theme.bg)
             }
-            .background(theme.bg)
-            .scrollContentBackground(.hidden)
             .navigationTitle("New Group")
+            // One primary per screen (design language §4): the toolbar's
+            // "Create" was a second accent button calling the same `create()`
+            // as the body's pinned "Create Group", so it is deleted rather
+            // than demoted — no action is lost.
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                        .foregroundStyle(theme.accent)
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") { Task { await create() } }
-                        .font(GSFont.bold(14, relativeTo: .body))
-                        .foregroundStyle(
-                            name.trimmingCharacters(in: .whitespaces).isEmpty || isCreating
-                                ? theme.neutral500 : theme.accent
-                        )
-                        .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || isCreating)
+                        .foregroundStyle(theme.neutral700)
                 }
             }
             .task {
@@ -200,6 +207,12 @@ struct CreateGroupView: View {
                 .frame(width: 44, height: 44)
                 .clipped()
         } else {
+            // No `fill:`/`ink:` here, deliberately (review B1 F6): the crew
+            // identity colour is `GSGroupColor.color(for: group.id)`, and this
+            // group has no id yet — it is created on submit (see `create()`).
+            // There is nothing stable to key the palette on, so the preview
+            // keeps GSInitialsAvatar's neutral default and picks up its real
+            // colour the moment the crew exists.
             GSInitialsAvatar(
                 name: name.trimmingCharacters(in: .whitespaces).isEmpty
                     ? "New Group" : name,

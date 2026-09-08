@@ -195,12 +195,18 @@ struct SocialTabView: View {
                                             .foregroundStyle(theme.neutral500)
                                     }
                                     Spacer()
+                                    // Badges point, they do not shout (design
+                                    // language §4): ONE small accent count in
+                                    // the corner of the widget that has
+                                    // something waiting. The plain friend
+                                    // count returns when nothing is pending.
                                     if pendingCount > 0 {
                                         GSTag(text: "\(pendingCount) new", style: .accent)
+                                    } else {
+                                        Text("\(friendCount)")
+                                            .font(GSFont.body(14, relativeTo: .subheadline))
+                                            .foregroundStyle(theme.neutral500)
                                     }
-                                    Text("\(friendCount)")
-                                        .font(GSFont.body(14, relativeTo: .subheadline))
-                                        .foregroundStyle(theme.neutral500)
                                     Image(systemName: "chevron.right")
                                         .font(.system(size: 13, weight: .semibold))
                                         .foregroundStyle(theme.neutral500)
@@ -603,8 +609,10 @@ struct GSInitialsAvatar: View {
     let avatarURL: URL?
     var size: CGFloat = 34
     /// Redesign (spec §4): GROUP avatars carry the group's identity color
-    /// (`GSGroupColor`), independent of the user's accent. `nil` keeps the
-    /// pre-redesign accent fill for non-group callers.
+    /// (`GSGroupColor`), independent of the user's accent. Passing `fill:`/
+    /// `ink:` is the OPT-IN — the default is now neutral (neutral400 tile,
+    /// `text` ink), because an avatar is an identity, not the screen's one
+    /// accent act (design language §2, accent-discipline sweep 2026-09-06).
     var fill: Color? = nil
     var ink: Color? = nil
 
@@ -623,6 +631,19 @@ struct GSInitialsAvatar: View {
     init(name: String, avatarURL: URL? = nil, size: CGFloat = 34, fill: Color? = nil, ink: Color? = nil) {
         let parts = name.split(separator: " ").prefix(2)
         self.initialsText = parts.map { String($0.prefix(1)).uppercased() }.joined()
+        self.avatarURL = avatarURL
+        self.size = size
+        self.fill = fill
+        self.ink = ink
+    }
+
+    /// Precomputed-initials overload (2026-09-06): the doc comment above
+    /// dropped this while nothing needed it. `GSLeaderboardRow` does —
+    /// `GroupRecapView.LeaderboardRow` carries its own `initials` alongside a
+    /// display name that is literally "You" for the caller's row, so deriving
+    /// initials from that name would print "Y" where the crew sees "AJ".
+    init(initials: String, avatarURL: URL? = nil, size: CGFloat = 34, fill: Color? = nil, ink: Color? = nil) {
+        self.initialsText = initials
         self.avatarURL = avatarURL
         self.size = size
         self.fill = fill
@@ -650,9 +671,9 @@ struct GSInitialsAvatar: View {
     private var initialsView: some View {
         Text(initialsText)
             .font(GSFont.bold(size * 0.31, relativeTo: .caption))
-            .foregroundStyle(ink ?? theme.bg)
+            .foregroundStyle(ink ?? theme.text)
             .frame(width: size, height: size)
-            .background(fill ?? theme.accent)
+            .background(fill ?? theme.neutral400)
     }
 }
 

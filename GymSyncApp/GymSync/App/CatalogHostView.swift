@@ -365,6 +365,18 @@ struct CatalogHostView: View {
     // `debugSetAuthorizationStatus(_:)` seam on PushReceiver.swift and skips
     // `checkInitialState()`; see the `#if DEBUG` convenience init added to
     // PushPrimingView.swift (same-file, for `private` @State access).
+    //
+    // 2026-09-07 (review B1 F2): forcing the SINGLETON was not enough. The
+    // view's `.onChange(of: scenePhase)` fires as the app becomes active on
+    // launch, and `handleForegroundReturn()` is gated on `isDenied` — so for
+    // the denied fixture it ran, refreshed from UNUserNotificationCenter, and
+    // the simulator's real `.notDetermined` replaced the forced value.
+    // `app-onboarding-push-denied` was therefore capturing the PRE-PROMPT
+    // body, identical to `app-onboarding-push-priming`, and proved nothing.
+    // The fixture init now also sets a view-local `catalogForcedStatus` that
+    // `isDenied` reads, and the scenePhase hook takes the same catalog guard
+    // as `.task`. Both are `#if DEBUG`; the release build is unchanged, and
+    // no catalog id was added or renamed.
 
     private var content_pushPriming: some View {
         PushPrimingView(catalogAuthorizationStatus: .notDetermined)

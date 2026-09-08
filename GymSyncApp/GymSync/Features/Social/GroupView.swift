@@ -79,7 +79,15 @@ struct GroupView: View {
         .toolbar {
             ToolbarItem(placement: .principal) {
                 HStack(spacing: 8) {
-                    GSInitialsAvatar(name: group.name, avatarURL: group.avatarURL, size: 30)
+                    // Crew identity colour, same as SocialTabView.groupRow —
+                    // it is data colour, not decorative accent, so it survives
+                    // the accent-discipline sweep. Without the explicit pair
+                    // this fell to GSInitialsAvatar's new neutral default and
+                    // the same crew read amber on the Crews tab and grey here
+                    // (review B1 F6).
+                    GSInitialsAvatar(name: group.name, avatarURL: group.avatarURL, size: 30,
+                                     fill: GSGroupColor.color(for: group.id),
+                                     ink: GSGroupColor.onColor(for: group.id))
                     VStack(alignment: .leading, spacing: 0) {
                         Text(group.name)
                             .font(GSFont.bold(15, relativeTo: .headline))
@@ -169,7 +177,10 @@ struct GroupView: View {
                 // its doc comment); this used to hand-roll the same
                 // AsyncImage block inline.
                 HStack(spacing: 12) {
-                    GSInitialsAvatar(name: group.name, avatarURL: avatarURL ?? group.avatarURL, size: 56)
+                    // Crew identity colour — see the header avatar above.
+                    GSInitialsAvatar(name: group.name, avatarURL: avatarURL ?? group.avatarURL, size: 56,
+                                     fill: GSGroupColor.color(for: group.id),
+                                     ink: GSGroupColor.onColor(for: group.id))
 
                     PhotosPicker(selection: $avatarItem, matching: .images) {
                         Text("Change Group Photo")
