@@ -399,4 +399,53 @@ final class HomeCompositionTests: XCTestCase {
                                                                    calendar: pinnedCalendar),
                        2)
     }
+
+    // MARK: - Where the goal strip's tap lands (goal-first plan, task D2)
+    //
+    // Spec §6: "Tap the strip → the Ladder page" — but only for a row that
+    // BELONGS to a ladder. A standalone weekly goal opens the shipped editor
+    // exactly as it does today, and which one you get is a fact about the
+    // row, not a mode. Extracted as a value so it can be asserted without a
+    // view; `fetchWeeklyGoal` reads the block id through the same function,
+    // so the tap and these assertions cannot drift into two rules.
+
+    /// 2099, per this repo's live-DB dating convention. Nothing here writes,
+    /// but a fixture week that could collide with a real one is a habit worth
+    /// not having.
+    private func weeklyGoal(goalID: UUID?, kind: WeeklyGoalKind = .muscleSets) -> WeeklyGoal {
+        WeeklyGoal(userID: UUID(),
+                   weekStartString: "2099-01-04",
+                   kind: kind,
+                   params: WeeklyGoalParams(muscleTargets: ["chest": 12], goalID: goalID),
+                   source: .coach,
+                   setAt: Date(timeIntervalSince1970: 0))
+    }
+
+    func testARowThatBelongsToALadderOpensTheLadderPage() {
+        let goalID = UUID()
+        XCTAssertEqual(HomeView.goalStripDestination(for: weeklyGoal(goalID: goalID)),
+                       .ladder(goalID))
+    }
+
+    func testAStandaloneWeeklyGoalStillOpensTheEditor() {
+        XCTAssertEqual(HomeView.goalStripDestination(for: weeklyGoal(goalID: nil)),
+                       .editor,
+                       "spec §4: a row with goal_id = null is a standalone weekly goal exactly as today")
+    }
+
+    /// No row at all — the invitation state. The editor is where the first
+    /// goal gets made, so the tap must still land there.
+    func testNoGoalAtAllOpensTheEditor() {
+        XCTAssertEqual(HomeView.goalStripDestination(for: nil), .editor)
+    }
+
+    /// The seeded CI account's row has no `goal_id` until I2 gives it one, so
+    /// `app-tab-home`'s strip still opens the editor — which is correct, and
+    /// is why that capture does not move in this stream.
+    func testTheLadderIdIsNilForEveryRowThatIsNotARung() {
+        XCTAssertNil(HomeView.goalStripDestination(for: weeklyGoal(goalID: nil)).ladderGoalID)
+        let goalID = UUID()
+        XCTAssertEqual(HomeView.goalStripDestination(for: weeklyGoal(goalID: goalID)).ladderGoalID,
+                       goalID)
+    }
 }
