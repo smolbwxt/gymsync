@@ -62,7 +62,9 @@ final class BlockGoalLiveRepositoryTests: XCTestCase {
     /// The delete is registered BEFORE the insert, like every other write here,
     /// and it cascades: `block_goals.enrollment_id` is `ON DELETE CASCADE`, and
     /// the rungs cascade from the goal, so one delete cleans all three tables.
-    private func temporaryEndedBlock() async throws -> ProgramEnrollment {
+    private func temporaryEndedBlock(slug: String = "march-to-1rm",
+                                     startedOn: String = "2099-01-04",
+                                     weeks: Int = 8) async throws -> ProgramEnrollment {
         // snake_case field names rather than `CodingKeys`, matching
         // `VolumeTargetRepository.set`'s own local `Upsert` — a throwaway DTO
         // for one insert does not need the ceremony.
@@ -94,9 +96,9 @@ final class BlockGoalLiveRepositoryTests: XCTestCase {
         let rows: [ProgramEnrollment] = try await SupabaseService.shared.client
             .from("program_enrollments")
             .insert(EndedEnrollment(
-                id: id, user_id: owner, template_slug: "march-to-1rm",
+                id: id, user_id: owner, template_slug: slug,
                 focus: ProgramFocus(), baseline: [:],
-                started_on: "2099-01-04", weeks: 8,
+                started_on: startedOn, weeks: weeks,
                 ended_at: "2099-03-01T00:00:00Z", ended_reason: "completed"))
             .select()
             .execute().value
@@ -279,5 +281,60 @@ final class BlockGoalLiveRepositoryTests: XCTestCase {
         XCTAssertNil(after?.params.goalID,
                      "a week whose goal is gone is a plain weekly goal again, "
                      + "not a frozen ladder week")
+    }
+
+    /// FIX ROUND 1, FINDING F3. `page(goalID:)` is keyed on a GOAL, and spec §7
+    /// renders finished blocks' ladders in the ledger — so it has to read the
+    /// template of `goal.enrollmentID`, never `ProgramRepository.active()`.
+    ///
+    /// Two blocks, a goal on the OLDER one, and the page must carry that
+    /// block's own shape. The two templates are chosen so that BOTH assertions
+    /// discriminate: `march-to-1rm` is eight weeks with its deload at index 4
+    /// ("move fast, leave the gym fresh"), `leg-strength-block` is six weeks
+    /// with its deload at index 3 ("keep the pattern, drop the load"). A page
+    /// built from the wrong enrollment marks the wrong week AND quotes the wrong
+    /// line. It could not have passed before the fix either, for a third reason:
+    /// the CI account has no ACTIVE block at all, so `template` was nil and
+    /// every deload flag and note silently disappeared.
+    func testAFinishedBlocksPageRendersItsOwnDeloadsAndNotes() async throws {
+        try await TestAuth.signInIfConfigured()
+        let userID = await SupabaseService.shared.currentUserID()
+        let owner = try XCTUnwrap(userID)
+
+        // The newer block, which the goal does NOT belong to.
+        _ = try await temporaryEndedBlock(slug: "leg-strength-block",
+                                          startedOn: "2099-06-06", weeks: 6)
+        let older = try await temporaryEndedBlock(slug: "march-to-1rm")
+
+        let goalID = temporaryGoal(UUID())
+        let saved = await repository.save(goal(goalID, owner: owner,
+                                               enrollmentID: older.id, byDate: nil))
+        XCTAssertTrue(saved)
+
+        // Eight rungs, one per week of the older block.
+        let rungs = (0..<8).map { index in
+            LadderRung(weekIndex: index,
+                       weekStartString: String(format: "2099-01-%02d", 4 + index * 7),
+                       target: GoalTarget(targetWeightLbs: Decimal(190 + index * 5),
+                                          targetReps: 5),
+                       status: index == 0 ? .current : .ahead)
+        }
+        let savedLadder = await repository.saveLadder(
+            Ladder(goalID: goalID, rungs: rungs, derivedAt: Date()))
+        XCTAssertTrue(savedLadder)
+
+        let page = await repository.page(goalID: goalID)
+        let rows = try XCTUnwrap(page?.rows)
+        XCTAssertEqual(rows.count, 8)
+        XCTAssertTrue(rows[4].isDeload,
+                      "march-to-1rm marks its fifth week as the deload, and this "
+                      + "goal belongs to a march-to-1rm block")
+        XCTAssertEqual(rows[4].note,
+                       "Deload — move fast, leave the gym fresh.",
+                       "the block's own decision-log line, not another block's")
+        XCTAssertEqual(rows.filter(\.isDeload).count, 1)
+        XCTAssertFalse(rows[3].isDeload,
+                       "week 4 is leg-strength-block's deload, and this goal is "
+                       + "not on that block")
     }
 }

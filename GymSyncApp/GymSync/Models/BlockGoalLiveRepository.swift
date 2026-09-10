@@ -188,6 +188,31 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
         }
     }
 
+    /// The enrollment a goal actually drives.
+    ///
+    /// `BlockGoal.enrollmentID` names it; `ProgramRepository.active()` names
+    /// whatever the athlete is training NOW, and the two are the same block only
+    /// while the block is current. Every read keyed on a goal id has to use this
+    /// one — the ladder page for a finished block is a shipped surface
+    /// (spec §7, Stream D's ledger).
+    ///
+    /// Fetched by id rather than through `ProgramRepository.history()`, which
+    /// pages every enrollment the athlete has ever had to find one row.
+    private func enrollment(id: UUID) async -> ProgramEnrollment? {
+        do {
+            let rows: [ProgramEnrollment] = try await client
+                .from("program_enrollments")
+                .select()
+                .eq("id", value: id)
+                .limit(1)
+                .execute().value
+            return rows.first
+        } catch {
+            AppLogger.db.error("program_enrollments read failed: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
     func ladder(goalID: UUID) async -> Ladder? {
         do {
             let rows: [RungRow] = try await client
@@ -220,7 +245,12 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
               let ladder = await ladder(goalID: goalID) else { return nil }
         let calendar = Calendar.current
         let unit = await MainActor.run { ThemeStore.shared.weightUnit }
-        let template = (try? await ProgramRepository.active())?.template
+        // THE GOAL'S OWN BLOCK, never "the active block". `page(goalID:)` is
+        // keyed on a GOAL, and spec §7 renders finished blocks' ladders in the
+        // ledger — so reading the active enrollment attached another block's
+        // deloads and notes, and attached NOTHING at all once the athlete had
+        // no active block.
+        let template = await enrollment(id: goal.enrollmentID)?.template
 
         var liftName = ""
         if let exerciseID = goal.target.exerciseID {
@@ -344,7 +374,8 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
                                             currentWeekStart: currentWeekStart,
                                             overriddenWeeks: overridden)
 
-        let template = (try? await ProgramRepository.active())?.template
+        // The goal's own block, for the reason `page(goalID:)` gives.
+        let template = await enrollment(id: goal.enrollmentID)?.template
         let fresh = LadderMath.reLadder(
             existing: stamped, metric: goal.metric,
             current: measured[currentWeekStart] ?? GoalTarget(),
@@ -495,9 +526,13 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
             // The baseline is the ENROLLMENT'S frozen one, not the milestone:
             // a ladder built from where the athlete is going rather than from
             // where they are would prescribe week 1 at the goal.
+            // THE GOAL'S OWN BLOCK here too. At build time it happens to be the
+            // active one, but keying the baseline read on anything other than
+            // `goal.enrollmentID` is the same defect F3 names, waiting for the
+            // first caller that derives a ladder for a block that is not current.
             guard let exerciseID = goal.target.exerciseID,
-                  let enrollment = try? await ProgramRepository.active(),
-                  let baseline = enrollment.baselineValue(for: exerciseID),
+                  let block = await enrollment(id: goal.enrollmentID),
+                  let baseline = block.baselineValue(for: exerciseID),
                   let rungs = LadderReadout.strengthRungs(
                     program: program, exerciseID: exerciseID,
                     baselineE1RMLbs: baseline, unit: unit)
