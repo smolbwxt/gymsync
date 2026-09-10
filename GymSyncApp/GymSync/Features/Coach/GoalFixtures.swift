@@ -62,9 +62,15 @@ extension LadderRow {
     /// The same row with a different standing. `LadderRow` is Task 0's frozen
     /// surface and every field is `let`, so a fixture that wants one status
     /// changed has to rebuild the row — this keeps that rebuild in one place
-    /// instead of five, and it is `fileprivate`-adjacent by intent: only the
-    /// fixtures above use it.
-    func with(status: RungStatus) -> LadderRow {
+    /// instead of five.
+    ///
+    /// **`fileprivate`, in the language rather than in a comment** (task
+    /// review finding 8). It used to be internal, and therefore visible to
+    /// every production file, while its own doc comment claimed to be
+    /// fixture-only; both call sites are in this file. It also removes any
+    /// chance of a duplicate-declaration collision when I1 concatenates
+    /// Stream C's half of this file.
+    fileprivate func with(status: RungStatus) -> LadderRow {
         LadderRow(weekNumber: weekNumber, weekStartString: weekStartString,
                   targetText: targetText, implication: implication,
                   status: status, isDeload: isDeload, note: note)
