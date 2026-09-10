@@ -459,7 +459,7 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
                   // materialises as the WEEK's share rather than the block's
                   // running total. nil for week one, and ignored by every other
                   // metric.
-                  previousRung: ladder.rungs.first { $0.weekIndex == rung.weekIndex - 1 })
+                  previousRung: ladder.rungs.first(where: { $0.weekIndex == rung.weekIndex - 1 }))
         else { return nil }
 
         let weekly = LiveWeeklyGoalRepository()

@@ -303,7 +303,7 @@ enum HealthKitBridge {
         // elements, labelled or otherwise.
         guard let first = windows.map({ $0.start }).min(),
               let last = windows.map({ $0.end }).max() else { return nil }
-        return (first, last)
+        return (start: first, end: last)
     }
 
     /// Bucketed by the workout's START, which is what a per-window query would
