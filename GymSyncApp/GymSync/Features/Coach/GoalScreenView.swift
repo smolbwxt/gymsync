@@ -158,7 +158,7 @@ struct GoalScreenView: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
-            .padding(.bottom, 24)
+            .padding(.bottom, 16)
         }
         .background(theme.bg)
         .navigationTitle("Your goal")
@@ -170,7 +170,6 @@ struct GoalScreenView: View {
             .font(GSFont.heading(28, relativeTo: .largeTitle))
             .foregroundStyle(theme.text)
             .fixedSize(horizontal: false, vertical: true)
-            .padding(.bottom, 2)
     }
 
     // MARK: - The grid
@@ -251,7 +250,13 @@ struct GoalScreenView: View {
             Spacer(minLength: 0)
         }
         .padding(12)
-        .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
+        // 92, not 104. The tile's own content is a name, up to two lines of
+        // 11 pt copy and — on the suggested one — a kicker, which is about
+        // 90 pt with its padding; the extra twelve was empty on every tile and
+        // it was empty five rows deep. Frame 93 ran ~764 pt against a ~740 pt
+        // viewport and cut the Pro door — the one card the frame exists to
+        // show — off at the fold.
+        .frame(maxWidth: .infinity, minHeight: 92, alignment: .topLeading)
         .contentShape(Rectangle())
     }
 

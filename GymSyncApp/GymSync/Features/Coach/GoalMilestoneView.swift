@@ -644,13 +644,21 @@ struct GoalMilestoneView: View {
 
     // MARK: Body
 
+    /// QUESTIONS ABOVE, THE READOUT AND THE ACT BELOW (design rule 4).
+    ///
+    /// Coach's line sits in the pinned footer rather than in the scroll
+    /// content, directly above the primary. Two reasons, and the frames made
+    /// both of them: a short lever set — Recovery is three rows and a sentence
+    /// — left ~900 pt of black between the line and the button it belongs to,
+    /// and rule 7 wants Coach next to the act, not stranded at the top of an
+    /// empty page. It is still under the levers, which is where spec §5.2 puts
+    /// it.
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 header
                 modeSwitch
                 levers
-                coachLine
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
@@ -1321,6 +1329,8 @@ struct GoalMilestoneView: View {
     /// incomplete, because a disabled button with no reason is a dead end.
     private var footer: some View {
         VStack(spacing: 8) {
+            coachLine
+
             if let incompleteReason {
                 Text(incompleteReason)
                     .font(GSFont.body(12, relativeTo: .footnote))
