@@ -884,6 +884,11 @@ struct GoalMilestoneView: View {
 
     private var volumeLevers: some View {
         VStack(alignment: .leading, spacing: 10) {
+            // `canIncrease: true` is unbounded UPWARD by design — the plate
+            // milestone catalog counts past a million pounds, so any ceiling
+            // here would be a number this app has already been beaten by.
+            // Downward it stops at one step, which is the smallest block worth
+            // naming.
             stepperRow(title: "THIS BLOCK", text: volumeReading,
                        canDecrease: (draft.target.volumeLbs ?? 0) > volumeStepLbs,
                        canIncrease: true) { delta in
@@ -919,6 +924,11 @@ struct GoalMilestoneView: View {
                 let next = max(60, min(180 * 60, seconds + delta * 60))
                 draft = GoalMilestoneCopy.applying(draft, targetSeconds: next)
             }
+            // SECONDS MOVES WITHIN THE MINUTE, on purpose: minus is inert at
+            // `:00` and plus at `:55`, because the row beside it owns the
+            // minutes and a seconds stepper that rolled over would let two
+            // controls fight for one number. `47:55` + 5 s is a job for
+            // MINUTES, not for this row silently becoming `48:00`.
             stepperRow(title: "SECONDS", value: seconds % 60, suffix: "SECONDS",
                        canDecrease: seconds % 60 >= 5, canIncrease: seconds % 60 <= 50) { delta in
                 let next = max(60, seconds + delta * 5)
