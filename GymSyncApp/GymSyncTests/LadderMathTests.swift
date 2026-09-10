@@ -547,4 +547,86 @@ final class LadderMathTests: XCTestCase {
         XCTAssertEqual(firstWeek.params.volumeLbs, 25_000,
                        "with no week before it, the rung IS the week")
     }
+
+    // MARK: - Fix round 1, finding F2: the deload stays on the week the block marked
+    //
+    // EVERY ONE OF THESE USES A RULE THAT ADVANCES EVERY WEEK
+    // (`everyWeeks: 1`), and that is not incidental. The shipped
+    // `trainingDaysPerWeek` rule steps every SECOND week, so its ladder is full
+    // of natural plateaus and "this week repeats the last" says nothing about
+    // whether the deload landed. With a rule that climbs every week the only
+    // repeat in the ladder IS the deload, so the assertion can only pass for the
+    // right reason.
+
+    private func everyWeekRule() -> StepEveryNWeeksLadderRule {
+        StepEveryNWeeksLadderRule(step: 1, everyWeeks: 1,
+                                  read: { $0.days }, write: { $0.days = $1 })
+    }
+
+    /// Eight rungs, the first `closed` of them already behind the athlete.
+    private func partlyClosedLadder(closed: Int,
+                                    overridden: Set<Int> = []) -> Ladder {
+        Ladder(goalID: UUID(),
+               rungs: (0..<8).map { index in
+                   let status: RungStatus
+                   if overridden.contains(index) { status = .overridden }
+                   else if index < closed { status = .met }
+                   else if index == closed { status = .current }
+                   else { status = .ahead }
+                   return .init(weekIndex: index,
+                                weekStartString: String(format: "2026-09-%02d", 6 + index * 7),
+                                target: GoalTarget(days: 2), status: status)
+               },
+               derivedAt: Date(timeIntervalSince1970: 0))
+    }
+
+    private func reLaddered(closed: Int, overridden: Set<Int> = []) -> Ladder {
+        LadderMath.reLadder(
+            existing: partlyClosedLadder(closed: closed, overridden: overridden),
+            metric: .trainingDaysPerWeek,
+            current: GoalTarget(days: 2),
+            // High enough that the ramp never saturates and the only flat spot
+            // in the ladder is the deload itself.
+            milestone: GoalTarget(days: 20),
+            constraints: LadderConstraints(deloadWeeks: [4]),
+            rule: everyWeekRule(),
+            derivedAt: Date(timeIntervalSince1970: 100))
+    }
+
+    /// THE DEFECT THIS PINS. `LadderReadout.constraints` numbers deloads over the
+    /// WHOLE block, `reLadder` asks the rule for only the rungs still ahead, and
+    /// every rule tests `deloadWeeks.contains(index)` against its own
+    /// `0..<weeks` — local to that window. Handed the absolute set unchanged,
+    /// `march-to-1rm`'s week-5 deload (index 4) drifted one week later on every
+    /// refresh and then vanished off the front of the block. Silently: the only
+    /// existing re-ladder test passed an empty `LadderConstraints()`.
+    func testTheDeloadStaysOnItsOwnWeekAcrossSuccessiveRefreshes() throws {
+        for closed in [0, 1, 2] {
+            let out = reLaddered(closed: closed)
+            let days = out.rungs.compactMap(\.target.days)
+
+            XCTAssertEqual(days[4], days[3],
+                           "with \(closed) week(s) closed, week 5 is the light one")
+            XCTAssertGreaterThan(days[3], days[2],
+                                 "with \(closed) closed, the week before it climbs")
+            XCTAssertGreaterThan(days[5], days[4],
+                                 "with \(closed) closed, the week after it resumes")
+        }
+    }
+
+    /// The translation is BY POSITION, not by subtracting the first index, and a
+    /// hole is where the two differ. An athlete who sets their own goal for a
+    /// FUTURE week makes that rung `overridden`, and it drops out of the middle
+    /// of the window — after which a single offset would shift every constraint
+    /// past the hole by one.
+    func testTheDeloadSurvivesAHoleLeftByAnOverriddenFutureWeek() throws {
+        let out = reLaddered(closed: 2, overridden: [3])
+        let days = out.rungs.compactMap(\.target.days)
+
+        XCTAssertEqual(days[3], 2, "an overridden week is the athlete's, untouched")
+        XCTAssertEqual(days[4], days[2],
+                       "week 5 still holds — it repeats the last rung the ladder "
+                       + "actually rewrote, which is week 3")
+        XCTAssertGreaterThan(days[5], days[4], "and week 6 resumes the climb")
+    }
 }

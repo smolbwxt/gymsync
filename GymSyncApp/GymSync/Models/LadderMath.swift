@@ -201,7 +201,8 @@ extension LadderMath {
         guard !mutable.isEmpty else { return existing }
 
         let fresh = rule.rungs(current: current, target: milestone,
-                               weeks: mutable.count, constraints: constraints)
+                               weeks: mutable.count,
+                               constraints: windowed(constraints, over: mutable))
         var byWeek: [String: GoalTarget] = [:]
         for (rung, target) in zip(mutable, fresh) {
             byWeek[rung.weekStartString] = target
@@ -215,6 +216,53 @@ extension LadderMath {
             return updated
         }
         return out
+    }
+
+    /// `constraints` translated from BLOCK-RELATIVE week indices to the window
+    /// the rule is about to iterate (fix round 1, finding F2).
+    ///
+    /// THIS IS THE DELOAD LAW'S ONE SHARP EDGE. `LadderReadout.constraints`
+    /// builds `deloadWeeks` by enumerating the whole template, so a
+    /// `march-to-1rm` deload is index 4 of eight. `reLadder` then asks the rule
+    /// for only the rungs that are still `ahead` or `current`, and every rule
+    /// tests `deloadWeeks.contains(index)` with `index` running `0..<weeks` —
+    /// local to that window. Handed the absolute set unchanged, the light week
+    /// drifted one week later on every refresh (after week 1 closed, local 4 was
+    /// absolute 5; after week 2, absolute 6) and then vanished entirely once
+    /// the block index fell off the front. Silently, because nothing rebuilt the
+    /// ladder from the block afterwards to notice.
+    ///
+    /// Translating puts every constraint back on the week the block actually
+    /// marked, and constraints outside the window simply do not appear: a deload
+    /// the athlete has already trained through is not a deload still ahead of
+    /// them.
+    ///
+    /// TRANSLATED BY POSITION, not by subtracting the first index, and the
+    /// difference only shows on a ladder with a HOLE in it. `mutable` is
+    /// normally contiguous — past weeks are met/missed, then current, then
+    /// ahead — but an athlete who sets their own goal for a FUTURE week makes
+    /// that rung `overridden`, and it drops out of the middle. Subtracting a
+    /// single offset would then shift every rung after the hole; asking each
+    /// mutable rung for its own position cannot. For a contiguous window the two
+    /// are the same arithmetic.
+    ///
+    /// WHAT THIS DOES NOT FIX, and it is worth knowing: a rule with its OWN
+    /// cadence — `PercentRampLadderRule`'s `downWeekEvery` — still counts from
+    /// the start of the window, so an endurance down-week re-phases on a
+    /// re-ladder. Carrying a phase offset would mean widening `LadderConstraints`,
+    /// which is frozen Task 0 surface; it is recorded for the controller rather
+    /// than invented here.
+    private static func windowed(_ constraints: LadderConstraints,
+                                 over mutable: [LadderRung]) -> LadderConstraints {
+        guard mutable.first?.weekIndex != 0 else { return constraints }
+        var local = constraints
+        local.deloadWeeks = Set(mutable.enumerated().compactMap { position, rung in
+            constraints.deloadWeeks.contains(rung.weekIndex) ? position : nil
+        })
+        local.taperWeeks = Set(mutable.enumerated().compactMap { position, rung in
+            constraints.taperWeeks.contains(rung.weekIndex) ? position : nil
+        })
+        return local
     }
 }
 
