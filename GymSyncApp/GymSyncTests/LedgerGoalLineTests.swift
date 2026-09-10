@@ -103,4 +103,61 @@ final class LedgerGoalLineTests: XCTestCase {
                                               unit: .lbs, calendar: calendar)
         XCTAssertEqual(line?.hasPrefix("MISSED"), true)
     }
+
+    // MARK: - The read is wired, not a placeholder (review finding 3)
+
+    /// A repository that knows one finished block's goal — the shape Stream
+    /// A's live one will have at I1, standing in for it here.
+    private struct LedgerBlockGoalRepository: BlockGoalRepository {
+        let goal: BlockGoal
+        func activeGoal() async -> BlockGoal? { goal }
+        func ladder(goalID: UUID) async -> Ladder? { nil }
+        func page(goalID: UUID) async -> LadderPageModel? { nil }
+        @discardableResult func save(_ goal: BlockGoal) async -> Bool { false }
+        func reLadder(goalID: UUID) async -> Ladder? { nil }
+        @discardableResult
+        func materialiseRung(goalID: UUID, weekStart: String) async -> WeeklyGoal? { nil }
+    }
+
+    /// THE WHOLE CHAIN, on a finished block: the injected repository answers,
+    /// `goals(for:repository:)` keys it by enrollment, and `goalLine` words
+    /// it. This is what makes D5 a wired read rather than a seam that always
+    /// answered `[:]` — hand the ledger a repository that knows the block and
+    /// the row says what the block was for.
+    func testTheLedgerReadsItsGoalThroughTheInjectedRepository() async {
+        let finished = goal(.met)
+        let repository = LedgerBlockGoalRepository(goal: finished)
+
+        let goals = await ProgramLedgerView.goals(for: [finished.enrollmentID],
+                                                  repository: repository)
+        XCTAssertEqual(goals.count, 1)
+        let found = goals[finished.enrollmentID]
+        XCTAssertNotNil(found)
+        XCTAssertEqual(
+            ProgramLedgerView.goalLine(found, liftName: "Bench", unit: .lbs,
+                                       calendar: calendar),
+            "MET — BENCH 225 BY OCT 18",
+            "a finished block on screen says what it was for and how it came out")
+    }
+
+    /// A block the repository does not know about contributes nothing — the
+    /// ledger does not attach one block's goal to another block's row.
+    func testAGoalForSomeOtherBlockNeverLandsOnThisRow() async {
+        let elsewhere = goal(.met)
+        let goals = await ProgramLedgerView.goals(
+            for: [UUID()], repository: LedgerBlockGoalRepository(goal: elsewhere))
+        XCTAssertTrue(goals.isEmpty)
+    }
+
+    /// The shipping default is the stub, whose fixture enrollment no real
+    /// block has — so a real athlete sees no goal line rather than the
+    /// fixture's bench milestone, exactly as the schedule page's card does.
+    func testTheStubNeverAttachesItsFixtureGoalToARealBlock() async {
+        let goals = await ProgramLedgerView.goals(for: [UUID(), UUID()],
+                                                  repository: StubBlockGoalRepository())
+        XCTAssertTrue(goals.isEmpty)
+        XCTAssertTrue(ProgramLedgerView().goalRepository is StubBlockGoalRepository)
+        XCTAssertNil(ProgramLedgerView().goalsForEnrollments,
+                     "the closure is the previewless fallback, not the shipping path")
+    }
 }

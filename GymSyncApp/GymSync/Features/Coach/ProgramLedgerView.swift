@@ -16,25 +16,31 @@ import SwiftUI
 // hidden: they are part of the story of what drove the next block.
 struct ProgramLedgerView: View {
 
-    /// The goals for the blocks on screen, in ONE read for every row rather
-    /// than one read per row (goal-first plan, task D5).
+    /// The block goals behind the rows on screen (goal-first plan, task D5).
     ///
-    /// A CLOSURE rather than a `BlockGoalRepository`, deliberately. That
-    /// protocol is Task 0's frozen interface, and its only read of a goal is
-    /// `activeGoal()` — the goal driving the ACTIVE enrollment — while every
-    /// row in this ledger is a block that has already ended. Widening the
-    /// protocol would change a surface three streams fork against, so the
-    /// batch read lives here as a seam with the shape the plan asks for (all
-    /// the ids at once), and integration task I1 binds it to Stream A's
-    /// `block_goals` read.
-    ///
-    /// The default answers nothing, so today every row renders its status
-    /// line and no goal line. That is the honest state: `block_goals` is
-    /// Stream A's table and this build cannot read it yet.
-    let goalsForEnrollments: @Sendable ([UUID]) async -> [UUID: BlockGoal]
+    /// `StubBlockGoalRepository` until Stream A's live one lands (I1) — the
+    /// same injection every other surface in this stream takes, so all of
+    /// them swap together.
+    let goalRepository: any BlockGoalRepository
 
-    init(goalsForEnrollments: @escaping @Sendable ([UUID]) async -> [UUID: BlockGoal]
-         = { _ in [:] }) {
+    /// An override for the batch read, for a caller that has a better one
+    /// than the frozen protocol can express.
+    ///
+    /// **THE REPOSITORY IS THE REAL PATH** (task review finding 3, and the
+    /// controller's ruling on it): `load()` reads through `goalRepository`,
+    /// so a goal line renders as soon as the injected repository knows about
+    /// the block on screen. This closure exists only as the previewless
+    /// fallback — nil is the shipping value — and it is what integration task
+    /// I1 binds to Stream A's `.in("enrollment_id", …)` batch read, which is
+    /// the read the plan describes and the one the frozen protocol cannot
+    /// express: `BlockGoalRepository` answers `activeGoal()` and nothing
+    /// else, while a ledger row is a block that has already ended. Widening a
+    /// protocol three streams fork against is not this stream's call.
+    let goalsForEnrollments: (@Sendable ([UUID]) async -> [UUID: BlockGoal])?
+
+    init(goalRepository: any BlockGoalRepository = StubBlockGoalRepository(),
+         goalsForEnrollments: (@Sendable ([UUID]) async -> [UUID: BlockGoal])? = nil) {
+        self.goalRepository = goalRepository
         self.goalsForEnrollments = goalsForEnrollments
     }
 
@@ -403,9 +409,37 @@ struct ProgramLedgerView: View {
     private func load() async {
         enrollments = (try? await ProgramRepository.history()) ?? []
         // ONE read for every row on screen, not one per row.
-        goalsByEnrollment = await goalsForEnrollments(enrollments.map(\.id))
+        let ids = enrollments.map(\.id)
+        if let goalsForEnrollments {
+            goalsByEnrollment = await goalsForEnrollments(ids)
+        } else {
+            goalsByEnrollment = await Self.goals(for: ids, repository: goalRepository)
+        }
         await loadLiftNames()
         loading = false
+    }
+
+    /// What the frozen `BlockGoalRepository` CAN answer, keyed the way the
+    /// rows need it.
+    ///
+    /// The protocol has one read of a goal — `activeGoal()`, the goal driving
+    /// the athlete's active enrollment — so this returns at most one entry,
+    /// and only when that enrollment is actually one of the rows on screen.
+    /// That is a narrower answer than the plan's `.in("enrollment_id", …)`,
+    /// and it is the honest one this stream can give without widening a
+    /// surface three streams fork against; `goalsForEnrollments` is where I1
+    /// hands in the wider read.
+    ///
+    /// It is a real read, not a placeholder: hand this a repository that
+    /// knows the block and the line renders.
+    /// `LedgerGoalLineTests.testTheLedgerReadsItsGoalThroughTheInjectedRepository`
+    /// proves the whole chain — repository → map → `goalLine` — on a FINISHED
+    /// block.
+    static func goals(for enrollmentIDs: [UUID],
+                      repository: any BlockGoalRepository) async -> [UUID: BlockGoal] {
+        guard let goal = await repository.activeGoal(),
+              enrollmentIDs.contains(goal.enrollmentID) else { return [:] }
+        return [goal.enrollmentID: goal]
     }
 
     /// The exercise catalog, and only when a goal on screen names a lift.
