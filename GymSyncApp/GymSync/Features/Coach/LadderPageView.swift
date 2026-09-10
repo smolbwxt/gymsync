@@ -199,7 +199,16 @@ struct LadderPageView: View {
         }
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .gs3DCard(cornerRadius: GSMetrics.radiusSm)
+        // CARD radius, not small-card (task review finding 7). Rule 1's
+        // scale is "cards 24, small cards 16, strips 14, chips 999", and this
+        // is the page's principal object — eight rows, the whole ladder, the
+        // thing the page is named for. The coach line and SEE THE BLOCK stay
+        // at the strip's 14, which is what they are.
+        //
+        // `LadderCard` on the schedule page keeps 16 deliberately: three rows
+        // and a footer, sitting in a column of other cards, is a small card
+        // by the same scale.
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd)
     }
 
     /// Week number and the target in words on the left, the implication
