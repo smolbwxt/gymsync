@@ -337,6 +337,20 @@ struct ProgramLedgerView: View {
     /// it sits directly under `statusLine(_:)`, which is already one, and two
     /// adjacent metadata lines in different cases read as two different kinds
     /// of thing.
+    ///
+    /// **THE FINAL MEASURED VALUE IS NOT HERE YET, AND THAT IS AN OPEN ITEM**
+    /// (task review finding 6). Spec §6 asks the ledger for "the outcome …
+    /// with the milestone *and the final measured value*". This renders
+    /// `MET — BENCH 225 BY OCT 18`; `BlockGoal.outcomeValue` is read nowhere
+    /// in the app, and the plan's own test for this function pinned the
+    /// expected string WITHOUT the measured value while constructing an
+    /// `outcomeValue` of 227 that nothing consumes — a plan-level omission
+    /// this task transcribed faithfully rather than silently invented around.
+    ///
+    /// It is a phase-3 decision, because phase 3 is what writes the column:
+    /// either the line grows a measured half (`MET AT 227 — BENCH 225 BY OCT
+    /// 18`) or the spec drops the clause. Named here so it is not lost in the
+    /// gap between "phase 1 renders" and "phase 3 writes".
     static func goalLine(_ goal: BlockGoal?, liftName: String, unit: WeightUnit,
                          calendar: Calendar = .current) -> String? {
         guard let goal,
