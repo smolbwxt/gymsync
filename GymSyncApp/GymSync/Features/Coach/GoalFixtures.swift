@@ -28,9 +28,11 @@ enum GoalFixtures {
     /// midnight-UTC date as the day before.
     static let today = StubBlockGoalRepository.fixtureCreatedAt
 
-    /// The display unit, pinned, so every frame reads `lb` whatever unit the
+    /// The display unit, pinned, so every frame reads `lbs` whatever unit the
     /// capturing simulator's account happens to carry — the same reason
-    /// `WeeklyGoalFixtures.editorUnit` exists.
+    /// `WeeklyGoalFixtures.editorUnit` exists. `lbs`, not `lb`:
+    /// `WeightUnit.label` is the raw value, and the frames print what it
+    /// says.
     static let unit: WeightUnit = .lbs
 
     /// The picker's rows: the block's focus lifts, shared with the weekly
