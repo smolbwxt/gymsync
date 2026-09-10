@@ -345,7 +345,7 @@ struct LadderPageView: View {
     /// (task C3), and this row is a door rather than an object to read.
     private var seeTheBlock: some View {
         NavigationLink {
-            ProgramScheduleView()
+            blockSchedule()
                 .background(theme.bg)
                 .navigationTitle("Program schedule")
                 .navigationBarTitleDisplayMode(.inline)
@@ -404,6 +404,21 @@ struct LadderPageView: View {
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .gs3DCard(cornerRadius: GSMetrics.radiusSm)
+    }
+
+    /// The block's schedule page, built with **this page's** repository
+    /// (task review finding 2).
+    ///
+    /// The same drop `HomeView.ladderPage(for:)` fixes, one hop further out:
+    /// this used to be a bare `ProgramScheduleView()`, discarding the
+    /// repository the ladder page itself was handed. Home → ladder → schedule
+    /// → ladder is a real path, and every hop of it now carries one
+    /// repository, so I1 swaps them all together by changing one default.
+    ///
+    /// A FUNCTION for the same reason `ladderPage(for:)` is one: the wiring
+    /// becomes a value a test can hold.
+    func blockSchedule() -> ProgramScheduleView {
+        ProgramScheduleView(goalRepository: repository)
     }
 
     // MARK: - The status -> style mapping (LadderRowStyleTests)

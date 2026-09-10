@@ -322,7 +322,7 @@ struct HomeView: View {
             // page, and Home does no ladder arithmetic (the agreement law
             // `goalStripSection` states).
             .navigationDestination(item: $pushedLadderGoalID) { goalID in
-                LadderPageView(goalID: goalID)
+                ladderPage(for: goalID)
             }
             // Coach's front door. Reachable elsewhere only from the You
             // tab's own `showCoach` push (`YouTabView.swift:124-131`); the
@@ -837,6 +837,24 @@ struct HomeView: View {
     static func goalStripDestination(for goal: WeeklyGoal?) -> GoalStripDestination {
         guard let goalID = goal?.params.goalID else { return .editor }
         return .ladder(goalID)
+    }
+
+    /// The ladder page this Home pushes, built with **this Home's**
+    /// repository (task review finding 2).
+    ///
+    /// It used to be `LadderPageView(goalID: goalID)`, which silently fell
+    /// back to that view's own default `StubBlockGoalRepository()`. Today
+    /// both sides are the stub and nothing looks wrong; at I1, when Home is
+    /// handed the live repository, Coach's line would have read the athlete's
+    /// real ladder while the page one tap away rendered the fixture "Bench
+    /// 225 by Oct 18". It fails silently and it looks correct, which is the
+    /// worst shape a defect can have.
+    ///
+    /// A FUNCTION rather than an inline construction so the wiring is a value
+    /// a test can hold — `HomeCompositionTests
+    /// .testTheLadderPageHomePushesCarriesHomesOwnRepository`.
+    func ladderPage(for goalID: UUID) -> LadderPageView {
+        LadderPageView(goalID: goalID, repository: blockGoalRepository)
     }
 
     /// The strip's own chrome — `surface` fill, 14 pt radius, 12 pt padding

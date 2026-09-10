@@ -169,7 +169,7 @@ struct ProgramScheduleView: View {
                 .presentationDetents([.height(500)])
         }
         .navigationDestination(item: $pushedLadderGoalID) { goalID in
-            LadderPageView(goalID: goalID, repository: goalRepository)
+            ladderPage(for: goalID)
                 .background(theme.bg)
         }
         .navigationDestination(item: $pushedRoutineID) { id in
@@ -204,6 +204,18 @@ struct ProgramScheduleView: View {
                 pushedLadderGoalID = ladderGoalID
             }
         }
+    }
+
+    /// The ladder page this schedule pushes, built with **this page's**
+    /// repository.
+    ///
+    /// This hop was already right; it is a function now for the same reason
+    /// `HomeView.ladderPage(for:)` and `LadderPageView.blockSchedule()` are —
+    /// a default argument cannot be asserted from its call site, and
+    /// `LadderRepositoryWiringTests` pins all four hops of the loop so I1
+    /// swaps one default rather than hunting four constructions.
+    func ladderPage(for goalID: UUID) -> LadderPageView {
+        LadderPageView(goalID: goalID, repository: goalRepository)
     }
 
     /// The goal driving THIS block, and its ladder.
