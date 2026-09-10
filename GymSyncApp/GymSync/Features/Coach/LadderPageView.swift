@@ -532,14 +532,29 @@ struct LadderPageView: View {
     /// repository rewrites only `ahead` and `current` rungs (spec §8), so a
     /// missed or overridden week stays visible — which is why the page simply
     /// re-reads afterwards rather than patching rows itself.
+    /// **THE WORLD GUARD IS FIRST**, and that is the fix for task review
+    /// finding 5. `reLadder(goalID:)` is a PERSISTING write — the protocol
+    /// says so at `BlockGoalRepository.swift:30-33` — and this used to call
+    /// it and only then check for a world. The seam's contract, stated in
+    /// this file's header and repeated in `CatalogHostView`, is that a page
+    /// with a world "never opens a socket"; the guard was protecting the
+    /// re-read and leaving the write outside it. Inert today only because the
+    /// catalog's repository happens to be the stub and no tap occurs in a
+    /// capture — which is luck, not enforcement.
     private func reLadder() async {
+        guard world == nil else { return }
         reLaddering = true
         defer { reLaddering = false }
         _ = await repository.reLadder(goalID: goalID)
-        guard world == nil else { return }
         fetched = await repository.page(goalID: goalID)
     }
 
+    /// The other write on this page, and it is world-safe **structurally**
+    /// rather than by a guard: `goal` is set only in `load()`, which returns
+    /// before it reads anything when a world is present, so a catalog frame
+    /// can never hold one and this returns on the line below. Recorded here
+    /// so the next reader does not have to re-derive it and add a guard that
+    /// looks necessary — the one in `reLadder()` is, this one is not.
     private func save() async {
         guard let goal else { return }
         saving = true
