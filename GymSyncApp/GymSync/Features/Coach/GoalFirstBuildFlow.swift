@@ -125,10 +125,11 @@ struct GoalFirstBuildFlow: View {
 
         if let userID = appState.currentProfile?.id {
             routines = (try? await RoutineRepository.fetchAll(ownerID: userID)) ?? []
+            // Only NOW may the goal screen say "no routines". Before the fetch
+            // lands — and for a signed-out athlete, who is never asked at all —
+            // `routines.isEmpty` means "not asked yet", and a tile that flashed
+            // a warning on every open would be lying half the time.
+            routinesLoaded = true
         }
-        // Only NOW may the goal screen say "no routines": before the fetch
-        // lands, `routines.isEmpty` means "not asked yet", and a tile that
-        // flashed a warning on every open would be lying half the time.
-        routinesLoaded = true
     }
 }
