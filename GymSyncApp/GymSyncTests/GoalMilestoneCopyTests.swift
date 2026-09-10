@@ -20,22 +20,44 @@ final class GoalMilestoneCopyTests: XCTestCase {
         XCTAssertEqual(line, "You're at 205 now; that's about 6 weeks of work.")
     }
 
-    func testEveryPresetProducesADraftItsMetricCanRead() {
+    /// **THE HELD BRANCH IS INVERTED FROM THE PLAN'S OWN C2 TEST**, by the
+    /// controller's fix-round-2 ruling. The plan asserted `XCTAssertNil(draft
+    /// .byDate)` for a held preset, quoting spec §2.1's parenthetical — and
+    /// that left Maintenance's and Recovery's ONLY lever with nowhere to put
+    /// its answer, because `BlockGoalDraft` is Task 0's frozen surface and
+    /// carries no week count (review finding 6). A held draft now writes its
+    /// length into the field the builder already reads a length from, so B4
+    /// receives it the same way for all eleven presets and nothing frozen
+    /// moves.
+    ///
+    /// What is asserted instead is the thing that actually has to be true: the
+    /// date a held preset carries IS its block length, read back out.
+    func testEveryPresetProducesADraftItsMetricCanRead() throws {
+        let today = Date(timeIntervalSince1970: 0)
         for preset in GoalPreset.allCases {
             let draft = GoalMilestoneCopy.draft(preset: preset,
                                                 current: GoalTarget(),
-                                                today: Date(timeIntervalSince1970: 0),
+                                                today: today,
                                                 unit: .lbs)
             XCTAssertEqual(draft.metric, preset.metric, "\(preset.rawValue)")
             XCTAssertEqual(draft.preset, preset)
             XCTAssertEqual(draft.source, .user, "the door is the athlete choosing")
-            if preset.asksForDate {
-                XCTAssertNotNil(draft.byDate, "\(preset.rawValue) is seeded with a date")
-            } else {
-                XCTAssertNil(draft.byDate,
-                             "\(preset.rawValue) is held for the block; it has no deadline")
-            }
+
+            let byDate = try XCTUnwrap(draft.byDate, "\(preset.rawValue) is seeded with a date")
+            XCTAssertEqual(GoalBlockLength.weeks(byDate: byDate, from: today),
+                           GoalBlockLength.defaultWeeks,
+                           "\(preset.rawValue): the date IS the block length")
         }
+    }
+
+    /// The card still only ASKS the eight. `asksForDate` is about the question
+    /// — whether a date row renders — and fix round 2 did not change it; what
+    /// changed is that the answer for the other three is derived from their
+    /// stepper rather than left empty.
+    func testOnlyTheEightDateBearingPresetsAreAskedForADate() {
+        XCTAssertEqual(Set(GoalPreset.allCases.filter { !$0.asksForDate }),
+                       [.maintenance, .recovery, .consistency])
+        XCTAssertEqual(GoalPreset.allCases.filter(\.asksForDate).count, 8)
     }
 
     func testMaintenanceSeedsEveryMajorGroup() {
@@ -233,6 +255,62 @@ final class GoalMilestoneCopyTests: XCTestCase {
             XCTAssertNil(GoalMilestoneCopy.incompleteReason(preset: preset, draft: seeded,
                                                             hasRoutines: false),
                          preset.rawValue)
+        }
+    }
+
+    // MARK: - A held block's length reaches the builder (review finding 6)
+
+    /// **STEPPING RECOVERY TO FOUR WEEKS YIELDS A DRAFT WHOSE DATE IS FOUR
+    /// WEEKS OUT** — the controller's own test for fix round 2.
+    ///
+    /// Maintenance's and Recovery's only lever is the block length, and
+    /// `BlockGoalDraft` carries no week count. Rather than widen a frozen type,
+    /// the stepper writes the length into the field `ProgramBuilder.build`
+    /// already reads a length from, so B4 hears it the same way it hears every
+    /// other preset's.
+    func testSteppingAHeldBlockLengthMovesTheDateTheBuilderReads() throws {
+        let today = Date(timeIntervalSince1970: 1_788_696_000)
+        let six = GoalMilestoneCopy.draft(preset: .recovery, current: GoalTarget(),
+                                          today: today, unit: .lbs, weeks: 6)
+        XCTAssertEqual(GoalBlockLength.weeks(byDate: try XCTUnwrap(six.byDate), from: today), 6)
+
+        // The stepper's whole act, 6 → 4, through the function the card calls.
+        let four = GoalMilestoneCopy.settingHeldWeeks(six, weeks: 4, today: today)
+        let byDate = try XCTUnwrap(four.byDate)
+
+        XCTAssertEqual(GoalBlockLength.weeks(byDate: byDate, from: today), 4,
+                       "the builder reads the length off the date, like every preset")
+        XCTAssertLessThan(byDate, try XCTUnwrap(six.byDate),
+                          "a shorter block ends sooner")
+        XCTAssertEqual(byDate,
+                       try XCTUnwrap(Calendar.current.date(byAdding: .day, value: 28,
+                                                           to: WeekMath.startOfWeek(today))),
+                       "four whole weeks from the week the athlete is standing in")
+
+        // And Coach counts the same number.
+        let weeks = GoalMilestoneCopy.weeks(preset: .recovery, byDate: byDate,
+                                            heldWeeks: 4, today: today)
+        XCTAssertEqual(weeks, 4)
+        XCTAssertEqual(GoalMilestoneCopy.coachLine(preset: .recovery, current: GoalTarget(),
+                                                   draft: four, weeks: weeks, unit: .lbs),
+                       "I'll hold this for 4 weeks.")
+    }
+
+    /// The derivation holds whatever weekday the athlete opens the door on —
+    /// the span is `N × 7 − offset` days with `offset` in 0…6, which always
+    /// rounds up to `N`.
+    func testAHeldBlocksDateReadsBackAsItsLengthOnEveryWeekday() throws {
+        let anchor = Date(timeIntervalSince1970: 1_788_696_000)
+        for dayOffset in 0..<7 {
+            let today = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: dayOffset,
+                                                            to: anchor))
+            for weeks in [GoalBlockLength.minimumWeeks, 6, 8, 12] {
+                let draft = GoalMilestoneCopy.draft(preset: .maintenance, current: GoalTarget(),
+                                                    today: today, unit: .lbs, weeks: weeks)
+                XCTAssertEqual(
+                    GoalBlockLength.weeks(byDate: try XCTUnwrap(draft.byDate), from: today),
+                    weeks, "day \(dayOffset), \(weeks) weeks")
+            }
         }
     }
 

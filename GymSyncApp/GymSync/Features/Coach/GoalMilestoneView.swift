@@ -26,17 +26,32 @@ enum GoalMilestoneCopy {
 
     /// The milestone the card OPENS on, from what the athlete's log says now.
     ///
-    /// `byDate` follows `GoalPreset.asksForDate` exactly (Task 0's frozen
-    /// rule): Maintenance, Recovery and Consistency are held for the block and
-    /// asking for a date would invent a deadline for a goal that has none.
+    /// **EVERY DRAFT CARRIES A DATE, INCLUDING THE HELD ONES** (controller
+    /// ruling, fix round 2).
     ///
-    /// THE DATE IS THE LAST DAY OF THE BLOCK, not the day after it. A block
-    /// that starts today and runs `weeks` weeks counts today as day one, so
-    /// its final day is `today + weeks × 7 − 1`. Seeding the day after would
-    /// hand `GoalBlockLength.weeks` a span of exactly `weeks × 7` days, which
-    /// still rounds to `weeks` — both are self-consistent — but "by the end of
-    /// the block" is the sentence the athlete reads, and the last day is what
-    /// it means.
+    /// `GoalPreset.asksForDate` still decides whether the CARD ASKS: the three
+    /// it excludes render a weeks stepper and no date picker, because their
+    /// milestone is a length held, not a day met. But the length has to reach
+    /// the builder, and `BlockGoalDraft` — Task 0's frozen surface — carries no
+    /// week count. Since `GoalBlockLength.weeks(byDate:from:)` is already how
+    /// `ProgramBuilder.build` reads a block's length for the other eight, the
+    /// held presets write theirs into the same field: `weekStart(today) + N
+    /// weeks`. B4 then receives the length the same way for all eleven, and
+    /// nothing about the frozen model moves.
+    ///
+    /// **This inverts the plan's own C2 assertion** that a held draft's
+    /// `byDate` is nil (spec §2.1's parenthetical). The alternative was a
+    /// stepper the builder could not hear — the review's finding 6 — or
+    /// widening a frozen type. `asksForDate` keeps its meaning, which is about
+    /// the QUESTION and not about the field.
+    ///
+    /// THE DATE-BEARING PRESETS' DATE IS THE LAST DAY OF THE BLOCK, not the day
+    /// after it. A block that starts today and runs `weeks` weeks counts today
+    /// as day one, so its final day is `today + weeks × 7 − 1`. Seeding the day
+    /// after would hand `GoalBlockLength.weeks` a span of exactly `weeks × 7`
+    /// days, which still rounds to `weeks` — both are self-consistent — but "by
+    /// the end of the block" is the sentence the athlete reads, and the last
+    /// day is what it means.
     static func draft(preset: GoalPreset,
                       current: GoalTarget,
                       today: Date,
@@ -49,7 +64,7 @@ enum GoalMilestoneCopy {
                                  weeks: weeks, unit: unit),
             byDate: preset.asksForDate
                 ? milestoneDate(from: today, weeks: weeks, calendar: calendar)
-                : nil,
+                : heldMilestoneDate(from: today, weeks: weeks, calendar: calendar),
             preset: preset,
             source: .user)
     }
@@ -58,6 +73,37 @@ enum GoalMilestoneCopy {
     static func milestoneDate(from today: Date, weeks: Int,
                               calendar: Calendar = .current) -> Date {
         calendar.date(byAdding: .day, value: max(1, weeks) * 7 - 1, to: today) ?? today
+    }
+
+    /// A HELD block's end: the morning its last week closes over into.
+    ///
+    /// `WeekMath.startOfWeek(today) + N × 7` — the block's own weeks, counted
+    /// from the week the athlete is standing in, which is the shape
+    /// `StubBlockGoalRepository`'s fixture ladder already documents (eight
+    /// training weeks from Sunday 2026-08-23, milestone Sunday 2026-10-18).
+    /// A held block is booked by the WEEK, so its length is a whole number of
+    /// them and its end is a week boundary; the date-bearing presets count from
+    /// `today` instead, because a milestone the athlete named has a day.
+    ///
+    /// `GoalBlockLength.weeks` reads exactly `N` back out of it whatever
+    /// weekday `today` falls on: the span is `N × 7 − offset` days with
+    /// `offset` in 0…6, and that always rounds up to `N`.
+    static func heldMilestoneDate(from today: Date, weeks: Int,
+                                  calendar: Calendar = .current) -> Date {
+        let start = WeekMath.startOfWeek(today, calendar: calendar)
+        return calendar.date(byAdding: .day, value: max(1, weeks) * 7, to: start) ?? today
+    }
+
+    /// The weeks stepper's whole act: the length the athlete chose, and the
+    /// date that carries it to the builder.
+    ///
+    /// One function so the card and its test perform the same act — the stepper
+    /// is view code and view code is not testable in this target, so the thing
+    /// it does has to live somewhere a test can call.
+    static func settingHeldWeeks(_ draft: BlockGoalDraft, weeks: Int, today: Date,
+                                 calendar: Calendar = .current) -> BlockGoalDraft {
+        applying(draft, byDate: heldMilestoneDate(from: today, weeks: weeks,
+                                                  calendar: calendar))
     }
 
     /// **THE BLOCK LENGTH THE CARD IS WORKING TO**, and it is READ OFF THE
@@ -71,17 +117,24 @@ enum GoalMilestoneCopy {
     /// a milestone six months out, and would let the body-composition card
     /// show a weight, a rate and a date that cannot all three be true.
     ///
-    /// The three HELD presets (Maintenance, Recovery, Consistency — the ones
-    /// `GoalPreset.asksForDate` excludes) have no date to read, so their
-    /// stepper's answer is the block length, clamped to the generator's own
-    /// limits.
+    /// **THE DATE IS THE ANSWER WHENEVER THERE IS ONE**, for all eleven
+    /// presets — the held ones included, since fix round 2 gives them one
+    /// derived from their own stepper (`heldMilestoneDate`). One path, so the
+    /// length the card counts and the length `ProgramBuilder.build` reads
+    /// cannot be two numbers.
+    ///
+    /// The fallback below is only reachable for a draft that never went
+    /// through `draft(...)`: a held preset's stepper is the honest answer
+    /// there, and anything else takes the builder's own default.
     static func weeks(preset: GoalPreset, byDate: Date?, heldWeeks: Int,
                       today: Date, calendar: Calendar = .current) -> Int {
-        guard preset.asksForDate else {
-            return max(GoalBlockLength.minimumWeeks,
-                       min(GoalBlockLength.maximumWeeks, heldWeeks))
+        if let byDate {
+            return GoalBlockLength.weeks(byDate: byDate, from: today, calendar: calendar)
         }
-        return GoalBlockLength.weeks(byDate: byDate, from: today, calendar: calendar)
+        return preset.asksForDate
+            ? GoalBlockLength.defaultWeeks
+            : max(GoalBlockLength.minimumWeeks,
+                  min(GoalBlockLength.maximumWeeks, heldWeeks))
     }
 
     /// Body composition's two readings are ONE milestone said two ways, so a
@@ -1013,12 +1066,19 @@ struct GoalMilestoneView: View {
     /// It renders ONLY for those three, which is exactly why `weeks` may not
     /// be this stepper's value on the other eight: there, nothing would ever
     /// write it.
+    ///
+    /// It writes BOTH the value it shows and the date that carries it: the
+    /// draft is what reaches `ProgramBuilder.build`, and `BlockGoalDraft` has
+    /// no week count, so a stepper that moved only its own state would be a
+    /// lever the builder never hears (review finding 6).
     private var weeksStepper: some View {
         stepperRow(title: "BLOCK", value: heldWeeks,
                    suffix: heldWeeks == 1 ? "WEEK" : "WEEKS",
                    canDecrease: heldWeeks > GoalBlockLength.minimumWeeks,
                    canIncrease: heldWeeks < 24) { delta in
-            heldWeeks = max(GoalBlockLength.minimumWeeks, min(24, heldWeeks + delta))
+            let next = max(GoalBlockLength.minimumWeeks, min(24, heldWeeks + delta))
+            heldWeeks = next
+            draft = GoalMilestoneCopy.settingHeldWeeks(draft, weeks: next, today: today)
         }
     }
 
