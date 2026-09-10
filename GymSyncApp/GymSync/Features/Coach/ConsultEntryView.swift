@@ -141,7 +141,16 @@ struct ConsultEntryView: View {
             //
             // At integration this becomes, verbatim — the shape B's own two
             // call sites already have, so the three lines I1 changes are the
-            // three lines a grep for the marker comment finds:
+            // three lines a grep for the marker comment finds.
+            //
+            // ⚠️ **THE FOUR LINES BELOW ARE A TEMPLATE, NOT THE CALL.** The
+            // live call is at the bottom of this comment block and passes
+            // NEITHER argument, because neither exists on this branch. An I1
+            // pass that greps `StubBlockGoalRepository` and swaps it in place
+            // would edit this comment and leave the call untouched — the call
+            // is the thing to rewrite, wholesale, with what follows. It will
+            // not compile after B is merged until someone does, which is the
+            // loud failure this shape is chosen for.
             //
             //     _ = try await ProgramBuilder.build(
             //         profile: profile, answers: answers,
