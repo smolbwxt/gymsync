@@ -467,7 +467,15 @@ enum GoalMilestoneCopy {
     /// Only the three presets whose milestone names a THING can be
     /// under-specified — every other lever on every other card is seeded to a
     /// legal value and bounded away from zero.
-    static func incompleteReason(preset: GoalPreset, draft: BlockGoalDraft) -> String? {
+    ///
+    /// `hasRoutines` is the one thing a reason can depend on that is not in
+    /// the draft: an athlete with NO SAVED ROUTINES who picks Benchmark used
+    /// to get an empty picker and a permanently disabled primary reading
+    /// "Pick the routine this goal is about." with nothing to pick — a dead
+    /// end whose only exit is Back. A disabled button must say the thing the
+    /// athlete can actually do about it.
+    static func incompleteReason(preset: GoalPreset, draft: BlockGoalDraft,
+                                 hasRoutines: Bool = true) -> String? {
         switch preset {
         case .strength, .repStrength:
             return draft.target.exerciseID == nil ? "Pick the lift this goal is about." : nil
@@ -475,12 +483,24 @@ enum GoalMilestoneCopy {
             let hasTarget = draft.target.muscleTargets?.values.contains { $0 > 0 } ?? false
             return hasTarget ? nil : "Give the muscle group a weekly set target."
         case .benchmark:
+            guard hasRoutines else { return noRoutinesReason }
             return draft.target.routineID == nil ? "Pick the routine this goal is about." : nil
         case .endurance, .consistency, .conditioning, .maintenance, .recovery,
              .bodyComposition, .volume:
             return nil
         }
     }
+
+    /// One sentence, said in the same words wherever the state shows: on the
+    /// milestone card in place of the picker, and under the primary as the
+    /// reason it is disabled.
+    static let noRoutinesReason =
+        "You have no routines yet — build one first, or pick a workout from Discover."
+
+    /// The goal screen's version — a tile has room for a note, not a
+    /// sentence, and the card behind it says the rest.
+    static let noRoutinesTileNote = "Needs a saved routine."
+
 
     // MARK: Small numbers
 
@@ -542,6 +562,11 @@ struct GoalMilestoneView: View {
     /// The Body composition card's `A WEIGHT / A RATE` switch. Both readings
     /// are always set and always agree; this only chooses which one is stepped.
     @State private var stepsTheRate = false
+    /// The pickers' search text. The cap is on what is DRAWN, never on what is
+    /// searched — `WeeklyGoalEditorSheet.liftPicker`'s own rule, and the
+    /// reason a 1,300-row catalog is reachable from a card six rows tall.
+    @State private var liftQuery = ""
+    @State private var routineQuery = ""
 
     init(preset: GoalPreset,
          current: GoalTarget,
@@ -613,7 +638,8 @@ struct GoalMilestoneView: View {
     }
 
     private var incompleteReason: String? {
-        GoalMilestoneCopy.incompleteReason(preset: activePreset, draft: draft)
+        GoalMilestoneCopy.incompleteReason(preset: activePreset, draft: draft,
+                                           hasRoutines: !routines.isEmpty)
     }
 
     // MARK: Body
@@ -863,7 +889,22 @@ struct GoalMilestoneView: View {
     private var benchmarkLevers: some View {
         let seconds = draft.target.targetSeconds ?? 60
         return VStack(alignment: .leading, spacing: 10) {
-            routinePicker
+            if routines.isEmpty {
+                // ONE PLAIN LINE where the picker would be, and the primary
+                // below says the same thing as its reason. A picker with
+                // nothing in it explains nothing.
+                Text(GoalMilestoneCopy.noRoutinesReason)
+                    .font(GSFont.body(13, relativeTo: .subheadline))
+                    .foregroundStyle(theme.neutral700)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(theme.surface)
+                    .clipShape(RoundedRectangle(cornerRadius: GSMetrics.radiusSm))
+            } else {
+                routinePicker
+            }
             stepperRow(title: "MINUTES", value: seconds / 60,
                        suffix: seconds / 60 == 1 ? "MINUTE" : "MINUTES",
                        canDecrease: seconds >= 120, canIncrease: seconds < 180 * 60) { delta in
@@ -1134,31 +1175,88 @@ struct GoalMilestoneView: View {
 
     // MARK: The pickers
 
-    /// Focus lifts first, then whatever else the host handed over — the same
-    /// ordering `WeeklyGoalEditorSheet.liftPicker` uses, and the one that
-    /// matters: the lift a block is built around is the lift a lift goal is
-    /// nearly always about.
+    /// EVERY LIFT THE HOST HANDED OVER — focus lifts first, then the catalog
+    /// — in a search field over a bounded inner scroll.
+    ///
+    /// `WeeklyGoalEditorSheet.liftPicker` is the precedent, down to the cap:
+    /// the list is capped at what is DRAWN (40 matched rows), never at what is
+    /// SEARCHED, because the catalog is over 1,300 rows. The six-row cap this
+    /// replaces was neither — it computed twelve options in the host and drew
+    /// six, so an athlete with three focus lifts could see three compounds and
+    /// set a strength goal on nothing else, with no scroll-past, no search and
+    /// no "more".
     private var liftPicker: some View {
-        VStack(spacing: 6) {
-            ForEach(Array(lifts.prefix(6))) { option in
-                pickerRow(title: option.name, detail: option.detail,
-                          selected: option.id == draft.target.exerciseID) {
-                    draft = GoalMilestoneCopy.applying(draft, exerciseID: option.id)
+        VStack(alignment: .leading, spacing: 8) {
+            searchField("Search lifts", text: $liftQuery)
+
+            ScrollView {
+                VStack(spacing: 6) {
+                    ForEach(visibleLifts) { option in
+                        pickerRow(title: option.name, detail: option.detail,
+                                  selected: option.id == draft.target.exerciseID) {
+                            draft = GoalMilestoneCopy.applying(draft, exerciseID: option.id)
+                        }
+                    }
                 }
             }
+            .frame(maxHeight: 220)
         }
     }
 
+    /// The athlete's own routines — a much smaller list than the lift
+    /// catalog, so the same bounded scroll is generous rather than necessary.
+    /// The empty case never reaches here: `benchmarkLevers` says so in words
+    /// instead.
     private var routinePicker: some View {
-        VStack(spacing: 6) {
-            ForEach(Array(routines.prefix(6))) { routine in
-                pickerRow(title: routine.name,
-                          detail: (routine.description ?? "ROUTINE").uppercased(),
-                          selected: routine.id == draft.target.routineID) {
-                    draft = GoalMilestoneCopy.applying(draft, routineID: routine.id)
+        VStack(alignment: .leading, spacing: 8) {
+            if routines.count > 6 {
+                searchField("Search routines", text: $routineQuery)
+            }
+
+            ScrollView {
+                VStack(spacing: 6) {
+                    ForEach(visibleRoutines) { routine in
+                        pickerRow(title: routine.name,
+                                  detail: (routine.description ?? "ROUTINE").uppercased(),
+                                  selected: routine.id == draft.target.routineID) {
+                            draft = GoalMilestoneCopy.applying(draft, routineID: routine.id)
+                        }
+                    }
                 }
             }
+            .frame(maxHeight: 200)
         }
+    }
+
+    /// Focus lifts first, then everything else with the focus lifts removed so
+    /// nothing appears twice, then the display cap —
+    /// `WeeklyGoalEditorSheet.visibleLifts`' shape exactly.
+    private var visibleLifts: [WeeklyGoalEditorSheet.LiftOption] {
+        let query = liftQuery.trimmingCharacters(in: .whitespaces).lowercased()
+        let matched = query.isEmpty ? lifts : lifts.filter { $0.name.lowercased().contains(query) }
+        return Array(matched.prefix(40))
+    }
+
+    private var visibleRoutines: [Routine] {
+        let query = routineQuery.trimmingCharacters(in: .whitespaces).lowercased()
+        let matched = query.isEmpty
+            ? routines
+            : routines.filter { $0.name.lowercased().contains(query) }
+        return Array(matched.prefix(40))
+    }
+
+    private func searchField(_ prompt: String, text: Binding<String>) -> some View {
+        TextField(prompt, text: text)
+            .font(GSFont.body(14, relativeTo: .body))
+            .foregroundStyle(theme.text)
+            .autocorrectionDisabled()
+            .textInputAutocapitalization(.never)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(theme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: GSMetrics.radiusSm))
+            .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
+                .strokeBorder(theme.divider, lineWidth: 1))
     }
 
     private func pickerRow(title: String, detail: String, selected: Bool,

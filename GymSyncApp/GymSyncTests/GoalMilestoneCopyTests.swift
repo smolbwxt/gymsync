@@ -196,6 +196,46 @@ final class GoalMilestoneCopyTests: XCTestCase {
                        "the rate the weight implies is the rate that produced it")
     }
 
+    // MARK: - Benchmark with nothing to benchmark (review finding 3)
+
+    /// An athlete with NO SAVED ROUTINES who picks Benchmark used to get an
+    /// empty picker and a permanently disabled primary reading "Pick the
+    /// routine this goal is about." with nothing to pick — a dead end whose
+    /// only exit is Back. A disabled button has to name the thing the athlete
+    /// can actually do about it.
+    func testBenchmarkWithNoRoutinesSaysWhatToDoAboutIt() {
+        let empty = BlockGoalDraft(metric: .benchmarkTime, target: GoalTarget(),
+                                   byDate: nil, preset: .benchmark)
+        XCTAssertEqual(GoalMilestoneCopy.incompleteReason(preset: .benchmark, draft: empty,
+                                                          hasRoutines: false),
+                       GoalMilestoneCopy.noRoutinesReason)
+        XCTAssertTrue(GoalMilestoneCopy.noRoutinesReason.hasSuffix("."))
+        XCTAssertTrue(GoalMilestoneCopy.noRoutinesTileNote.hasSuffix("."))
+
+        // A stale id does not rescue it: no routines means nothing to measure
+        // against, whatever the draft still carries.
+        let stale = GoalMilestoneCopy.applying(empty, routineID: UUID())
+        XCTAssertEqual(GoalMilestoneCopy.incompleteReason(preset: .benchmark, draft: stale,
+                                                          hasRoutines: false),
+                       GoalMilestoneCopy.noRoutinesReason)
+        XCTAssertNil(GoalMilestoneCopy.incompleteReason(preset: .benchmark, draft: stale,
+                                                        hasRoutines: true))
+    }
+
+    /// The routine list gates exactly ONE preset. Ten others must stay
+    /// buildable for an athlete who has never saved a routine.
+    func testNoOtherPresetIsBlockedByAnEmptyRoutineList() {
+        let current = GoalTarget(exerciseID: UUID(), muscleTargets: ["chest": 10])
+        for preset in GoalPreset.allCases where preset != .benchmark {
+            let seeded = GoalMilestoneCopy.draft(preset: preset, current: current,
+                                                 today: Date(timeIntervalSince1970: 0),
+                                                 unit: .lbs)
+            XCTAssertNil(GoalMilestoneCopy.incompleteReason(preset: preset, draft: seeded,
+                                                            hasRoutines: false),
+                         preset.rawValue)
+        }
+    }
+
     // MARK: - The block length tracks the date (review finding 1)
 
     /// **THE DATE IS THE HORIZON.** On the eight date-bearing presets nothing

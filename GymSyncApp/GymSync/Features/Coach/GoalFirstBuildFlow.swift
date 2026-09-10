@@ -52,9 +52,12 @@ struct GoalFirstBuildFlow: View {
     @State private var current = GoalTarget()
     @State private var lifts: [WeeklyGoalEditorSheet.LiftOption] = []
     @State private var routines: [Routine] = []
+    /// False until `load()` has actually asked. See its own comment.
+    @State private var routinesLoaded = false
 
     var body: some View {
-        GoalScreenView(onChosen: { chosen = $0.preset })
+        GoalScreenView(onChosen: { chosen = $0.preset },
+                       hasRoutines: !routinesLoaded || !routines.isEmpty)
             .background(theme.bg)
             .navigationDestination(item: $chosen) { preset in
                 milestone(preset)
@@ -101,13 +104,21 @@ struct GoalFirstBuildFlow: View {
             guard let exercise = byID[id] else { return nil }
             return .init(id: exercise.id, name: exercise.name, detail: "FOCUS LIFT")
         }
-        // Compounds first behind the focus lifts, capped: the picker draws
-        // six rows, so a thousand alphabetical isolations below them would be
-        // a scroll nobody finishes.
+        // EVERY LIFT, behind the focus lifts. Compounds first — a strength
+        // goal is nearly always about one — then the rest, each block
+        // alphabetical. No cap and no filter: the picker searches and scrolls
+        // (`GoalMilestoneView.liftPicker`), so dropping options here would
+        // drop them for good, and the review found exactly that — twelve
+        // computed, six drawn, and an athlete with three focus lifts unable to
+        // set a strength goal on anything else.
+        let restIDs = Set(focusIDs)
         let rest = catalog
-            .filter { !focusIDs.contains($0.id) && $0.category == "compound" }
-            .sorted { $0.name < $1.name }
-            .prefix(12)
+            .filter { !restIDs.contains($0.id) }
+            .sorted { lhs, rhs in
+                let lhsCompound = lhs.category == "compound"
+                let rhsCompound = rhs.category == "compound"
+                return lhsCompound == rhsCompound ? lhs.name < rhs.name : lhsCompound
+            }
             .map { WeeklyGoalEditorSheet.LiftOption(id: $0.id, name: $0.name,
                                                     detail: $0.primaryMuscle.uppercased()) }
         lifts = focus + rest
@@ -115,5 +126,9 @@ struct GoalFirstBuildFlow: View {
         if let userID = appState.currentProfile?.id {
             routines = (try? await RoutineRepository.fetchAll(ownerID: userID)) ?? []
         }
+        // Only NOW may the goal screen say "no routines": before the fetch
+        // lands, `routines.isEmpty` means "not asked yet", and a tile that
+        // flashed a warning on every open would be lying half the time.
+        routinesLoaded = true
     }
 }

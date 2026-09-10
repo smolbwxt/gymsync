@@ -46,6 +46,16 @@ struct GoalScreenView: View {
     /// first block, which is the normal case in phase 1.
     var suggested: GoalPreset? = nil
 
+    /// Does the athlete have a routine to benchmark?
+    ///
+    /// `false` puts a muted note on the Benchmark tile rather than HIDING it:
+    /// a preset that vanishes teaches nothing, and the goal is still a real
+    /// goal — it just needs a routine first. The milestone card behind the
+    /// tile says the rest and states it as the reason its primary is disabled
+    /// (`GoalMilestoneCopy.noRoutinesReason`). Defaults `true`, so a host that
+    /// has not asked never accuses the athlete of having nothing.
+    var hasRoutines: Bool = true
+
     @Environment(\.gsTheme) private var theme
 
     // MARK: - The copy table
@@ -229,6 +239,15 @@ struct GoalScreenView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .multilineTextAlignment(.leading)
 
+            if preset == .benchmark && !hasRoutines {
+                Text(GoalMilestoneCopy.noRoutinesTileNote)
+                    .font(GSFont.bold(9, relativeTo: .caption2))
+                    .tracking(0.6)
+                    .foregroundStyle(theme.neutral500)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+
             Spacer(minLength: 0)
         }
         .padding(12)
@@ -239,7 +258,9 @@ struct GoalScreenView: View {
     private func accessibilityLabel(_ preset: GoalPreset) -> String {
         let line = Self.copy[preset]?.line ?? ""
         let suggestion = preset == suggested ? "Coach suggests. " : ""
-        return "\(suggestion)\(Self.name(preset)). \(line)"
+        let note = preset == .benchmark && !hasRoutines
+            ? " \(GoalMilestoneCopy.noRoutinesTileNote)" : ""
+        return "\(suggestion)\(Self.name(preset)). \(line)\(note)"
     }
 
     // MARK: - The Pro door
