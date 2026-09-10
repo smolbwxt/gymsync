@@ -12,6 +12,23 @@ import SwiftUI
 // HERMETIC. No repository, no clock, no `AppState`: the screen is a title, a
 // table of copy and a callback, which is what lets `goal-screen` (frame 93) be
 // a capture rather than a fetch.
+//
+// ── ACCENT IS SPENT ONCE ON THIS SCREEN ──────────────────────────────────
+//
+// The `COACH SUGGESTS` marker, and nothing else. Design rule 2 gives accent
+// three jobs — the one primary action, an invitation line, the current item —
+// and this screen is a PICKER, so it has no primary (rule 4: the one primary
+// lives on the milestone card). That leaves the current item, which is Coach's
+// suggestion.
+//
+// The plan asked for the tile glyphs in `theme.accent` — the `doorLabel`
+// recipe, which carries three of them on Coach home — and, three lines later,
+// called the suggestion kicker "the only accent on this screen". Both were
+// shipped as written and escalated; frame 93 settled it: with ten accent
+// glyphs competing, the marker stopped reading as the current item at all.
+// So the ten glyphs, the Pro door's glyph and its `PRO` capsule are all
+// NEUTRAL now (controller ruling, review finding 2), and the one accent on
+// the screen points at the one thing accent is for.
 
 /// The first question of the build: which kind of goal is this block for?
 struct GoalScreenView: View {
@@ -178,9 +195,8 @@ struct GoalScreenView: View {
         let entry = Self.copy[preset]
         return VStack(alignment: .leading, spacing: 6) {
             if preset == suggested {
-                // ACCENT'S "CURRENT ITEM" JOB (design rule 2). The only
-                // emphasis on this screen beyond the tile glyphs' own
-                // established recipe.
+                // ACCENT'S "CURRENT ITEM" JOB (design rule 2), and on this
+                // screen it is the ONLY accent — see the type's doc comment.
                 Text("COACH SUGGESTS")
                     .font(GSFont.bold(9, relativeTo: .caption2))
                     .tracking(1.1)
@@ -199,10 +215,12 @@ struct GoalScreenView: View {
                 Spacer(minLength: 4)
 
                 // The `doorLabel` recipe (`CoachHomeView.swift:174-209`) at
-                // tile scale: the metric's glyph, accent, top right.
+                // tile scale — but NEUTRAL, not accent (see the type's doc
+                // comment). Ten of these in a grid is not the three that
+                // recipe was drawn for.
                 Image(systemName: entry?.glyph ?? "questionmark")
                     .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(theme.accent)
+                    .foregroundStyle(theme.neutral500)
             }
 
             Text(entry?.line ?? "")
@@ -229,9 +247,12 @@ struct GoalScreenView: View {
     /// Below the grid, full width — the pro path (spec §2.4), rendered and
     /// disabled (see `proDoorEnabled`).
     ///
-    /// The `PRO` capsule is drawn exactly as `CoachOnboardingViews.swift:60-68`
-    /// draws it: 9 pt bold, 0.8 tracking, accent stroke, `Capsule()`. One
-    /// recipe, so the badge means the same thing on both screens.
+    /// The `PRO` capsule keeps `CoachOnboardingViews.swift:60-68`'s GEOMETRY
+    /// and TYPOGRAPHY — 9 pt bold, 0.8 tracking, `Capsule()` stroke — so the
+    /// badge is recognisably the same badge, and takes a NEUTRAL ink instead
+    /// of that screen's accent. Design rule 4: badges point, they do not
+    /// shout, and a tag on a door that cannot be opened yet is the last thing
+    /// on this screen that should be the loudest.
     private var proDoor: some View {
         Button { } label: {
             proDoorLabel
@@ -258,7 +279,7 @@ struct GoalScreenView: View {
 
                 Image(systemName: Self.proDoorGlyph)
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(theme.accent)
+                    .foregroundStyle(theme.neutral500)
             }
 
             Text(Self.proDoorLine)
@@ -282,8 +303,8 @@ struct GoalScreenView: View {
         Text("PRO")
             .font(GSFont.bold(9, relativeTo: .caption2))
             .tracking(0.8)
-            .foregroundStyle(theme.accent)
+            .foregroundStyle(theme.neutral500)
             .padding(.horizontal, 5).padding(.vertical, 2)
-            .overlay(Capsule().strokeBorder(theme.accent, lineWidth: 1))
+            .overlay(Capsule().strokeBorder(theme.neutral500, lineWidth: 1))
     }
 }
