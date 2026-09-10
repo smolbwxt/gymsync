@@ -147,28 +147,60 @@ struct RateOfChangeLadderRule: LadderRule {
     }
 }
 
-/// Cumulative volume: the WEEK's tonnage, rising so the block's sum is the
-/// milestone.
-///
-/// The rungs are per-week tonnage, not a running total — that is what the
-/// strip's `volumeLbs` param means and what the athlete can act on. A deload
-/// week takes half (the generator's own `deloadVolumeMultiplier` reasoning),
-/// and the remaining weeks carry what it gave up, so the block still sums to
+/// Cumulative volume: the TONNAGE-TO-DATE each week should end on, climbing to
 /// the milestone.
+///
+/// **THE RUNGS ARE CUMULATIVE, AND `cumulativeVolume` IS THE ONLY METRIC IN THE
+/// REGISTRY WHOSE MILESTONE IS PER-BLOCK RATHER THAN PER-WEEK** (controller
+/// ruling, fix round 1). Every other rung answers "what should this week be";
+/// this one answers "where should the block stand by the end of this week",
+/// because the milestone it climbs to — 100,000 lb moved — is a total and not a
+/// rate. Rungs on the same scale as the milestone are what lets standing
+/// compare the last rung against it and get an honest answer; per-week rungs
+/// made every dated Volume goal report itself as falling short from day one.
+///
+/// `current.volumeLbs` IS THE TONNAGE ALREADY BANKED, so only what is LEFT gets
+/// spread: a 100,000 lb block sitting at 40,000 with five weeks to go asks for
+/// 60,000 over those five, not another 100,000. Re-laddering therefore does not
+/// re-ask for work the athlete has already done.
+///
+/// A deload week takes HALF A SHARE of what remains (the generator's own
+/// `deloadVolumeMultiplier` reasoning) and the other weeks carry what it gave
+/// up, so the block still arrives.
+///
+/// The WEEK'S OWN share — the number the strip asks for — is the step up from
+/// the week before, and `LadderMath.weeklyGoal(from:…:previousRung:)` is where
+/// that subtraction happens. It is not stored on the rung, because
+/// `GoalTarget` is the frozen Task 0 shape and a second volume field would be
+/// two numbers for one fact.
 struct CumulativeLadderRule: LadderRule {
     func rungs(current: GoalTarget, target: GoalTarget, weeks: Int,
                constraints: LadderConstraints) -> [GoalTarget] {
         guard weeks > 0, let total = target.volumeLbs, total > 0 else {
             return Array(repeating: target, count: Swift.max(0, weeks))
         }
+        // Clamped at both ends: a block already past its milestone asks for
+        // nothing more, and a negative reading cannot inflate what is left.
+        let done = Swift.min(Swift.max(0, current.volumeLbs ?? 0), total)
+        let remaining = total - done
+
         let weights = (0..<weeks).map { constraints.deloadWeeks.contains($0) ? 0.5 : 1.0 }
         let denominator = weights.reduce(0, +)
         guard denominator > 0 else { return Array(repeating: target, count: weeks) }
-        return weights.map { weight in
+
+        var running = done
+        var out: [GoalTarget] = []
+        for weight in weights {
+            running += remaining * weight / denominator
             var rung = target
-            rung.volumeLbs = (total * weight / denominator / 100).rounded() * 100
-            return rung
+            rung.volumeLbs = (running / 100).rounded() * 100
+            out.append(rung)
         }
+        // The last rung IS the milestone, for the reason the ramps force theirs:
+        // rounding to the hundred must not make the final week a miss by
+        // arithmetic.
+        if var last = out.last { last.volumeLbs = total; out[out.count - 1] = last }
+        return out
     }
 }
 

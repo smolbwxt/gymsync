@@ -233,8 +233,14 @@ extension LadderMath {
     /// nil when the metric has no weekly shape — there is none in phase 1, and
     /// the `nil` return exists so phase 2's `vo2Max` (a test day, not a week)
     /// has somewhere honest to land.
+    ///
+    /// `previousRung` exists for ONE metric. `cumulativeVolume`'s rungs are
+    /// tonnage-to-date (see `CumulativeLadderRule`), and the strip asks for a
+    /// WEEK — so the week's own share is this rung minus the one before it.
+    /// Defaulted, because every other metric's rung already is the week.
     static func weeklyGoal(from rung: LadderRung, goal: BlockGoal,
-                           userID: UUID, now: Date) -> WeeklyGoal? {
+                           userID: UUID, now: Date,
+                           previousRung: LadderRung? = nil) -> WeeklyGoal? {
         var params = WeeklyGoalParams()
         params.goalID = goal.id
         params.byDate = goal.byDate
@@ -286,7 +292,13 @@ extension LadderMath {
             params.bodyWeightLbs = rung.target.bodyWeightLbs
         case .cumulativeVolume:
             kind = .volume
-            params.volumeLbs = rung.target.volumeLbs
+            // THE LADDER COUNTS A BLOCK; THE STRIP ASKS FOR A WEEK. The rung is
+            // the tonnage-to-date this week should end on, so what the athlete
+            // owes THIS week is the step up from the week before it. Without
+            // the subtraction a week-six rung would ask for the whole block's
+            // total in seven days.
+            let banked = previousRung?.target.volumeLbs ?? 0
+            params.volumeLbs = rung.target.volumeLbs.map { Swift.max(0, $0 - banked) }
         case .benchmarkTime:
             kind = .benchmark
             params.routineID = rung.target.routineID ?? goal.target.routineID
@@ -329,9 +341,14 @@ extension LadderMath {
         model.source = goal.source
         model.weekCount = ladder.rungs.count
 
-        model.rows = ladder.rungs.map { rung in
+        model.rows = ladder.rungs.enumerated().map { index, rung in
             let isDeload = deloadWeeks.contains(rung.weekIndex)
+            // The rung BEFORE this one, for the one metric whose rungs are
+            // cumulative: the row says where the block stands, and its
+            // implication says what this week adds.
+            let previous = index > 0 ? ladder.rungs[index - 1].target : nil
             let (text, implication) = rungText(metric: goal.metric, target: rung.target,
+                                               previous: previous,
                                                sets: rungSets, unit: unit)
             return LadderRow(
                 weekNumber: rung.weekIndex + 1,
@@ -466,6 +483,7 @@ extension LadderMath {
     /// One rung, worded — and its implication when the number implies something
     /// the text does not say.
     private static func rungText(metric: GoalMetric, target: GoalTarget,
+                                 previous: GoalTarget? = nil,
                                  sets: Int,
                                  unit: WeightUnit) -> (String, String?) {
         switch metric {
@@ -513,8 +531,16 @@ extension LadderMath {
             return (Units.formatBodyWeight(pounds: pounds, unit: unit), rate)
         case .cumulativeVolume:
             guard let pounds = target.volumeLbs else { return ("—", nil) }
-            return ("\(WeeklyGoalProgressMath.groupedNumber(Units.fromPounds(pounds, to: unit)))"
-                    + " \(unit.label)", nil)
+            // THE ROW IS THE RUNNING TOTAL and the implication is the week's own
+            // share, because a cumulative ladder read as a list of weekly
+            // numbers looks like it is asking for the block eight times.
+            let banked = previous?.volumeLbs ?? 0
+            let thisWeek = Swift.max(0, pounds - banked)
+            let total = "\(WeeklyGoalProgressMath.groupedNumber(Units.fromPounds(pounds, to: unit)))"
+                + " \(unit.label)"
+            let share = "+\(WeeklyGoalProgressMath.groupedNumber(Units.fromPounds(thisWeek, to: unit)))"
+                + " this week"
+            return (total, thisWeek > 0 ? share : nil)
         case .benchmarkTime:
             guard let seconds = target.targetSeconds else { return ("—", nil) }
             return (WeeklyGoalProgressMath.clock(Double(seconds)), nil)

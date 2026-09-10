@@ -460,4 +460,91 @@ final class LadderMathTests: XCTestCase {
         let expected = try XCTUnwrap(WeeklyGoalDetector.blockEnd(block, calendar: calendar))
         XCTAssertEqual(draft.byDate, expected)
     }
+
+    // MARK: - Fix round 1, finding F1: a Volume ladder on plan is ON TRACK
+
+    /// The defect this pins: with per-week rungs, `reachesMilestone` compared
+    /// ONE WEEK's tonnage against the BLOCK's total, so every dated Volume goal
+    /// rendered "This ladder reaches 12,500 — move the date?" from the day it
+    /// was created — quoting a week's number as if it were the milestone.
+    func testAVolumeLadderOnPlanIsOnTrackRatherThanProposingADateMove() {
+        let goal = strengthGoal(target: GoalTarget(volumeLbs: 100_000),
+                                byDate: StubBlockGoalRepository.fixtureByDate,
+                                preset: .volume, source: .user,
+                                metric: .cumulativeVolume)
+        // Built by the rule itself, so this test is about the composition rather
+        // than about a hand-written ladder that happens to agree.
+        let targets = CumulativeLadderRule().rungs(
+            current: GoalTarget(volumeLbs: 0), target: goal.target,
+            weeks: 8, constraints: LadderConstraints())
+        let ladder = Ladder(
+            goalID: goal.id,
+            rungs: targets.enumerated().map { index, target in
+                .init(weekIndex: index,
+                      weekStartString: String(format: "2026-09-%02d", 6 + index * 7),
+                      target: target, status: index == 2 ? .current : .ahead)
+            },
+            derivedAt: Date(timeIntervalSince1970: 0))
+
+        let page = LadderMath.page(goal: goal, ladder: ladder, liftName: "",
+                                   rungSets: 3, notesByWeek: [:], unit: .lbs,
+                                   now: pageNow, calendar: pageCalendar)
+
+        XCTAssertTrue(page.reachesMilestone,
+                      "the last rung IS the block total, so the ladder arrives")
+        XCTAssertEqual(page.coachLine, "On track")
+    }
+
+    /// The row says where the BLOCK stands; the implication says what the WEEK
+    /// adds. A cumulative ladder read as a list of weekly numbers looks like it
+    /// is asking for the block eight times over.
+    func testAVolumeRowSaysTheRunningTotalAndTheWeeksOwnShare() throws {
+        let goal = strengthGoal(target: GoalTarget(volumeLbs: 100_000),
+                                byDate: nil, preset: .volume, source: .coach,
+                                metric: .cumulativeVolume)
+        let ladder = Ladder(
+            goalID: goal.id,
+            rungs: [
+                .init(weekIndex: 0, weekStartString: "2026-09-06",
+                      target: GoalTarget(volumeLbs: 25_000), status: .met),
+                .init(weekIndex: 1, weekStartString: "2026-09-13",
+                      target: GoalTarget(volumeLbs: 50_000), status: .current),
+            ],
+            derivedAt: Date(timeIntervalSince1970: 0))
+
+        let page = LadderMath.page(goal: goal, ladder: ladder, liftName: "",
+                                   rungSets: 3, notesByWeek: [:], unit: .lbs,
+                                   now: pageNow, calendar: pageCalendar)
+
+        XCTAssertEqual(page.rows[1].targetText, "50,000 lbs")
+        XCTAssertEqual(page.rows[1].implication, "+25,000 this week")
+        XCTAssertEqual(page.rows[0].implication, "+25,000 this week",
+                       "week one's share is the whole rung — there is nothing banked")
+    }
+
+    /// Materialisation has to undo the cumulation: the strip asks for a WEEK,
+    /// and `volumeProgress` measures the week's own tonnage against
+    /// `params.volumeLbs`. Without the subtraction a week-six rung would ask
+    /// for the whole block in seven days.
+    func testAVolumeRungMaterialisesAsTheWeeksShareNotTheRunningTotal() throws {
+        let goal = blockGoal(.cumulativeVolume, target: GoalTarget(volumeLbs: 100_000))
+        let previous = LadderRung(weekIndex: 1, weekStartString: "2026-08-30",
+                                  target: GoalTarget(volumeLbs: 25_000), status: .met)
+        let current = LadderRung(weekIndex: 2, weekStartString: "2026-09-06",
+                                 target: GoalTarget(volumeLbs: 40_000), status: .current)
+
+        let row = try XCTUnwrap(LadderMath.weeklyGoal(
+            from: current, goal: goal, userID: UUID(),
+            now: Date(timeIntervalSince1970: 0), previousRung: previous))
+
+        XCTAssertEqual(row.kind, .volume)
+        XCTAssertEqual(row.params.volumeLbs, 15_000,
+                       "40,000 by the end of this week, 25,000 already banked")
+
+        let firstWeek = try XCTUnwrap(LadderMath.weeklyGoal(
+            from: previous, goal: goal, userID: UUID(),
+            now: Date(timeIntervalSince1970: 0)))
+        XCTAssertEqual(firstWeek.params.volumeLbs, 25_000,
+                       "with no week before it, the rung IS the week")
+    }
 }

@@ -89,15 +89,66 @@ final class LadderRuleTests: XCTestCase {
                        "gaining rides the 0.25-0.5 % band, not the loss band")
     }
 
-    func testVolumeWeeksSumToTheMilestoneWithAHalfDeload() throws {
+    // MARK: - Cumulative volume (fix round 1, finding F1)
+    //
+    // `cumulativeVolume` is the ONE metric whose milestone is per-BLOCK rather
+    // than per-week, so its rungs are TONNAGE-TO-DATE. These three pin that
+    // shape: the climb arrives, a deload adds half a share, and re-deriving
+    // mid-block spreads only what is left.
+
+    /// The week's own share is the STEP between rungs, so a cumulative ladder
+    /// is read by differencing it.
+    private func weeklyShares(_ rungs: [GoalTarget]) -> [Double] {
+        var previous = 0.0
+        return rungs.compactMap(\.volumeLbs).map { total in
+            defer { previous = total }
+            return total - previous
+        }
+    }
+
+    func testVolumeRungsAreCumulativeAndTheLastOneIsTheMilestone() throws {
         let rungs = CumulativeLadderRule().rungs(
             current: GoalTarget(volumeLbs: 0), target: GoalTarget(volumeLbs: 100_000),
             weeks: 8, constraints: LadderConstraints(deloadWeeks: [5]))
-        let total = rungs.compactMap(\.volumeLbs).reduce(0, +)
-        XCTAssertEqual(total, 100_000, accuracy: 800, "rounding to 100 lb, eight weeks")
-        XCTAssertEqual(try XCTUnwrap(rungs[5].volumeLbs) * 2,
-                       try XCTUnwrap(rungs[4].volumeLbs), accuracy: 200,
-                       "the deload week is half a week")
+        XCTAssertEqual(rungs.count, 8)
+        XCTAssertEqual(rungs.last?.volumeLbs, 100_000,
+                       "the last rung IS the milestone, so standing can compare "
+                       + "it against the milestone and get an honest answer")
+
+        let climbs = rungs.compactMap(\.volumeLbs)
+        XCTAssertEqual(climbs, climbs.sorted(),
+                       "tonnage-to-date never goes down")
+
+        let shares = weeklyShares(rungs)
+        XCTAssertEqual(shares[5] * 2, shares[4], accuracy: 200,
+                       "the deload week takes half a share of what remains")
+    }
+
+    /// The controller's own worked example: a 100,000 lb block sitting at
+    /// 40,000 with five weeks to go asks for the 60,000 that is LEFT, not
+    /// another 100,000.
+    func testVolumeSpreadsOnlyWhatIsLeftOverTheWeeksThatRemain() throws {
+        let rungs = CumulativeLadderRule().rungs(
+            current: GoalTarget(volumeLbs: 40_000),
+            target: GoalTarget(volumeLbs: 100_000),
+            weeks: 5, constraints: LadderConstraints())
+        XCTAssertEqual(rungs.count, 5)
+        XCTAssertEqual(try XCTUnwrap(rungs[0].volumeLbs), 52_000, accuracy: 100,
+                       "40,000 banked plus a fifth of the 60,000 that remains")
+        XCTAssertEqual(rungs.last?.volumeLbs, 100_000)
+        XCTAssertEqual(weeklyShares(rungs).dropFirst().reduce(0, +), 48_000,
+                       accuracy: 400,
+                       "the work already done is never asked for again")
+    }
+
+    func testAVolumeBlockAlreadyPastItsMilestoneAsksForNothingMore() throws {
+        let rungs = CumulativeLadderRule().rungs(
+            current: GoalTarget(volumeLbs: 120_000),
+            target: GoalTarget(volumeLbs: 100_000),
+            weeks: 4, constraints: LadderConstraints())
+        XCTAssertEqual(rungs.compactMap(\.volumeLbs), [100_000, 100_000, 100_000, 100_000],
+                       "done is clamped at the milestone, so the remainder is zero "
+                       + "rather than negative")
     }
 
     func testBenchmarkTimeDescendsAndHoldsThroughADeload() {

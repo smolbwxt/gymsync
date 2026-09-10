@@ -400,8 +400,13 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
               let goal = await goal(id: goalID),
               let ladder = await ladder(goalID: goalID),
               let rung = LadderMath.rung(in: ladder, weekStart: weekStart),
-              let derived = LadderMath.weeklyGoal(from: rung, goal: goal,
-                                                  userID: userID, now: Date())
+              let derived = LadderMath.weeklyGoal(
+                  from: rung, goal: goal, userID: userID, now: Date(),
+                  // The week before this one, so a cumulative-volume rung
+                  // materialises as the WEEK's share rather than the block's
+                  // running total. nil for week one, and ignored by every other
+                  // metric.
+                  previousRung: ladder.rungs.first { $0.weekIndex == rung.weekIndex - 1 })
         else { return nil }
 
         let weekly = LiveWeeklyGoalRepository()
@@ -584,11 +589,18 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
             }
 
         case .cumulativeVolume:
+            // TONNAGE-TO-DATE, NOT THE WEEK'S. The rungs this is compared
+            // against are cumulative (`CumulativeLadderRule`), so the reading
+            // has to be on the same scale or `statuses` marks a perfectly good
+            // week `missed`. The fetch already starts at the block's first
+            // week, so the running total is tonnage since the block began.
             let logs = await setLogs(userID: userID, since: first.start, until: last.end)
+            var running = 0.0
             for week in weeks {
                 let inWeek = logs.filter { $0.loggedAt >= week.start && $0.loggedAt < week.end }
+                running += BlockGoalMetricMath.volumePounds(logs: inWeek)
                 var target = GoalTarget()
-                target.volumeLbs = BlockGoalMetricMath.volumePounds(logs: inWeek)
+                target.volumeLbs = running
                 out[week.key] = target
             }
 
