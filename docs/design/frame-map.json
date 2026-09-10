@@ -230,7 +230,8 @@
   },
   "ladder-on-track": {
     "frame": 97,
-    "title": "Ladder page - on track"
+    "title": "Ladder page - on track",
+    "note": "two captures from this one id: app-ladder-on-track (the milestone, the date, Coach's line and the eight rungs) and app-ladder-on-track-2 (scrolled to the bottom: the four levers, the one accent primary, SEE THE BLOCK). The -2 attachment has no frame-map entry of its own by design, exactly as calendar-scheduling's does not. Only the on-track id carries a second capture - all three standings share one page body below the rungs."
   },
   "ladder-behind": {
     "frame": 98,
