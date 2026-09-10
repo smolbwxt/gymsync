@@ -254,9 +254,17 @@ final class BlockGoalLiveRepositoryTests: XCTestCase {
         XCTAssertTrue(saved)
 
         // Eight rungs, one per week of the older block.
-        let rungs = (0..<8).map { index in
-            LadderRung(weekIndex: index,
-                       weekStartString: String(format: "2099-01-%02d", 4 + index * 7),
+        //
+        // THE WEEK KEYS COME FROM `LadderMath.weekStartStrings`, not from
+        // `String(format: "2099-01-%02d", 4 + index * 7)`. That formatter walks
+        // off the end of the month — 32, 39, 46, 53 January — and `week_start`
+        // is a `date` column, so the whole upsert was rejected. The pure tests
+        // get away with the same trick because their keys are never anything but
+        // strings; a live test's are dates.
+        let weekKeys = LadderMath.weekStartStrings(from: older.startedOn, count: 8)
+        XCTAssertEqual(weekKeys.count, 8)
+        let rungs = weekKeys.enumerated().map { index, key in
+            LadderRung(weekIndex: index, weekStartString: key,
                        target: GoalTarget(targetWeightLbs: Decimal(190 + index * 5),
                                           targetReps: 5),
                        status: index == 0 ? .current : .ahead)
