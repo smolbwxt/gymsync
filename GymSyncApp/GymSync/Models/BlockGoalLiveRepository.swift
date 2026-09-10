@@ -126,13 +126,21 @@ private struct RungRow: Codable {
         case derivedAt = "derived_at"
     }
 
-    init(_ rung: LadderRung, goalID: UUID) {
+    /// `derivedAt` IS WRITTEN, not defaulted (fix round 1, finding F7).
+    ///
+    /// The column is `NOT NULL DEFAULT now()` with no touch trigger, so an
+    /// omitted value means `ON CONFLICT DO UPDATE` leaves the original insert
+    /// time in place forever — while `LadderMath.reLadder` correctly stamps the
+    /// new time on the value it returns. The two disagreed the moment the
+    /// returned ladder was dropped and re-read, which makes "when was this
+    /// ladder last derived" unanswerable on the read side.
+    init(_ rung: LadderRung, goalID: UUID, derivedAt: Date) {
         self.goalID = goalID
         weekIndex = rung.weekIndex
         weekStart = rung.weekStartString
         target = rung.target
         status = rung.status.rawValue
-        derivedAt = nil
+        self.derivedAt = derivedAt
     }
 
     var model: LadderRung? {
@@ -325,16 +333,18 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
     /// key — so re-deriving a week edits its row rather than colliding.
     @discardableResult
     func saveLadder(_ ladder: Ladder) async -> Bool {
-        await upsertRungs(ladder.rungs, goalID: ladder.goalID)
+        await upsertRungs(ladder.rungs, goalID: ladder.goalID,
+                          derivedAt: ladder.derivedAt)
     }
 
     @discardableResult
-    private func upsertRungs(_ rungs: [LadderRung], goalID: UUID) async -> Bool {
+    private func upsertRungs(_ rungs: [LadderRung], goalID: UUID,
+                             derivedAt: Date) async -> Bool {
         guard !rungs.isEmpty else { return true }
         do {
             try await client
                 .from("block_goal_rungs")
-                .upsert(rungs.map { RungRow($0, goalID: goalID) },
+                .upsert(rungs.map { RungRow($0, goalID: goalID, derivedAt: derivedAt) },
                         onConflict: "goal_id,week_index")
                 .execute()
             return true
@@ -389,7 +399,7 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
             // element and that element is the pair.
             .filter { $0.0 != $0.1 }
             .map(\.1)
-        await upsertRungs(changed, goalID: goalID)
+        await upsertRungs(changed, goalID: goalID, derivedAt: now)
         return fresh
     }
 
@@ -427,9 +437,21 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
     /// and `writeMaterialisedRung` is the one door added for this.
     @discardableResult
     func materialiseRung(goalID: UUID, weekStart: String) async -> WeeklyGoal? {
+        guard let goal = await goal(id: goalID),
+              let ladder = await ladder(goalID: goalID) else { return nil }
+        return await materialiseRung(goal: goal, ladder: ladder, weekStart: weekStart)
+    }
+
+    /// The same write, for a caller that ALREADY holds the goal and the ladder
+    /// (fix round 1, finding F5).
+    ///
+    /// `detectGoalIfMissing` re-laddered — reading both — and then called the
+    /// id-keyed door, which read both again. Two round trips for rows already in
+    /// hand, on Home's first load.
+    @discardableResult
+    func materialiseRung(goal: BlockGoal, ladder: Ladder,
+                         weekStart: String) async -> WeeklyGoal? {
         guard let userID = await SupabaseService.shared.currentUserID(),
-              let goal = await goal(id: goalID),
-              let ladder = await ladder(goalID: goalID),
               let rung = LadderMath.rung(in: ladder, weekStart: weekStart),
               let derived = LadderMath.weeklyGoal(
                   from: rung, goal: goal, userID: userID, now: Date(),
@@ -505,7 +527,8 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
             currentWeekStart: WeekMath.weekStartString(startedOn, calendar: calendar))
 
         let ladder = Ladder(goalID: goal.id, rungs: rungs, derivedAt: Date())
-        guard await upsertRungs(ladder.rungs, goalID: goal.id) else { return nil }
+        guard await upsertRungs(ladder.rungs, goalID: goal.id,
+                                derivedAt: ladder.derivedAt) else { return nil }
         return ladder
     }
 
@@ -595,8 +618,14 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
         switch goal.metric {
         case .liftOneRepMax, .liftRepsAtLoad:
             guard let exerciseID = goal.target.exerciseID else { return [:] }
-            let logs = (try? await SessionRepository.exerciseHistory(
-                userID: userID, exerciseID: exerciseID, limit: 500)) ?? []
+            // BOUNDED BY THE BLOCK, not by a row count (fix round 1, finding
+            // F8). `SessionRepository.exerciseHistory` takes the most recent 500
+            // logs across all time; for a frequently-trained main on a long
+            // block those 500 need not reach the block's start, and a rung with
+            // no reading is one `statuses` marks `missed`. Every other arm here
+            // already bounds its read by `first.start`/`last.end`.
+            let logs = await exerciseLogs(userID: userID, exerciseID: exerciseID,
+                                          since: first.start, until: last.end)
             for week in weeks {
                 let inWeek = logs.filter { $0.loggedAt >= week.start && $0.loggedAt < week.end }
                 var target = GoalTarget()
@@ -656,8 +685,11 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
                 ids: Array(routines.keys))) ?? []
             let byRoutine = Dictionary(grouping: rows, by: \.routineID)
             let catalog = await catalogByID()
+            // ONE query for the block, not one per rung (finding F5). The tags
+            // carry their own windows and `sessionCounts` overlap-matches them,
+            // so handing every week the whole span is correct as well as cheaper.
+            let tags = await HealthKitBridge.workoutTags(windows: windows(weeks))
             for week in weeks {
-                let tags = await HealthKitBridge.workoutTags(from: week.start, to: week.end)
                 let counted = sessions.filter { session in
                     guard let completed = session.completedAt,
                           completed >= week.start, completed < week.end else { return false }
@@ -675,9 +707,11 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
         case .weeklyDistance:
             let unit = await MainActor.run { ThemeStore.shared.weightUnit }
             let activity = goal.target.activity ?? ""
-            for week in weeks {
-                let metres = await HealthKitBridge.distanceMeters(
-                    activity: activity, from: week.start, to: week.end)
+            // ONE query for the block (finding F5): eight rungs used to mean
+            // eight HealthKit round trips on Home's first load.
+            let metresByWeek = await HealthKitBridge.distanceMeters(
+                activity: activity, windows: windows(weeks))
+            for (week, metres) in zip(weeks, metresByWeek) {
                 var target = GoalTarget()
                 target.activity = activity
                 target.distance = WeeklyGoalProgressMath.distanceValue(metres: metres,
@@ -693,15 +727,18 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
             let rows = (try? await RoutineRepository.exercisesForRoutines(
                 ids: Array(routines.keys))) ?? []
             let byRoutine = Dictionary(grouping: rows, by: \.routineID)
-            for week in weeks {
+            // TWO queries for the block, not two per rung (finding F5). An
+            // eight-week Recovery block used to cost sixteen HealthKit round
+            // trips, which is the part of this file that did not honour its own
+            // "only what this metric needs is fetched" header.
+            let minutesByWeek = await HealthKitBridge.lissMinutes(windows: windows(weeks))
+            let tags = await HealthKitBridge.workoutTags(windows: windows(weeks))
+            for (week, healthMinutes) in zip(weeks, minutesByWeek) {
                 let inWeek = logs.filter { $0.loggedAt >= week.start && $0.loggedAt < week.end }
                 let weekSessions = sessions.filter { session in
                     guard let completed = session.completedAt else { return false }
                     return completed >= week.start && completed < week.end
                 }
-                let healthMinutes = await HealthKitBridge.lissMinutes(from: week.start,
-                                                                      to: week.end)
-                let tags = await HealthKitBridge.workoutTags(from: week.start, to: week.end)
                 var target = GoalTarget()
                 target.lissMinutes = BlockGoalMetricMath.lissMinutes(
                     healthMinutes: healthMinutes, sessions: weekSessions,
@@ -744,6 +781,12 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
         return out
     }
 
+    /// The rungs' windows, in the shape `HealthKitBridge`'s batch reads take.
+    private func windows(_ weeks: [(key: String, start: Date, end: Date)])
+        -> [(start: Date, end: Date)] {
+        weeks.map { (start: $0.start, end: $0.end) }
+    }
+
     // MARK: - The fetches
 
     /// The block's set logs, PENALTY EXCLUDED AND FAILED KEPT.
@@ -776,6 +819,37 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
             return rows
         } catch {
             AppLogger.db.error("block goal set_logs read failed: \(error.localizedDescription, privacy: .public)")
+            return []
+        }
+    }
+
+    /// One exercise's logs inside the block's own window.
+    ///
+    /// PENALTY EXCLUDED AND FAILED KEPT, for the reason `setLogs` above gives in
+    /// full: a failed triple completed two reps and credits a full set, so
+    /// filtering `is_failed` server-side would silently undercount. The limit is
+    /// a ceiling on one lift's logs across one block, which no real athlete
+    /// approaches — it is there so the read cannot silently truncate on
+    /// PostgREST's default max-rows.
+    private func exerciseLogs(userID: UUID, exerciseID: UUID,
+                              since: Date, until: Date) async -> [SetLog] {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        do {
+            let rows: [SetLog] = try await client
+                .from("set_logs")
+                .select()
+                .eq("user_id", value: userID)
+                .eq("exercise_id", value: exerciseID)
+                .gte("logged_at", value: formatter.string(from: since))
+                .lt("logged_at", value: formatter.string(from: until))
+                .eq("is_penalty", value: "false")
+                .order("logged_at", ascending: true)
+                .limit(2000)
+                .execute().value
+            return rows
+        } catch {
+            AppLogger.db.error("block goal exercise set_logs read failed: \(error.localizedDescription, privacy: .public)")
             return []
         }
     }
@@ -827,10 +901,12 @@ extension LiveBlockGoalRepository {
         let currentWeek = WeekMath.weekStartString(now, calendar: calendar)
 
         if let existing = await goal(enrollmentID: enrollment.id) {
-            // `_ =`: reLadder answers with the ladder it wrote and this path
-            // does not need it — the caller asked for the GOAL.
-            _ = await reLadder(goalID: existing.id)
-            await materialiseRung(goalID: existing.id, weekStart: currentWeek)
+            // The re-laddered ladder is handed straight to materialisation
+            // rather than being dropped and re-read (finding F5).
+            if let fresh = await reLadder(goalID: existing.id) {
+                await materialiseRung(goal: existing, ladder: fresh,
+                                      weekStart: currentWeek)
+            }
             return existing
         }
 
@@ -852,27 +928,29 @@ extension LiveBlockGoalRepository {
                              enrollmentID: enrollment.id, now: now)
         guard await saveDetected(goal) else { return nil }
 
-        await deriveLadder(goal: goal, enrollment: enrollment, unit: unit,
-                           calendar: calendar, now: now)
-        await materialiseRung(goalID: goal.id, weekStart: currentWeek)
+        if let derived = await deriveLadder(goal: goal, enrollment: enrollment,
+                                            unit: unit, calendar: calendar, now: now) {
+            await materialiseRung(goal: goal, ladder: derived, weekStart: currentWeek)
+        }
         return goal
     }
 
     /// The first ladder for a block that had none.
     ///
     /// A strength goal reads its rungs off the block's OWN template weeks
-    /// (`LadderReadout.strengthRungs(template:…)`, which goes through
-    /// `ProgramMath.targetWeight` — the function the program card prints).
+    /// (`LadderReadout.strengthRungs(template:…)`, snapped to the athlete's own
+    /// plate grid by the same helper the build-time door uses).
     /// Everything else ramps. Either way the rungs land `ahead` except the week
     /// the athlete is in, which `LadderMath.statuses` marks `current` by the
     /// same law that marks it on every later refresh.
+    @discardableResult
     private func deriveLadder(goal: BlockGoal, enrollment: ProgramEnrollment,
                               unit: WeightUnit, calendar: Calendar,
-                              now: Date) async {
+                              now: Date) async -> Ladder? {
         let weekKeys = LadderMath.weekStartStrings(from: enrollment.startedOn,
                                                    count: max(1, enrollment.weeks),
                                                    calendar: calendar)
-        guard !weekKeys.isEmpty else { return }
+        guard !weekKeys.isEmpty else { return nil }
         let template = enrollment.template
         var targets: [GoalTarget] = []
 
@@ -880,7 +958,8 @@ extension LiveBlockGoalRepository {
            let baseline = enrollment.baselineValue(for: exerciseID),
            let readOut = LadderReadout.strengthRungs(template: template,
                                                      exerciseID: exerciseID,
-                                                     baselineE1RMLbs: baseline),
+                                                     baselineE1RMLbs: baseline,
+                                                     unit: unit),
            readOut.count == weekKeys.count {
             targets = readOut
         } else {
@@ -888,7 +967,7 @@ extension LiveBlockGoalRepository {
                 current: GoalTarget(), target: goal.target, weeks: weekKeys.count,
                 constraints: LadderReadout.constraints(template: template, unit: unit))
         }
-        guard targets.count == weekKeys.count else { return }
+        guard targets.count == weekKeys.count else { return nil }
 
         let raw = zip(weekKeys.enumerated(), targets).map { pair, target in
             LadderRung(weekIndex: pair.offset, weekStartString: pair.element,
@@ -897,7 +976,9 @@ extension LiveBlockGoalRepository {
         let rungs = LadderMath.statuses(
             rungs: raw, metric: goal.metric, measuredByWeek: [:],
             currentWeekStart: WeekMath.weekStartString(now, calendar: calendar))
-        await saveLadder(Ladder(goalID: goal.id, rungs: rungs, derivedAt: now))
+        let ladder = Ladder(goalID: goal.id, rungs: rungs, derivedAt: now)
+        guard await saveLadder(ladder) else { return nil }
+        return ladder
     }
 
     /// The BLOCK'S own prescribed sets per group, when the titration has

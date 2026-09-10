@@ -21,21 +21,12 @@ import XCTest
 /// the CI account", which left the whole of `LiveBlockGoalRepository`
 /// compile-checked and behaviour-unchecked.
 ///
-/// The fixture is inserted DIRECTLY rather than through
-/// `ProgramRepository.enroll`, and that is the whole point.
+/// `TestSession.swift`'s `makeTempEndedEnrollment(slug:startedOn:weeks:)` is the
+/// factory — it states in full why the row is inserted already-ended rather than
+/// through `ProgramRepository.enroll`, and it registers its own teardown.
 ///
-///   * `enroll` starts training TODAY. `build-test` and the screenshot job run
-///     in PARALLEL on the SAME account (both read `TEST_USER_EMAIL`), so an
-///     enrollment that is active for even one round trip could reach
-///     `app-tab-home` — which is a frozen, owner-approved frame (global
-///     constraint 8). A row written with `ended_at` already set is never active
-///     and `ProgramRepository.active()` can never see it.
-///   * `one_active_program_per_user` is a PARTIAL unique index
-///     (`WHERE ended_at IS NULL`), so an ended block never contends with
-///     whatever the account may have.
-///
-/// `UNIQUE (enrollment_id)` is then satisfied for free: the block is new, so
-/// nothing can already own a goal on it.
+/// `UNIQUE (enrollment_id)` is satisfied for free: the block is new, so nothing
+/// can already own a goal on it.
 final class BlockGoalLiveRepositoryTests: XCTestCase {
 
     private let repository = LiveBlockGoalRepository()
@@ -56,55 +47,6 @@ final class BlockGoalLiveRepositoryTests: XCTestCase {
         return weekStart
     }
 
-    /// A block of this test's own, ended before it ever existed as an active
-    /// one. See the type's comment for why it is inserted directly.
-    ///
-    /// The delete is registered BEFORE the insert, like every other write here,
-    /// and it cascades: `block_goals.enrollment_id` is `ON DELETE CASCADE`, and
-    /// the rungs cascade from the goal, so one delete cleans all three tables.
-    private func temporaryEndedBlock(slug: String = "march-to-1rm",
-                                     startedOn: String = "2099-01-04",
-                                     weeks: Int = 8) async throws -> ProgramEnrollment {
-        // snake_case field names rather than `CodingKeys`, matching
-        // `VolumeTargetRepository.set`'s own local `Upsert` — a throwaway DTO
-        // for one insert does not need the ceremony.
-        struct EndedEnrollment: Encodable {
-            let id: UUID
-            let user_id: UUID
-            let template_slug: String
-            let focus: ProgramFocus
-            let baseline: [String: Double]
-            let started_on: String
-            let weeks: Int
-            let ended_at: String
-            let ended_reason: String
-        }
-
-        let userID = await SupabaseService.shared.currentUserID()
-        let owner = try XCTUnwrap(userID)
-        let id = UUID()
-        addTeardownBlock {
-            _ = try? await SupabaseService.shared.client
-                .from("program_enrollments")
-                .delete()
-                .eq("id", value: id)
-                .execute()
-        }
-
-        // 2099 throughout, and `ended_at` is set in the INSERT itself — there is
-        // no moment at which this row is an active block.
-        let rows: [ProgramEnrollment] = try await SupabaseService.shared.client
-            .from("program_enrollments")
-            .insert(EndedEnrollment(
-                id: id, user_id: owner, template_slug: slug,
-                focus: ProgramFocus(), baseline: [:],
-                started_on: startedOn, weeks: weeks,
-                ended_at: "2099-03-01T00:00:00Z", ended_reason: "completed"))
-            .select()
-            .execute().value
-        return try XCTUnwrap(rows.first)
-    }
-
     private func goal(_ id: UUID, owner: UUID, enrollmentID: UUID,
                       byDate: Date?) -> BlockGoal {
         BlockGoal(id: id, userID: owner, enrollmentID: enrollmentID,
@@ -119,7 +61,7 @@ final class BlockGoalLiveRepositoryTests: XCTestCase {
         try await TestAuth.signInIfConfigured()
         let userID = await SupabaseService.shared.currentUserID()
         let owner = try XCTUnwrap(userID)          // never XCTUnwrap(await …)
-        let block = try await temporaryEndedBlock()
+        let block = try await makeTempEndedEnrollment()
 
         let goalID = temporaryGoal(UUID())
         // 2099, like every other row a live test writes here.
@@ -175,7 +117,7 @@ final class BlockGoalLiveRepositoryTests: XCTestCase {
         try await TestAuth.signInIfConfigured()
         let userID = await SupabaseService.shared.currentUserID()
         let owner = try XCTUnwrap(userID)
-        let block = try await temporaryEndedBlock()
+        let block = try await makeTempEndedEnrollment()
 
         let firstID = temporaryGoal(UUID())
         // The second id is registered too — if the database ever stopped
@@ -200,7 +142,7 @@ final class BlockGoalLiveRepositoryTests: XCTestCase {
         try await TestAuth.signInIfConfigured()
         let userID = await SupabaseService.shared.currentUserID()
         let owner = try XCTUnwrap(userID)
-        let block = try await temporaryEndedBlock()
+        let block = try await makeTempEndedEnrollment()
 
         let goalID = temporaryGoal(UUID())
         let week = temporaryWeek("2099-04-05")
@@ -253,7 +195,7 @@ final class BlockGoalLiveRepositoryTests: XCTestCase {
         try await TestAuth.signInIfConfigured()
         let userID = await SupabaseService.shared.currentUserID()
         let owner = try XCTUnwrap(userID)
-        let block = try await temporaryEndedBlock()
+        let block = try await makeTempEndedEnrollment()
 
         let goalID = temporaryGoal(UUID())
         let week = temporaryWeek("2099-05-03")
@@ -302,9 +244,9 @@ final class BlockGoalLiveRepositoryTests: XCTestCase {
         let owner = try XCTUnwrap(userID)
 
         // The newer block, which the goal does NOT belong to.
-        _ = try await temporaryEndedBlock(slug: "leg-strength-block",
+        _ = try await makeTempEndedEnrollment(slug: "leg-strength-block",
                                           startedOn: "2099-06-06", weeks: 6)
-        let older = try await temporaryEndedBlock(slug: "march-to-1rm")
+        let older = try await makeTempEndedEnrollment(slug: "march-to-1rm")
 
         let goalID = temporaryGoal(UUID())
         let saved = await repository.save(goal(goalID, owner: owner,

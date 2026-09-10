@@ -33,9 +33,7 @@ enum LadderReadout {
 
         return program.weeks.map { week in
             let raw = base * week.intensityMultiplier
-            let loadLbs = Units.toPounds(
-                Units.roundToIncrement(Units.fromPounds(Decimal(raw), to: unit), unit: unit),
-                from: unit)
+            let loadLbs = snapped(Decimal(raw), unit: unit)
             var target = GoalTarget(exerciseID: exerciseID)
             target.targetWeightLbs = loadLbs
             // The reps the block prescribes for that slot, so the rung can be
@@ -43,6 +41,27 @@ enum LadderReadout {
             target.targetReps = slot.repsLow
             return target
         }
+    }
+
+    /// THE ONE PLACE A PRESCRIBED LOAD IS SNAPPED TO A GRID THE ATHLETE CAN
+    /// ACTUALLY LOAD (fix round 1, finding F6).
+    ///
+    /// Both `strengthRungs` doors go through this. They used to round
+    /// differently — the `program` door in the athlete's own unit, the
+    /// `template` door through `ProgramMath.targetWeight`, which always rounds
+    /// to 5 lb — so a kg athlete whose block was derived by one door and
+    /// re-derived by the other could be shown one week at two loads.
+    ///
+    /// For a POUNDS athlete the two were already identical (`displayIncrement`
+    /// is 5 lb), so nothing a lb lifter sees moves; it is kg that gets correct.
+    /// Rounding happens IN the display unit and converts back, never in pounds
+    /// and then converted — the doctrine `Units.roundToIncrement` and
+    /// `WeeklyGoalDetector.liftTarget` both follow, because 225 lb is 102.058 kg
+    /// and a ladder computed in pounds yields rungs a kg lifter cannot load.
+    static func snapped(_ pounds: Decimal, unit: WeightUnit) -> Decimal {
+        Units.toPounds(Units.roundToIncrement(Units.fromPounds(pounds, to: unit),
+                                              unit: unit),
+                       from: unit)
     }
 
     /// A rep-strength rung: the same prescribed loading, but the goal's LOAD is
@@ -204,25 +223,28 @@ extension LadderReadout {
         return out
     }
 
-    /// Strength rungs from the template's OWN percent-of-baseline weeks, through
-    /// `ProgramMath.targetWeight` — THE SAME FUNCTION THE PROGRAM CARD PRINTS,
-    /// so the ladder and the card cannot show one week two loads.
+    /// Strength rungs from the template's OWN percent-of-baseline weeks.
+    ///
+    /// `baseline × percent`, snapped by `snapped(_:unit:)` — the SAME grid the
+    /// `program` door uses, which is what finding F6 asked for. For a pounds
+    /// athlete this is exactly what `ProgramMath.targetWeight` (the program
+    /// card's own function) produces, because both round to the 5 lb step; for a
+    /// kg athlete it is the one that lands on a bar they can build.
     ///
     /// nil for a volume-driven block (no week carries a percent) and for no
     /// baseline: a ladder that invented a load would print a number nobody
     /// prescribed, which is the same refusal `strengthRungs(program:…)` makes
     /// for a main with no `percentOfMax`.
     static func strengthRungs(template: ProgramTemplate?, exerciseID: UUID,
-                              baselineE1RMLbs: Decimal) -> [GoalTarget]? {
+                              baselineE1RMLbs: Decimal,
+                              unit: WeightUnit) -> [GoalTarget]? {
         guard let weeks = template?.weeks, !weeks.isEmpty, baselineE1RMLbs > 0,
               weeks.contains(where: { $0.percentOfBaseline != nil }) else { return nil }
         var previous: Decimal?
         return weeks.map { week in
             var target = GoalTarget(exerciseID: exerciseID)
-            if let percent = week.percentOfBaseline,
-               let pounds = ProgramMath.targetWeight(percentOfBaseline: percent,
-                                                     baseline: baselineE1RMLbs) {
-                previous = Decimal(pounds)
+            if let percent = week.percentOfBaseline {
+                previous = snapped(baselineE1RMLbs * Decimal(percent) / 100, unit: unit)
             }
             // A TEST WEEK CARRIES NO PERCENT (`march-to-1rm`'s week 8, "work up
             // to a new heavy single"). It holds the last prescribed load rather

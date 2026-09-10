@@ -229,13 +229,89 @@ enum HealthKitBridge {
     /// CONNECT HEALTH read is `weeklyGoalHealthNeedsConnecting()`'s job, as it
     /// is for distance.
     static func lissMinutes(from start: Date, to end: Date) async -> Int {
+        lissMinutes(in: await workouts(from: start, to: end))
+    }
+
+    /// The five LISS families' minutes among workouts ALREADY fetched.
+    ///
+    /// Split out so a caller with many windows makes ONE query instead of one
+    /// per window (fix round 1, finding F5) — and split rather than copied, so
+    /// the batch door and the single door cannot come to disagree about what
+    /// counts as LISS.
+    static func lissMinutes(in workouts: [HKWorkout]) -> Int {
         let families: Set<HKWorkoutActivityType> = [
             .walking, .cycling, .rowing, .elliptical, .stairClimbing,
         ]
-        let seconds = await workouts(from: start, to: end)
+        let seconds = workouts
             .filter { families.contains($0.workoutActivityType) }
             .reduce(0.0) { $0 + $1.duration }
         return Int((seconds / 60).rounded())
+    }
+
+    // MARK: - Whole-block reads (fix round 1, finding F5)
+    //
+    // `LiveBlockGoalRepository.measuredByWeek` asks the same question of eight
+    // consecutive weeks. Asked one week at a time that is eight HealthKit round
+    // trips — sixteen for the Recovery pair, which needs minutes AND tags — on
+    // Home's first-load budget. These take the windows together, run ONE query
+    // over their whole span, and bucket in memory.
+    //
+    // Each returns one entry per window, in the order given, so a caller can
+    // `zip` it with its own weeks.
+
+    /// LISS minutes per window, one query.
+    static func lissMinutes(windows: [(start: Date, end: Date)]) async -> [Int] {
+        guard let span = span(of: windows) else { return [] }
+        let all = await workouts(from: span.start, to: span.end)
+        return windows.map { window in
+            lissMinutes(in: all.filter { overlaps($0, window) })
+        }
+    }
+
+    /// Metres of one activity per window, one query. Summed from the workouts'
+    /// own `totalDistance`, exactly as `distanceMeters(activity:from:to:)` does.
+    static func distanceMeters(activity: String,
+                               windows: [(start: Date, end: Date)]) async -> [Double] {
+        guard let type = activityType(for: activity),
+              let span = span(of: windows) else {
+            return Array(repeating: 0, count: windows.count)
+        }
+        let all = await workouts(from: span.start, to: span.end)
+            .filter { $0.workoutActivityType == type }
+        return windows.map { window in
+            all.filter { overlaps($0, window) }
+                .reduce(0.0) { $0 + ($1.totalDistance?.doubleValue(for: .meter()) ?? 0) }
+        }
+    }
+
+    /// Every tag across the windows' whole span, in ONE array and ONE query.
+    ///
+    /// Not bucketed, deliberately: `HealthWorkoutTag.matches(type:sessionStart:
+    /// sessionEnd:)` is an interval-overlap test that carries its own window, so
+    /// a consumer hands it the whole span and only the overlapping tags can
+    /// match. Bucketing first would risk dropping a tag that straddles a week
+    /// boundary.
+    static func workoutTags(windows: [(start: Date, end: Date)]) async -> [HealthWorkoutTag] {
+        guard let span = span(of: windows) else { return [] }
+        return await workoutTags(from: span.start, to: span.end)
+    }
+
+    /// The earliest start and the latest end across the windows.
+    private static func span(of windows: [(start: Date, end: Date)])
+        -> (start: Date, end: Date)? {
+        // `{ $0.start }`, not `\.start`: Swift has no key paths to tuple
+        // elements, labelled or otherwise.
+        guard let first = windows.map({ $0.start }).min(),
+              let last = windows.map({ $0.end }).max() else { return nil }
+        return (first, last)
+    }
+
+    /// Bucketed by the workout's START, which is what a per-window query would
+    /// have returned: `HKQuery.predicateForSamples(withStart:end:)` matches a
+    /// sample whose start falls inside the window.
+    private static func overlaps(_ workout: HKWorkout,
+                                 _ window: (start: Date, end: Date)) -> Bool {
+        workout.startDate >= window.start && workout.startDate < window.end
     }
 
     static func duration(from start: Date, to end: Date) -> TimeInterval {

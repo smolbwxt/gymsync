@@ -126,4 +126,53 @@ final class LadderReadoutTests: XCTestCase {
         XCTAssertEqual(text, "—")
         XCTAssertNil(implication)
     }
+
+    // MARK: - Fix round 1, finding F6: the two doors round the same way
+
+    /// `LadderReadout` has two `strengthRungs` doors — one that takes the
+    /// generator's `Program` (Stream B, build time) and one that takes the
+    /// enrollment's `ProgramTemplate` (the repository, which has no Program).
+    /// They used to round differently: the first in the athlete's own unit, the
+    /// second always to 5 lb. A block derived by one and re-derived by the other
+    /// could then show a kg athlete one week at two loads.
+    ///
+    /// Both go through `snapped(_:unit:)` now, so this asserts the property
+    /// rather than a pair of literals.
+    func testBothStrengthDoorsSnapToTheSameGrid() throws {
+        // 250 × 75 % = 187.5 — deliberately BETWEEN grid points in both units,
+        // so a door that skipped the snap would be visible.
+        let baseline: Decimal = 250
+        let percent = 75.0
+
+        for unit in [WeightUnit.lbs, .kg] {
+            let viaTemplate = try XCTUnwrap(LadderReadout.strengthRungs(
+                template: ProgramTemplate.bySlug("march-to-1rm"),
+                exerciseID: bench, baselineE1RMLbs: baseline, unit: unit))
+            // march-to-1rm's first week IS 75 % of baseline.
+            let first = try XCTUnwrap(viaTemplate.first?.targetWeightLbs)
+            XCTAssertEqual(first, LadderReadout.snapped(baseline * Decimal(percent) / 100,
+                                                        unit: unit),
+                           "the template door snaps, in \(unit.label)")
+
+            // The program door, given a slot whose loading lands on the same
+            // number, must produce the same pounds.
+            let viaProgram = try XCTUnwrap(LadderReadout.strengthRungs(
+                program: program(weeks: wave(1), percentOfMax: percent),
+                exerciseID: bench, baselineE1RMLbs: baseline, unit: unit))
+            XCTAssertEqual(try XCTUnwrap(viaProgram.first?.targetWeightLbs), first,
+                           "and so does the program door, in \(unit.label)")
+        }
+    }
+
+    /// A pounds athlete sees exactly what the program card prints, which is the
+    /// half of F6 that must NOT move: `ProgramMath.targetWeight` rounds to the
+    /// 5 lb step and so does `snapped(_:unit: .lbs)`.
+    func testThePoundsGridStillAgreesWithTheProgramCard() throws {
+        for percent in [75.0, 82.5, 87.5, 90.0] {
+            let card = try XCTUnwrap(ProgramMath.targetWeight(percentOfBaseline: percent,
+                                                              baseline: 250))
+            let ladder = LadderReadout.snapped(250 * Decimal(percent) / 100, unit: .lbs)
+            XCTAssertEqual(ladder, Decimal(card), "\(percent) %")
+        }
+    }
 }
