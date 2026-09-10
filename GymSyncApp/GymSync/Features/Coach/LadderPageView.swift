@@ -211,10 +211,19 @@ struct LadderPageView: View {
         return HStack(alignment: .top, spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
+                    // A KICKER, so design rule 3 governs it: "10 to 11 pt
+                    // caps with 0.1 to 0.13 em tracking, in `muted`; a kicker
+                    // turns `text` only when it is the CURRENT one." It used
+                    // to take `style.ink` wholesale, which put weeks 4, 5, 7
+                    // and 8 in the same full-strength white as week 3 and
+                    // left the ring doing the entire job of marking the
+                    // current rung. `met` keeps its green — rule 2's "green
+                    // means done" is a fair override, and it is the one
+                    // status whose colour IS the fact.
                     Text("WEEK \(row.weekNumber)")
                         .font(GSFont.bold(10, relativeTo: .caption2).monospacedDigit())
                         .tracking(1.1)
-                        .foregroundStyle(style.ink)
+                        .foregroundStyle(Self.kickerInk(for: row.status, theme: theme))
                     if !kicker.isEmpty {
                         Text(kicker)
                             .font(GSFont.bold(9, relativeTo: .caption2))
@@ -450,6 +459,26 @@ struct LadderPageView: View {
             return RowStyle(ink: theme.text, ring: theme.accent)
         case .ahead:
             return RowStyle(ink: theme.text, ring: nil)
+        }
+    }
+
+    /// The ink for a row's `WEEK n` kicker, which is **not** the ink for its
+    /// target text (task review finding 4).
+    ///
+    /// Design rule 3 gives kickers their own colour law — `muted`, turning
+    /// `text` only for the current one — and it is what buys the scan-down
+    /// hierarchy on a page of eight rungs. `style(for:)` answers for the row
+    /// as a whole and is unchanged, so `LadderRowStyleTests` still asserts
+    /// what it asserted.
+    ///
+    /// `met` keeps `style.ink`'s green: rule 2's "green means done" is a fair
+    /// override of rule 3, because it is the one status whose colour IS the
+    /// fact rather than a weight.
+    static func kickerInk(for status: RungStatus, theme: GSTheme) -> Color {
+        switch status {
+        case .met:     return Color.gsSuccess
+        case .current: return theme.text
+        case .ahead, .missed, .overridden: return theme.neutral500
         }
     }
 

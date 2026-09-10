@@ -94,10 +94,14 @@ struct LadderCard: View {
         let kicker = LadderPageView.kicker(for: row.status, isDeload: row.isDeload)
         let word = LadderPageView.statusWord(for: row.status)
         return HStack(spacing: 8) {
+            // Design rule 3's kicker law, through the same helper the page
+            // uses — the card and the page must not disagree about what a
+            // week number looks like any more than about what a met week
+            // does.
             Text("WK \(row.weekNumber)")
                 .font(GSFont.bold(10, relativeTo: .caption2).monospacedDigit())
                 .tracking(1.0)
-                .foregroundStyle(style.ink)
+                .foregroundStyle(LadderPageView.kickerInk(for: row.status, theme: theme))
                 .frame(width: 46, alignment: .leading)
             Text(row.targetText)
                 .font(GSFont.bold(13, relativeTo: .subheadline).monospacedDigit())

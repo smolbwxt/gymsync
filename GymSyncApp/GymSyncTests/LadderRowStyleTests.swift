@@ -79,6 +79,40 @@ final class LadderRowStyleTests: XCTestCase {
         }
     }
 
+    // MARK: - The WEEK n kicker's own ink (review finding 4)
+
+    /// Design rule 3: "Kickers are 10 to 11 pt caps with 0.1 to 0.13 em
+    /// tracking and sit in `muted`; a kicker turns `text` only when it is the
+    /// current one." The row's week number is a kicker by every measure the
+    /// rule names, so it does not take the row's ink wholesale — an `ahead`
+    /// rung in full-strength `text` made weeks 4, 5, 7 and 8 look exactly as
+    /// loud as the current one.
+    func testOnlyTheCurrentWeeksKickerTurnsText() {
+        XCTAssertEqual(LadderPageView.kickerInk(for: .current, theme: theme), theme.text)
+        for status in [RungStatus.ahead, .missed, .overridden] {
+            XCTAssertEqual(LadderPageView.kickerInk(for: status, theme: theme),
+                           theme.neutral500,
+                           "\(status) is not the current rung and must not read as loud as it")
+        }
+    }
+
+    /// `met` keeps the green: rule 2's "green means done" is a fair override
+    /// of rule 3, because it is the one status whose colour IS the fact
+    /// rather than a weight.
+    func testAMetWeeksKickerKeepsTheOneGreen() {
+        XCTAssertEqual(LadderPageView.kickerInk(for: .met, theme: theme), Color.gsSuccess)
+    }
+
+    /// The kicker law is the row law's sibling, not its copy — and neither of
+    /// them is ever red or gold.
+    func testTheKickerInkIsNeverRedOrGold() {
+        for status in everyStatus {
+            let ink = LadderPageView.kickerInk(for: status, theme: theme)
+            XCTAssertNotEqual(ink, Color.red)
+            XCTAssertNotEqual(ink, HomeV2Gold.top)
+        }
+    }
+
     // MARK: - The kicker beside the week number
 
     func testADeloadRowSaysSo() {
