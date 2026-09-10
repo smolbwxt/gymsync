@@ -196,6 +196,92 @@ final class GoalMilestoneCopyTests: XCTestCase {
                        "the rate the weight implies is the rate that produced it")
     }
 
+    // MARK: - The block length tracks the date (review finding 1)
+
+    /// **THE DATE IS THE HORIZON.** On the eight date-bearing presets nothing
+    /// renders a weeks stepper, so the milestone date is the only lever that
+    /// moves the block length — and everything downstream of it has to move
+    /// when it does: Coach's "about N weeks of work", and body composition's
+    /// rate, which is a weight divided by a horizon.
+    ///
+    /// Before the fix, `weeks` was `@State` written in one place that eight of
+    /// eleven cards never drew, so a milestone six months out still read
+    /// "about 8 weeks of work" and frame 95's three readings stopped being
+    /// true of one block the moment the date moved.
+    func testMovingTheDateMovesTheBlockLengthTheLineAndTheRate() throws {
+        let today = Date(timeIntervalSince1970: 1_788_696_000)
+        let current = GoalTarget(bodyWeightLbs: 190)
+        let seeded = GoalMilestoneCopy.draft(preset: .bodyComposition, current: current,
+                                             today: today, unit: .lbs)
+        let seededDate = try XCTUnwrap(seeded.byDate)
+
+        let before = GoalMilestoneCopy.weeks(preset: .bodyComposition, byDate: seededDate,
+                                             heldWeeks: 8, today: today)
+        XCTAssertEqual(before, 8, "the seed is an eight-week block")
+
+        let movedDate = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: 28,
+                                                           to: seededDate))
+        let moved = GoalMilestoneCopy.applying(seeded, byDate: movedDate)
+        let after = GoalMilestoneCopy.weeks(preset: .bodyComposition, byDate: movedDate,
+                                            heldWeeks: 8, today: today)
+        XCTAssertEqual(after, 12, "four weeks later is a twelve-week block")
+
+        // Coach's line counts the new horizon.
+        let lineBefore = GoalMilestoneCopy.coachLine(preset: .bodyComposition, current: current,
+                                                     draft: seeded, weeks: before, unit: .lbs)
+        let lineAfter = GoalMilestoneCopy.coachLine(preset: .bodyComposition, current: current,
+                                                    draft: moved, weeks: after, unit: .lbs)
+        XCTAssertTrue(lineBefore.contains("8 weeks of work"), lineBefore)
+        XCTAssertTrue(lineAfter.contains("12 weeks of work"), lineAfter)
+        XCTAssertNotEqual(lineBefore, lineAfter)
+
+        // A WEIGHT: the weight the athlete set stays, and the RATE follows the
+        // date — the same pounds over a longer block is a gentler cut.
+        let heldWeight = GoalMilestoneCopy.rebalancedBodyComposition(
+            moved, startLbs: 190, weeks: after, stepsTheRate: false, unit: .lbs)
+        XCTAssertEqual(heldWeight.target.bodyWeightLbs, moved.target.bodyWeightLbs,
+                       "the reading the athlete holds is the one that stays")
+        let rateBefore = try XCTUnwrap(seeded.target.bodyWeightRatePercent)
+        let rateAfter = try XCTUnwrap(heldWeight.target.bodyWeightRatePercent)
+        XCTAssertGreaterThan(rateAfter, rateBefore,
+                             "a longer block is a gentler rate, not the same one")
+
+        // A RATE: the rate stays and the WEIGHT follows.
+        let heldRate = GoalMilestoneCopy.rebalancedBodyComposition(
+            moved, startLbs: 190, weeks: after, stepsTheRate: true, unit: .lbs)
+        XCTAssertEqual(heldRate.target.bodyWeightRatePercent,
+                       moved.target.bodyWeightRatePercent)
+        XCTAssertNotEqual(heldRate.target.bodyWeightLbs, moved.target.bodyWeightLbs,
+                          "the same rate over four more weeks lands somewhere else")
+    }
+
+    /// The three presets `GoalPreset.asksForDate` excludes are held for the
+    /// block, so their stepper — the only lever they have — IS the answer.
+    func testAHeldPresetsBlockLengthIsTheStepperAndNotADate() {
+        let today = Date(timeIntervalSince1970: 1_788_696_000)
+        for preset in GoalPreset.allCases where !preset.asksForDate {
+            XCTAssertEqual(
+                GoalMilestoneCopy.weeks(preset: preset, byDate: nil, heldWeeks: 6, today: today),
+                6, preset.rawValue)
+        }
+        XCTAssertEqual(Set(GoalPreset.allCases.filter { !$0.asksForDate }),
+                       [.maintenance, .recovery, .consistency],
+                       "three held presets, and they are the three with the stepper")
+    }
+
+    /// The stepper's answer is clamped to the generator's own limits, so a
+    /// held block can never be shorter than a wave or longer than the column
+    /// allows.
+    func testAHeldBlockLengthIsClampedToTheGeneratorsLimits() {
+        let today = Date(timeIntervalSince1970: 1_788_696_000)
+        XCTAssertEqual(GoalMilestoneCopy.weeks(preset: .recovery, byDate: nil,
+                                               heldWeeks: 1, today: today),
+                       GoalBlockLength.minimumWeeks)
+        XCTAssertEqual(GoalMilestoneCopy.weeks(preset: .recovery, byDate: nil,
+                                               heldWeeks: 500, today: today),
+                       GoalBlockLength.maximumWeeks)
+    }
+
     /// Deterministic on a tie: a dictionary's maximum is not, and a catalog
     /// frame must be.
     func testTheLeadingGroupIsDeterministicOnATie() {

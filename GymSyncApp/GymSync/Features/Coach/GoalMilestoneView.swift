@@ -60,6 +60,56 @@ enum GoalMilestoneCopy {
         calendar.date(byAdding: .day, value: max(1, weeks) * 7 - 1, to: today) ?? today
     }
 
+    /// **THE BLOCK LENGTH THE CARD IS WORKING TO**, and it is READ OFF THE
+    /// MILESTONE DATE for the eight presets that carry one.
+    ///
+    /// This is the inverse of `milestoneDate` and the reason that function's
+    /// round trip is tested: the date is the lever the athlete actually moves
+    /// on those cards, so it — not a stepper nobody rendered — is what Coach's
+    /// line counts and what body composition converts a rate over. A block
+    /// length that ignored the date would print "about 8 weeks of work" under
+    /// a milestone six months out, and would let the body-composition card
+    /// show a weight, a rate and a date that cannot all three be true.
+    ///
+    /// The three HELD presets (Maintenance, Recovery, Consistency — the ones
+    /// `GoalPreset.asksForDate` excludes) have no date to read, so their
+    /// stepper's answer is the block length, clamped to the generator's own
+    /// limits.
+    static func weeks(preset: GoalPreset, byDate: Date?, heldWeeks: Int,
+                      today: Date, calendar: Calendar = .current) -> Int {
+        guard preset.asksForDate else {
+            return max(GoalBlockLength.minimumWeeks,
+                       min(GoalBlockLength.maximumWeeks, heldWeeks))
+        }
+        return GoalBlockLength.weeks(byDate: byDate, from: today, calendar: calendar)
+    }
+
+    /// Body composition's two readings are ONE milestone said two ways, so a
+    /// change of horizon has to move whichever one the athlete is NOT holding.
+    ///
+    /// `stepsTheRate` is the card's segmented switch: on `A RATE` the rate is
+    /// the athlete's and the weight follows it; on `A WEIGHT` the weight is
+    /// theirs and the rate follows. Without this, moving the BY date left
+    /// `TARGET 179 lbs`, `THAT IS −0.75 %/WK` and `BY <date>` on screen
+    /// together while no longer all being true of one block.
+    static func rebalancedBodyComposition(_ draft: BlockGoalDraft,
+                                          startLbs: Decimal?,
+                                          weeks: Int,
+                                          stepsTheRate: Bool,
+                                          unit: WeightUnit) -> BlockGoalDraft {
+        let start = startLbs ?? draft.target.bodyWeightLbs ?? defaultBodyWeightLbs
+        if stepsTheRate {
+            let rate = draft.target.bodyWeightRatePercent ?? bodyCompositionRatePercent
+            return applying(draft,
+                            bodyWeightLbs: projectedBodyWeight(from: start, ratePercent: rate,
+                                                               weeks: weeks, unit: unit))
+        }
+        let target = draft.target.bodyWeightLbs ?? start
+        return applying(draft,
+                        bodyWeightRatePercent: impliedRatePercent(from: start, to: target,
+                                                                  weeks: weeks))
+    }
+
     /// A strength block asks for about ten percent, snapped to something
     /// loadable. Never less than one increment above where the athlete is: a
     /// milestone at today's number is not a milestone.
@@ -77,8 +127,10 @@ enum GoalMilestoneCopy {
     /// A block of a named workout the athlete has never run: "Murph under
     /// 45 min", the spec's example.
     private static let defaultBenchmarkSeconds = 45 * 60
-    /// The seed when there is no body-weight reading at all.
-    private static let defaultBodyWeightLbs: Decimal = 190
+    /// The seed when there is no body-weight reading at all. Internal rather
+    /// than private because the card's steppers fall back to the same number,
+    /// and two spellings of one default is how two of them drift.
+    static let defaultBodyWeightLbs: Decimal = 190
 
     static func seededTarget(preset: GoalPreset, current: GoalTarget,
                              weeks: Int, unit: WeightUnit) -> GoalTarget {
@@ -477,9 +529,13 @@ struct GoalMilestoneView: View {
     /// The milestone as it stands. The primary hands over THIS — the edited
     /// draft, never the seed (task C3).
     @State private var draft: BlockGoalDraft
-    /// Maintenance's and Recovery's own lever, and the span Coach's line and
-    /// every ramp seed are computed over.
-    @State private var weeks: Int
+    /// The block length the WEEKS STEPPER holds — Maintenance's, Recovery's
+    /// and Consistency's only lever (spec §5.2), and theirs alone.
+    ///
+    /// It is not `weeks`. On the eight date-bearing presets the block length
+    /// is READ OFF THE DATE (see `weeks` below); this value is what the
+    /// stepper writes for the three presets that have no date to read.
+    @State private var heldWeeks: Int
     /// The Strength card's `A MAX / REPS AT A LOAD` switch — the one place a
     /// metric changes, and it re-seeds rather than mutating.
     @State private var repsAtALoad: Bool
@@ -516,8 +572,8 @@ struct GoalMilestoneView: View {
                                              today: today, unit: seedUnit,
                                              weeks: blockWeeks)
         _draft = State(initialValue: seeded)
-        _weeks = State(initialValue: max(GoalBlockLength.minimumWeeks,
-                                         min(GoalBlockLength.maximumWeeks, blockWeeks)))
+        _heldWeeks = State(initialValue: max(GoalBlockLength.minimumWeeks,
+                                             min(GoalBlockLength.maximumWeeks, blockWeeks)))
         _repsAtALoad = State(initialValue: preset == .repStrength)
     }
 
@@ -543,6 +599,17 @@ struct GoalMilestoneView: View {
         default:
             return nil
         }
+    }
+
+    /// The block length this card is working to.
+    ///
+    /// COMPUTED, NEVER STORED, on the eight date-bearing presets: the date is
+    /// the lever, so everything downstream of the horizon — Coach's line, the
+    /// rate↔weight conversion, the Strength mode switch's re-seed — moves the
+    /// moment the athlete moves it.
+    private var weeks: Int {
+        GoalMilestoneCopy.weeks(preset: activePreset, byDate: draft.byDate,
+                                heldWeeks: heldWeeks, today: today)
     }
 
     private var incompleteReason: String? {
@@ -859,6 +926,9 @@ struct GoalMilestoneView: View {
                 draft, bodyWeightLbs: pounds,
                 bodyWeightRatePercent: GoalMilestoneCopy.impliedRatePercent(
                     from: current.bodyWeightLbs ?? pounds, to: pounds, weeks: weeks))
+            // `weeks` is read off the date above, so a cut set today and a cut
+            // set after moving the milestone a month out are different rates,
+            // which is the whole point.
         }
     }
 
@@ -869,7 +939,8 @@ struct GoalMilestoneView: View {
             let next = max(-2, min(2, (draft.target.bodyWeightRatePercent ?? 0)
                                       + Double(delta) * 0.25))
             let landing = GoalMilestoneCopy.projectedBodyWeight(
-                from: current.bodyWeightLbs ?? draft.target.bodyWeightLbs ?? 190,
+                from: current.bodyWeightLbs ?? draft.target.bodyWeightLbs
+                    ?? GoalMilestoneCopy.defaultBodyWeightLbs,
                 ratePercent: next, weeks: weeks, unit: unit)
             draft = GoalMilestoneCopy.applying(draft, bodyWeightLbs: landing,
                                                bodyWeightRatePercent: next)
@@ -879,12 +950,16 @@ struct GoalMilestoneView: View {
     /// The block length, for the two cards whose only lever it is — and for
     /// Consistency, whose milestone spec §2.3 gives as "days per week, HELD
     /// FOR N WEEKS".
+    ///
+    /// It renders ONLY for those three, which is exactly why `weeks` may not
+    /// be this stepper's value on the other eight: there, nothing would ever
+    /// write it.
     private var weeksStepper: some View {
-        stepperRow(title: "BLOCK", value: weeks,
-                   suffix: weeks == 1 ? "WEEK" : "WEEKS",
-                   canDecrease: weeks > GoalBlockLength.minimumWeeks,
-                   canIncrease: weeks < 24) { delta in
-            weeks = max(GoalBlockLength.minimumWeeks, min(24, weeks + delta))
+        stepperRow(title: "BLOCK", value: heldWeeks,
+                   suffix: heldWeeks == 1 ? "WEEK" : "WEEKS",
+                   canDecrease: heldWeeks > GoalBlockLength.minimumWeeks,
+                   canIncrease: heldWeeks < 24) { delta in
+            heldWeeks = max(GoalBlockLength.minimumWeeks, min(24, heldWeeks + delta))
         }
     }
 
@@ -909,10 +984,22 @@ struct GoalMilestoneView: View {
         .clipShape(RoundedRectangle(cornerRadius: GSMetrics.radiusSm))
     }
 
+    /// THE DATE IS THE HORIZON, so setting it does more than stamp a field:
+    /// `weeks` is read off it, and on the body-composition card the reading
+    /// the athlete is not holding has to follow it or the card contradicts
+    /// itself.
     private var byDateBinding: Binding<Date> {
         Binding(
             get: { draft.byDate ?? GoalMilestoneCopy.milestoneDate(from: today, weeks: weeks) },
-            set: { draft = GoalMilestoneCopy.applying(draft, byDate: $0) })
+            set: { newDate in
+                let moved = GoalMilestoneCopy.applying(draft, byDate: newDate)
+                guard activePreset == .bodyComposition else { draft = moved; return }
+                draft = GoalMilestoneCopy.rebalancedBodyComposition(
+                    moved, startLbs: current.bodyWeightLbs,
+                    weeks: GoalMilestoneCopy.weeks(preset: activePreset, byDate: newDate,
+                                                   heldWeeks: heldWeeks, today: today),
+                    stepsTheRate: stepsTheRate, unit: unit)
+            })
     }
 
     private func loadStepper(title: String, pounds: Decimal,
