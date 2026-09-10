@@ -144,7 +144,11 @@ struct GoalScreenView: View {
 
     static let proDoorTitle = "Talk it through with Coach"
     static let proDoorGlyph = "bubble.left.and.text.bubble.right"
-    static let proDoorLine = "Coach finds the goal and the ladder with you. Pick a preset below and I'll build to it."
+    /// `above`, not the plan's `below`. The grid IS above this door — that is
+    /// where the plan puts both of them — so the sentence pointed the wrong
+    /// way on frame 93. One word, and it was escalated rather than corrected
+    /// silently when it shipped (concern 2); the review settled it.
+    static let proDoorLine = "Coach finds the goal and the ladder with you. Pick a preset above and I'll build to it."
     static let proDoorFooter = "PRO · ARRIVING WITH THE WATCH METRICS"
 
     // MARK: - Body
