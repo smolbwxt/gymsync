@@ -5,6 +5,9 @@ struct SocialTabView: View {
     @State private var unread: Set<UUID> = []
     /// Crew-widget bar meta per group (owner 2026-08-12) — fed by refresh().
     @State private var barByGroup: [UUID: CrewBarMeta] = [:]
+    /// The crew's 30-day frequency crown, per group (spec §3). Absent for a crew
+    /// nobody has trained with in the window — the crown DECAYS by disappearing.
+    @State private var honorByGroup: [UUID: CrewHonor] = [:]
     @State private var previews: [UUID: String] = [:]
     @State private var friendCount = 0
     @State private var pendingCount = 0
@@ -449,6 +452,21 @@ struct SocialTabView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
                 .monospacedDigit()
+
+            // Spec §3's honor line — absent when there is no crown, because
+            // a blank line is not a state. Same type scale, tracking and
+            // tint as the meta line above it (design rule 3: kickers are
+            // muted caps), and no accent: a finished month is not an
+            // invitation (rule 2).
+            if let honor = honorByGroup[group.id] {
+                Text(CrewHonorMath.line(honor))
+                    .font(GSFont.bold(9.5, relativeTo: .caption2))
+                    .kerning(0.8)
+                    .foregroundStyle(theme.neutral500)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .monospacedDigit()
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
@@ -563,6 +581,28 @@ struct SocialTabView: View {
                 }
             }
             barByGroup = barMeta
+
+            // The crew's frequency honor (spec §3), widened to 30 days and read
+            // through `group_consistency_honor` rather than the bar's own
+            // session list — the bar counts what RLS lets THIS VIEWER see
+            // (organizer-or-participant,
+            // 20260709000006_create_sessions.sql:50-56), which is the wrong
+            // question for a line that says "who showed up most".
+            var honorMeta = honorByGroup
+            await withTaskGroup(of: (UUID, CrewHonor?).self) { taskGroup in
+                for group in currentGroups {
+                    taskGroup.addTask {
+                        guard let rows = try? await GroupRepository.consistencyHonor(groupID: group.id) else {
+                            return (group.id, nil)
+                        }
+                        return (group.id, CrewHonorMath.crown(rows))
+                    }
+                }
+                for await (id, honor) in taskGroup {
+                    if let honor { honorMeta[id] = honor }
+                }
+            }
+            honorByGroup = honorMeta
 
             errorText = nil
         } catch {
