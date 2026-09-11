@@ -293,19 +293,6 @@ enum WorkoutPostRepository {
                 .execute()
         } catch { throw ErrorMapping.map(error) }
     }
-
-    static func unreact(postID: UUID, emoji: String) async throws {
-        guard let userID = await SupabaseService.shared.currentUserID() else {
-            throw GymSyncError.unauthorized
-        }
-        do {
-            try await client.from("post_reactions").delete()
-                .eq("post_id", value: postID.uuidString)
-                .eq("user_id", value: userID.uuidString)
-                .eq("emoji", value: emoji)
-                .execute()
-        } catch { throw ErrorMapping.map(error) }
-    }
 }
 
 struct PostReaction: Codable, Sendable {

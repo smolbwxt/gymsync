@@ -47,7 +47,7 @@ struct PumpFeedView: View {
                         reactionCounts: countsByPost[post.id] ?? [:],
                         ownedSoundSlugs: ownedSoundSlugs,
                         soundNames: soundNames,
-                        onReact: { emoji in Task { await toggleReaction(post: post, emoji: emoji) } },
+                        onReact: { emoji in Task { await commitReaction(post: post, emoji: emoji) } },
                         onDelete: { deleteTarget = post },
                         onReport: { reportTarget = post }
                     )
@@ -160,32 +160,23 @@ struct PumpFeedView: View {
 
     // MARK: - Actions
 
-    /// Optimistic toggle — the server is authoritative; a failure rolls the
-    /// tap back.
+    /// Optimistic, and ONE-WAY. Spec §2 (Strava's kudos): a reaction commits.
+    /// A second tap on a chip you already own does nothing — it is not an
+    /// error and it gets no message, because nothing went wrong; the gesture
+    /// simply has no second half any more.
+    ///
+    /// Still optimistic, still rolled back on failure: a tap that never
+    /// reached the server must not leave a count that says it did.
     @MainActor
-    private func toggleReaction(post: WorkoutPost, emoji: String) async {
-        let had = mineByPost[post.id, default: []].contains(emoji)
-        if had {
+    private func commitReaction(post: WorkoutPost, emoji: String) async {
+        guard !mineByPost[post.id, default: []].contains(emoji) else { return }
+        mineByPost[post.id, default: []].insert(emoji)
+        countsByPost[post.id, default: [:]][emoji, default: 0] += 1
+        do {
+            try await WorkoutPostRepository.react(postID: post.id, emoji: emoji)
+        } catch {
             mineByPost[post.id, default: []].remove(emoji)
             countsByPost[post.id, default: [:]][emoji, default: 1] -= 1
-        } else {
-            mineByPost[post.id, default: []].insert(emoji)
-            countsByPost[post.id, default: [:]][emoji, default: 0] += 1
-        }
-        do {
-            if had {
-                try await WorkoutPostRepository.unreact(postID: post.id, emoji: emoji)
-            } else {
-                try await WorkoutPostRepository.react(postID: post.id, emoji: emoji)
-            }
-        } catch {
-            if had {
-                mineByPost[post.id, default: []].insert(emoji)
-                countsByPost[post.id, default: [:]][emoji, default: 0] += 1
-            } else {
-                mineByPost[post.id, default: []].remove(emoji)
-                countsByPost[post.id, default: [:]][emoji, default: 1] -= 1
-            }
         }
     }
 
@@ -491,15 +482,6 @@ struct PumpPostCard: View {
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .contextMenu {
-                    if myReactions.contains(key) {
-                        Button(role: .destructive) {
-                            onReact(key)
-                        } label: {
-                            Label("Remove my sound", systemImage: "speaker.slash")
-                        }
-                    }
-                }
             }
 
             if !ownedSoundSlugs.isEmpty {
