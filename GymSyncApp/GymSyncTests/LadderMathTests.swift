@@ -715,4 +715,172 @@ final class LadderMathTests: XCTestCase {
         XCTAssertLessThan(miles[3], miles[2], "block week 4")
         XCTAssertGreaterThan(miles[4], miles[3])
     }
+
+    // MARK: - Round 2, finding F4: a forced ramp reports the milestone it cannot reach
+    //
+    // `PercentRampLadderRule` and `StepEveryNWeeksLadderRule` both END with
+    // `write(&last, finish)`, and F1 made `CumulativeLadderRule` do the same by
+    // design. So for Endurance, Consistency, Conditioning and Volume the last
+    // rung IS the milestone whatever the athlete asked for — and all four ask
+    // for a date, so spec §3.5's proposal channel was unreachable for them.
+    // `rampCeiling` is the second way to fall short. Both sides of every line.
+
+    func testEnduranceCannotOutrunTenPercentAWeek() throws {
+        // 3 mi to 15 in four weeks needs ~50 %/wk. The ramp gains 10 %.
+        let short = try XCTUnwrap(LadderMath.rampCeiling(
+            metric: .weeklyDistance, current: GoalTarget(distance: 3),
+            milestone: GoalTarget(activity: "run", distance: 15), weeks: 4))
+        XCTAssertEqual(try XCTUnwrap(short.distance), 4.4, accuracy: 0.05,
+                       "3 x 1.1^4 — where the ramp actually arrives")
+        XCTAssertEqual(short.activity, "run", "the subject rides on the ceiling too")
+
+        // 10 to 15 in eight weeks is well inside the band.
+        XCTAssertNil(LadderMath.rampCeiling(
+            metric: .weeklyDistance, current: GoalTarget(distance: 10),
+            milestone: GoalTarget(activity: "run", distance: 15), weeks: 8))
+    }
+
+    /// No measured floor is the ladder's own "held flat" state, which the rule
+    /// documents — standing must not contradict it by calling it a shortfall.
+    func testEnduranceWithNoMeasuredStateIsNotAShortfall() {
+        XCTAssertNil(LadderMath.rampCeiling(
+            metric: .weeklyDistance, current: GoalTarget(),
+            milestone: GoalTarget(activity: "run", distance: 15), weeks: 4))
+    }
+
+    func testConsistencyCannotAddADayFasterThanEveryTwoWeeks() throws {
+        // 2 days to 6 in four weeks needs +4; the rule gives +2.
+        let short = try XCTUnwrap(LadderMath.rampCeiling(
+            metric: .trainingDaysPerWeek, current: GoalTarget(days: 2),
+            milestone: GoalTarget(days: 6), weeks: 4))
+        XCTAssertEqual(short.days, 4, "2 + 4/2")
+
+        // 2 to 4 in eight weeks is +2 against +4 available.
+        XCTAssertNil(LadderMath.rampCeiling(
+            metric: .trainingDaysPerWeek, current: GoalTarget(days: 2),
+            milestone: GoalTarget(days: 4), weeks: 8))
+    }
+
+    func testConditioningRidesTheSameCadenceAsConsistency() throws {
+        let short = try XCTUnwrap(LadderMath.rampCeiling(
+            metric: .sessionsOfTypePerWeek,
+            current: GoalTarget(sessionType: "hiit", sessions: 1),
+            milestone: GoalTarget(sessionType: "hiit", sessions: 5), weeks: 4))
+        XCTAssertEqual(short.sessions, 3, "1 + 4/2")
+        XCTAssertEqual(short.sessionType, "hiit")
+
+        XCTAssertNil(LadderMath.rampCeiling(
+            metric: .sessionsOfTypePerWeek,
+            current: GoalTarget(sessionType: "hiit", sessions: 1),
+            milestone: GoalTarget(sessionType: "hiit", sessions: 3), weeks: 6))
+    }
+
+    func testVolumeIsJudgedAgainstTheAthletesOwnBestRecentWeek() throws {
+        // A 100,000 lb block, eight weeks, nothing banked. A 5,000 lb best week
+        // means the honest ceiling is 5,000 x 1.1 x 8 = 44,000.
+        let short = try XCTUnwrap(LadderMath.rampCeiling(
+            metric: .cumulativeVolume, current: GoalTarget(volumeLbs: 0),
+            milestone: GoalTarget(volumeLbs: 100_000), weeks: 8,
+            bestRecentWeekVolumeLbs: 5_000))
+        XCTAssertEqual(try XCTUnwrap(short.volumeLbs), 44_000, accuracy: 100)
+
+        // A 20,000 lb week clears it with room.
+        XCTAssertNil(LadderMath.rampCeiling(
+            metric: .cumulativeVolume, current: GoalTarget(volumeLbs: 0),
+            milestone: GoalTarget(volumeLbs: 100_000), weeks: 8,
+            bestRecentWeekVolumeLbs: 20_000))
+
+        // Tonnage already banked counts toward the milestone.
+        XCTAssertNil(LadderMath.rampCeiling(
+            metric: .cumulativeVolume, current: GoalTarget(volumeLbs: 70_000),
+            milestone: GoalTarget(volumeLbs: 100_000), weeks: 8,
+            bestRecentWeekVolumeLbs: 5_000))
+    }
+
+    /// No history is not evidence of a shortfall. The ladder gets the benefit of
+    /// the doubt rather than a proposal built on nothing.
+    func testVolumeWithNoRecentHistoryIsNotJudged() {
+        XCTAssertNil(LadderMath.rampCeiling(
+            metric: .cumulativeVolume, current: GoalTarget(volumeLbs: 0),
+            milestone: GoalTarget(volumeLbs: 100_000), weeks: 8,
+            bestRecentWeekVolumeLbs: nil))
+    }
+
+    /// The metrics whose rungs are NOT forced keep answering from their last
+    /// rung, so the ceiling has nothing to add.
+    func testTheUnforcedMetricsHaveNoCeiling() {
+        for metric in [GoalMetric.liftOneRepMax, .liftRepsAtLoad, .weeklyMuscleSets,
+                       .bodyWeight, .benchmarkTime, .lissMinutesPerWeek,
+                       .stretchingExercisesPerWeek] {
+            XCTAssertNil(LadderMath.rampCeiling(
+                metric: metric, current: GoalTarget(days: 1),
+                milestone: GoalTarget(days: 99), weeks: 4), metric.rawValue)
+        }
+    }
+
+    private func enduranceLadder(from start: Double, to goal: BlockGoal,
+                                 weeks: Int) throws -> Ladder {
+        let rule = try XCTUnwrap(LadderRules.rampRule(for: .weeklyDistance))
+        let targets = rule.rungs(current: GoalTarget(distance: start),
+                                 target: goal.target, weeks: weeks,
+                                 constraints: LadderConstraints())
+        return Ladder(
+            goalID: goal.id,
+            rungs: targets.enumerated().map { index, target in
+                .init(weekIndex: index,
+                      weekStartString: String(format: "2026-09-%02d", 6 + index * 7),
+                      target: target, status: index == 0 ? .current : .ahead)
+            },
+            derivedAt: Date(timeIntervalSince1970: 0))
+    }
+
+    private func enduranceGoal() -> BlockGoal {
+        strengthGoal(target: GoalTarget(activity: "run", distance: 15),
+                     byDate: StubBlockGoalRepository.fixtureByDate,
+                     preset: .endurance, source: .user, metric: .weeklyDistance)
+    }
+
+    /// THE WHOLE POINT, on the page. A forced ramp's last rung IS the milestone,
+    /// so the proposal has to quote the CEILING — otherwise Coach says "this
+    /// ladder reaches 15 mi — move the date?" about a 15 mi milestone.
+    func testAnUnreachableEnduranceLadderProposesAgainstTheCeiling() throws {
+        let goal = enduranceGoal()
+        let ladder = try enduranceLadder(from: 3, to: goal, weeks: 4)
+
+        XCTAssertEqual(ladder.rungs.last?.target.distance, 15,
+                       "the rule forces the last rung, which is why standing "
+                       + "cannot be read off it")
+
+        let page = LadderMath.page(
+            goal: goal, ladder: ladder, liftName: "", rungSets: 3,
+            notesByWeek: [:], unit: .lbs,
+            rampCeiling: LadderMath.rampCeiling(
+                metric: .weeklyDistance, current: GoalTarget(distance: 3),
+                milestone: goal.target, weeks: 4),
+            now: pageNow, calendar: pageCalendar)
+
+        XCTAssertFalse(page.reachesMilestone)
+        XCTAssertTrue(page.coachLine.contains("move the date?"), page.coachLine)
+        XCTAssertFalse(page.coachLine.contains("15"),
+                       "the proposal must not quote the milestone back at the "
+                       + "athlete as if the ladder got there")
+    }
+
+    /// And the other side: a reachable one is still On track, with no ceiling to
+    /// pass, so nothing about the shipped behaviour moves.
+    func testAReachableEnduranceLadderIsStillOnTrack() throws {
+        let goal = enduranceGoal()
+        let ladder = try enduranceLadder(from: 10, to: goal, weeks: 8)
+
+        let page = LadderMath.page(
+            goal: goal, ladder: ladder, liftName: "", rungSets: 3,
+            notesByWeek: [:], unit: .lbs,
+            rampCeiling: LadderMath.rampCeiling(
+                metric: .weeklyDistance, current: GoalTarget(distance: 10),
+                milestone: goal.target, weeks: 8),
+            now: pageNow, calendar: pageCalendar)
+
+        XCTAssertTrue(page.reachesMilestone)
+        XCTAssertEqual(page.coachLine, "On track")
+    }
 }

@@ -27,6 +27,13 @@ import Foundation
 /// +`step` a fraction each week, with every `downWeekEvery`-th week cut to
 /// `downFactor` of the week before it. Endurance's shape.
 struct PercentRampLadderRule: LadderRule {
+    /// Endurance's ceiling: **+10 % a week**, and the number lives here rather
+    /// than at the one call site because `LadderMath.rampCeiling` asks the same
+    /// question from the other end — "could a 10 %-a-week ramp have got there?"
+    /// — and two copies of a rate is how a ladder and its own standing come to
+    /// disagree (round 2, finding F4).
+    static let enduranceStep = 0.10
+
     let step: Double
     let downWeekEvery: Int
     let downFactor: Double
@@ -244,7 +251,8 @@ extension LadderRules {
         switch metric {
         case .weeklyDistance:
             return PercentRampLadderRule(
-                step: 0.10, downWeekEvery: 4, downFactor: 0.7,
+                step: PercentRampLadderRule.enduranceStep,
+                downWeekEvery: 4, downFactor: 0.7,
                 read: { $0.distance }, write: { $0.distance = $1 })
         case .trainingDaysPerWeek:
             return StepEveryNWeeksLadderRule(

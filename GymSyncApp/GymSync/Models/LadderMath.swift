@@ -390,9 +390,16 @@ extension LadderMath {
     /// LAST RUNG against the MILESTONE. When it is false the coach line becomes
     /// the proposal — and NOTHING IS WRITTEN. Spec §3.5's whole point is that
     /// Coach proposes the date move and the athlete accepts it.
+    ///
+    /// `rampCeiling` is where a FORCED ramp actually arrives, or nil when it
+    /// reaches — `LadderMath.rampCeiling(metric:current:milestone:weeks:…)`
+    /// computes it and the repository supplies it, because it needs the measured
+    /// state. Defaulted to nil, which reads as "nothing to say", so every
+    /// caller that has no measurement still gets the shipped behaviour.
     static func page(goal: BlockGoal, ladder: Ladder, liftName: String,
                      rungSets: Int, notesByWeek: [Int: String],
                      deloadWeeks: Set<Int> = [], unit: WeightUnit,
+                     rampCeiling: GoalTarget? = nil,
                      now: Date, calendar: Calendar) -> LadderPageModel {
         var model = LadderPageModel()
         model.source = goal.source
@@ -443,23 +450,127 @@ extension LadderMath {
             return model
         }
 
+        // TWO WAYS TO FALL SHORT, and a ladder has to survive both. The last
+        // rung can simply be below the milestone (body weight, benchmark), OR
+        // the rung can BE the milestone because the rule forced it there while
+        // the ramp could never have climbed that far (Endurance, Consistency,
+        // Conditioning, Volume — finding F4). `rampCeiling` is the second one,
+        // and when it is non-nil it also carries the honest number.
         let last = ladder.rungs.last
-        model.reachesMilestone = last.map {
+        let lastRungArrives = last.map {
             reached(metric: goal.metric, measured: $0.target, target: goal.target)
         } ?? false
+        model.reachesMilestone = lastRungArrives && rampCeiling == nil
+
         if model.reachesMilestone {
             model.coachLine = "On track"
         } else {
             // NAMES THE NUMBER. "This ladder reaches 218 — move the date?" is
             // the spec's own wording, and the point of it is that the ladder
-            // never lies about the gap: it says where it actually arrives.
-            let reach = last.map { bareNumber(metric: goal.metric, target: $0.target,
-                                              unit: unit) } ?? ""
+            // never lies about the gap: it says where it actually arrives —
+            // which for a forced ramp is the CEILING, not the last rung, because
+            // the last rung is the milestone the rule wrote in.
+            let honest = rampCeiling ?? last?.target
+            let reach = honest.map { bareNumber(metric: goal.metric, target: $0,
+                                                unit: unit) } ?? ""
             model.coachLine = reach.isEmpty
                 ? "This ladder does not reach the milestone — move the date?"
                 : "This ladder reaches \(reach) — move the date?"
         }
         return model
+    }
+
+    // MARK: - Can this ramp actually arrive? (round 2, finding F4)
+
+    /// Where a ramp metric's ladder actually ARRIVES, or nil when it reaches the
+    /// milestone.
+    ///
+    /// **WHY THIS EXISTS.** `reachesMilestone` was the last rung compared
+    /// against the milestone, which is honest for the metrics whose rungs are
+    /// computed — body weight, benchmark — and vacuous for the three that FORCE
+    /// their last rung to the milestone. `PercentRampLadderRule` and
+    /// `StepEveryNWeeksLadderRule` both end with
+    /// `if var last = out.last { write(&last, finish) }`, so Endurance,
+    /// Consistency and Conditioning could never report a ladder that falls
+    /// short — and all three ask for a date, so spec §3.5's whole proposal
+    /// channel was unreachable for them. An athlete asking for 15 mi a week in
+    /// four weeks from a base of 3 was told "On track" and handed a final week
+    /// of 15 the ramp never climbed to. `cumulativeVolume` joined them when F1
+    /// made its last rung the milestone by design.
+    ///
+    /// THE LIMITS ARE THE RULES' OWN, so this cannot drift from what the ladder
+    /// actually builds:
+    ///
+    ///   * **Endurance** — the ramp gains at most
+    ///     `PercentRampLadderRule.enduranceStep` a week, so it arrives at
+    ///     `start × (1 + step)^weeks`.
+    ///   * **Consistency and Conditioning** — `StepEveryNWeeksLadderRule` adds
+    ///     one every two weeks, so it arrives at `start + weeks / 2`.
+    ///   * **Volume** — the block can ask for at most the athlete's best recent
+    ///     week plus a tenth, `weeks` times over, on top of what is banked.
+    ///     `bestRecentWeekVolumeLbs` is the repository's read of the last eight
+    ///     weeks of set logs; nil means there is no history to judge against and
+    ///     the ladder is given the benefit of the doubt.
+    ///
+    /// Every other metric returns nil: their rungs are not forced, so the last
+    /// rung against the milestone already answers.
+    ///
+    /// THE CEILINGS ARE SLIGHTLY GENEROUS, deliberately. Endurance's down weeks
+    /// mean the realised climb is below the compounded ceiling, and a deload
+    /// costs Volume half a week. Coach proposing a date move should be a clear
+    /// call, not a rounding one — a ladder that misses by a hair says nothing,
+    /// and a ladder that cannot get there says so.
+    static func rampCeiling(metric: GoalMetric, current: GoalTarget,
+                            milestone: GoalTarget, weeks: Int,
+                            bestRecentWeekVolumeLbs: Double? = nil) -> GoalTarget? {
+        guard weeks > 0 else { return nil }
+        switch metric {
+        case .weeklyDistance:
+            // No measured floor is the ladder's own "held flat" state, not a
+            // shortfall — the rule says so and standing must not contradict it.
+            guard let start = current.distance, start > 0,
+                  let finish = milestone.distance, finish > start else { return nil }
+            let reach = start * pow(1 + PercentRampLadderRule.enduranceStep,
+                                    Double(weeks))
+            guard reach < finish else { return nil }
+            var ceiling = milestone
+            ceiling.distance = (reach * 10).rounded() / 10
+            return ceiling
+
+        case .trainingDaysPerWeek:
+            guard let start = current.days, let finish = milestone.days,
+                  finish > start else { return nil }
+            let reach = start + weeks / 2
+            guard reach < finish else { return nil }
+            var ceiling = milestone
+            ceiling.days = reach
+            return ceiling
+
+        case .sessionsOfTypePerWeek:
+            guard let start = current.sessions, let finish = milestone.sessions,
+                  finish > start else { return nil }
+            let reach = start + weeks / 2
+            guard reach < finish else { return nil }
+            var ceiling = milestone
+            ceiling.sessions = reach
+            return ceiling
+
+        case .cumulativeVolume:
+            guard let total = milestone.volumeLbs, total > 0,
+                  let best = bestRecentWeekVolumeLbs, best > 0 else { return nil }
+            let done = Swift.min(Swift.max(0, current.volumeLbs ?? 0), total)
+            let reach = done + best * 1.1 * Double(weeks)
+            guard reach < total else { return nil }
+            var ceiling = milestone
+            ceiling.volumeLbs = (reach / 100).rounded() * 100
+            return ceiling
+
+        case .liftOneRepMax, .liftRepsAtLoad, .weeklyMuscleSets, .bodyWeight,
+             .benchmarkTime, .lissMinutesPerWeek, .stretchingExercisesPerWeek:
+            // Not forced, or not a climb at all: the last rung against the
+            // milestone is already the honest answer.
+            return nil
+        }
     }
 
     // MARK: - Wording

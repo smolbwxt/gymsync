@@ -276,7 +276,82 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
             notesByWeek: LadderReadout.notesByWeek(template: template),
             deloadWeeks: LadderReadout.constraints(template: template,
                                                    unit: unit).deloadWeeks,
-            unit: unit, now: Date(), calendar: calendar)
+            unit: unit,
+            rampCeiling: await rampCeiling(goal: goal, ladder: ladder,
+                                           calendar: calendar),
+            now: Date(), calendar: calendar)
+    }
+
+    /// Where a forced ramp actually arrives, or nil when it reaches (finding F4).
+    ///
+    /// `LadderMath.rampCeiling` decides; this only fetches what it decides from.
+    /// The question is about the weeks that REMAIN — Coach proposes a date move
+    /// on the ladder as it stands now, not as it stood when the block began — so
+    /// the span is the `ahead` and `current` rungs and the starting point is
+    /// today's measured reading, the same pair `reLadder` works from.
+    private func rampCeiling(goal: BlockGoal, ladder: Ladder,
+                             calendar: Calendar) async -> GoalTarget? {
+        // Only four metrics can be forced short; the rest answer from their last
+        // rung and this whole read is waste for them.
+        switch goal.metric {
+        case .weeklyDistance, .trainingDaysPerWeek, .sessionsOfTypePerWeek,
+             .cumulativeVolume:
+            break
+        case .liftOneRepMax, .liftRepsAtLoad, .weeklyMuscleSets, .bodyWeight,
+             .benchmarkTime, .lissMinutesPerWeek, .stretchingExercisesPerWeek:
+            return nil
+        }
+        guard let userID = await SupabaseService.shared.currentUserID() else { return nil }
+
+        let remaining = ladder.rungs.filter {
+            $0.status == .ahead || $0.status == .current
+        }.count
+        guard remaining > 0 else { return nil }
+
+        let currentWeek = WeekMath.weekStartString(Date(), calendar: calendar)
+        let measured = await measuredByWeek(goal: goal, rungs: ladder.rungs,
+                                            userID: userID, calendar: calendar)
+        let best = goal.metric == .cumulativeVolume
+            ? await bestRecentWeekVolumeLbs(userID: userID, calendar: calendar)
+            : nil
+
+        return LadderMath.rampCeiling(
+            metric: goal.metric,
+            current: measured[currentWeek] ?? GoalTarget(),
+            milestone: goal.target, weeks: remaining,
+            bestRecentWeekVolumeLbs: best)
+    }
+
+    /// The heaviest single week the athlete has actually put in lately — the
+    /// last EIGHT weeks of set logs, bucketed by week and maxed.
+    ///
+    /// Eight because it is a block's own length: a ceiling drawn from a longer
+    /// window would let a peak from two blocks ago vouch for a plan the athlete
+    /// is nowhere near today, and a shorter one would let a single deload week
+    /// declare a reasonable milestone unreachable.
+    ///
+    /// nil when there is no history, which `rampCeiling` reads as "nothing to
+    /// judge against" and gives the ladder the benefit of the doubt.
+    private func bestRecentWeekVolumeLbs(userID: UUID,
+                                         calendar: Calendar) async -> Double? {
+        let now = Date()
+        let thisWeek = WeekMath.startOfWeek(now, calendar: calendar)
+        guard let since = calendar.date(byAdding: .day, value: -56, to: thisWeek),
+              let until = calendar.date(byAdding: .day, value: 7, to: thisWeek)
+        else { return nil }
+
+        let logs = await setLogs(userID: userID, since: since, until: until)
+        guard !logs.isEmpty else { return nil }
+
+        var byWeek: [String: [SetLog]] = [:]
+        for log in logs {
+            byWeek[WeekMath.weekStartString(log.loggedAt, calendar: calendar),
+                   default: []].append(log)
+        }
+        let best = byWeek.values
+            .map { BlockGoalMetricMath.volumePounds(logs: $0) }
+            .max() ?? 0
+        return best > 0 ? best : nil
     }
 
     // MARK: - Write
