@@ -69,6 +69,35 @@ enum GoalMilestoneCopy {
             source: .user)
     }
 
+    /// A goal the athlete already has, as the card's own draft (final review
+    /// F2's edit mode).
+    ///
+    /// `source = .user` because opening the editor is the athlete taking the
+    /// milestone back, which is the same stamp
+    /// `BlockGoalRepository.save(_:)`'s contract puts on it regardless — owner
+    /// decision 8, the milestone and its date belong to the athlete. The
+    /// PRESET comes from the goal, so a card opened on a Consistency goal
+    /// renders Consistency's levers and not the tile the athlete last tapped.
+    static func editableDraft(_ goal: BlockGoal) -> BlockGoalDraft {
+        BlockGoalDraft(metric: goal.metric, target: goal.target,
+                       byDate: goal.byDate, preset: goal.preset, source: .user)
+    }
+
+    /// The primary's word.
+    ///
+    /// `BUILD MY BLOCK` at the door; `USE THIS MILESTONE` when the card is
+    /// EDITING a milestone that already exists (final review F2) — and
+    /// deliberately not "SAVE", because nothing is written on that screen. The
+    /// ladder page's SAVE THE MILESTONE is the write (spec §6: "the one accent
+    /// primary is the save"), and a second primary claiming the same act is how
+    /// an athlete comes to believe a thing is saved when it is not.
+    ///
+    /// Here rather than in the body for this file's own stated reason: a body
+    /// is not testable in this target, so nothing that can be wrong lives in one.
+    static func primaryTitle(editing: Bool) -> String {
+        editing ? "USE THIS MILESTONE" : "BUILD MY BLOCK"
+    }
+
     /// The final day of a block of `weeks` weeks that starts on `today`.
     static func milestoneDate(from today: Date, weeks: Int,
                               calendar: Calendar = .current) -> Date {
@@ -622,6 +651,21 @@ struct GoalMilestoneView: View {
     /// `goal-milestone-recovery` is specified as a SIX-week block.
     var blockWeeks: Int = GoalBlockLength.defaultWeeks
 
+    /// The milestone this card is EDITING, when it is editing one rather than
+    /// composing a new one (final review F2).
+    ///
+    /// The ladder page's EDIT THE MILESTONE / EDIT THE DATE levers open this
+    /// card for the goal they are standing on, which is spec §6's "the levers
+    /// the athlete own — edit the milestone, edit the date". With one set the
+    /// card opens on THAT GOAL'S own target and date rather than on a fresh
+    /// seed, and the primary hands the edited draft back instead of building:
+    /// the write is the ladder page's SAVE THE MILESTONE, its one accent
+    /// primary (spec §6), through the repository surface that stamps
+    /// `source = .user`.
+    ///
+    /// nil is the door, unchanged — every frame and every existing call site.
+    var editing: BlockGoal? = nil
+
     @Environment(\.gsTheme) private var theme
 
     /// The milestone as it stands. The primary hands over THIS — the edited
@@ -654,6 +698,7 @@ struct GoalMilestoneView: View {
          unitOverride: WeightUnit? = nil,
          hasRoutines: Bool = true,
          blockWeeks: Int = GoalBlockLength.defaultWeeks,
+         editing: BlockGoal? = nil,
          onBuild: @escaping (BlockGoalDraft) -> Void) {
         self.preset = preset
         self.current = current
@@ -663,6 +708,7 @@ struct GoalMilestoneView: View {
         self.unitOverride = unitOverride
         self.hasRoutines = hasRoutines
         self.blockWeeks = blockWeeks
+        self.editing = editing
         self.onBuild = onBuild
 
         // THE SEED ROUNDS IN `unitOverride ?? .lbs`, not in the athlete's live
@@ -673,9 +719,13 @@ struct GoalMilestoneView: View {
         // computed `unit`), which is the same split `WeeklyGoalEditorSheet`
         // ships: it seeds a flat `225` and steps in kilograms.
         let seedUnit = unitOverride ?? .lbs
-        let seeded = GoalMilestoneCopy.draft(preset: preset, current: current,
-                                             today: today, unit: seedUnit,
-                                             weeks: blockWeeks)
+        // EDITING OPENS ON THE MILESTONE ITSELF (F2), never on a fresh seed:
+        // the athlete came here to move 225, not to be shown a number derived
+        // from where they are today.
+        let seeded = editing.map(GoalMilestoneCopy.editableDraft)
+            ?? GoalMilestoneCopy.draft(preset: preset, current: current,
+                                       today: today, unit: seedUnit,
+                                       weeks: blockWeeks)
         _draft = State(initialValue: seeded)
         _heldWeeks = State(initialValue: max(GoalBlockLength.minimumWeeks,
                                              min(GoalBlockLength.maximumWeeks, blockWeeks)))
@@ -1447,7 +1497,7 @@ struct GoalMilestoneView: View {
             }
 
             Button { onBuild(draft) } label: {
-                Text("BUILD MY BLOCK")
+                Text(GoalMilestoneCopy.primaryTitle(editing: editing != nil))
                     .font(GSFont.bold(14, relativeTo: .body))
                     .tracking(1.0)
                     .foregroundStyle(theme.bg)

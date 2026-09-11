@@ -35,14 +35,11 @@ struct LadderPageView: View {
     /// With one set, `load()` returns without touching the repository, so a
     /// frame is a value rather than a fetch.
     var world: LadderPageModel? = nil
-    /// The milestone and its date. ONE closure for both levers on purpose:
-    /// the milestone and the date it is due are one object (spec §2.1, and
-    /// the door composes them together in §5), so two closures would promise
-    /// two screens where there is one. I1 raises the milestone editor.
-    var onEditMilestone: () -> Void = {}
-    /// This week's rung — the shipped `WeeklyGoalEditorSheet`, scoped by the
-    /// `RungContext` task D3 gave it.
-    var onEditRung: () -> Void = {}
+    /// Where EDIT THIS WEEK'S RUNG writes. The shipped weekly-goal editor
+    /// needs a weekly repository and this page is the one holding the ladder
+    /// the rung belongs to, so it carries one — `LiveWeeklyGoalRepository` by
+    /// default, injected by a host that has its own.
+    var weeklyGoalRepository: any WeeklyGoalRepository = LiveWeeklyGoalRepository()
 
     @Environment(\.gsTheme) private var theme
 
@@ -61,6 +58,62 @@ struct LadderPageView: View {
     @State private var saving = false
     @State private var errorText: String?
     @State private var coachThread: CoachOpener?
+
+    // MARK: - The levers' own state (final review F2)
+    //
+    // THE PAGE OWNS ITS EDITORS. It used to take an `onEditMilestone` and an
+    // `onEditRung` closure, both defaulted to `{}` — and all seven production
+    // constructions omitted both, so three of the four levers below were
+    // enabled, tappable and inert, with the doc comments claiming I1 had wired
+    // them. A defaulted closure cannot be asserted from a call site, which is
+    // exactly why nothing caught it.
+    //
+    // They are gone rather than made required: spec §6 keeps SAVE THE MILESTONE
+    // as this page's ONE accent primary, so the edited milestone has to come
+    // back HERE to be written, and both editors need context (the goal behind
+    // the page, this week's rung number, the block's milestone wording) that
+    // only this page holds. With no parameter there is nothing left to default.
+    //
+    // DETERMINISM FOR THE CATALOG is the `world` guard, the same one
+    // `reLadder()` documents: every opener below returns on a page rendered
+    // from a `world`, so no capture can reach a repository or the clock.
+
+    /// EDIT THE MILESTONE / EDIT THE DATE, once the goal and its pickers are in
+    /// hand.
+    @State private var milestoneEdit: MilestoneEdit?
+    /// EDIT THIS WEEK'S RUNG, once the week's row and the athlete are.
+    @State private var rungEdit: RungEdit?
+    /// A lever is fetching what its editor needs. Disables the lever set the
+    /// way `reLaddering` does, so two taps cannot open two sheets.
+    @State private var preparingLever = false
+    /// The milestone editor handed back an edit that is not yet written.
+    @State private var pendingEdit = false
+
+    /// What EDIT THE MILESTONE opened. `Identifiable` so it drives
+    /// `.sheet(item:)` — a value, so the sheet cannot be presented before the
+    /// reads it needs have landed.
+    private struct MilestoneEdit: Identifiable {
+        let id = UUID()
+        let goal: BlockGoal
+        let preset: GoalPreset
+        /// The block's own lift, so the card's picker and Coach's line can name
+        /// it. One lift, because editing a milestone is not changing which lift
+        /// the block was built around — that is a new block.
+        let lifts: [WeeklyGoalEditorSheet.LiftOption]
+        let routines: [Routine]
+    }
+
+    /// What EDIT THIS WEEK'S RUNG opened.
+    private struct RungEdit: Identifiable {
+        let id = UUID()
+        let userID: UUID
+        let weekStart: String
+        /// The row as it stands, or nil when this week has none yet.
+        let weekly: WeeklyGoal?
+        /// Task D3's header context — the rung this edit is an OVERRIDE of.
+        let context: WeeklyGoalEditorSheet.RungContext
+        let weeklySessionGoal: Int
+    }
 
     /// Coach's line opens a seeded thread (design rule 7). `Identifiable` so
     /// it can drive `navigationDestination(item:)`.
@@ -101,6 +154,24 @@ struct LadderPageView: View {
         .navigationDestination(item: $coachThread) { opener in
             CoachThreadLauncher(title: opener.title, opener: opener.opener)
                 .background(theme.bg)
+        }
+        // EDIT THE MILESTONE / EDIT THE DATE (spec §6). The door's own card,
+        // opened on this goal — one screen, because the milestone and the date
+        // it is due are one object (spec §2.1).
+        .sheet(item: $milestoneEdit) { edit in
+            NavigationStack {
+                milestoneEditor(goal: edit.goal, preset: edit.preset,
+                                lifts: edit.lifts, routines: edit.routines)
+                    .background(theme.bg)
+            }
+        }
+        // EDIT THIS WEEK'S RUNG (task D3). The SHIPPED weekly-goal editor,
+        // scoped to the rung — an athlete's edit of this week's row is an
+        // override of it (spec §4), which is what the `rung:` header says.
+        .sheet(item: $rungEdit) { edit in
+            rungEditor(userID: edit.userID, weekStart: edit.weekStart,
+                       weekly: edit.weekly, context: edit.context,
+                       weeklySessionGoal: edit.weeklySessionGoal)
         }
     }
 
@@ -292,9 +363,20 @@ struct LadderPageView: View {
     /// things you press and none of them is the page's primary.
     private var levers: some View {
         VStack(spacing: 8) {
-            lever("EDIT THE MILESTONE", glyph: "target", action: onEditMilestone)
-            lever("EDIT THE DATE", glyph: "calendar", action: onEditMilestone)
-            lever("EDIT THIS WEEK'S RUNG", glyph: "slider.horizontal.3", action: onEditRung)
+            // TWO ROWS, ONE DESTINATION, and that is the honest shape rather
+            // than the drift the review flagged (F7): the card they open holds
+            // the milestone AND its date, because they are one object (spec
+            // §2.1) and spec §6 names both levers. Two rows promise two ways
+            // in, not two screens.
+            lever("EDIT THE MILESTONE", glyph: "target") {
+                Task { await openMilestoneEditor() }
+            }
+            lever("EDIT THE DATE", glyph: "calendar") {
+                Task { await openMilestoneEditor() }
+            }
+            lever("EDIT THIS WEEK'S RUNG", glyph: "slider.horizontal.3") {
+                Task { await openRungEditor() }
+            }
             lever(reLaddering ? "RE-LADDERING…" : "LET COACH RE-LADDER",
                   glyph: "arrow.triangle.2.circlepath") {
                 Task { await reLadder() }
@@ -325,7 +407,7 @@ struct LadderPageView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
-        .disabled(reLaddering)
+        .disabled(reLaddering || preparingLever)
     }
 
     // MARK: - 6: the save
@@ -348,6 +430,17 @@ struct LadderPageView: View {
             }
             .buttonStyle(GSPrimaryButtonStyle())
             .disabled(saving || reLaddering)
+            // The edit is HELD until this button writes it, and says so. The
+            // headline above still reads the milestone as it is STORED —
+            // `LadderMath.page` words it and this view does no arithmetic of
+            // its own — so without this line an athlete who edited 225 to 235
+            // would see 225 and have no idea what SAVE was about to do.
+            if pendingEdit && errorText == nil {
+                Text("Milestone edited — SAVE THE MILESTONE to keep it.")
+                    .font(GSFont.body(12, relativeTo: .footnote))
+                    .foregroundStyle(theme.neutral700)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if let errorText {
                 Text(errorText)
                     .font(GSFont.body(12, relativeTo: .footnote))
@@ -584,5 +677,137 @@ struct LadderPageView: View {
             errorText = "That didn't save. Check your connection and try again."
             return
         }
+        // The page re-reads rather than re-wording the headline itself:
+        // `LadderMath.page` is the one place the ladder's words are chosen
+        // (this file's header), and a locally patched headline would be a
+        // second opinion about the same milestone.
+        pendingEdit = false
+        fetched = await repository.page(goalID: goalID)
+    }
+
+    // MARK: - The levers (final review F2)
+
+    /// EDIT THE MILESTONE / EDIT THE DATE: the door's own card, opened on this
+    /// goal.
+    ///
+    /// The pickers are fetched HERE rather than on every page load, because a
+    /// ladder page is opened far more often than a milestone is edited — and
+    /// the reads are the goal's own subject, never the 1,300-row catalog.
+    ///
+    /// A goal with NO PRESET does not open one: `preset` is nullable precisely
+    /// for the Coach-guided goals of phase 2 (`BlockGoal.preset`), and there is
+    /// no card for a milestone nobody chose a shape for. Nothing renders one
+    /// today, so this is a guard rather than a dead end an athlete can reach.
+    private func openMilestoneEditor() async {
+        guard world == nil, !preparingLever, let goal, let preset = goal.preset else { return }
+        preparingLever = true
+        defer { preparingLever = false }
+
+        var lifts: [WeeklyGoalEditorSheet.LiftOption] = []
+        if let exerciseID = goal.target.exerciseID,
+           let exercise = try? await ExerciseRepository.fetch(id: exerciseID) {
+            lifts = [.init(id: exercise.id, name: exercise.name, detail: "FOCUS LIFT")]
+        }
+        var routines: [Routine] = []
+        if goal.metric == .benchmarkTime,
+           let userID = await SupabaseService.shared.currentUserID() {
+            routines = (try? await RoutineRepository.fetchAll(ownerID: userID)) ?? []
+        }
+        milestoneEdit = MilestoneEdit(goal: goal, preset: preset,
+                                      lifts: lifts, routines: routines)
+    }
+
+    /// The edited milestone, held for the save.
+    ///
+    /// `applying` on the repository's own model rather than a fresh `BlockGoal`:
+    /// the id, the enrollment and the row's own timestamps belong to the block,
+    /// and only the three fields the card can move are taken from the draft.
+    /// `source` is not among them — `BlockGoalRepository.save(_:)`'s contract is
+    /// that a save from here is always the athlete's (owner decision 8).
+    private func apply(_ draft: BlockGoalDraft, to existing: BlockGoal) {
+        var edited = existing
+        edited.metric = draft.metric
+        edited.target = draft.target
+        edited.byDate = draft.byDate
+        edited.preset = draft.preset
+        goal = edited
+        pendingEdit = edited != existing
+        errorText = nil
+    }
+
+    /// EDIT THIS WEEK'S RUNG: the shipped weekly-goal editor, scoped to the
+    /// rung this week materialises (task D3).
+    ///
+    /// The `RungContext` is built from the PAGE MODEL — its week number, its
+    /// week count and its headline — so the editor's header and the ladder's
+    /// own headline name one milestone in one spelling, which is the contract
+    /// `WeeklyGoalEditorSheet.rungLine` states.
+    private func openRungEditor() async {
+        guard world == nil, !preparingLever, let page = resolved else { return }
+        preparingLever = true
+        defer { preparingLever = false }
+
+        guard let userID = await SupabaseService.shared.currentUserID() else { return }
+        let weekStart = WeekMath.weekStartString()
+        let weekly = await weeklyGoalRepository.goal(weekStart: weekStart)
+        // The profile's STANDING weekly session goal, for the `days` lever's
+        // stepper — `WeeklyGoalEditorSheet.weeklySessionGoal`'s own rule: the
+        // days kind and the streak goal are one number, and seeding a default
+        // over it would let two editors walk each other backwards.
+        let standing = (try? await ProfileRepository.fetch(userID: userID))?
+            .weeklySessionGoal
+        rungEdit = RungEdit(userID: userID, weekStart: weekStart, weekly: weekly,
+                            context: Self.rungContext(page),
+                            weeklySessionGoal: standing ?? 3)
+    }
+
+    /// The milestone editor this page opens.
+    ///
+    /// A FUNCTION rather than an inline construction, for the reason
+    /// `HomeView.ladderPage(for:)` gives: the wiring is then a value a test can
+    /// hold (`LadderLeverTests`), and a lever that stopped reaching its editor
+    /// would fail a test rather than look correct.
+    ///
+    /// `current` is EMPTY on purpose: the card's `current` seeds a NEW
+    /// milestone and feeds Coach's "you're at 205 now" line, and an edit opens
+    /// on the milestone itself (`GoalMilestoneCopy.editableDraft`). Coach then
+    /// says "I haven't got a reading for this yet", which is true of this
+    /// screen — the reading lives on the ladder below it.
+    func milestoneEditor(goal: BlockGoal, preset: GoalPreset,
+                         lifts: [WeeklyGoalEditorSheet.LiftOption] = [],
+                         routines: [Routine] = []) -> GoalMilestoneView {
+        GoalMilestoneView(preset: preset, current: GoalTarget(),
+                          lifts: lifts, routines: routines,
+                          editing: goal) { edited in
+            apply(edited, to: goal)
+            milestoneEdit = nil
+        }
+    }
+
+    /// The rung editor this page opens — the SHIPPED weekly-goal editor,
+    /// carrying THIS page's weekly repository (the dropped-injection defect
+    /// `LadderRepositoryWiringTests` exists for) and task D3's `RungContext`.
+    func rungEditor(userID: UUID, weekStart: String, weekly: WeeklyGoal?,
+                    context: WeeklyGoalEditorSheet.RungContext,
+                    weeklySessionGoal: Int) -> WeeklyGoalEditorSheet {
+        WeeklyGoalEditorSheet(goal: weekly, userID: userID, weekStart: weekStart,
+                              repository: weeklyGoalRepository,
+                              rung: context,
+                              weeklySessionGoal: weeklySessionGoal) { _, _ in
+            rungEdit = nil
+            // The override makes the rung `overridden` on the next read, so the
+            // page re-reads rather than patching the row itself — the same
+            // reason `reLadder()` re-reads.
+            Task { fetched = await repository.page(goalID: goalID) }
+        }
+    }
+
+    /// The rung header's context, as a VALUE so it can be asserted without a
+    /// view (`LadderLeverTests`) — the shape `HomeView.goalStripDestination`
+    /// takes for the same reason.
+    static func rungContext(_ page: LadderPageModel) -> WeeklyGoalEditorSheet.RungContext {
+        WeeklyGoalEditorSheet.RungContext(weekNumber: page.weekNumber,
+                                          weekCount: page.weekCount,
+                                          milestone: page.headline)
     }
 }

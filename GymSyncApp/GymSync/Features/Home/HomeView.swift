@@ -786,9 +786,9 @@ struct HomeView: View {
     /// editor exactly as it does today. Both are one tap from the strip, and
     /// which one you get is a fact about the row, not a mode.
     ///
-    /// The editor is still reachable from the ladder page — "edit this week's
-    /// rung" is one of its levers (task D1's `onEditRung`, wired at I1) — so
-    /// nothing that could be edited before became unreachable.
+    /// The editor is still reachable from the ladder page — EDIT THIS WEEK'S
+    /// RUNG is one of its levers, and it opens this same sheet scoped to the
+    /// rung — so nothing that could be edited before became unreachable.
     ///
     /// **THIS TASK CHANGES NO ARITHMETIC ON HOME.** The kicker is still
     /// `progress.kicker`, rendered exactly as it is today; A14 is what puts
@@ -856,8 +856,15 @@ struct HomeView: View {
     /// A FUNCTION rather than an inline construction so the wiring is a value
     /// a test can hold — `HomeCompositionTests
     /// .testTheLadderPageHomePushesCarriesHomesOwnRepository`.
+    ///
+    /// IT CARRIES HOME'S WEEKLY REPOSITORY TOO (final review F2). The ladder
+    /// page's EDIT THIS WEEK'S RUNG lever opens the shipped weekly-goal editor,
+    /// and an editor reached from Home that wrote through a different
+    /// repository than Home's own strip reads would be the same silent
+    /// mismatch this function was written to prevent.
     func ladderPage(for goalID: UUID) -> LadderPageView {
-        LadderPageView(goalID: goalID, repository: blockGoalRepository)
+        LadderPageView(goalID: goalID, repository: blockGoalRepository,
+                       weeklyGoalRepository: goalRepository)
     }
 
     /// The strip's own chrome — `surface` fill, 14 pt radius, 12 pt padding
