@@ -407,11 +407,17 @@ struct StatsTabView: View {
         VStack(alignment: .leading, spacing: 10) {
             GSSectionHeader("Streak")
             HStack(spacing: 8) {
-                // Default value color (owner's text law, 2026-08-12) — the
-                // old live-streak accent tint retired with the sweep.
+                // Gold has exactly two jobs (design language §2): the
+                // week-streak number, and "the window is open, act now".
+                // A current streak is the first of those, so this tile is
+                // one of the few places gold belongs — 0xF6C945, the same
+                // check-in/streak gold HomeOneButton.top and
+                // LobbyView.checkInGold already carry. The longest-streak
+                // tile below stays default text: one gold number per card.
                 GSStatTile(
                     value: currentStreakValue,
-                    label: "Current streak"
+                    label: "Current streak",
+                    valueColor: Color.gsHex(0xF6C945)
                 )
                 GSStatTile(
                     value: "\(userStreak?.longestStreak ?? 0)",
