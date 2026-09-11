@@ -50,10 +50,16 @@ struct PumpCheckComposerCard: View {
     @State private var posted = false
     @State private var skipped = false
     @State private var errorText: String?
-    /// Spec §2: how many times the lifter re-shot before posting. Counted in
-    /// the Retake button, written once at INSERT, shown on the card above
-    /// zero.
+    /// Spec §2: how many times the lifter re-shot before posting. Counted
+    /// when the REPLACEMENT ARRIVES, not when Retake is tapped — a tap that
+    /// opens the camera and is then cancelled has re-shot nothing, and the
+    /// count is meant to be honest about how many photos were actually taken
+    /// (review fix 8). Written once at INSERT, shown on the card above zero.
     @State private var retakeCount = 0
+    /// Set by Retake, consumed by the next capture that lands. A cancelled
+    /// picker leaves it set on purpose: the lifter discarded a photo, so the
+    /// next one they take IS the retake, whichever control they reach it by.
+    @State private var awaitingRetake = false
     /// Spec §1 line 4: the one proposal the lifter picked, or none.
     @State private var highlight: PostHighlight?
 
@@ -75,7 +81,6 @@ struct PumpCheckComposerCard: View {
         self.context = context
         _includeHR = State(initialValue: context.includeHRDefault)
         _photo = State(initialValue: catalogPhoto)
-        _retakeCount = State(initialValue: catalogPhoto == nil ? 0 : 2)
         _highlight = State(initialValue: HighlightMath
             .propose(summary: context.summary).first { $0.kind == .pr })
     }
@@ -87,7 +92,13 @@ struct PumpCheckComposerCard: View {
         HighlightMath.propose(summary: context.summary)
     }
 
-    private var windowEnd: Date { context.windowStart.addingTimeInterval(60) }
+    /// ONE DEFINITION OF THE WINDOW. `PostLateness.windowSeconds` is the
+    /// 60 s the server-side lateness derivation and the card's tag both use;
+    /// a literal `60` here was a second copy of the same rule, free to drift
+    /// (review fix 5).
+    private var windowEnd: Date {
+        context.windowStart.addingTimeInterval(PostLateness.windowSeconds)
+    }
     private var windowOpen: Bool { Date() < windowEnd }
 
     var body: some View {
@@ -114,6 +125,10 @@ struct PumpCheckComposerCard: View {
                 CameraPicker { image in
                     photo = image
                     capturedLate = Date() > windowEnd
+                    if awaitingRetake {
+                        retakeCount += 1
+                        awaitingRetake = false
+                    }
                 }
                 .ignoresSafeArea()
             }
@@ -253,7 +268,7 @@ struct PumpCheckComposerCard: View {
                 .buttonStyle(GSPrimaryButtonStyle(fontSize: 14, verticalPadding: 11))
                 .disabled(isPosting)
                 Button {
-                    retakeCount += 1
+                    awaitingRetake = true
                     photo = nil
                     showCamera = true
                 } label: {
