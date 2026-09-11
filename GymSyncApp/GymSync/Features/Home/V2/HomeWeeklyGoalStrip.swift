@@ -161,7 +161,8 @@ struct HomeWeeklyGoalStrip: View {
     private var chipRow: some View {
         HStack(spacing: 8) {
             ForEach(Array(progress.chips.enumerated()), id: \.offset) { _, chip in
-                chipView(chip)
+                GSGoalChip(name: chip.name, done: chip.done,
+                           target: chip.target, isNext: chip.isNext)
             }
         }
     }
@@ -199,51 +200,6 @@ struct HomeWeeklyGoalStrip: View {
         }
     }
 
-    /// Equal widths come from `maxWidth: .infinity` on every chip inside one
-    /// `HStack` — four chips, one 8 pt gap between each, and the row is the
-    /// strip's width whatever the names are.
-    ///
-    /// `done` and `target` arrive as Doubles because a set credits
-    /// fractionally (`MuscleGroup.credit`: 1.0 primary, a capped share per
-    /// secondary group), and the chip rounds for display. A lifter reads
-    /// "9/12", never "8.5/12" — the half-set is real accounting, not a
-    /// number anyone counts in the gym.
-    private func chipView(_ chip: WeeklyGoalProgress.Chip) -> some View {
-        // MET NEEDS AT LEAST ONE REAL TARGET (final review finding 12). A
-        // plain `done >= target` is TRUE for a 0-target chip, so a group
-        // nobody is asking for drew a green `0/0` and read as finished.
-        // `WeeklyGoalProgressMath.muscleSetsProgress` guards the strip-level
-        // `met` against exactly this and says why; the per-chip colour did
-        // not get the same guard. Reachable through the editor's 0-stepper
-        // and through a `volume_targets` deload row at `weekly_sets = 0`.
-        let met = chip.target > 0 && chip.done >= chip.target
-        return VStack(alignment: .leading, spacing: 7) {
-            Text(chip.name)
-                .font(GSFont.bold(9, relativeTo: .caption2))
-                .tracking(1.0)
-                .foregroundStyle(theme.neutral500)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-
-            meter(fill: fraction(of: chip), met: met)
-
-            Text("\(Int(chip.done.rounded()))/\(Int(chip.target.rounded()))")
-                .font(GSFont.bold(12, relativeTo: .caption))
-                .monospacedDigit()
-                .foregroundStyle(met ? Self.green : theme.text)
-                .lineLimit(1)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 8)
-        .overlay(
-            chip.isNext
-                ? RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(theme.accent, lineWidth: 1.5)
-                : nil
-        )
-    }
-
     /// The 4 pt track and its fill. `GeometryReader` rather than a fixed
     /// width, the same call `HomeMilestoneTile.segment(fill:)` makes and for
     /// the same reason: a chip's width is a quarter of the page's, which is
@@ -261,15 +217,6 @@ struct HomeWeeklyGoalStrip: View {
             }
         }
         .frame(height: 4)
-    }
-
-    /// Done over target, clamped to 0...1 — a group that overshoots draws a
-    /// full meter rather than one that runs past its own track, and a target
-    /// of zero (a group Coach is watching but not yet asking for) draws an
-    /// empty one instead of dividing by nothing.
-    private func fraction(of chip: WeeklyGoalProgress.Chip) -> Double {
-        guard chip.target > 0 else { return 0 }
-        return min(max(chip.done / chip.target, 0), 1)
     }
 
     // MARK: - The subject chip
