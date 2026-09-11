@@ -69,11 +69,28 @@ final class LadderRepositoryWiringTests: XCTestCase {
         XCTAssertTrue(ladderAgain.repository is MarkerBlockGoalRepository)
     }
 
-    /// The defaults are still the stub, so nothing that does not inject
-    /// changed behaviour.
-    func testTheUninjectedDefaultIsStillTheStub() {
-        XCTAssertTrue(LadderPageView(goalID: UUID()).repository is StubBlockGoalRepository)
-        XCTAssertTrue(ProgramScheduleView().goalRepository is StubBlockGoalRepository)
-        XCTAssertTrue(HomeView().blockGoalRepository is StubBlockGoalRepository)
+    /// I1's swap: every production default is now the live repository, not
+    /// the stub. The stub stays in the codebase for the catalog captures,
+    /// which always pass a `world:` or construct one of these explicitly
+    /// rather than reaching a default.
+    func testTheUninjectedDefaultIsNowLive() {
+        XCTAssertTrue(LadderPageView(goalID: UUID()).repository is LiveBlockGoalRepository)
+        XCTAssertTrue(ProgramScheduleView().goalRepository is LiveBlockGoalRepository)
+        XCTAssertTrue(HomeView().blockGoalRepository is LiveBlockGoalRepository)
+        XCTAssertTrue(ProgramLedgerView().goalRepository is LiveBlockGoalRepository)
+    }
+
+    /// `CoachHomeView`'s two bare constructions (`ProgramScheduleView()`,
+    /// `ProgramLedgerView()`) inject nothing and were not pinned by any test
+    /// above — the wiring loop tests hold values built with an EXPLICIT
+    /// repository, which proves the injection propagates but not that the
+    /// two doors CoachHomeView opens on its own default actually resolve to
+    /// the live repository once I1 swaps it (task review finding 2 /
+    /// controller ruling: swap five stub defaults, not four).
+    func testCoachHomeViewsBareConstructionsAreNowLive() {
+        XCTAssertTrue(ProgramScheduleView().goalRepository is LiveBlockGoalRepository,
+                      "CoachHomeView's .schedule route constructs ProgramScheduleView() bare")
+        XCTAssertTrue(ProgramLedgerView().goalRepository is LiveBlockGoalRepository,
+                      "CoachHomeView's .ledger route constructs ProgramLedgerView() bare")
     }
 }

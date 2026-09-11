@@ -38,7 +38,10 @@ struct HomeView: View {
     /// unchanged.
     init(friendsRepository: any FriendsLiveRepository = LiveFriendsLiveRepository(),
          goalRepository: any WeeklyGoalRepository = LiveWeeklyGoalRepository(),
-         blockGoalRepository: any BlockGoalRepository = StubBlockGoalRepository()) {
+         // I1 swap: LiveBlockGoalRepository (A11) — StubBlockGoalRepository
+         // stays in the codebase for the catalog captures, which always pass
+         // one explicitly (or a `world:`) rather than reaching this default.
+         blockGoalRepository: any BlockGoalRepository = LiveBlockGoalRepository()) {
         self.friendsRepository = friendsRepository
         self.goalRepository = goalRepository
         self.blockGoalRepository = blockGoalRepository

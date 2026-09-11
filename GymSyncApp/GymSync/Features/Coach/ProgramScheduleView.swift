@@ -23,8 +23,10 @@ import SwiftUI
 struct ProgramScheduleView: View {
 
     /// The block's goal and its ladder (goal-first plan, task D4).
-    /// `StubBlockGoalRepository` until Stream A's live one lands (integration
-    /// task I1) — the same posture every other surface in this stream takes.
+    /// `LiveBlockGoalRepository` (Stream A's A11) as of integration task I1's
+    /// swap — `StubBlockGoalRepository` stays in the codebase for the catalog
+    /// captures, which construct this view explicitly rather than through
+    /// this default.
     ///
     /// Declared with an EXPLICIT init below rather than left to the
     /// synthesised memberwise one, for the reason `HomeView`'s own injection
@@ -34,7 +36,7 @@ struct ProgramScheduleView: View {
     /// `ProgramScheduleView()` call site is unchanged.
     let goalRepository: any BlockGoalRepository
 
-    init(goalRepository: any BlockGoalRepository = StubBlockGoalRepository()) {
+    init(goalRepository: any BlockGoalRepository = LiveBlockGoalRepository()) {
         self.goalRepository = goalRepository
     }
 

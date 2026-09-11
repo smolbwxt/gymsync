@@ -25,10 +25,11 @@ struct LadderPageView: View {
     // MARK: - Inputs
 
     let goalID: UUID
-    /// Where the page reads from. `StubBlockGoalRepository` until Stream A's
-    /// `LiveBlockGoalRepository` lands (integration task I1) — the same
-    /// posture every other Stream D surface takes.
-    var repository: any BlockGoalRepository = StubBlockGoalRepository()
+    /// Where the page reads from. `LiveBlockGoalRepository` (Stream A's A11)
+    /// as of integration task I1's swap; `StubBlockGoalRepository` stays in
+    /// the codebase for the catalog captures, which always pass a `world:`
+    /// and never reach this default (see the file header).
+    var repository: any BlockGoalRepository = LiveBlockGoalRepository()
     /// Rendered directly when present — the catalog's hermetic path, the same
     /// `world` seam `CalendarSchedulingView` grew for the identical reason.
     /// With one set, `load()` returns without touching the repository, so a

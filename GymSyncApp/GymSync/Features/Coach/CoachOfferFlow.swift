@@ -16,22 +16,44 @@ import SwiftUI
 // Goal-first programming (plan task C3): the offer opens
 // `GoalFirstBuildFlow` rather than the consult directly, so the onboarding
 // build begins with the goal like every other build (spec §5.4). The
-// landing is unchanged until Stream D's ladder page lands; I1 swaps it.
+// landing is the ladder page for the goal the build just wrote (spec §5.3,
+// integration task I1), or the plain schedule page when there is no id to
+// land on.
 struct CoachOfferFlow: View {
     @Environment(\.gsTheme) private var theme
 
-    /// The build landed; push the schedule page.
-    @State private var landed = false
+    /// The build landed; push the ladder page, or the schedule page as the
+    /// fallback landing.
+    @State private var landing: BuildLanding?
+
+    private enum BuildLanding: Identifiable, Hashable {
+        case ladder(UUID)
+        case schedule
+        var id: String {
+            switch self {
+            case .ladder(let goalID): return goalID.uuidString
+            case .schedule: return "schedule"
+            }
+        }
+    }
 
     var body: some View {
-        GoalFirstBuildFlow(onBuilt: { _ in landed = true })
+        GoalFirstBuildFlow(onBuilt: { id in
+            landing = id.map { .ladder($0) } ?? .schedule
+        })
             .background(theme.bg)
             // A PUSH: the flow is this stack's root, so there is nothing
             // to swap the landing into. The athlete lands on their
             // program, which is the point.
-            .navigationDestination(isPresented: $landed) {
-                ProgramScheduleView()
-                    .background(theme.bg)
+            .navigationDestination(item: $landing) { landing in
+                switch landing {
+                case .ladder(let goalID):
+                    LadderPageView(goalID: goalID)
+                        .background(theme.bg)
+                case .schedule:
+                    ProgramScheduleView()
+                        .background(theme.bg)
+                }
             }
     }
 }

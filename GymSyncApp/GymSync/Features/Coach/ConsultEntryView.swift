@@ -44,9 +44,10 @@ struct ConsultEntryView: View {
     /// view must not assume.
     ///
     /// The id is what lets a host push the ladder page (spec §6) for the goal
-    /// just written. It is `nil` until B4 writes the row, and every host
-    /// currently ignores it and pushes `ProgramScheduleView` exactly as
-    /// today; integration task I1 swaps that destination, one line per host.
+    /// just written — `ProgramBuilder.Outcome.goalID`, non-nil once step 7b's
+    /// save succeeds. Every host now does exactly that (integration task
+    /// I1), falling back to `ProgramScheduleView` only when the id is nil (a
+    /// failed enrollment or a failed save; the block still built).
     var onBuilt: (UUID?) -> Void
 
     /// A rule the athlete just gave that could NOT be stored.

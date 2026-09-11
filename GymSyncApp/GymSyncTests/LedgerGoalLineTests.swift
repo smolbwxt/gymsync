@@ -149,14 +149,20 @@ final class LedgerGoalLineTests: XCTestCase {
         XCTAssertTrue(goals.isEmpty)
     }
 
-    /// The shipping default is the stub, whose fixture enrollment no real
-    /// block has — so a real athlete sees no goal line rather than the
+    /// The stub's fixture enrollment no real block has — so a catalog capture
+    /// that constructs one explicitly sees no goal line rather than the
     /// fixture's bench milestone, exactly as the schedule page's card does.
     func testTheStubNeverAttachesItsFixtureGoalToARealBlock() async {
         let goals = await ProgramLedgerView.goals(for: [UUID(), UUID()],
                                                   repository: StubBlockGoalRepository())
         XCTAssertTrue(goals.isEmpty)
-        XCTAssertTrue(ProgramLedgerView().goalRepository is StubBlockGoalRepository)
+    }
+
+    /// The shipping default is `LiveBlockGoalRepository` (integration task
+    /// I1's swap) — `StubBlockGoalRepository` stays in the codebase only for
+    /// the catalog captures, which construct it explicitly.
+    func testTheShippingDefaultIsLive() {
+        XCTAssertTrue(ProgramLedgerView().goalRepository is LiveBlockGoalRepository)
         XCTAssertNil(ProgramLedgerView().goalsForEnrollments,
                      "the closure is the previewless fallback, not the shipping path")
     }

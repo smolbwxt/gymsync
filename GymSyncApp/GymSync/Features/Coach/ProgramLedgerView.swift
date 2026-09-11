@@ -18,9 +18,11 @@ struct ProgramLedgerView: View {
 
     /// The block goals behind the rows on screen (goal-first plan, task D5).
     ///
-    /// `StubBlockGoalRepository` until Stream A's live one lands (I1) — the
-    /// same injection every other surface in this stream takes, so all of
-    /// them swap together.
+    /// `LiveBlockGoalRepository` (Stream A's A11) as of integration task I1's
+    /// swap — the same injection every other surface in this stream takes, so
+    /// all of them swap together. `StubBlockGoalRepository` stays in the
+    /// codebase for the catalog captures, which construct this view
+    /// explicitly rather than through this default.
     let goalRepository: any BlockGoalRepository
 
     /// An override for the batch read, for a caller that has a better one
@@ -38,7 +40,7 @@ struct ProgramLedgerView: View {
     /// protocol three streams fork against is not this stream's call.
     let goalsForEnrollments: (@Sendable ([UUID]) async -> [UUID: BlockGoal])?
 
-    init(goalRepository: any BlockGoalRepository = StubBlockGoalRepository(),
+    init(goalRepository: any BlockGoalRepository = LiveBlockGoalRepository(),
          goalsForEnrollments: (@Sendable ([UUID]) async -> [UUID: BlockGoal])? = nil) {
         self.goalRepository = goalRepository
         self.goalsForEnrollments = goalsForEnrollments
@@ -59,9 +61,21 @@ struct ProgramLedgerView: View {
     /// A past block whose after-action thread is being prepared/pushed.
     @State private var aar: AARTarget?
     @State private var buildingAAR: UUID?
-    /// A block was just built from the ledger; push a FRESH schedule
-    /// page (the calendar's proven pattern).
-    @State private var builtFromHere = false
+    /// A block was just built from the ledger; push its ladder page (spec
+    /// §5.3, integration task I1) — or, when the build had no goal id to
+    /// land on, a FRESH schedule page (the calendar's proven pattern).
+    @State private var builtLanding: BuildLanding?
+
+    private enum BuildLanding: Identifiable, Hashable {
+        case ladder(UUID)
+        case schedule
+        var id: String {
+            switch self {
+            case .ladder(let goalID): return goalID.uuidString
+            case .schedule: return "schedule"
+            }
+        }
+    }
 
     private struct AARTarget: Identifiable, Hashable {
         let id: UUID
@@ -122,9 +136,15 @@ struct ProgramLedgerView: View {
             CoachThreadLauncher(title: target.title, opener: target.opener)
                 .background(theme.bg)
         }
-        .navigationDestination(isPresented: $builtFromHere) {
-            ProgramScheduleView()
-                .background(theme.bg)
+        .navigationDestination(item: $builtLanding) { landing in
+            switch landing {
+            case .ladder(let goalID):
+                LadderPageView(goalID: goalID)
+                    .background(theme.bg)
+            case .schedule:
+                ProgramScheduleView()
+                    .background(theme.bg)
+            }
         }
     }
 
@@ -201,7 +221,9 @@ struct ProgramLedgerView: View {
             // goal). The back button stays: the goal screen is a question, and
             // a question you cannot walk away from is a trap. The consult
             // inside the flow keeps its own hidden back button.
-            GoalFirstBuildFlow(onBuilt: { _ in builtFromHere = true })
+            GoalFirstBuildFlow(onBuilt: { id in
+                builtLanding = id.map { .ladder($0) } ?? .schedule
+            })
                 .background(theme.bg)
         } label: {
             HStack(spacing: 8) {

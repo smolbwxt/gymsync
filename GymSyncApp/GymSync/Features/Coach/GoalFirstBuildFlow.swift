@@ -16,11 +16,12 @@ import SwiftUI
 /// is actually about — retiring the wizard and bringing Coach home's own door,
 /// the fourth host, onto this path.
 ///
-/// LANDING. `onBuilt` is handed the id of the goal row the build wrote and
-/// every host currently pushes `ProgramScheduleView` exactly as today. Stream
-/// D's ladder page (D1) is the real landing; integration task I1 swaps the
-/// destination, one line per host, and the ladder page's own `SEE THE BLOCK ›`
-/// row keeps the schedule one tap away.
+/// LANDING. `onBuilt` is handed the id of the goal row the build wrote
+/// (`ProgramBuilder.Outcome.goalID`), and every host pushes Stream D's ladder
+/// page (D1) for it — the real landing (spec §5.3), swapped in at
+/// integration task I1. A nil id (the enrollment or the save itself failed;
+/// the block still built) falls back to the plain schedule page, which the
+/// ladder page's own `SEE THE BLOCK ›` row keeps one tap away regardless.
 struct GoalFirstBuildFlow: View {
 
     var onBuilt: (UUID?) -> Void

@@ -56,7 +56,14 @@ struct CoachHomeView: View {
     /// it) and the view behind it wrote routines directly, bypassing
     /// `ProgramBuilder.build`; `.consult` was this screen's own second build
     /// path, which is what `ConsultEntryView` exists to prevent.
-    private enum Route: Hashable { case goal, schedule, ledger }
+    ///
+    /// `.ladder(UUID)` is the real landing (spec §5.3, integration task I1):
+    /// the build hands back the id of the `block_goals` row it wrote, and
+    /// this pushes the ladder page for it rather than the plain schedule.
+    /// `.schedule` survives as the fallback for the one case the build has no
+    /// goal id to land on — a failed enrollment or a failed save, where the
+    /// block still built and the schedule is the next best landing.
+    private enum Route: Hashable { case goal, ladder(UUID), schedule, ledger }
 
     private var persona: CoachPersona? { CoachPersona.bySlug(profile.persona) }
 
@@ -100,15 +107,21 @@ struct CoachHomeView: View {
             switch destination {
             case .goal:
                 // The REPLACE that used to carry the consult carries this:
-                // moving route to .schedule swaps the pushed view, so the
-                // build unmounts and the schedule takes its place — nothing
+                // moving route off .goal swaps the pushed view, so the
+                // build unmounts and the landing takes its place — nothing
                 // underneath to fall back into. (Owner 2026-08-26: "When I
                 // built my week, it should take us to our scheduling stack.")
                 //
-                // I1 swaps `ProgramScheduleView` for Stream D's ladder page,
-                // which is the real landing (spec §5.3).
-                GoalFirstBuildFlow(onBuilt: { _ in route = .schedule },
+                // I1: the ladder page (spec §5.3) is the real landing, for
+                // the goal the build just wrote; `.schedule` is the fallback
+                // for the one case with no id to land on.
+                GoalFirstBuildFlow(onBuilt: { id in
+                                       route = id.map { .ladder($0) } ?? .schedule
+                                   },
                                    onRuleTrouble: { ruleTrouble = $0 })
+                    .background(theme.bg)
+            case .ladder(let goalID):
+                LadderPageView(goalID: goalID)
                     .background(theme.bg)
             case .schedule:
                 ProgramScheduleView()
