@@ -194,6 +194,22 @@ enum WeeklyGoalProgressMath {
     /// else entirely on a clock.
     static let noAttemptRead = "NO ATTEMPT YET"
 
+    /// What a `lift` goal says in place of a deadline while the athlete has
+    /// not logged a set of that lift inside the block (round 2, item 2).
+    ///
+    /// The third of the same family, and it is here for the reason the other
+    /// two are: `0 → 200 lbs` is a legal reading that says the athlete's bench
+    /// is zero, which is not a thing a person can be. An unlogged lift is a
+    /// STATE, and a state is said in words rather than shown as a number that
+    /// means something else. `liftProgress` signals it with `value: 0` — no
+    /// real e1RM is zero — and `HomeWeeklyGoalStrip.liftReading` draws an em
+    /// dash for it.
+    ///
+    /// It is not a rare arm either: every materialised rung of a new block
+    /// takes it until the athlete trains that lift for the first time, which
+    /// is exactly what `app-tab-home` shows.
+    static let noSetLoggedRead = "NO SET LOGGED YET"
+
     /// The week's seven day letters, in the DEVICE calendar's own order —
     /// starting at `calendar.firstWeekday`, so a Sunday-first athlete reads
     /// S M T W T F S and a Monday-first one reads M T W T F S S. Taken from
@@ -461,7 +477,23 @@ enum WeeklyGoalProgressMath {
                                                      daysLeft: daysLeft))
         }
 
-        let currentLbs = bestE1RMPounds(logs: blockLogs, exerciseID: exerciseID) ?? 0
+        // **NO LOGGED SET IS NOT A ZERO** (round 2, item 2), the same rule the
+        // benchmark arm above states in full. An empty meter, `value: 0` as the
+        // SIGNAL that there is no e1RM to print, and the state said in words on
+        // the kicker row — never `0 → 200 lbs`, which reads as a bench of zero.
+        guard let measuredLbs = bestE1RMPounds(logs: blockLogs, exerciseID: exerciseID),
+              measuredLbs > 0 else {
+            return WeeklyGoalProgress(chips: [.init(name: exerciseName, done: 0,
+                                                    target: 1, isNext: false)],
+                                      value: 0,
+                                      target: double(Units.fromPounds(targetLbs, to: unit)),
+                                      unitLabel: unit.label,
+                                      rightHandRead: noSetLoggedRead,
+                                      kicker: kicker(source: goal.source, met: false,
+                                                     daysLeft: daysLeft))
+        }
+
+        let currentLbs = measuredLbs
         let floorLbs = blockStartLbs
             ?? earliestE1RMPounds(logs: blockLogs, exerciseID: exerciseID)
             ?? 0

@@ -647,11 +647,27 @@ struct HomeWeeklyGoalStrip: View {
         }
     }
 
-    private var liftLine: String {
-        let read = "\(Self.number(progress.value)) → \(Self.number(progress.target))"
-        let unit = unitLabel
-        return unit.isEmpty ? read : read + " " + unit
+    /// **AN UNLOGGED LIFT PRINTS AN EM DASH, NEVER `0`** (round 2, item 2) —
+    /// the rule `benchmarkReading` states below, applied to the other reading
+    /// that can spell a missing measurement as a legal number. A zero e1RM is
+    /// not a light bench; it is no bench at all, and the strip must not say one
+    /// where it means the other. `liftProgress` signals the state with
+    /// `value: 0` and says `NO SET LOGGED YET` on the kicker row beside this.
+    ///
+    /// A static, like `benchmarkReading`, so the rule is a test rather than a
+    /// body (`HomeWeeklyGoalStrip` renders, it does not decide).
+    /// `unitLabel` is PASSED, not read off `progress`: this view's own
+    /// `unitLabel` falls back to the athlete's `ThemeStore` unit when the
+    /// progress carries none, and a static that reached for the store would
+    /// make a catalog frame depend on a setting.
+    static func liftReading(_ progress: WeeklyGoalProgress,
+                            unitLabel: String) -> String {
+        let current = progress.value > 0 ? number(progress.value) : "—"
+        let read = "\(current) → \(number(progress.target))"
+        return unitLabel.isEmpty ? read : read + " " + unitLabel
     }
+
+    private var liftLine: String { Self.liftReading(progress, unitLabel: unitLabel) }
 
     // MARK: - recovery
     //
