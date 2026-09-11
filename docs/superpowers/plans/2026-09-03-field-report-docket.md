@@ -293,3 +293,8 @@ lobby + group-session simplification round (still unasked), the #6 crash (needs 
   build starts on the owner's sign-off of that spec, in parallel; first step merges `feat/milestone-render-pipeline`.
 - Queue after these: congruence B2/B9/B3; the lobby + group-session simplification round (still unasked); the
   #6 crash the day a log arrives.
+
+## Controller notes (2026-09-11 evening)
+- Hero spec §4 corrected before sign-off: the render pipeline's real output is ~212 KB per 600 × 1500 frame (not ~90 KB), so bundling all thirty rungs' frame sets would be ~213 MB at 2×. The spec now carries the measured numbers and a recommendation (per-rung frame sets served from Supabase storage; rung 1 + the Earth poster bundled); owner decision 6 is open.
+- Congruence order: T-F.1–T-F.4 moved ahead of B3 so B3's captures can be proven under the proof-before-merge rule (ruling in the plan ledger).
+- Later, with the eight hard-coded greens: `CrewRoomView.swift:46` keeps a local `0xE8C33A` on the streak numeral (legitimate streak gold) and a stale ":285 OUT gold" comment.
