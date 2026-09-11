@@ -122,6 +122,29 @@ enum GoalPreset: String, Codable, CaseIterable, Sendable {
         }
     }
 
+    /// The preset that EDITS a goal measured by `metric`. Every metric maps, so a
+    /// Coach-detected goal (spec §5.4 — written with `preset: nil`) still opens a
+    /// milestone card: the milestone and its date are the athlete's (owner
+    /// decision 8), never "Coach set it, rebuild to change it". Two metrics are
+    /// many-to-one: `weeklyMuscleSets` opens the Muscle card (Maintenance is a
+    /// flat hold of the same numbers, and the Muscle levers can express it);
+    /// both Recovery metrics open the Recovery card.
+    init(metric: GoalMetric) {
+        switch metric {
+        case .liftOneRepMax:              self = .strength
+        case .liftRepsAtLoad:             self = .repStrength
+        case .weeklyMuscleSets:           self = .muscle
+        case .weeklyDistance:             self = .endurance
+        case .trainingDaysPerWeek:        self = .consistency
+        case .sessionsOfTypePerWeek:      self = .conditioning
+        case .stretchingExercisesPerWeek: self = .recovery
+        case .lissMinutesPerWeek:         self = .recovery
+        case .bodyWeight:                 self = .bodyComposition
+        case .cumulativeVolume:           self = .volume
+        case .benchmarkTime:              self = .benchmark
+        }
+    }
+
     /// Does the door ask for a date? Maintenance and Recovery do not — they
     /// are "held for the block" (spec §2.1), and asking for one would invent
     /// a deadline for a goal that has none. **Nor does Consistency**, whose

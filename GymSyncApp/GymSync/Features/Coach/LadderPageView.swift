@@ -699,7 +699,10 @@ struct LadderPageView: View {
     /// no card for a milestone nobody chose a shape for. Nothing renders one
     /// today, so this is a guard rather than a dead end an athlete can reach.
     private func openMilestoneEditor() async {
-        guard world == nil, !preparingLever, let goal, let preset = goal.preset else { return }
+        // A Coach-detected goal carries `preset: nil` (spec §5.4); its card is
+        // the one its METRIC edits, so the levers are never inert for it.
+        guard world == nil, !preparingLever, let goal else { return }
+        let preset = goal.preset ?? GoalPreset(metric: goal.metric)
         preparingLever = true
         defer { preparingLever = false }
 

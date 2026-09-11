@@ -306,8 +306,9 @@ enum GoalMilestoneCopy {
     /// `?? draft.target.bodyWeightLbs` — collapsed `start` onto the very
     /// number being aimed at, so `impliedRatePercent(179 → 179)` was 0 and a
     /// card that seeded `-0.75 %/WK` printed `0.00 %/WK` the moment the date
-    /// moved. In phase 1 that was EVERY athlete, because `current` is an empty
-    /// `GoalTarget` until Stream A's readers land.
+    /// moved. Before the door fetched readings (final review, round 2) that was
+    /// EVERY athlete, because `current` was an empty `GoalTarget`; it is now
+    /// only an athlete with no logged body weight.
     ///
     /// A zero standing in for an absent reading is the exact thing
     /// `currentReading` refuses to do three screens up in this file. The seed's

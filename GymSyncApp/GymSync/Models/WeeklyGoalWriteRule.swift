@@ -101,7 +101,7 @@ enum WeeklyGoalWriteRule {
 /// Without it, both Coach paths constructed `LiveWeeklyGoalRepository()`
 /// inline: any future unit test of `book(...)` or `build(...)` would perform
 /// six network fetches and a write, and the branch writes real
-/// `weekly_goals` rows from these paths well before I1 swaps the read
+/// `weekly_goals` rows from these paths (integration has since swapped the read
 /// binding off the stub.
 protocol WeeklyGoalCoachWriter: Sendable {
     /// Detect this week's goal and persist it only if

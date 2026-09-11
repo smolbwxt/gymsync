@@ -169,4 +169,22 @@ final class BlockGoalModelTests: XCTestCase {
                                             WeeklyGoalFixtures.editorUserID]),
                       "and none of them is one of the fixture world's lifts or its athlete")
     }
+
+    // MARK: - A metric always names the card that edits it
+
+    /// Spec §5.4 writes Coach-detected goals with `preset: nil`; the ladder
+    /// page's levers must still open a card for them (final review, round 3).
+    func testEveryMetricOpensTheCardThatEditsIt() {
+        for metric in GoalMetric.allCases {
+            let preset = GoalPreset(metric: metric)
+            switch metric {
+            case .weeklyMuscleSets:
+                XCTAssertEqual(preset, .muscle, "muscle sets edit on the Muscle card (Maintenance is a hold of the same numbers)")
+            case .lissMinutesPerWeek, .stretchingExercisesPerWeek:
+                XCTAssertEqual(preset, .recovery)
+            default:
+                XCTAssertEqual(preset.metric, metric, "\(metric) must round-trip through its preset")
+            }
+        }
+    }
 }
