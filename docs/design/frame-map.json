@@ -228,5 +228,10 @@
     "frame": 92,
     "title": "Calendar & scheduling page",
     "note": "two captures from this one id: app-calendar-scheduling (the header, month and week) and app-calendar-scheduling-2 (scrolled to the bottom: block row, campaign row, pinned primary). The -2 attachment has no frame-map entry of its own by design."
+  },
+  "block-calendar": {
+    "frame": 103,
+    "title": "The block, in time - flag and trophy",
+    "note": "congruence B2 T2.3 (owner round 12): a checkered flag on the block's first day, a trophy on its last. Frames 101 and 102 are reserved by the social-cards work on other branches. No proof frame is rendered into docs/design/mockups/ yet, so parity_diff.js logs 'skip block-calendar: no proof frame'."
   }
 }

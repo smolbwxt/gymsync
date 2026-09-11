@@ -81,6 +81,8 @@ final class CatalogScreenTests: XCTestCase {
             "home-goal-editor",
             "home-goal-editor-lift",
             "calendar-scheduling",
+            // congruence B2 T2.3: the block calendar's flag/trophy glyphs.
+            "block-calendar",
         ]
         for id in ids {
             XCTAssertNotNil(CatalogScreen(rawValue: id), "missing catalog case: \(id)")

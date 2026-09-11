@@ -506,6 +506,13 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogHomeGoalEditor()          { captureCatalog("home-goal-editor") }
     func testCatalogHomeGoalEditorLift()      { captureCatalog("home-goal-editor-lift") }
 
+    // congruence B2 T2.3 (frame 103): the block calendar's checkered flag on
+    // the block's first day and trophy on its last. e52df22 claimed
+    // "Proves: app-block-calendar" while no such capture existed; this is it.
+    // The fixture pins the block to October 2026 so both glyphs land in one
+    // month column and inside the viewport — one capture, no scroll.
+    func testCatalogBlockCalendar()           { captureCatalog("block-calendar") }
+
     // The page the calendar card is a door onto (Stream D). Rendered from a
     // fixture world — no clock, no repository — so the frame is comparable
     // against the v7 proof and against itself on any run day.

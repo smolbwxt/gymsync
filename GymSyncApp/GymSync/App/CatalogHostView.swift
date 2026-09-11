@@ -109,6 +109,7 @@ enum CatalogScreen: String, CaseIterable {
     case homeGoalEditorLift = "home-goal-editor-lift"
     /// The page Home's calendar card is a door onto (Stream D, frame 92).
     case calendarScheduling = "calendar-scheduling"
+    case blockCalendar = "block-calendar"
 }
 
 struct CatalogHostView: View {
@@ -199,6 +200,7 @@ struct CatalogHostView: View {
             case .homeGoalEditor:             content_homeGoalEditor
             case .homeGoalEditorLift:         content_homeGoalEditorLift
             case .calendarScheduling:         content_calendarScheduling
+            case .blockCalendar:              content_blockCalendar
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -2040,6 +2042,73 @@ struct CatalogHostView: View {
             ),
         ]
     )
+
+    // MARK: - Block calendar (congruence B2 T2.3, frame 103)
+    //
+    // "The block, in time" with the owner's round-12 glyphs: a checkered flag
+    // on the block's first day, a trophy on its last (commit e52df22). That
+    // commit's body says "Proves: app-block-calendar" — no such capture
+    // existed; this id is it.
+    //
+    // HERMETIC. `BlockCalendarView` normally fills `completedDays` and
+    // `scheduledDays` from `SessionRepository` in its `.task`; the
+    // `catalogFixture…` init seeds both and sets `catalogSkipLoad`, so nothing
+    // on this frame opens a socket.
+    //
+    // The block is PINNED to October 2026 rather than derived from `Date.now`:
+    // four weeks from Oct 1 end on Oct 28, so the flag and the trophy both sit
+    // in ONE month column and both are inside the captured viewport. A
+    // clock-relative start (what `programFixtureEnrollment` uses) would slide
+    // the block over a month boundary and split the grid in two on most run
+    // days.
+    //
+    // Around the two glyphs: Oct 2 and Oct 5 are DONE (`theme.text` bars), Oct
+    // 9 and Oct 13 are BOOKED (accent bars), so the legend's first row has
+    // something to point at beside its new glyph row. Neither Oct 1 nor Oct 28
+    // is completed or booked, so the flag reads neutral and the trophy accent
+    // — `blockGlyphColor`'s two default branches.
+    //
+    // NavigationStack wrapper: `seriesCard` holds a NavigationLink and the
+    // view sets `navigationDestination`, both no-ops without one (same
+    // reasoning as `content_calendarScheduling`).
+    private var content_blockCalendar: some View {
+        NavigationStack {
+            BlockCalendarView(
+                catalogFixtureEnrollment: Self.blockFixtureEnrollment,
+                catalogFixtureWeeks: Self.blockFixtureWeeks,
+                catalogFixtureCompleted: [Self.blockFixtureDay(2), Self.blockFixtureDay(5)],
+                catalogFixtureScheduled: [Self.blockFixtureDay(9), Self.blockFixtureDay(13)]
+            )
+        }
+    }
+
+    /// Local midnight on that day of October 2026 — the same value
+    /// `monthRows` produces for its cells, so a `Set<Date>.contains` hit is
+    /// exact rather than off by a time-of-day.
+    private static func blockFixtureDay(_ day: Int) -> Date {
+        Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: day))!
+    }
+
+    /// Four weeks from Oct 1 2026: `blockEnd` is start + (4 × 7 − 1) = Oct 28.
+    private static let blockFixtureEnrollment = ProgramEnrollment(
+        id: UUID(uuidString: "50000000-0000-4000-d000-000000000c01")!,
+        userID: campaignFixtureUserID,
+        templateSlug: "march-to-1rm",
+        focus: ProgramFocus(exerciseIDs: [programFixtureSquat.id]),
+        baseline: [programFixtureSquat.id.uuidString.lowercased(): 262.5],
+        startedOnString: "2026-10-01",
+        weeks: 4,
+        endedAt: nil,
+        endedReason: nil,
+        createdAt: blockFixtureDay(1)
+    )
+
+    private static let blockFixtureWeeks: [ProgramWeek] = [
+        ProgramWeek(percentOfBaseline: 72.5, sets: 5, reps: 5),
+        ProgramWeek(percentOfBaseline: 77.5, sets: 5, reps: 3),
+        ProgramWeek(percentOfBaseline: 82.5, sets: 4, reps: 3),
+        ProgramWeek(sets: 3, reps: 5, isDeload: true, note: "Deload - leave two in the tank"),
+    ]
 }
 
 // MARK: - Profile fixture

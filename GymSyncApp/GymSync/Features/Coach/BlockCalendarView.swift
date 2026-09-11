@@ -38,6 +38,11 @@ struct BlockCalendarView: View {
     /// Told when THIS view's own sheet changes a schedule, so the host
     /// can refresh its week buttons.
     var onScheduleChanged: (() async -> Void)? = nil
+    /// Debug-only seam for the design-parity screen catalog: the
+    /// `block-calendar` frame seeds its own day sets, so `load()` must never
+    /// reach a repository. Same idiom as `CampaignsTabView.catalogSkipLoad`
+    /// (`Features/Library/CampaignsTabView.swift:54`).
+    var catalogSkipLoad = false
 
     @Environment(AppState.self) private var appState
     @Environment(\.gsTheme) private var theme
@@ -481,6 +486,7 @@ struct BlockCalendarView: View {
     // MARK: Load
 
     private func load() async {
+        if catalogSkipLoad { loading = false; return }
         guard loading else { return }
         defer { loading = false }
         await reloadAll()
@@ -489,6 +495,7 @@ struct BlockCalendarView: View {
     /// Every read, re-runnable: the embedded copy on the program page
     /// re-reads when that page books a week.
     private func reloadAll() async {
+        if catalogSkipLoad { return }
         if let enrollment, !weeks.isEmpty {
             selectedWeek = highlightedWeek
                 ?? ProgramMath.currentWeek(startedOn: enrollment.startedOn,
@@ -811,3 +818,35 @@ struct WeekScheduleSheet: View {
         return "\(formatter.string(from: window.start)) - \(formatter.string(from: last))"
     }
 }
+
+// MARK: - Catalog fixture seam (`block-calendar` catalog case)
+
+#if DEBUG
+extension BlockCalendarView {
+    /// Debug-only seam for the design-parity screen catalog: seeds the day
+    /// sets `reloadAll()` would otherwise fetch and sets `catalogSkipLoad`, so
+    /// the frame renders with no repository call and no clock. Same idiom as
+    /// `CampaignsTabView.init(catalogFixtureActive:…)`
+    /// (`Features/Library/CampaignsTabView.swift:341-362`) — a dedicated init
+    /// in an extension rather than the memberwise one, because
+    /// `_completedDays` and its siblings are `private @State` and only
+    /// reachable from inside this file, and because an init declared in the
+    /// struct body would suppress the memberwise init every production call
+    /// site uses.
+    init(catalogFixtureEnrollment enrollment: ProgramEnrollment,
+         catalogFixtureWeeks weeks: [ProgramWeek],
+         catalogFixtureCompleted completed: Set<Date>,
+         catalogFixtureScheduled scheduled: Set<Date>,
+         catalogFixtureSelectedWeek week: Int = 1) {
+        // Delegate to the memberwise init (internal — CalendarTimelineRows
+        // and ProgramScheduleView both call it) rather than assigning the
+        // `let`s here, then seed the state the fetch would have filled.
+        self.init(enrollment: enrollment, weeks: weeks)
+        _completedDays = State(initialValue: completed)
+        _scheduledDays = State(initialValue: scheduled)
+        _selectedWeek = State(initialValue: week)
+        _loading = State(initialValue: false)
+        catalogSkipLoad = true
+    }
+}
+#endif
