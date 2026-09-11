@@ -234,6 +234,16 @@ struct PumpPostCard: View {
             authorRow
                 .padding(12)
 
+            // Lines 2 and 3 sit ABOVE the photo, because they are the reason
+            // the card exists (spec §1: "a snapshot of where people are in
+            // their fitness trajectory") and a 300 pt photo between the name
+            // and the trajectory would bury it below the fold.
+            if let trajectory = post.trajectory {
+                trajectoryBlock(trajectory)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 12)
+            }
+
             if post.photoPath != nil {
                 photoBlock
             }
@@ -277,10 +287,56 @@ struct PumpPostCard: View {
                     .foregroundStyle(theme.neutral500)
             }
             Spacer()
-            if post.isLate {
+            // Spec §2: the binary `late` chip becomes elapsed time, and the
+            // retake count shows above zero. An OLD row (no `completed_at`)
+            // keeps the chip it was written with — an honest fallback rather
+            // than a computed "0 min".
+            if let retakes = PostLateness.retakeTag(post.retakeCount ?? 0) {
+                GSTag(text: retakes, style: .neutral)
+            }
+            if let lateness = PostLateness.tag(completedAt: post.completedAt,
+                                               postedAt: post.createdAt) {
+                GSTag(text: lateness, style: .neutral)
+            } else if post.isLate {
                 GSTag(text: "late", style: .neutral)
             }
         }
+    }
+
+    /// Lines 2 and 3 — the trajectory and this week's rung (spec §1).
+    ///
+    /// A STRIP, not a card: `surface` at 14 pt, design rule 1's "lines that
+    /// belong to the card above them". The card is already the one raised
+    /// object on this idea and a second extrusion inside it would make two.
+    ///
+    /// NO ACCENT anywhere in here, `behind` included. Accent has three jobs
+    /// (rule 2) and none of them is "a fact about someone else's week"; red
+    /// is errors only, and being behind is not an error. The standing is
+    /// carried by the WORD, which is what spec §1 asks for.
+    private func trajectoryBlock(_ trajectory: PostTrajectory) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text(trajectory.line)
+                .font(GSFont.bodyMedium(12.5, relativeTo: .caption).monospacedDigit())
+                .foregroundStyle(theme.neutral700)
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
+
+            if !trajectory.chips.isEmpty {
+                HStack(spacing: 8) {
+                    ForEach(Array(trajectory.chips.enumerated()), id: \.offset) { _, chip in
+                        // isNext is never set: a finished post is not an
+                        // invitation (design rule 2).
+                        GSGoalChip(name: chip.name, done: chip.done,
+                                   target: chip.target, fill: chip.fill)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
+        .background(theme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 
     private var photoBlock: some View {
@@ -308,8 +364,25 @@ struct PumpPostCard: View {
                 exerciseRow(exercise)
             }
 
+            // Line 4 — the lifter's one pick. Bold body text, no glyph and no
+            // colour: the set rows below already carry a `PR` tag in accent,
+            // and a second accent on the same card would be two.
+            if let highlight = post.highlight {
+                Text(HighlightText.line(highlight, unit: unit))
+                    .font(GSFont.bold(13, relativeTo: .subheadline))
+                    .foregroundStyle(theme.text)
+                    .lineLimit(2)
+            }
+
+            // Line 5 — `Push day · 42 min · 7,240 lb`. The routine name is
+            // dropped rather than replaced for a freeform session; "Workout ·
+            // 42 min" names nothing.
             HStack(spacing: 6) {
                 let minutes = max(1, post.summary.durationSeconds / 60)
+                if let routineName = post.summary.routineName, !routineName.isEmpty {
+                    Text(routineName)
+                    Text("·")
+                }
                 Text("\(minutes) min")
                 Text("·")
                 Text("\(StatMath.compactNumber(Units.fromPounds(post.summary.totalVolumeLbs, to: unit))) \(unit.label)")
