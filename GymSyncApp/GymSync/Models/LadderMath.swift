@@ -259,6 +259,21 @@ extension LadderMath {
     /// re-ladder. Carrying a phase offset would mean widening `LadderConstraints`,
     /// which is frozen Task 0 surface; it is recorded for the controller rather
     /// than invented here.
+    private static func windowed(_ constraints: LadderConstraints,
+                                 over mutable: [LadderRung]) -> LadderConstraints {
+        var local = constraints
+        // Where local index 0 sits in the BLOCK, so a rule with a cadence of its
+        // own can anchor it there rather than to this window (O2).
+        local.phaseOriginWeekIndex = mutable.first?.weekIndex ?? 0
+        local.deloadWeeks = Set(mutable.enumerated().compactMap { position, rung in
+            constraints.deloadWeeks.contains(rung.weekIndex) ? position : nil
+        })
+        local.taperWeeks = Set(mutable.enumerated().compactMap { position, rung in
+            constraints.taperWeeks.contains(rung.weekIndex) ? position : nil
+        })
+        return local
+    }
+
     /// The remaining rungs, re-derived — through the door this metric's rungs
     /// came out of in the first place (final review F1).
     ///
@@ -342,21 +357,6 @@ extension LadderMath {
     /// the ladder exactly as the block derived it.
     static func bestMeasuredE1RM(_ measured: [String: GoalTarget]) -> Decimal? {
         measured.values.compactMap(\.targetWeightLbs).filter { $0 > 0 }.max()
-    }
-
-    private static func windowed(_ constraints: LadderConstraints,
-                                 over mutable: [LadderRung]) -> LadderConstraints {
-        var local = constraints
-        // Where local index 0 sits in the BLOCK, so a rule with a cadence of its
-        // own can anchor it there rather than to this window (O2).
-        local.phaseOriginWeekIndex = mutable.first?.weekIndex ?? 0
-        local.deloadWeeks = Set(mutable.enumerated().compactMap { position, rung in
-            constraints.deloadWeeks.contains(rung.weekIndex) ? position : nil
-        })
-        local.taperWeeks = Set(mutable.enumerated().compactMap { position, rung in
-            constraints.taperWeeks.contains(rung.weekIndex) ? position : nil
-        })
-        return local
     }
 }
 
