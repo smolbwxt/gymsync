@@ -73,3 +73,73 @@ extension XCTestCase {
         return session
     }
 }
+
+// MARK: - Enrollments
+
+/// A block for a live-DB test, **ended before it ever exists as an active one**
+/// (fix round 1, finding F10 — this used to live in
+/// `BlockGoalLiveRepositoryTests` where the next suite could not find it).
+///
+/// INSERTED DIRECTLY rather than through `ProgramRepository.enroll`, and that is
+/// the whole point:
+///
+///   * `enroll` starts training TODAY. `build-test` and the screenshot job run
+///     in PARALLEL on the SAME account (both read the `TEST_USER_EMAIL` secret),
+///     so an enrollment that is active for even one round trip could reach
+///     `app-tab-home` — a frozen, owner-approved frame. A row written with
+///     `ended_at` already set is never active and `ProgramRepository.active()`
+///     can never see it.
+///   * `one_active_program_per_user` is a PARTIAL unique index
+///     (`WHERE ended_at IS NULL`), so an ended block never contends with
+///     whatever the account may already have.
+///
+/// The delete is registered BEFORE the insert, like every factory in this file,
+/// and it cascades: `block_goals.enrollment_id` is `ON DELETE CASCADE` and the
+/// rungs cascade from the goal, so one delete cleans all three tables.
+extension XCTestCase {
+
+    /// An ended `program_enrollments` row, deletion pre-registered.
+    ///
+    /// `slug` picks which bundled template's shape the block carries — the
+    /// deload weeks and per-week notes a ladder page reads. Every date is 2099.
+    func makeTempEndedEnrollment(slug: String = "march-to-1rm",
+                                 startedOn: String = "2099-01-04",
+                                 weeks: Int = 8) async throws -> ProgramEnrollment {
+        // snake_case field names rather than `CodingKeys`, matching
+        // `VolumeTargetRepository.set`'s own local `Upsert` — a throwaway DTO
+        // for one insert does not need the ceremony.
+        struct EndedEnrollment: Encodable {
+            let id: UUID
+            let user_id: UUID
+            let template_slug: String
+            let focus: ProgramFocus
+            let baseline: [String: Double]
+            let started_on: String
+            let weeks: Int
+            let ended_at: String
+            let ended_reason: String
+        }
+
+        let userID = await SupabaseService.shared.currentUserID()
+        let owner = try XCTUnwrap(userID)
+        let id = UUID()
+        addTeardownBlock {
+            _ = try? await SupabaseService.shared.client
+                .from("program_enrollments")
+                .delete()
+                .eq("id", value: id)
+                .execute()
+        }
+
+        let rows: [ProgramEnrollment] = try await SupabaseService.shared.client
+            .from("program_enrollments")
+            .insert(EndedEnrollment(
+                id: id, user_id: owner, template_slug: slug,
+                focus: ProgramFocus(), baseline: [:],
+                started_on: startedOn, weeks: weeks,
+                ended_at: "2099-03-01T00:00:00Z", ended_reason: "completed"))
+            .select()
+            .execute().value
+        return try XCTUnwrap(rows.first)
+    }
+}

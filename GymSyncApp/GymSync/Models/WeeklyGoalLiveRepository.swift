@@ -29,6 +29,13 @@ private struct WeeklyGoalRow: Codable {
     let kind: String
     let params: WeeklyGoalParams
     let source: String
+    /// `weekly_goals.goal_id` (task A2) — the COLUMN half of the ladder link.
+    /// `params.goalID` is the other half; see `model` for why the column is the
+    /// authority on READ.
+    let goalID: UUID?
+    /// `weekly_goals.rung_index`. Column-only: `WeeklyGoalParams` has no mirror
+    /// for it, so nothing in `WeeklyGoal` carries it and only the writer sets it.
+    let rungIndex: Int?
     let createdAt: Date?
     let updatedAt: Date?
 
@@ -38,16 +45,29 @@ private struct WeeklyGoalRow: Codable {
         case kind
         case params
         case source
+        case goalID = "goal_id"
+        case rungIndex = "rung_index"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
     }
 
-    init(_ goal: WeeklyGoal) {
+    /// `rungIndex` is a WRITE-SIDE argument because `WeeklyGoal` cannot carry it
+    /// — that struct is the frozen Task 0 shape and has no field per column.
+    /// `goal_id` needs no such argument: `params.goalID` already holds it, and
+    /// writing the column FROM the param here is what makes the two halves one
+    /// value written twice, exactly as A2's own COMMENT promises.
+    ///
+    /// Both are optional and both encode only when set, so `save`'s ordinary
+    /// upsert — which passes no rung index and may carry no goal id — omits them
+    /// and leaves whatever the row already had.
+    init(_ goal: WeeklyGoal, rungIndex: Int? = nil) {
         userID = goal.userID
         weekStart = goal.weekStartString
         kind = goal.kind.rawValue
         params = goal.params
         source = goal.source.rawValue
+        goalID = goal.params.goalID
+        self.rungIndex = rungIndex
         createdAt = nil
         updatedAt = nil
     }
@@ -62,7 +82,8 @@ private struct WeeklyGoalRow: Codable {
         return WeeklyGoal(userID: userID,
                           weekStartString: weekStart,
                           kind: kind,
-                          params: params,
+                          params: LiveWeeklyGoalRepository.reconcileLadderLink(
+                              params: params, goalIDColumn: goalID),
                           source: source,
                           // `updated_at` IS `setAt`: the goal's own trigger
                           // bumps it on every edit (A1). The fallbacks are
@@ -169,6 +190,52 @@ struct LiveWeeklyGoalRepository: WeeklyGoalRepository, WeeklyGoalCoachWriter {
         }
     }
 
+    /// THE LADDER'S ONE DOOR INTO `weekly_goals` (task A11).
+    ///
+    /// `LiveBlockGoalRepository.materialiseRung` has ALREADY consulted
+    /// `WeeklyGoalWriteRule.shouldOverwrite` against the existing row before
+    /// calling this — that check belongs to the caller because the caller is the
+    /// one that knows what it derived, and this method deliberately does not
+    /// repeat it. Nothing else may call it.
+    ///
+    /// It exists at all because `upsert` below is `private` on purpose: the
+    /// write rule's whole premise is that one function consults `source` before
+    /// any Coach write, and an internal `upsert` would let a future caller put a
+    /// `coach` row over a `user` one without ever passing through it. One named
+    /// door, with the rule named in its own doc comment, is the seam that keeps
+    /// that true while still letting the ladder materialise.
+    @discardableResult
+    func writeMaterialisedRung(_ goal: WeeklyGoal, rungIndex: Int? = nil) async -> Bool {
+        await upsert(goal, rungIndex: rungIndex)
+    }
+
+    /// **THE COLUMN IS THE AUTHORITY ON READ** (Stream B review, cross-stream
+    /// requirement).
+    ///
+    /// The ladder link lives in two places: `weekly_goals.goal_id`, which the
+    /// foreign key and its `ON DELETE SET NULL` need, and `params.goalID`, which
+    /// is what survives into `WeeklyGoal` — a struct with no field per column.
+    /// The client asks `params.goalID` whether a week belongs to a ladder
+    /// (`isLadderWeek`), and JSON does not participate in `ON DELETE SET NULL`.
+    ///
+    /// So when the goal is deleted the column goes NULL and the param does not,
+    /// and without this the week would stay frozen as a ladder week forever —
+    /// pointing at a goal that no longer exists. Clearing the param when the
+    /// column is null makes it a plain weekly goal again, which is exactly what
+    /// spec §4 says a `goal_id = null` row IS.
+    ///
+    /// ONE DIRECTION ONLY. A non-null column does NOT write the param back: an
+    /// athlete who saves a standalone goal over a ladder week has dropped the
+    /// link on purpose, and resurrecting it from a column they never touched
+    /// would undo their own edit.
+    static func reconcileLadderLink(params: WeeklyGoalParams,
+                                    goalIDColumn: UUID?) -> WeeklyGoalParams {
+        guard goalIDColumn == nil else { return params }
+        var cleared = params
+        cleared.goalID = nil
+        return cleared
+    }
+
     /// Writes a row exactly as given. Shared by `save` and by A11's Coach
     /// write path, which has already decided it is allowed to write.
     ///
@@ -178,11 +245,12 @@ struct LiveWeeklyGoalRepository: WeeklyGoalRepository, WeeklyGoalCoachWriter {
     /// `user` one without ever passing through it. No test calls it, so the
     /// seam costs nothing.
     @discardableResult
-    private func upsert(_ goal: WeeklyGoal) async -> Bool {
+    private func upsert(_ goal: WeeklyGoal, rungIndex: Int? = nil) async -> Bool {
         do {
             try await client
                 .from("weekly_goals")
-                .upsert(WeeklyGoalRow(goal), onConflict: "user_id,week_start")
+                .upsert(WeeklyGoalRow(goal, rungIndex: rungIndex),
+                        onConflict: "user_id,week_start")
                 .execute()
             return true
         } catch {
@@ -336,10 +404,70 @@ struct LiveWeeklyGoalRepository: WeeklyGoalRepository, WeeklyGoalCoachWriter {
 
     // MARK: - Progress
 
+    /// The kind's own progress, plus the BLOCK CONTEXT when this row belongs to
+    /// a ladder (task A14, spec §6).
+    ///
+    /// ONE EXTRA READ, and only for a row that HAS a `goalID`: a standalone
+    /// weekly goal — every row written before goal-first programming, and every
+    /// row an athlete sets themselves outside a block — pays exactly nothing.
+    ///
+    /// The frozen Home frames are unaffected (global constraint 8): they build
+    /// their `WeeklyGoalProgress` from a literal fixture and never reach this
+    /// type at all.
+    func progress(for goal: WeeklyGoal) async -> WeeklyGoalProgress {
+        var progress = await rawProgress(for: goal)
+        guard let goalID = goal.params.goalID,
+              let context = await blockContext(goalID: goalID,
+                                               weekStart: goal.weekStartString)
+        else { return progress }
+        let now = Date()
+        progress.kicker = WeeklyGoalProgressMath.blockKicker(
+            source: goal.source, met: progress.met,
+            daysLeft: WeekMath.daysRemaining(in: now, from: now, calendar: .current),
+            weekNumber: context.weekNumber, weekCount: context.weekCount)
+        return progress
+    }
+
+    /// Which rung of which ladder this week is — the two numbers `WEEK 3 OF 8`
+    /// needs, in one query.
+    ///
+    /// nil when the ladder has no rung for this week, which is the honest answer
+    /// for a row whose block was re-laddered shorter: the kicker then falls back
+    /// to `THIS WEEK` rather than naming a week the ladder does not have.
+    private func blockContext(goalID: UUID,
+                              weekStart: String) async -> (weekNumber: Int,
+                                                           weekCount: Int)? {
+        struct RungKeyRow: Decodable {
+            let weekIndex: Int
+            /// A DATE column, so a raw String — never through the timestamp
+            /// decoder (`ProgramEnrollment.swift:34-38`).
+            let weekStart: String
+            enum CodingKeys: String, CodingKey {
+                case weekIndex = "week_index"
+                case weekStart = "week_start"
+            }
+        }
+        do {
+            let rows: [RungKeyRow] = try await client
+                .from("block_goal_rungs")
+                .select("week_index, week_start")
+                .eq("goal_id", value: goalID)
+                .order("week_index", ascending: true)
+                .execute().value
+            guard !rows.isEmpty,
+                  let match = rows.first(where: { $0.weekStart == weekStart })
+            else { return nil }
+            return (match.weekIndex + 1, rows.count)
+        } catch {
+            AppLogger.db.error("block_goal_rungs context read failed: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
     /// Only what THIS kind needs is fetched. A `days` goal has no business
     /// paging the 1,300-row exercise catalog, and Home's refresh is a budget
     /// the strip shares with eight other reads.
-    func progress(for goal: WeeklyGoal) async -> WeeklyGoalProgress {
+    private func rawProgress(for goal: WeeklyGoal) async -> WeeklyGoalProgress {
         guard let userID = await SupabaseService.shared.currentUserID() else {
             return WeeklyGoalProgress()
         }
@@ -424,51 +552,111 @@ struct LiveWeeklyGoalRepository: WeeklyGoalRepository, WeeklyGoalCoachWriter {
                 healthNeedsConnecting: await needsConnecting,
                 now: now, calendar: calendar)
 
-        // ── goal-first programming phase 1 (plan task 0.3) ────────────────
+        // ── goal-first programming phase 1 ────────────────────────────────
         //
-        // CLOSED, NOT FETCHED. Task 0 is the interface four streams fork
-        // against; the READS behind these four kinds — the stretching count,
-        // the LISS minutes, the scale, the week's tonnage, the benchmark's
-        // clock — are Stream A task A5's, and a guess at them here would be
-        // exactly the second opinion this file exists to avoid.
+        // WIRED IN TASK A11, exactly as Task 0's own comment said they would
+        // be: "each arm still routes through the kind's own pure function, so
+        // A5 fills in an argument rather than inventing an arm." A5 and A6
+        // shipped those functions, and A2 widened `weekly_goals.kind` so a row
+        // of one of these kinds is now reachable — at which point leaving the
+        // stubbed zeros would print `0 / 6 stretches` at an athlete who had
+        // stretched, which is worse than the empty state it replaced.
         //
-        // Unreachable today either way: a row of one of these kinds cannot
-        // be inserted until `weekly_goals.kind`'s CHECK constraint is
-        // widened (task A2, applied at a controller gate per global
-        // constraint 10), so `goal.kind` cannot arrive here as one of them.
-        // Each arm still routes through the kind's own pure function, so A5
-        // fills in an argument rather than inventing an arm.
+        // ONLY WHAT THE KIND NEEDS IS FETCHED, the same discipline the five
+        // arms above follow.
         case .recovery:
-            // The one read this arm CAN honestly make today: whether Health
-            // has ever been asked. Without it the companion chip would say
-            // `0 min` where it means "not connected" (controller ruling 1).
-            let recoveryNeedsConnecting =
-                await HealthKitBridge.weeklyGoalHealthNeedsConnecting()
+            async let recoveryLogs = weekSetLogs(userID: userID, since: weekStart,
+                                                 until: weekEnd)
+            async let recoveryCatalog = catalogByID()
+            async let recoverySessions = weekSessions(userID: userID)
+            async let recoveryRoutines = routinesByID(userID: userID)
+            async let recoveryHealthMinutes = HealthKitBridge.lissMinutes(from: weekStart,
+                                                                          to: weekEnd)
+            async let recoveryTags = HealthKitBridge.workoutTags(from: weekStart,
+                                                                 to: weekEnd)
+            async let recoveryNeedsConnecting =
+                HealthKitBridge.weeklyGoalHealthNeedsConnecting()
+
+            let recoveryLibrary = await recoveryRoutines
+            let recoveryRows = (try? await RoutineRepository
+                .exercisesForRoutines(ids: Array(recoveryLibrary.keys))) ?? []
+            let recoveryCatalogByID = await recoveryCatalog
+            // The week's COMPLETED sessions only: `weekSessions` deliberately
+            // also returns booked ones for `daysProgress`, and a session that
+            // has not happened has moved nobody's minutes.
+            let recoveryCompleted = (await recoverySessions).filter { session in
+                guard let done = session.completedAt else { return false }
+                return done >= weekStart && done < weekEnd
+            }
             return WeeklyGoalProgressMath.recoveryProgress(
-                goal: goal, stretchingExercisesDone: 0, lissMinutesDone: 0,
-                healthNeedsConnecting: recoveryNeedsConnecting,
+                goal: goal,
+                stretchingExercisesDone: BlockGoalMetricMath.stretchingExerciseCount(
+                    logs: await recoveryLogs, catalog: recoveryCatalogByID),
+                lissMinutesDone: BlockGoalMetricMath.lissMinutes(
+                    healthMinutes: await recoveryHealthMinutes,
+                    sessions: recoveryCompleted, routines: recoveryLibrary,
+                    routineExercises: Dictionary(grouping: recoveryRows, by: \.routineID),
+                    catalog: recoveryCatalogByID, healthWorkouts: await recoveryTags),
+                healthNeedsConnecting: await recoveryNeedsConnecting,
                 now: now, calendar: calendar)
 
         case .bodyWeight:
+            async let bodyWeightBlock = try? await ProgramRepository.active()
+            let bodyWeightLogs = (try? await BodyWeightLogRepository
+                .recent(userID: userID)) ?? []
+            // The reading AT THE BLOCK'S START is the "from" of the strip's
+            // "185 → 178", and it is the last weigh-in on or before that day —
+            // not the oldest row in the table, which could be years old.
+            let bodyWeightStart = (await bodyWeightBlock)?.startedOn
+            let atBlockStart = bodyWeightStart.map { start in
+                bodyWeightLogs.filter { $0.loggedAt <= start }
+            } ?? []
             return WeeklyGoalProgressMath.bodyWeightProgress(
-                goal: goal, currentLbs: nil, blockStartLbs: nil, unit: unit,
-                now: now, calendar: calendar)
+                goal: goal,
+                currentLbs: BlockGoalMetricMath.currentBodyWeightPounds(logs: bodyWeightLogs),
+                blockStartLbs: BlockGoalMetricMath.currentBodyWeightPounds(logs: atBlockStart),
+                unit: unit, now: now, calendar: calendar)
 
         case .volume:
+            let volumeLogs = await weekSetLogs(userID: userID, since: weekStart,
+                                               until: weekEnd)
             return WeeklyGoalProgressMath.volumeProgress(
-                goal: goal, volumeLbs: 0, unit: unit, now: now, calendar: calendar)
+                goal: goal,
+                volumeLbs: BlockGoalMetricMath.volumePounds(logs: volumeLogs),
+                unit: unit, now: now, calendar: calendar)
 
         case .benchmark:
             // The routine's NAME is the benchmark's subject chip, and it is
             // readable now — the library is already keyed by id for
             // `sessionsOfType`, so this costs the fetch that arm costs and
             // nothing new.
-            var benchmarkName = ""
-            if let routineID = goal.params.routineID {
-                benchmarkName = await routinesByID(userID: userID)[routineID]?.name ?? ""
+            guard let benchmarkRoutineID = goal.params.routineID else {
+                return WeeklyGoalProgressMath.benchmarkProgress(
+                    goal: goal, bestSeconds: nil, startSeconds: nil,
+                    routineName: "", now: now, calendar: calendar)
             }
+            async let benchmarkLibrary = routinesByID(userID: userID)
+            async let benchmarkHistory = (try? await SessionRepository
+                .history(userID: userID, limit: 200)) ?? []
+            let benchmarkName = (await benchmarkLibrary)[benchmarkRoutineID]?.name ?? ""
+            let benchmarkSessions = await benchmarkHistory
+            // THE WHOLE HISTORY, not the week: a benchmark is a record, and
+            // "your best" does not reset on Sunday. `startSeconds` is the
+            // EARLIEST finished run, so the strip can show the gap closed.
+            let firstRun = benchmarkSessions
+                .filter { $0.routineID == benchmarkRoutineID }
+                .compactMap { session -> (Date, Int)? in
+                    guard let started = session.startedAt,
+                          let completed = session.completedAt,
+                          completed > started else { return nil }
+                    return (completed, Int(completed.timeIntervalSince(started).rounded()))
+                }
+                .min { $0.0 < $1.0 }?.1
             return WeeklyGoalProgressMath.benchmarkProgress(
-                goal: goal, bestSeconds: nil, startSeconds: nil,
+                goal: goal,
+                bestSeconds: BlockGoalMetricMath.bestBenchmarkSeconds(
+                    sessions: benchmarkSessions, routineID: benchmarkRoutineID),
+                startSeconds: firstRun,
                 routineName: benchmarkName, now: now, calendar: calendar)
         }
     }
