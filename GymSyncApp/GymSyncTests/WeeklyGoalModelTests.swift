@@ -75,11 +75,60 @@ final class WeeklyGoalModelTests: XCTestCase {
         XCTAssertTrue(object.isEmpty, "an unset field must be ABSENT, never null")
     }
 
+    func testNewKindsRoundTripThroughTheirOwnParamsOnly() throws {
+        let cases: [(WeeklyGoalKind, WeeklyGoalParams, [String])] = [
+            (.recovery, WeeklyGoalParams(count: 6, lissMinutes: 120),
+             ["count", "lissMinutes"]),
+            (.bodyWeight, WeeklyGoalParams(bodyWeightLbs: 178),
+             ["bodyWeightLbs"]),
+            (.volume, WeeklyGoalParams(volumeLbs: 100_000),
+             ["volumeLbs"]),
+            (.benchmark, WeeklyGoalParams(routineID: UUID(), targetSeconds: 2700),
+             ["routineID", "targetSeconds"]),
+        ]
+        for (kind, params, expected) in cases {
+            let data = try JSONEncoder().encode(params)
+            let object = try XCTUnwrap(
+                JSONSerialization.jsonObject(with: data) as? [String: Any])
+            XCTAssertEqual(object.keys.sorted(), expected.sorted(),
+                           "\(kind.rawValue) writes only its own keys")
+            XCTAssertEqual(try JSONDecoder().decode(WeeklyGoalParams.self, from: data),
+                           params)
+        }
+    }
+
+    func testEveryKindHasADistinctColumnSpelling() {
+        let raws = WeeklyGoalKind.allCases.map(\.rawValue)
+        XCTAssertEqual(raws.count, 9)
+        XCTAssertEqual(raws.count, Set(raws).count)
+        XCTAssertTrue(raws.contains("body_weight"))
+    }
+
+    /// `goalID` is what makes a materialised rung traceable back to the
+    /// ladder that wrote it, and it is the one new field that is not a
+    /// metric's own number (spec §4). A row without it is a standalone
+    /// weekly goal exactly as today, so absent must stay absent.
+    func testGoalIDRidesInParamsAndIsAbsentForAStandaloneGoal() throws {
+        let goalID = UUID()
+        try assertRoundTrips(WeeklyGoalParams(count: 6, lissMinutes: 120, goalID: goalID),
+                             keys: ["count", "lissMinutes", "goalID"])
+        try assertRoundTrips(WeeklyGoalParams(count: 6, lissMinutes: 120),
+                             keys: ["count", "lissMinutes"])
+    }
+
     /// The `kind` column's CHECK constraint (`weekly_goals`, Stream A task
     /// A1) is written against these exact strings.
+    ///
+    /// THE FOUR GOAL-FIRST KINDS ARE LISTED HERE FROM PLAN TASK 0.3, and the
+    /// column's own constraint is widened to match by Stream A task A2 — the
+    /// app side lands first on purpose, so three streams can compile against
+    /// the widened enum before any migration is applied (global constraint
+    /// 10: migrations reach the live project at a controller gate, and no
+    /// pgTAP test in this plan runs before that gate).
     func testKindRawValuesMatchTheColumnsCheckConstraint() {
         XCTAssertEqual(Set(WeeklyGoalKind.allCases.map(\.rawValue)),
-                       ["muscle_sets", "distance", "sessions_of_type", "days", "lift"])
+                       ["muscle_sets", "distance", "sessions_of_type", "days", "lift",
+                        "recovery", "body_weight", "volume", "benchmark"])
         XCTAssertEqual(WeeklyGoalSource.coach.rawValue, "coach")
         XCTAssertEqual(WeeklyGoalSource.user.rawValue, "user")
     }

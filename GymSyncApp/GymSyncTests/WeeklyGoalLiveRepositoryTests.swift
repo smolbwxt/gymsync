@@ -175,4 +175,46 @@ final class WeeklyGoalLiveRepositoryTests: XCTestCase {
         XCTAssertEqual(proposed?.source, .coach)
         XCTAssertNil(stored, "propose-only: detect() must not leave a row behind")
     }
+
+    // MARK: - The ladder link's two halves (task A11, Stream B cross-stream review)
+    //
+    // PURE — no sign-in, no network. `reconcileLadderLink` is the whole rule and
+    // it is a static function precisely so it can be pinned without a database.
+
+    func testAClearedGoalIdColumnClearsTheParamMirror() {
+        var params = WeeklyGoalParams()
+        params.goalID = UUID()
+        params.targetWeightLbs = 225
+
+        let reconciled = LiveWeeklyGoalRepository.reconcileLadderLink(
+            params: params, goalIDColumn: nil)
+
+        XCTAssertNil(reconciled.goalID,
+                     "the column went NULL under ON DELETE SET NULL; JSON does not, "
+                     + "so the read has to")
+        XCTAssertEqual(reconciled.targetWeightLbs, 225,
+                       "only the link is cleared — the week's own numbers stand")
+    }
+
+    func testALiveColumnLeavesTheParamAlone() {
+        let goalID = UUID()
+        var params = WeeklyGoalParams()
+        params.goalID = goalID
+
+        let reconciled = LiveWeeklyGoalRepository.reconcileLadderLink(
+            params: params, goalIDColumn: goalID)
+
+        XCTAssertEqual(reconciled.goalID, goalID)
+    }
+
+    /// ONE DIRECTION ONLY. A non-null column does not write the param back: an
+    /// athlete who saved a standalone goal over a ladder week dropped the link on
+    /// purpose, and resurrecting it from a column they never touched would undo
+    /// their own edit.
+    func testALiveColumnDoesNotResurrectALinkTheAthleteDropped() {
+        let reconciled = LiveWeeklyGoalRepository.reconcileLadderLink(
+            params: WeeklyGoalParams(), goalIDColumn: UUID())
+
+        XCTAssertNil(reconciled.goalID)
+    }
 }

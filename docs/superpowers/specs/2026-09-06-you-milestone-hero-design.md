@@ -1,7 +1,7 @@
 # The You milestone hero — one display, weekly and lifetime — design
 
-**Status:** owner gave the go to write this on 2026-09-11 ("go with your suggestions"); for the owner's review
-before any You tab code. This is the document the congruence plan's T10.2 and its "does not decide" item 3 name
+**Status:** SIGNED OFF by the owner on 2026-09-11 (round 12), with one addition — §4b, the interactive
+model — whose build path is decision 7 (open). Was: for the owner's review before any You tab code. This is the document the congruence plan's T10.2 and its "does not decide" item 3 name
 as the gate for the hero work. **Gate documents:** the milestone catalog
 (`docs/superpowers/specs/2026-09-06-milestone-catalog.md` — the thirty rungs, the one currency, the render
 notes, the Earth-ring hero), the design language (`docs/superpowers/specs/2026-09-05-design-language.md`), and
@@ -65,16 +65,69 @@ The pipeline renders each rung as a sequence at a fixed camera; the app ships a 
 | DISTANCE | `render_plates.py` in line mode — the line along the path | 41 frames per rung | as HEIGHT |
 | The Earth ring (DISTANCE rung 10, and the poster) | `render_earth_ring.py` — the face-to-face ring, r = 1.40 R, elevation 62° | 5 frames (0, 25, 50, 75, 100) | nearest frame; the ring is a poster, not a meter, per the catalog |
 
-Assets are bundled per rung as an `.xcassets` image set folder (`milestone/<ladder>/<rung>/f00…f40`), at 2×
-and 3× only, with the alpha-clean background so the hero's own surface shows through. Budget: ≤ 30 MB for all
-thirty rungs at 2× (measured from the pipeline's 600 × 1500 outputs, ~90 KB each); if the measured total
-exceeds it, the shipped step widens (5 % for HEIGHT and DISTANCE) before any rung is cut. The landmark
-silhouettes are part of the render (the catalog's render notes), not separate SF or SVG assets — one image,
-one light, one style.
+Assets: measured, not assumed. The pipeline's existing outputs are **~212 KB per 600 × 1500 alpha PNG**
+(51 frames = 10 MB; the 240 × 1500 variant is 188 KB, the vessel 191 KB, the Earth ring 540 KB at 600 × 600),
+not the ~90 KB an earlier draft of this spec claimed. Bundling every rung's frame set is therefore out: thirty
+rungs at the steps above come to ~213 MB at 2× alone, and widening the step to 5 % still leaves ~130 MB.
+**Recommended delivery (owner decision 6, open):** bundle only what the first open needs — the HEIGHT ladder's
+rung 1 set (the first-week state, ~9 MB) and the Earth ring's five poster frames (~2.7 MB) — and serve every
+other rung's frame set from a public Supabase storage bucket (`milestone-frames/<ladder>/<rung>/`), fetched on
+first need and cached on device (one rung is ~9 MB; the hero only ever shows one). The buckets and the client
+download path already exist for exercise media; a rung can be re-rendered without an app release. Fallback while
+a set downloads: the bundled rung-1 frame at the current progress, with the caption already correct.
+**Alternative (zero network):** ship one full-stack render per HEIGHT/DISTANCE rung and clip it to the progress
+height at runtime (a stack *is* its lower portion) — ~30 × 2 × 212 KB ≈ 13 MB at 2× — but the cut loses the top
+plate's face and WEIGHT's poured vessel has no clip equivalent; it is the second choice. Either way the frames
+stay alpha-clean so the hero's own surface shows through, and the landmark silhouettes are part of the render
+(the catalog's render notes), not separate SF or SVG assets — one image, one light, one style.
 
 The render is **the ground, not a tile**: it is placed with `.aspectRatio(.fill)` inside the hero's bounds, the
 hero's `surface` shows through its alpha, and a vertical scrim (`bg` → clear, 40 % height) sits under the
 numbers so the week's headline stays legible on any frame. No border, no inner radius.
+
+## 4b. The interactive model — owner round 12 (2026-09-11)
+
+The owner: *"as a part of the spec let's remember that I want it to be interactive — in the widget, if a user
+uses their finger to interact with it, we could spin the model."* ("Widget" here is the You hero in the app;
+WidgetKit home-screen widgets accept no gestures, so this cannot be a home-screen widget.)
+
+**What interactivity forces.** A frame set cannot be spun: a turntable at 36 angles × 41 progress steps × ~212 KB
+is ~313 MB per rung. Spinning needs real geometry at runtime. That geometry is cheap for two of the three ladders:
+
+| Ladder | Geometry at runtime | Asset per rung | Spin? |
+|---|---|---|---|
+| HEIGHT, DISTANCE | plates = one instanced cylinder (procedural, 0 bytes); the landmark = one low-poly mesh exported from the Blender pipeline as USDZ | ~0.3–1.5 MB (the pipeline already builds the geometry from code) | yes |
+| WEIGHT (vessel) | the glass shell = one mesh; the poured plates are a rigid-body **simulation**, not real-time — bake the settled plate transforms per fill level (21 levels × ~50 plates × 7 floats ≈ 30 KB per level) and instance the same cylinder | ~1 MB mesh + ~0.6 MB of baked transforms | yes, phase 2 (the bake is new pipeline work) |
+| Earth ring (poster) | stays a picture | 5 frames | no (per the catalog: a poster, not a meter) |
+
+**Storage and memory, against the frame path.**
+
+| | Frame sets (§4 as signed) | Interactive model |
+|---|---|---|
+| Bundle for thirty rungs | ~213 MB at 2× (impossible); ~9 MB per rung if streamed from storage | ~6–30 MB of meshes in total; plates cost nothing |
+| Runtime memory while the hero is on screen | one decoded 600 × 1500 frame ≈ 3.6 MB (+ a neighbour during a cross-fade) | a live SceneKit scene — ~2 k instanced plates, one 10–20 k-triangle landmark, an image-based light — ≈ 30–80 MB, released when You leaves the screen |
+| At rest | a bundled frame | a **snapshot the scene renders itself** (`SCNRenderer`) once per progress change, so the resting hero costs what a frame costs and the scene runs only while a finger is on it |
+| Reduced motion | the nearest static frame | the snapshot, no spin |
+| Look | Cycles renders, exactly the catalog's | SceneKit PBR + HDRI; a look-matching pass is required and is the main risk — expect "close", not identical |
+
+Consequence for decision 6: **the interactive path dissolves the asset-budget problem.** With the resting hero
+rendered from geometry there are no frame sets to bundle or stream for HEIGHT and DISTANCE; only the vessel keeps
+frames until its bake lands.
+
+**Level of effort (the owner's ask).** Build weeks of one Opus stream plus CI rounds:
+
+| Path | Work | Estimate |
+|---|---|---|
+| A. Frames only (spec as signed, storage-streamed) | bucket + fetch/cache, frame interpolation, four ids | ~1 week |
+| B. Interactive from the start for HEIGHT + DISTANCE; vessel as frames | pipeline exports landmark meshes as USDZ (2–3 days); SceneKit scene, spin gesture with inertia, snapshot-at-rest, reduced motion (4–5 days); look-matching against the Cycles renders (3–4 days); ids + proofs (2 days) | ~2.5–3 weeks |
+| C. B plus the vessel bake | rigid-body bake export + instanced playback | +1 week, phase 2 |
+
+**Recommendation:** B. About a week and a half more than A, it removes the 213 MB problem outright and builds the
+thing the owner asked for rather than a picture of it. A's four catalog ids stay (`you-hero-*` capture the snapshot
+at rest); one id is added, `you-hero-spinning` (a frame mid-gesture via a debug seam that sets the camera angle), so
+FLOOR +5 instead of +4.
+
+**Decision 7 (owner, open):** A, B, or C.
 
 ## 5. States
 
@@ -130,6 +183,8 @@ social-card work.
 3. Whether the Stats tab's milestone page gains the same renders (it lists the rungs today).
 4. Lifetime reps/sets/bar-travel are still not computable (`increment_lifetime_volume` carries volume only);
    nothing here needs them — the ladders are volume-derived by design.
+5. Asset delivery (§4): superseded by §4b — under path B there are no frame sets for HEIGHT/DISTANCE; under path A
+   the storage-fetched sets stand. Falls out of decision 7.
 
 ## Owner decisions (2026-09-04 → 2026-09-11) — binding
 
@@ -138,3 +193,13 @@ social-card work.
 3. One currency: plates from pounds; feet from plates; the catalog's thirty rungs with sources.
 4. The next rung is the one with the highest progress; the Earth ring is the poster beyond the last rung.
 5. Go to write this spec now, in parallel with the programming and social work.
+6. **Signed off 2026-09-11 (round 12).**
+7. The hero is interactive — a finger rotates, pans and pinches a 3D object (§4b). **Deferred by the owner
+   (2026-09-11, round 13): on the to-do list, not prioritized; the current plan stands.** No physics: it is a
+   3D image you orbit and zoom, not a simulation. The route when its turn comes: **Blender pre-builds every
+   mesh** — the landmark, the plate column as stackable segments of 1 / 10 / 100 / 1,000 plates with the level
+   of detail baked into each piece (full plate geometry in the small pieces, a normal-mapped profile in the
+   large), and the vessel's settled pile exported in fill layers — and packages them as USDZ with USD Preview
+   Surface materials, which RealityKit reads directly. The iOS side then only loads the pieces, stacks them to
+   the plate count, and drives a camera: no mesh code in the app. Decide between path A and this route when
+   the hero's turn comes, after a half-day check that RealityKit renders and captures on the CI simulator.

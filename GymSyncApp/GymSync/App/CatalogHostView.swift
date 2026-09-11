@@ -109,6 +109,22 @@ enum CatalogScreen: String, CaseIterable {
     case homeGoalEditorLift = "home-goal-editor-lift"
     /// The page Home's calendar card is a door onto (Stream D, frame 92).
     case calendarScheduling = "calendar-scheduling"
+    // Goal-first programming, the door (Stream C, frames 93-96): the goal
+    // screen and three of its eleven milestone cards — the one the spec works
+    // through end to end, the one with a segmented switch and a rate, and the
+    // one held for the block with no date at all. See `content_goalScreen`
+    // for the whole story.
+    case goalScreen = "goal-screen"
+    case goalMilestoneStrength = "goal-milestone-strength"
+    case goalMilestoneBodyComposition = "goal-milestone-body-composition"
+    case goalMilestoneRecovery = "goal-milestone-recovery"
+    // Goal-first programming (Stream D, task D7): the ladder page in its
+    // three standings, and the weekly strip with the block kicker. See
+    // `content_ladderOnTrack` for the whole story.
+    case ladderOnTrack = "ladder-on-track"
+    case ladderBehind = "ladder-behind"
+    case ladderMet = "ladder-met"
+    case homeGoalStripBlock = "home-goal-strip-block"
     case blockCalendar = "block-calendar"
 }
 
@@ -200,6 +216,14 @@ struct CatalogHostView: View {
             case .homeGoalEditor:             content_homeGoalEditor
             case .homeGoalEditorLift:         content_homeGoalEditorLift
             case .calendarScheduling:         content_calendarScheduling
+            case .goalScreen:                 content_goalScreen
+            case .goalMilestoneStrength:      content_goalMilestoneStrength
+            case .goalMilestoneBodyComposition: content_goalMilestoneBodyComposition
+            case .goalMilestoneRecovery:      content_goalMilestoneRecovery
+            case .ladderOnTrack:              content_ladderOnTrack
+            case .ladderBehind:               content_ladderBehind
+            case .ladderMet:                  content_ladderMet
+            case .homeGoalStripBlock:         content_homeGoalStripBlock
             case .blockCalendar:              content_blockCalendar
             }
         }
@@ -1954,6 +1978,142 @@ struct CatalogHostView: View {
             CalendarSchedulingView(completedSessions: [], upcomingSessions: [], groups: [],
                                    world: Self.calendarFixtureWorld)
         }
+    }
+
+    // MARK: - Goal-first programming, the door (Stream C, frames 93-96)
+    //
+    // "Set a goal → Coach builds your block." Four ids: the goal screen the
+    // build now begins on, and three of its eleven milestone cards, chosen
+    // because they are the three SHAPES a card can have — one with a lift
+    // picker, a load and a date (Strength, the milestone the spec works
+    // through end to end); one with a segmented switch between two ways of
+    // saying the same milestone (Body composition, a weight or a rate); and
+    // one HELD for the block, whose only lever is its length and which asks
+    // for no date at all (Recovery). The other eight are recombinations of
+    // those three; these are the decisions.
+    //
+    // HERMETIC (global constraint 7). `GoalFixtures` holds integers, strings
+    // and the stub's own two dates; `today` is `StubBlockGoalRepository
+    // .fixtureCreatedAt`, `unitOverride` is `.lbs` so the frames read `lb`
+    // whatever the capturing simulator's account is set to, `onChosen` and
+    // `onBuild` are `{ _ in }`, and `lifts`/`routines` are fixture arrays.
+    // Nothing here reads a repository, `AppState` or the clock.
+    //
+    // THE NUMBERS ARE SEEDED, NOT WRITTEN. The strength card is handed 205
+    // and produces 225 by Oct 18 on its own — the spec's worked milestone and
+    // the stub's own fixture goal — because a fixture that hard-coded the
+    // seed would capture a frame the code cannot produce.
+    //
+    // Wrapped in a `NavigationStack` for the same reason
+    // `content_calendarScheduling` is: both pages set `.navigationTitle`,
+    // which is a no-op without one.
+    //
+    // FLOOR is NOT bumped here — integration bumps it once, for every new id
+    // at once, because a stream branch that raises it before its ids exist on
+    // the integration branch turns CI red for the other three streams.
+
+    private var content_goalScreen: some View {
+        NavigationStack {
+            GoalScreenView(onChosen: { _ in }, suggested: .strength)
+        }
+    }
+
+    private var content_goalMilestoneStrength: some View {
+        NavigationStack {
+            GoalMilestoneView(preset: .strength,
+                              current: GoalFixtures.strengthCurrent,
+                              lifts: GoalFixtures.lifts,
+                              routines: GoalFixtures.routines,
+                              today: GoalFixtures.today,
+                              unitOverride: GoalFixtures.unit,
+                              onBuild: { _ in })
+        }
+    }
+
+    private var content_goalMilestoneBodyComposition: some View {
+        NavigationStack {
+            GoalMilestoneView(preset: .bodyComposition,
+                              current: GoalFixtures.bodyCompositionCurrent,
+                              lifts: GoalFixtures.lifts,
+                              routines: GoalFixtures.routines,
+                              today: GoalFixtures.today,
+                              unitOverride: GoalFixtures.unit,
+                              onBuild: { _ in })
+        }
+    }
+
+    private var content_goalMilestoneRecovery: some View {
+        NavigationStack {
+            GoalMilestoneView(preset: .recovery,
+                              current: GoalFixtures.recoveryCurrent,
+                              lifts: GoalFixtures.lifts,
+                              routines: GoalFixtures.routines,
+                              today: GoalFixtures.today,
+                              unitOverride: GoalFixtures.unit,
+                              blockWeeks: GoalFixtures.recoveryWeeks,
+                              onBuild: { _ in })
+        }
+    }
+
+    // MARK: - The ladder page and the block strip (Stream D, frames 97-100)
+    //
+    // Spec §6's ladder page in the three standings a block can be in, plus
+    // the weekly strip once the rung it renders belongs to one.
+    //
+    // HERMETIC, and not by accident — the whole reason `LadderPageView` grew
+    // a `world` parameter, the same seam `CalendarSchedulingView` grew for
+    // the identical reason. With one present the page renders the resolved
+    // model and never opens a socket: `load()` returns before it touches the
+    // repository, so `activeGoal()` is never called and no goal is ever held,
+    // which also makes the accent primary inert. Every date is a fixture
+    // STRING baked into `LadderPageModel`, so the frames render identically
+    // whatever day CI runs on, and both lever callbacks are `{}`.
+    //
+    // Wrapped in a `NavigationStack` for the same reason
+    // `content_calendarScheduling` is: the page sets `.navigationTitle` and
+    // its SEE THE BLOCK row is a `NavigationLink`, both no-ops without one.
+    //
+    // All three render `StubBlockGoalRepository.fixturePage` or a derivation
+    // of it (`LadderFixtures`), so the ladder page, the schedule card and the
+    // door's own frames describe ONE eight-week bench block.
+
+    /// `ladder-on-track` — the fixture block as it stands: weeks 1 and 2 met,
+    /// week 3 current and ringed, five ahead, the wave's deload at week 6
+    /// labelled as what it is, and Coach reading `On track`.
+    private var content_ladderOnTrack: some View {
+        NavigationStack {
+            LadderPageView(goalID: StubBlockGoalRepository.fixtureGoalID,
+                           world: StubBlockGoalRepository.fixturePage)
+        }
+    }
+
+    /// `ladder-behind` — the same block after an override and a miss, with
+    /// the re-derived ladder no longer reaching the milestone. Coach's line
+    /// is spec §6's own words and goes ACCENT here, because it is now an
+    /// invitation to act rather than a readout.
+    private var content_ladderBehind: some View {
+        NavigationStack {
+            LadderPageView(goalID: StubBlockGoalRepository.fixtureGoalID,
+                           world: LadderFixtures.behind)
+        }
+    }
+
+    /// `ladder-met` — every rung met, week 8 of 8. One column of the one
+    /// green, in its "done" job.
+    private var content_ladderMet: some View {
+        NavigationStack {
+            LadderPageView(goalID: StubBlockGoalRepository.fixtureGoalID,
+                           world: LadderFixtures.met)
+        }
+    }
+
+    /// `home-goal-strip-block` — the shipped muscle-sets strip carrying the
+    /// BLOCK kicker. It reuses `WeeklyGoalFixtures.muscleSets`' four chips by
+    /// derivation rather than by retyping, so this frame and
+    /// `home-goal-strip-muscle-sets` differ **only** in the kicker — which is
+    /// the whole of what spec §6 changes about the strip.
+    private var content_homeGoalStripBlock: some View {
+        WeeklyGoalStripFrame(kind: .muscleSets, progress: GoalStripFixtures.block)
     }
 
     private static let calendarPushCrew = GSGroupColor.palette[4]

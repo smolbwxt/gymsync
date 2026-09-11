@@ -1,0 +1,155 @@
+import SwiftUI
+
+/// The ONE way into a build, now with the goal in front of it (spec §5).
+///
+/// Four screens open a build (Coach home, the ledger, the block calendar, the
+/// onboarding offer). Each opens THIS, which walks
+/// goal screen → milestone card → consult → builder → the ladder page — so
+/// there is exactly one build path, which is the same reason
+/// `ConsultEntryView` was collapsed into one in the first place.
+///
+/// Plan: task C4 names and specifies this type; task C3 is where it has to
+/// EXIST, because `ConsultEntryView.goal` is non-optional from C3 onward and a
+/// host with no goal screen in front of it has nothing to pass. Introducing it
+/// here and re-pointing the three `ConsultEntryView` hosts in the same commit
+/// is what keeps every commit on this branch compiling; C4 then does what C4
+/// is actually about — retiring the wizard and bringing Coach home's own door,
+/// the fourth host, onto this path.
+///
+/// LANDING. `onBuilt` is handed the id of the goal row the build wrote
+/// (`ProgramBuilder.Outcome.goalID`), and every host pushes the ladder page
+/// (D1) for it — the real landing (spec §5.3), wired at I1. A nil id (the
+/// enrollment or the save itself failed; the block still built) falls back to
+/// the plain schedule page, which the ladder page's own `SEE THE BLOCK ›` row
+/// keeps one tap away regardless.
+struct GoalFirstBuildFlow: View {
+
+    var onBuilt: (UUID?) -> Void
+    /// A rule the athlete gave during the consult that could not be stored.
+    /// Passed straight through to the host, which is the screen still on the
+    /// stack when this one unmounts.
+    var onRuleTrouble: (String) -> Void = { _ in }
+
+    @Environment(AppState.self) private var appState
+    @Environment(\.gsTheme) private var theme
+
+    /// The tile the athlete tapped. `GoalPreset` rather than the draft,
+    /// because `navigationDestination(item:)` needs `Hashable` and
+    /// `BlockGoalDraft` is Task 0's frozen surface — widening it to reach a
+    /// navigation API is not this stream's call.
+    @State private var chosen: GoalPreset?
+    /// The milestone the card built, and the push that carries it.
+    @State private var goal: BlockGoalDraft?
+    @State private var building = false
+
+    /// What the athlete's log says now, for the seeds and Coach's line.
+    ///
+    /// **THE VALUE THE CARD OPENS ON, not the last word** (round 2, item 1).
+    /// Empty here, because the reading depends on the preset the athlete has
+    /// not chosen yet and — for a lift goal — on a lift they have not picked;
+    /// the card asks `reader` for it on appear and again when the subject
+    /// changes, and re-seeds itself while nothing has been typed.
+    ///
+    /// Empty is honest in the meantime: no zero is printed and no number is
+    /// invented. The catalog frames pass their own `current` and NO reader, so
+    /// they stay values rather than fetches.
+    @State private var current = GoalTarget()
+
+    /// Where the card's reading comes from — the LADDER's own per-metric read
+    /// (`LiveBlockGoalRepository`), so the door and the ladder cannot disagree
+    /// about what the athlete's log says.
+    /// NOT `private`, for the reason `HomeView`'s own injection comment gives:
+    /// a private stored property drags the synthesized memberwise init private
+    /// with it, and every host constructs this view with `onBuilt:`.
+    let reader: any GoalCurrentReader = LiveBlockGoalRepository()
+    @State private var lifts: [WeeklyGoalEditorSheet.LiftOption] = []
+    @State private var routines: [Routine] = []
+    /// False until `load()` has actually asked. See its own comment.
+    @State private var routinesLoaded = false
+
+    /// ONE ANSWER TO "HAS THIS ATHLETE GOT A ROUTINE", for the tile and for
+    /// the card behind it. `routines.isEmpty` means "none" only once `load()`
+    /// has asked; a signed-out athlete is never asked, and two screens reading
+    /// the list raw would disagree about it.
+    private var hasRoutines: Bool { !routinesLoaded || !routines.isEmpty }
+
+    var body: some View {
+        GoalScreenView(onChosen: { chosen = $0.preset },
+                       hasRoutines: hasRoutines)
+            .background(theme.bg)
+            .navigationDestination(item: $chosen) { preset in
+                milestone(preset)
+            }
+            .task { await load() }
+    }
+
+    private func milestone(_ preset: GoalPreset) -> some View {
+        GoalMilestoneView(preset: preset,
+                          current: current,
+                          lifts: lifts,
+                          routines: routines,
+                          hasRoutines: hasRoutines,
+                          reader: reader,
+                          onBuild: { draft in
+                              goal = draft
+                              building = true
+                          })
+            .background(theme.bg)
+            .navigationDestination(isPresented: $building) {
+                consult
+            }
+    }
+
+    @ViewBuilder
+    private var consult: some View {
+        if let goal {
+            ConsultEntryView(goal: goal, onBuilt: onBuilt,
+                             onRuleTrouble: onRuleTrouble)
+                .background(theme.bg)
+                .navigationBarBackButtonHidden(true)
+        }
+    }
+
+    /// The pickers' contents. The block's focus lifts first, then the catalog
+    /// — `WeeklyGoalEditorSheet.liftPicker`'s own ordering, and the one that
+    /// matters: the lift a block is built around is the lift a lift goal is
+    /// nearly always about.
+    private func load() async {
+        let profile = (try? await TrainingProfileRepository.load()) ?? TrainingProfile()
+        let catalog = (try? await ExerciseRepository.fetchAll()) ?? []
+        let focusIDs = profile.focusExerciseIDs ?? []
+        let byID = Dictionary(catalog.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+
+        let focus = focusIDs.compactMap { id -> WeeklyGoalEditorSheet.LiftOption? in
+            guard let exercise = byID[id] else { return nil }
+            return .init(id: exercise.id, name: exercise.name, detail: "FOCUS LIFT")
+        }
+        // EVERY LIFT, behind the focus lifts. Compounds first — a strength
+        // goal is nearly always about one — then the rest, each block
+        // alphabetical. No cap and no filter: the picker searches and scrolls
+        // (`GoalMilestoneView.liftPicker`), so dropping options here would
+        // drop them for good, and the review found exactly that — twelve
+        // computed, six drawn, and an athlete with three focus lifts unable to
+        // set a strength goal on anything else.
+        let restIDs = Set(focusIDs)
+        let rest = catalog
+            .filter { !restIDs.contains($0.id) }
+            .sorted { lhs, rhs in
+                let lhsCompound = lhs.category == "compound"
+                let rhsCompound = rhs.category == "compound"
+                return lhsCompound == rhsCompound ? lhs.name < rhs.name : lhsCompound
+            }
+            .map { WeeklyGoalEditorSheet.LiftOption(id: $0.id, name: $0.name,
+                                                    detail: $0.primaryMuscle.uppercased()) }
+        lifts = focus + rest
+
+        if let userID = appState.currentProfile?.id {
+            routines = (try? await RoutineRepository.fetchAll(ownerID: userID)) ?? []
+            // Only NOW may the goal screen say "no routines". Before the fetch
+            // lands — and for a signed-out athlete, who is never asked at all —
+            // `routines.isEmpty` means "not asked yet", and a tile that flashed
+            // a warning on every open would be lying half the time.
+            routinesLoaded = true
+        }
+    }
+}

@@ -9,11 +9,16 @@ import XCTest
 /// a real Apple ID in CI), then walks each of the five tabs plus the
 /// You -> Appearance destination, attaching a screenshot for each.
 ///
-/// This account (ci_test_user — same one the GymSyncTests unit test target
-/// uses) is shared and its data mutates between runs; these screenshots are
-/// for layout/visual verification only, not content assertions. Deliberately
-/// no pixel-diffing here — that's a follow-up once this pipeline is proven
-/// stable.
+/// The account that signs in is the `TEST_USER_EMAIL`/`CI_TEST_USERNAME` one
+/// (`ci_test_user`): `ios.yml` passes those same repo secrets in as
+/// `UITEST_EMAIL`/`UITEST_PASSWORD`, and `scripts/seed_qa_fixtures.js
+/// --username "$CI_TEST_USERNAME"` builds the fixture world for it.
+/// `ci_test_user_2` is NOT that identity — it is the counterpart profile the
+/// GymSyncTests unit target queries as a friend/block/kudos target and never
+/// signs in as. This account is shared and its data mutates between runs;
+/// these screenshots are for layout/visual verification only, not content
+/// assertions. Deliberately no pixel-diffing here — that's a follow-up once
+/// this pipeline is proven stable.
 ///
 /// One test method per tab (rather than a single walk-through test) so a
 /// failure partway through (e.g. a slow network call on the Social tab)
@@ -238,6 +243,35 @@ final class ScreenshotTests: XCTestCase {
         settleAfterNavigation()
     }
 
+    /// Routines hub → the EXERCISES row → `ExercisesListView`.
+    ///
+    /// Shared by `testLibraryExercisesList` and `testExerciseDetail`, which
+    /// both used to do `app.buttons["Exercises"]` and both landed on the hub.
+    /// `RoutinesHubView.exercisesRow` carries the SAME modifier pair as the
+    /// You-grid widgets above — `.accessibilityElement(children: .ignore)`
+    /// plus `.accessibilityLabel("Exercises")` — which drops the button
+    /// TRAIT, so no `app.buttons[...]` query matches it, exact or predicate.
+    /// The label itself is exact ("Exercises", not a composed string), so the
+    /// fix is the query TYPE, not the match style: the same type-agnostic
+    /// `descendants(matching: .any)` lookup `openYouWidget` already pays for.
+    ///
+    /// The row sits below PROGRAMS, the builder button and the routine
+    /// collection, so it is usually below the fold — hence the two-swipe
+    /// guard, mirroring `testActivityFeed`.
+    private func openExercisesRow(_ app: XCUIApplication) {
+        let exercisesRow = app.descendants(matching: .any)["Exercises"].firstMatch
+        guard exercisesRow.waitForExistence(timeout: 10) else { return }
+        if !exercisesRow.isHittable {
+            app.swipeUp()
+            settle()
+            if !exercisesRow.isHittable {
+                app.swipeUp()
+                settle()
+            }
+        }
+        exercisesRow.tap()
+    }
+
     // MARK: - Tab screenshots
 
     func testHomeTab() {
@@ -263,8 +297,7 @@ final class ScreenshotTests: XCTestCase {
         guard waitForTabBar(app) else { return }
         // EXERCISES moved into the Routines hub (owner 2026-08-16).
         openYouWidget(app, label: "Routines and programming")
-        let exercisesRow = app.buttons["Exercises"]
-        if exercisesRow.waitForExistence(timeout: 10) { exercisesRow.tap() }
+        openExercisesRow(app)
         settleAfterNavigation()
         attachScreenshot(app, named: "app-library-exercises.png")
     }
@@ -440,7 +473,7 @@ final class ScreenshotTests: XCTestCase {
     // spends more minutes on this screen than any other and it had no
     // capture at all: none of the 16 signed-in walks starts a workout,
     // because starting one writes a real session and real set logs to the
-    // shared ci_test_user_2 account. The catalog builds it from fixture
+    // shared CI_TEST_USERNAME account. The catalog builds it from fixture
     // values instead (`content_soloLiveSet`), so the design round gets the
     // screen without the suite acquiring a write.
     func testCatalogSoloLiveSet()            { captureCatalog("solo-live-set") }
@@ -506,6 +539,63 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogHomeGoalEditor()          { captureCatalog("home-goal-editor") }
     func testCatalogHomeGoalEditorLift()      { captureCatalog("home-goal-editor-lift") }
 
+    // Goal-first programming (Stream D, task D7). The ladder page in the
+    // three standings a block can be in — on track, falling short, met — and
+    // the weekly strip once the rung it renders belongs to one.
+    //
+    // `home-goal-strip-block` deliberately repeats
+    // `home-goal-strip-muscle-sets`' four chips: the two frames differ ONLY
+    // in the kicker, which is the whole of what spec §6 changes about the
+    // strip, and putting them side by side in the artifact is how a reviewer
+    // sees that nothing else moved.
+    func testCatalogLadderBehind()            { captureCatalog("ladder-behind") }
+    func testCatalogLadderMet()               { captureCatalog("ladder-met") }
+    func testCatalogHomeGoalStripBlock()      { captureCatalog("home-goal-strip-block") }
+
+    /// `ladder-on-track`, in TWO captures from ONE id — the
+    /// `calendar-scheduling` precedent directly above, and for the identical
+    /// reason (task review of Stream D, finding 1).
+    ///
+    /// The ladder page is far taller than a phone. The headline, the date,
+    /// Coach's line and eight rungs fill the first screen, so **four of spec
+    /// §6's seven elements are below the fold in a single capture**: EDIT THE
+    /// DATE, EDIT THIS WEEK'S RUNG, LET COACH RE-LADDER and — the one the
+    /// controller's ruling for this stream is actually about — the page's ONE
+    /// ACCENT PRIMARY, plus the SEE THE BLOCK door under it. Without this
+    /// second frame "one primary per screen" is verifiable only by reading
+    /// the source, and D7's stated job is to PROVE the stream.
+    ///
+    /// ONLY the on-track id gets it. The three standings share one page
+    /// body — the levers and the primary are identical in all three — so a
+    /// second capture of `behind` and `met` would add two frames that say
+    /// what this one already says, and the artifact is a design medium, not
+    /// an inventory.
+    ///
+    /// `-2` is a second ATTACHMENT, not a second id: `CatalogScreen`, the
+    /// documented id list and `FLOOR` are all untouched, and `parity_diff.js`
+    /// reports it as an unmapped capture (a warning, not a failure). The
+    /// frame-map entry for 97 says so in its own `note`.
+    func testCatalogLadderOnTrack() {
+        let app = XCUIApplication()
+        var env = app.launchEnvironment
+        env["UITEST_CATALOG"] = "ladder-on-track"
+        app.launchEnvironment = env
+        app.launch()
+        // Same budget and same reasoning as `captureCatalog` — a catalog
+        // launch bypasses `RootView`, so there is no synchronization point
+        // and this sleep is the screen's whole render budget.
+        Thread.sleep(forTimeInterval: catalogRenderBudget)
+        attachScreenshot(app, named: "app-ladder-on-track.png")
+
+        // To the bottom. The page is a plain `ScrollView` with no competing
+        // gesture, so an ordinary swipe scrolls wherever it lands; two are
+        // enough to clear eight rungs and reach the foot.
+        app.swipeUp()
+        app.swipeUp()
+        Thread.sleep(forTimeInterval: catalogRenderBudget)
+        attachScreenshot(app, named: "app-ladder-on-track-2.png")
+    }
+
     // congruence B2 T2.3 (frame 103): the block calendar's checkered flag on
     // the block's first day and trophy on its last. e52df22 claimed
     // "Proves: app-block-calendar" while no such capture existed; this is it.
@@ -546,10 +636,24 @@ final class ScreenshotTests: XCTestCase {
         attachScreenshot(app, named: "app-calendar-scheduling-2.png")
     }
 
+    // Goal-first programming, the door (Stream C, frames 93-96). The goal
+    // screen every build now begins on, and three of its eleven milestone
+    // cards — the three shapes a card can have, rather than three of one
+    // shape: a picker with a load and a date, a segmented switch between two
+    // ways of saying one milestone, and a card held for the block that asks
+    // for no date at all.
+    func testCatalogGoalScreen()             { captureCatalog("goal-screen") }
+    func testCatalogGoalMilestoneStrength()  { captureCatalog("goal-milestone-strength") }
+    func testCatalogGoalMilestoneBodyComposition() {
+        captureCatalog("goal-milestone-body-composition")
+    }
+    func testCatalogGoalMilestoneRecovery()  { captureCatalog("goal-milestone-recovery") }
+
     // MARK: - Seeded deep-screen captures
     //
-    // Reachable via the deterministic `ci_test_user_2` fixture world (Task 3,
-    // `scripts/seed_qa_fixtures.js`): a group named "[QA] Push Crew" with one
+    // Reachable via the deterministic fixture world the QA seed builds for the
+    // `CI_TEST_USERNAME` account (Task 3, `scripts/seed_qa_fixtures.js`, which
+    // takes that username): a group named "[QA] Push Crew" with one
     // session in every state (scheduled/lobby_open/voting/locked/in_progress/
     // completed), a 3-message chat thread, one accepted + one pending friend,
     // and three private routines ("[QA] Push Day/Pull Day/Leg Day").
@@ -577,14 +681,62 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// Crew room → GroupView (behind MANAGE) → a named sub-tab.
+    ///
+    /// `SocialTabView`'s group row pushes `CrewRoomView`, not `GroupView`:
+    /// the crew-room redesign moved the four sub-tabs (Chat/Members/Sessions/
+    /// Stats) behind the room's `MANAGE` toolbar item. So every
+    /// `app.buttons["Sessions"]` lookup here used to time out and leave the
+    /// capture showing the crew room — four separate failed navigations, not
+    /// one repeated screenshot. MANAGE is the missing first hop.
+    ///
+    /// GroupView's own segmented control renders each SubTab's `rawValue` as
+    /// plain `Text` (no icon, no composed-label ambiguity — unlike the
+    /// icon-led rows elsewhere in this file), so an exact-match button lookup
+    /// is right for the sub-tab itself.
+    ///
+    /// `settleAfterNavigation()` on both hops rather than `settle()`: the
+    /// MANAGE tap pushes a screen and the sub-tab tap swaps (and, for Stats,
+    /// fetches) content, and nothing waits on either result.
+    private func openManageSubTab(_ app: XCUIApplication, _ tab: String) {
+        let manage = app.buttons["MANAGE"]
+        if manage.waitForExistence(timeout: 10) {
+            manage.tap()
+            settleAfterNavigation()
+        }
+        let subTab = app.buttons[tab]
+        if subTab.waitForExistence(timeout: 10) {
+            subTab.tap()
+            settleAfterNavigation()
+        }
+    }
+
     func testChat() {
         let app = launchApp()
         guard waitForTabBar(app) else { return }
         selectTab(app, label: "Crews")
         settle()
-        // GroupView's `subTab` defaults to `.chat`, so tapping into the crew
-        // lands directly on ChatView — no further navigation needed.
         openPushCrew(app)
+
+        // The crew room does NOT land on chat: it opens `ChatView` as a
+        // SHEET from its `THE CHAT` preview card (`CrewRoomView`'s
+        // `chatPreviewCard` sets `showChat`; the `.sheet` presents it).
+        // CONTAINS because that card's composed label is "THE CHAT" followed
+        // by "OPEN" and the message-preview lines.
+        let chatCard = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS 'THE CHAT'")
+        ).firstMatch
+        if chatCard.waitForExistence(timeout: 10) {
+            // The preview card is the LAST card in the room's ScrollView, so
+            // it can sit below the fold — same defensive scroll
+            // `testActivityFeed` uses for its Activity row.
+            if !chatCard.isHittable {
+                app.swipeUp()
+                settle()
+            }
+            chatCard.tap()
+            settleAfterNavigation()
+        }
         attachScreenshot(app, named: "app-chat.png")
     }
 
@@ -594,12 +746,7 @@ final class ScreenshotTests: XCTestCase {
         selectTab(app, label: "Crews")
         settle()
         openPushCrew(app)
-
-        let sessionsTab = app.buttons["Sessions"]
-        if sessionsTab.waitForExistence(timeout: 10) {
-            sessionsTab.tap()
-            settleAfterNavigation()
-        }
+        openManageSubTab(app, "Sessions")
 
         // The seeded world has exactly one session per state; "Lobby Open"
         // is `"lobby_open".replacingOccurrences(of: "_", with: " ").capitalized`
@@ -623,12 +770,7 @@ final class ScreenshotTests: XCTestCase {
         selectTab(app, label: "Crews")
         settle()
         openPushCrew(app)
-
-        let sessionsTab = app.buttons["Sessions"]
-        if sessionsTab.waitForExistence(timeout: 10) {
-            sessionsTab.tap()
-            settleAfterNavigation()
-        }
+        openManageSubTab(app, "Sessions")
 
         // The seeded world's one "completed" session is the only row whose
         // state caption reads "Completed" — it's in the "Past" section and
@@ -650,23 +792,17 @@ final class ScreenshotTests: XCTestCase {
         settle()
         openPushCrew(app)
 
-        let sessionsTab = app.buttons["Sessions"]
-        if sessionsTab.waitForExistence(timeout: 10) {
-            sessionsTab.tap()
-            settleAfterNavigation()
-        }
-
-        // The Burpee Ledger row is GroupView.sessionsList's first Section,
-        // always present regardless of the seeded world's upcoming/past
-        // session mix (unlike testLobby's "Lobby Open"/testSessionRecap's
-        // "Completed" caption matches, which depend on a specific session
-        // existing in that state). CONTAINS (not an exact/BEGINSWITH match)
-        // for the same reason testFriends/testRoutineDetail/testActivityFeed
-        // use it above: the row's composed accessibility label prepends an
-        // SF Symbol icon ahead of the "Burpee Ledger" Text, and whether/how
-        // that icon contributes to the composed label isn't guaranteed.
+        // NOT through MANAGE, unlike testLobby/testSessionRecap/testGroupStats
+        // above: the ledger is one of the crew ROOM's own rows. The redesign
+        // gave `CrewRoomView` a `burpeeLedgerRow` NavigationLink (inside the
+        // routines-together card, under its GSDivider) labelled `BURPEES`, which pushes
+        // `BurpeeLedgerView` directly — so this walk stays on the room and
+        // never needs GroupView at all. CONTAINS (not exact/BEGINSWITH) for
+        // the same reason testFriends/testRoutineDetail/testActivityFeed use
+        // it: the row's composed label is "BURPEES" followed by each member's
+        // initials avatar and outstanding count.
         let ledgerRow = app.buttons.matching(
-            NSPredicate(format: "label CONTAINS 'Burpee Ledger'")
+            NSPredicate(format: "label CONTAINS 'BURPEES'")
         ).firstMatch
         if ledgerRow.waitForExistence(timeout: 10) {
             ledgerRow.tap()
@@ -682,16 +818,14 @@ final class ScreenshotTests: XCTestCase {
         settle()
         openPushCrew(app)
 
-        // GroupView's themed segmented control renders each SubTab's
-        // `rawValue` as plain Text (no icon, no composed accessibility
-        // label ambiguity — unlike the icon-led "Burpee Ledger"/"Friends"
-        // rows elsewhere in this file), same as the existing `sessionsTab =
-        // app.buttons["Sessions"]` exact-match lookup above.
-        let statsTab = app.buttons["Stats"]
-        if statsTab.waitForExistence(timeout: 10) {
-            statsTab.tap()
-            settleAfterNavigation()
-        }
+        // Stats is a GroupView sub-tab, and GroupView now sits behind the
+        // crew room's MANAGE toolbar item — MANAGE is the first hop, which is
+        // what `openManageSubTab` adds. The sub-tab lookup itself stays an
+        // exact match: the themed segmented control renders each SubTab's
+        // `rawValue` as plain Text (no icon, no composed accessibility-label
+        // ambiguity — unlike Friends' icon-led row or BURPEES' avatar-trailed one elsewhere
+        // in this file).
+        openManageSubTab(app, "Stats")
         attachScreenshot(app, named: "app-group-stats.png")
     }
 
@@ -730,6 +864,14 @@ final class ScreenshotTests: XCTestCase {
             pushDay.tap()
             settleAfterNavigation()
         }
+
+        // A SECOND cycle, and unconditional. RoutineDetailView's `.task`
+        // fetches the routine's exercises over the network before the list
+        // renders, and the tap above pushed the screen with nothing waiting
+        // on it — one cycle captured the detail mid-load. Two is what every
+        // other deep capture that waits on a fetch already spends
+        // (`testExerciseDetail`, `testActivityFeed` below).
+        settleAfterNavigation()
         attachScreenshot(app, named: "app-routine-detail.png")
     }
 
@@ -738,8 +880,11 @@ final class ScreenshotTests: XCTestCase {
         guard waitForTabBar(app) else { return }
         // EXERCISES moved into the Routines hub (owner 2026-08-16).
         openYouWidget(app, label: "Routines and programming")
-        let exercisesRow = app.buttons["Exercises"]
-        if exercisesRow.waitForExistence(timeout: 10) { exercisesRow.tap() }
+        openExercisesRow(app)
+        // The tap pushes ExercisesListView; give the push its tail before the
+        // app.cells query below starts looking for rows that are not on the
+        // hub at all.
+        settle()
 
         // Unlike the seeded "[QA] Push Day" routine above, exercise rows have
         // no stable predictable name to match on (the live catalog, not a QA

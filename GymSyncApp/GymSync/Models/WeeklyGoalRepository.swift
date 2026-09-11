@@ -5,12 +5,11 @@ import Foundation
 // Plan: docs/superpowers/plans/2026-09-06-home-v3-production-plan.md, task
 // 0.2. This file is HALF THE INTERFACE the four streams fork against:
 // Stream B (Home in production) and Stream C (the editor and the strip's
-// five kinds) wire to the protocol and to `WeeklyGoalProgress`; Stream A
-// ships `LiveWeeklyGoalRepository` behind the same protocol, and
-// integration task I1 swaps the default binding. Until then
-// `StubWeeklyGoalRepository` is what everything sees — deterministic, no
-// network, the design's own fixture numbers — so Home is correct and
-// capturable at every point in the build rather than only at the end.
+// five kinds) wire to the protocol and to `WeeklyGoalProgress`;
+// `LiveWeeklyGoalRepository` ships behind the same protocol and I1 swapped
+// every production binding to it. `StubWeeklyGoalRepository` below is now the
+// CATALOG'S repository — deterministic, no network, the design's own fixture
+// numbers — which is what keeps Home's frames values rather than fetches.
 
 /// Reads and writes this week's goal.
 ///
@@ -77,8 +76,8 @@ struct WeeklyGoalProgress: Equatable, Sendable {
 
 // MARK: - The stub
 
-/// The shipping default until Stream A's `LiveWeeklyGoalRepository` lands
-/// (integration task I1).
+/// The CATALOG'S repository since I1 swapped the shipping default to
+/// `LiveWeeklyGoalRepository`.
 ///
 /// Deterministic and hermetic: no `AppState`, no repository, no `Date.now`.
 /// The numbers are the design's own — the addendum frames' chest 8/12, back
