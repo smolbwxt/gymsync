@@ -84,6 +84,14 @@ struct PercentRampLadderRule: LadderRule {
 /// +`step` every `everyWeeks` weeks until the target, then hold. Consistency
 /// and Conditioning's shape ("+1 day every two weeks until the target holds").
 struct StepEveryNWeeksLadderRule: LadderRule {
+    /// Consistency and Conditioning's cadence: **one step every two weeks**.
+    /// Lives here, beside `PercentRampLadderRule.enduranceStep`, for the same
+    /// reason that constant does: `LadderMath.rampCeiling` asks the same
+    /// question from the other end — "could a step-every-two-weeks ramp have
+    /// got there?" — and two copies of the cadence is how a ladder and its
+    /// own standing come to disagree (r2 open item 1).
+    static let consistencyEveryWeeks = 2
+
     let step: Int
     let everyWeeks: Int
     let read: @Sendable (GoalTarget) -> Int?
@@ -256,11 +264,11 @@ extension LadderRules {
                 read: { $0.distance }, write: { $0.distance = $1 })
         case .trainingDaysPerWeek:
             return StepEveryNWeeksLadderRule(
-                step: 1, everyWeeks: 2,
+                step: 1, everyWeeks: StepEveryNWeeksLadderRule.consistencyEveryWeeks,
                 read: { $0.days }, write: { $0.days = $1 })
         case .sessionsOfTypePerWeek:
             return StepEveryNWeeksLadderRule(
-                step: 1, everyWeeks: 2,
+                step: 1, everyWeeks: StepEveryNWeeksLadderRule.consistencyEveryWeeks,
                 read: { $0.sessions }, write: { $0.sessions = $1 })
         case .lissMinutesPerWeek, .stretchingExercisesPerWeek:
             return HoldLadderRule()

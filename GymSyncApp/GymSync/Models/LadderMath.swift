@@ -505,7 +505,8 @@ extension LadderMath {
     ///     `PercentRampLadderRule.enduranceStep` a week, so it arrives at
     ///     `start × (1 + step)^weeks`.
     ///   * **Consistency and Conditioning** — `StepEveryNWeeksLadderRule` adds
-    ///     one every two weeks, so it arrives at `start + weeks / 2`.
+    ///     one every `StepEveryNWeeksLadderRule.consistencyEveryWeeks` weeks,
+    ///     so it arrives at `start + weeks / consistencyEveryWeeks`.
     ///   * **Volume** — the block can ask for at most the athlete's best recent
     ///     week plus a tenth, `weeks` times over, on top of what is banked.
     ///     `bestRecentWeekVolumeLbs` is the repository's read of the last eight
@@ -540,7 +541,7 @@ extension LadderMath {
         case .trainingDaysPerWeek:
             guard let start = current.days, let finish = milestone.days,
                   finish > start else { return nil }
-            let reach = start + weeks / 2
+            let reach = start + weeks / StepEveryNWeeksLadderRule.consistencyEveryWeeks
             guard reach < finish else { return nil }
             var ceiling = milestone
             ceiling.days = reach
@@ -549,7 +550,7 @@ extension LadderMath {
         case .sessionsOfTypePerWeek:
             guard let start = current.sessions, let finish = milestone.sessions,
                   finish > start else { return nil }
-            let reach = start + weeks / 2
+            let reach = start + weeks / StepEveryNWeeksLadderRule.consistencyEveryWeeks
             guard reach < finish else { return nil }
             var ceiling = milestone
             ceiling.sessions = reach
