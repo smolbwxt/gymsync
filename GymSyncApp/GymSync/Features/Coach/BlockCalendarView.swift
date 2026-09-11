@@ -245,8 +245,13 @@ struct BlockCalendarView: View {
 
     private func fill(for day: Date) -> Color {
         let key = calendar.startOfDay(for: day)
-        if let last = blockEnd, calendar.isDate(key, inSameDayAs: last) { return theme.accent }
+        // DONE wins over the block-end mark: a final day the athlete actually
+        // completed must read as completed. (Before this, the block-end branch
+        // ran first and repainted that day BOOKED.) Whether the block end
+        // keeps a mark at all — and in which channel — is the owner's question
+        // on the proof card; the colour is left as it is.
         if completedDays.contains(key) { return theme.text }
+        if let last = blockEnd, calendar.isDate(key, inSameDayAs: last) { return theme.accent }
         if scheduledDays.contains(key) { return theme.accent }
         if plannedDays.contains(key) { return theme.accent.opacity(0.55) }
         if inSelectedWeek(key) { return theme.accent.opacity(0.22) }
