@@ -961,12 +961,14 @@ async function main() {
   // --- block, goal and ladder: I2, goal-first-programming-plan/brief-
   //     integration.md (controller ruling 4) --------------------------------
   // Gives `me` a real, in-flight training block with a Coach-set milestone
-  // and a materialised eight-week ladder, so the existing weekly-goal row
-  // below can mirror the goal onto the CURRENT week and `app-tab-home`
-  // renders the strip's BLOCK kicker ("WEEK 3 OF 8 · COACH'S GOAL") instead
-  // of the plain weekly-goal one — the end-to-end proof that A14 (the
-  // kicker), A10 (the ladder becomes the week's goal) and D2 (the strip
-  // opens the ladder) all agree.
+  // and a materialised eight-week ladder. The CURRENT week's `weekly_goals`
+  // row is deliberately NOT written here (see the block at the end of this
+  // function): the app materialises it from rung 2 on Home's first load, and
+  // `app-tab-home` renders the strip's BLOCK kicker
+  // ("WEEK 3 OF 8 · COACH'S GOAL") off the row it wrote itself. That walk is
+  // the end-to-end proof that A10 (the ladder becomes the week's goal), A14
+  // (the kicker) and D2 (the strip opens the ladder) agree — which the
+  // hand-written row it replaced could not give (final review F1/F5).
   //
   // NOTE on production visibility, per this file's own header (:27-36): this
   // row is genuinely live in the shared Supabase project, not an isolated
@@ -1074,65 +1076,33 @@ async function main() {
     body: JSON.stringify(rungs) });
   console.log('  block goal rungs: 8 weeks, week index 2 current (200 lb), week index 5 the wave\'s deload (175 lb)');
 
-  // --- weekly goal: I2, home-v3-production plan/brief-integration.md ------
-  // `app-tab-home` renders the goal strip's INVITATION when `me` (the
-  // account CI actually signs in as and unit-tests as) has no
-  // `weekly_goals` row for the current week — this block gives it a real
-  // one so the capture shows a genuine muscle-sets reading instead.
+  // --- the week's goal is NOT seeded: the app has to materialise it -------
+  // FINAL REVIEW F1/F5. This block used to hand-write the current week's
+  // `weekly_goals` row — `kind: 'muscle_sets'` with a `goal_id` stapled on —
+  // and `app-tab-home`'s `WEEK 3 OF 8 . COACH'S GOAL` was then a proof of
+  // A14's kicker reading a column, nothing more. It also HID the feature's
+  // worst bug: in CI the row production would never write was written by
+  // hand, so the screenshot walk never exercised `materialiseRung`, and the
+  // capture looked right while week 2 onward of every real block quietly
+  // lost its ladder.
   //
-  // NOTE on production visibility, per this file's own header (:27-36):
-  // this row is genuinely live in the shared Supabase project, not an
-  // isolated test copy — and it is inert for real users the same way every
-  // other fixture above is: scoped to one account by `user_id`, and RLS
-  // ("owner reads own weekly goal", `20260906000001_weekly_goals.sql`)
-  // means nobody else can read it.
+  // So the row is DELETED instead, and Home's first load has to produce it:
+  // `LiveWeeklyGoalRepository.detectIfMissing` asks the block side first
+  // (plan item 6), which re-ladders from actuals and materialises this
+  // week's rung into `weekly_goals`. `app-tab-home` must still read
+  // `WEEK 3 OF 8 . COACH'S GOAL` — now above the LIFT reading rung 2
+  // actually is (bench 200), rather than above four muscle-sets chips
+  // describing a different goal (the incoherence F5 names). If the kicker is
+  // missing from the capture, the walk has found a real defect in the
+  // materialisation path, which is the whole point of seeding it this way.
   //
-  // week_start, computed at RUN TIME (this step runs on every screenshot
-  // job, and the week rolls) with the SAME rule `WeekMath.startOfWeek` uses
-  // in Swift — the device calendar's week, honouring `firstWeekday` — not
-  // ISO. The CI simulator's locale is en_US, whose first day is SUNDAY, so
-  // `currentWeekStartSunday` below mirrors that in UTC (Node has no
-  // Foundation `Calendar`); this can skew by a few hours right at a
-  // Saturday/Sunday-midnight boundary, the same honestly-accepted skew
-  // every other UTC-stamped fixture in this file already carries, and it
-  // does not cross a week boundary any other time.
-  //
-  // Upserts on `(user_id, week_start)` — the table's own PK — rather than
-  // this file's usual delete-then-insert: every OTHER week's row is real
-  // goal history this script must not touch (unlike every table above,
-  // which this account owns exclusively). A mid-week re-run converges to
-  // the same row.
-  //
-  // `kind`/`params` match `HomeV2Fixtures.coachTargets` (CHEST/BACK/LEGS
-  // 12, ARMS 8, `targetSource: "routines"`) — the same four targets the
-  // catalog's own muscle-sets fixture renders — so this account's shape
-  // agrees with the catalog frames. `done` is deliberately NOT written
-  // here: `LiveWeeklyGoalRepository.progress(for:)` computes it from this
-  // account's real completed sessions, which is the whole point of a LIVE
-  // repository read rather than a second fixture.
-  //
-  // `goal_id` / `rung_index` / `params.goalID` (controller ruling 4, I2):
-  // ADDITIVE ONLY — this row's `kind` stays `muscle_sets` and its params
-  // keep their own four targets, exactly as every other frame that reads
-  // this row already expects. The mirror alone is what A14's `blockKicker`
-  // needs to switch the strip's kicker from `THIS WEEK · COACH'S GOAL` to
-  // `WEEK 3 OF 8 · COACH'S GOAL` — `rung_index: 2` is the ladder's own
-  // current week (0-indexed week 2, "week 3 of 8"), matching the block
-  // goal's rungs seeded above.
+  // ONLY THE CURRENT WEEK, and only this account's row: every other week in
+  // `weekly_goals` is real goal history this script must not touch, which is
+  // why the filter carries `week_start=eq.` and not a range.
   const weekStart = currentWeekStartSunday();
-  await rest('weekly_goals', { method: 'POST',
-    headers: { Prefer: 'resolution=merge-duplicates' },
-    body: JSON.stringify({
-      user_id: me.id,
-      week_start: weekStart,
-      kind: 'muscle_sets',
-      source: 'coach',
-      goal_id: blockGoal.id,
-      rung_index: 2,
-      params: { muscleTargets: { chest: 12, back: 12, legs: 12, arms: 8 },
-               targetSource: 'routines', goalID: blockGoal.id },
-    }) });
-  console.log(`  weekly goal: muscle_sets for week ${weekStart}, mirrors block goal ${blockGoal.id} at rung 2 (week 3 of 8)`);
+  await rest(`weekly_goals?user_id=eq.${me.id}&week_start=eq.${weekStart}`,
+    { method: 'DELETE' });
+  console.log(`  weekly goal: cleared week ${weekStart} — the app must materialise rung 2 of block goal ${blockGoal.id} on Home's first load`);
 
   console.log('\ndone — QA fixture world seeded (idempotent).');
 }
