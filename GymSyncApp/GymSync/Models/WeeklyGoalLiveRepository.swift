@@ -102,6 +102,15 @@ struct LiveWeeklyGoalRepository: WeeklyGoalRepository, WeeklyGoalCoachWriter {
 
     private var client: SupabaseClient { SupabaseService.shared.client }
 
+    /// The BLOCK's answer for a week, asked before this repository detects one
+    /// of its own (plan item 6; final review F1).
+    ///
+    /// `LiveBlockGoalRepository` in production — the default is the wiring, and
+    /// `LadderDetectionSeamTests` pins it, because a default that silently
+    /// resolved to something inert is precisely how item 6 came to be ruled and
+    /// then not built.
+    var ladderSource: any LadderWeekSource = LiveBlockGoalRepository()
+
     // MARK: - Read
 
     func goal(weekStart: String) async -> WeeklyGoal? {
@@ -379,13 +388,51 @@ struct LiveWeeklyGoalRepository: WeeklyGoalRepository, WeeklyGoalCoachWriter {
     /// Detection runs at most once per fetch: this makes one attempt and
     /// returns, so a week that cannot be written (offline) renders the
     /// invitation and is retried on the next refresh rather than looped on.
+    /// **AND THE LADDER IS ASKED FIRST** (plan item 6's controller ruling;
+    /// final review F1). See `weekInEffect` below for the whole of the rule
+    /// and why it is stated there rather than here.
     func detectIfMissing(weekStart: String) async -> WeeklyGoal? {
         let existing = await goal(weekStart: weekStart)
+        return await Self.weekInEffect(
+            existing: existing,
+            weekStart: weekStart,
+            currentWeekStart: WeekMath.weekStartString(),
+            ladder: { await ladderSource.ladderWeek(weekStart: weekStart) },
+            detect: { await writeDetected(weekStart: weekStart, existing: existing) })
+    }
+
+    /// PLAN ITEM 6, THE WHOLE OF IT, with no Supabase in it — so the ruling's
+    /// own week-2 world is a unit test (`LadderDetectionSeamTests`).
+    ///
+    /// > "when `detectIfMissing` runs for a user with an active `BlockGoal`, it
+    /// > calls `reLadder` from actuals and then `materialiseRung` for the
+    /// > current week, and returns that row — so a new week re-ladders itself
+    /// > on its first Home load"
+    ///
+    /// THE LADDER IS ASKED BEFORE DETECTION, not after, and that ordering is
+    /// the fix rather than a preference. Detection writes a goal with **no
+    /// `goalID`** (`detect` has no idea a block exists), and a row with no
+    /// `goalID` is a standalone weekly goal by spec §4 — so from week 2 of
+    /// every block the strip lost its `WEEK 3 OF 8` kicker and the strip's tap
+    /// went to the editor instead of the ladder. Asking second would have
+    /// written that row first and then had to overwrite it.
+    ///
+    /// `shouldDetectOnRead` STILL GATES BOTH. A week that already has a row is
+    /// not the ladder's to fill any more than it is detection's — the rung for
+    /// a week the athlete has spoken for is `materialiseRung`'s to decline, and
+    /// it does, through `WeeklyGoalWriteRule` — and a week that is not the
+    /// current one is never written from a read at all.
+    static func weekInEffect(existing: WeeklyGoal?,
+                             weekStart: String,
+                             currentWeekStart: String,
+                             ladder: () async -> WeeklyGoal?,
+                             detect: () async -> WeeklyGoal?) async -> WeeklyGoal? {
         guard WeeklyGoalWriteRule.shouldDetectOnRead(
                 existing: existing,
                 weekStart: weekStart,
-                currentWeekStart: WeekMath.weekStartString()) else { return existing }
-        return await writeDetected(weekStart: weekStart, existing: existing)
+                currentWeekStart: currentWeekStart) else { return existing }
+        if let rung = await ladder() { return rung }
+        return await detect()
     }
 
     /// The gated write both paths share, so "Coach may not overwrite you"

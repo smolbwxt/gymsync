@@ -259,6 +259,91 @@ extension LadderMath {
     /// re-ladder. Carrying a phase offset would mean widening `LadderConstraints`,
     /// which is frozen Task 0 surface; it is recorded for the controller rather
     /// than invented here.
+    /// The remaining rungs, re-derived — through the door this metric's rungs
+    /// came out of in the first place (final review F1).
+    ///
+    /// **THE THREE THE GENERATOR PRESCRIBES DO NOT RAMP** (spec §3.1: "the
+    /// ladder is a read-out of the block"), and handing them to
+    /// `LadderRules.rule(for:)` is not a harmless no-op — it answers
+    /// `HoldLadderRule` for all three (`LadderRules+Ramps.swift:278-279`), and
+    /// a hold answers `Array(repeating: milestone, count: weeks)`. So
+    /// `reLadder` REPLACED every remaining week of a bench block with the
+    /// milestone itself: an athlete two weeks into "225 by Oct 18" was
+    /// prescribed 225 for weeks 3 through 8, in place of the block's own
+    /// 200/205/210/deload/220/225. Latent until now because the only trigger
+    /// was a button; plan item 6 puts a re-ladder on the first Home load of
+    /// every week, which is what turns it from latent into certain.
+    ///
+    /// `liftOneRepMax` is RE-READ from the block's own template at the new
+    /// measured baseline — spec §3.5's own sentence for it ("regenerating the
+    /// block's remaining weeks' loading from the new e1RM baseline … the ladder
+    /// is re-read from the regenerated plan").
+    ///
+    /// `liftRepsAtLoad` and `weeklyMuscleSets` keep the rungs they have.
+    /// Their read-outs (`LadderReadout.repStrengthRungs`, `.muscleRungs`) take
+    /// the generated `Program` and the exercise catalog, which no caller of
+    /// this holds — and what a block PRESCRIBES does not move because the
+    /// athlete trained. Leaving them alone is the honest answer; flattening
+    /// them onto the milestone was not.
+    ///
+    /// PURE, like everything else in this file, so the regression above is a
+    /// unit test (`LadderDetectionSeamTests`) rather than a story about
+    /// Supabase.
+    static func reLaddered(goal: BlockGoal, existing: Ladder,
+                           template: ProgramTemplate?,
+                           measured: [String: GoalTarget],
+                           unit: WeightUnit, now: Date,
+                           calendar: Calendar = .current) -> Ladder {
+        switch goal.metric {
+        case .liftOneRepMax:
+            guard let exerciseID = goal.target.exerciseID,
+                  let baseline = bestMeasuredE1RM(measured),
+                  let prescribed = LadderReadout.strengthRungs(
+                    template: template, exerciseID: exerciseID,
+                    baselineE1RMLbs: baseline, unit: unit),
+                  prescribed.count == existing.rungs.count
+            else { return existing }
+            var out = existing
+            out.derivedAt = now
+            out.rungs = existing.rungs.enumerated().map { index, rung in
+                // The same window `reLadder` moves and no wider: a met, missed
+                // or overridden week is the record of the climb, not a forecast.
+                guard rung.status == .ahead || rung.status == .current else { return rung }
+                var updated = rung
+                updated.target = prescribed[index]
+                return updated
+            }
+            return out
+
+        case .liftRepsAtLoad, .weeklyMuscleSets:
+            return existing
+
+        case .weeklyDistance, .trainingDaysPerWeek, .sessionsOfTypePerWeek,
+             .lissMinutesPerWeek, .stretchingExercisesPerWeek, .bodyWeight,
+             .cumulativeVolume, .benchmarkTime:
+            return reLadder(
+                existing: existing, metric: goal.metric,
+                current: measured[WeekMath.weekStartString(now, calendar: calendar)]
+                    ?? GoalTarget(),
+                milestone: goal.target,
+                constraints: LadderReadout.constraints(template: template, unit: unit),
+                rule: LadderRules.rule(for: goal.metric),
+                derivedAt: now)
+        }
+    }
+
+    /// The baseline a strength re-read builds from: the BEST e1RM the block has
+    /// actually measured.
+    ///
+    /// Best rather than latest, for the reason `BlockGoalMetricMath
+    /// .bestBenchmarkSeconds` gives about its own reading: a baseline is a
+    /// record of what the athlete has done, and one light week is not evidence
+    /// they got weaker. nil when nothing has been measured at all, which leaves
+    /// the ladder exactly as the block derived it.
+    static func bestMeasuredE1RM(_ measured: [String: GoalTarget]) -> Decimal? {
+        measured.values.compactMap(\.targetWeightLbs).filter { $0 > 0 }.max()
+    }
+
     private static func windowed(_ constraints: LadderConstraints,
                                  over mutable: [LadderRung]) -> LadderConstraints {
         var local = constraints

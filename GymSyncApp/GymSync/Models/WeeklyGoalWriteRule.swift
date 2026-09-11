@@ -116,3 +116,33 @@ struct NoOpWeeklyGoalCoachWriter: WeeklyGoalCoachWriter {
     @discardableResult
     func writeDetectedGoal(weekStart: String) async -> WeeklyGoal? { nil }
 }
+
+// MARK: - The seam plan item 6's detect-on-read takes
+
+/// What `LiveWeeklyGoalRepository.detectIfMissing` asks the BLOCK side before
+/// it detects a goal of its own (controller ruling on plan item 6; final
+/// review F1).
+///
+/// A protocol, and for the same two reasons `WeeklyGoalCoachWriter` above is
+/// one. The live block repository is Supabase all the way down, so a direct
+/// call would make the ruling's own test — "a user with an active goal, a
+/// `weekly_goals` row for last week only, and a changed actual →
+/// `detectIfMissing(thisWeek)` returns a `source = coach` row whose rung
+/// moved" — an integration story rather than a unit test. And it keeps the
+/// dependency pointing one way: the weekly repository knows a ladder may have
+/// an answer, not how a ladder is built.
+protocol LadderWeekSource: Sendable {
+    /// The row this athlete's active block says `weekStart` is: re-laddered
+    /// from actuals and materialised into `weekly_goals`, through
+    /// `WeeklyGoalWriteRule` like every other Coach write.
+    ///
+    /// nil when there is no active block, no goal on it, or nothing could be
+    /// written — and nil is what sends the caller to plain detection.
+    func ladderWeek(weekStart: String) async -> WeeklyGoal?
+}
+
+/// Answers nothing — the binding for a repository with no ladder behind it,
+/// and what a test injects to prove plain detection still runs untouched.
+struct NoLadderWeekSource: LadderWeekSource {
+    func ladderWeek(weekStart: String) async -> WeeklyGoal? { nil }
+}

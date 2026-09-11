@@ -482,13 +482,11 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
 
         // The goal's own block, for the reason `page(goalID:)` gives.
         let template = await enrollment(id: goal.enrollmentID)?.template
-        let fresh = LadderMath.reLadder(
-            existing: stamped, metric: goal.metric,
-            current: measured[currentWeekStart] ?? GoalTarget(),
-            milestone: goal.target,
-            constraints: LadderReadout.constraints(template: template, unit: unit),
-            rule: LadderRules.rule(for: goal.metric),
-            derivedAt: now)
+        // `LadderMath` decides, this only fetches and writes — including the
+        // choice of WHICH DOOR a metric re-ladders through (final review F1).
+        let fresh = LadderMath.reLaddered(goal: goal, existing: stamped,
+                                          template: template, measured: measured,
+                                          unit: unit, now: now, calendar: calendar)
 
         let changed = zip(existing.rungs, fresh.rungs)
             // `$0.0` / `$0.1`, not `$0` / `$1`: `filter`'s closure takes ONE
@@ -967,6 +965,37 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
 
 // MARK: - A13: blocks that predate goals (spec §5.4)
 
+/// What A13 did for one week: the goal that now drives the block, and the
+/// `weekly_goals` row its ladder materialised for that week.
+///
+/// `week` is nil when nothing was written — offline, no rung for this week, or
+/// (the one that matters) the athlete's own row stood and
+/// `WeeklyGoalWriteRule` left it alone. The caller then falls back to whatever
+/// was already there rather than to a row this never wrote.
+struct DetectedBlockWeek: Sendable {
+    let goal: BlockGoal
+    let week: WeeklyGoal?
+}
+
+extension LiveBlockGoalRepository: LadderWeekSource {
+
+    /// **PLAN ITEM 6'S SEAM** (controller ruling, 2026-09-07; final review F1).
+    ///
+    /// Home's first load of a week calls `WeeklyGoalRepository.detectIfMissing`,
+    /// which asks this before it detects anything of its own: an athlete with an
+    /// active block gets that block's rung, re-laddered from actuals, and only
+    /// an athlete without one falls through to plain detection.
+    ///
+    /// nil is the answer for "this athlete has no block goal to answer with",
+    /// which is every account until they build one — and it is what makes plain
+    /// detection the untouched path it was before this existed.
+    func ladderWeek(weekStart: String) async -> WeeklyGoal? {
+        guard let enrollment = try? await ProgramRepository.active() else { return nil }
+        return await detectGoalIfMissing(enrollment: enrollment,
+                                         weekStart: weekStart)?.week
+    }
+}
+
 extension LiveBlockGoalRepository {
 
     /// Derive and persist a goal for a block that predates goals — and, for a
@@ -990,20 +1019,27 @@ extension LiveBlockGoalRepository {
     ///
     /// The ladder is derived and persisted IMMEDIATELY after the goal, so a
     /// migrated block has rungs on its first Home load rather than an empty page.
+    ///
+    /// **IT HANDS BACK THE WEEK'S ROW, not just the goal** (final review F1).
+    /// The caller is `LiveWeeklyGoalRepository.detectIfMissing`, which owes
+    /// Home a `WeeklyGoal`; returning only the `BlockGoal` would have made it
+    /// re-read the row this just wrote.
     @discardableResult
-    func detectGoalIfMissing(enrollment: ProgramEnrollment) async -> BlockGoal? {
+    func detectGoalIfMissing(enrollment: ProgramEnrollment,
+                             weekStart: String? = nil) async -> DetectedBlockWeek? {
         let calendar = Calendar.current
         let now = Date()
-        let currentWeek = WeekMath.weekStartString(now, calendar: calendar)
+        let currentWeek = weekStart ?? WeekMath.weekStartString(now, calendar: calendar)
 
         if let existing = await goal(enrollmentID: enrollment.id) {
             // The re-laddered ladder is handed straight to materialisation
             // rather than being dropped and re-read (finding F5).
-            if let fresh = await reLadder(goalID: existing.id) {
-                await materialiseRung(goal: existing, ladder: fresh,
-                                      weekStart: currentWeek)
+            guard let fresh = await reLadder(goalID: existing.id) else {
+                return DetectedBlockWeek(goal: existing, week: nil)
             }
-            return existing
+            let week = await materialiseRung(goal: existing, ladder: fresh,
+                                             weekStart: currentWeek)
+            return DetectedBlockWeek(goal: existing, week: week)
         }
 
         guard let userID = await SupabaseService.shared.currentUserID() else { return nil }
@@ -1024,11 +1060,12 @@ extension LiveBlockGoalRepository {
                              enrollmentID: enrollment.id, now: now)
         guard await saveDetected(goal) else { return nil }
 
-        if let derived = await deriveLadder(goal: goal, enrollment: enrollment,
-                                            unit: unit, calendar: calendar, now: now) {
-            await materialiseRung(goal: goal, ladder: derived, weekStart: currentWeek)
-        }
-        return goal
+        guard let derived = await deriveLadder(goal: goal, enrollment: enrollment,
+                                               unit: unit, calendar: calendar, now: now)
+        else { return DetectedBlockWeek(goal: goal, week: nil) }
+        let week = await materialiseRung(goal: goal, ladder: derived,
+                                         weekStart: currentWeek)
+        return DetectedBlockWeek(goal: goal, week: week)
     }
 
     /// The first ladder for a block that had none.

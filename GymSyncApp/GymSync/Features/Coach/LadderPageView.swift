@@ -551,11 +551,21 @@ struct LadderPageView: View {
     /// re-read and leaving the write outside it. Inert today only because the
     /// catalog's repository happens to be the stub and no tap occurs in a
     /// capture — which is luck, not enforcement.
+    ///
+    /// **AND IT MATERIALISES THIS WEEK'S RUNG** (final review F1, consequence
+    /// 4). Re-laddering moves the rungs; the `weekly_goals` row Home's strip
+    /// reads is a COPY of the current one (spec §4), and rewriting the ladder
+    /// without rewriting that copy left the strip quoting the number the
+    /// athlete had just asked Coach to replace. `materialiseRung` consults
+    /// `WeeklyGoalWriteRule` itself, so a week the athlete has overridden is
+    /// still left alone.
     private func reLadder() async {
         guard world == nil else { return }
         reLaddering = true
         defer { reLaddering = false }
         _ = await repository.reLadder(goalID: goalID)
+        await repository.materialiseRung(goalID: goalID,
+                                         weekStart: WeekMath.weekStartString())
         fetched = await repository.page(goalID: goalID)
     }
 
