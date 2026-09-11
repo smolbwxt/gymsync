@@ -78,6 +78,13 @@ struct GSGoalChip: View {
     /// rather than one that runs past its own track, and a target of zero
     /// draws an empty one instead of dividing by nothing. `fill` wins when
     /// the caller supplied one.
+    ///
+    /// INTERNAL, not private, ONLY so `GSGoalChipTests` can read it. This
+    /// repo has no snapshot harness, so the one testable thing about a chip
+    /// is the number its meter draws; making that number reachable is what
+    /// keeps the `fill` override — the rule that stops a 205 → 225 lift
+    /// drawing 91 % on day one — under test at all. Nothing outside the
+    /// chip's own tests calls it.
     var fraction: Double {
         if let fill { return min(max(fill, 0), 1) }
         guard target > 0 else { return 0 }
