@@ -958,6 +958,97 @@ async function main() {
   console.log(`  campaign_progress: sessions_completed=${progressRow?.sessions_completed ?? '?'}, ` +
     `workouts_completed=${progressRow?.workouts_completed ?? '?'}, volume_lifted=${progressRow?.volume_lifted ?? '?'}`);
 
+  // --- block, goal and ladder: I2, goal-first-programming-plan/brief-
+  //     integration.md (controller ruling 4) --------------------------------
+  // Gives `me` a real, in-flight training block with a Coach-set milestone
+  // and a materialised eight-week ladder, so the existing weekly-goal row
+  // below can mirror the goal onto the CURRENT week and `app-tab-home`
+  // renders the strip's BLOCK kicker ("WEEK 3 OF 8 · COACH'S GOAL") instead
+  // of the plain weekly-goal one — the end-to-end proof that A14 (the
+  // kicker), A10 (the ladder becomes the week's goal) and D2 (the strip
+  // opens the ladder) all agree.
+  //
+  // NOTE on production visibility, per this file's own header (:27-36): this
+  // row is genuinely live in the shared Supabase project, not an isolated
+  // test copy — and it is inert for real users the same way every other
+  // fixture in this file is: scoped to `me.id` alone, and every table's own
+  // RLS ("owner reads own …", A1/A2's migrations) means nobody else can
+  // read it.
+  //
+  // Idempotent on each table's own natural/unique key, per this file's usual
+  // idiom (:26-36), and real history none of these three blocks may churn:
+  //   * program_enrollments — created ONLY when `me` has no ACTIVE enrollment
+  //     (`ended_at IS NULL` is the table's own partial unique index,
+  //     `one_active_program_per_user`); an existing active block (this
+  //     script's own prior run, or a real one) is reused as-is rather than
+  //     replaced.
+  //   * block_goals — UPSERTED ON `enrollment_id`, the table's own UNIQUE
+  //     key (A1's migration: "ONE PRIMARY GOAL PER BLOCK") — never
+  //     delete-then-insert, because the goal is real history.
+  //   * block_goal_rungs — the table's own PK is `(goal_id, week_index)`, so
+  //     an upsert on that composite key converges a re-run the same way.
+  const benchExerciseID = bySlug['bench-press'];
+  const blockWeekStart = currentWeekStartSunday();
+
+  let [enrollment] = await rest(
+    `program_enrollments?select=id,started_on&user_id=eq.${me.id}&ended_at=is.null`);
+  if (!enrollment) {
+    [enrollment] = await rest('program_enrollments', { method: 'POST', headers: rep,
+      body: JSON.stringify({
+        user_id: me.id,
+        template_slug: 'coach-qa-fixture',
+        started_on: blockWeekStart,
+        weeks: 8,
+        focus: { exercise_ids: [benchExerciseID] },
+        baseline: { [benchExerciseID.toLowerCase()]: 205 },
+      }) });
+    console.log(`  program enrollment ${enrollment.id}: coach-qa-fixture, started ${blockWeekStart}, 8 weeks`);
+  } else {
+    console.log(`  program enrollment ${enrollment.id} already active — not re-enrolling`);
+  }
+
+  // by_date = the enrollment's own start + 56 days (8 training weeks), the
+  // same shape `StubBlockGoalRepository`'s fixture goal documents: the
+  // milestone falls the day after the last training week closes over.
+  const enrollmentStart = new Date(`${enrollment.started_on}T00:00:00Z`);
+  const blockByDate = new Date(enrollmentStart.getTime() + 56 * 86_400_000)
+    .toISOString().slice(0, 10);
+
+  const [blockGoal] = await rest('block_goals?on_conflict=enrollment_id', { method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+    body: JSON.stringify({
+      user_id: me.id,
+      enrollment_id: enrollment.id,
+      metric: 'lift_one_rep_max',
+      target: { exerciseID: benchExerciseID, targetWeightLbs: 225 },
+      by_date: blockByDate,
+      preset: 'strength',
+      source: 'coach',
+    }) });
+  console.log(`  block goal ${blockGoal.id}: bench 225 by ${blockByDate}`);
+
+  // Eight rungs, week 0..7, walking forward one week at a time from the
+  // enrollment's own start (already a Sunday, so `+7×i` days lands on the
+  // week's own start every time). Targets and statuses are
+  // `StubBlockGoalRepository.fixtureLadder`'s own numbers — met, met,
+  // current, ahead ×5, with week index 5's 175 the wave's deload — so this
+  // account's real ladder and the catalog's fixture describe the same shape
+  // of block.
+  const RUNG_TARGETS_LBS = [190, 195, 200, 205, 210, 175, 220, 225];
+  const RUNG_STATUSES = ['met', 'met', 'current', 'ahead', 'ahead', 'ahead', 'ahead', 'ahead'];
+  const rungs = RUNG_TARGETS_LBS.map((weightLbs, weekIndex) => ({
+    goal_id: blockGoal.id,
+    week_index: weekIndex,
+    week_start: new Date(enrollmentStart.getTime() + weekIndex * 7 * 86_400_000)
+      .toISOString().slice(0, 10),
+    target: { targetWeightLbs: weightLbs },
+    status: RUNG_STATUSES[weekIndex],
+  }));
+  await rest('block_goal_rungs', { method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates' },
+    body: JSON.stringify(rungs) });
+  console.log('  block goal rungs: 8 weeks, week index 2 current (200 lb), week index 5 the wave\'s deload (175 lb)');
+
   // --- weekly goal: I2, home-v3-production plan/brief-integration.md ------
   // `app-tab-home` renders the goal strip's INVITATION when `me` (the
   // account CI actually signs in as and unit-tests as) has no
@@ -994,6 +1085,15 @@ async function main() {
   // here: `LiveWeeklyGoalRepository.progress(for:)` computes it from this
   // account's real completed sessions, which is the whole point of a LIVE
   // repository read rather than a second fixture.
+  //
+  // `goal_id` / `rung_index` / `params.goalID` (controller ruling 4, I2):
+  // ADDITIVE ONLY — this row's `kind` stays `muscle_sets` and its params
+  // keep their own four targets, exactly as every other frame that reads
+  // this row already expects. The mirror alone is what A14's `blockKicker`
+  // needs to switch the strip's kicker from `THIS WEEK · COACH'S GOAL` to
+  // `WEEK 3 OF 8 · COACH'S GOAL` — `rung_index: 2` is the ladder's own
+  // current week (0-indexed week 2, "week 3 of 8"), matching the block
+  // goal's rungs seeded above.
   const weekStart = currentWeekStartSunday();
   await rest('weekly_goals', { method: 'POST',
     headers: { Prefer: 'resolution=merge-duplicates' },
@@ -1002,10 +1102,12 @@ async function main() {
       week_start: weekStart,
       kind: 'muscle_sets',
       source: 'coach',
+      goal_id: blockGoal.id,
+      rung_index: 2,
       params: { muscleTargets: { chest: 12, back: 12, legs: 12, arms: 8 },
-               targetSource: 'routines' },
+               targetSource: 'routines', goalID: blockGoal.id },
     }) });
-  console.log(`  weekly goal: muscle_sets for week ${weekStart}`);
+  console.log(`  weekly goal: muscle_sets for week ${weekStart}, mirrors block goal ${blockGoal.id} at rung 2 (week 3 of 8)`);
 
   console.log('\ndone — QA fixture world seeded (idempotent).');
 }
