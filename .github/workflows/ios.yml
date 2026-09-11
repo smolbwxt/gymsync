@@ -362,7 +362,12 @@ jobs:
           # (app-tab-stats-2, the scrolled streak card) — 107 -> 108.
           # congruence B2 T2.3: the new block-calendar catalog id adds
           # app-block-calendar — 108 -> 109.
-          FLOOR=109
+          # congruence B9: T-F.1 moved app-session-recap and app-lobby onto
+          # their real screens, which left the crew room and the sessions list
+          # — where T9.2's chat preview and T9.1's state glyphs live — on no
+          # frame. testCrewRoom and testGroupSessions add one capture each:
+          # 109 -> 111.
+          FLOOR=111
           # `|| true` + the `:-0` default for the same `set -eo pipefail`
           # reason as the simulator picker above: a missing $SCREENS makes
           # `find` exit 1, which would kill the step before it printed the

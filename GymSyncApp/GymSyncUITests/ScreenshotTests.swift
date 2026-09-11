@@ -711,6 +711,35 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// The crew ROOM itself, with THE CHAT preview card in frame.
+    ///
+    /// congruence B9: T9.2's proof used to ride on `app-session-recap`, which
+    /// landed on the crew room before T-F.1 fixed that id's routing. Nothing
+    /// captures the room now, so `CrewRoomView.chatPreview` — the second site
+    /// wired through `ChatMessage.displayBody` — is on no frame at all. This
+    /// is that frame.
+    ///
+    /// The swipe is `testChat`'s own defensive scroll, for its reason: the
+    /// preview card is the LAST card in the room's ScrollView and can sit
+    /// below the fold. It is NOT a second attachment — one capture, after the
+    /// card is reachable.
+    func testCrewRoom() {
+        let app = launchApp()
+        guard waitForTabBar(app) else { return }
+        selectTab(app, label: "Crews")
+        settle()
+        openPushCrew(app)
+
+        let chatCard = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS 'THE CHAT'")
+        ).firstMatch
+        if chatCard.waitForExistence(timeout: 10), !chatCard.isHittable {
+            app.swipeUp()
+            settle()
+        }
+        attachScreenshot(app, named: "app-crew-room.png")
+    }
+
     func testChat() {
         let app = launchApp()
         guard waitForTabBar(app) else { return }
@@ -738,6 +767,27 @@ final class ScreenshotTests: XCTestCase {
             settleAfterNavigation()
         }
         attachScreenshot(app, named: "app-chat.png")
+    }
+
+    /// The sessions LIST, not a session.
+    ///
+    /// congruence B9: T9.1 replaced `GroupView.sessionRow`'s emoji state
+    /// glyphs with SF Symbols, and every existing walk through this list
+    /// (`testLobby`, `testSessionRecap`) taps straight through it to a pushed
+    /// screen, so the glyphs are on no frame. This stops on the list.
+    ///
+    /// The seed writes one session per state — scheduled, lobby_open, voting,
+    /// locked, in_progress, completed (`scripts/seed_qa_fixtures.js:306`) —
+    /// and NO abandoned one, so this frame proves the completed tick and the
+    /// absence of a glyph on the rest. The abandoned cross has no fixture.
+    func testGroupSessions() {
+        let app = launchApp()
+        guard waitForTabBar(app) else { return }
+        selectTab(app, label: "Crews")
+        settle()
+        openPushCrew(app)
+        openManageSubTab(app, "Sessions")
+        attachScreenshot(app, named: "app-group-sessions.png")
     }
 
     func testLobby() {
