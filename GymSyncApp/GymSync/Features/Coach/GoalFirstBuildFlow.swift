@@ -44,23 +44,24 @@ struct GoalFirstBuildFlow: View {
 
     /// What the athlete's log says now, for the seeds and Coach's line.
     ///
-    /// **STILL EMPTY, AND I1 DID NOT FILL IT** (final-fix round, recorded
-    /// rather than quietly left as a future-tense promise). A5's readers exist
-    /// as pure math — `BlockGoalMetricMath`, `WeeklyGoalProgressMath` — and
-    /// `LiveBlockGoalRepository.measuredByWeek` composes them per metric for
-    /// the LADDER, but nothing composes them for the DOOR, so every card opens
-    /// on its documented defaults and Coach's line reads "I haven't got a
-    /// reading for this yet" rather than spec §5.2's "You're at 205 now".
+    /// **THE VALUE THE CARD OPENS ON, not the last word** (round 2, item 1).
+    /// Empty here, because the reading depends on the preset the athlete has
+    /// not chosen yet and — for a lift goal — on a lift they have not picked;
+    /// the card asks `reader` for it on appear and again when the subject
+    /// changes, and re-seeds itself while nothing has been typed.
     ///
-    /// An empty reading is honest rather than wrong — no zero is printed, no
-    /// number is invented — and the catalog frames pass their own `current`, so
-    /// they are unaffected. Filling it is a per-metric live read plus a re-seed
-    /// of a card whose `@State` draft is built in `init`; that is a task, not a
-    /// line, and it is the open item behind the door's silence on reach (F4).
-    ///
-    /// It is never fetched by the milestone card itself; it arrives here and is
-    /// passed down, which is what keeps that card capturable.
+    /// Empty is honest in the meantime: no zero is printed and no number is
+    /// invented. The catalog frames pass their own `current` and NO reader, so
+    /// they stay values rather than fetches.
     @State private var current = GoalTarget()
+
+    /// Where the card's reading comes from — the LADDER's own per-metric read
+    /// (`LiveBlockGoalRepository`), so the door and the ladder cannot disagree
+    /// about what the athlete's log says.
+    /// NOT `private`, for the reason `HomeView`'s own injection comment gives:
+    /// a private stored property drags the synthesized memberwise init private
+    /// with it, and every host constructs this view with `onBuilt:`.
+    let reader: any GoalCurrentReader = LiveBlockGoalRepository()
     @State private var lifts: [WeeklyGoalEditorSheet.LiftOption] = []
     @State private var routines: [Routine] = []
     /// False until `load()` has actually asked. See its own comment.
@@ -88,6 +89,7 @@ struct GoalFirstBuildFlow: View {
                           lifts: lifts,
                           routines: routines,
                           hasRoutines: hasRoutines,
+                          reader: reader,
                           onBuild: { draft in
                               goal = draft
                               building = true

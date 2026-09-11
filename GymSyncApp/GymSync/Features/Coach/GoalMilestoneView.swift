@@ -83,6 +83,133 @@ enum GoalMilestoneCopy {
                        byDate: goal.byDate, preset: goal.preset, source: .user)
     }
 
+    // MARK: The reading, and what it lets Coach say
+
+    /// The draft again, for a reading that has just arrived (round 2, item 1).
+    ///
+    /// The card opens BEFORE its reading does — the live read is a fetch and the
+    /// card is a screen — so the seed it opened on is a default, and the number
+    /// the athlete actually wants to raise arrives a moment later. This moves
+    /// the draft to the seed that reading implies, and **only while nothing has
+    /// been typed**: an athlete who has already stepped the target past it must
+    /// not have it snatched back.
+    ///
+    /// "Nothing typed" is `draft == seed`, compared with the SUBJECT carried
+    /// across, because picking a lift is choosing what the question is about
+    /// rather than answering it — and picking one is exactly what makes a
+    /// strength reading possible in the first place.
+    ///
+    /// The seed comes back either way, so the NEXT reading compares against the
+    /// right thing rather than against the card's very first default.
+    static func reseeded(draft: BlockGoalDraft, openedOn seed: BlockGoalDraft,
+                         preset: GoalPreset, reading: GoalTarget,
+                         today: Date, unit: WeightUnit, weeks: Int,
+                         calendar: Calendar = .current)
+        -> (draft: BlockGoalDraft, seed: BlockGoalDraft) {
+        var fresh = self.draft(preset: preset, current: reading, today: today,
+                               unit: unit, weeks: weeks, calendar: calendar)
+        fresh.target.exerciseID = draft.target.exerciseID ?? fresh.target.exerciseID
+        fresh.target.routineID = draft.target.routineID ?? fresh.target.routineID
+        var expected = seed
+        expected.target.exerciseID = draft.target.exerciseID ?? expected.target.exerciseID
+        expected.target.routineID = draft.target.routineID ?? expected.target.routineID
+        return draft == expected ? (fresh, fresh) : (draft, fresh)
+    }
+
+    /// **WHERE THIS BLOCK ACTUALLY ARRIVES**, or nil when it reaches the
+    /// milestone asked for — B5's question, asked at the door (spec §3.2,
+    /// final review F4).
+    ///
+    /// Every arm answers from a model this codebase already states out loud:
+    ///
+    ///   * **Strength** — `strengthGainFactor`, the card's own "a strength block
+    ///     asks for about ten percent", spread over the length actually asked
+    ///     for rather than assumed to be the default eight weeks. That is what
+    ///     makes the seed and the reach agree at the default length and disagree
+    ///     the moment the athlete pulls the date in, which is the only case the
+    ///     sentence exists for.
+    ///   * **Endurance, Consistency, Conditioning** — `LadderMath.rampCeiling`,
+    ///     the same function the LADDER PAGE's standing uses, so the door and
+    ///     the page cannot quote two different ceilings for one block. They get
+    ///     no achievable DATE: their climbs compound, `GoalBlockLength.reach`'s
+    ///     second clause is linear, and an invented date would be exactly the
+    ///     lie the sentence is written to avoid. The first clause stands alone.
+    ///   * **Body composition** — the rungs `RateOfChangeLadderRule` would
+    ///     produce, which is the one rule that can honestly fall short: it
+    ///     clamps into spec §2.3's evidence band rather than forcing the last
+    ///     rung onto the milestone.
+    ///   * **Everything else** — nil. Muscle, Maintenance, Recovery and
+    ///     Benchmark have no forced ramp to fall short of, and Volume's reading
+    ///     is deliberately unfilled (`GoalCurrentReading.reduce`). A reach they
+    ///     cannot compute is one they must not claim.
+    static func reach(preset: GoalPreset, current: GoalTarget, draft: BlockGoalDraft,
+                      weeks: Int, unit: WeightUnit, today: Date = .now,
+                      calendar: Calendar = .current) -> GoalBlockLength.Reach? {
+        let metric = preset.metric
+        switch preset {
+        case .strength:
+            guard let now = current.targetWeightLbs, now > 0,
+                  let milestone = draft.target.targetWeightLbs, milestone > 0 else { return nil }
+            let projection = strengthProjection(fromLbs: now, weeks: weeks)
+            let answer = GoalBlockLength.reach(
+                metric: metric,
+                rungs: [GoalTarget(targetWeightLbs: projection.ceilingLbs)],
+                milestone: GoalTarget(targetWeightLbs: milestone),
+                byDate: draft.byDate, weeklyGain: projection.weeklyGainLbs,
+                from: today, calendar: calendar)
+            return answer.reaches ? nil : answer
+
+        case .endurance, .consistency, .conditioning:
+            guard let ceiling = LadderMath.rampCeiling(metric: metric, current: current,
+                                                       milestone: draft.target,
+                                                       weeks: weeks) else { return nil }
+            return GoalBlockLength.Reach(reaches: false, projected: ceiling,
+                                         achievableDate: nil)
+
+        case .bodyComposition:
+            let rungs = RateOfChangeLadderRule().rungs(
+                current: current, target: draft.target, weeks: weeks,
+                constraints: LadderConstraints(unit: unit))
+            guard let last = rungs.last else { return nil }
+            let answer = GoalBlockLength.reach(
+                metric: metric, rungs: [last], milestone: draft.target,
+                byDate: draft.byDate,
+                weeklyGain: weeklyBodyWeightChangeLbs(rungs: rungs),
+                from: today, calendar: calendar)
+            return answer.reaches ? nil : answer
+
+        case .repStrength, .muscle, .maintenance, .recovery, .volume, .benchmark:
+            return nil
+        }
+    }
+
+    /// What a block of `weeks` weeks can safely raise an e1RM to, and by how
+    /// much a week.
+    ///
+    /// `strengthGainFactor` is this card's own model — "a strength block asks
+    /// for about ten percent" — and a block is `GoalBlockLength.defaultWeeks`
+    /// long unless the athlete says otherwise, so ten percent over eight weeks
+    /// is the rate and `weeks` of it is the ceiling. Linear rather than
+    /// compounded, deliberately: the second clause of B5's sentence divides by
+    /// this rate to name a date, and a rate that changed every week would make
+    /// that date a guess dressed as arithmetic.
+    static func strengthProjection(fromLbs now: Decimal, weeks: Int)
+        -> (ceilingLbs: Decimal, weeklyGainLbs: Double) {
+        let perWeek = (strengthGainFactor - 1) / Decimal(GoalBlockLength.defaultWeeks)
+        let ceiling = now * (1 + perWeek * Decimal(max(1, weeks)))
+        return (ceiling, double(now * perWeek))
+    }
+
+    /// The body-composition ladder's own weekly step, in pounds — read off the
+    /// rungs it just produced rather than recomputed from the band, so the
+    /// sentence's date and the ladder's rows come from one arithmetic.
+    private static func weeklyBodyWeightChangeLbs(rungs: [GoalTarget]) -> Double? {
+        guard let first = rungs.first?.bodyWeightLbs,
+              let last = rungs.last?.bodyWeightLbs, rungs.count > 1 else { return nil }
+        let change = abs(double(last) - double(first)) / Double(rungs.count - 1)
+        return change > 0 ? change : nil
+    }
+
     /// The primary's word.
     ///
     /// `BUILD MY BLOCK` at the door; `USE THIS MILESTONE` when the card is
@@ -446,7 +573,12 @@ enum GoalMilestoneCopy {
            let gap = GoalBlockLength.reachSentence(
                milestoneText: milestoneText(preset: preset, draft: draft,
                                             unit: unit, subject: subject),
-               byDate: draft.byDate, reach: reach, calendar: calendar) {
+               // A HELD PRESET NAMES NO DATE (ruling 14). Consistency's
+               // `byDate` carries the block LENGTH, not a deadline, and a
+               // sentence reading "5 days a week by Nov 8 needs more than this
+               // block can safely give" would quote a day nobody asked for.
+               byDate: preset.asksForDate ? draft.byDate : nil,
+               reach: reach, calendar: calendar) {
             return gap
         }
 
@@ -629,7 +761,9 @@ struct GoalMilestoneView: View {
 
     let preset: GoalPreset
     /// What the athlete's log says right now, for the seeds and for Coach's
-    /// line. Passed in, never fetched here.
+    /// line — the value the card OPENS on. Passed in, never fetched here; a
+    /// `reader` (below) may replace it once a live read lands, and `reading`
+    /// is what everything downstream of that actually reads.
     let current: GoalTarget
     /// The block's focus lifts first, then the catalog — the same ordering
     /// `WeeklyGoalEditorSheet.liftPicker` uses.
@@ -675,11 +809,26 @@ struct GoalMilestoneView: View {
     /// nil is the door, unchanged — every frame and every existing call site.
     var editing: BlockGoal? = nil
 
+    /// Where "you're at 205 now" comes from (round 2, item 1).
+    ///
+    /// **nil IS THE CATALOG**, and that is the whole of this card's hermetic
+    /// promise: the three frame builders pass a fixed `current:` and no reader,
+    /// so a capture still cannot reach a repository or the clock (global
+    /// constraint 7). The door passes `LiveBlockGoalRepository()`, which reads
+    /// through the LADDER's own per-metric reader — one reader, two windows.
+    var reader: (any GoalCurrentReader)? = nil
+
     @Environment(\.gsTheme) private var theme
 
     /// The milestone as it stands. The primary hands over THIS — the edited
     /// draft, never the seed (task C3).
     @State private var draft: BlockGoalDraft
+    /// The draft this card would open on for the reading it has. Not the
+    /// athlete's — the comparison that tells `reseeded` whether they have typed.
+    @State private var seed: BlockGoalDraft
+    /// What the athlete's log says now. Seeded from the injected `current` and
+    /// replaced by the reader's answer when one arrives.
+    @State private var reading: GoalTarget
     /// The block length the WEEKS STEPPER holds — Maintenance's, Recovery's
     /// and Consistency's only lever (spec §5.2), and theirs alone.
     ///
@@ -708,6 +857,7 @@ struct GoalMilestoneView: View {
          hasRoutines: Bool = true,
          blockWeeks: Int = GoalBlockLength.defaultWeeks,
          editing: BlockGoal? = nil,
+         reader: (any GoalCurrentReader)? = nil,
          onBuild: @escaping (BlockGoalDraft) -> Void) {
         self.preset = preset
         self.current = current
@@ -718,6 +868,7 @@ struct GoalMilestoneView: View {
         self.hasRoutines = hasRoutines
         self.blockWeeks = blockWeeks
         self.editing = editing
+        self.reader = reader
         self.onBuild = onBuild
 
         // THE SEED ROUNDS IN `unitOverride ?? .lbs`, not in the athlete's live
@@ -736,6 +887,12 @@ struct GoalMilestoneView: View {
                                        today: today, unit: seedUnit,
                                        weeks: blockWeeks)
         _draft = State(initialValue: seeded)
+        // What the card OPENED on, and what it has READ so far. The reading
+        // arrives after the card does (it is a fetch), and `reseeded` compares
+        // the draft against the seed to decide whether moving it would be
+        // filling a default in or snatching back something typed.
+        _seed = State(initialValue: seeded)
+        _reading = State(initialValue: current)
         _heldWeeks = State(initialValue: max(GoalBlockLength.minimumWeeks,
                                              min(GoalBlockLength.maximumWeeks, blockWeeks)))
         _repsAtALoad = State(initialValue: preset == .repStrength)
@@ -807,6 +964,28 @@ struct GoalMilestoneView: View {
         .safeAreaInset(edge: .bottom) { footer }
         .navigationTitle(GoalScreenView.name(preset))
         .navigationBarTitleDisplayMode(.inline)
+        // THE READING (round 2, item 1). On appear, and again whenever the
+        // SUBJECT changes — "where am I now" on the bench is a different
+        // question from "where am I now" on the squat, and the lift picker is
+        // the lever that asks it. A card with no reader (every catalog frame)
+        // never enters any of these.
+        .task { await refreshReading() }
+        .onChange(of: draft.target.exerciseID) { Task { await refreshReading() } }
+        .onChange(of: draft.target.routineID) { Task { await refreshReading() } }
+        .onChange(of: repsAtALoad) { Task { await refreshReading() } }
+    }
+
+    /// Ask the reader, then let `reseeded` decide whether the draft may move.
+    private func refreshReading() async {
+        guard let reader else { return }
+        let fresh = await reader.current(metric: activePreset.metric,
+                                         subject: draft.target)
+        let next = GoalMilestoneCopy.reseeded(draft: draft, openedOn: seed,
+                                              preset: activePreset, reading: fresh,
+                                              today: today, unit: unit, weeks: weeks)
+        reading = fresh
+        seed = next.seed
+        draft = next.draft
     }
 
     private var header: some View {
@@ -850,7 +1029,7 @@ struct GoalMilestoneView: View {
     /// milestone carrying a `liftOneRepMax` target is a goal nothing can read.
     private func reseed() {
         let carried = draft.target.exerciseID
-        var seeded = GoalMilestoneCopy.draft(preset: activePreset, current: current,
+        var seeded = GoalMilestoneCopy.draft(preset: activePreset, current: reading,
                                              today: today, unit: unit, weeks: weeks)
         seeded.target.exerciseID = carried ?? seeded.target.exerciseID
         if let existing = draft.byDate, seeded.byDate != nil { seeded.byDate = existing }
@@ -1120,7 +1299,10 @@ struct GoalMilestoneView: View {
     /// collapse the rate to `0.00 %/WK`). A start weight that IS the target is
     /// not a start weight.
     private var bodyCompositionStartLbs: Decimal {
-        current.bodyWeightLbs ?? GoalMilestoneCopy.defaultBodyWeightLbs
+        // `reading`, not `current`: the scale reading the card opened on is a
+        // default until the live read lands, and a rate computed from a default
+        // start weight is a rate about nobody.
+        reading.bodyWeightLbs ?? GoalMilestoneCopy.defaultBodyWeightLbs
     }
 
     private var bodyWeightStepper: some View {
@@ -1477,26 +1659,25 @@ struct GoalMilestoneView: View {
     /// One line, first person (design rule 7), on a `surface` strip at 14 pt —
     /// a line that belongs to the card above it (rule 1).
     ///
-    /// **NO `reach:` IS PASSED, AND THAT IS A RECORDED DEFERRAL** (final review
-    /// F4). `coachLine`'s replacement branch — spec §3.2's "225 by Oct 18 needs
-    /// more than this block can safely give" — is unreachable because this
-    /// argument is omitted, and passing it today would not reach it either:
-    /// every reach model this codebase has starts from the MEASURED current
-    /// state, and `GoalFirstBuildFlow.current` is never filled (see its own doc
-    /// comment). With an empty `current` every ramp answers
-    /// `Array(repeating: milestone, count: weeks)` and every `rampCeiling`
-    /// guard returns nil, so `reach` would say "reaches" for all eleven presets
-    /// — a second piece of logic with no reachable call site, which is the
-    /// defect this round exists to stop shipping.
+    /// **IT READS `reading`, AND IT CARRIES THE REACH** (round 2, item 1;
+    /// final review F4). Both halves needed the same missing thing: a measured
+    /// current state at the door. `reader` supplies it through the ladder's own
+    /// per-metric read, so Coach's line is "You're at 205 now" rather than "I
+    /// haven't got a reading for this yet", and `GoalMilestoneCopy.reach` can
+    /// answer B5's question — the replacement branch (spec §3.2's "225 by Oct 18
+    /// needs more than this block can safely give; Nov 15 is the date I can
+    /// build to") now has a call site.
     ///
-    /// The gap is told honestly one screen later: the ladder page's standing
-    /// runs the same `LadderMath.rampCeiling` against a real reading. Closing
-    /// it AT THE DOOR means giving the door a measured current state, which is
-    /// one reader per metric and must reuse the ladder's — two readers for one
-    /// metric is the drift the agreement law forbids.
+    /// `current` is the value the card OPENED on; `reading` is that until a live
+    /// read lands and the reading after. Everything Coach says comes from the
+    /// second, or the line would state a number the card no longer holds.
     private var coachLine: some View {
-        Text(GoalMilestoneCopy.coachLine(preset: activePreset, current: current,
+        Text(GoalMilestoneCopy.coachLine(preset: activePreset, current: reading,
                                          draft: draft, weeks: weeks, unit: unit,
+                                         reach: GoalMilestoneCopy.reach(
+                                             preset: activePreset, current: reading,
+                                             draft: draft, weeks: weeks, unit: unit,
+                                             today: today),
                                          subject: subject))
             .font(GSFont.body(13, relativeTo: .subheadline))
             .foregroundStyle(theme.neutral700)

@@ -724,9 +724,14 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
     // goal has no business paging the 1,300-row exercise catalog, and this runs
     // on Home's refresh budget.
 
-    private func measuredByWeek(goal: BlockGoal, rungs: [LadderRung],
-                                userID: UUID,
-                                calendar: Calendar) async -> [String: GoalTarget] {
+    /// **INTERNAL, NOT PRIVATE, BECAUSE THE DOOR ASKS IT TOO** (round 2, item
+    /// 1). `GoalCurrentReader`'s conformance below hands it the last few weeks
+    /// instead of a block's rungs, so "where am I now" at the door and "what did
+    /// week 4 measure" on the ladder are one read of one table with one piece of
+    /// arithmetic behind them.
+    func measuredByWeek(goal: BlockGoal, rungs: [LadderRung],
+                        userID: UUID,
+                        calendar: Calendar) async -> [String: GoalTarget] {
         // The closure's return type and the tuple's labels are BOTH spelled out.
         // A bare `(rung.weekStartString, start, end)` leans on Swift adding the
         // labels for you, which it does not reliably do inside a `compactMap`.
@@ -1182,5 +1187,47 @@ extension LiveBlockGoalRepository {
     private func effectiveWeeklyGoal(userID: UUID) async -> Int {
         let profile = try? await ProfileRepository.fetch(userID: userID)
         return profile?.effectiveWeeklyGoal ?? 3
+    }
+}
+
+// MARK: - Round 2, item 1: the door's reading
+
+extension LiveBlockGoalRepository: GoalCurrentReader {
+
+    /// "Where am I now" for one metric, through the LADDER'S OWN reader.
+    ///
+    /// The `BlockGoal` below is a QUERY, not a row: nothing is written, the ids
+    /// it carries are never persisted or compared, and `measuredByWeek` reads
+    /// only `metric` and the subject fields of `target` off it. Building one is
+    /// what lets the door reuse the ladder's reader instead of growing a second
+    /// set of per-metric reads — the drift the agreement law forbids, and the
+    /// reason `GoalCurrentReading.reduce` exists rather than a parallel switch.
+    ///
+    /// The window is the last `GoalCurrentReading.weeksOfHistory` weeks ENDING
+    /// WITH THIS ONE, so a reading is recent without being one week's luck.
+    func current(metric: GoalMetric, subject: GoalTarget) async -> GoalTarget {
+        guard let userID = await SupabaseService.shared.currentUserID() else {
+            return GoalTarget()
+        }
+        let calendar = Calendar.current
+        let weeks = GoalCurrentReading.weeksOfHistory
+        guard let start = calendar.date(byAdding: .day, value: -7 * (weeks - 1),
+                                        to: WeekMath.startOfWeek(Date(), calendar: calendar))
+        else { return GoalTarget() }
+
+        let keys = LadderMath.weekStartStrings(from: start, count: weeks,
+                                               calendar: calendar)
+        let rungs = keys.enumerated().map { index, key in
+            LadderRung(weekIndex: index, weekStartString: key,
+                       target: subject, status: .ahead)
+        }
+        let query = BlockGoal(id: UUID(), userID: userID, enrollmentID: UUID(),
+                              metric: metric, target: subject, byDate: nil,
+                              preset: nil, source: .coach,
+                              outcome: nil, outcomeValue: nil,
+                              createdAt: Date(), updatedAt: Date())
+        let weekly = await measuredByWeek(goal: query, rungs: rungs,
+                                          userID: userID, calendar: calendar)
+        return GoalCurrentReading.reduce(metric: metric, weekly: weekly)
     }
 }

@@ -778,7 +778,11 @@ struct LadderPageView: View {
                          routines: [Routine] = []) -> GoalMilestoneView {
         GoalMilestoneView(preset: preset, current: GoalTarget(),
                           lifts: lifts, routines: routines,
-                          editing: goal) { edited in
+                          editing: goal,
+                          // The edit screen reads too (round 2, item 1): an
+                          // athlete moving a milestone should be told where
+                          // they actually are, the same as one setting it.
+                          reader: LiveBlockGoalRepository()) { edited in
             apply(edited, to: goal)
             milestoneEdit = nil
         }
