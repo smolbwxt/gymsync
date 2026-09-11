@@ -988,21 +988,46 @@ async function main() {
   //   * block_goal_rungs — the table's own PK is `(goal_id, week_index)`, so
   //     an upsert on that composite key converges a re-run the same way.
   const benchExerciseID = bySlug['bench-press'];
-  const blockWeekStart = currentWeekStartSunday();
+  const currentWeekStart = currentWeekStartSunday();
+  // STARTED TWO WEEKS BEFORE THE CURRENT WEEK, not on it. `WeeklyGoalLiveRepository
+  // .blockContext` finds "this week's rung" by matching TODAY's real calendar
+  // week against `block_goal_rungs.week_start` — it does not read the
+  // `status` column or any stored week number — so for the current week to
+  // land on rung index 2 (the row this block stamps `current`, "week 3 of
+  // 8") the block's own `started_on` has to be two calendar weeks in the
+  // past. Starting it on the current week's Sunday instead put today on rung
+  // index 0 and rendered `WEEK 1 OF 8` — caught by looking at the artifact,
+  // not by reasoning about the query in the abstract.
+  const enrollmentStartDate = new Date(`${currentWeekStart}T00:00:00Z`);
+  const blockStartedOn = new Date(enrollmentStartDate.getTime() - 14 * 86_400_000)
+    .toISOString().slice(0, 10);
 
   let [enrollment] = await rest(
-    `program_enrollments?select=id,started_on&user_id=eq.${me.id}&ended_at=is.null`);
+    `program_enrollments?select=id,template_slug,started_on&user_id=eq.${me.id}&ended_at=is.null`);
   if (!enrollment) {
     [enrollment] = await rest('program_enrollments', { method: 'POST', headers: rep,
       body: JSON.stringify({
         user_id: me.id,
         template_slug: 'coach-qa-fixture',
-        started_on: blockWeekStart,
+        started_on: blockStartedOn,
         weeks: 8,
         focus: { exercise_ids: [benchExerciseID] },
         baseline: { [benchExerciseID.toLowerCase()]: 205 },
       }) });
-    console.log(`  program enrollment ${enrollment.id}: coach-qa-fixture, started ${blockWeekStart}, 8 weeks`);
+    console.log(`  program enrollment ${enrollment.id}: coach-qa-fixture, started ${blockStartedOn} (2 weeks ago, so today is week 3), 8 weeks`);
+  } else if (enrollment.template_slug === 'coach-qa-fixture' && enrollment.started_on !== blockStartedOn) {
+    // SELF-HEALING, for exactly this fixture's own template: `started_on`
+    // has to walk forward with `currentWeekStartSunday()` every run (it is
+    // always "two weeks before this week"), or a stale run's date drifts the
+    // block out of week 3 as the calendar moves on — the same bug this
+    // correction fixes on first sight of it (a run that seeded 2026-09-06
+    // instead of 2026-08-23 and rendered `WEEK 1 OF 8`). A REAL enrollment
+    // (any other template_slug) is never touched — only this script's own
+    // fixture self-corrects.
+    await rest(`program_enrollments?id=eq.${enrollment.id}`, { method: 'PATCH',
+      body: JSON.stringify({ started_on: blockStartedOn }) });
+    enrollment.started_on = blockStartedOn;
+    console.log(`  program enrollment ${enrollment.id}: coach-qa-fixture, corrected started_on to ${blockStartedOn} (2 weeks ago, so today is week 3)`);
   } else {
     console.log(`  program enrollment ${enrollment.id} already active — not re-enrolling`);
   }
