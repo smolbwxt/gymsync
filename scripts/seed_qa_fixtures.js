@@ -1126,10 +1126,22 @@ async function main() {
   // be a second opinion about the same milestone, and the wording's
   // authority is the catalog fixture plus PostTrajectoryMathTests. This row
   // proves the COLUMNS, not the copy.
+  //
+  // THE POST OWNS BOTH OF ITS TIMESTAMPS (review fix 11a). It used to read
+  // `completed_at` off the Murph attempt session and let the server default
+  // `created_at` to now(), which made the live card read "posted 55 days
+  // after" — the Murph fixture's completion is a fixed date in the past
+  // (`MURPH_ATTEMPT_COMPLETED_AT`, :645) and now() walks away from it every
+  // day. Worse, a re-run kept the FIRST run's created_at while now() moved on,
+  // so the gap only ever grew. Writing both explicitly, relative to this run,
+  // pins the tag at "posted 47 min after" on every seed — which is spec §2's
+  // own example and what the capture is there to show.
+  //
+  // `MURPH_ATTEMPT_COMPLETED_AT` is deliberately NOT touched: that constant is
+  // the attempt fixture's own contract and other assertions read it.
   const QA_POST_ID = '00000000-0000-4000-f000-000000000730';
-  const [murphRow] = await rest(
-    `sessions?select=completed_at&id=eq.${murphSession.id}`);
-  const postCompletedAt = murphRow && murphRow.completed_at;
+  const qaPostCreatedAt = new Date(Date.now() - 60 * 60 * 1000);          // now - 1 h
+  const qaPostCompletedAt = new Date(qaPostCreatedAt.getTime() - 47 * 60 * 1000); // - 47 min
   await rest('workout_posts?on_conflict=id', { method: 'POST',
     headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
     body: JSON.stringify({
@@ -1151,7 +1163,8 @@ async function main() {
       },
       includes_hr: false,
       is_late: true,
-      completed_at: postCompletedAt,
+      created_at: qaPostCreatedAt.toISOString(),
+      completed_at: qaPostCompletedAt.toISOString(),
       retake_count: 2,
       highlight: { kind: 'pr', text: 'PR — Back Squat', weightLbs: 235, reps: 3 },
       trajectory: {
@@ -1167,7 +1180,7 @@ async function main() {
       goal_id: blockGoal.id,
       week_start: currentWeekStart,
     }) });
-  console.log(`  workout post ${QA_POST_ID}: a pump check carrying block goal ${blockGoal.id}'s week 3`);
+  console.log(`  workout post ${QA_POST_ID}: a pump check carrying block goal ${blockGoal.id}'s week 3, posted 47 min after its session`);
 
   console.log('\ndone — QA fixture world seeded (idempotent).');
 }
