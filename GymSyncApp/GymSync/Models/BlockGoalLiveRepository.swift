@@ -270,6 +270,16 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
         // (`march-to-1rm` runs 3 × 5 down to 2 × 1), so this passes the first
         // week's and a per-week spelling is an I1 question, not a silent
         // approximation: recorded rather than papered over.
+        //
+        // A GOAL WITH NO DATE NEVER NEEDS A CEILING (r2 open item 2):
+        // `LadderMath.page` returns "Held for the block." on its own
+        // `dated == nil` guard before `rampCeiling` is ever read, so asking
+        // for one here was a wasted `measuredByWeek` read (a `blockSessions`
+        // fetch for a Consistency goal, which never asks for a date) on
+        // every held ladder's page load.
+        let ceiling = goal.byDate != nil
+            ? await rampCeiling(goal: goal, ladder: ladder, calendar: calendar)
+            : nil
         return LadderMath.page(
             goal: goal, ladder: ladder, liftName: liftName,
             rungSets: template?.weeks.first?.sets ?? 3,
@@ -277,8 +287,7 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
             deloadWeeks: LadderReadout.constraints(template: template,
                                                    unit: unit).deloadWeeks,
             unit: unit,
-            rampCeiling: await rampCeiling(goal: goal, ladder: ladder,
-                                           calendar: calendar),
+            rampCeiling: ceiling,
             now: Date(), calendar: calendar)
     }
 
