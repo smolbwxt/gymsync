@@ -693,7 +693,7 @@ struct ChatView: View {
                 Image(systemName: "flame.fill")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(theme.accent)
-                Text(message.body ?? "")
+                Text(message.displayBody ?? "")
                     .font(.custom("Archivo-Bold", size: 13))
                     .foregroundStyle(theme.text)
                     .fixedSize(horizontal: false, vertical: true)

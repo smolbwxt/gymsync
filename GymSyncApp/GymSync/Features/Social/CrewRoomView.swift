@@ -689,7 +689,7 @@ struct CrewRoomView: View {
             case .coachReply: return "Coach answered"
             case .text, .systemPR, .systemSession, .systemLate, .systemLeaderboard,
                  .systemStreak, .systemCampaign:
-                return message.body
+                return message.displayBody
             }
         }
     }

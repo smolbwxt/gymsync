@@ -68,10 +68,11 @@ SELECT results_eq(
   ARRAY[1], 'tie weight does not announce');
 
 -- Body renders whole-number weights without a trailing dot
+-- and carries no literal emoji prefix (design language §2; 20260906000003).
 SELECT results_eq(
   $$SELECT body FROM chat_messages
     WHERE group_id='50000000-0000-0000-0000-000000000001' AND kind='system_pr'$$,
-  ARRAY['🔥 pr_user_a hit a PR on Bench Press: 100 lbs'],
+  ARRAY['pr_user_a hit a PR on Bench Press: 100 lbs'],
   'body formats whole-number weight cleanly');
 
 SELECT * FROM finish();

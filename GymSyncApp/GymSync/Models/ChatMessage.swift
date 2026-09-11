@@ -78,6 +78,15 @@ struct ChatMessage: Codable, Identifiable, Sendable, Equatable {
 
     var isSystem: Bool { authorID == nil }
 
+    /// Legacy rows written before 20260906000003 carry a literal "🔥 "
+    /// prefix (design language §2: no decorative emoji — the SF flame beside
+    /// the body is the glyph). Read the body through this everywhere a PR
+    /// announcement is rendered.
+    var displayBody: String? {
+        guard let body else { return nil }
+        return body.hasPrefix("🔥 ") ? String(body.dropFirst(2)) : body
+    }
+
     enum CodingKeys: String, CodingKey {
         case id
         case groupID = "group_id"
