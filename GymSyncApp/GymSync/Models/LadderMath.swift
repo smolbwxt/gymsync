@@ -246,6 +246,13 @@ extension LadderMath {
     /// mutable rung for its own position cannot. For a contiguous window the two
     /// are the same arithmetic.
     ///
+    /// THERE IS NO SHORT-CIRCUIT FOR A WINDOW THAT STARTS AT WEEK 0, and there
+    /// used to be (round 2, item O1). It looked safe — translating a full-block
+    /// window is the identity — but that is only true when the window is also
+    /// CONTIGUOUS. A ladder whose week 1 is overridden while week 0 is still
+    /// current starts at 0 and has a hole, so the identity is wrong and the
+    /// guard was skipping the very correction the hole needs.
+    ///
     /// WHAT THIS DOES NOT FIX, and it is worth knowing: a rule with its OWN
     /// cadence — `PercentRampLadderRule`'s `downWeekEvery` — still counts from
     /// the start of the window, so an endurance down-week re-phases on a
@@ -254,7 +261,6 @@ extension LadderMath {
     /// than invented here.
     private static func windowed(_ constraints: LadderConstraints,
                                  over mutable: [LadderRung]) -> LadderConstraints {
-        guard mutable.first?.weekIndex != 0 else { return constraints }
         var local = constraints
         local.deloadWeeks = Set(mutable.enumerated().compactMap { position, rung in
             constraints.deloadWeeks.contains(rung.weekIndex) ? position : nil

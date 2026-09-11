@@ -629,4 +629,28 @@ final class LadderMathTests: XCTestCase {
                        + "actually rewrote, which is week 3")
         XCTAssertGreaterThan(days[5], days[4], "and week 6 resumes the climb")
     }
+
+    /// ROUND 2, ITEM O1. `windowed` used to short-circuit when the window began
+    /// at week 0 — translating a full-block window IS the identity, so it looked
+    /// safe. It is the identity only when the window is also CONTIGUOUS. A
+    /// ladder whose week 1 is overridden while week 0 is still current starts at
+    /// 0 AND has a hole, so the short-circuit skipped the very correction the
+    /// hole needs and the deload landed a week late.
+    func testAWeekZeroWindowWithAHoleIsStillTranslated() throws {
+        let out = LadderMath.reLadder(
+            existing: partlyClosedLadder(closed: 0, overridden: [1]),
+            metric: .trainingDaysPerWeek,
+            current: GoalTarget(days: 2), milestone: GoalTarget(days: 20),
+            // Week 3 of the block — index 2 — is the light one.
+            constraints: LadderConstraints(deloadWeeks: [2]),
+            rule: everyWeekRule(),
+            derivedAt: Date(timeIntervalSince1970: 100))
+        let days = out.rungs.compactMap(\.target.days)
+
+        XCTAssertEqual(days[1], 2, "an overridden week is the athlete's, untouched")
+        XCTAssertEqual(days[2], days[0],
+                       "week 3 holds — it repeats the last rung the ladder actually "
+                       + "rewrote, which is week 1")
+        XCTAssertGreaterThan(days[3], days[2], "and week 4 resumes the climb")
+    }
 }
