@@ -238,6 +238,35 @@ final class ScreenshotTests: XCTestCase {
         settleAfterNavigation()
     }
 
+    /// Routines hub → the EXERCISES row → `ExercisesListView`.
+    ///
+    /// Shared by `testLibraryExercisesList` and `testExerciseDetail`, which
+    /// both used to do `app.buttons["Exercises"]` and both landed on the hub.
+    /// `RoutinesHubView.exercisesRow` carries the SAME modifier pair as the
+    /// You-grid widgets above — `.accessibilityElement(children: .ignore)`
+    /// plus `.accessibilityLabel("Exercises")` — which drops the button
+    /// TRAIT, so no `app.buttons[...]` query matches it, exact or predicate.
+    /// The label itself is exact ("Exercises", not a composed string), so the
+    /// fix is the query TYPE, not the match style: the same type-agnostic
+    /// `descendants(matching: .any)` lookup `openYouWidget` already pays for.
+    ///
+    /// The row sits below PROGRAMS, the builder button and the routine
+    /// collection, so it is usually below the fold — hence the two-swipe
+    /// guard, mirroring `testActivityFeed`.
+    private func openExercisesRow(_ app: XCUIApplication) {
+        let exercisesRow = app.descendants(matching: .any)["Exercises"].firstMatch
+        guard exercisesRow.waitForExistence(timeout: 10) else { return }
+        if !exercisesRow.isHittable {
+            app.swipeUp()
+            settle()
+            if !exercisesRow.isHittable {
+                app.swipeUp()
+                settle()
+            }
+        }
+        exercisesRow.tap()
+    }
+
     // MARK: - Tab screenshots
 
     func testHomeTab() {
@@ -263,8 +292,7 @@ final class ScreenshotTests: XCTestCase {
         guard waitForTabBar(app) else { return }
         // EXERCISES moved into the Routines hub (owner 2026-08-16).
         openYouWidget(app, label: "Routines and programming")
-        let exercisesRow = app.buttons["Exercises"]
-        if exercisesRow.waitForExistence(timeout: 10) { exercisesRow.tap() }
+        openExercisesRow(app)
         settleAfterNavigation()
         attachScreenshot(app, named: "app-library-exercises.png")
     }
@@ -738,8 +766,11 @@ final class ScreenshotTests: XCTestCase {
         guard waitForTabBar(app) else { return }
         // EXERCISES moved into the Routines hub (owner 2026-08-16).
         openYouWidget(app, label: "Routines and programming")
-        let exercisesRow = app.buttons["Exercises"]
-        if exercisesRow.waitForExistence(timeout: 10) { exercisesRow.tap() }
+        openExercisesRow(app)
+        // The tap pushes ExercisesListView; give the push its tail before the
+        // app.cells query below starts looking for rows that are not on the
+        // hub at all.
+        settle()
 
         // Unlike the seeded "[QA] Push Day" routine above, exercise rows have
         // no stable predictable name to match on (the live catalog, not a QA
