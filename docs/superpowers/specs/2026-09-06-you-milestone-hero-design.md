@@ -1,7 +1,7 @@
 # The You milestone hero — one display, weekly and lifetime — design
 
-**Status:** owner gave the go to write this on 2026-09-11 ("go with your suggestions"); for the owner's review
-before any You tab code. This is the document the congruence plan's T10.2 and its "does not decide" item 3 name
+**Status:** SIGNED OFF by the owner on 2026-09-11 (round 12), with one addition — §4b, the interactive
+model — whose build path is decision 7 (open). Was: for the owner's review before any You tab code. This is the document the congruence plan's T10.2 and its "does not decide" item 3 name
 as the gate for the hero work. **Gate documents:** the milestone catalog
 (`docs/superpowers/specs/2026-09-06-milestone-catalog.md` — the thirty rungs, the one currency, the render
 notes, the Earth-ring hero), the design language (`docs/superpowers/specs/2026-09-05-design-language.md`), and
@@ -85,6 +85,50 @@ The render is **the ground, not a tile**: it is placed with `.aspectRatio(.fill)
 hero's `surface` shows through its alpha, and a vertical scrim (`bg` → clear, 40 % height) sits under the
 numbers so the week's headline stays legible on any frame. No border, no inner radius.
 
+## 4b. The interactive model — owner round 12 (2026-09-11)
+
+The owner: *"as a part of the spec let's remember that I want it to be interactive — in the widget, if a user
+uses their finger to interact with it, we could spin the model."* ("Widget" here is the You hero in the app;
+WidgetKit home-screen widgets accept no gestures, so this cannot be a home-screen widget.)
+
+**What interactivity forces.** A frame set cannot be spun: a turntable at 36 angles × 41 progress steps × ~212 KB
+is ~313 MB per rung. Spinning needs real geometry at runtime. That geometry is cheap for two of the three ladders:
+
+| Ladder | Geometry at runtime | Asset per rung | Spin? |
+|---|---|---|---|
+| HEIGHT, DISTANCE | plates = one instanced cylinder (procedural, 0 bytes); the landmark = one low-poly mesh exported from the Blender pipeline as USDZ | ~0.3–1.5 MB (the pipeline already builds the geometry from code) | yes |
+| WEIGHT (vessel) | the glass shell = one mesh; the poured plates are a rigid-body **simulation**, not real-time — bake the settled plate transforms per fill level (21 levels × ~50 plates × 7 floats ≈ 30 KB per level) and instance the same cylinder | ~1 MB mesh + ~0.6 MB of baked transforms | yes, phase 2 (the bake is new pipeline work) |
+| Earth ring (poster) | stays a picture | 5 frames | no (per the catalog: a poster, not a meter) |
+
+**Storage and memory, against the frame path.**
+
+| | Frame sets (§4 as signed) | Interactive model |
+|---|---|---|
+| Bundle for thirty rungs | ~213 MB at 2× (impossible); ~9 MB per rung if streamed from storage | ~6–30 MB of meshes in total; plates cost nothing |
+| Runtime memory while the hero is on screen | one decoded 600 × 1500 frame ≈ 3.6 MB (+ a neighbour during a cross-fade) | a live SceneKit scene — ~2 k instanced plates, one 10–20 k-triangle landmark, an image-based light — ≈ 30–80 MB, released when You leaves the screen |
+| At rest | a bundled frame | a **snapshot the scene renders itself** (`SCNRenderer`) once per progress change, so the resting hero costs what a frame costs and the scene runs only while a finger is on it |
+| Reduced motion | the nearest static frame | the snapshot, no spin |
+| Look | Cycles renders, exactly the catalog's | SceneKit PBR + HDRI; a look-matching pass is required and is the main risk — expect "close", not identical |
+
+Consequence for decision 6: **the interactive path dissolves the asset-budget problem.** With the resting hero
+rendered from geometry there are no frame sets to bundle or stream for HEIGHT and DISTANCE; only the vessel keeps
+frames until its bake lands.
+
+**Level of effort (the owner's ask).** Build weeks of one Opus stream plus CI rounds:
+
+| Path | Work | Estimate |
+|---|---|---|
+| A. Frames only (spec as signed, storage-streamed) | bucket + fetch/cache, frame interpolation, four ids | ~1 week |
+| B. Interactive from the start for HEIGHT + DISTANCE; vessel as frames | pipeline exports landmark meshes as USDZ (2–3 days); SceneKit scene, spin gesture with inertia, snapshot-at-rest, reduced motion (4–5 days); look-matching against the Cycles renders (3–4 days); ids + proofs (2 days) | ~2.5–3 weeks |
+| C. B plus the vessel bake | rigid-body bake export + instanced playback | +1 week, phase 2 |
+
+**Recommendation:** B. About a week and a half more than A, it removes the 213 MB problem outright and builds the
+thing the owner asked for rather than a picture of it. A's four catalog ids stay (`you-hero-*` capture the snapshot
+at rest); one id is added, `you-hero-spinning` (a frame mid-gesture via a debug seam that sets the camera angle), so
+FLOOR +5 instead of +4.
+
+**Decision 7 (owner, open):** A, B, or C.
+
 ## 5. States
 
 | State | What the hero shows |
@@ -139,8 +183,8 @@ social-card work.
 3. Whether the Stats tab's milestone page gains the same renders (it lists the rungs today).
 4. Lifetime reps/sets/bar-travel are still not computable (`increment_lifetime_volume` carries volume only);
    nothing here needs them — the ladders are volume-derived by design.
-5. Asset delivery (§4): storage-fetched frame sets with rung 1 and the Earth poster bundled (recommended) versus
-   bundled full-stack renders clipped at runtime — the measured ~212 KB per frame rules out bundling every set.
+5. Asset delivery (§4): superseded by §4b — under path B there are no frame sets for HEIGHT/DISTANCE; under path A
+   the storage-fetched sets stand. Falls out of decision 7.
 
 ## Owner decisions (2026-09-04 → 2026-09-11) — binding
 
@@ -149,3 +193,5 @@ social-card work.
 3. One currency: plates from pounds; feet from plates; the catalog's thirty rungs with sources.
 4. The next rung is the one with the highest progress; the Earth ring is the poster beyond the last rung.
 5. Go to write this spec now, in parallel with the programming and social work.
+6. **Signed off 2026-09-11 (round 12).**
+7. The hero is interactive — a finger spins the model (§4b). Build path A / B / C: **open**; the estimate is in §4b.
