@@ -695,7 +695,7 @@ final class ScreenshotTests: XCTestCase {
         // NOT through MANAGE, unlike testLobby/testSessionRecap/testGroupStats
         // above: the ledger is one of the crew ROOM's own rows. The redesign
         // gave `CrewRoomView` a `burpeeLedgerRow` NavigationLink (inside the
-        // commit card, under its divider) labelled `BURPEES`, which pushes
+        // routines-together card, under its GSDivider) labelled `BURPEES`, which pushes
         // `BurpeeLedgerView` directly — so this walk stays on the room and
         // never needs GroupView at all. CONTAINS (not exact/BEGINSWITH) for
         // the same reason testFriends/testRoutineDetail/testActivityFeed use
@@ -723,7 +723,7 @@ final class ScreenshotTests: XCTestCase {
         // what `openManageSubTab` adds. The sub-tab lookup itself stays an
         // exact match: the themed segmented control renders each SubTab's
         // `rawValue` as plain Text (no icon, no composed accessibility-label
-        // ambiguity — unlike the icon-led "BURPEES"/"Friends" rows elsewhere
+        // ambiguity — unlike Friends' icon-led row or BURPEES' avatar-trailed one elsewhere
         // in this file).
         openManageSubTab(app, "Stats")
         attachScreenshot(app, named: "app-group-stats.png")
