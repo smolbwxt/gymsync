@@ -194,4 +194,12 @@ social-card work.
 4. The next rung is the one with the highest progress; the Earth ring is the poster beyond the last rung.
 5. Go to write this spec now, in parallel with the programming and social work.
 6. **Signed off 2026-09-11 (round 12).**
-7. The hero is interactive — a finger spins the model (§4b). Build path A / B / C: **open**; the estimate is in §4b.
+7. The hero is interactive — a finger rotates, pans and pinches a 3D object (§4b). **Deferred by the owner
+   (2026-09-11, round 13): on the to-do list, not prioritized; the current plan stands.** No physics: it is a
+   3D image you orbit and zoom, not a simulation. The route when its turn comes: **Blender pre-builds every
+   mesh** — the landmark, the plate column as stackable segments of 1 / 10 / 100 / 1,000 plates with the level
+   of detail baked into each piece (full plate geometry in the small pieces, a normal-mapped profile in the
+   large), and the vessel's settled pile exported in fill layers — and packages them as USDZ with USD Preview
+   Surface materials, which RealityKit reads directly. The iOS side then only loads the pieces, stacks them to
+   the plate count, and drives a camera: no mesh code in the app. Decide between path A and this route when
+   the hero's turn comes, after a half-day check that RealityKit renders and captures on the CI simulator.

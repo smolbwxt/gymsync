@@ -305,3 +305,7 @@ lobby + group-session simplification round (still unasked), the #6 crash (needs 
 - **Block calendar:** BLOCK ENDS becomes a mini trophy replacing the last session's mark; the block's first day gets a checkered flag. Landed on `feat/congruence-b2-b9` as the T2.3 resolution.
 - **#6 Start-in-lobby crash: parked.** No way to capture logs now; play-test and re-create on future versions; pick it up when the next crash happens.
 - **Next priority after the current queue (congruence, social cards, hero): the lobby + group-session simplification round.**
+
+## Owner round 13 (2026-09-11, evening) — to-do, not prioritized
+- **Interactive milestone hero (deferred).** Owner: "Add it to the to-do list, but let's not prioritize this now; I like the plan that we have." Requirement stands (a 3D object you rotate, pan and pinch — no physics). Route recorded in the hero spec, decision 7: Blender pre-builds every mesh (landmark, plate column as 1/10/100/1,000-plate stackable segments with LOD baked in, vessel pile in fill layers) → USDZ with USD Preview Surface materials → RealityKit loads, stacks and drives a camera; no mesh code in the app. Estimate ~2–2.5 build weeks. When the hero's turn comes: half-day CI-render check, then choose between path A (frames) and this route.
+- Queue unchanged: congruence (B2+B9 → T-F → B3 → B8 → B11 → B6), social cards (two streams + integration), then the lobby + group-session simplification round.
