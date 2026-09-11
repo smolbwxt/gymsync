@@ -228,30 +228,59 @@ struct BlockCalendarView: View {
     @ViewBuilder
     private func dayCell(_ day: Date?) -> some View {
         if let day {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(fill(for: day))
-                .frame(height: 10)
-                .frame(maxWidth: .infinity)
-                .overlay {
-                    if calendar.isDateInToday(day) {
-                        RoundedRectangle(cornerRadius: 2)
-                            .strokeBorder(theme.accent, lineWidth: 1.5)
-                    }
+            ZStack {
+                // Owner round 12 (2026-09-11): the block's first day carries a
+                // checkered flag and its last day a trophy. A glyph channel,
+                // because no colour could tell "block ends" from BOOKED. The
+                // glyph REPLACES that day's bar; its colour still follows
+                // DONE > BOOKED like every other day.
+                if let glyph = blockGlyph(for: day) {
+                    Image(systemName: glyph)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(blockGlyphColor(for: day, glyph: glyph))
+                        .frame(height: 10)
+                        .frame(maxWidth: .infinity)
+                        .accessibilityHidden(true)
+                } else {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(fill(for: day))
+                        .frame(height: 10)
+                        .frame(maxWidth: .infinity)
                 }
+                if calendar.isDateInToday(day) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .strokeBorder(theme.accent, lineWidth: 1.5)
+                        .frame(height: 10)
+                        .frame(maxWidth: .infinity)
+                }
+            }
         } else {
             Color.clear.frame(height: 10).frame(maxWidth: .infinity)
         }
     }
 
+    /// `flag.checkered` on the block's first day, `trophy.fill` on its last, nil elsewhere.
+    private func blockGlyph(for day: Date) -> String? {
+        let key = calendar.startOfDay(for: day)
+        if let last = blockEnd, calendar.isDate(key, inSameDayAs: last) { return "trophy.fill" }
+        if let first = startDate, calendar.isDate(key, inSameDayAs: first) { return "flag.checkered" }
+        return nil
+    }
+
+    /// DONE paints the glyph in text; the trophy is otherwise the block's accent
+    /// (the finish line), and the flag is neutral unless that day is booked.
+    private func blockGlyphColor(for day: Date, glyph: String) -> Color {
+        let key = calendar.startOfDay(for: day)
+        if completedDays.contains(key) { return theme.text }
+        if glyph == "trophy.fill" || scheduledDays.contains(key) { return theme.accent }
+        return theme.neutral700
+    }
+
     private func fill(for day: Date) -> Color {
         let key = calendar.startOfDay(for: day)
-        // DONE wins over the block-end mark: a final day the athlete actually
-        // completed must read as completed. (Before this, the block-end branch
-        // ran first and repainted that day BOOKED.) Whether the block end
-        // keeps a mark at all — and in which channel — is the owner's question
-        // on the proof card; the colour is left as it is.
+        // The block's first and last days carry glyphs (dayCell / blockGlyph);
+        // this fill is the bar under every other day, DONE > BOOKED > PLANNED.
         if completedDays.contains(key) { return theme.text }
-        if let last = blockEnd, calendar.isDate(key, inSameDayAs: last) { return theme.accent }
         if scheduledDays.contains(key) { return theme.accent }
         if plannedDays.contains(key) { return theme.accent.opacity(0.55) }
         if inSelectedWeek(key) { return theme.accent.opacity(0.22) }
@@ -260,11 +289,30 @@ struct BlockCalendarView: View {
     }
 
     private var legend: some View {
-        HStack(spacing: 12) {
-            legendDot(theme.text, "DONE")
-            legendDot(theme.accent, "BOOKED")
-            legendDot(theme.accent.opacity(0.55), "PLANNED")
-            legendDot(theme.accent, "BLOCK ENDS")
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 12) {
+                legendDot(theme.text, "DONE")
+                legendDot(theme.accent, "BOOKED")
+                legendDot(theme.accent.opacity(0.55), "PLANNED")
+            }
+            HStack(spacing: 12) {
+                legendGlyph("flag.checkered", theme.neutral700, "BLOCK STARTS")
+                legendGlyph("trophy.fill", theme.accent, "BLOCK ENDS")
+            }
+        }
+    }
+
+    private func legendGlyph(_ symbol: String, _ color: Color, _ label: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: symbol)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(color)
+                .frame(width: 10, height: 8)
+                .accessibilityHidden(true)
+            Text(label)
+                .font(GSFont.bold(8, relativeTo: .caption2))
+                .tracking(0.8)
+                .foregroundStyle(theme.neutral700)
         }
     }
 
