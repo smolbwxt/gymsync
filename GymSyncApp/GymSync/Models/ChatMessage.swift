@@ -78,13 +78,24 @@ struct ChatMessage: Codable, Identifiable, Sendable, Equatable {
 
     var isSystem: Bool { authorID == nil }
 
-    /// Legacy rows written before 20260906000003 carry a literal "🔥 "
-    /// prefix (design language §2: no decorative emoji — the SF flame beside
-    /// the body is the glyph). Read the body through this everywhere a PR
-    /// announcement is rendered.
+    /// The literal prefix `public.announce_pr()` wrote into every PR
+    /// announcement body until migration 20260906000003 stopped authoring it.
+    private static let legacyPRPrefix = "🔥 "
+
+    /// The body as it should be rendered. A PR announcement written before
+    /// 20260906000003 carries a literal flame that ChatView already draws as
+    /// a real SF Symbol beside it (design language §2: no decorative emoji),
+    /// so the duplicate is stripped here.
+    ///
+    /// Every other kind is returned untouched on purpose: `system_streak`
+    /// bodies are authored with their own flame by
+    /// `push_streak_milestone_group()`
+    /// (20260719000008_streak_pushes.sql:163), which is message text, and a
+    /// member's own "🔥 let's go" is content, not chrome.
     var displayBody: String? {
-        guard let body else { return nil }
-        return body.hasPrefix("🔥 ") ? String(body.dropFirst(2)) : body
+        guard kind == .systemPR, let body,
+              body.hasPrefix(Self.legacyPRPrefix) else { return body }
+        return String(body.dropFirst(Self.legacyPRPrefix.count))
     }
 
     enum CodingKeys: String, CodingKey {
