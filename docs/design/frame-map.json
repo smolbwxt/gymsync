@@ -13,7 +13,8 @@
   },
   "tab-stats": {
     "frame": 63,
-    "title": "Onyx Stats (redesign)"
+    "title": "Onyx Stats (redesign)",
+    "note": "two captures from this one id: app-tab-stats (the viewport: lifetime volume, weekly volume, the LEDGER door) and app-tab-stats-2 (scrolled to the streak card, where the gold current-streak number lives). The -2 attachment has no frame-map entry of its own by design."
   },
   "tab-you": {
     "frame": 64,

@@ -346,7 +346,9 @@ jobs:
           # passed if app-calendar-scheduling-2 stopped being produced, which
           # is precisely the `.simultaneousGesture` regression that capture
           # exists to catch.
-          FLOOR=98
+          # congruence B2 T2.4: testStatsTab gains a second attachment
+          # (app-tab-stats-2, the scrolled streak card) — 98 -> 99.
+          FLOOR=99
           # `|| true` + the `:-0` default for the same `set -eo pipefail`
           # reason as the simulator picker above: a missing $SCREENS makes
           # `find` exit 1, which would kill the step before it printed the

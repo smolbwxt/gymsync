@@ -277,11 +277,34 @@ final class ScreenshotTests: XCTestCase {
         attachScreenshot(app, named: "app-tab-social.png")
     }
 
+    // TWO captures from one walk, on the app-calendar-scheduling / -2
+    // precedent below (:498-516). The Stats page is taller than a phone and
+    // the streak card is the FIFTH block down (lifetime volume, weekly
+    // volume, the LEDGER door, personal records, then streak), so the gold
+    // current-streak number congruence T2.4 lands has no picture in the
+    // viewport frame above. `-2` is a second ATTACHMENT, not a second
+    // catalog id: no `CatalogScreen` case, no documented-id entry, no
+    // frame-map id of its own. It IS a second exported file, so ios.yml's
+    // FLOOR (which counts captures, not ids) moves with it.
     func testStatsTab() {
         let app = launchApp()
         guard waitForTabBar(app) else { return }
         openYouWidget(app, label: "Stats")
         attachScreenshot(app, named: "app-tab-stats.png")
+
+        // Scroll to the streak card. GSSectionHeader renders its title
+        // uppercased, so the header reads "STREAK" in the AX tree. Bounded
+        // so a page that never reaches it still attaches a frame rather than
+        // spinning out the test's time budget.
+        let streakHeader = app.staticTexts["STREAK"]
+        var swipes = 0
+        while !streakHeader.isHittable && swipes < 6 {
+            app.swipeUp()
+            settle()
+            swipes += 1
+        }
+        settleAfterNavigation()
+        attachScreenshot(app, named: "app-tab-stats-2.png")
     }
 
     func testYouTab() {
