@@ -221,7 +221,7 @@ struct YouTabView: View {
             showStats = true
         } label: {
             widgetCard(title: "STATS") {
-                Text("Volume · PRs · body weight · history")
+                Text(statsFaceText)
                     .font(GSFont.body(13, relativeTo: .subheadline))
                     .foregroundStyle(theme.neutral700)
                     // UI wave 2026-08-27: the one-line-shrink recipe
@@ -236,6 +236,21 @@ struct YouTabView: View {
         .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Stats")
+    }
+
+    /// State sentence, not a contents list (T10.1, congruence B10). Same
+    /// `StatMath.compactNumber` + `Units.fromPounds(_:to:)` chain
+    /// `TopLiftersView.leaderboardRow` and `SettingsView`'s profile row
+    /// already use to render `profile.lifetimeVolumeLifted`. Nil profile
+    /// (pre-launch-fetch, or logged out) falls back to a door-what-it's-for
+    /// sentence rather than a dangling number.
+    private var statsFaceText: String {
+        guard let profile = appState.currentProfile else {
+            return "Your volume, PRs, body weight and history live here."
+        }
+        let unit = ThemeStore.shared.weightUnit
+        let lifetimeVolumeText = "\(StatMath.compactNumber(Units.fromPounds(profile.lifetimeVolumeLifted, to: unit))) \(unit.label)"
+        return "You've lifted \(lifetimeVolumeText) — see where it's going."
     }
 
     // MARK: - Widgets
@@ -266,12 +281,12 @@ struct YouTabView: View {
     /// gone (owner 2026-08-21) — the 2026-08-13 "state from the outside"
     /// ruling survives, one line lower.
     private var routinesFaceText: String {
-        guard let routineCount else { return "Programs · the builder · Discover" }
+        guard let routineCount else { return "Build a routine, or start from someone else's." }
         let limit = Monetization.freeRoutineLimit
-        let state = routineCount > limit
-            ? "\(routineCount) routines"
-            : "\(routineCount) of \(limit) slots filled"
-        return "Programs · the builder · Discover · \(state)"
+        if routineCount > limit {
+            return "\(routineCount) routines on file."
+        }
+        return "\(routineCount) of \(limit) slots filled — build another, or start from someone else's."
     }
 
     /// Coach's T1 slot (owner 2026-08-24: "the coach should replace
@@ -282,8 +297,14 @@ struct YouTabView: View {
         Button {
             showCoach = true
         } label: {
-            widgetCard(title: "COACH") {
-                Text("Your ongoing chat, your program, the research")
+            // Owner round-6 note (docket): drop the grey line, bigger
+            // COACH, no coach name, a line like "Build my workouts", the
+            // badge drives attention. `badgeCount: nil` — no live
+            // "something's waiting" count exists on this screen yet;
+            // wiring one is a future task, not a repository call smuggled
+            // into this one (T10.1, congruence B10).
+            widgetCard(title: "COACH", titleSize: 28, badgeCount: nil) {
+                Text("Build my workouts.")
                     .font(GSFont.body(13, relativeTo: .subheadline))
                     .foregroundStyle(theme.neutral700)
                     // UI wave 2026-08-27: the one-line-shrink recipe
@@ -310,7 +331,7 @@ struct YouTabView: View {
             showShop = true
         } label: {
             widgetCard(title: "SHOP") {
-                Text("Pro, the soundboard rack, and training with a personal trainer")
+                Text("Pro, this week's rack, and hiring a trainer.")
                     .font(GSFont.body(13, relativeTo: .subheadline))
                     .foregroundStyle(theme.neutral700)
                     // UI wave 2026-08-27: the one-line-shrink recipe
@@ -339,7 +360,7 @@ struct YouTabView: View {
             showSettings = true
         } label: {
             widgetCard(title: "SETTINGS") {
-                Text("Account, appearance, notifications, home gym")
+                Text("Your account, your palette, your gym, your alerts.")
                     .font(GSFont.body(13, relativeTo: .subheadline))
                     .foregroundStyle(theme.neutral700)
                     // UI wave 2026-08-27: the one-line-shrink recipe
@@ -365,29 +386,56 @@ struct YouTabView: View {
     // description + footer read comfortably without the grid era's square
     // proportions.
 
+    /// `titleSize` and `badgeCount` (T10.1, congruence B10): additive
+    /// params so COACH alone can read bigger, with a badge slot for later.
+    /// Defaults reproduce the pre-existing 24pt title / no-badge look
+    /// exactly, so the other four widgets are untouched by this call.
     private func widgetCard<Face: View>(
         title: String,
+        titleSize: CGFloat = 24,
+        badgeCount: Int? = nil,
         @ViewBuilder face: () -> Face
     ) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             // Owner 2026-08-21 (typography pass): bigger title, the face
             // sits low, and the bottom caps line is gone — two levels of
             // text per widget, not three.
-            Text(title)
-                .font(GSFont.bold(24, relativeTo: .title2))
-                .tracking(0.5)
-                .foregroundStyle(theme.text)
-                // One line always: "ROUTINES & PROGRAMMING" wrapped on
-                // 375pt devices, making that card taller than its
-                // siblings - the You-page half of "the widgets are all
-                // different sized". A title at 17pt is still a title.
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+            HStack(alignment: .top, spacing: 8) {
+                Text(title)
+                    .font(GSFont.bold(titleSize, relativeTo: .title2))
+                    .tracking(0.5)
+                    .foregroundStyle(theme.text)
+                    // One line always: "ROUTINES & PROGRAMMING" wrapped on
+                    // 375pt devices, making that card taller than its
+                    // siblings - the You-page half of "the widgets are all
+                    // different sized". A title at 17pt is still a title.
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                // Badges point, they do not shout (design language §4): a
+                // small accent count in the corner, only when something is
+                // actually waiting.
+                if let badgeCount, badgeCount > 0 {
+                    Spacer(minLength: 8)
+                    cornerBadge(badgeCount)
+                }
+            }
             Spacer(minLength: 14)
             face()
         }
         .padding(12)
         .frame(maxWidth: .infinity, minHeight: 92, alignment: .leading)
+    }
+
+    /// Same recipe as `HomeCoachTile.badge(_:)` — a small accent-filled
+    /// circle with a tabular count, foreground `theme.bg` for contrast on
+    /// the accent fill.
+    private func cornerBadge(_ count: Int) -> some View {
+        Text("\(count)")
+            .font(GSFont.bold(12, relativeTo: .caption))
+            .monospacedDigit()
+            .foregroundStyle(theme.bg)
+            .frame(width: 22, height: 22)
+            .background(Circle().fill(theme.accent))
     }
 
 
