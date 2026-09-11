@@ -547,14 +547,62 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// Crew room → GroupView (behind MANAGE) → a named sub-tab.
+    ///
+    /// `SocialTabView`'s group row pushes `CrewRoomView`, not `GroupView`:
+    /// the crew-room redesign moved the four sub-tabs (Chat/Members/Sessions/
+    /// Stats) behind the room's `MANAGE` toolbar item. So every
+    /// `app.buttons["Sessions"]` lookup here used to time out and leave the
+    /// capture showing the crew room — four separate failed navigations, not
+    /// one repeated screenshot. MANAGE is the missing first hop.
+    ///
+    /// GroupView's own segmented control renders each SubTab's `rawValue` as
+    /// plain `Text` (no icon, no composed-label ambiguity — unlike the
+    /// icon-led rows elsewhere in this file), so an exact-match button lookup
+    /// is right for the sub-tab itself.
+    ///
+    /// `settleAfterNavigation()` on both hops rather than `settle()`: the
+    /// MANAGE tap pushes a screen and the sub-tab tap swaps (and, for Stats,
+    /// fetches) content, and nothing waits on either result.
+    private func openManageSubTab(_ app: XCUIApplication, _ tab: String) {
+        let manage = app.buttons["MANAGE"]
+        if manage.waitForExistence(timeout: 10) {
+            manage.tap()
+            settleAfterNavigation()
+        }
+        let subTab = app.buttons[tab]
+        if subTab.waitForExistence(timeout: 10) {
+            subTab.tap()
+            settleAfterNavigation()
+        }
+    }
+
     func testChat() {
         let app = launchApp()
         guard waitForTabBar(app) else { return }
         selectTab(app, label: "Crews")
         settle()
-        // GroupView's `subTab` defaults to `.chat`, so tapping into the crew
-        // lands directly on ChatView — no further navigation needed.
         openPushCrew(app)
+
+        // The crew room does NOT land on chat: it opens `ChatView` as a
+        // SHEET from its `THE CHAT` preview card (`CrewRoomView`'s
+        // `chatPreviewCard` sets `showChat`; the `.sheet` presents it).
+        // CONTAINS because that card's composed label is "THE CHAT" followed
+        // by "OPEN" and the message-preview lines.
+        let chatCard = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS 'THE CHAT'")
+        ).firstMatch
+        if chatCard.waitForExistence(timeout: 10) {
+            // The preview card is the LAST card in the room's ScrollView, so
+            // it can sit below the fold — same defensive scroll
+            // `testActivityFeed` uses for its Activity row.
+            if !chatCard.isHittable {
+                app.swipeUp()
+                settle()
+            }
+            chatCard.tap()
+            settleAfterNavigation()
+        }
         attachScreenshot(app, named: "app-chat.png")
     }
 
@@ -564,12 +612,7 @@ final class ScreenshotTests: XCTestCase {
         selectTab(app, label: "Crews")
         settle()
         openPushCrew(app)
-
-        let sessionsTab = app.buttons["Sessions"]
-        if sessionsTab.waitForExistence(timeout: 10) {
-            sessionsTab.tap()
-            settleAfterNavigation()
-        }
+        openManageSubTab(app, "Sessions")
 
         // The seeded world has exactly one session per state; "Lobby Open"
         // is `"lobby_open".replacingOccurrences(of: "_", with: " ").capitalized`
@@ -593,12 +636,7 @@ final class ScreenshotTests: XCTestCase {
         selectTab(app, label: "Crews")
         settle()
         openPushCrew(app)
-
-        let sessionsTab = app.buttons["Sessions"]
-        if sessionsTab.waitForExistence(timeout: 10) {
-            sessionsTab.tap()
-            settleAfterNavigation()
-        }
+        openManageSubTab(app, "Sessions")
 
         // The seeded world's one "completed" session is the only row whose
         // state caption reads "Completed" — it's in the "Past" section and
@@ -620,23 +658,17 @@ final class ScreenshotTests: XCTestCase {
         settle()
         openPushCrew(app)
 
-        let sessionsTab = app.buttons["Sessions"]
-        if sessionsTab.waitForExistence(timeout: 10) {
-            sessionsTab.tap()
-            settleAfterNavigation()
-        }
-
-        // The Burpee Ledger row is GroupView.sessionsList's first Section,
-        // always present regardless of the seeded world's upcoming/past
-        // session mix (unlike testLobby's "Lobby Open"/testSessionRecap's
-        // "Completed" caption matches, which depend on a specific session
-        // existing in that state). CONTAINS (not an exact/BEGINSWITH match)
-        // for the same reason testFriends/testRoutineDetail/testActivityFeed
-        // use it above: the row's composed accessibility label prepends an
-        // SF Symbol icon ahead of the "Burpee Ledger" Text, and whether/how
-        // that icon contributes to the composed label isn't guaranteed.
+        // NOT through MANAGE, unlike testLobby/testSessionRecap/testGroupStats
+        // above: the ledger is one of the crew ROOM's own rows. The redesign
+        // gave `CrewRoomView` a `burpeeLedgerRow` NavigationLink (inside the
+        // commit card, under its divider) labelled `BURPEES`, which pushes
+        // `BurpeeLedgerView` directly — so this walk stays on the room and
+        // never needs GroupView at all. CONTAINS (not exact/BEGINSWITH) for
+        // the same reason testFriends/testRoutineDetail/testActivityFeed use
+        // it: the row's composed label is "BURPEES" followed by each member's
+        // initials avatar and outstanding count.
         let ledgerRow = app.buttons.matching(
-            NSPredicate(format: "label CONTAINS 'Burpee Ledger'")
+            NSPredicate(format: "label CONTAINS 'BURPEES'")
         ).firstMatch
         if ledgerRow.waitForExistence(timeout: 10) {
             ledgerRow.tap()
@@ -652,16 +684,14 @@ final class ScreenshotTests: XCTestCase {
         settle()
         openPushCrew(app)
 
-        // GroupView's themed segmented control renders each SubTab's
-        // `rawValue` as plain Text (no icon, no composed accessibility
-        // label ambiguity — unlike the icon-led "Burpee Ledger"/"Friends"
-        // rows elsewhere in this file), same as the existing `sessionsTab =
-        // app.buttons["Sessions"]` exact-match lookup above.
-        let statsTab = app.buttons["Stats"]
-        if statsTab.waitForExistence(timeout: 10) {
-            statsTab.tap()
-            settleAfterNavigation()
-        }
+        // Stats is a GroupView sub-tab, and GroupView now sits behind the
+        // crew room's MANAGE toolbar item — MANAGE is the first hop, which is
+        // what `openManageSubTab` adds. The sub-tab lookup itself stays an
+        // exact match: the themed segmented control renders each SubTab's
+        // `rawValue` as plain Text (no icon, no composed accessibility-label
+        // ambiguity — unlike the icon-led "BURPEES"/"Friends" rows elsewhere
+        // in this file).
+        openManageSubTab(app, "Stats")
         attachScreenshot(app, named: "app-group-stats.png")
     }
 
