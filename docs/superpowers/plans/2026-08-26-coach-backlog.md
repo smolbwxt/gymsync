@@ -665,3 +665,21 @@ and the lobby attach - field-verify: check into a Coach-booked session,
 the prescribed day should load without picking anything.
 Remaining v0 code: O1/O3 onboarding resume (review-critical), M2 gates
 (blocked on ASC products).
+
+## F11 - Shared lever furniture: `GSStepperRow` / `GSChip` / picker row (open)
+Raised by the Stream C review of the goal-first plan (finding 11), 2026-09-10.
+`GoalMilestoneView` re-creates `WeeklyGoalEditorSheet`'s stepper row, chip,
+search field and picker row — the flat-on-`theme.surface` furniture design
+rule 1 calls out — because those are `private` to that view. Two copies of a
+stepper row is how two screens drift: the editor's chips are 9.5 pt / 0.8
+tracking on `neutral300` at `GSMetrics.pill`, and the card's match today only
+because they were copied today.
+**Size:** M. **Files:** a new `DesignSystem/GSLeverRow.swift`;
+`Features/Home/WeeklyGoalEditorSheet.swift`;
+`Features/Coach/GoalMilestoneView.swift`.
+**Do it while there are only two copies.** The moment a third screen needs a
+stepper the extraction stops being a refactor and starts being an audit. Fold
+the search-field + bounded-scroll picker in with it — both screens now ship
+that shape, and both document the same "the cap is on what is DRAWN, never on
+what is searched" rule in their own words.
+**Not urgent:** nothing is broken; this is drift insurance.

@@ -573,6 +573,19 @@ final class ScreenshotTests: XCTestCase {
         attachScreenshot(app, named: "app-calendar-scheduling-2.png")
     }
 
+    // Goal-first programming, the door (Stream C, frames 93-96). The goal
+    // screen every build now begins on, and three of its eleven milestone
+    // cards — the three shapes a card can have, rather than three of one
+    // shape: a picker with a load and a date, a segmented switch between two
+    // ways of saying one milestone, and a card held for the block that asks
+    // for no date at all.
+    func testCatalogGoalScreen()             { captureCatalog("goal-screen") }
+    func testCatalogGoalMilestoneStrength()  { captureCatalog("goal-milestone-strength") }
+    func testCatalogGoalMilestoneBodyComposition() {
+        captureCatalog("goal-milestone-body-composition")
+    }
+    func testCatalogGoalMilestoneRecovery()  { captureCatalog("goal-milestone-recovery") }
+
     // MARK: - Seeded deep-screen captures
     //
     // Reachable via the deterministic `ci_test_user_2` fixture world (Task 3,

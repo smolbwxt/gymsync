@@ -6,12 +6,18 @@ import XCTest
 ///
 /// The defect these close: the screening shipped inside CoachConsultView,
 /// which meant it guarded exactly ONE of the four doors into the
-/// generator. CoachWizardView is also presented from RootView, from two
+/// generator. The legacy wizard was also presented from RootView, from two
 /// places on the Coach home, and from the block calendar — so an athlete
 /// who never opened the consult, including a brand-new user taking the
 /// post-walkthrough offer, was prescribed loads with no PAR-Q+ at all.
 /// That is the exact failure the 40-persona sweep surfaced, and it stood
 /// open on three paths out of four for a day.
+///
+/// That wizard is retired (goal-first programming, plan task C4) and every
+/// door now walks `GoalFirstBuildFlow` → `ConsultEntryView` →
+/// `ProgramBuilder.build`. The rule below outlives it, which is the point:
+/// the gate stands in front of the function that PRESCRIBES, not in front
+/// of whichever screen happens to be the door this month.
 ///
 /// The fix is not "screen at four doors". It is that PRESCRIBING is what
 /// requires screening, so the gate stands in front of the one function
@@ -23,9 +29,10 @@ final class HealthGateTests: XCTestCase {
 
     // MARK: - The gate condition the wizard evaluates
 
-    /// Mirrors CoachWizardView.healthGateRequired. Kept as a function here
-    /// so the RULE is testable even though the view is not: a screening
-    /// gates generation when it is missing, expired, or refused.
+    /// Mirrors the gate `ProgramBuilder.build` runs before it prescribes.
+    /// Kept as a function here so the RULE is testable even though the view
+    /// is not: a screening gates generation when it is missing, expired, or
+    /// refused.
     private func gateRequired(_ screening: HealthScreening?) -> Bool {
         guard let screening else { return true }
         return !(!screening.needsScreening && screening.clearsTheGate)

@@ -11,9 +11,11 @@ import XCTest
 ///   exercise into `excludedExerciseIDs`, then reassigned that whole set
 ///   from the profile's own exclusions with `=`.
 ///
-///   CoachWizardView inserted the swapped-TO exercise into
+///   The build path inserted the swapped-TO exercise into
 ///   `starredExerciseIDs`, then reassigned that set from starred routines
-///   with `=`.
+///   with `=`. (That code lived in the legacy wizard, retired by the
+///   goal-first plan's task C4; the lever it broke is `ProgramBuilder`'s
+///   now, and this suite is why the fix cannot rot.)
 ///
 /// Every test in the suite was green. `StandingRulesTests` builds rules
 /// through a fixture that leaves `intent` as `.unknown`, so it never

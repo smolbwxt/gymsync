@@ -1,0 +1,460 @@
+import XCTest
+@testable import GymSync
+
+/// The milestone card's pure half.
+///
+/// A SwiftUI body is not unit-testable in this target, so everything that can
+/// be WRONG lives in `GoalMilestoneCopy` and is tested here: the seed each
+/// preset opens on, the sentence Coach says under the levers, and — task C3 —
+/// that the levers change the milestone and never the metric.
+final class GoalMilestoneCopyTests: XCTestCase {
+
+    func testTheStrengthLineIsTheSpecsOwn() {
+        let line = GoalMilestoneCopy.coachLine(
+            preset: .strength,
+            current: GoalTarget(targetWeightLbs: 205),
+            draft: BlockGoalDraft(metric: .liftOneRepMax,
+                                  target: GoalTarget(targetWeightLbs: 225),
+                                  byDate: nil, preset: .strength),
+            weeks: 6, unit: .lbs)
+        XCTAssertEqual(line, "You're at 205 now; that's about 6 weeks of work.")
+    }
+
+    /// **THE HELD BRANCH IS INVERTED FROM THE PLAN'S OWN C2 TEST**, by the
+    /// controller's fix-round-2 ruling. The plan asserted `XCTAssertNil(draft
+    /// .byDate)` for a held preset, quoting spec §2.1's parenthetical — and
+    /// that left Maintenance's and Recovery's ONLY lever with nowhere to put
+    /// its answer, because `BlockGoalDraft` is Task 0's frozen surface and
+    /// carries no week count (review finding 6). A held draft now writes its
+    /// length into the field the builder already reads a length from, so B4
+    /// receives it the same way for all eleven presets and nothing frozen
+    /// moves.
+    ///
+    /// What is asserted instead is the thing that actually has to be true: the
+    /// date a held preset carries IS its block length, read back out.
+    func testEveryPresetProducesADraftItsMetricCanRead() throws {
+        let today = Date(timeIntervalSince1970: 0)
+        for preset in GoalPreset.allCases {
+            let draft = GoalMilestoneCopy.draft(preset: preset,
+                                                current: GoalTarget(),
+                                                today: today,
+                                                unit: .lbs)
+            XCTAssertEqual(draft.metric, preset.metric, "\(preset.rawValue)")
+            XCTAssertEqual(draft.preset, preset)
+            XCTAssertEqual(draft.source, .user, "the door is the athlete choosing")
+
+            let byDate = try XCTUnwrap(draft.byDate, "\(preset.rawValue) is seeded with a date")
+            XCTAssertEqual(GoalBlockLength.weeks(byDate: byDate, from: today),
+                           GoalBlockLength.defaultWeeks,
+                           "\(preset.rawValue): the date IS the block length")
+        }
+    }
+
+    /// The card still only ASKS the eight. `asksForDate` is about the question
+    /// — whether a date row renders — and fix round 2 did not change it; what
+    /// changed is that the answer for the other three is derived from their
+    /// stepper rather than left empty.
+    func testOnlyTheEightDateBearingPresetsAreAskedForADate() {
+        XCTAssertEqual(Set(GoalPreset.allCases.filter { !$0.asksForDate }),
+                       [.maintenance, .recovery, .consistency])
+        XCTAssertEqual(GoalPreset.allCases.filter(\.asksForDate).count, 8)
+    }
+
+    func testMaintenanceSeedsEveryMajorGroup() {
+        let draft = GoalMilestoneCopy.draft(preset: .maintenance,
+                                            current: GoalTarget(),
+                                            today: Date(timeIntervalSince1970: 0),
+                                            unit: .lbs)
+        XCTAssertEqual(Set(draft.target.muscleTargets?.keys ?? [:].keys),
+                       Set(MuscleGroup.allCases.map(\.rawValue)),
+                       "owner decision 9: every major group")
+    }
+
+    func testAnUnreachableMilestoneReplacesTheLineWithTheGap() {
+        let reach = GoalBlockLength.Reach(reaches: false,
+                                          projected: GoalTarget(targetWeightLbs: 218),
+                                          achievableDate: Date(timeIntervalSince1970: 1_795_000_000))
+        let line = GoalMilestoneCopy.coachLine(
+            preset: .strength, current: GoalTarget(targetWeightLbs: 205),
+            draft: BlockGoalDraft(metric: .liftOneRepMax,
+                                  target: GoalTarget(targetWeightLbs: 225),
+                                  byDate: Date(timeIntervalSince1970: 1_792_411_200),
+                                  preset: .strength),
+            weeks: 6, unit: .lbs, reach: reach)
+        XCTAssertTrue(line.contains("more than this block can safely give"),
+                      "the ladder never lies about the gap")
+    }
+
+    // MARK: - Task C3: the primary hands over the EDITED draft
+
+    func testThePrimaryHandsOverTheEditedDraftAndNotTheSeed() {
+        let bench = UUID()
+        let seeded = GoalMilestoneCopy.draft(preset: .strength,
+                                             current: GoalTarget(exerciseID: bench,
+                                                                 targetWeightLbs: 205),
+                                             today: Date(timeIntervalSince1970: 0),
+                                             unit: .lbs)
+        let edited = GoalMilestoneCopy.applying(seeded,
+                                                exerciseID: bench,
+                                                targetWeightLbs: 245,
+                                                byDate: Date(timeIntervalSince1970: 1_795_000_000))
+        XCTAssertEqual(edited.target.targetWeightLbs, 245)
+        XCTAssertEqual(edited.target.exerciseID, bench)
+        XCTAssertNotEqual(edited.byDate, seeded.byDate)
+        XCTAssertEqual(edited.metric, seeded.metric,
+                       "the levers change the milestone, never the metric")
+        XCTAssertEqual(edited.preset, .strength)
+    }
+
+    // MARK: - The seeds, one preset at a time
+
+    /// The catalog's own strength frame: 205 now, 225 asked for. Ten percent,
+    /// snapped to a loadable increment — not an arbitrary literal, which is
+    /// why a kg athlete gets a kg-loadable rung rather than a converted one.
+    func testTheStrengthSeedIsTenPercentSnappedToAPlateStep() {
+        let draft = GoalMilestoneCopy.draft(
+            preset: .strength,
+            current: GoalTarget(targetWeightLbs: 205),
+            today: Date(timeIntervalSince1970: 0), unit: .lbs)
+        XCTAssertEqual(draft.target.targetWeightLbs, 225)
+    }
+
+    /// Never a milestone the athlete is already standing on.
+    func testAStrengthSeedIsAlwaysAboveWhereTheAthleteIs() {
+        for pounds in stride(from: Decimal(45), through: Decimal(500), by: 5) {
+            let raised = GoalMilestoneCopy.raisedLoad(from: pounds, unit: .lbs)
+            XCTAssertGreaterThan(raised, pounds, "\(pounds)")
+        }
+    }
+
+    /// The date is the block's LAST DAY, so `GoalBlockLength.weeks` reads the
+    /// same block length back out of it. The two halves of the door cannot
+    /// disagree about how long the block is.
+    func testTheSeededDateRoundTripsToTheBlockLength() {
+        let today = Date(timeIntervalSince1970: 1_788_696_000)
+        for weeks in [4, 6, 8, 12, 16] {
+            let date = GoalMilestoneCopy.milestoneDate(from: today, weeks: weeks)
+            XCTAssertEqual(GoalBlockLength.weeks(byDate: date, from: today), weeks,
+                           "\(weeks) weeks")
+        }
+    }
+
+    /// Held for the block: no number to chase, so no "you're at 0 now".
+    func testAHeldGoalSaysItIsHeldRatherThanReadingZero() {
+        for preset in [GoalPreset.maintenance, .recovery] {
+            let draft = GoalMilestoneCopy.draft(preset: preset, current: GoalTarget(),
+                                                today: Date(timeIntervalSince1970: 0),
+                                                unit: .lbs, weeks: 6)
+            let line = GoalMilestoneCopy.coachLine(preset: preset, current: GoalTarget(),
+                                                   draft: draft, weeks: 6, unit: .lbs)
+            XCTAssertEqual(line, "I'll hold this for 6 weeks.", preset.rawValue)
+        }
+    }
+
+    /// A metric with nothing logged says so; it never prints a zero standing
+    /// in for an absent reading — the shipped strip's own rule.
+    func testAnUnreadMetricSaysSoRatherThanReadingZero() {
+        for preset in GoalPreset.allCases where preset.asksForDate {
+            let reading = GoalMilestoneCopy.currentReading(preset: preset,
+                                                           current: GoalTarget(),
+                                                           unit: .lbs)
+            XCTAssertNil(reading, "\(preset.rawValue) has nothing measured")
+        }
+    }
+
+    func testEveryPresetProducesALineThatIsASentence() {
+        for preset in GoalPreset.allCases {
+            let draft = GoalMilestoneCopy.draft(preset: preset, current: GoalTarget(),
+                                                today: Date(timeIntervalSince1970: 0),
+                                                unit: .lbs)
+            let line = GoalMilestoneCopy.coachLine(preset: preset, current: GoalTarget(),
+                                                   draft: draft, weeks: 8, unit: .lbs)
+            XCTAssertFalse(line.isEmpty, preset.rawValue)
+            XCTAssertTrue(line.hasSuffix("."), "\(preset.rawValue): \(line)")
+        }
+    }
+
+    /// Only the three presets whose milestone names a THING can be
+    /// under-specified, and each says which thing is missing.
+    func testOnlyAMilestoneMissingItsSubjectBlocksThePrimary() {
+        let blocked: Set<GoalPreset> = [.strength, .repStrength, .muscle, .benchmark]
+        for preset in GoalPreset.allCases {
+            let empty = BlockGoalDraft(metric: preset.metric, target: GoalTarget(),
+                                       byDate: nil, preset: preset)
+            let reason = GoalMilestoneCopy.incompleteReason(preset: preset, draft: empty)
+            if blocked.contains(preset) {
+                XCTAssertNotNil(reason, "\(preset.rawValue) must say what is missing")
+                XCTAssertTrue(reason?.hasSuffix(".") ?? false, preset.rawValue)
+            } else {
+                XCTAssertNil(reason, "\(preset.rawValue) cannot be incomplete")
+            }
+        }
+    }
+
+    /// A seeded card is buildable the moment it opens, for every preset whose
+    /// subject the athlete's log already names.
+    func testASeededCardIsBuildable() {
+        let bench = UUID(), murph = UUID()
+        let current = GoalTarget(exerciseID: bench, muscleTargets: ["chest": 10],
+                                 routineID: murph)
+        for preset in GoalPreset.allCases {
+            let draft = GoalMilestoneCopy.draft(preset: preset, current: current,
+                                                today: Date(timeIntervalSince1970: 0),
+                                                unit: .lbs)
+            XCTAssertNil(GoalMilestoneCopy.incompleteReason(preset: preset, draft: draft),
+                         preset.rawValue)
+        }
+    }
+
+    /// The two body-composition readings are one milestone said two ways, so
+    /// stepping either one may never leave the card contradicting itself.
+    func testTheBodyCompositionRateAndWeightAgree() {
+        let target = GoalMilestoneCopy.projectedBodyWeight(
+            from: 190, ratePercent: GoalMilestoneCopy.bodyCompositionRatePercent,
+            weeks: 8, unit: .lbs)
+        let implied = GoalMilestoneCopy.impliedRatePercent(from: 190, to: target, weeks: 8)
+        XCTAssertEqual(implied, GoalMilestoneCopy.bodyCompositionRatePercent,
+                       accuracy: 0.05,
+                       "the rate the weight implies is the rate that produced it")
+    }
+
+    // MARK: - Benchmark with nothing to benchmark (review finding 3)
+
+    /// An athlete with NO SAVED ROUTINES who picks Benchmark used to get an
+    /// empty picker and a permanently disabled primary reading "Pick the
+    /// routine this goal is about." with nothing to pick — a dead end whose
+    /// only exit is Back. A disabled button has to name the thing the athlete
+    /// can actually do about it.
+    func testBenchmarkWithNoRoutinesSaysWhatToDoAboutIt() {
+        let empty = BlockGoalDraft(metric: .benchmarkTime, target: GoalTarget(),
+                                   byDate: nil, preset: .benchmark)
+        XCTAssertEqual(GoalMilestoneCopy.incompleteReason(preset: .benchmark, draft: empty,
+                                                          hasRoutines: false),
+                       GoalMilestoneCopy.noRoutinesReason)
+        XCTAssertTrue(GoalMilestoneCopy.noRoutinesReason.hasSuffix("."))
+        XCTAssertTrue(GoalMilestoneCopy.noRoutinesTileNote.hasSuffix("."))
+
+        // A stale id does not rescue it: no routines means nothing to measure
+        // against, whatever the draft still carries.
+        let stale = GoalMilestoneCopy.applying(empty, routineID: UUID())
+        XCTAssertEqual(GoalMilestoneCopy.incompleteReason(preset: .benchmark, draft: stale,
+                                                          hasRoutines: false),
+                       GoalMilestoneCopy.noRoutinesReason)
+        XCTAssertNil(GoalMilestoneCopy.incompleteReason(preset: .benchmark, draft: stale,
+                                                        hasRoutines: true))
+    }
+
+    /// The routine list gates exactly ONE preset. Ten others must stay
+    /// buildable for an athlete who has never saved a routine.
+    func testNoOtherPresetIsBlockedByAnEmptyRoutineList() {
+        let current = GoalTarget(exerciseID: UUID(), muscleTargets: ["chest": 10])
+        for preset in GoalPreset.allCases where preset != .benchmark {
+            let seeded = GoalMilestoneCopy.draft(preset: preset, current: current,
+                                                 today: Date(timeIntervalSince1970: 0),
+                                                 unit: .lbs)
+            XCTAssertNil(GoalMilestoneCopy.incompleteReason(preset: preset, draft: seeded,
+                                                            hasRoutines: false),
+                         preset.rawValue)
+        }
+    }
+
+    // MARK: - No fabricated zero rate (re-review item A)
+
+    /// **A DATE MOVE WITH NO BODY-WEIGHT READING MUST NOT PRINT
+    /// `0.00 %/WK`.**
+    ///
+    /// `current` is an empty `GoalTarget` for every phase-1 athlete —
+    /// `GoalFirstBuildFlow` holds one until Stream A's readers land — so
+    /// `startLbs` is nil on every real date move today. The fallback used to
+    /// run through `draft.target.bodyWeightLbs`, which collapsed `start` onto
+    /// the number being aimed at: `impliedRatePercent(179 → 179)` is 0, and a
+    /// card that seeded `-0.75 %/WK` printed `0.00 %/WK` the moment the date
+    /// moved.
+    ///
+    /// The existing date-move tests are green because they both pass a
+    /// populated `current`. This is the case that was not covered.
+    func testADateMoveWithNoReadingNeverFabricatesAZeroRate() throws {
+        let today = Date(timeIntervalSince1970: 1_788_696_000)
+        let seeded = GoalMilestoneCopy.draft(preset: .bodyComposition,
+                                             current: GoalTarget(),   // nothing measured
+                                             today: today, unit: .lbs)
+        XCTAssertEqual(seeded.target.bodyWeightRatePercent,
+                       GoalMilestoneCopy.bodyCompositionRatePercent,
+                       "the seed asks for the safe band's midpoint")
+
+        let moved = GoalMilestoneCopy.applying(
+            seeded,
+            byDate: try XCTUnwrap(Calendar.current.date(byAdding: .day, value: 28,
+                                                        to: try XCTUnwrap(seeded.byDate))))
+        let weeks = GoalMilestoneCopy.weeks(preset: .bodyComposition, byDate: moved.byDate,
+                                            heldWeeks: 8, today: today)
+        XCTAssertEqual(weeks, 12)
+
+        // `startLbs: nil` is what the card passes when nothing has been
+        // measured — the exact phase-1 call.
+        let rebalanced = GoalMilestoneCopy.rebalancedBodyComposition(
+            moved, startLbs: nil, weeks: weeks, stepsTheRate: false, unit: .lbs)
+        let rate = try XCTUnwrap(rebalanced.target.bodyWeightRatePercent)
+        XCTAssertLessThan(rate, -0.1,
+                          "a real cut, not a zero standing in for an absent reading")
+        XCTAssertGreaterThan(rate, GoalMilestoneCopy.bodyCompositionRatePercent,
+                             "twelve weeks is gentler than the eight it was seeded over")
+
+        // The mirror branch lands somewhere real too.
+        let heldRate = GoalMilestoneCopy.rebalancedBodyComposition(
+            moved, startLbs: nil, weeks: weeks, stepsTheRate: true, unit: .lbs)
+        XCTAssertNotEqual(heldRate.target.bodyWeightLbs, moved.target.bodyWeightLbs)
+        XCTAssertGreaterThan(try XCTUnwrap(heldRate.target.bodyWeightLbs), 0)
+    }
+
+    // MARK: - A held block's length reaches the builder (review finding 6)
+
+    /// **STEPPING RECOVERY TO FOUR WEEKS YIELDS A DRAFT WHOSE DATE IS FOUR
+    /// WEEKS OUT** — the controller's own test for fix round 2.
+    ///
+    /// Maintenance's and Recovery's only lever is the block length, and
+    /// `BlockGoalDraft` carries no week count. Rather than widen a frozen type,
+    /// the stepper writes the length into the field `ProgramBuilder.build`
+    /// already reads a length from, so B4 hears it the same way it hears every
+    /// other preset's.
+    func testSteppingAHeldBlockLengthMovesTheDateTheBuilderReads() throws {
+        let today = Date(timeIntervalSince1970: 1_788_696_000)
+        let six = GoalMilestoneCopy.draft(preset: .recovery, current: GoalTarget(),
+                                          today: today, unit: .lbs, weeks: 6)
+        XCTAssertEqual(GoalBlockLength.weeks(byDate: try XCTUnwrap(six.byDate), from: today), 6)
+
+        // The stepper's whole act, 6 → 4, through the function the card calls.
+        let four = GoalMilestoneCopy.settingHeldWeeks(six, weeks: 4, today: today)
+        let byDate = try XCTUnwrap(four.byDate)
+
+        XCTAssertEqual(GoalBlockLength.weeks(byDate: byDate, from: today), 4,
+                       "the builder reads the length off the date, like every preset")
+        XCTAssertLessThan(byDate, try XCTUnwrap(six.byDate),
+                          "a shorter block ends sooner")
+        XCTAssertEqual(byDate,
+                       try XCTUnwrap(Calendar.current.date(byAdding: .day, value: 28,
+                                                           to: WeekMath.startOfWeek(today))),
+                       "four whole weeks from the week the athlete is standing in")
+
+        // And Coach counts the same number.
+        let weeks = GoalMilestoneCopy.weeks(preset: .recovery, byDate: byDate,
+                                            heldWeeks: 4, today: today)
+        XCTAssertEqual(weeks, 4)
+        XCTAssertEqual(GoalMilestoneCopy.coachLine(preset: .recovery, current: GoalTarget(),
+                                                   draft: four, weeks: weeks, unit: .lbs),
+                       "I'll hold this for 4 weeks.")
+    }
+
+    /// The derivation holds whatever weekday the athlete opens the door on —
+    /// the span is `N × 7 − offset` days with `offset` in 0…6, which always
+    /// rounds up to `N`.
+    func testAHeldBlocksDateReadsBackAsItsLengthOnEveryWeekday() throws {
+        let anchor = Date(timeIntervalSince1970: 1_788_696_000)
+        for dayOffset in 0..<7 {
+            let today = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: dayOffset,
+                                                            to: anchor))
+            for weeks in [GoalBlockLength.minimumWeeks, 6, 8, 12] {
+                let draft = GoalMilestoneCopy.draft(preset: .maintenance, current: GoalTarget(),
+                                                    today: today, unit: .lbs, weeks: weeks)
+                XCTAssertEqual(
+                    GoalBlockLength.weeks(byDate: try XCTUnwrap(draft.byDate), from: today),
+                    weeks, "day \(dayOffset), \(weeks) weeks")
+            }
+        }
+    }
+
+    // MARK: - The block length tracks the date (review finding 1)
+
+    /// **THE DATE IS THE HORIZON.** On the eight date-bearing presets nothing
+    /// renders a weeks stepper, so the milestone date is the only lever that
+    /// moves the block length — and everything downstream of it has to move
+    /// when it does: Coach's "about N weeks of work", and body composition's
+    /// rate, which is a weight divided by a horizon.
+    ///
+    /// Before the fix, `weeks` was `@State` written in one place that eight of
+    /// eleven cards never drew, so a milestone six months out still read
+    /// "about 8 weeks of work" and frame 95's three readings stopped being
+    /// true of one block the moment the date moved.
+    func testMovingTheDateMovesTheBlockLengthTheLineAndTheRate() throws {
+        let today = Date(timeIntervalSince1970: 1_788_696_000)
+        let current = GoalTarget(bodyWeightLbs: 190)
+        let seeded = GoalMilestoneCopy.draft(preset: .bodyComposition, current: current,
+                                             today: today, unit: .lbs)
+        let seededDate = try XCTUnwrap(seeded.byDate)
+
+        let before = GoalMilestoneCopy.weeks(preset: .bodyComposition, byDate: seededDate,
+                                             heldWeeks: 8, today: today)
+        XCTAssertEqual(before, 8, "the seed is an eight-week block")
+
+        let movedDate = try XCTUnwrap(Calendar.current.date(byAdding: .day, value: 28,
+                                                           to: seededDate))
+        let moved = GoalMilestoneCopy.applying(seeded, byDate: movedDate)
+        let after = GoalMilestoneCopy.weeks(preset: .bodyComposition, byDate: movedDate,
+                                            heldWeeks: 8, today: today)
+        XCTAssertEqual(after, 12, "four weeks later is a twelve-week block")
+
+        // Coach's line counts the new horizon.
+        let lineBefore = GoalMilestoneCopy.coachLine(preset: .bodyComposition, current: current,
+                                                     draft: seeded, weeks: before, unit: .lbs)
+        let lineAfter = GoalMilestoneCopy.coachLine(preset: .bodyComposition, current: current,
+                                                    draft: moved, weeks: after, unit: .lbs)
+        XCTAssertTrue(lineBefore.contains("8 weeks of work"), lineBefore)
+        XCTAssertTrue(lineAfter.contains("12 weeks of work"), lineAfter)
+        XCTAssertNotEqual(lineBefore, lineAfter)
+
+        // A WEIGHT: the weight the athlete set stays, and the RATE follows the
+        // date — the same pounds over a longer block is a gentler cut.
+        let heldWeight = GoalMilestoneCopy.rebalancedBodyComposition(
+            moved, startLbs: 190, weeks: after, stepsTheRate: false, unit: .lbs)
+        XCTAssertEqual(heldWeight.target.bodyWeightLbs, moved.target.bodyWeightLbs,
+                       "the reading the athlete holds is the one that stays")
+        let rateBefore = try XCTUnwrap(seeded.target.bodyWeightRatePercent)
+        let rateAfter = try XCTUnwrap(heldWeight.target.bodyWeightRatePercent)
+        XCTAssertGreaterThan(rateAfter, rateBefore,
+                             "a longer block is a gentler rate, not the same one")
+
+        // A RATE: the rate stays and the WEIGHT follows.
+        let heldRate = GoalMilestoneCopy.rebalancedBodyComposition(
+            moved, startLbs: 190, weeks: after, stepsTheRate: true, unit: .lbs)
+        XCTAssertEqual(heldRate.target.bodyWeightRatePercent,
+                       moved.target.bodyWeightRatePercent)
+        XCTAssertNotEqual(heldRate.target.bodyWeightLbs, moved.target.bodyWeightLbs,
+                          "the same rate over four more weeks lands somewhere else")
+    }
+
+    /// The three presets `GoalPreset.asksForDate` excludes are held for the
+    /// block, so their stepper — the only lever they have — IS the answer.
+    func testAHeldPresetsBlockLengthIsTheStepperAndNotADate() {
+        let today = Date(timeIntervalSince1970: 1_788_696_000)
+        for preset in GoalPreset.allCases where !preset.asksForDate {
+            XCTAssertEqual(
+                GoalMilestoneCopy.weeks(preset: preset, byDate: nil, heldWeeks: 6, today: today),
+                6, preset.rawValue)
+        }
+        XCTAssertEqual(Set(GoalPreset.allCases.filter { !$0.asksForDate }),
+                       [.maintenance, .recovery, .consistency],
+                       "three held presets, and they are the three with the stepper")
+    }
+
+    /// The stepper's answer is clamped to the generator's own limits, so a
+    /// held block can never be shorter than a wave or longer than the column
+    /// allows.
+    func testAHeldBlockLengthIsClampedToTheGeneratorsLimits() {
+        let today = Date(timeIntervalSince1970: 1_788_696_000)
+        XCTAssertEqual(GoalMilestoneCopy.weeks(preset: .recovery, byDate: nil,
+                                               heldWeeks: 1, today: today),
+                       GoalBlockLength.minimumWeeks)
+        XCTAssertEqual(GoalMilestoneCopy.weeks(preset: .recovery, byDate: nil,
+                                               heldWeeks: 500, today: today),
+                       GoalBlockLength.maximumWeeks)
+    }
+
+    /// Deterministic on a tie: a dictionary's maximum is not, and a catalog
+    /// frame must be.
+    func testTheLeadingGroupIsDeterministicOnATie() {
+        let tied = GoalTarget(muscleTargets: ["legs": 12, "back": 12, "chest": 12])
+        for _ in 0..<25 {
+            XCTAssertEqual(GoalMilestoneCopy.leadingGroup(tied), .back)
+        }
+    }
+}

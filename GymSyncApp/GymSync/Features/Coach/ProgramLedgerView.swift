@@ -197,9 +197,12 @@ struct ProgramLedgerView: View {
     /// ledger, and building is one deliberate act inside it.
     private var buildDoor: some View {
         NavigationLink {
-            ConsultEntryView(onBuilt: { builtFromHere = true })
+            // Through the goal screen first (spec §5.4: no block without a
+            // goal). The back button stays: the goal screen is a question, and
+            // a question you cannot walk away from is a trap. The consult
+            // inside the flow keeps its own hidden back button.
+            GoalFirstBuildFlow(onBuilt: { _ in builtFromHere = true })
                 .background(theme.bg)
-                .navigationBarBackButtonHidden(true)
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "wand.and.stars")
