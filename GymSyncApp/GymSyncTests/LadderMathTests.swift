@@ -653,4 +653,66 @@ final class LadderMathTests: XCTestCase {
                        + "rewrote, which is week 1")
         XCTAssertGreaterThan(days[3], days[2], "and week 4 resumes the climb")
     }
+
+    // MARK: - Round 2, item O2: the down-week cadence is the BLOCK's, not the window's
+
+    /// Twelve rungs, the first `closed` of them behind the athlete.
+    private func twelveWeekLadder(closed: Int) -> Ladder {
+        Ladder(goalID: UUID(),
+               rungs: (0..<12).map { index in
+                   .init(weekIndex: index,
+                         weekStartString: String(format: "2026-09-%02d", 6 + index * 7),
+                         target: GoalTarget(distance: 10),
+                         status: index < closed ? .met : (index == closed ? .current : .ahead))
+               },
+               derivedAt: Date(timeIntervalSince1970: 0))
+    }
+
+    /// `PercentRampLadderRule` cuts every FOURTH week — block weeks 4, 8 and 12,
+    /// which are indices 3, 7 and 11. `deloadWeeks` gets translated into the
+    /// window, but this cadence is the rule's own and used to count from
+    /// whatever it was handed: after two weeks closed, the cut landed on block
+    /// weeks 6 and 10 instead.
+    ///
+    /// Index 11 is the LAST rung and is forced to the milestone, so only 3 and 7
+    /// can be read as down weeks.
+    func testTheDownWeekCadenceStaysOnTheBlocksOwnFourthWeeks() throws {
+        let rule = try XCTUnwrap(LadderRules.rampRule(for: .weeklyDistance))
+
+        for closed in [0, 1, 2] {
+            let out = LadderMath.reLadder(
+                existing: twelveWeekLadder(closed: closed),
+                metric: .weeklyDistance,
+                current: GoalTarget(distance: 10),
+                // High enough that the ramp never saturates, so the only dips in
+                // the ladder are the cadence's own.
+                milestone: GoalTarget(activity: "run", distance: 400),
+                constraints: LadderConstraints(),
+                rule: rule, derivedAt: Date(timeIntervalSince1970: 100))
+            let miles = out.rungs.compactMap(\.target.distance)
+
+            XCTAssertLessThan(miles[3], miles[2],
+                              "with \(closed) closed, block week 4 is a down week")
+            XCTAssertLessThan(miles[7], miles[6],
+                              "with \(closed) closed, block week 8 is too")
+            XCTAssertGreaterThan(miles[4], miles[3],
+                                 "with \(closed) closed, the week after resumes")
+            XCTAssertGreaterThan(miles[6], miles[5],
+                                 "with \(closed) closed, week 7 is not a down week")
+        }
+    }
+
+    /// A fresh derivation has no origin to carry, so the default is 0 and the
+    /// cadence counts from the block's own first week — unchanged behaviour, and
+    /// the reason the new field can be defaulted rather than threaded through
+    /// every call site.
+    func testAFreshDerivationCountsFromWeekOne() throws {
+        let rule = try XCTUnwrap(LadderRules.rampRule(for: .weeklyDistance))
+        let rungs = rule.rungs(current: GoalTarget(distance: 10),
+                               target: GoalTarget(activity: "run", distance: 400),
+                               weeks: 8, constraints: LadderConstraints())
+        let miles = rungs.compactMap(\.distance)
+        XCTAssertLessThan(miles[3], miles[2], "block week 4")
+        XCTAssertGreaterThan(miles[4], miles[3])
+    }
 }

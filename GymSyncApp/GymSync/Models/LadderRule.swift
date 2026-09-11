@@ -24,6 +24,26 @@ struct LadderConstraints: Equatable, Sendable {
     /// the doctrine `Units.roundToIncrement` and
     /// `WeeklyGoalDetector.liftTarget` both follow.
     var unit: WeightUnit = .lbs
+    /// The BLOCK-relative week index that local index 0 sits on.
+    ///
+    /// **THE CADENCE ANCHOR** (round 2, item O2). `deloadWeeks` and `taperWeeks`
+    /// are translated into the window a rule is about to iterate
+    /// (`LadderMath.windowed`), but a rule with a cadence of its OWN —
+    /// `PercentRampLadderRule`'s "every fourth week is a down week" — counts
+    /// from the start of whatever it is handed. On a re-ladder that is the
+    /// window, not the block, so the down week re-phased on every refresh: an
+    /// eight-week endurance block's weeks 4 and 8 became weeks 6 and 10 of
+    /// nothing after two weeks closed.
+    ///
+    /// With the origin the rule can ask what BLOCK week a local index is, and
+    /// anchor its cadence there. 0 for a fresh derivation, which is what every
+    /// call site that does not re-ladder means.
+    ///
+    /// Assumes the window is contiguous, which it is except when an athlete has
+    /// overridden a future week; the deload SET is exact either way, and a
+    /// down-week cadence off by one on a holed ladder is a smaller wrong than
+    /// the one this replaces.
+    var phaseOriginWeekIndex: Int = 0
 }
 
 /// One rung per week, from where the athlete is to where they said they want

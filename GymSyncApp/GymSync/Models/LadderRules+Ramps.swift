@@ -49,8 +49,13 @@ struct PercentRampLadderRule: LadderRule {
         var value = start
         var out: [GoalTarget] = []
         for index in 0..<weeks {
+            // THE CADENCE IS ANCHORED TO THE BLOCK, not to this window (O2).
+            // `deloadWeeks` arrives already translated to local indices; the
+            // down-week rhythm is the rule's own and has to be counted from the
+            // block's first week, or a re-ladder re-phases it.
+            let blockWeek = constraints.phaseOriginWeekIndex + index
             let isDown = constraints.deloadWeeks.contains(index)
-                || (downWeekEvery > 0 && (index + 1) % downWeekEvery == 0)
+                || (downWeekEvery > 0 && (blockWeek + 1) % downWeekEvery == 0)
             if isDown {
                 var rung = target
                 write(&rung, (value * downFactor).rounded(.toNearestOrEven))

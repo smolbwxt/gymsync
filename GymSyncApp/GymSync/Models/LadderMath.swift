@@ -262,6 +262,9 @@ extension LadderMath {
     private static func windowed(_ constraints: LadderConstraints,
                                  over mutable: [LadderRung]) -> LadderConstraints {
         var local = constraints
+        // Where local index 0 sits in the BLOCK, so a rule with a cadence of its
+        // own can anchor it there rather than to this window (O2).
+        local.phaseOriginWeekIndex = mutable.first?.weekIndex ?? 0
         local.deloadWeeks = Set(mutable.enumerated().compactMap { position, rung in
             constraints.deloadWeeks.contains(rung.weekIndex) ? position : nil
         })
