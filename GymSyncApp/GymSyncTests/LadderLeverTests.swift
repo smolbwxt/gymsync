@@ -164,8 +164,12 @@ final class LadderFixtureCoherenceTests: XCTestCase {
         let reach = LadderFixtures.behindReachesE1RM
         for row in LadderFixtures.behind.rows where row.status != .missed
                                                 && row.status != .overridden {
+            // THE FIRST WHOLE WORD THAT IS A NUMBER. Filtering digits out of
+            // "≈ 205 e1RM" yields 2051 — the `1` in `e1RM` — which is how the
+            // first cut of this test failed the fixture it was written to pin.
             guard let implication = row.implication,
-                  let value = Int(implication.filter(\.isNumber)) else { continue }
+                  let value = implication.split(separator: " ")
+                      .compactMap({ Int($0) }).first else { continue }
             XCTAssertLessThanOrEqual(value, reach,
                                      "week \(row.weekNumber) implies \(value) above a standing of \(reach)")
         }
