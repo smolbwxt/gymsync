@@ -281,3 +281,15 @@ cards (`app-pump-feed-post`), and the venue hub's rows (`app-venue-hub`). Not a 
 composition pass (what a social card says, in what order, with which one action), to be run as its own
 brainstorm → proof-cards round after goal-first programming's Task 0 is under review. Queued behind: the
 lobby + group-session simplification round (still unasked), the #6 crash (needs a log).
+
+### 2026-09-11 — owner: "go with your suggestions" (four decisions)
+- PR #41 (You tab state sentences) merged → TestFlight 927.
+- Goal-first programming release: yes — PR #42 open on `feat/goal-first-release`, merges on its green run; frames
+  90/91 (nine-kind editor grid) and the Home strip's lift rung (`— → 200 lbs · NO SET LOGGED YET`) re-approved
+  with it. Deferred and written into the PR: strength/muscle re-ladder by regenerating remaining weeks; Volume's
+  door reach; Coach-guided goals (phase 2); block end (phase 3).
+- Social cards: design APPROVED as proposed (visibility on) → `docs/superpowers/specs/2026-09-11-social-cards-design.md`.
+- Milestone hero: GO → `docs/superpowers/specs/2026-09-06-you-milestone-hero-design.md` (the T10.2 gate document);
+  build starts on the owner's sign-off of that spec, in parallel; first step merges `feat/milestone-render-pipeline`.
+- Queue after these: congruence B2/B9/B3; the lobby + group-session simplification round (still unasked); the
+  #6 crash the day a log arrives.
