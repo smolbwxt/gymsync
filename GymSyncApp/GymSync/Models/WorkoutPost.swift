@@ -119,9 +119,15 @@ enum WorkoutPostRepository {
         let avgBpm: Int?
         let maxBpm: Int?
         let isLate: Bool
+        let completedAt: Date?
+        let retakeCount: Int
+        let highlight: PostHighlight?
+        let trajectory: PostTrajectory?
+        let goalID: UUID?
+        let weekStartString: String?
 
         enum CodingKeys: String, CodingKey {
-            case id, summary
+            case id, summary, highlight, trajectory
             case authorID = "author_id"
             case sessionID = "session_id"
             case photoPath = "photo_path"
@@ -129,6 +135,10 @@ enum WorkoutPostRepository {
             case avgBpm = "avg_bpm"
             case maxBpm = "max_bpm"
             case isLate = "is_late"
+            case completedAt = "completed_at"
+            case retakeCount = "retake_count"
+            case goalID = "goal_id"
+            case weekStartString = "week_start"
         }
     }
 
@@ -138,13 +148,27 @@ enum WorkoutPostRepository {
     /// insert leaves at worst an orphan in the author's own folder.
     /// HR values are hard-gated on `includesHR` here as well as by the
     /// table CHECK — the client must never ship bpm the user didn't share.
+    ///
+    /// `isLate` IS NO LONGER A PARAMETER. Spec §2 makes it a derivation from
+    /// `postedAt − completedAt` (`PostLateness.isLate`), so the one place
+    /// that writes the row is the one place that decides it — a caller can no
+    /// longer hand in a lateness that disagrees with the timestamps beside it.
+    /// `capturedLate` survives as the FALLBACK for a session with no
+    /// `completed_at`, which is a shape this app no longer writes.
     static func create(sessionID: UUID,
                        summary: PostSummary,
                        photoJPEG: Data?,
                        includesHR: Bool,
                        avgBpm: Int?,
                        maxBpm: Int?,
-                       isLate: Bool) async throws -> WorkoutPost {
+                       completedAt: Date?,
+                       capturedLate: Bool,
+                       retakeCount: Int,
+                       highlight: PostHighlight?,
+                       trajectory: PostTrajectory?,
+                       goalID: UUID?,
+                       weekStartString: String?,
+                       postedAt: Date = .now) async throws -> WorkoutPost {
         guard let userID = await SupabaseService.shared.currentUserID() else {
             throw GymSyncError.unauthorized
         }
@@ -171,7 +195,15 @@ enum WorkoutPostRepository {
                     includesHR: includesHR,
                     avgBpm: includesHR ? avgBpm : nil,
                     maxBpm: includesHR ? maxBpm : nil,
-                    isLate: isLate))
+                    isLate: PostLateness.isLate(completedAt: completedAt,
+                                                postedAt: postedAt,
+                                                fallback: capturedLate),
+                    completedAt: completedAt,
+                    retakeCount: retakeCount,
+                    highlight: highlight,
+                    trajectory: trajectory,
+                    goalID: goalID,
+                    weekStartString: weekStartString))
                 .select()
                 .single()
                 .execute()

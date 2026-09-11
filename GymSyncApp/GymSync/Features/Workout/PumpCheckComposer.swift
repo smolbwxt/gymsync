@@ -23,6 +23,16 @@ struct PumpCheckContext {
     let includeHRDefault: Bool
     /// The moment the recap appeared — anchor of the 1:00 window.
     let windowStart: Date
+    // ── the trajectory snapshot (spec §1, §2, §6) ─────────────────────
+    /// The session's own completion. The precise late tag measures from here,
+    /// not from `windowStart`: spec §2 says "elapsed time from the session's
+    /// completion to the post", and a recap opened ten minutes late would
+    /// otherwise read as a prompt post.
+    let completedAt: Date?
+    /// Resolved by `PostTrajectoryResolver`, nil for an athlete with no block.
+    let trajectory: PostTrajectory?
+    let goalID: UUID?
+    let weekStartString: String?
 }
 
 struct PumpCheckComposerCard: View {
@@ -40,10 +50,22 @@ struct PumpCheckComposerCard: View {
     @State private var posted = false
     @State private var skipped = false
     @State private var errorText: String?
+    /// Spec §2: how many times the lifter re-shot before posting. Counted in
+    /// the Retake button, written once at INSERT, shown on the card above
+    /// zero.
+    @State private var retakeCount = 0
+    /// Spec §1 line 4: the one proposal the lifter picked, or none.
+    @State private var highlight: PostHighlight?
 
     init(context: PumpCheckContext) {
         self.context = context
         _includeHR = State(initialValue: context.includeHRDefault)
+    }
+
+    /// Computed, not stored: the summary is immutable and
+    /// `HighlightMath.propose` is pure, so there is nothing to keep in sync.
+    private var proposals: [PostHighlight] {
+        HighlightMath.propose(summary: context.summary)
     }
 
     private var windowEnd: Date { context.windowStart.addingTimeInterval(60) }
@@ -159,6 +181,45 @@ struct PumpCheckComposerCard: View {
                     }
                 }
             }
+
+            // Spec §1 line 4: Coach proposes, the lifter picks ONE OR NONE.
+            // No free text, and no new primary — `Post` is the one accent on
+            // this card (design rule 4). Selection is the "current item" job
+            // of accent (rule 2): a 1.5 pt ring, the same one
+            // `GSGoalChip.isNext` draws.
+            if !proposals.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("COACH'S PICKS")
+                        .font(GSFont.bold(10, relativeTo: .caption2))
+                        .tracking(1.2)
+                        .foregroundStyle(theme.neutral500)
+                    ForEach(Array(proposals.enumerated()), id: \.offset) { _, proposal in
+                        Button {
+                            // Tapping the chosen one clears it — "or none" is
+                            // reachable without a fourth control saying None.
+                            highlight = (highlight == proposal) ? nil : proposal
+                        } label: {
+                            Text(HighlightText.line(proposal, unit: ThemeStore.shared.weightUnit))
+                                .font(GSFont.bodyMedium(12.5, relativeTo: .caption))
+                                .foregroundStyle(theme.text)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                                .background(theme.bg)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
+                                        .strokeBorder(highlight == proposal
+                                                      ? theme.accent : theme.divider,
+                                                      lineWidth: highlight == proposal ? 1.5 : 1)
+                                )
+                                .clipShape(RoundedRectangle(cornerRadius: GSMetrics.radiusSm))
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
             HStack(spacing: 10) {
                 Button {
                     Task { await post(image) }
@@ -173,6 +234,7 @@ struct PumpCheckComposerCard: View {
                 .buttonStyle(GSPrimaryButtonStyle(fontSize: 14, verticalPadding: 11))
                 .disabled(isPosting)
                 Button {
+                    retakeCount += 1
                     photo = nil
                     showCamera = true
                 } label: {
@@ -221,7 +283,13 @@ struct PumpCheckComposerCard: View {
                 includesHR: includeHR && context.avgBpm != nil,
                 avgBpm: context.avgBpm,
                 maxBpm: context.maxBpm,
-                isLate: capturedLate)
+                completedAt: context.completedAt,
+                capturedLate: capturedLate,
+                retakeCount: retakeCount,
+                highlight: highlight,
+                trajectory: context.trajectory,
+                goalID: context.goalID,
+                weekStartString: context.weekStartString)
             errorText = nil
             withAnimation(.easeOut(duration: 0.2)) { posted = true }
         } catch let error as GymSyncError {

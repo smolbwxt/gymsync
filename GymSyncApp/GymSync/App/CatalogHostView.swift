@@ -1275,7 +1275,12 @@ struct CatalogHostView: View {
                 summary: Self.pumpFixtureSummary,
                 avgBpm: 142, maxBpm: 171,
                 includeHRDefault: true,
-                windowStart: Date()))
+                windowStart: Date(),
+                // A FIXTURE, never a resolver (global constraint 7): the idle
+                // composer has no photo, so no picker and no lateness are in
+                // this frame and `app-pump-composer` stays byte-identical.
+                completedAt: nil, trajectory: nil,
+                goalID: nil, weekStartString: nil))
                 .padding(16)
         }
     }
