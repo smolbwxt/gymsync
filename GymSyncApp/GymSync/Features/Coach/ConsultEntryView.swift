@@ -130,56 +130,31 @@ struct ConsultEntryView: View {
         profile = outcome.profile
         if let ruleTrouble = outcome.ruleTrouble { onRuleTrouble(ruleTrouble) }
         do {
-            // ── THE ONE LINE INTEGRATION CHANGES ─────────────────────────
+            // ── THE ONE LINE INTEGRATION CHANGES, NOW MADE (I1) ──────────
             //
-            // Stream B is done (`origin/feat/goal-first-generator`, 2515c0f)
-            // and `ProgramBuilder.build` now REQUIRES `goal:`. It is not
-            // passed here because that parameter does not exist on this
-            // branch and `ProgramBuilder.swift` is B's file — streams touch
-            // disjoint file sets, and merging B is integration's job, not
-            // this stream's.
+            // Stream B's `ProgramBuilder.build` requires `goal:` and
+            // `blockGoalRepository:` (no defaults). `goal`, NOT
+            // `LadderMath.detectedGoal(profile:)`: this screen's own
+            // milestone (`ConsultEntryView.goal`, Stream C task C3) is in
+            // scope — B4 left the detected-goal draft only as a placeholder
+            // "for the call sites Stream C has not reached yet", and this is
+            // that call site. The other placeholder lived in
+            // `CoachHomeView.buildFromConsult`, which task C4 deleted
+            // outright, so no production path ships the stand-in.
             //
-            // At integration this becomes, verbatim — the shape B's own two
-            // call sites already have, so the three lines I1 changes are the
-            // three lines a grep for the marker comment finds.
+            // `blockGoalRepository` is `LiveBlockGoalRepository()` (A11) —
+            // the I1 swap of every `// I1: swap` marker.
             //
-            // ⚠️ **THE FOUR LINES BELOW ARE A TEMPLATE, NOT THE CALL.** The
-            // live call is at the bottom of this comment block and passes
-            // NEITHER argument, because neither exists on this branch. An I1
-            // pass that greps `StubBlockGoalRepository` and swaps it in place
-            // would edit this comment and leave the call untouched — the call
-            // is the thing to rewrite, wholesale, with what follows. It will
-            // not compile after B is merged until someone does, which is the
-            // loud failure this shape is chosen for.
-            //
-            //     _ = try await ProgramBuilder.build(
-            //         profile: profile, answers: answers,
-            //         catalog: catalog, userID: userID,
-            //         goal: goal,
-            //         // I1: swap to LiveBlockGoalRepository (A11)
-            //         blockGoalRepository: StubBlockGoalRepository())
-            //
-            // `blockGoalRepository` HAS NO DEFAULT on B's signature either,
-            // deliberately: `LiveBlockGoalRepository` does not exist until task
-            // A11, and a defaulted stub would have let step 7b run its whole
-            // happy path and write nothing — "no block without a goal" true at
-            // the type level and false in the database. So every call site
-            // names the stub out loud and carries that marker.
-            //
-            // **`goal`, NOT `LadderMath.detectedGoal(profile:)`.** B4 left
-            // that consistency draft at both build call sites as a
-            // placeholder "for the call sites Stream C has not reached yet".
-            // This IS that call site, and it has now been reached: the
-            // athlete's own milestone is in scope as `goal`. The other
-            // placeholder lived in `CoachHomeView.buildFromConsult`, which
-            // task C4 deleted outright, so no production path can ship the
-            // stand-in.
-            //
-            // `onBuilt` is then handed the id of the `block_goals` row the
-            // build wrote instead of `nil`.
-            _ = try await ProgramBuilder.build(profile: profile, answers: answers,
-                                               catalog: catalog, userID: userID)
-            onBuilt(nil)
+            // `onBuilt` is handed the id of the `block_goals` row the build
+            // wrote (`outcome.goalID`, nil only when the enrollment or the
+            // save itself failed), so the host can push the ladder page
+            // (spec §6) for the goal just written.
+            let outcome = try await ProgramBuilder.build(
+                profile: profile, answers: answers,
+                catalog: catalog, userID: userID,
+                goal: goal,
+                blockGoalRepository: LiveBlockGoalRepository())
+            onBuilt(outcome.goalID)
         } catch {
             trouble = ErrorMapping.map(error).errorDescription
         }

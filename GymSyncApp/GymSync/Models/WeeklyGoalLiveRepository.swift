@@ -392,6 +392,11 @@ struct LiveWeeklyGoalRepository: WeeklyGoalRepository, WeeklyGoalCoachWriter {
     /// has one implementation rather than two that can drift.
     private func writeDetected(weekStart: String,
                                existing: WeeklyGoal?) async -> WeeklyGoal? {
+        // A LADDER WEEK IS NOT DETECTION'S TO FILL (task B6). Asked FIRST, and
+        // before the derivation, so a booking inside an active block costs
+        // neither a wrong write nor the six reads `detect` would have made to
+        // arrive at one.
+        guard !WeeklyGoalWriteRule.isLadderWeek(existing) else { return existing }
         guard let detected = await detect(weekStart: weekStart) else { return existing }
         guard WeeklyGoalWriteRule.shouldOverwrite(existing: existing,
                                                   detected: detected) else {

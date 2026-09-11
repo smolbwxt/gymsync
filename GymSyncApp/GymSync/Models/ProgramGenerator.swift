@@ -201,6 +201,19 @@ enum ProgramGenerator {
         /// straight pass-through: nobody has a target until the recovery
         /// probe has told the search something.
         var volumeTargets: [String: Int] = [:]
+        /// The block's goal (spec §5.3). THE BLOCK EXISTS TO SERVE IT.
+        ///
+        /// A DRAFT, not a `BlockGoal`: the goal is composed at the door and the
+        /// enrollment does not exist until `ProgramBuilder` writes it, so the
+        /// only shape available at generation time is the one without an
+        /// enrollment id (`BlockGoalDraft`'s own doc comment).
+        ///
+        /// Optional here and REQUIRED at `ProgramBuilder.build` (task B4). The
+        /// generator is a pure function with golden tests that predate goals
+        /// and must keep passing byte for byte; the DOOR is where "no block
+        /// without a goal" is enforced, because the door is the only way a
+        /// block gets built.
+        var goal: BlockGoalDraft? = nil
     }
 
     struct CatalogExercise {
@@ -311,7 +324,41 @@ enum ProgramGenerator {
 
     // MARK: Pipeline
 
+    /// The inputs `generate` actually runs on — `inputs` with its goal folded
+    /// in (tasks B1 and B3, spec §5.3).
+    ///
+    /// **ALL FOUR LEVERS, NOT JUST THE BAND.** `generate` used to apply
+    /// `GoalGeneratorMapping.focus(for:)` alone, so a call site that built
+    /// `Inputs` by hand and set `goal` directly got the band and silently *not*
+    /// the focus lift, the focus muscles, the seeded volume targets or the
+    /// cardio and mobility placement — a half-honoured goal, in a file whose own
+    /// comments claimed the goal was honoured. Two paths applying different
+    /// subsets of "the goal" is precisely the drift this stream exists to avoid,
+    /// so there is one path now and this is it.
+    ///
+    /// SAFE TO RUN TWICE, by construction: `apply` is assignment, `formUnion`,
+    /// `max` and a clamp computed from the goal, so
+    /// `TrainingProfile.generatorInputs(…, goal:)` having already run makes this
+    /// a no-op rather than a second helping. Pure, and it RETURNS rather than
+    /// mutating in place, so a test can read every lever without generating a
+    /// program.
+    ///
+    /// A GOAL-LESS BUILD IS UNTOUCHED — the mapping is never consulted when
+    /// `goal` is nil — which is what keeps the golden tests byte identical.
+    static func resolvedInputs(_ inputs: Inputs) -> Inputs {
+        guard let goal = inputs.goal else { return inputs }
+        var resolved = inputs
+        GoalGeneratorMapping.apply(goal, to: &resolved)
+        return resolved
+    }
+
     static func generate(inputs: Inputs, catalog: [CatalogExercise]) -> Program {
+        // THE GOAL, before anything reads a single field of `inputs`.
+        //
+        // FIRST LINE, so the split, the slot templates, selection scoring, the
+        // prescription and the cardio passes all ride the goal rather than the
+        // profile's `blockGoal`.
+        let inputs = resolvedInputs(inputs)
         // Band override (power_rfd) beats the focus table for prescription
         // SHAPE only — split, slots, and scoring still ride the focus.
         let band = GeneratorScience.applyRepAppetite(
@@ -2097,6 +2144,184 @@ enum ProgramGenerator {
                 reps: main.repsLow,
                 isDeload: week.isDeload,
                 note: week.note)
+        }
+    }
+}
+
+// MARK: - GoalGeneratorMapping
+//
+// Spec §5.3: `ProgramGenerator.Inputs` gains `goal`, "which sets the focus
+// band and the focus exercise where the goal names one, the block length
+// from the date, and the conditioning / mobility placement for the ramp
+// metrics."
+//
+// THREE LEVERS AND NO MORE (task B1). The generator's science and its timing
+// constants are not this feature's to move: a goal steers WHICH band, WHICH
+// lift and WHICH muscles, and — through `applyPlacement` (task B3) — where
+// the cardio and the mobility go. Everything else about the block is the
+// same machinery it was before goals existed, which is what lets the golden
+// tests stand unchanged.
+//
+// FILE SCOPE, not nested in `ProgramGenerator`: the mapping is consumed by
+// `TrainingProfile.generatorInputs` and by the door, neither of which should
+// have to spell a namespace to ask what band a goal wants. PURE — no clock,
+// no catalog, no network.
+enum GoalGeneratorMapping {
+
+    /// The training emphasis this goal asks for, or nil for the two presets
+    /// that deliberately ask for none.
+    ///
+    /// AN OPTIONAL RETURN RATHER THAN A DEFAULT, so "no override" is a value
+    /// the caller has to handle rather than a silent fall-through: for
+    /// `consistency` and `recovery` the PROFILE'S own focus stands. Showing
+    /// up more often is not a training emphasis, and a recovery block's shape
+    /// is its cardio and mobility placement (`applyPlacement`), not a rep
+    /// range.
+    ///
+    /// KEYED ON THE PRESET, which is the table spec §2.3 actually writes. A
+    /// goal with no preset is Coach-guided (spec §2.4, phase 2) and gets no
+    /// override: until Coach can name a band, the profile's is the only
+    /// honest answer.
+    static func focus(for goal: BlockGoalDraft) -> GeneratorScience.Focus? {
+        switch goal.preset {
+        case .strength, .repStrength:               return .strength
+        case .muscle, .maintenance, .volume:        return .hypertrophy
+        case .endurance, .conditioning, .benchmark: return .conditioning
+        case .bodyComposition:                      return .weightLoss
+        case .consistency, .recovery:               return nil
+        case .none:                                 return nil
+        }
+    }
+
+    /// Fold `goal` into `inputs` — the whole of what a goal moves.
+    ///
+    /// Called LAST by `TrainingProfile.generatorInputs`, after every
+    /// profile-derived field and after the standing-rule loop, so the goal is
+    /// the strongest voice in the room. That ordering is the design, not an
+    /// accident of where the line sits.
+    static func apply(_ goal: BlockGoalDraft, to inputs: inout ProgramGenerator.Inputs) {
+        inputs.goal = goal
+
+        // 1. The band.
+        if let goalFocus = focus(for: goal) { inputs.focus = goalFocus }
+
+        // 2. The focus lift. A focus lift WINS its main pattern slot outright
+        //    before scoring, which is exactly the promise a "bench 225" goal
+        //    makes.
+        //
+        //    `formUnion`, NEVER assignment: the consult's own focus lifts and
+        //    `RuleIntent.swap`'s starred lift are already in this set, and an
+        //    assignment would erase them — the precise defect
+        //    `TrainingProfile.generatorInputs` records against
+        //    `excludedExerciseIDs`.
+        if goal.metric == .liftOneRepMax || goal.metric == .liftRepsAtLoad,
+           let liftID = goal.target.exerciseID {
+            inputs.focusExerciseIDs.formUnion([liftID])
+        }
+
+        // 3. The muscle group.
+        if goal.metric == .weeklyMuscleSets {
+            if goal.preset == .maintenance {
+                // OWNER DECISION 9: Maintenance is every major group, and nil
+                // is already the generator's own spelling of "all muscle
+                // groups" (`Inputs.focusMuscles`) — the owner's "hit all and
+                // don't think about it again". Set explicitly rather than
+                // left alone, because a profile carrying a stored focus
+                // muscle from a previous block would otherwise narrow a
+                // maintenance block to one group.
+                inputs.focusMuscles = nil
+                // Seed the recommended numbers so `balanceWeeklyVolume`
+                // balances toward THEM rather than toward the band.
+                for (group, sets) in goal.target.muscleTargets ?? [:] {
+                    inputs.volumeTargets[group] = sets
+                }
+            } else {
+                // EVERY GROUP THE GOAL NAMES, and `nil` when it names none.
+                //
+                // This used to handle `targets.count == 1` and fall through
+                // silently otherwise, which left a `focusMuscles` carried over
+                // from a PREVIOUS block in place — narrowing a block the goal
+                // wanted wider, in the one branch of this function that said
+                // nothing about what it did. Spec §2.3 gives Muscle a single
+                // group, so the one-group case is the same value it always was;
+                // this just stops a two-group goal from inheriting somebody
+                // else's focus, and a goal with no groups at all from silently
+                // keeping one.
+                let named = goal.target.muscleTargets.map { Set($0.keys) } ?? []
+                inputs.focusMuscles = named.isEmpty ? nil : named
+            }
+        }
+
+        // 4. Where the cardio and the mobility go.
+        applyPlacement(goal, to: &inputs)
+    }
+
+    /// The PACE FLOOR behind an endurance goal's minutes: 10 minutes per mile.
+    ///
+    /// **A STATED ASSUMPTION, NOT A MEASUREMENT.** The app has no pace-history
+    /// reader in phase 1 and the spec gives no number, so this is the plan's
+    /// decision written down rather than a fact read off the athlete's log.
+    /// The equivalent metric pace is ~6 min/km, and this seam has no unit —
+    /// `GoalTarget.distance` is "in the athlete's unit" and neither the
+    /// profile nor `Inputs` carries one — so a kilometre athlete's minutes come
+    /// out high and the 20…90 clamp below is what bounds the error. When a
+    /// pace reader lands, this constant is the one line it replaces.
+    static let paceFloorMinutesPerUnitDistance: Double = 10
+
+    /// Conditioning / mobility placement for the ramp metrics (task B3, spec
+    /// §3.4: "The block generator receives the rung as an input where it
+    /// changes the plan — a cardio day placed, a mobility circuit added —
+    /// through the existing conditioning / cardio passes").
+    ///
+    /// THROUGH THE EXISTING PASSES, NOT A NEW ONE. `Inputs` already carries
+    /// `cardioDays`, `cardioMinutes` and `fillWeekWithRecovery`, and `generate`
+    /// already has a dedicated-cardio placement and an active-recovery fill.
+    /// This sets those fields and touches nothing else in the generator.
+    ///
+    /// `max(…)`, NEVER assignment, on the day counts: the athlete's own cardio
+    /// answer from the consult is already in `Inputs`, and a goal must not take
+    /// days away from someone who asked for them. The conditioning cap of four
+    /// bounds the GOAL's ask for the same reason — it is not a ceiling on the
+    /// athlete.
+    ///
+    /// Keyed on the PRESET, like `focus(for:)`: a Coach-guided goal (spec §2.4,
+    /// phase 2) places nothing until Coach can name what it wants.
+    static func applyPlacement(_ goal: BlockGoalDraft,
+                               to inputs: inout ProgramGenerator.Inputs) {
+        switch goal.preset {
+        case .endurance:
+            inputs.cardioDays = max(inputs.cardioDays, 2)
+            if let distance = goal.target.distance, distance > 0 {
+                let weeklyMinutes = distance * paceFloorMinutesPerUnitDistance
+                let perSession = weeklyMinutes / Double(max(1, inputs.cardioDays))
+                inputs.cardioMinutes = min(90, max(20, Int(perSession.rounded())))
+            }
+        case .conditioning:
+            inputs.cardioDays = max(inputs.cardioDays, min(4, goal.target.sessions ?? 0))
+        case .bodyComposition:
+            // CUTTING ONLY. A negative rate is a deficit and the generator's
+            // own weight-loss cardio pass then shapes the days; an explicitly
+            // POSITIVE rate is a gaining block, and buying it two cardio days
+            // it never asked for would work against the goal. No rate at all is
+            // read as the cut — the preset's common case, and the behaviour the
+            // plan's table specifies.
+            if (goal.target.bodyWeightRatePercent ?? -1) < 0 {
+                inputs.cardioDays = max(inputs.cardioDays, 2)
+            }
+        case .recovery:
+            inputs.fillWeekWithRecovery = true
+            inputs.cardioDays = max(inputs.cardioDays, 2)
+            if let liss = goal.target.lissMinutes {
+                inputs.cardioMinutes = min(60, max(20, liss / 2))
+            }
+        case .benchmark:
+            inputs.cardioDays = max(inputs.cardioDays, 1)
+        case .strength, .repStrength, .muscle, .consistency, .maintenance,
+             .volume, .none:
+            // NOTHING, and exhaustively so: a new preset has to come through
+            // this switch and say what it places rather than defaulting into
+            // silence.
+            break
         }
     }
 }

@@ -4,34 +4,6 @@ import Foundation
 //
 // Spec §5.3: the goal sets "the block length from the date". PURE, so the
 // answer is a test rather than a clock.
-//
-// ── WHY THIS FILE IS ON STREAM C'S BRANCH ────────────────────────────────
-//
-// It is STREAM B's file (plan tasks B2 and B5). Stream C needs two of its
-// declarations before B lands: `GoalMilestoneCopy.coachLine` takes a
-// `Reach` and delegates the gap sentence to `reachSentence`, and the plan's
-// own C2 test constructs `GoalBlockLength.Reach(reaches:projected:
-// achievableDate:)` by name. C forks from Task 0, where neither exists, so
-// the branch could not compile the test the plan gives it.
-//
-// What is here is B2's enum and B5's `Reach` + `reachSentence` COPIED
-// CHARACTER FOR CHARACTER from `origin/feat/goal-first-generator` (2515c0f),
-// and nothing else. `reach(metric:rungs:milestone:byDate:weeklyGain:from:
-// calendar:)` and its private `shortfall(...)`/`gap(...)` are deliberately
-// ABSENT: they call `LadderMath.reached`, which is Stream A's, and a second
-// implementation of "has this rung reached the milestone" would be exactly
-// the drift this plan's live-faithful discipline exists to prevent.
-//
-// VERIFIED SUBSET, not a claim:
-//   diff <(sed -n '/^enum GoalBlockLength {/,$p' <this file>) //        <(git show origin/feat/goal-first-generator:GymSyncApp/GymSync///          Models/GoalBlockLength.swift | sed -n '/^enum GoalBlockLength {/,$p') //     | grep '^<'
-// prints nothing: every line below appears, unchanged, in B's file.
-//
-// AT INTEGRATION (task I1) this is a "both added" conflict against Stream
-// B's own `GoalBlockLength.swift`. **Take B's file whole.** C's call sites
-// compile against it untouched and C's copy disappears. Resolving it the
-// other way round loses `reach(...)` and breaks B loudly, which is the point
-// of putting this at B's own path rather than at a private one that would
-// collide silently as a duplicate declaration.
 enum GoalBlockLength {
 
     /// The generator's own limits. Below four weeks a block has no wave to
@@ -60,6 +32,11 @@ enum GoalBlockLength {
     }
 }
 
+// MARK: - "Cannot reach by the date"
+//
+// Spec §3.2, the copy verbatim: "225 by Oct 18 needs more than this block can
+// safely give; Nov 15 is the date I can build to" — and, in the same
+// paragraph: **"The ladder never lies about the gap."**
 extension GoalBlockLength {
 
     /// Can the block's own prescribed loading reach `target` by `byDate`?
@@ -75,6 +52,32 @@ extension GoalBlockLength {
         /// The date the block COULD build to, when it cannot make the one
         /// asked for. nil when it can.
         let achievableDate: Date?
+    }
+
+    static func reach(metric: GoalMetric, rungs: [GoalTarget], milestone: GoalTarget,
+                      byDate: Date?, weeklyGain: Double?, from now: Date = .now,
+                      calendar: Calendar = .current) -> Reach {
+        guard let last = rungs.last else {
+            return Reach(reaches: false, projected: milestone, achievableDate: nil)
+        }
+        if LadderMath.reached(metric: metric, measured: last, target: milestone) {
+            return Reach(reaches: true, projected: last, achievableDate: nil)
+        }
+        // The date the block COULD build to: how many more weeks of the same
+        // weekly gain the remaining distance needs. nil `weeklyGain` (a metric
+        // with no linear gain, or a ladder that is flat) means the honest
+        // answer is "not on this ladder", with no invented date.
+        var achievable: Date?
+        if let weeklyGain, weeklyGain > 0,
+           let short = shortfall(metric: metric, last: last, milestone: milestone),
+           short > 0 {
+            let extraWeeks = Int((short / weeklyGain).rounded(.up))
+            let endOfBlock = calendar.date(byAdding: .day,
+                                           value: rungs.count * 7, to: now) ?? now
+            achievable = calendar.date(byAdding: .day, value: extraWeeks * 7,
+                                       to: byDate ?? endOfBlock)
+        }
+        return Reach(reaches: false, projected: last, achievableDate: achievable)
     }
 
     /// Coach's sentence at the door, spec §3.2 verbatim in shape:
@@ -96,10 +99,77 @@ extension GoalBlockLength {
         // dates. One line here, and the sentence names the day the arithmetic
         // used.
         formatter.timeZone = calendar.timeZone
+        // AND THE CALENDAR'S LOCALE, for the identical reason one line up.
+        // `dateFormat = "MMM d"` takes its month SYMBOLS from
+        // `formatter.locale`, which setting `formatter.calendar` does not
+        // touch. Before this line the three tests that pin `Oct 18` and
+        // `Nov 15` character for character were green by RUNNER DEFAULT rather
+        // than by anything they controlled — they set `calendar.locale` and the
+        // formatter ignored it — and would have gone red on any non-English
+        // simulator or developer Mac. `.current` when the calendar names no
+        // locale, which is every production call: the athlete reads their own
+        // months, and only a test hands this a pinned one.
+        formatter.locale = calendar.locale ?? .current
         formatter.dateFormat = "MMM d"
         let asked = byDate.map { " by \(formatter.string(from: $0))" } ?? ""
         let head = "\(milestoneText)\(asked) needs more than this block can safely give"
         guard let achievable = reach.achievableDate else { return head + "." }
         return head + "; \(formatter.string(from: achievable)) is the date I can build to."
+    }
+
+    /// How far the last rung still is from the milestone, in the metric's own
+    /// unit — pounds for a lift, reps for rep strength, miles or kilometres for
+    /// distance, seconds for a benchmark, pounds for body weight.
+    ///
+    /// nil for `weeklyMuscleSets`, where "distance to the milestone" is not a
+    /// single number: six groups are six gaps, and one date computed over them
+    /// would be a guess wearing arithmetic's clothes.
+    private static func shortfall(metric: GoalMetric, last: GoalTarget,
+                                  milestone: GoalTarget) -> Double? {
+        switch metric {
+        case .liftOneRepMax:
+            return gap(milestone.targetWeightLbs, last.targetWeightLbs)
+        case .liftRepsAtLoad:
+            return gap(milestone.targetReps, last.targetReps)
+        case .weeklyDistance:
+            return gap(milestone.distance, last.distance)
+        case .trainingDaysPerWeek:
+            return gap(milestone.days, last.days)
+        case .sessionsOfTypePerWeek:
+            return gap(milestone.sessions, last.sessions)
+        case .lissMinutesPerWeek:
+            return gap(milestone.lissMinutes, last.lissMinutes)
+        case .stretchingExercisesPerWeek:
+            return gap(milestone.stretchingExercises, last.stretchingExercises)
+        case .cumulativeVolume:
+            return gap(milestone.volumeLbs, last.volumeLbs)
+        case .benchmarkTime:
+            // A TIME DESCENDS, so the distance still to travel is how far the
+            // last rung sits ABOVE the milestone.
+            return gap(last.targetSeconds, milestone.targetSeconds)
+        case .bodyWeight:
+            guard let wanted = milestone.bodyWeightLbs, let now = last.bodyWeightLbs
+            else { return nil }
+            let remaining = (milestone.bodyWeightRatePercent ?? -1) < 0
+                ? now - wanted : wanted - now
+            return NSDecimalNumber(decimal: remaining).doubleValue
+        case .weeklyMuscleSets:
+            return nil
+        }
+    }
+
+    private static func gap(_ target: Decimal?, _ last: Decimal?) -> Double? {
+        guard let target, let last else { return nil }
+        return NSDecimalNumber(decimal: target - last).doubleValue
+    }
+
+    private static func gap(_ target: Int?, _ last: Int?) -> Double? {
+        guard let target, let last else { return nil }
+        return Double(target - last)
+    }
+
+    private static func gap(_ target: Double?, _ last: Double?) -> Double? {
+        guard let target, let last else { return nil }
+        return target - last
     }
 }
