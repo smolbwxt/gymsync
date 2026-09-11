@@ -171,6 +171,60 @@ final class LadderDetectionSeamTests: XCTestCase {
         XCTAssertEqual(calls.detect, 0)
     }
 
+    // MARK: - The booking's write path (round 2, item 3)
+
+    /// A booking made INSIDE an active block materialises that week's rung
+    /// rather than writing a goal with no `goalID` over the top of it.
+    ///
+    /// Home cannot repair this one afterwards: `detectIfMissing` fills an
+    /// ABSENT row, and a booking leaves a present one. The wrong row would have
+    /// stood for the whole week.
+    func testABookingInsideABlockMaterialisesTheRung() async {
+        let calls = Calls()
+        let rung = materialisedRung(pounds: 205)
+
+        let answer = await LiveWeeklyGoalRepository.bookedWeek(
+            existing: nil,
+            ladder: { calls.ladder += 1; return rung },
+            detect: { calls.detect += 1; return self.detectedGoal() })
+
+        XCTAssertEqual(answer, rung)
+        XCTAssertEqual(answer?.params.goalID, goalID)
+        XCTAssertEqual(calls.detect, 0, "detection would have dropped the ladder link")
+    }
+
+    /// A booking with no block behind it detects exactly as it always has.
+    func testABookingWithNoBlockStillDetects() async {
+        let calls = Calls()
+        let detected = detectedGoal()
+
+        let answer = await LiveWeeklyGoalRepository.bookedWeek(
+            existing: nil,
+            ladder: { calls.ladder += 1; return nil },
+            detect: { calls.detect += 1; return detected })
+
+        XCTAssertEqual(answer, detected)
+        XCTAssertEqual(calls.ladder, 1)
+        XCTAssertEqual(calls.detect, 1)
+    }
+
+    /// A week that is ALREADY a rung is nobody's to rewrite — the question is
+    /// asked before the ladder is, so a booking inside a block that has already
+    /// materialised the week costs no read at all.
+    func testABookingOverAnExistingRungTouchesNothing() async {
+        let calls = Calls()
+        let rung = materialisedRung(pounds: 200)
+
+        let answer = await LiveWeeklyGoalRepository.bookedWeek(
+            existing: rung,
+            ladder: { calls.ladder += 1; return self.materialisedRung(pounds: 205) },
+            detect: { calls.detect += 1; return self.detectedGoal() })
+
+        XCTAssertEqual(answer, rung)
+        XCTAssertEqual(calls.ladder, 0)
+        XCTAssertEqual(calls.detect, 0)
+    }
+
     /// THE WIRING ITSELF (F1's actual defect: correct logic, no call site).
     /// The live weekly repository's ladder source is the live block repository,
     /// by default, with nothing to inject at the call site in `HomeView`.

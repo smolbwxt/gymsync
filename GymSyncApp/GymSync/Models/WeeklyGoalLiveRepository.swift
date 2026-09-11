@@ -365,9 +365,42 @@ struct LiveWeeklyGoalRepository: WeeklyGoalRepository, WeeklyGoalCoachWriter {
     /// like every other Coach write: it never throws and never blocks the
     /// booking or the build that called it.
     @discardableResult
+    /// **AND THE LADDER IS ASKED HERE TOO** (round 2, item 3). A booking is a
+    /// write of the week's goal, and detection has no idea a block exists — so
+    /// `WeekBooker.book` inside an active block used to write a row with no
+    /// `goalID` for a week the ladder covers. Home could not repair it either:
+    /// `detectIfMissing` only fills an ABSENT row, and this one is present.
+    /// One week of the block then read as a standalone weekly goal, with the
+    /// strip's kicker and its destination both wrong, until the next rebuild.
     func writeDetectedGoal(weekStart: String) async -> WeeklyGoal? {
         let existing = await goal(weekStart: weekStart)
-        return await writeDetected(weekStart: weekStart, existing: existing)
+        return await Self.bookedWeek(
+            existing: existing,
+            ladder: { await ladderSource.ladderWeek(weekStart: weekStart) },
+            detect: { await writeDetected(weekStart: weekStart, existing: existing) })
+    }
+
+    /// The rule a BOOKING follows, with no Supabase in it so both of its
+    /// branches are unit tests (round 2, item 3).
+    ///
+    /// A row that is ALREADY a rung stands untouched — `isLadderWeek` is asked
+    /// first here exactly as it is inside `writeDetected`, and asking twice is
+    /// cheaper than the read the ladder would otherwise make to answer the same
+    /// question. Then the ladder, then plain detection: the same order
+    /// `weekInEffect` states for the READ path, because "an active block's rung
+    /// is not detection's to replace" is one rule, not two.
+    ///
+    /// Unlike `weekInEffect` there is no current-week gate. A booking may
+    /// legitimately write a FUTURE week (`WeekBooker.book` books one), and a
+    /// future week inside a block is a rung like any other — `materialiseRung`
+    /// looks up that week's rung and writes it, or answers nil when the ladder
+    /// has none for it.
+    static func bookedWeek(existing: WeeklyGoal?,
+                           ladder: () async -> WeeklyGoal?,
+                           detect: () async -> WeeklyGoal?) async -> WeeklyGoal? {
+        guard !WeeklyGoalWriteRule.isLadderWeek(existing) else { return existing }
+        if let rung = await ladder() { return rung }
+        return await detect()
     }
 
     /// DETECT ON READ (final review finding 1). Home's fetch calls this when
