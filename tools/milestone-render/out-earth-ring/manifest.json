@@ -1,0 +1,146 @@
+{
+  "generator": "tools/milestone-render/render_earth_ring.py",
+  "blender_version": "5.2.1 LTS",
+  "engine": "CYCLES",
+  "device_type": "OPTIX",
+  "devices": [
+    "NVIDIA GeForce RTX 5070"
+  ],
+  "samples": 96,
+  "image_size": [
+    1200,
+    1200
+  ],
+  "background": "transparent (RGBA, 8-bit PNG); app paints #0A0B0D behind",
+  "geometry": "plates stacked FACE TO FACE (axis tangent to the ring); ring advances by each plate's thickness, not its diameter",
+  "fill_mapping": "covered arc starts at the terminator (dawn line) on the lit side and grows eastward; uncovered arc renders nothing (hide_render, no ghost plates); fill 1.0 closes the ring",
+  "ring": {
+    "earth_radius": 1.0,
+    "ring_radius": 1.4,
+    "ring_diameter_arg": 0.13,
+    "n_plates": 752,
+    "thickness_over_diameter_ratio": 0.09,
+    "plate_thickness": 0.011697,
+    "plate_diameter": 0.13,
+    "plate_color_hex": "#2F6FD0",
+    "dawn_theta_deg": 232.2595
+  },
+  "limb_clearance": {
+    "ring_radius": 1.4,
+    "elevation_deg": 62.0,
+    "ring_radius_times_sin_elevation": 1.2361,
+    "earth_radius": 1.0,
+    "clears": true,
+    "note": "ring_radius * sin(elevation) must exceed earth_radius for the WHOLE ring to clear Earth's silhouette (verify_ring_clears_limb checks this against the real camera transform, not just this orthographic-approximation inequality)"
+  },
+  "earth": {
+    "ocean_hex": [
+      "#0E2C3A",
+      "#17506B"
+    ],
+    "land_hex": [
+      "#35513C",
+      "#4E6E4F"
+    ],
+    "atmosphere_hex": "#7FC4E8"
+  },
+  "camera": {
+    "lens_mm": 55.0,
+    "elevation_deg": 62.0,
+    "azimuth_deg": 232.2595,
+    "margin": 0.07,
+    "fit": {
+      "distance": 5.2503,
+      "aim": [
+        -0.0875,
+        -0.1131,
+        -0.076
+      ],
+      "ndc_x": [
+        0.07,
+        0.93
+      ],
+      "ndc_y": [
+        0.1211,
+        0.8788
+      ]
+    }
+  },
+  "distinctness_check": {
+    "render_hashes_md5": {
+      "25": "8de3f61e5a1738acbf5ec972ffd5e4a3",
+      "50": "4da8971453b1869ea3da1e0414140562",
+      "75": "ffd2683917f063aad2cf6abab3b7b44d",
+      "100": "60c9736e75a7ad5f36c5b8f1cb3182c7"
+    },
+    "all_distinct": true
+  },
+  "history": "Pass 1: shallow 3/4 camera (13 deg elevation), ring radius 1.06 -- far side of the ring projected inside Earth's silhouette, making fill 0.50 and 0.75 render pixel-identical. Pass 2: near-polar camera (68 deg) made the whole ring visible, but ring_radius(1.06) * sin(68 deg) = 0.983 still fell just short of clearing Earth's radius (1.0), so the uncovered arc visually merged with the atmosphere's Fresnel rim highlight instead of reading as a gap; also surfaced uneven ring lighting, fixed with plate self-emission (see ring.plate_color_hex / measured_plate_color). Pass 3: lowered elevation to 62 deg and lifted the ring; the brief's orthographic-approximation estimate (ring_radius 1.24) failed a real-camera check, so ring_radius was raised to 1.40 (empirical threshold ~1.34, found by binary search against the actual perspective camera) so ring_radius * sin(elevation) > earth_radius holds with margin (see limb_clearance above) -- verify_ring_clears_limb() checks this geometrically every run and verify_distinct_renders() still checks fill distinctness (see distinctness_check above); both pass.",
+  "measured_plate_color": {
+    "hex": "#2861C2",
+    "target_hex": "#2F6FD0",
+    "rgb_255": [
+      40,
+      97,
+      194
+    ],
+    "pct_diff_per_channel": [
+      2.75,
+      5.49,
+      5.49
+    ],
+    "sample_count": 752
+  },
+  "honest_math": {
+    "earth_equatorial_circumference_mi": 24901,
+    "earth_equatorial_circumference_ft": 131477280,
+    "earth_equatorial_circumference_in": 1577727360,
+    "plate_thickness_in": 1.5,
+    "plates_face_to_face_to_close_ring": 1051818240,
+    "total_weight_lb": 47331820800,
+    "note": "visible plates are symbolic"
+  },
+  "renders": [
+    {
+      "fill": 0.25,
+      "tag": "25",
+      "plates_shown": 188,
+      "seconds": 1.1
+    },
+    {
+      "fill": 0.5,
+      "tag": "50",
+      "plates_shown": 376,
+      "seconds": 0.99
+    },
+    {
+      "fill": 0.75,
+      "tag": "75",
+      "plates_shown": 564,
+      "seconds": 1.03
+    },
+    {
+      "fill": 1.0,
+      "tag": "100",
+      "plates_shown": 752,
+      "seconds": 1.1
+    }
+  ],
+  "previews": [
+    "preview_25_600.png",
+    "preview_50_600.png",
+    "preview_75_600.png",
+    "preview_100_600.png"
+  ],
+  "preview_background": "#0A0B0D",
+  "timing": {
+    "seconds_per_frame": {
+      "25": 1.1,
+      "50": 0.99,
+      "75": 1.03,
+      "100": 1.1
+    },
+    "mean_seconds_per_frame": 1.06,
+    "total_seconds": 5.25
+  }
+}
