@@ -332,12 +332,17 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
     }
 
     /// The heaviest single week the athlete has actually put in lately — the
-    /// last EIGHT weeks of set logs, bucketed by week and maxed.
+    /// last NINE weeks of set logs, bucketed by week and maxed: the eight
+    /// prior weeks plus the partial current week (r2 open item 4 — the code
+    /// and this comment used to disagree on the count).
     ///
-    /// Eight because it is a block's own length: a ceiling drawn from a longer
-    /// window would let a peak from two blocks ago vouch for a plan the athlete
-    /// is nowhere near today, and a shorter one would let a single deload week
-    /// declare a reasonable milestone unreachable.
+    /// Eight PRIOR weeks because that is a block's own length: a ceiling
+    /// drawn from a longer window would let a peak from two blocks ago vouch
+    /// for a plan the athlete is nowhere near today, and a shorter one would
+    /// let a single deload week declare a reasonable milestone unreachable.
+    /// The partial ninth (this week, still in progress) can only LOWER the
+    /// max it is bucketed alongside, never raise it, so including it is safe
+    /// rather than a second window to reason about.
     ///
     /// nil when there is no history, which `rampCeiling` reads as "nothing to
     /// judge against" and gives the ladder the benefit of the doubt.
