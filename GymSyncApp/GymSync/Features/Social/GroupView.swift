@@ -472,10 +472,17 @@ struct GroupView: View {
     private func sessionRow(_ session: WorkoutSession) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 4) {
+                // Design language §2: no decorative emoji — SF Symbols for
+                // glyphs. Green means done (the same rule the gsSuccess
+                // token serves), neutral for an abandoned session.
                 if session.state == "completed" {
-                    Text("\u{2705}")
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 13, weight: .regular))
+                        .foregroundStyle(Color.gsSuccess)
                 } else if session.state == "abandoned" {
-                    Text("\u{1F32B}\u{FE0F}")
+                    Image(systemName: "xmark.circle")
+                        .font(.system(size: 13, weight: .regular))
+                        .foregroundStyle(theme.neutral500)
                 }
                 Text("Workout")
                     .font(GSFont.bold(14, relativeTo: .headline))
