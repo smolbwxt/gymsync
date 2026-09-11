@@ -756,6 +756,37 @@ final class ScreenshotTests: XCTestCase {
         attachScreenshot(app, named: "app-friends.png")
     }
 
+    /// The pump feed on the LIVE account — the post `seed_qa_fixtures.js`
+    /// writes, rendered by the real `PumpFeedView` against the real
+    /// repositories, trajectory and all.
+    ///
+    /// This is the capture a fixture frame cannot stand in for: the catalog's
+    /// `app-pump-feed-post` builds `PumpPostCard` directly with values, so it
+    /// would look perfect while `WorkoutPostRepository.feed()`'s decode, the
+    /// signed-URL fetch or the trajectory column's round trip were broken.
+    ///
+    /// CONTAINS, not BEGINSWITH, for the reason `testFriends` gives: the row's
+    /// composed accessibility label prepends an icon and appends a subtitle.
+    func testPumpFeedLive() {
+        let app = launchApp()
+        guard waitForTabBar(app) else { return }
+        selectTab(app, label: "Crews")
+        settle()
+
+        let feedRow = app.buttons.matching(
+            NSPredicate(format: "label CONTAINS 'Pump checks from your friends'")
+        ).firstMatch
+        if feedRow.waitForExistence(timeout: 15) {
+            feedRow.tap()
+            settleAfterNavigation()
+        }
+        // A second settle: the feed's `.task` fetches the page, then hydrates
+        // authors and reactions in a second round trip — the same two-cycle
+        // wait `testExerciseDetail` and `testActivityFeed` already take.
+        settleAfterNavigation()
+        attachScreenshot(app, named: "app-pump-feed.png")
+    }
+
     func testRoutineDetail() {
         let app = launchApp()
         guard waitForTabBar(app) else { return }
