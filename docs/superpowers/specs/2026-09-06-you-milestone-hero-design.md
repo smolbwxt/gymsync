@@ -65,12 +65,21 @@ The pipeline renders each rung as a sequence at a fixed camera; the app ships a 
 | DISTANCE | `render_plates.py` in line mode — the line along the path | 41 frames per rung | as HEIGHT |
 | The Earth ring (DISTANCE rung 10, and the poster) | `render_earth_ring.py` — the face-to-face ring, r = 1.40 R, elevation 62° | 5 frames (0, 25, 50, 75, 100) | nearest frame; the ring is a poster, not a meter, per the catalog |
 
-Assets are bundled per rung as an `.xcassets` image set folder (`milestone/<ladder>/<rung>/f00…f40`), at 2×
-and 3× only, with the alpha-clean background so the hero's own surface shows through. Budget: ≤ 30 MB for all
-thirty rungs at 2× (measured from the pipeline's 600 × 1500 outputs, ~90 KB each); if the measured total
-exceeds it, the shipped step widens (5 % for HEIGHT and DISTANCE) before any rung is cut. The landmark
-silhouettes are part of the render (the catalog's render notes), not separate SF or SVG assets — one image,
-one light, one style.
+Assets: measured, not assumed. The pipeline's existing outputs are **~212 KB per 600 × 1500 alpha PNG**
+(51 frames = 10 MB; the 240 × 1500 variant is 188 KB, the vessel 191 KB, the Earth ring 540 KB at 600 × 600),
+not the ~90 KB an earlier draft of this spec claimed. Bundling every rung's frame set is therefore out: thirty
+rungs at the steps above come to ~213 MB at 2× alone, and widening the step to 5 % still leaves ~130 MB.
+**Recommended delivery (owner decision 6, open):** bundle only what the first open needs — the HEIGHT ladder's
+rung 1 set (the first-week state, ~9 MB) and the Earth ring's five poster frames (~2.7 MB) — and serve every
+other rung's frame set from a public Supabase storage bucket (`milestone-frames/<ladder>/<rung>/`), fetched on
+first need and cached on device (one rung is ~9 MB; the hero only ever shows one). The buckets and the client
+download path already exist for exercise media; a rung can be re-rendered without an app release. Fallback while
+a set downloads: the bundled rung-1 frame at the current progress, with the caption already correct.
+**Alternative (zero network):** ship one full-stack render per HEIGHT/DISTANCE rung and clip it to the progress
+height at runtime (a stack *is* its lower portion) — ~30 × 2 × 212 KB ≈ 13 MB at 2× — but the cut loses the top
+plate's face and WEIGHT's poured vessel has no clip equivalent; it is the second choice. Either way the frames
+stay alpha-clean so the hero's own surface shows through, and the landmark silhouettes are part of the render
+(the catalog's render notes), not separate SF or SVG assets — one image, one light, one style.
 
 The render is **the ground, not a tile**: it is placed with `.aspectRatio(.fill)` inside the hero's bounds, the
 hero's `surface` shows through its alpha, and a vertical scrim (`bg` → clear, 40 % height) sits under the
@@ -130,6 +139,8 @@ social-card work.
 3. Whether the Stats tab's milestone page gains the same renders (it lists the rungs today).
 4. Lifetime reps/sets/bar-travel are still not computable (`increment_lifetime_volume` carries volume only);
    nothing here needs them — the ladders are volume-derived by design.
+5. Asset delivery (§4): storage-fetched frame sets with rung 1 and the Earth poster bundled (recommended) versus
+   bundled full-stack renders clipped at runtime — the measured ~212 KB per frame rules out bundling every set.
 
 ## Owner decisions (2026-09-04 → 2026-09-11) — binding
 
