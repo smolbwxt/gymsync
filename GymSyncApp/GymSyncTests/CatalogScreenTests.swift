@@ -97,6 +97,9 @@ final class CatalogScreenTests: XCTestCase {
             "ladder-behind",
             "ladder-met",
             "home-goal-strip-block",
+            // Social cards (Stage 1): the Crews tab's first fixture world —
+            // two crews, one with the honor line and one without.
+            "crews-tab",
         ]
         for id in ids {
             XCTAssertNotNil(CatalogScreen(rawValue: id), "missing catalog case: \(id)")

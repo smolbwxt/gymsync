@@ -586,6 +586,11 @@ final class ScreenshotTests: XCTestCase {
     }
     func testCatalogGoalMilestoneRecovery()  { captureCatalog("goal-milestone-recovery") }
 
+    // Social cards (Stage 1, frame 101) — the Crews tab's first fixture
+    // world. Two crews: Push Crew carries spec §3's honor line, Sunday Squad
+    // is a crew at rest and carries none (the decay is the line's absence).
+    func testCatalogCrewsTab()               { captureCatalog("crews-tab") }
+
     // MARK: - Seeded deep-screen captures
     //
     // Reachable via the deterministic `ci_test_user_2` fixture world (Task 3,

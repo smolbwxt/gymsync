@@ -39,6 +39,30 @@ struct SocialTabView: View {
     /// every visited tab alive, so `.task` fires once per app run).
     @State private var lastRefreshedAt: Date = .distantPast
 
+    #if DEBUG
+    var catalogSkipLoad = false
+
+    /// The catalog's world (plan task S1.6). `VenueHubView`'s own init is the
+    /// precedent; the same rule applies — `catalogSkipLoad` suppresses
+    /// `refresh()` entirely, so no repository, no clock and no network is
+    /// reachable from a frame.
+    init(catalogFixtureGroups: [GymGroup] = [],
+         catalogFixtureBars: [UUID: CrewBarMeta] = [:],
+         catalogFixtureHonors: [UUID: CrewHonor] = [:],
+         catalogFixtureFriendCount: Int = 0,
+         catalogFixturePendingCount: Int = 0,
+         catalogSkipLoad: Bool = false) {
+        _groups = State(initialValue: catalogFixtureGroups)
+        _barByGroup = State(initialValue: catalogFixtureBars)
+        _honorByGroup = State(initialValue: catalogFixtureHonors)
+        _friendCount = State(initialValue: catalogFixtureFriendCount)
+        _pendingCount = State(initialValue: catalogFixturePendingCount)
+        self.catalogSkipLoad = catalogSkipLoad
+    }
+    #else
+    init() {}
+    #endif
+
     var body: some View {
         NavigationStack {
             GeometryReader { proxy in
@@ -329,6 +353,14 @@ struct SocialTabView: View {
                 }
             }
             .task {
+                // The catalog seam reaches past `refresh()` here: this block
+                // also opens a realtime subscription and touches AppState's
+                // launch accounting, neither of which may run from a frame
+                // (global constraint 7). `VenueHubView`'s precedent needs no
+                // equivalent — its `.task` is only `await load()`.
+                #if DEBUG
+                if catalogSkipLoad { return }
+                #endif
                 // Launch-readiness accounting (RootView's overlay hold).
                 appState.beginLaunchFetch()
                 await refresh()
@@ -341,6 +373,10 @@ struct SocialTabView: View {
                 await consumePendingRouteIfNeeded()
             }
             .onChange(of: scenePhase) {
+                #if DEBUG
+                // Same reason as `.task` above — this path subscribes too.
+                if catalogSkipLoad { return }
+                #endif
                 guard scenePhase == .active else { return }
                 Task {
                     await refresh()
@@ -512,6 +548,9 @@ struct SocialTabView: View {
     }
 
     private func refresh() async {
+        #if DEBUG
+        if catalogSkipLoad { return }
+        #endif
         lastRefreshedAt = .now
         do {
             groups = try await GroupRepository.myGroups()

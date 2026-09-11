@@ -260,5 +260,9 @@
   "home-goal-strip-block": {
     "frame": 100,
     "title": "Weekly goal strip - the block kicker"
+  },
+  "crews-tab": {
+    "frame": 101,
+    "title": "Crews tab - two crews, one with the honor line"
   }
 }
