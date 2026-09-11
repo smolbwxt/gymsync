@@ -167,6 +167,18 @@ struct PumpFeedView: View {
     ///
     /// Still optimistic, still rolled back on failure: a tap that never
     /// reached the server must not leave a count that says it did.
+    ///
+    /// A CONFLICT IS NOT A FAILURE (review fix 9). The guard above reads
+    /// CLIENT state, and client state can be behind the server's — the same
+    /// reaction from another device, or a row this page loaded before the
+    /// hydrate that would have revealed it. `post_reactions`' primary key is
+    /// (post_id, user_id, emoji), so that insert comes back 23505 / HTTP 409,
+    /// which `ErrorMapping` already distinguishes as `.conflict`. Rolling the
+    /// optimistic count back there un-lit a chip the server was holding lit,
+    /// and the next refresh silently put it back — the user saw their own
+    /// kudos flicker off. The row exists, which is exactly what the tap
+    /// wanted, so the chip stays lit and the counts are re-read from the
+    /// server rather than guessed at.
     @MainActor
     private func commitReaction(post: WorkoutPost, emoji: String) async {
         guard !mineByPost[post.id, default: []].contains(emoji) else { return }
@@ -174,6 +186,10 @@ struct PumpFeedView: View {
         countsByPost[post.id, default: [:]][emoji, default: 0] += 1
         do {
             try await WorkoutPostRepository.react(postID: post.id, emoji: emoji)
+        } catch GymSyncError.conflict {
+            // Already committed, by this account, before this tap. Keep the
+            // chip lit; let the server say what the counts are.
+            await hydrate([post])
         } catch {
             mineByPost[post.id, default: []].remove(emoji)
             countsByPost[post.id, default: [:]][emoji, default: 1] -= 1
