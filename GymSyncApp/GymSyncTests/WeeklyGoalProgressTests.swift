@@ -467,18 +467,44 @@ final class WeeklyGoalProgressTests: XCTestCase {
         XCTAssertEqual(progress.unitLabel, "lbs")
     }
 
-    func testLiftWithNoLogsRendersZeroAndDoesNotCrash() {
+    /// **NO LOGGED SET IS A STATE, NOT A ZERO** (round 2, item 2). It renders
+    /// an empty meter, `value: 0` as the signal, and the state in words — the
+    /// benchmark arm's own rule, which exists because `0 → 225 lbs` reads as a
+    /// bench of zero and nobody benches zero.
+    func testLiftWithNoLoggedSetSaysSoRatherThanReadingZero() {
         let squat = exercise(5, "Back Squat", "quads")
         let progress = WeeklyGoalProgressMath.liftProgress(
             goal: liftGoal(squat, targetLbs: 225), blockLogs: [],
-            blockStartLbs: 200, unit: .lbs,
+            blockStartLbs: 200, unit: .lbs, exerciseName: "BACK SQUAT",
             now: wednesday, calendar: testCalendar)
 
-        XCTAssertEqual(progress.value, 0)
+        XCTAssertEqual(progress.value, 0, "the SIGNAL: no real e1RM is zero")
         XCTAssertEqual(progress.target, 225, accuracy: 0.001)
-        XCTAssertEqual(progress.chips[0].done, 0,
-                       "below the floor clamps to an empty meter, never negative")
+        XCTAssertEqual(progress.chips[0].done, 0, "an empty meter, never negative")
+        XCTAssertEqual(progress.chips[0].name, "BACK SQUAT")
+        XCTAssertEqual(progress.rightHandRead,
+                       WeeklyGoalProgressMath.noSetLoggedRead)
         XCTAssertFalse(progress.met)
+    }
+
+    /// And the strip draws an em dash for it — the reading, not only the meter,
+    /// the way `benchmarkReading` guards its clock.
+    func testTheStripDrawsAnEmDashForALiftWithNoSetLogged() {
+        let squat = exercise(5, "Back Squat", "quads")
+        let progress = WeeklyGoalProgressMath.liftProgress(
+            goal: liftGoal(squat, targetLbs: 225), blockLogs: [],
+            blockStartLbs: 200, unit: .lbs, now: wednesday, calendar: testCalendar)
+
+        XCTAssertEqual(HomeWeeklyGoalStrip.liftReading(progress, unitLabel: "lbs"),
+                       "— → 225 lbs")
+    }
+
+    /// A logged set reads as itself, unchanged — the catalog's `strip-lift`
+    /// frame is this shape and must not move.
+    func testALoggedLiftStillReadsAsANumber() {
+        XCTAssertEqual(
+            HomeWeeklyGoalStrip.liftReading(WeeklyGoalFixtures.lift, unitLabel: "lb"),
+            "205 → 225 lb")
     }
 
     func testLiftBlockStartEqualToTargetDoesNotDivideByZero() {
@@ -577,15 +603,20 @@ final class WeeklyGoalProgressTests: XCTestCase {
                                                             calendar: calendar))
     }
 
+    /// A LOGGED SET, deliberately: with none, the read is `NO SET LOGGED YET`
+    /// (round 2, item 2) and this test would be pinning that arm instead of the
+    /// deadline phrase it is about. 180 x 5 is 210 — a real reading, still short
+    /// of 225, so `met` stays false and the phrase is what is under test.
     func testLiftRightHandReadIsWeeksWhenTheGoalNamesADate() {
         let squat = exercise(5, "Back Squat", "quads")
+        let logs = [liftLog(squat, weight: 180, reps: 5)]
         let byDate = testCalendar.date(byAdding: .day, value: 15, to: wednesday)!
         let dated = WeeklyGoalProgressMath.liftProgress(
             goal: liftGoal(squat, targetLbs: 225, byDate: byDate),
-            blockLogs: [], blockStartLbs: 200, unit: .lbs,
+            blockLogs: logs, blockStartLbs: 200, unit: .lbs,
             now: wednesday, calendar: testCalendar)
         let undated = WeeklyGoalProgressMath.liftProgress(
-            goal: liftGoal(squat, targetLbs: 225), blockLogs: [],
+            goal: liftGoal(squat, targetLbs: 225), blockLogs: logs,
             blockStartLbs: 200, unit: .lbs,
             now: wednesday, calendar: testCalendar)
 
@@ -1151,5 +1182,41 @@ final class WeeklyGoalProgressTests: XCTestCase {
 
         XCTAssertEqual(progress.value, 9.3206, accuracy: 0.001)
         XCTAssertEqual(progress.unitLabel, "mi")
+    }
+
+    // MARK: - A14: the strip's block kicker (spec §6)
+
+    func testTheBlockKickerNamesTheWeekAndWhoseGoalItIs() {
+        XCTAssertEqual(
+            WeeklyGoalProgressMath.blockKicker(source: .coach, met: false, daysLeft: 3,
+                                               weekNumber: 3, weekCount: 8),
+            "WEEK 3 OF 8 · COACH'S GOAL")
+        XCTAssertEqual(
+            WeeklyGoalProgressMath.blockKicker(source: .user, met: false, daysLeft: 3,
+                                               weekNumber: 3, weekCount: 8),
+            "WEEK 3 OF 8 · YOUR GOAL")
+    }
+
+    func testAStandaloneWeekKeepsTheShippedKicker() {
+        XCTAssertEqual(
+            WeeklyGoalProgressMath.blockKicker(source: .coach, met: false, daysLeft: 3,
+                                               weekNumber: nil, weekCount: nil),
+            "THIS WEEK · COACH'S GOAL")
+    }
+
+    func testAMetWeekStillSaysMet() {
+        XCTAssertEqual(
+            WeeklyGoalProgressMath.blockKicker(source: .coach, met: true, daysLeft: 2,
+                                               weekNumber: 3, weekCount: 8),
+            "GOAL MET · 2 DAYS LEFT")
+    }
+
+    /// A block of zero weeks is not a block, and `WEEK 1 OF 0` is not a
+    /// sentence. It falls back to the shipped kicker rather than printing one.
+    func testAZeroWeekBlockFallsBackToTheShippedKicker() {
+        XCTAssertEqual(
+            WeeklyGoalProgressMath.blockKicker(source: .user, met: false, daysLeft: 1,
+                                               weekNumber: 1, weekCount: 0),
+            "THIS WEEK · YOUR GOAL")
     }
 }

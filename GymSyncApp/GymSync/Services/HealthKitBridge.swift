@@ -114,9 +114,19 @@ enum HealthKitBridge {
     /// mileage goal that ignored it would be wrong for most runners.
     ///
     /// Best-effort: `[]` on no availability, no permission, or any error.
+    ///
+    /// **`.strictStartDate`** (round 2, item O3). Without it the predicate
+    /// matches any workout whose interval OVERLAPS the window, so a ride that
+    /// began last Saturday night and ended after midnight counted for both
+    /// weeks. The batch readers below fetch one span and bucket by the
+    /// workout's START, so overlap-matching here would have made a single-window
+    /// read and a batch read disagree at exactly the week boundaries a ladder is
+    /// made of. One rule — a workout belongs to the week it STARTED in — and
+    /// both doors follow it.
     static func workouts(from start: Date, to end: Date) async -> [HKWorkout] {
         guard HKHealthStore.isHealthDataAvailable() else { return [] }
-        let predicate = HKQuery.predicateForSamples(withStart: start, end: end)
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end,
+                                                    options: .strictStartDate)
         return await withCheckedContinuation { continuation in
             let query = HKSampleQuery(sampleType: HKObjectType.workoutType(),
                                       predicate: predicate,
@@ -207,6 +217,121 @@ enum HealthKitBridge {
             return HealthWorkoutTag(type: tag, start: workout.startDate,
                                     end: workout.endDate)
         }
+    }
+
+    /// Minutes of LOW-INTENSITY STEADY-STATE work in the window (spec §2.2's
+    /// `lissMinutesPerWeek`, NEW).
+    ///
+    /// The activity families, not a heart-rate zone: walking, cycling, rowing,
+    /// elliptical and stair climbing — the five `workoutTags` already treats as
+    /// `cardio`, minus running, which is where LISS stops being low intensity
+    /// for most lifters.
+    ///
+    /// WHAT THIS CANNOT DO, and it is the spec's own open item (§11.2):
+    /// distinguish an easy ride from an interval session. That needs the
+    /// watch's heart-rate samples, which is phase 2's `zone2MinutesPerWeek`.
+    /// Until then a bike is a bike. Stated here rather than papered over, and
+    /// the reason `BlockGoalMetricMath.lissMinutes` also counts a cardio-only
+    /// APP session for an athlete with no Health at all.
+    ///
+    /// Best-effort: 0 on no availability, no permission, or any error — never
+    /// nil, so the ladder renders `0 / 150 min` rather than an error. The
+    /// CONNECT HEALTH read is `weeklyGoalHealthNeedsConnecting()`'s job, as it
+    /// is for distance.
+    static func lissMinutes(from start: Date, to end: Date) async -> Int {
+        lissMinutes(in: await workouts(from: start, to: end))
+    }
+
+    /// The five LISS families' minutes among workouts ALREADY fetched.
+    ///
+    /// Split out so a caller with many windows makes ONE query instead of one
+    /// per window (fix round 1, finding F5) — and split rather than copied, so
+    /// the batch door and the single door cannot come to disagree about what
+    /// counts as LISS.
+    static func lissMinutes(in workouts: [HKWorkout]) -> Int {
+        let families: Set<HKWorkoutActivityType> = [
+            .walking, .cycling, .rowing, .elliptical, .stairClimbing,
+        ]
+        let seconds = workouts
+            .filter { families.contains($0.workoutActivityType) }
+            .reduce(0.0) { $0 + $1.duration }
+        return Int((seconds / 60).rounded())
+    }
+
+    // MARK: - Whole-block reads (fix round 1, finding F5)
+    //
+    // `LiveBlockGoalRepository.measuredByWeek` asks the same question of eight
+    // consecutive weeks. Asked one week at a time that is eight HealthKit round
+    // trips — sixteen for the Recovery pair, which needs minutes AND tags — on
+    // Home's first-load budget. These take the windows together, run ONE query
+    // over their whole span, and bucket in memory.
+    //
+    // Each returns one entry per window, in the order given, so a caller can
+    // `zip` it with its own weeks.
+
+    /// LISS minutes per window, one query.
+    static func lissMinutes(windows: [(start: Date, end: Date)]) async -> [Int] {
+        guard let span = span(of: windows) else { return [] }
+        let all = await workouts(from: span.start, to: span.end)
+        return windows.map { window in
+            lissMinutes(in: all.filter { startsWithin($0, window) })
+        }
+    }
+
+    /// Metres of one activity per window, one query. Summed from the workouts'
+    /// own `totalDistance`, exactly as `distanceMeters(activity:from:to:)` does.
+    static func distanceMeters(activity: String,
+                               windows: [(start: Date, end: Date)]) async -> [Double] {
+        guard let type = activityType(for: activity),
+              let span = span(of: windows) else {
+            return Array(repeating: 0, count: windows.count)
+        }
+        let all = await workouts(from: span.start, to: span.end)
+            .filter { $0.workoutActivityType == type }
+        return windows.map { window in
+            all.filter { startsWithin($0, window) }
+                .reduce(0.0) { $0 + ($1.totalDistance?.doubleValue(for: .meter()) ?? 0) }
+        }
+    }
+
+    /// Every tag across the windows' whole span, in ONE array and ONE query.
+    ///
+    /// Not bucketed, deliberately, and this is the ONE reader where that is
+    /// right: `HealthWorkoutTag.matches(type:sessionStart:sessionEnd:)` is an
+    /// interval-overlap test against A SESSION's window, not a week's — it asks
+    /// "did the watch record this piece of training", and a session that ran
+    /// across midnight has to be able to find the workout that corroborates it.
+    /// So a consumer hands it the whole span and lets `matches` do the pairing.
+    /// The start-strict bucketing the other two use is for weekly TOTALS, which
+    /// is a different question with a different right answer.
+    static func workoutTags(windows: [(start: Date, end: Date)]) async -> [HealthWorkoutTag] {
+        guard let span = span(of: windows) else { return [] }
+        return await workoutTags(from: span.start, to: span.end)
+    }
+
+    /// The earliest start and the latest end across the windows.
+    private static func span(of windows: [(start: Date, end: Date)])
+        -> (start: Date, end: Date)? {
+        // `{ $0.start }`, not `\.start`: Swift has no key paths to tuple
+        // elements, labelled or otherwise.
+        guard let first = windows.map({ $0.start }).min(),
+              let last = windows.map({ $0.end }).max() else { return nil }
+        return (start: first, end: last)
+    }
+
+    /// Does this workout belong to that window?
+    ///
+    /// BY ITS START, and `workouts(from:to:)` now asks HealthKit the same
+    /// question with `.strictStartDate`, so a per-window query and a bucketed
+    /// span return the same set. The comment here used to CLAIM that agreement
+    /// while the query was still overlap-matching (round 2, item O3); the
+    /// option makes the claim true instead of correcting it downward.
+    ///
+    /// Named `startsWithin` rather than `overlaps`, because overlap is precisely
+    /// what it does not test.
+    private static func startsWithin(_ workout: HKWorkout,
+                                     _ window: (start: Date, end: Date)) -> Bool {
+        workout.startDate >= window.start && workout.startDate < window.end
     }
 
     static func duration(from start: Date, to end: Date) -> TimeInterval {

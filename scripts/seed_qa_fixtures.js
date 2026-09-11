@@ -958,54 +958,151 @@ async function main() {
   console.log(`  campaign_progress: sessions_completed=${progressRow?.sessions_completed ?? '?'}, ` +
     `workouts_completed=${progressRow?.workouts_completed ?? '?'}, volume_lifted=${progressRow?.volume_lifted ?? '?'}`);
 
-  // --- weekly goal: I2, home-v3-production plan/brief-integration.md ------
-  // `app-tab-home` renders the goal strip's INVITATION when `me` (the
-  // account CI actually signs in as and unit-tests as) has no
-  // `weekly_goals` row for the current week — this block gives it a real
-  // one so the capture shows a genuine muscle-sets reading instead.
+  // --- block, goal and ladder: I2, goal-first-programming-plan/brief-
+  //     integration.md (controller ruling 4) --------------------------------
+  // Gives `me` a real, in-flight training block with a Coach-set milestone
+  // and a materialised eight-week ladder. The CURRENT week's `weekly_goals`
+  // row is deliberately NOT written here (see the block at the end of this
+  // function): the app materialises it from rung 2 on Home's first load, and
+  // `app-tab-home` renders the strip's BLOCK kicker
+  // ("WEEK 3 OF 8 · COACH'S GOAL") off the row it wrote itself. That walk is
+  // the end-to-end proof that A10 (the ladder becomes the week's goal), A14
+  // (the kicker) and D2 (the strip opens the ladder) agree — which the
+  // hand-written row it replaced could not give (final review F1/F5).
   //
-  // NOTE on production visibility, per this file's own header (:27-36):
-  // this row is genuinely live in the shared Supabase project, not an
-  // isolated test copy — and it is inert for real users the same way every
-  // other fixture above is: scoped to one account by `user_id`, and RLS
-  // ("owner reads own weekly goal", `20260906000001_weekly_goals.sql`)
-  // means nobody else can read it.
+  // NOTE on production visibility, per this file's own header (:27-36): this
+  // row is genuinely live in the shared Supabase project, not an isolated
+  // test copy — and it is inert for real users the same way every other
+  // fixture in this file is: scoped to `me.id` alone, and every table's own
+  // RLS ("owner reads own …", A1/A2's migrations) means nobody else can
+  // read it.
   //
-  // week_start, computed at RUN TIME (this step runs on every screenshot
-  // job, and the week rolls) with the SAME rule `WeekMath.startOfWeek` uses
-  // in Swift — the device calendar's week, honouring `firstWeekday` — not
-  // ISO. The CI simulator's locale is en_US, whose first day is SUNDAY, so
-  // `currentWeekStartSunday` below mirrors that in UTC (Node has no
-  // Foundation `Calendar`); this can skew by a few hours right at a
-  // Saturday/Sunday-midnight boundary, the same honestly-accepted skew
-  // every other UTC-stamped fixture in this file already carries, and it
-  // does not cross a week boundary any other time.
-  //
-  // Upserts on `(user_id, week_start)` — the table's own PK — rather than
-  // this file's usual delete-then-insert: every OTHER week's row is real
-  // goal history this script must not touch (unlike every table above,
-  // which this account owns exclusively). A mid-week re-run converges to
-  // the same row.
-  //
-  // `kind`/`params` match `HomeV2Fixtures.coachTargets` (CHEST/BACK/LEGS
-  // 12, ARMS 8, `targetSource: "routines"`) — the same four targets the
-  // catalog's own muscle-sets fixture renders — so this account's shape
-  // agrees with the catalog frames. `done` is deliberately NOT written
-  // here: `LiveWeeklyGoalRepository.progress(for:)` computes it from this
-  // account's real completed sessions, which is the whole point of a LIVE
-  // repository read rather than a second fixture.
-  const weekStart = currentWeekStartSunday();
-  await rest('weekly_goals', { method: 'POST',
-    headers: { Prefer: 'resolution=merge-duplicates' },
+  // Idempotent on each table's own natural/unique key, per this file's usual
+  // idiom (:26-36), and real history none of these three blocks may churn:
+  //   * program_enrollments — created ONLY when `me` has no ACTIVE enrollment
+  //     (`ended_at IS NULL` is the table's own partial unique index,
+  //     `one_active_program_per_user`); an existing active block (this
+  //     script's own prior run, or a real one) is reused as-is rather than
+  //     replaced.
+  //   * block_goals — UPSERTED ON `enrollment_id`, the table's own UNIQUE
+  //     key (A1's migration: "ONE PRIMARY GOAL PER BLOCK") — never
+  //     delete-then-insert, because the goal is real history.
+  //   * block_goal_rungs — the table's own PK is `(goal_id, week_index)`, so
+  //     an upsert on that composite key converges a re-run the same way.
+  const benchExerciseID = bySlug['bench-press'];
+  const currentWeekStart = currentWeekStartSunday();
+  // STARTED TWO WEEKS BEFORE THE CURRENT WEEK, not on it. `WeeklyGoalLiveRepository
+  // .blockContext` finds "this week's rung" by matching TODAY's real calendar
+  // week against `block_goal_rungs.week_start` — it does not read the
+  // `status` column or any stored week number — so for the current week to
+  // land on rung index 2 (the row this block stamps `current`, "week 3 of
+  // 8") the block's own `started_on` has to be two calendar weeks in the
+  // past. Starting it on the current week's Sunday instead put today on rung
+  // index 0 and rendered `WEEK 1 OF 8` — caught by looking at the artifact,
+  // not by reasoning about the query in the abstract.
+  const enrollmentStartDate = new Date(`${currentWeekStart}T00:00:00Z`);
+  const blockStartedOn = new Date(enrollmentStartDate.getTime() - 14 * 86_400_000)
+    .toISOString().slice(0, 10);
+
+  let [enrollment] = await rest(
+    `program_enrollments?select=id,template_slug,started_on&user_id=eq.${me.id}&ended_at=is.null`);
+  if (!enrollment) {
+    [enrollment] = await rest('program_enrollments', { method: 'POST', headers: rep,
+      body: JSON.stringify({
+        user_id: me.id,
+        template_slug: 'coach-qa-fixture',
+        started_on: blockStartedOn,
+        weeks: 8,
+        focus: { exercise_ids: [benchExerciseID] },
+        baseline: { [benchExerciseID.toLowerCase()]: 205 },
+      }) });
+    console.log(`  program enrollment ${enrollment.id}: coach-qa-fixture, started ${blockStartedOn} (2 weeks ago, so today is week 3), 8 weeks`);
+  } else if (enrollment.template_slug === 'coach-qa-fixture' && enrollment.started_on !== blockStartedOn) {
+    // SELF-HEALING, for exactly this fixture's own template: `started_on`
+    // has to walk forward with `currentWeekStartSunday()` every run (it is
+    // always "two weeks before this week"), or a stale run's date drifts the
+    // block out of week 3 as the calendar moves on — the same bug this
+    // correction fixes on first sight of it (a run that seeded 2026-09-06
+    // instead of 2026-08-23 and rendered `WEEK 1 OF 8`). A REAL enrollment
+    // (any other template_slug) is never touched — only this script's own
+    // fixture self-corrects.
+    await rest(`program_enrollments?id=eq.${enrollment.id}`, { method: 'PATCH',
+      body: JSON.stringify({ started_on: blockStartedOn }) });
+    enrollment.started_on = blockStartedOn;
+    console.log(`  program enrollment ${enrollment.id}: coach-qa-fixture, corrected started_on to ${blockStartedOn} (2 weeks ago, so today is week 3)`);
+  } else {
+    console.log(`  program enrollment ${enrollment.id} already active — not re-enrolling`);
+  }
+
+  // by_date = the enrollment's own start + 56 days (8 training weeks), the
+  // same shape `StubBlockGoalRepository`'s fixture goal documents: the
+  // milestone falls the day after the last training week closes over.
+  const enrollmentStart = new Date(`${enrollment.started_on}T00:00:00Z`);
+  const blockByDate = new Date(enrollmentStart.getTime() + 56 * 86_400_000)
+    .toISOString().slice(0, 10);
+
+  const [blockGoal] = await rest('block_goals?on_conflict=enrollment_id', { method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
     body: JSON.stringify({
       user_id: me.id,
-      week_start: weekStart,
-      kind: 'muscle_sets',
+      enrollment_id: enrollment.id,
+      metric: 'lift_one_rep_max',
+      target: { exerciseID: benchExerciseID, targetWeightLbs: 225 },
+      by_date: blockByDate,
+      preset: 'strength',
       source: 'coach',
-      params: { muscleTargets: { chest: 12, back: 12, legs: 12, arms: 8 },
-               targetSource: 'routines' },
     }) });
-  console.log(`  weekly goal: muscle_sets for week ${weekStart}`);
+  console.log(`  block goal ${blockGoal.id}: bench 225 by ${blockByDate}`);
+
+  // Eight rungs, week 0..7, walking forward one week at a time from the
+  // enrollment's own start (already a Sunday, so `+7×i` days lands on the
+  // week's own start every time). Targets and statuses are
+  // `StubBlockGoalRepository.fixtureLadder`'s own numbers — met, met,
+  // current, ahead ×5, with week index 5's 175 the wave's deload — so this
+  // account's real ladder and the catalog's fixture describe the same shape
+  // of block.
+  const RUNG_TARGETS_LBS = [190, 195, 200, 205, 210, 175, 220, 225];
+  const RUNG_STATUSES = ['met', 'met', 'current', 'ahead', 'ahead', 'ahead', 'ahead', 'ahead'];
+  const rungs = RUNG_TARGETS_LBS.map((weightLbs, weekIndex) => ({
+    goal_id: blockGoal.id,
+    week_index: weekIndex,
+    week_start: new Date(enrollmentStart.getTime() + weekIndex * 7 * 86_400_000)
+      .toISOString().slice(0, 10),
+    target: { targetWeightLbs: weightLbs },
+    status: RUNG_STATUSES[weekIndex],
+  }));
+  await rest('block_goal_rungs', { method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates' },
+    body: JSON.stringify(rungs) });
+  console.log('  block goal rungs: 8 weeks, week index 2 current (200 lb), week index 5 the wave\'s deload (175 lb)');
+
+  // --- the week's goal is NOT seeded: the app has to materialise it -------
+  // FINAL REVIEW F1/F5. This block used to hand-write the current week's
+  // `weekly_goals` row — `kind: 'muscle_sets'` with a `goal_id` stapled on —
+  // and `app-tab-home`'s `WEEK 3 OF 8 . COACH'S GOAL` was then a proof of
+  // A14's kicker reading a column, nothing more. It also HID the feature's
+  // worst bug: in CI the row production would never write was written by
+  // hand, so the screenshot walk never exercised `materialiseRung`, and the
+  // capture looked right while week 2 onward of every real block quietly
+  // lost its ladder.
+  //
+  // So the row is DELETED instead, and Home's first load has to produce it:
+  // `LiveWeeklyGoalRepository.detectIfMissing` asks the block side first
+  // (plan item 6), which re-ladders from actuals and materialises this
+  // week's rung into `weekly_goals`. `app-tab-home` must still read
+  // `WEEK 3 OF 8 . COACH'S GOAL` — now above the LIFT reading rung 2
+  // actually is (bench 200), rather than above four muscle-sets chips
+  // describing a different goal (the incoherence F5 names). If the kicker is
+  // missing from the capture, the walk has found a real defect in the
+  // materialisation path, which is the whole point of seeding it this way.
+  //
+  // ONLY THE CURRENT WEEK, and only this account's row: every other week in
+  // `weekly_goals` is real goal history this script must not touch, which is
+  // why the filter carries `week_start=eq.` and not a range.
+  const weekStart = currentWeekStartSunday();
+  await rest(`weekly_goals?user_id=eq.${me.id}&week_start=eq.${weekStart}`,
+    { method: 'DELETE' });
+  console.log(`  weekly goal: cleared week ${weekStart} — the app must materialise rung 2 of block goal ${blockGoal.id} on Home's first load`);
 
   console.log('\ndone — QA fixture world seeded (idempotent).');
 }

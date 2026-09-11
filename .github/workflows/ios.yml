@@ -335,6 +335,14 @@ jobs:
           SCREENS="$RUNNER_TEMP/screens"
           # I3 (home-v3-production plan/brief-integration.md): 87 -> 97;
           # final review finding 7: 97 -> 98.
+          # goal-first phase 1 (I4, goal-first-programming-plan/brief-
+          # integration.md, controller rulings 5/11): 98 -> 107. Eight new
+          # ids (goal-screen, goal-milestone-strength/-body-composition/
+          # -recovery, ladder-on-track/-behind/-met, home-goal-strip-block),
+          # one capture each, PLUS the on-track id's second attachment
+          # (app-ladder-on-track-2, scrolled to the levers and the one accent
+          # primary) — the same "-2" idiom app-calendar-scheduling-2 already
+          # established, and unmapped in frame-map.json for the same reason.
           # THE FLOOR IS THE NUMBER OF CAPTURES WE EXPECT, NOT THE NUMBER OF
           # IDS. It used to track the ScreenshotTests test-METHOD count 1:1
           # (87 methods at the prior value) because every method attached
@@ -345,8 +353,9 @@ jobs:
           # proof — so 97 methods export 98 files. At 97 the guard still
           # passed if app-calendar-scheduling-2 stopped being produced, which
           # is precisely the `.simultaneousGesture` regression that capture
-          # exists to catch.
-          FLOOR=98
+          # exists to catch. The same reasoning is why 107, not 106, is the
+          # floor now: testCatalogLadderOnTrack attaches TWO files too.
+          FLOOR=107
           # `|| true` + the `:-0` default for the same `set -eo pipefail`
           # reason as the simulator picker above: a missing $SCREENS makes
           # `find` exit 1, which would kill the step before it printed the

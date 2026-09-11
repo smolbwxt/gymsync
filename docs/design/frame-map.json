@@ -227,5 +227,38 @@
     "frame": 92,
     "title": "Calendar & scheduling page",
     "note": "two captures from this one id: app-calendar-scheduling (the header, month and week) and app-calendar-scheduling-2 (scrolled to the bottom: block row, campaign row, pinned primary). The -2 attachment has no frame-map entry of its own by design."
+  },
+  "goal-screen": {
+    "frame": 93,
+    "title": "Goal screen - ten presets and the Pro door"
+  },
+  "goal-milestone-strength": {
+    "frame": 94,
+    "title": "Goal milestone - strength"
+  },
+  "goal-milestone-body-composition": {
+    "frame": 95,
+    "title": "Goal milestone - body composition"
+  },
+  "goal-milestone-recovery": {
+    "frame": 96,
+    "title": "Goal milestone - recovery"
+  },
+  "ladder-on-track": {
+    "frame": 97,
+    "title": "Ladder page - on track",
+    "note": "two captures from this one id: app-ladder-on-track (the milestone, the date, Coach's line and the eight rungs) and app-ladder-on-track-2 (scrolled to the bottom: the four levers, the one accent primary, SEE THE BLOCK). The -2 attachment has no frame-map entry of its own by design, exactly as calendar-scheduling's does not. Only the on-track id carries a second capture - all three standings share one page body below the rungs."
+  },
+  "ladder-behind": {
+    "frame": 98,
+    "title": "Ladder page - the ladder falls short"
+  },
+  "ladder-met": {
+    "frame": 99,
+    "title": "Ladder page - milestone met"
+  },
+  "home-goal-strip-block": {
+    "frame": 100,
+    "title": "Weekly goal strip - the block kicker"
   }
 }

@@ -100,8 +100,9 @@ struct HomeWeeklyGoalStrip: View {
     /// unreachable:
     ///
     ///   * the switch below is EXHAUSTIVE over `WeeklyGoalKind` with **no**
-    ///     `default:`, so a sixth kind is a compile error rather than a
-    ///     blank strip;
+    ///     `default:`, so a tenth kind is a compile error rather than a
+    ///     blank strip — and it is one of four in this file and thirteen in
+    ///     the app, which `WeeklyGoalKind`'s own doc comment lists;
     ///   * the kicker row renders for every kind, so even an arm that has
     ///     nothing to draw yet still says what the strip is, how much week
     ///     is left, and that it opens.
@@ -135,6 +136,13 @@ struct HomeWeeklyGoalStrip: View {
         case .sessionsOfType: sessionsBody
         case .days:           daysBody
         case .lift:           liftBody
+        // Goal-first programming phase 1 (plan task 0.3). Every one of these
+        // is the EXISTING full-width meter with a different subject and a
+        // different unit — the subject-chip contract below, no new geometry.
+        case .recovery:       recoveryBody
+        case .bodyWeight:     bodyWeightBody
+        case .volume:         volumeBody
+        case .benchmark:      benchmarkBody
         }
     }
 
@@ -318,7 +326,32 @@ struct HomeWeeklyGoalStrip: View {
         // the subject chip carries that. Without it the honest drawing is an
         // empty track: `value / target` would report a 205 → 225 goal as
         // 91 % done on the day the block opened.
-        if case .some(.lift) = kind { return 0 }
+        //
+        // `bodyWeight` has the identical span-above-a-floor geometry, and
+        // `benchmark` is worse than wrong without its chip: its numbers are
+        // SECONDS and lower is better, so a raw 47:10 over 45:00 draws a
+        // meter more than full for an athlete who has not beaten the time
+        // yet. All three fall back to an empty track rather than to a
+        // plausible-looking wrong answer.
+        //
+        // AN EXHAUSTIVE SWITCH OVER THE OPTIONAL, no `default:` (review
+        // finding 5). This was three `if case`s, on the reasoning that a
+        // `default:` is the shape that quietly absorbs the next kind — true,
+        // but it took the wrong way out of it: a chain of `if case`s absorbs
+        // the next kind just as silently, and this is the one place in the
+        // file where absorbing it costs a WRONG NUMBER rather than a blank.
+        // Phase 2's `vo2Max` and phase 3's `patternLoadPercent` both have
+        // span-above-a-floor geometry, and either would have fallen through
+        // to `value / target` and drawn a plausible, confident, wrong meter.
+        // Spelling every case out makes it a compile error, which is what
+        // `unitLabel` twenty lines below already does.
+        switch kind {
+        case .some(.lift), .some(.bodyWeight), .some(.benchmark):
+            return 0
+        case .some(.muscleSets), .some(.distance), .some(.sessionsOfType),
+             .some(.days), .some(.recovery), .some(.volume), .none:
+            break
+        }
         guard progress.target > 0 else { return 0 }
         return Self.clamped(progress.value / progress.target)
     }
@@ -354,13 +387,28 @@ struct HomeWeeklyGoalStrip: View {
     /// owner answer 2 states it: **mi with lbs, km with kg** for a distance,
     /// and the weight unit's own label for a lift. Never a hard-coded "mi"
     /// or "lb".
+    ///
+    /// CLOSED OVER THE OPTIONAL, with no `default:` (plan task 0.3,
+    /// controller ruling 2). It used to end in `default: return ""`, which
+    /// would have silently given a body-weight goal no unit at all — a bare
+    /// `183 → 178` that every lifter reads as pounds. Spelling `.none` and
+    /// every silent kind out makes the next kind a compile error here too.
     private var unitLabel: String {
         if !progress.unitLabel.isEmpty { return progress.unitLabel }
         let unit = ThemeStore.shared.weightUnit
         switch kind {
-        case .some(.distance): return unit == .kg ? "km" : "mi"
-        case .some(.lift):     return unit.label
-        default:               return ""
+        case .some(.distance):
+            return unit == .kg ? "km" : "mi"
+        // Every weight in this app is stored in pounds and read in the
+        // athlete's own unit (`Models/Units.swift:7-12`), so all three
+        // weight-shaped kinds print the same label.
+        case .some(.lift), .some(.bodyWeight), .some(.volume):
+            return unit.label
+        // The kinds whose reading carries its noun instead of a unit —
+        // sets, sessions, days, stretches, a clock — and the no-goal state.
+        case .some(.muscleSets), .some(.sessionsOfType), .some(.days),
+             .some(.recovery), .some(.benchmark), .none:
+            return ""
         }
     }
 
@@ -599,11 +647,217 @@ struct HomeWeeklyGoalStrip: View {
         }
     }
 
-    private var liftLine: String {
-        let read = "\(Self.number(progress.value)) → \(Self.number(progress.target))"
+    /// **AN UNLOGGED LIFT PRINTS AN EM DASH, NEVER `0`** (round 2, item 2) —
+    /// the rule `benchmarkReading` states below, applied to the other reading
+    /// that can spell a missing measurement as a legal number. A zero e1RM is
+    /// not a light bench; it is no bench at all, and the strip must not say one
+    /// where it means the other. `liftProgress` signals the state with
+    /// `value: 0` and says `NO SET LOGGED YET` on the kicker row beside this.
+    ///
+    /// A static, like `benchmarkReading`, so the rule is a test rather than a
+    /// body (`HomeWeeklyGoalStrip` renders, it does not decide).
+    /// `unitLabel` is PASSED, not read off `progress`: this view's own
+    /// `unitLabel` falls back to the athlete's `ThemeStore` unit when the
+    /// progress carries none, and a static that reached for the store would
+    /// make a catalog frame depend on a setting.
+    static func liftReading(_ progress: WeeklyGoalProgress,
+                            unitLabel: String) -> String {
+        let current = progress.value > 0 ? number(progress.value) : "—"
+        let read = "\(current) → \(number(progress.target))"
+        return unitLabel.isEmpty ? read : read + " " + unitLabel
+    }
+
+    private var liftLine: String { Self.liftReading(progress, unitLabel: unitLabel) }
+
+    // MARK: - recovery
+    //
+    // Goal-first programming phase 1 (plan task 0.3, controller ruling 1).
+
+    /// `4 / 6 stretches`, with `120 / 150 LISS min` under it.
+    ///
+    /// RECOVERY IS ONE GOAL WITH TWO METRICS and the primary is the
+    /// stretching count — what the block actually schedules (spec §2.3). So
+    /// the meter, the fraction and the met colour are the count's, and the
+    /// LISS minutes sit under them in the muted register a companion reads
+    /// in: it is a second fact about the same week, not a second goal.
+    private var recoveryBody: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            meter(fill: meterFraction, met: progress.met)
+
+            Text(recoveryLine)
+                .font(GSFont.bold(13, relativeTo: .subheadline))
+                .monospacedDigit()
+                .foregroundStyle(progress.met ? Self.green : theme.text)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+
+            if let companion = Self.recoveryCompanionLine(recoveryCompanion) {
+                Text(companion)
+                    .font(GSFont.bold(11, relativeTo: .caption))
+                    .monospacedDigit()
+                    .tracking(companion == WeeklyGoalProgressMath.connectHealthRead ? 1.1 : 0)
+                    .foregroundStyle(theme.neutral500)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+        }
+    }
+
+    /// `4 / 6 stretches` — the noun is printed because a bare `4 / 6` on a
+    /// recovery strip could be either of the goal's two numbers.
+    private var recoveryLine: String {
+        "\(Self.number(progress.value)) / \(Self.number(progress.target)) stretches"
+    }
+
+    /// The LISS companion chip — `chips[1]` by the contract
+    /// `WeeklyGoalProgressMath.recoveryProgress` states, and nil when the
+    /// caller supplied only a subject.
+    private var recoveryCompanion: WeeklyGoalProgress.Chip? {
+        progress.chips.count > 1 ? progress.chips[1] : nil
+    }
+
+    /// The companion line under a recovery reading, or nil when there is
+    /// none to draw.
+    ///
+    /// **`0 min` MUST NEVER MEAN "Health is not connected"** (controller
+    /// ruling 1). LISS minutes come from Apple Health and nowhere else, so
+    /// an unasked permission produces a perfect, silent zero — the same harm
+    /// `distanceProgress` already guards against, pointed at the companion.
+    /// `WeeklyGoalProgressMath.recoveryProgress` names the companion chip
+    /// `CONNECT HEALTH` in that state, and this prints the name where the
+    /// fraction would go.
+    ///
+    /// nil when the chip is absent or asks for no minutes: a recovery goal
+    /// that does not name a LISS target says nothing about LISS, which is a
+    /// different fact from a target the athlete has not met.
+    ///
+    /// **NO TARGET IS CHECKED FIRST, BEFORE CONNECT HEALTH** (review finding
+    /// 3). The two guards used to run the other way round, and
+    /// `recoveryProgress` names the chip `CONNECT HEALTH` whenever Health is
+    /// unconnected — whether or not the goal tracks LISS at all. So a rung
+    /// carrying only a stretching count, on a phone with Health unasked,
+    /// prompted the athlete to connect Health **for a metric its goal does
+    /// not measure**: the same absence-versus-zero confusion controller
+    /// ruling 1 exists to prevent, pointed the other way. The editor always
+    /// writes a clamped `lissMinutes >= 15`, so the sheet cannot reach it; a
+    /// ladder-materialised rung (task A13) writing only `count` can.
+    ///
+    /// `static` and internal so `WeeklyGoalRecoveryReadingTests` can put the
+    /// ruling under a test — a SwiftUI body is not unit-testable here, and
+    /// the strings this line can be are exactly what the ruling is about.
+    /// `HomeOneButtonResolver` is the same posture.
+    static func recoveryCompanionLine(_ companion: WeeklyGoalProgress.Chip?) -> String? {
+        guard let companion, companion.target > 0 else { return nil }
+        if companion.name == WeeklyGoalProgressMath.connectHealthRead {
+            return WeeklyGoalProgressMath.connectHealthRead
+        }
+        return "\(number(companion.done)) / \(number(companion.target)) LISS min"
+    }
+
+    // MARK: - bodyWeight
+
+    /// `183 → 178 lb`, over a meter that starts where the block started.
+    ///
+    /// Literally `liftBody`'s composition: the arrow reading is the same
+    /// shape (a number, U+2192, a number, one small unit), and the meter has
+    /// the same span-above-a-floor geometry, which only the subject chip can
+    /// carry. Rendered as its own property rather than by reusing
+    /// `liftBody`, because the two will diverge the moment body composition
+    /// gains its rate reading (`bodyWeightRatePercent`) and a shared body
+    /// would then have to switch on `kind` inside itself.
+    private var bodyWeightBody: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            meter(fill: meterFraction, met: progress.met)
+
+            Text(liftLine)
+                .font(GSFont.bold(13, relativeTo: .subheadline))
+                .monospacedDigit()
+                .foregroundStyle(progress.met ? Self.green : theme.text)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+    }
+
+    // MARK: - volume
+
+    /// `62,400 / 100,000 lb`, tabular.
+    ///
+    /// The one reading in this system big enough to need thousands
+    /// separators, and they are grouped by `WeeklyGoalProgressMath
+    /// .groupedNumber` — POSIX by construction, so a French simulator
+    /// cannot turn the capture's commas into full stops. `Self.number`'s own
+    /// million ceiling is why this does not go through it: a block-long
+    /// tonnage goal passes a million and would print an em dash.
+    private var volumeBody: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            meter(fill: meterFraction, met: progress.met)
+
+            Text(volumeLine)
+                .font(GSFont.bold(13, relativeTo: .subheadline))
+                .monospacedDigit()
+                .foregroundStyle(progress.met ? Self.green : theme.text)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+    }
+
+    private var volumeLine: String {
+        let read = "\(WeeklyGoalProgressMath.groupedNumber(progress.value))"
+            + " / \(WeeklyGoalProgressMath.groupedNumber(progress.target))"
         let unit = unitLabel
         return unit.isEmpty ? read : read + " " + unit
     }
+
+    // MARK: - benchmark
+
+    /// `47:10 → 45:00`, and lower is better.
+    ///
+    /// No unit beside it: a clock IS its own unit, and `45:00 min` reads as
+    /// forty-five minutes of minutes. The meter runs DOWNWARD from the
+    /// athlete's own first attempt — the seconds shaved over the seconds
+    /// there were to shave — which is geometry only the subject chip
+    /// carries, so with no chip this draws an empty track (`meterFraction`).
+    private var benchmarkBody: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            meter(fill: meterFraction, met: progress.met)
+
+            Text(benchmarkLine)
+                .font(GSFont.bold(13, relativeTo: .subheadline))
+                .monospacedDigit()
+                .foregroundStyle(progress.met ? Self.green : theme.text)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+    }
+
+    /// The routine's name leads when the subject chip carries one — a
+    /// benchmark without its workout's name is a pair of times nobody can
+    /// place — and is simply dropped when it does not, exactly as
+    /// `sessionsLine` drops its noun.
+    ///
+    /// **AN UNRUN BENCHMARK PRINTS AN EM DASH, NEVER `0:00`** (review
+    /// finding 2). `0:00` is a legal time and reads as the fastest anyone has
+    /// ever gone, so a benchmark nobody has attempted must not be able to
+    /// spell itself that way — the guard belongs on the READING, not only on
+    /// the meter. `benchmarkProgress` signals the state with `value: 0` (no
+    /// real attempt is zero seconds) and says `NO ATTEMPT YET` on the kicker
+    /// row beside this.
+    ///
+    /// `static` and internal for the reason `recoveryCompanionLine` is: a
+    /// SwiftUI body is not unit-testable in this target, and this string is
+    /// where finding 2's defect lived. It needs no unit label — a clock is
+    /// its own unit — so unlike the other readings it is a pure function of
+    /// `progress` alone and can be pinned exactly.
+    static func benchmarkReading(_ progress: WeeklyGoalProgress) -> String {
+        let best = progress.value > 0
+            ? WeeklyGoalProgressMath.clock(progress.value)
+            : "—"
+        let read = best + " → \(WeeklyGoalProgressMath.clock(progress.target))"
+        guard let name = progress.chips.first?.name, !name.isEmpty else { return read }
+        return name + " " + read
+    }
+
+    private var benchmarkLine: String { Self.benchmarkReading(progress) }
 
     // MARK: - No goal yet
 
@@ -676,7 +930,8 @@ struct HomeWeeklyGoalStrip: View {
             + ". " + progress.rightHandRead.lowercased() + ". Opens the goal editor."
     }
 
-    /// The spoken form of the four non-chip readings. Deliberately NOT the
+    /// The spoken form of every non-chip reading — eight of them as of plan
+    /// task 0.3. Deliberately NOT the
     /// rendered string: `→` is read as nothing by some voices and as
     /// "rightwards arrow" by others, and `9.4 / 15 mi` invites a synthesizer
     /// to say "nine point four slash".
@@ -705,7 +960,61 @@ struct HomeWeeklyGoalStrip: View {
             let unit = unitLabel
             return unit.isEmpty ? "\(value) towards \(target)"
                                 : "\(value) towards \(target) \(unit)"
+
+        // Goal-first programming phase 1 (plan task 0.3).
+        case .recovery:
+            let read = "\(value) of \(target) stretches"
+            guard let minutes = recoveryCompanion,
+                  Self.recoveryCompanionLine(minutes) != nil else { return read }
+            // The connect prompt is spoken as a sentence rather than as the
+            // kicker's caps — a synthesizer given `CONNECT HEALTH` reads two
+            // shouted words at a lifter who has not been told why.
+            if minutes.name == WeeklyGoalProgressMath.connectHealthRead {
+                return read + ", connect Apple Health for easy minutes"
+            }
+            return read + ", \(Self.number(minutes.done)) of "
+                + "\(Self.number(minutes.target)) easy minutes"
+
+        case .bodyWeight:
+            let unit = unitLabel
+            return unit.isEmpty ? "\(value) towards \(target)"
+                                : "\(value) towards \(target) \(unit)"
+
+        case .volume:
+            let unit = unitLabel
+            let read = "\(WeeklyGoalProgressMath.groupedNumber(progress.value)) of "
+                + WeeklyGoalProgressMath.groupedNumber(progress.target)
+            return unit.isEmpty ? read : read + " " + unit
+
+        case .benchmark:
+            // SPOKEN AS TIME, not as a clock face: `47:10` is read out as
+            // "forty-seven ten" by some voices and as a ratio by others.
+            //
+            // And an unrun benchmark is spoken as unrun, mirroring the
+            // rendered em dash (review finding 2) — "zero seconds towards
+            // forty-five minutes" would be the same false record read aloud.
+            let aim = Self.spokenClock(progress.target)
+            let read = progress.value > 0
+                ? "\(Self.spokenClock(progress.value)) towards \(aim)"
+                : "not run yet, aiming for \(aim)"
+            guard let name = subject?.name, !name.isEmpty else { return read }
+            return "\(name), " + read
         }
+    }
+
+    /// `47 minutes 10 seconds`, and the seconds dropped when there are none.
+    ///
+    /// Internal rather than private so it can be tested (review finding 6):
+    /// it is the one string on this strip a sighted reviewer never sees, so
+    /// a screenshot cannot be its proof.
+    static func spokenClock(_ seconds: Double) -> String {
+        guard seconds.isFinite, seconds >= 0, seconds < 360_000 else { return "—" }
+        let whole = Int(seconds.rounded())
+        let minutes = whole / 60
+        let remainder = whole % 60
+        let minutePart = "\(minutes) minute\(minutes == 1 ? "" : "s")"
+        guard remainder > 0 else { return minutePart }
+        return minutePart + " \(remainder) second\(remainder == 1 ? "" : "s")"
     }
 
     private var metSuffix: String { progress.met ? ", met" : "" }

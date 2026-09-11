@@ -13,7 +13,6 @@ import SwiftUI
 //   RESEARCH — when a question the corpus couldn't answer comes back
 //     researched, the delivery notice lands here.
 struct CoachHomeView: View {
-    @Environment(AppState.self) private var appState
     @Environment(\.gsTheme) private var theme
 
     @State private var profile = TrainingProfile()
@@ -32,13 +31,6 @@ struct CoachHomeView: View {
     /// two narrow filters above: this list exists so the athlete can SEE
     /// everything Coach is holding against their name, and take one back.
     @State private var standingRulesAll: [TrainingRule] = []
-    /// Loaded for the consult, whose constraint chips must offer labels
-    /// selection recognises — see ConsultVocabulary.
-    @State private var catalog: [Exercise] = []
-    /// Sessions per week the LOG shows, over the trailing 8 weeks. nil
-    /// means no evidence, which is not the same as zero — it decides
-    /// whether the consult diagnoses or cold-starts.
-    @State private var loggedCadence: Double?
     /// The consult ends on "BUILD IT", so it has to actually build.
     /// Saving a profile and dropping the athlete back here with
     /// instructions to go press generate somewhere else is not what that
@@ -53,11 +45,25 @@ struct CoachHomeView: View {
     /// the medical questions a second time.
     ///
     /// navigationDestination(item:) REPLACES rather than stacks: moving
-    /// route from .consult to .wizard swaps the pushed view, so the
-    /// consult is gone and the builder pops back to here.
+    /// route from .goal to .schedule swaps the pushed view, so the build
+    /// is gone and the schedule pops back to here.
     @State private var route: Route?
 
-    private enum Route: Hashable { case consult, wizard, schedule, ledger }
+    /// Goal-first programming (plan task C4). `.consult` and `.wizard` are
+    /// gone: `.goal` is the one build route, and it opens
+    /// `GoalFirstBuildFlow` — goal screen, milestone card, consult, builder.
+    /// `.wizard` was already unreachable (nothing in the repository ever set
+    /// it) and the view behind it wrote routines directly, bypassing
+    /// `ProgramBuilder.build`; `.consult` was this screen's own second build
+    /// path, which is what `ConsultEntryView` exists to prevent.
+    ///
+    /// `.ladder(UUID)` is the real landing (spec §5.3, integration task I1):
+    /// the build hands back the id of the `block_goals` row it wrote, and
+    /// this pushes the ladder page for it rather than the plain schedule.
+    /// `.schedule` survives as the fallback for the one case the build has no
+    /// goal id to land on — a failed enrollment or a failed save, where the
+    /// block still built and the schedule is the next best landing.
+    private enum Route: Hashable { case goal, ladder(UUID), schedule, ledger }
 
     private var persona: CoachPersona? { CoachPersona.bySlug(profile.persona) }
 
@@ -99,25 +105,24 @@ struct CoachHomeView: View {
         .contentMargins(.bottom, 88, for: .scrollContent)
         .navigationDestination(item: $route) { destination in
             switch destination {
-            case .consult:
-                consultDestination
-            case .wizard:
-                // Owner 2026-08-26: "When I built my week, it should take
-                // us to our scheduling stack." It did the opposite —
-                // dismiss() popped the athlete OUT of the builder, which
-                // is the only screen in the app that instantiates
-                // ProgramScheduleView. The week they had just commissioned
-                // was three taps back the way they came.
+            case .goal:
+                // The REPLACE that used to carry the consult carries this:
+                // moving route off .goal swaps the pushed view, so the
+                // build unmounts and the landing takes its place — nothing
+                // underneath to fall back into. (Owner 2026-08-26: "When I
+                // built my week, it should take us to our scheduling stack.")
                 //
-                // The same REPLACE that fixed the consult loop carries
-                // this: moving route to .schedule swaps the pushed view,
-                // so the builder unmounts and the schedule takes its place
-                // — no wizard underneath to fall back into.
-                CoachWizardView(onCreated: {
-                    route = .schedule
-                    return .handled
-                })
-                .background(theme.bg)
+                // I1: the ladder page (spec §5.3) is the real landing, for
+                // the goal the build just wrote; `.schedule` is the fallback
+                // for the one case with no id to land on.
+                GoalFirstBuildFlow(onBuilt: { id in
+                                       route = id.map { .ladder($0) } ?? .schedule
+                                   },
+                                   onRuleTrouble: { ruleTrouble = $0 })
+                    .background(theme.bg)
+            case .ladder(let goalID):
+                LadderPageView(goalID: goalID)
+                    .background(theme.bg)
             case .schedule:
                 ProgramScheduleView()
                     .background(theme.bg)
@@ -134,8 +139,6 @@ struct CoachHomeView: View {
             }
             researched = await CoachChatRepository.researchedQuestions()
             await readRules()
-            catalog = (try? await ExerciseRepository.fetchAll()) ?? []
-            await readCadence()
         }
     }
 
@@ -232,8 +235,16 @@ struct CoachHomeView: View {
     // built program page." The consult IS the build now: it ends in the
     // chat with Coach, BUILD IT runs the builder, and the athlete lands
     // on the program page with the weeks ready to schedule.
+    //
+    // Goal-first programming (plan task C4): the door's COPY IS UNCHANGED —
+    // it is still true, because the goal screen is the first question of that
+    // conversation — and it now opens `GoalFirstBuildFlow` rather than this
+    // screen's own copy of the consult. That copy is gone with it: two build
+    // paths anchored on one screen is exactly what `ConsultEntryView` was
+    // collapsed into one to prevent, and this screen was the one host that
+    // had never joined it.
     private var consultDoor: some View {
-        Button { route = .consult } label: {
+        Button { route = .goal } label: {
             doorLabel(title: "BUILD MY PROGRAM",
                       icon: "hammer",
                       description: "A conversation with Coach, then your block — built, and ready to put on the calendar.",
@@ -244,81 +255,12 @@ struct CoachHomeView: View {
         .accessibilityLabel("Build my program — a conversation with Coach, then your block")
     }
 
-    private var consultDestination: some View {
-        CoachConsultView(
-            profile: profile,
-            catalog: catalog,
-            // Everything below is READ. A consult that opens already
-            // knowing the athlete is the difference between a consult and
-            // a form.
-            //
-            // A block finished OR sets logged. Carryover alone would
-            // cold-start someone midway through their first block - they
-            // have a log, they just have not finished anything.
-            hasLog: profile.carryover != nil || loggedCadence != nil,
-            loggedDaysPerWeek: loggedCadence
-                ?? profile.carryover?.suggestedDaysPerWeek.map(Double.init),
-            recommendedDaysPerWeek: profile.daysPerWeek,
-            userID: appState.currentProfile?.id,
-            onFinish: { answers in
-                await applyConsult(answers)
-                // Build straight from the tuned profile - no wizard in
-                // between - and REPLACE the consult with the program page.
-                // Replacing rather than pushing is what keeps the health
-                // gate from re-running on the way back.
-                await buildFromConsult(answers)
-            })
-        .background(theme.bg)
-        .navigationBarBackButtonHidden(true)
-    }
-
-    /// The build, run from the consult's BUILD IT. Landing is a route
-    /// swap; a failure surfaces in the same notice slot the rule trouble
-    /// uses, and the consult stays put so the athlete can try again.
-    private func buildFromConsult(_ answers: ConsultAnswers) async {
-        guard let userID = appState.currentProfile?.id else { return }
-        do {
-            _ = try await ProgramBuilder.build(profile: profile, answers: answers,
-                                               catalog: catalog, userID: userID)
-            route = .schedule
-        } catch {
-            ruleTrouble = ErrorMapping.map(error).errorDescription
-        }
-    }
-
     /// A returning athlete is not starting over, and the door should not
     /// say they are.
     private var consultSubtitle: String {
         profile.carryover == nil
             ? "A few questions, then your first block"
             : "Tell me what changed and I'll rebuild the block"
-    }
-
-    /// Fold the consult's answers into the profile and save. The generator
-    /// is not run from here — the athlete lands on MY PROGRAM with every
-    /// field already set, which is the point of the split: the consult
-    /// TUNES, the wizard BUILDS, and both read the same profile.
-    private func applyConsult(_ answers: ConsultAnswers) async {
-        guard let userID = appState.currentProfile?.id else { return }
-        // The write path is shared with the onboarding offer flow
-        // (ConsultPersistence) - one copy, or the two hosts drift.
-        let outcome = await ConsultPersistence.apply(
-            answers, to: profile, catalog: catalog, userID: userID)
-        profile = outcome.profile
-        if let trouble = outcome.ruleTrouble {
-            ruleTrouble = trouble
-        }
-        await readRules()
-    }
-
-    /// The trailing-8-week cadence, from set logs. Distinct DAYS, not log
-    /// rows — see ConsultProbe.loggedCadence.
-    private func readCadence() async {
-        guard let userID = appState.currentProfile?.id else { return }
-        let since = Calendar.current.date(byAdding: .day, value: -56, to: Date()) ?? Date()
-        guard let logs = try? await SessionRepository.recentSetLogs(userID: userID,
-                                                                   since: since) else { return }
-        loggedCadence = ConsultProbe.loggedCadence(sessionDates: logs.map(\.loggedAt))
     }
 
     // MARK: MY PROGRAM (the generator, one layer down)

@@ -57,6 +57,28 @@ struct WeeklyGoalEditorSheet: View {
         var params: WeeklyGoalParams = WeeklyGoalParams()
     }
 
+    /// The rung this edit is an OVERRIDE of (goal-first plan, task D3).
+    ///
+    /// Spec §4: "An athlete's edit of this week's row is an override of the
+    /// rung: the row becomes `source = user`, the ladder marks the rung
+    /// `overridden`, re-laddering starts from actuals as before, and Coach's
+    /// propose-only rule protects the override." Almost nothing about the
+    /// editor changes for that to be true — the shipped `save` already writes
+    /// `source = .user` and `WeeklyGoalWriteRule.shouldOverwrite` already
+    /// refuses to let Coach write over it. What the athlete needs is to be
+    /// TOLD which rung they are standing on, which is what this carries.
+    ///
+    /// nil for a standalone weekly goal, which is every row until I2 — and
+    /// which is why `home-goal-editor` and `home-goal-editor-lift` are
+    /// unchanged by this task.
+    struct RungContext: Equatable, Sendable {
+        /// 1-based, what the header prints.
+        let weekNumber: Int
+        let weekCount: Int
+        /// The milestone as the ladder page words it — "Bench 225 by Oct 18".
+        let milestone: String
+    }
+
     /// One row of the lift picker: the block's focus lifts first, then the
     /// catalog. A flat value rather than an `Exercise` so a catalog frame can
     /// build the picker without a repository.
@@ -65,6 +87,18 @@ struct WeeklyGoalEditorSheet: View {
         let name: String
         /// The row's kicker — `FOCUS LIFT` for the block's own, else the
         /// muscle group the lift belongs to.
+        let detail: String
+    }
+
+    /// One row of the BENCHMARK kind's routine picker (plan task 0.3).
+    ///
+    /// The same shape as `LiftOption` and for the same reason: a flat value
+    /// rather than a `Routine`, so a catalog frame builds the picker from
+    /// fixtures and never reaches a repository.
+    struct RoutineOption: Identifiable, Equatable, Sendable {
+        let id: UUID
+        let name: String
+        /// The row's kicker. Free-form; the picker prints it in caps.
         let detail: String
     }
 
@@ -77,11 +111,18 @@ struct WeeklyGoalEditorSheet: View {
     /// `WeekMath.weekStartString(_:)`'s value for the week being edited.
     /// Passed rather than computed so the sheet has no clock of its own.
     let weekStart: String
-    /// Where a save goes. `StubWeeklyGoalRepository` until integration task
-    /// I1 swaps the binding to Stream A's live one.
+    /// Where a save goes. The DEFAULT is the stub and it is catalog-only:
+    /// every production host injects its own (I1) — `HomeView.swift:297` and
+    /// `LadderPageView.rungEditor`, both pinned by tests — so a sheet that
+    /// reached this default would be a dropped injection rather than a
+    /// deliberate one.
     var repository: any WeeklyGoalRepository = StubWeeklyGoalRepository()
     /// Coach's standing suggestion, when there is one.
     var proposal: Proposal? = nil
+    /// The rung this week's row materialises, when it belongs to a ladder
+    /// (task D3). nil = a standalone weekly goal, and the header keeps the
+    /// shipped standing copy line.
+    var rung: RungContext? = nil
     /// The profile's **standing** weekly session goal — `Profile
     /// .weeklySessionGoal`, what next week will be, which is the value the
     /// streak sheet edits and the value this sheet's `days` stepper edits
@@ -97,7 +138,12 @@ struct WeeklyGoalEditorSheet: View {
     var weeklySessionGoal: Int = 3
     /// The block's focus lifts, shown at the top of the lift picker.
     var focusLifts: [LiftOption] = []
-    /// Whether to load the full exercise catalog behind the focus lifts.
+    /// The routines shown at the top of the BENCHMARK kind's picker, ahead
+    /// of whatever `loadsCatalog` fetches. Injected for the same reason
+    /// `focusLifts` is: a catalog frame is a value, not a fetch.
+    var routineOptions: [RoutineOption] = []
+    /// Whether to load the full exercise catalog behind the focus lifts —
+    /// and, for the benchmark kind, the athlete's own routines.
     /// False in a catalog frame, which must not touch the network.
     var loadsCatalog: Bool = true
     /// The clock, injected. Stamps `setAt` on a save and frames the by-date
@@ -154,13 +200,34 @@ struct WeeklyGoalEditorSheet: View {
     @State private var saving = false
     @State private var errorText: String?
 
+    // ── goal-first programming phase 1 (plan task 0.3) ────────────────────
+    /// `recovery`: the primary metric — stretching exercises a week.
+    @State private var stretchCount: Int
+    /// `recovery`: the companion — easy (LISS) minutes a week.
+    @State private var lissMinutes: Int
+    /// `bodyWeight`: CANONICAL POUNDS, like `targetWeightLbs`. The stepper
+    /// converts at the edge in both directions.
+    @State private var bodyWeightLbs: Decimal
+    /// `volume`: the week's tonnage in CANONICAL POUNDS, like every other
+    /// weight here. The stepper converts at the edge in both directions.
+    @State private var volumeLbs: Decimal
+    /// `benchmark`: the routine, and the time to beat, split so the two
+    /// steppers each own a whole number.
+    @State private var routineID: UUID?
+    @State private var benchmarkMinutes: Int
+    @State private var benchmarkSeconds: Int
+    @State private var routineCatalog: [RoutineOption] = []
+    @State private var routineQuery = ""
+
     init(goal: WeeklyGoal?,
          userID: UUID,
          weekStart: String,
          repository: any WeeklyGoalRepository = StubWeeklyGoalRepository(),
          proposal: Proposal? = nil,
+         rung: RungContext? = nil,
          weeklySessionGoal: Int = 3,
          focusLifts: [LiftOption] = [],
+         routineOptions: [RoutineOption] = [],
          loadsCatalog: Bool = true,
          today: Date = .now,
          unitOverride: WeightUnit? = nil,
@@ -170,8 +237,10 @@ struct WeeklyGoalEditorSheet: View {
         self.weekStart = weekStart
         self.repository = repository
         self.proposal = proposal
+        self.rung = rung
         self.weeklySessionGoal = weeklySessionGoal
         self.focusLifts = focusLifts
+        self.routineOptions = routineOptions
         self.loadsCatalog = loadsCatalog
         self.today = today
         self.unitOverride = unitOverride
@@ -200,6 +269,20 @@ struct WeeklyGoalEditorSheet: View {
         // by-date has already passed would otherwise seed the selection
         // outside its own range — an ill-defined state on a real stale row.
         _byDate = State(initialValue: max(params.byDate ?? Self.defaultByDate(from: today), today))
+
+        // ── goal-first programming phase 1 (plan task 0.3) ────────────────
+        // `count` is one column serving THREE kinds now, so — exactly as
+        // `sessionCount` above — it is only this kind's number when this
+        // kind is the one that wrote it.
+        _stretchCount = State(initialValue: goal?.kind == .recovery
+                              ? max(1, min(21, params.count ?? 6)) : 6)
+        _lissMinutes = State(initialValue: Self.clampLiss(params.lissMinutes ?? 150))
+        _bodyWeightLbs = State(initialValue: params.bodyWeightLbs ?? 180)
+        _volumeLbs = State(initialValue: params.volumeLbs.map { Decimal($0) } ?? 100_000)
+        _routineID = State(initialValue: params.routineID ?? routineOptions.first?.id)
+        let seconds = max(0, params.targetSeconds ?? Self.defaultBenchmarkSeconds)
+        _benchmarkMinutes = State(initialValue: max(1, min(180, seconds / 60)))
+        _benchmarkSeconds = State(initialValue: (seconds % 60) / 5 * 5)
     }
 
     // MARK: - Vocabulary
@@ -273,6 +356,17 @@ struct WeeklyGoalEditorSheet: View {
 
                     Spacer(minLength: 0)
                 }
+            } else if let rung = rung {
+                // Task D3. The rung line replaces the standing copy line for
+                // this case only, and sits BELOW the proposal branch: a
+                // proposal is Coach asking about a goal the athlete already
+                // set, which is the one thing on this sheet the athlete can
+                // act on, and a sheet cannot both ask a question and explain
+                // where the answer came from.
+                Text(Self.rungLine(rung))
+                    .font(GSFont.body(13, relativeTo: .subheadline))
+                    .foregroundStyle(theme.neutral700)
+                    .fixedSize(horizontal: false, vertical: true)
             } else {
                 // The design's copy line, verbatim.
                 Text("Coach set this from your block. Change it here; Coach follows your lead for the rest of the week.")
@@ -283,19 +377,42 @@ struct WeeklyGoalEditorSheet: View {
         }
     }
 
+    /// The rung header's second line, verbatim from the plan.
+    ///
+    /// Straight quotation marks, deliberately: the plan gives the sentence
+    /// verbatim with them, and this line is a contract between the ladder
+    /// page's headline and the editor's header — the two must name one
+    /// milestone in one spelling.
+    static func rungLine(_ rung: RungContext) -> String {
+        "Week \(rung.weekNumber) of \(rung.weekCount) of \"\(rung.milestone)\". "
+            + "Change this week and Coach ladders from where you actually are."
+    }
+
     // MARK: - The kinds
 
-    /// A segmented row: five equal chips, one per kind, in
-    /// `WeeklyGoalKind`'s own order.
+    /// A segmented control: one equal chip per kind, in `WeeklyGoalKind`'s
+    /// own order.
     ///
     /// Equal widths rather than a horizontal scroller, because a scroller
-    /// puts `A LIFT` off the right edge of a 375 pt device — and off the
-    /// right edge of the capture that is supposed to prove the lift editor
-    /// renders. Flat, 999 radius, the selected one `theme.text` on
+    /// puts the last chips off the right edge of a 375 pt device — and off
+    /// the right edge of the capture that is supposed to prove those editors
+    /// render. Flat, 999 radius, the selected one `theme.text` on
     /// `theme.neutral300`: chips are furniture (rule 1) and a selected chip
     /// is not a primary action.
+    ///
+    /// **TWO ROWS OF FIVE, as of plan task 0.3, and that is a deliberate
+    /// departure from the shipped single `HStack`.** Nine chips in one row
+    /// on a 375 pt device leaves each about 33 pt wide, and `MUSCLE SETS`
+    /// scaled to `minimumScaleFactor(0.6)` inside 33 pt is not a word anyone
+    /// can read — the row would have kept its shape and lost its job. A
+    /// five-column `LazyVGrid` keeps every chip the width it has today,
+    /// wraps the four new kinds onto a second row, and leaves the last cell
+    /// empty rather than stretching four chips across five columns' worth of
+    /// space. The scroller is still refused, for the reason above.
     private var kindChips: some View {
-        HStack(spacing: 6) {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6),
+                                 count: 5),
+                  alignment: .leading, spacing: 6) {
             ForEach(WeeklyGoalKind.allCases, id: \.self) { candidate in
                 chip(label: Self.chipLabel(candidate, unit: unit),
                      selected: candidate == kind) { kind = candidate }
@@ -307,6 +424,10 @@ struct WeeklyGoalEditorSheet: View {
     /// list — except that the distance chip follows owner answer 2 rather
     /// than the design's literal word: a chip reading `MILES` on a device set
     /// to kilograms names a unit the rest of the screen does not use.
+    ///
+    /// The four goal-first kinds carry the plan's own labels (task 0.3's
+    /// table), spelled as the subject they edit rather than as the metric:
+    /// `RECOVERY`, `BODY WEIGHT`, `VOLUME`, `BENCHMARK`.
     private static func chipLabel(_ kind: WeeklyGoalKind, unit: WeightUnit) -> String {
         switch kind {
         case .muscleSets:     return "MUSCLE SETS"
@@ -314,6 +435,10 @@ struct WeeklyGoalEditorSheet: View {
         case .sessionsOfType: return "SESSIONS"
         case .days:           return "DAYS"
         case .lift:           return "A LIFT"
+        case .recovery:       return "RECOVERY"
+        case .bodyWeight:     return "BODY WEIGHT"
+        case .volume:         return "VOLUME"
+        case .benchmark:      return "BENCHMARK"
         }
     }
 
@@ -357,6 +482,14 @@ struct WeeklyGoalEditorSheet: View {
         case .sessionsOfType: sessionLevers
         case .days:           dayLevers
         case .lift:           liftLevers
+        // Goal-first programming phase 1 (plan task 0.3): one lever card per
+        // new kind, built from the same flat furniture as the five above —
+        // steppers on `theme.surface`, a picker of rows, nothing raised
+        // (rule 1).
+        case .recovery:       recoveryLevers
+        case .bodyWeight:     bodyWeightLevers
+        case .volume:         volumeLevers
+        case .benchmark:      benchmarkLevers
         }
     }
 
@@ -565,6 +698,218 @@ struct WeeklyGoalEditorSheet: View {
         }
     }
 
+    // MARK: - The goal-first lever cards (plan task 0.3)
+
+    /// RECOVERY — two steppers, because recovery is the one goal with two
+    /// metrics and it is still ONE goal (spec §2.3).
+    ///
+    /// The stretching count leads because it is the PRIMARY: it is what the
+    /// block actually schedules, and it is what the strip's fraction and met
+    /// colour are about (controller ruling 1). Easy minutes follow as the
+    /// companion.
+    ///
+    /// BOTH ARE BOUNDED AWAY FROM ZERO — 1 stretch and 15 minutes — which is
+    /// exactly why `incompleteReason` has nothing to say about this kind: a
+    /// recovery goal cannot be under-specified through these levers.
+    private var recoveryLevers: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            stepperRow(title: "STRETCHES",
+                       value: stretchCount,
+                       suffix: "A WEEK",
+                       canDecrease: stretchCount > 1,
+                       canIncrease: stretchCount < 21) { delta in
+                stretchCount = max(1, min(21, stretchCount + delta))
+            }
+
+            stepperRow(title: "EASY MINUTES",
+                       value: lissMinutes,
+                       suffix: "A WEEK",
+                       canDecrease: lissMinutes > Self.lissStep,
+                       canIncrease: lissMinutes < Self.lissMax) { delta in
+                lissMinutes = Self.clampLiss(lissMinutes + delta * Self.lissStep)
+            }
+
+            Text("Easy minutes come from Apple Health. Connect it in Settings and this week counts itself.")
+                .font(GSFont.body(12, relativeTo: .footnote))
+                .foregroundStyle(theme.neutral500)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// BODY WEIGHT — one stepper, in the athlete's own unit.
+    ///
+    /// `Units` converts at both edges exactly as `weightRow` does, and for
+    /// the same reason: every stored weight in this app is pounds
+    /// (`Models/Units.swift:7-12`), and a kg athlete steps in kilograms
+    /// rather than reading converted pounds.
+    ///
+    /// It formats through `Units.formatBodyWeight`, NOT `Units.format`:
+    /// that one snaps to a loadable plate increment, and a person is not a
+    /// barbell — its own doc comment says "rounding a person to the nearest
+    /// 2.5 lb loses a real trend". The step follows: 1 lb / 0.5 kg, the
+    /// granularity a scale is read at, rather than the 5 lb a plate is
+    /// loaded at.
+    private var bodyWeightLevers: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            stepperRow(title: "TARGET",
+                       text: Units.formatBodyWeight(pounds: bodyWeightLbs, unit: unit),
+                       canDecrease: Units.fromPounds(bodyWeightLbs, to: unit) > bodyWeightStep,
+                       canIncrease: true) { delta in
+                let current = Units.fromPounds(bodyWeightLbs, to: unit)
+                let next = current + Decimal(delta) * bodyWeightStep
+                bodyWeightLbs = Units.toPounds(max(bodyWeightStep, next), from: unit)
+            }
+
+            Text("Weigh in when you like — the meter runs from where the block started, not from zero.")
+                .font(GSFont.body(12, relativeTo: .footnote))
+                .foregroundStyle(theme.neutral500)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// The body-weight stepper's step in the athlete's own unit — a scale's
+    /// granularity, not a plate's.
+    private var bodyWeightStep: Decimal { unit == .kg ? Decimal(0.5) : 1 }
+
+    /// VOLUME — one tonnage stepper.
+    ///
+    /// 2,500 lb a step, the plan's number; a kg athlete steps by a round
+    /// 1,000 kg instead of by 1,134, because a step nobody would name is a
+    /// step nobody can aim with. Stored in pounds like every other weight.
+    private var volumeLevers: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            stepperRow(title: "THIS WEEK",
+                       text: volumeReading,
+                       canDecrease: Units.fromPounds(volumeLbs, to: unit) > volumeStep,
+                       canIncrease: true) { delta in
+                let current = Units.fromPounds(volumeLbs, to: unit)
+                let next = current + Decimal(delta) * volumeStep
+                volumeLbs = Units.toPounds(max(volumeStep, next), from: unit)
+            }
+        }
+    }
+
+    /// The tonnage step in the athlete's own unit.
+    private var volumeStep: Decimal { unit == .kg ? 1_000 : 2_500 }
+
+    /// `100,000 LBS` — grouped through the one implementation the strip and
+    /// Coach's sentence also use, so the same tonnage is never spelled two
+    /// ways. Its own property because a single interpolation carrying a
+    /// conversion, a bridge and two calls is the shape that makes the Swift
+    /// type checker give up inside a `ViewBuilder`.
+    private var volumeReading: String {
+        let inUnit = Self.double(Units.fromPounds(volumeLbs, to: unit))
+        return WeeklyGoalProgressMath.groupedNumber(inUnit) + " " + unit.label.uppercased()
+    }
+
+    /// BENCHMARK — the routine, then the time to beat.
+    ///
+    /// The picker comes FIRST because it is the question the goal cannot be
+    /// saved without (`incompleteReason`), and questions go above readouts
+    /// (design rule 4). Minutes and seconds are two steppers rather than one
+    /// so each owns a whole number: a single 30-second stepper cannot reach
+    /// 45:10, and a text field for a time is a keyboard on a sheet that has
+    /// none.
+    private var benchmarkLevers: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            routinePicker
+
+            stepperRow(title: "MINUTES",
+                       value: benchmarkMinutes,
+                       suffix: benchmarkMinutes == 1 ? "MINUTE" : "MINUTES",
+                       canDecrease: benchmarkMinutes > 1,
+                       canIncrease: benchmarkMinutes < 180) { delta in
+                benchmarkMinutes = max(1, min(180, benchmarkMinutes + delta))
+            }
+
+            stepperRow(title: "SECONDS",
+                       value: benchmarkSeconds,
+                       suffix: "SECONDS",
+                       canDecrease: benchmarkSeconds > 0,
+                       canIncrease: benchmarkSeconds < 55) { delta in
+                benchmarkSeconds = max(0, min(55, benchmarkSeconds + delta * 5))
+            }
+
+            Text("Beat \(WeeklyGoalProgressMath.clock(Double(benchmarkTargetSeconds))) — lower is better on this one.")
+                .font(GSFont.body(12, relativeTo: .footnote))
+                .foregroundStyle(theme.neutral500)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// The two steppers, back as one number.
+    private var benchmarkTargetSeconds: Int { benchmarkMinutes * 60 + benchmarkSeconds }
+
+    /// The athlete's routines, searched and capped — `liftPicker`'s shape,
+    /// against a much smaller list (a person's own routines, not a 1,300-row
+    /// catalog), so the same bounded scroll is generous rather than
+    /// necessary.
+    private var routinePicker: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField("Search routines", text: $routineQuery)
+                .font(GSFont.body(14, relativeTo: .body))
+                .foregroundStyle(theme.text)
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(theme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: GSMetrics.radiusSm))
+                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
+                    .strokeBorder(theme.divider, lineWidth: 1))
+
+            ScrollView {
+                VStack(spacing: 6) {
+                    ForEach(visibleRoutines) { option in
+                        routineRow(option)
+                    }
+                }
+            }
+            .frame(maxHeight: 200)
+        }
+    }
+
+    private func routineRow(_ option: RoutineOption) -> some View {
+        let selected = option.id == routineID
+        return Button { routineID = option.id } label: {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(option.name)
+                        .font(GSFont.bold(13, relativeTo: .subheadline))
+                        .foregroundStyle(theme.text)
+                        .lineLimit(1)
+                    Text(option.detail)
+                        .font(GSFont.bold(9, relativeTo: .caption2))
+                        .tracking(1.0)
+                        .foregroundStyle(theme.neutral500)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 6)
+
+                if selected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(theme.accent)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(theme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: GSMetrics.radiusSm))
+            .overlay(
+                selected
+                    ? RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
+                        .strokeBorder(theme.accent, lineWidth: 1.5)
+                    : nil
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+    }
+
     // MARK: - Furniture
 
     /// A picker of short words as equal chips — the activity row and the
@@ -724,6 +1069,16 @@ struct WeeklyGoalEditorSheet: View {
             return exerciseID == nil ? "Pick the lift this goal is about." : nil
         case .distance, .sessionsOfType, .days:
             return nil
+
+        // Goal-first programming phase 1 (plan task 0.3). Three of the four
+        // cannot be under-specified — every lever they use is seeded to a
+        // legal value and every stepper is bounded away from zero — and the
+        // fourth has the same hole `lift` has: a time and a date with no
+        // workout attached is a goal nothing can be measured against.
+        case .recovery, .bodyWeight, .volume:
+            return nil
+        case .benchmark:
+            return routineID == nil ? "Pick the routine this goal is about." : nil
         }
     }
 
@@ -734,6 +1089,18 @@ struct WeeklyGoalEditorSheet: View {
         let focusIDs = Set(focusLifts.map(\.id))
         let rest = catalog.filter { !focusIDs.contains($0.id) }
         let all = focusLifts + rest
+        let matched = query.isEmpty ? all : all.filter { $0.name.lowercased().contains(query) }
+        return Array(matched.prefix(40))
+    }
+
+    /// The injected routines first, then whatever the fetch added, with the
+    /// injected ones removed so nothing appears twice — `visibleLifts`'
+    /// shape exactly.
+    private var visibleRoutines: [RoutineOption] {
+        let query = routineQuery.trimmingCharacters(in: .whitespaces).lowercased()
+        let seededIDs = Set(routineOptions.map(\.id))
+        let rest = routineCatalog.filter { !seededIDs.contains($0.id) }
+        let all = routineOptions + rest
         let matched = query.isEmpty ? all : all.filter { $0.name.lowercased().contains(query) }
         return Array(matched.prefix(40))
     }
@@ -788,6 +1155,30 @@ struct WeeklyGoalEditorSheet: View {
                 targetWeightLbs = weight
             }
             if let byDate = params.byDate { self.byDate = max(byDate, today) }
+
+        // Goal-first programming phase 1 (plan task 0.3). Same rule as every
+        // arm above: a field the proposal does not carry is LEFT ALONE
+        // rather than reset, so accepting cannot wipe a lever the athlete
+        // already set — and every value is clamped into its own stepper's
+        // range, because a proposal the stepper cannot step back down from
+        // is a lever the athlete has lost.
+        case .recovery:
+            if let count = params.count { stretchCount = max(1, min(21, count)) }
+            if let minutes = params.lissMinutes { lissMinutes = Self.clampLiss(minutes) }
+        case .bodyWeight:
+            if let weight = params.bodyWeightLbs, weight.isFinite, weight > 0 {
+                bodyWeightLbs = weight
+            }
+        case .volume:
+            if let tonnage = params.volumeLbs, tonnage.isFinite, tonnage > 0 {
+                volumeLbs = Decimal(tonnage)
+            }
+        case .benchmark:
+            if let routineID = params.routineID { self.routineID = routineID }
+            if let seconds = params.targetSeconds, seconds > 0 {
+                benchmarkMinutes = max(1, min(180, seconds / 60))
+                benchmarkSeconds = (seconds % 60) / 5 * 5
+            }
         }
     }
 
@@ -879,6 +1270,51 @@ struct WeeklyGoalEditorSheet: View {
     /// a number; carrying the old one forward would claim the block chose
     /// targets the person just typed over.
     private func params() -> WeeklyGoalParams {
+        Self.params(kind: kind,
+                    muscleTargets: muscleTargets,
+                    activity: activity,
+                    distanceTarget: distanceTarget,
+                    sessionType: sessionType,
+                    sessionCount: sessionCount,
+                    exerciseID: exerciseID,
+                    targetWeightLbs: targetWeightLbs,
+                    byDate: byDate,
+                    stretchCount: stretchCount,
+                    lissMinutes: lissMinutes,
+                    bodyWeightLbs: bodyWeightLbs,
+                    volumeLbs: Self.double(volumeLbs),
+                    routineID: routineID,
+                    benchmarkSeconds: benchmarkTargetSeconds,
+                    existing: goal)
+    }
+
+    /// The builder itself, lifted out of the view (task D3).
+    ///
+    /// A view-private closure over `@State` cannot be tested, and this is the
+    /// one piece of the editor that must not silently lose data — see the
+    /// `goalID` carry-through at the foot. Every lever arrives as a
+    /// parameter; the instance method above hands in its own state and is the
+    /// only production caller.
+    ///
+    /// The optional levers default to the SAME seeds `init` uses, so a caller
+    /// that names only the kind it cares about gets the editor's own idea of
+    /// that kind rather than a zero.
+    static func params(kind: WeeklyGoalKind,
+                       muscleTargets: [MuscleGroup: Int],
+                       activity: String? = nil,
+                       distanceTarget: Int? = nil,
+                       sessionType: String? = nil,
+                       sessionCount: Int? = nil,
+                       exerciseID: UUID? = nil,
+                       targetWeightLbs: Decimal? = nil,
+                       byDate: Date? = nil,
+                       stretchCount: Int? = nil,
+                       lissMinutes: Int? = nil,
+                       bodyWeightLbs: Decimal? = nil,
+                       volumeLbs: Double? = nil,
+                       routineID: UUID? = nil,
+                       benchmarkSeconds: Int? = nil,
+                       existing: WeeklyGoal?) -> WeeklyGoalParams {
         var params = WeeklyGoalParams()
         switch kind {
         case .muscleSets:
@@ -888,22 +1324,55 @@ struct WeeklyGoalEditorSheet: View {
             }
             params.muscleTargets = targets
         case .distance:
-            params.activity = activity
-            params.distanceTarget = Double(distanceTarget)
+            params.activity = activity ?? activities[0]
+            params.distanceTarget = Double(distanceTarget ?? 15)
         case .sessionsOfType:
-            params.sessionType = sessionType
-            params.count = sessionCount
+            params.sessionType = sessionType ?? sessionTypes[0]
+            params.count = sessionCount ?? 3
         case .days:
             break
         case .lift:
             params.exerciseID = exerciseID
-            params.targetWeightLbs = targetWeightLbs
+            params.targetWeightLbs = targetWeightLbs ?? 225
             params.byDate = byDate
+
+        // Goal-first programming phase 1 (plan task 0.3), each writing only
+        // its own keys — spec §4's mapping table, column for column.
+        case .recovery:
+            params.count = stretchCount ?? 6
+            params.lissMinutes = lissMinutes ?? 150
+        case .bodyWeight:
+            params.bodyWeightLbs = bodyWeightLbs ?? 180
+        case .volume:
+            params.volumeLbs = volumeLbs ?? 100_000
+        case .benchmark:
+            params.routineID = routineID
+            params.targetSeconds = benchmarkSeconds ?? defaultBenchmarkSeconds
         }
+
+        // **AN EDIT IS AN OVERRIDE OF THE RUNG, NOT A DIVORCE FROM IT**
+        // (spec §4, task D3). Every arm above builds a fresh
+        // `WeeklyGoalParams`, so without this line an edit would DROP
+        // `params.goalID` and orphan the row from its ladder — the ladder
+        // would lose the very week it was overridden in. It is carried for
+        // every kind, including a kind SWITCH: the athlete changing this
+        // week's rung from a lift to muscle sets is still overriding that
+        // rung.
+        //
+        // This replaces the previous note here, which said `goalID` was
+        // deliberately never written on this path. That was true while the
+        // ladder had no rows in `weekly_goals` to be attached to; A13 now
+        // materialises them, and the id it stamps has to survive an edit.
+        params.goalID = existing?.params.goalID
         return params
     }
 
     private func loadCatalogIfNeeded() async {
+        await loadLiftsIfNeeded()
+        await loadRoutinesIfNeeded()
+    }
+
+    private func loadLiftsIfNeeded() async {
         guard loadsCatalog, kind == .lift, catalog.isEmpty else { return }
         let rows = (try? await ExerciseRepository.fetchAll()) ?? []
         catalog = rows
@@ -917,6 +1386,24 @@ struct WeeklyGoalEditorSheet: View {
                            detail: MuscleGroup.group(exercise.primaryMuscle)?.rawValue.uppercased()
                                ?? exercise.primaryMuscle.uppercased())
             }
+    }
+
+    /// The athlete's own routines, for the benchmark picker — keyed on the
+    /// same `.task(id: kind)` the lift catalog is, so the fetch happens when
+    /// and only when that picker is on screen.
+    private func loadRoutinesIfNeeded() async {
+        guard loadsCatalog, kind == .benchmark, routineCatalog.isEmpty else { return }
+        let rows = (try? await RoutineRepository.fetchAll(ownerID: userID)) ?? []
+        routineCatalog = rows.map { routine in
+            RoutineOption(id: routine.id,
+                          name: routine.name,
+                          detail: routine.prescribedBy == nil ? "YOUR ROUTINE" : "PRESCRIBED")
+        }
+        // A picker that returned exactly one routine has already answered
+        // its own question; seeding it is the same courtesy `focusLifts`
+        // gets in `init`, and it is what keeps the primary reachable for an
+        // athlete with one saved workout.
+        if routineID == nil { routineID = routineCatalog.first?.id }
     }
 
     // MARK: - Seeds
@@ -944,5 +1431,31 @@ struct WeeklyGoalEditorSheet: View {
     /// written against when the person has not named one.
     private static func defaultByDate(from today: Date) -> Date {
         today.addingTimeInterval(6 * 7 * 24 * 60 * 60)
+    }
+
+    // MARK: - Goal-first seeds (plan task 0.3)
+
+    /// The LISS stepper's step and ceiling. Fifteen minutes is the smallest
+    /// unit of easy work anyone plans in; ten hours a week is far past any
+    /// real recovery block and is a guard, not a product rule.
+    private static let lissStep = 15
+    private static let lissMax = 600
+
+    /// The LISS stepper's range, brought to a whole step. Used for the seed
+    /// AND for every write, so a stale row carrying 137 minutes lands on a
+    /// number this stepper can actually step.
+    private static func clampLiss(_ minutes: Int) -> Int {
+        let stepped = (minutes / lissStep) * lissStep
+        return max(lissStep, min(lissMax, stepped))
+    }
+
+    /// 45:00 — the spec's own worked benchmark ("Murph under 45 min").
+    private static let defaultBenchmarkSeconds = 2700
+
+    /// `Decimal` -> `Double` at the one edge `WeeklyGoalParams.volumeLbs`
+    /// forces: tonnage is stored as a Double because it is an aggregate, and
+    /// everything upstream of it in this sheet is a Decimal weight.
+    private static func double(_ value: Decimal) -> Double {
+        NSDecimalNumber(decimal: value).doubleValue
     }
 }

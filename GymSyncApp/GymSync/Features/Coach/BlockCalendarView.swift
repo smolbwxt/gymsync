@@ -53,13 +53,25 @@ struct BlockCalendarView: View {
     @State private var plannedDays: Set<Date> = []
     @State private var selectedWeek = 1
     @State private var sheetWeek: WeekRef?
-    /// A block was just built from this calendar; push a FRESH schedule
-    /// page. This view's own `enrollment`/`weeks` are `let` values
-    /// captured before the build, so it cannot render the new block -
-    /// but a fresh ProgramScheduleView fetches, so the athlete lands on
-    /// what they just made instead of popping back to a calendar drawing
-    /// the block they replaced.
-    @State private var freshScheduleAfterBuild = false
+    /// A block was just built from this calendar; push its ladder page
+    /// (spec §5.3, integration task I1), or — when the build had no goal id
+    /// to land on — a FRESH schedule page. This view's own
+    /// `enrollment`/`weeks` are `let` values captured before the build, so it
+    /// cannot render the new block - but a fresh ProgramScheduleView
+    /// fetches, so the athlete lands on what they just made instead of
+    /// popping back to a calendar drawing the block they replaced.
+    @State private var builtLanding: BuildLanding?
+
+    private enum BuildLanding: Identifiable, Hashable {
+        case ladder(UUID)
+        case schedule
+        var id: String {
+            switch self {
+            case .ladder(let goalID): return goalID.uuidString
+            case .schedule: return "schedule"
+            }
+        }
+    }
     @State private var loading = true
 
     private struct WeekRef: Identifiable { let id: Int }
@@ -101,9 +113,15 @@ struct BlockCalendarView: View {
                 }
                 .background(theme.bg)
                 .contentMargins(.bottom, 88, for: .scrollContent)
-                .navigationDestination(isPresented: $freshScheduleAfterBuild) {
-                    ProgramScheduleView()
-                        .background(theme.bg)
+                .navigationDestination(item: $builtLanding) { landing in
+                    switch landing {
+                    case .ladder(let goalID):
+                        LadderPageView(goalID: goalID)
+                            .background(theme.bg)
+                    case .schedule:
+                        ProgramScheduleView()
+                            .background(theme.bg)
+                    }
                 }
             }
         }
@@ -296,15 +314,16 @@ struct BlockCalendarView: View {
                     .foregroundStyle(theme.neutral700)
             }
             NavigationLink {
-                // .handled: the calendar answers the build by pushing a
-                // FRESH ProgramScheduleView (state above). Its own
-                // captured enrollment/weeks stay stale - acceptable one
-                // level back - but the athlete's next screen is the block
-                // they just built, not the one they replaced.
-                ConsultEntryView(onBuilt: { freshScheduleAfterBuild = true })
+                // The calendar answers the build by pushing the ladder page
+                // for the goal it just wrote (state above), or a FRESH
+                // ProgramScheduleView when there is no id to land on. This
+                // view's own captured enrollment/weeks stay stale -
+                // acceptable one level back - but the athlete's next screen
+                // is the block they just built, not the one they replaced.
+                GoalFirstBuildFlow(onBuilt: { id in
+                    builtLanding = id.map { .ladder($0) } ?? .schedule
+                })
                     .background(theme.bg)
-                    .navigationTitle("Plan the next block")
-                    .navigationBarTitleDisplayMode(.inline)
             } label: {
                 Text("PLAN THE NEXT BLOCK")
                     .font(GSFont.bold(13, relativeTo: .subheadline))

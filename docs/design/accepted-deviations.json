@@ -150,5 +150,37 @@
   {
     "screenId": "tab-home",
     "reason": "Home v3 production, integration task I3 (home-v3-production plan + brief-integration.md, ruling: 'extend the existing tab-home entry — never a second one'). CORRECTION on dispatch: no prior tab-home entry existed in this file — grepped the full git history of accepted-deviations.json for 'tab-home': zero hits — so the plan/brief's premise was stale and this integration creates the first one rather than extending a phantom. `app-tab-home`'s content has diverged completely from this id's frame-map entry (frame 60, 'Onyx Home (redesign)') across more than ten iterations that never got their own deviation record: home-v3-01 through -10 (frames 71-80), the 08a/08b targets-strip addendum (frames 81-82), and now this production build's real weekly-goal strip (a live muscle-sets goal from I2's seed), crew pulse, calendar card (dot field, no appointment rows — those moved to the calendar-scheduling page above) and one-button primary. `app-tab-home` is a live, seeded, real-navigation capture (not a catalog fixture); a real judgment of Home's current shape belongs against the numbered home-v3-*/home-goal-strip-*/home-goal-editor* ids and their own frames, not frame 60, which this entry keeps only as the id's nominal (and long-stale) frame-map pointer. Per the precedent tab-you/tab-stats/tab-library already set in this file: EXTEND this entry on any future Home change, never open a second one."
+  },
+  {
+    "screenId": "goal-screen",
+    "reason": "Goal-first programming, integration task I4 (goal-first-programming-plan + brief-integration.md). `docs/design/frame-map.json` reserves frame 93 for this id (Stream C task C5), but no numbered canvas frame depicts it — there was no proof round for goal-first programming, the same posture `calendar-scheduling` above takes for its own frame. The authority is the design spec itself: `docs/superpowers/specs/2026-09-07-goal-first-programming-design.md` §5 item 1 (\"The goal screen. Title *Your goal for this block*... The athlete taps a preset\") and §2.3's presets table, which the ten tiles (Rep strength is the Strength card's second lever, not an eleventh tile, per §2.3's own closing line) and the disabled Pro door (§2.4, phase 2) render."
+  },
+  {
+    "screenId": "goal-milestone-strength",
+    "reason": "Goal-first programming, integration task I4. Frame 94 (Stream C task C5) has no numbered canvas frame — the authority is spec §5 item 2 (\"Strength — the lift (picker, focus lifts first), the target load (stepper..., seeded from e1RM + a realistic gain), the date (picker, seeded from the block length)\") and §2.3's Strength row. The card's own worked example (205 lb bench, 225 by Oct 18) is the spec's own example from §5.3's build step."
+  },
+  {
+    "screenId": "goal-milestone-body-composition",
+    "reason": "Goal-first programming, integration task I4. Frame 95 (Stream C task C5) has no numbered canvas frame — the authority is spec §2.3's Body composition row (\"a target weight and a date, or a rate\"; \"rate of change: lose 0.5-1% a week, gain 0.25-0.5% a week\") and §5 item 2's segmented-switch shape (a milestone said two ways, stepping either moves the other). The card's 179 lb seed is the documented 0.75%/wk midpoint compounded over the fixture's eight weeks, not the plan's own draft prose (\"190 -> 178\"), which the rate itself supersedes — see stream C's report, concern 3."
+  },
+  {
+    "screenId": "goal-milestone-recovery",
+    "reason": "Goal-first programming, integration task I4. Frame 96 (Stream C task C5) has no numbered canvas frame — the authority is spec §2.3's Recovery row (\"none - a recovery block of N weeks\"; \"LISS minutes and a stretching count per week\") and §5 item 2's held-preset shape (\"Maintenance and Recovery - the block length only\"). Six weeks is the plan's own number for this frame."
+  },
+  {
+    "screenId": "ladder-on-track",
+    "reason": "Goal-first programming, integration task I4. Frame 97 (Stream D task D7) has no numbered canvas frame — the authority is spec §6's ladder-page bullet (\"the milestone as the headline..., the date, Coach's one line on standing..., then the ladder: one row per week...\"). Two app captures exist for this one id (`app-ladder-on-track`, the milestone/date/Coach's-line/rungs; `app-ladder-on-track-2`, scrolled to the four levers and the one accent primary) — the same `app-calendar-scheduling`/`-2` idiom above; only the first is addressable by the frame map, per frame-map.json's own note on this entry."
+  },
+  {
+    "screenId": "ladder-behind",
+    "reason": "Goal-first programming, integration task I4. Frame 98 (Stream D task D7) has no numbered canvas frame — the authority is spec §6's ladder-page bullet and §3.5 (\"adaptive re-laddering\"; Coach's line \"This ladder reaches 218 - move the date?\"), which this frame renders after an override and a miss push the ladder off-plan. Final-fix round (review F6): the fixture's tail rungs were lowered so the ladder ACTUALLY arrives at 218 — it previously quoted 218 above a last rung reading `2 x 1 at 225 / ~232 e1RM`, and the reach sentence is only honest when the number is where the ramp gets to. Weeks 4, 5, 7 and 8 moved; the week-6 deload did not."
+  },
+  {
+    "screenId": "ladder-met",
+    "reason": "Goal-first programming, integration task I4. Frame 99 (Stream D task D7) has no numbered canvas frame — the authority is spec §6's ladder-page bullet (status \"met in green\") and §7 (\"Block end\"), which this frame renders as every rung met, week 8 of 8."
+  },
+  {
+    "screenId": "home-goal-strip-block",
+    "reason": "Goal-first programming, integration task I4. Frame 100 (Stream D task D7) has no numbered canvas frame — the authority is spec §6's Home bullet (\"the kicker gains the block context: `WEEK 3 OF 8 . COACH'S GOAL`\"). Identical to `home-goal-strip-muscle-sets` (frame 83) except the kicker, by construction (`GoalStripFixtures.block` derives from `WeeklyGoalFixtures.muscleSets` and changes exactly that one field) — the whole of what spec §6 changes about the strip."
   }
 ]

@@ -15,17 +15,65 @@ import SwiftUI
 // that block's computed payload. Abandoned blocks are shown, not
 // hidden: they are part of the story of what drove the next block.
 struct ProgramLedgerView: View {
+
+    /// The block goals behind the rows on screen (goal-first plan, task D5).
+    ///
+    /// `LiveBlockGoalRepository` (Stream A's A11) as of integration task I1's
+    /// swap — the same injection every other surface in this stream takes, so
+    /// all of them swap together. `StubBlockGoalRepository` stays in the
+    /// codebase for the catalog captures, which construct this view
+    /// explicitly rather than through this default.
+    let goalRepository: any BlockGoalRepository
+
+    /// An override for the batch read, for a caller that has a better one
+    /// than the repository it was handed.
+    ///
+    /// **THE REPOSITORY IS THE REAL PATH** (task review finding 3, and the
+    /// controller's ruling on it): `load()` reads through `goalRepository`,
+    /// so a goal line renders as soon as the injected repository knows about
+    /// the block on screen. The read a ledger row needs — the goals for blocks
+    /// that have ENDED — is now `BlockGoalRepository.goals(enrollmentIDs:)`,
+    /// added additively with a default so no conformer had to change (final
+    /// review F3), and this closure stays as the previewless fallback. nil is
+    /// the shipping value.
+    let goalsForEnrollments: (@Sendable ([UUID]) async -> [UUID: BlockGoal])?
+
+    init(goalRepository: any BlockGoalRepository = LiveBlockGoalRepository(),
+         goalsForEnrollments: (@Sendable ([UUID]) async -> [UUID: BlockGoal])? = nil) {
+        self.goalRepository = goalRepository
+        self.goalsForEnrollments = goalsForEnrollments
+    }
+
     @Environment(AppState.self) private var appState
     @Environment(\.gsTheme) private var theme
 
     @State private var enrollments: [ProgramEnrollment] = []
+    /// The goal each block was for, keyed by enrollment. Empty until I1
+    /// binds the read above.
+    @State private var goalsByEnrollment: [UUID: BlockGoal] = [:]
+    /// Names for the lifts the goals on screen name, so a milestone reads
+    /// "BENCH 225" rather than nothing. Fetched once per load, and only when
+    /// a goal on screen actually carries an `exerciseID`.
+    @State private var liftNames: [UUID: String] = [:]
     @State private var loading = true
     /// A past block whose after-action thread is being prepared/pushed.
     @State private var aar: AARTarget?
     @State private var buildingAAR: UUID?
-    /// A block was just built from the ledger; push a FRESH schedule
-    /// page (the calendar's proven pattern).
-    @State private var builtFromHere = false
+    /// A block was just built from the ledger; push its ladder page (spec
+    /// §5.3, integration task I1) — or, when the build had no goal id to
+    /// land on, a FRESH schedule page (the calendar's proven pattern).
+    @State private var builtLanding: BuildLanding?
+
+    private enum BuildLanding: Identifiable, Hashable {
+        case ladder(UUID)
+        case schedule
+        var id: String {
+            switch self {
+            case .ladder(let goalID): return goalID.uuidString
+            case .schedule: return "schedule"
+            }
+        }
+    }
 
     private struct AARTarget: Identifiable, Hashable {
         let id: UUID
@@ -86,9 +134,15 @@ struct ProgramLedgerView: View {
             CoachThreadLauncher(title: target.title, opener: target.opener)
                 .background(theme.bg)
         }
-        .navigationDestination(isPresented: $builtFromHere) {
-            ProgramScheduleView()
-                .background(theme.bg)
+        .navigationDestination(item: $builtLanding) { landing in
+            switch landing {
+            case .ladder(let goalID):
+                LadderPageView(goalID: goalID)
+                    .background(theme.bg)
+            case .schedule:
+                ProgramScheduleView()
+                    .background(theme.bg)
+            }
         }
     }
 
@@ -161,9 +215,14 @@ struct ProgramLedgerView: View {
     /// ledger, and building is one deliberate act inside it.
     private var buildDoor: some View {
         NavigationLink {
-            ConsultEntryView(onBuilt: { builtFromHere = true })
+            // Through the goal screen first (spec §5.4: no block without a
+            // goal). The back button stays: the goal screen is a question, and
+            // a question you cannot walk away from is a trap. The consult
+            // inside the flow keeps its own hidden back button.
+            GoalFirstBuildFlow(onBuilt: { id in
+                builtLanding = id.map { .ladder($0) } ?? .schedule
+            })
                 .background(theme.bg)
-                .navigationBarBackButtonHidden(true)
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "wand.and.stars")
@@ -213,6 +272,24 @@ struct ProgramLedgerView: View {
                         .tracking(0.8)
                         .foregroundStyle(enrollment.endedReason == "completed"
                                          ? Color.gsSuccess : theme.neutral500)
+                    // What this block was FOR, and how it came out. Absent
+                    // entirely for a block with no goal.
+                    //
+                    // The WHOLE line takes the colour, not just the outcome
+                    // word: `statusLine` directly above already colours its
+                    // whole line green for a completed block, and two
+                    // adjacent kickers with different colouring rules read as
+                    // two different kinds of thing. Green means done and
+                    // nothing here is red — a missed block is a fact.
+                    if let goalLine = goalLine(for: enrollment) {
+                        Text(goalLine)
+                            .font(GSFont.body(11, relativeTo: .caption))
+                            .tracking(0.8)
+                            .foregroundStyle(goalsByEnrollment[enrollment.id]?.outcome == .met
+                                             ? Color.gsSuccess : theme.neutral500)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
                 }
                 Spacer()
                 if buildingAAR == enrollment.id {
@@ -255,8 +332,167 @@ struct ProgramLedgerView: View {
         return "ABANDONED WK \(min(weeksRun + 1, enrollment.weeks)) OF \(enrollment.weeks) — \(started.uppercased())"
     }
 
+    // MARK: The goal each block was for (goal-first plan, task D5)
+
+    /// This row's goal line, already worded — or nil, and then no line at
+    /// all.
+    private func goalLine(for enrollment: ProgramEnrollment) -> String? {
+        let goal = goalsByEnrollment[enrollment.id]
+        let name = goal?.target.exerciseID.flatMap { liftNames[$0] } ?? ""
+        return Self.goalLine(goal, liftName: name, unit: ThemeStore.shared.weightUnit)
+    }
+
+    /// The goal this block was for, and how it came out.
+    ///
+    /// PHASE 1 RENDERS, PHASE 3 WRITES. `block_goals.outcome` is only ever
+    /// set by the block-end check (spec §7, phase 3), so today this line is
+    /// the milestone alone for every row — which is already the thing the
+    /// ledger was missing: a finished block that does not say what it was FOR
+    /// is a row nobody can read.
+    ///
+    /// Absent entirely for a block with no goal (every block built before
+    /// this feature). No placeholder, no "no goal set" — the ledger is a
+    /// record, and a record does not editorialise about its own gaps. The
+    /// same silence covers a goal whose target carries no readable number:
+    /// "  BY OCT 18" would be worse than nothing.
+    ///
+    /// A KICKER (caps, `neutral500`, 0.8 tracking — design rule 3), because
+    /// it sits directly under `statusLine(_:)`, which is already one, and two
+    /// adjacent metadata lines in different cases read as two different kinds
+    /// of thing.
+    ///
+    /// **THE FINAL MEASURED VALUE IS NOT HERE YET, AND THAT IS AN OPEN ITEM**
+    /// (task review finding 6). Spec §6 asks the ledger for "the outcome …
+    /// with the milestone *and the final measured value*". This renders
+    /// `MET — BENCH 225 BY OCT 18`; `BlockGoal.outcomeValue` is read nowhere
+    /// in the app, and the plan's own test for this function pinned the
+    /// expected string WITHOUT the measured value while constructing an
+    /// `outcomeValue` of 227 that nothing consumes — a plan-level omission
+    /// this task transcribed faithfully rather than silently invented around.
+    ///
+    /// It is a phase-3 decision, because phase 3 is what writes the column:
+    /// either the line grows a measured half (`MET AT 227 — BENCH 225 BY OCT
+    /// 18`) or the spec drops the clause. Named here so it is not lost in the
+    /// gap between "phase 1 renders" and "phase 3 writes".
+    static func goalLine(_ goal: BlockGoal?, liftName: String, unit: WeightUnit,
+                         calendar: Calendar = .current) -> String? {
+        guard let goal,
+              let milestone = milestone(goal, liftName: liftName, unit: unit,
+                                        calendar: calendar) else { return nil }
+        guard let outcome = goal.outcome else { return milestone }
+        return "\(outcome.rawValue.uppercased()) — \(milestone)"
+    }
+
+    /// "BENCH 225 BY OCT 18". The subject and its number, then the date when
+    /// the goal has one — Maintenance, Recovery and Consistency are held for
+    /// the block and print no date (spec §2.1).
+    ///
+    /// KEYED ON `preset.asksForDate`, NOT `byDate == nil` (I1 audit, ruling
+    /// 14): a held preset's `byDate` now carries the derived block length
+    /// (Stream C round 2), not a deadline, so a non-nil `byDate` no longer
+    /// means the goal has one to print — reading it that way would trail
+    /// "BY OCT 18" onto a goal held for the block. A nil `preset`
+    /// (Coach-guided, phase 2) falls back to the plain nil check.
+    private static func milestone(_ goal: BlockGoal, liftName: String,
+                                  unit: WeightUnit, calendar: Calendar) -> String? {
+        guard let subject = subject(goal, liftName: liftName, unit: unit) else { return nil }
+        let held = goal.preset?.asksForDate == false
+        guard !held, let byDate = goal.byDate else { return subject.uppercased() }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d"
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        return "\(subject) by \(formatter.string(from: byDate))".uppercased()
+    }
+
+    /// One line per metric, from the target alone. nil when the target does
+    /// not carry the number its own metric needs — a row that cannot say what
+    /// it was for says nothing.
+    private static func subject(_ goal: BlockGoal, liftName: String,
+                                unit: WeightUnit) -> String? {
+        let target = goal.target
+        switch goal.metric {
+        case .liftOneRepMax:
+            guard let pounds = target.targetWeightLbs, !liftName.isEmpty else { return nil }
+            return "\(liftName) \(Units.wholeNumber(pounds: pounds, unit: unit))"
+        case .liftRepsAtLoad:
+            guard let reps = target.targetReps, let load = target.loadLbs,
+                  !liftName.isEmpty else { return nil }
+            return "\(liftName) \(reps) × \(Units.wholeNumber(pounds: load, unit: unit))"
+        case .weeklyMuscleSets:
+            let sets = (target.muscleTargets ?? [:]).values.reduce(0, +)
+            guard sets > 0 else { return nil }
+            return "\(sets) sets a week"
+        case .weeklyDistance:
+            guard let distance = target.distance, distance > 0 else { return nil }
+            let label = unit == .lbs ? "mi" : "km"
+            return "\(Units.displayWeight(Decimal(distance))) \(label) a week"
+        case .trainingDaysPerWeek:
+            guard let days = target.days, days > 0 else { return nil }
+            return "\(days) days a week"
+        case .sessionsOfTypePerWeek:
+            guard let sessions = target.sessions, sessions > 0 else { return nil }
+            return "\(sessions) \(target.sessionType ?? "sessions") a week"
+        case .lissMinutesPerWeek:
+            guard let minutes = target.lissMinutes, minutes > 0 else { return nil }
+            return "\(minutes) easy min a week"
+        case .stretchingExercisesPerWeek:
+            guard let count = target.stretchingExercises, count > 0 else { return nil }
+            return "\(count) stretches a week"
+        case .bodyWeight:
+            guard let pounds = target.bodyWeightLbs else { return nil }
+            return Units.formatBodyWeight(pounds: pounds, unit: unit)
+        case .cumulativeVolume:
+            guard let volume = target.volumeLbs, volume > 0 else { return nil }
+            return "\(Int(Units.fromPounds(volume, to: unit).rounded())) \(unit.label) lifted"
+        case .benchmarkTime:
+            guard let seconds = target.targetSeconds, seconds > 0 else { return nil }
+            return WeeklyGoalProgressMath.clock(Double(seconds))
+        }
+    }
+
     private func load() async {
         enrollments = (try? await ProgramRepository.history()) ?? []
+        // ONE read for every row on screen, not one per row.
+        let ids = enrollments.map(\.id)
+        if let goalsForEnrollments {
+            goalsByEnrollment = await goalsForEnrollments(ids)
+        } else {
+            goalsByEnrollment = await Self.goals(for: ids, repository: goalRepository)
+        }
+        await loadLiftNames()
         loading = false
+    }
+
+    /// The goals for the rows on screen — **the batch read** (final review F3).
+    ///
+    /// This used to be `activeGoal()` narrowed to the ids asked about, which
+    /// could not render a single ledger row: `activeGoal()` resolves through
+    /// `ProgramRepository.active()` (`ended_at IS NULL`) and `pastRow` is
+    /// driven by `endedAt != nil`, so the intersection was empty BY
+    /// CONSTRUCTION and D5's goal line rendered for nobody. Its test was green
+    /// because the fake answered `activeGoal()` with a goal on a FINISHED
+    /// block — a value the live repository cannot produce.
+    ///
+    /// `BlockGoalRepository.goals(enrollmentIDs:)` is now the read, with the
+    /// old narrowing as its default so nothing that conforms broke; the live
+    /// repository overrides it with `.in("enrollment_id", …)`, the read the
+    /// plan describes.
+    static func goals(for enrollmentIDs: [UUID],
+                      repository: any BlockGoalRepository) async -> [UUID: BlockGoal] {
+        await repository.goals(enrollmentIDs: enrollmentIDs)
+    }
+
+    /// The exercise catalog, and only when a goal on screen names a lift.
+    /// Every other ledger visit pays nothing for this.
+    private func loadLiftNames() async {
+        let wanted = Set(goalsByEnrollment.values.compactMap { $0.target.exerciseID })
+        guard !wanted.isEmpty else {
+            liftNames = [:]
+            return
+        }
+        let rows = (try? await ExerciseRepository.fetchAll()) ?? []
+        liftNames = Dictionary(uniqueKeysWithValues:
+            rows.filter { wanted.contains($0.id) }.map { ($0.id, $0.name) })
     }
 }

@@ -21,6 +21,25 @@ import SwiftUI
 // date and does not transfer to hypertrophy. A block with no arc shows
 // its mesocycle structure instead, which IS universal.
 struct ProgramScheduleView: View {
+
+    /// The block's goal and its ladder (goal-first plan, task D4).
+    /// `LiveBlockGoalRepository` (Stream A's A11) as of integration task I1's
+    /// swap — `StubBlockGoalRepository` stays in the codebase for the catalog
+    /// captures, which construct this view explicitly rather than through
+    /// this default.
+    ///
+    /// Declared with an EXPLICIT init below rather than left to the
+    /// synthesised memberwise one, for the reason `HomeView`'s own injection
+    /// point records: this view has private `@State`, so its memberwise init
+    /// is private too, and an injection nobody outside this file can reach is
+    /// the opposite of an injection point. Every existing
+    /// `ProgramScheduleView()` call site is unchanged.
+    let goalRepository: any BlockGoalRepository
+
+    init(goalRepository: any BlockGoalRepository = LiveBlockGoalRepository()) {
+        self.goalRepository = goalRepository
+    }
+
     @Environment(AppState.self) private var appState
     @Environment(\.gsTheme) private var theme
 
@@ -61,6 +80,14 @@ struct ProgramScheduleView: View {
     /// Bumped after this page books a week so the embedded calendar
     /// re-reads its dots.
     @State private var calendarRefresh = 0
+    /// The block's ladder, when this block has a goal. nil renders NOTHING
+    /// AT ALL — no empty state and no reserved gap, the same posture
+    /// `crewPulseSection` takes on Home.
+    @State private var ladderPage: LadderPageModel?
+    /// The goal the card is a door onto — nil whenever `ladderPage` is.
+    @State private var ladderGoalID: UUID?
+    /// The pushed ladder page. A local push, like `pushedRoutineID` above.
+    @State private var pushedLadderGoalID: UUID?
 
     private struct WeekRef: Identifiable { let id: Int }
 
@@ -95,6 +122,10 @@ struct ProgramScheduleView: View {
                                       highlightedWeek: selectedWeek,
                                       refreshToken: calendarRefresh,
                                       onScheduleChanged: { await reloadSchedule() })
+                    // Spec §6: the ladder card tops the schedule page, above
+                    // the arc and the reasoning — the goal is what the block
+                    // is FOR, and the arc is how it gets there.
+                    ladderCard
                     arcCard
                     routinesCard
                     reasoningCard
@@ -139,6 +170,10 @@ struct ProgramScheduleView: View {
                               onChanged: { await reloadSchedule() })
                 .presentationDetents([.height(500)])
         }
+        .navigationDestination(item: $pushedLadderGoalID) { goalID in
+            ladderPage(for: goalID)
+                .background(theme.bg)
+        }
         .navigationDestination(item: $pushedRoutineID) { id in
             if let routine = routines.first(where: { $0.id == id }) {
                 ProgramRoutineDetailView(
@@ -153,6 +188,55 @@ struct ProgramScheduleView: View {
                 .navigationBarTitleDisplayMode(.inline)
             }
         }
+    }
+
+    // MARK: The block's goal (goal-first plan, task D4)
+
+    /// The ladder card, or **nothing at all**.
+    ///
+    /// A block with no goal — every block built before this feature, a
+    /// migrated one before A13's detection lands, a failed 7b write — renders
+    /// no card, no empty state and no reserved gap. That is the same posture
+    /// `crewPulseSection` takes on Home: a surface that has nothing true to
+    /// say says nothing.
+    @ViewBuilder
+    private var ladderCard: some View {
+        if let ladderPage, let ladderGoalID {
+            LadderCard(page: ladderPage) {
+                pushedLadderGoalID = ladderGoalID
+            }
+        }
+    }
+
+    /// The ladder page this schedule pushes, built with **this page's**
+    /// repository.
+    ///
+    /// This hop was already right; it is a function now for the same reason
+    /// `HomeView.ladderPage(for:)` and `LadderPageView.blockSchedule()` are —
+    /// a default argument cannot be asserted from its call site, and
+    /// `LadderRepositoryWiringTests` pins all four hops of the loop so I1
+    /// swaps one default rather than hunting four constructions.
+    func ladderPage(for goalID: UUID) -> LadderPageView {
+        LadderPageView(goalID: goalID, repository: goalRepository)
+    }
+
+    /// The goal driving THIS block, and its ladder.
+    ///
+    /// Gated on `goal.enrollmentID == enrollment.id`, which is not
+    /// belt-and-braces: `activeGoal()` answers for the athlete's active
+    /// enrollment, and this page can be showing a different block. It is also
+    /// what keeps the stub honest before I1 — the fixture goal names a
+    /// fixture enrollment no real block has, so a real athlete sees no card
+    /// rather than somebody else's bench milestone.
+    private func loadLadder(for enrollment: ProgramEnrollment) async {
+        guard let goal = await goalRepository.activeGoal(),
+              goal.enrollmentID == enrollment.id else {
+            ladderPage = nil
+            ladderGoalID = nil
+            return
+        }
+        ladderPage = await goalRepository.page(goalID: goal.id)
+        ladderGoalID = ladderPage == nil ? nil : goal.id
     }
 
     // MARK: The weeks (schedule them here)
@@ -596,6 +680,7 @@ struct ProgramScheduleView: View {
             selectedWeek = currentWeek
             phases = BlockPhaseMap.phases(for: template.weeks)
         }
+        if let active { await loadLadder(for: active) }
         await reloadSchedule()
         // `try?` does not add a nesting level here: load() already returns
         // an Optional, and Swift 5 flattens. Same shape as the call in

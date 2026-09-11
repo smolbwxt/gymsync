@@ -412,6 +412,12 @@ struct TrainingProfile: Codable, Equatable, Sendable {
     /// stored: neither belongs to the training profile (one lives on the
     /// account profile, the other is a fact about the log), and keeping
     /// them as parameters leaves this function pure and testable.
+    ///
+    /// `goal` is the BLOCK'S GOAL (task B1, spec §5.3) and is applied LAST —
+    /// after every profile-derived field and after the standing-rule loop —
+    /// so the goal is the strongest voice in the room, which is the whole
+    /// design. Defaulted to nil so every existing call site compiles and
+    /// produces the same `Inputs` it always did.
     func generatorInputs(durationWeeks: Int,
                          cardioDays: Int = 0,
                          cardioMinutes: Int = 20,
@@ -422,7 +428,8 @@ struct TrainingProfile: Codable, Equatable, Sendable {
                          daysSinceLastSession: Int? = nil,
                          daysSinceReturn: Int? = nil,
                          standingRules: [TrainingRule] = [],
-                         volumeTargets: [String: Int] = [:]) -> ProgramGenerator.Inputs {
+                         volumeTargets: [String: Int] = [:],
+                         goal: BlockGoalDraft? = nil) -> ProgramGenerator.Inputs {
         // Training age DECAYS (NSCA): a lifter several months away is a
         // novice again, whatever they once were and whatever they typed.
         let effectiveExperience = GeneratorScience.decayedExperience(
@@ -663,6 +670,13 @@ struct TrainingProfile: Codable, Equatable, Sendable {
         if blockGoal == .mobility {
             inputs.advisoryNotes.append("Mobility leads your goals: today it shapes the picks and the recovery prescriptions — a dedicated mobility modality is still being built, and this lifting meanwhile moves you better than stretching alone would.")
         }
+        // THE GOAL, LAST (task B1). Every line above is the profile speaking;
+        // this one is the block's own milestone, and it is applied after all
+        // of them so it wins where they disagree — a strength goal's band over
+        // the profile's stored blockGoal, a maintenance goal's every-group nil
+        // over a stale stored focus muscle. Nothing happens when there is no
+        // goal, which is what keeps a goal-less build byte identical.
+        if let goal { GoalGeneratorMapping.apply(goal, to: &inputs) }
         return inputs
     }
 }
