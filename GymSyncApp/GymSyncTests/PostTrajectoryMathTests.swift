@@ -43,10 +43,16 @@ final class PostTrajectoryMathTests: XCTestCase {
             .behind)
     }
 
-    func testAMissedRungIsBehindEvenWhenTheMilestoneStillReaches() {
+    /// THE CARD MUST SAY WHAT THE LADDER PAGE SAYS. `coachLine` reads "On
+    /// track" whenever the ladder still `reachesMilestone`, so a week that was
+    /// missed and then absorbed by a re-derived ladder is history, not
+    /// standing — otherwise the page tells the athlete they are on track while
+    /// their own post tells their crew they are behind.
+    func testStandingFollowsTheLadderPagesCoachLine() {
         XCTAssertEqual(
             PostTrajectoryMath.standing(goal: goal(), page: page([.met, .missed, .current])),
-            .behind)
+            .onTrack,
+            "a missed week the ladder still reaches past is not a standing")
     }
 
     func testARecordedOutcomeWins() {
@@ -78,8 +84,29 @@ final class PostTrajectoryMathTests: XCTestCase {
 
     func testNoMoreThanFourChips() {
         let progress = WeeklyGoalProgress(
-            chips: (0..<7).map { .init(name: "D\($0)", done: 1, target: 1, isNext: false) })
-        XCTAssertEqual(PostTrajectoryMath.chips(kind: .days, progress: progress).count, 4)
+            chips: (0..<7).map { .init(name: "G\($0)", done: 1, target: 1, isNext: false) })
+        XCTAssertEqual(PostTrajectoryMath.chips(kind: .muscleSets, progress: progress).count, 4)
+    }
+
+    /// A `days` rung is SEVEN weekday chips on the strip, and `prefix(4)` of
+    /// them is Monday-to-Thursday — so a Thursday-to-Saturday lifter posted
+    /// `0/0 · 0/0 · 0/0 · 0/0` under a line claiming a rung. One chip, the
+    /// strip's own reading.
+    func testADaysRungIsOneChipNotFourEmptyWeekdays() {
+        let week = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+        let trained: Set<String> = ["THU", "FRI", "SAT"]
+        let progress = WeeklyGoalProgress(
+            chips: week.map { .init(name: $0,
+                                    done: trained.contains($0) ? 1 : 0,
+                                    target: trained.contains($0) ? 1 : 0,
+                                    isNext: false) },
+            value: 3, target: 4)
+        let chips = PostTrajectoryMath.chips(kind: .days, progress: progress)
+        XCTAssertEqual(chips.count, 1)
+        XCTAssertEqual(chips[0].name, "DAYS")
+        XCTAssertEqual(chips[0].done, 3)
+        XCTAssertEqual(chips[0].target, 4)
+        XCTAssertNil(chips[0].fill, "days done over days asked for IS the meter")
     }
 
     /// The span kinds: the numbers the strip PRINTS, the meter the strip DRAWS.
