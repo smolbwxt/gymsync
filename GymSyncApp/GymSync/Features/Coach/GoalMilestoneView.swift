@@ -245,8 +245,14 @@ enum GoalMilestoneCopy {
             target.loadLbs = load
             target.targetWeightLbs = load
             // A rep every two weeks, the ramp spec §2.3 gives Consistency,
-            // because a rep at a fixed load is the same kind of climb.
-            target.targetReps = max(1, (current.targetReps ?? 5) + max(1, weeks / 2))
+            // because a rep at a fixed load is the same kind of climb. THE
+            // CADENCE IS NAMED (ruling 16, and final review F9): the door seeds
+            // the milestone the ladder then has to reach, so it must count in
+            // the same two-week step `StepEveryNWeeksLadderRule` climbs in and
+            // `LadderMath.rampCeiling` measures against — three copies of one
+            // number is how a door and a ladder come to disagree.
+            target.targetReps = max(1, (current.targetReps ?? 5)
+                + max(1, weeks / StepEveryNWeeksLadderRule.consistencyEveryWeeks))
 
         case .muscle:
             let group = leadingGroup(current) ?? .chest
@@ -265,11 +271,14 @@ enum GoalMilestoneCopy {
             target.distance = min(200, max(1, target.distance ?? 1))
 
         case .consistency:
-            target.days = min(7, max(1, (current.days ?? 3) + max(1, weeks / 2)))
+            // The ladder's own cadence, named — see `repStrength` above.
+            target.days = min(7, max(1, (current.days ?? 3)
+                + max(1, weeks / StepEveryNWeeksLadderRule.consistencyEveryWeeks)))
 
         case .conditioning:
             target.sessionType = current.sessionType ?? "hiit"
-            target.sessions = min(14, max(1, (current.sessions ?? 1) + max(1, weeks / 2)))
+            target.sessions = min(14, max(1, (current.sessions ?? 1)
+                + max(1, weeks / StepEveryNWeeksLadderRule.consistencyEveryWeeks)))
 
         case .maintenance:
             // OWNER DECISION 9: every major group, at the recommended number.
