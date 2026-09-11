@@ -145,12 +145,25 @@ enum GoalMilestoneCopy {
     /// theirs and the rate follows. Without this, moving the BY date left
     /// `TARGET 179 lbs`, `THAT IS −0.75 %/WK` and `BY <date>` on screen
     /// together while no longer all being true of one block.
+    /// **`startLbs ?? defaultBodyWeightLbs`, AND NEVER THE DRAFT'S OWN
+    /// TARGET.** The middle term this used to carry —
+    /// `?? draft.target.bodyWeightLbs` — collapsed `start` onto the very
+    /// number being aimed at, so `impliedRatePercent(179 → 179)` was 0 and a
+    /// card that seeded `-0.75 %/WK` printed `0.00 %/WK` the moment the date
+    /// moved. In phase 1 that was EVERY athlete, because `current` is an empty
+    /// `GoalTarget` until Stream A's readers land.
+    ///
+    /// A zero standing in for an absent reading is the exact thing
+    /// `currentReading` refuses to do three screens up in this file. The seed's
+    /// own fallback is 190, so the rebalance uses 190 too: a made-up starting
+    /// weight is honest about being a default, where a made-up rate of zero
+    /// claims the block asks for nothing.
     static func rebalancedBodyComposition(_ draft: BlockGoalDraft,
                                           startLbs: Decimal?,
                                           weeks: Int,
                                           stepsTheRate: Bool,
                                           unit: WeightUnit) -> BlockGoalDraft {
-        let start = startLbs ?? draft.target.bodyWeightLbs ?? defaultBodyWeightLbs
+        let start = startLbs ?? defaultBodyWeightLbs
         if stepsTheRate {
             let rate = draft.target.bodyWeightRatePercent ?? bodyCompositionRatePercent
             return applying(draft,
@@ -1026,6 +1039,17 @@ struct GoalMilestoneView: View {
 
     private var bodyWeightStep: Decimal { unit == .kg ? Decimal(0.5) : 1 }
 
+    /// WHERE THE ATHLETE IS STARTING FROM, in one place.
+    ///
+    /// Three call sites used to spell this three ways — the rate stepper fell
+    /// back to `defaultBodyWeightLbs` (right), the weight stepper to the value
+    /// it was setting and the date binding to the draft's own target (both
+    /// collapse the rate to `0.00 %/WK`). A start weight that IS the target is
+    /// not a start weight.
+    private var bodyCompositionStartLbs: Decimal {
+        current.bodyWeightLbs ?? GoalMilestoneCopy.defaultBodyWeightLbs
+    }
+
     private var bodyWeightStepper: some View {
         stepperRow(title: "TARGET", text: bodyWeightReading,
                    canDecrease: Units.fromPounds(draft.target.bodyWeightLbs ?? 0,
@@ -1037,7 +1061,7 @@ struct GoalMilestoneView: View {
             draft = GoalMilestoneCopy.applying(
                 draft, bodyWeightLbs: pounds,
                 bodyWeightRatePercent: GoalMilestoneCopy.impliedRatePercent(
-                    from: current.bodyWeightLbs ?? pounds, to: pounds, weeks: weeks))
+                    from: bodyCompositionStartLbs, to: pounds, weeks: weeks))
             // `weeks` is read off the date above, so a cut set today and a cut
             // set after moving the milestone a month out are different rates,
             // which is the whole point.
@@ -1051,8 +1075,7 @@ struct GoalMilestoneView: View {
             let next = max(-2, min(2, (draft.target.bodyWeightRatePercent ?? 0)
                                       + Double(delta) * 0.25))
             let landing = GoalMilestoneCopy.projectedBodyWeight(
-                from: current.bodyWeightLbs ?? draft.target.bodyWeightLbs
-                    ?? GoalMilestoneCopy.defaultBodyWeightLbs,
+                from: bodyCompositionStartLbs,
                 ratePercent: next, weeks: weeks, unit: unit)
             draft = GoalMilestoneCopy.applying(draft, bodyWeightLbs: landing,
                                                bodyWeightRatePercent: next)
@@ -1114,7 +1137,7 @@ struct GoalMilestoneView: View {
                 let moved = GoalMilestoneCopy.applying(draft, byDate: newDate)
                 guard activePreset == .bodyComposition else { draft = moved; return }
                 draft = GoalMilestoneCopy.rebalancedBodyComposition(
-                    moved, startLbs: current.bodyWeightLbs,
+                    moved, startLbs: bodyCompositionStartLbs,
                     weeks: GoalMilestoneCopy.weeks(preset: activePreset, byDate: newDate,
                                                    heldWeeks: heldWeeks, today: today),
                     stepsTheRate: stepsTheRate, unit: unit)

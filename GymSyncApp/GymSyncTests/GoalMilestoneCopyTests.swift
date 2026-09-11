@@ -258,6 +258,55 @@ final class GoalMilestoneCopyTests: XCTestCase {
         }
     }
 
+    // MARK: - No fabricated zero rate (re-review item A)
+
+    /// **A DATE MOVE WITH NO BODY-WEIGHT READING MUST NOT PRINT
+    /// `0.00 %/WK`.**
+    ///
+    /// `current` is an empty `GoalTarget` for every phase-1 athlete —
+    /// `GoalFirstBuildFlow` holds one until Stream A's readers land — so
+    /// `startLbs` is nil on every real date move today. The fallback used to
+    /// run through `draft.target.bodyWeightLbs`, which collapsed `start` onto
+    /// the number being aimed at: `impliedRatePercent(179 → 179)` is 0, and a
+    /// card that seeded `-0.75 %/WK` printed `0.00 %/WK` the moment the date
+    /// moved.
+    ///
+    /// The existing date-move tests are green because they both pass a
+    /// populated `current`. This is the case that was not covered.
+    func testADateMoveWithNoReadingNeverFabricatesAZeroRate() throws {
+        let today = Date(timeIntervalSince1970: 1_788_696_000)
+        let seeded = GoalMilestoneCopy.draft(preset: .bodyComposition,
+                                             current: GoalTarget(),   // nothing measured
+                                             today: today, unit: .lbs)
+        XCTAssertEqual(seeded.target.bodyWeightRatePercent,
+                       GoalMilestoneCopy.bodyCompositionRatePercent,
+                       "the seed asks for the safe band's midpoint")
+
+        let moved = GoalMilestoneCopy.applying(
+            seeded,
+            byDate: try XCTUnwrap(Calendar.current.date(byAdding: .day, value: 28,
+                                                        to: try XCTUnwrap(seeded.byDate))))
+        let weeks = GoalMilestoneCopy.weeks(preset: .bodyComposition, byDate: moved.byDate,
+                                            heldWeeks: 8, today: today)
+        XCTAssertEqual(weeks, 12)
+
+        // `startLbs: nil` is what the card passes when nothing has been
+        // measured — the exact phase-1 call.
+        let rebalanced = GoalMilestoneCopy.rebalancedBodyComposition(
+            moved, startLbs: nil, weeks: weeks, stepsTheRate: false, unit: .lbs)
+        let rate = try XCTUnwrap(rebalanced.target.bodyWeightRatePercent)
+        XCTAssertLessThan(rate, -0.1,
+                          "a real cut, not a zero standing in for an absent reading")
+        XCTAssertGreaterThan(rate, GoalMilestoneCopy.bodyCompositionRatePercent,
+                             "twelve weeks is gentler than the eight it was seeded over")
+
+        // The mirror branch lands somewhere real too.
+        let heldRate = GoalMilestoneCopy.rebalancedBodyComposition(
+            moved, startLbs: nil, weeks: weeks, stepsTheRate: true, unit: .lbs)
+        XCTAssertNotEqual(heldRate.target.bodyWeightLbs, moved.target.bodyWeightLbs)
+        XCTAssertGreaterThan(try XCTUnwrap(heldRate.target.bodyWeightLbs), 0)
+    }
+
     // MARK: - A held block's length reaches the builder (review finding 6)
 
     /// **STEPPING RECOVERY TO FOUR WEEKS YIELDS A DRAFT WHOSE DATE IS FOUR
