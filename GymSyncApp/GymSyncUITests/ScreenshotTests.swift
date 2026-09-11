@@ -758,6 +758,14 @@ final class ScreenshotTests: XCTestCase {
             pushDay.tap()
             settleAfterNavigation()
         }
+
+        // A SECOND cycle, and unconditional. RoutineDetailView's `.task`
+        // fetches the routine's exercises over the network before the list
+        // renders, and the tap above pushed the screen with nothing waiting
+        // on it — one cycle captured the detail mid-load. Two is what every
+        // other deep capture that waits on a fetch already spends
+        // (`testExerciseDetail`, `testActivityFeed` below).
+        settleAfterNavigation()
         attachScreenshot(app, named: "app-routine-detail.png")
     }
 
