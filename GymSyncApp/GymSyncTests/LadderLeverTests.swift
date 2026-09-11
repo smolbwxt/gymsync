@@ -135,3 +135,42 @@ final class LadderLeverTests: XCTestCase {
                         is LiveWeeklyGoalRepository)
     }
 }
+
+// MARK: - LadderFixtureCoherenceTests
+//
+// FINAL REVIEW F6: `app-ladder-behind` printed "This ladder reaches 218 — move
+// the date?" above a ladder whose last row read `2 × 1 at 225 / ≈ 232 e1RM`.
+// The production wording was never wrong; the fixture was, and a frame is what
+// the owner reads as the product.
+final class LadderFixtureCoherenceTests: XCTestCase {
+
+    /// Coach's line names the number the ladder's own last rung arrives at.
+    func testTheBehindFixturesLineIsWhatItsOwnLadderReaches() {
+        let page = LadderFixtures.behind
+        let reach = LadderFixtures.behindReachesE1RM
+
+        XCTAssertEqual(page.coachLine, "This ladder reaches \(reach) — move the date?")
+        XCTAssertEqual(page.rows.last?.implication, "≈ \(reach) e1RM",
+                       "the reach sentence is only honest if the last rung is where it says")
+        XCTAssertEqual(page.rows.last?.targetText, "2 × 1 at \(reach)")
+        XCTAssertFalse(page.reachesMilestone)
+    }
+
+    /// And it falls SHORT of the milestone it is a ladder to, or there is
+    /// nothing to move the date for.
+    func testTheBehindFixtureFallsShortOfTheMilestone() {
+        XCTAssertLessThan(LadderFixtures.behindReachesE1RM, 225,
+                          "the stub's milestone is 225; a ladder that reached it is not behind")
+        XCTAssertEqual(StubBlockGoalRepository.fixtureGoal.target.targetWeightLbs,
+                       Decimal(225))
+    }
+
+    /// The deload is left as the block wrote it — a light week is the block's
+    /// shape (spec §3.2), not a rung that failed to climb.
+    func testTheDeloadWeekIsUntouchedByTheRelowering() {
+        let deload = LadderFixtures.behind.rows.first { $0.isDeload }
+        XCTAssertEqual(deload?.weekNumber, 6)
+        XCTAssertEqual(deload?.targetText, "2 × 5 at 175")
+        XCTAssertNil(deload?.implication)
+    }
+}

@@ -116,14 +116,35 @@ enum LadderFixtures {
     /// Coach's line is the spec's own words, verbatim, and
     /// `reachesMilestone: false` is what turns it accent — an invitation to
     /// act, which is one of accent's jobs (design rule 2).
+    /// **WHERE THIS LADDER ACTUALLY ARRIVES.** Coach's line and the last rung
+    /// are one number stated twice, so they are one constant here (final
+    /// review F6): the frame used to print "This ladder reaches 218" above a
+    /// ladder whose last row visibly read `2 × 1 at 225 / ≈ 232 e1RM`, and the
+    /// whole point of the reach sentence is that the number is where the ramp
+    /// gets to. Production's wording is `LadderMath.page`'s and was always
+    /// right; the fixture was the liar, and it is the artifact the owner reads
+    /// as the product.
+    static let behindReachesE1RM = 218
+
     static let behind: LadderPageModel = {
         var page = StubBlockGoalRepository.fixturePage
-        page.coachLine = "This ladder reaches 218 — move the date?"
+        page.coachLine = "This ladder reaches \(behindReachesE1RM) — move the date?"
         page.reachesMilestone = false
+        // THE TAIL IS LOWER THAN THE BLOCK'S OWN, and that is the story rather
+        // than a second fixture: week 1 was overridden and week 2 missed, so
+        // the re-derived rungs start from ACTUALS (spec §3.5, "a missed week
+        // does not leave a hole to catch up; the ladder moves") and top out
+        // short of the 225 milestone. Week 6 is left alone — it is the wave's
+        // deload, and a deload is the block's shape, not a rung that climbs.
         page.rows = page.rows.map { row in
             switch row.weekNumber {
             case 1: return row.with(status: .overridden)
             case 2: return row.with(status: .missed)
+            case 4: return row.with(targetText: "4 × 3 at 190", implication: "≈ 207 e1RM")
+            case 5: return row.with(targetText: "4 × 3 at 195", implication: "≈ 212 e1RM")
+            case 7: return row.with(targetText: "3 × 2 at 205", implication: "≈ 216 e1RM")
+            case 8: return row.with(targetText: "2 × 1 at \(behindReachesE1RM)",
+                                    implication: "≈ \(behindReachesE1RM) e1RM")
             default: return row
             }
         }
@@ -158,6 +179,14 @@ extension LadderRow {
     /// chance of a duplicate-declaration collision when I1 concatenates
     /// Stream C's half of this file.
     fileprivate func with(status: RungStatus) -> LadderRow {
+        LadderRow(weekNumber: weekNumber, weekStartString: weekStartString,
+                  targetText: targetText, implication: implication,
+                  status: status, isDeload: isDeload, note: note)
+    }
+
+    /// The same row prescribing something else — what a re-ladder from actuals
+    /// does to a week still ahead (final review F6).
+    fileprivate func with(targetText: String, implication: String?) -> LadderRow {
         LadderRow(weekNumber: weekNumber, weekStartString: weekStartString,
                   targetText: targetText, implication: implication,
                   status: status, isDeload: isDeload, note: note)
