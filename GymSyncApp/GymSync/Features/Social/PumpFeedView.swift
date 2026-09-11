@@ -225,26 +225,37 @@ struct PumpPostCard: View {
             authorRow
                 .padding(12)
 
-            // Lines 2 and 3 sit ABOVE the photo, because they are the reason
-            // the card exists (spec §1: "a snapshot of where people are in
-            // their fitness trajectory") and a 300 pt photo between the name
-            // and the trajectory would bury it below the fold.
+            // SPEC §1'S ANATOMY, IN ITS ORDER: 1 who and when, 2 the
+            // trajectory, 3 this week's rung, 4 the highlight, 5 the workout
+            // in plain terms, 6 the picture, 7 reactions.
+            //
+            // The picture is SIXTH. Lines 2-5 are the reason the card exists
+            // ("a snapshot of where people are in their fitness trajectory")
+            // and a 300 pt photo above any of them buries it below the fold.
+            // This is review fix 4 and it supersedes the plan's S2.7 snippet,
+            // which left the photo between line 3 and line 4 and so shipped
+            // the order 1, 2, 3, picture, 4, 5, 7.
+            //
+            // `summaryBlock` carries lines 4 and 5 and the per-exercise rows
+            // they sit with. The exercise rows are not one of the seven lines
+            // — they are the detail this card has shown since 2026-07 — so
+            // they travel with the summary rather than being split from it.
             if let trajectory = post.trajectory {
                 trajectoryBlock(trajectory)
                     .padding(.horizontal, 12)
                     .padding(.bottom, 12)
             }
 
+            summaryBlock
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
+
             if post.photoPath != nil {
                 photoBlock
             }
 
-            summaryBlock
-                .padding(12)
-
             reactionsRow
-                .padding(.horizontal, 12)
-                .padding(.bottom, 12)
+                .padding(12)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .gs3DCard(cornerRadius: GSMetrics.radiusMd)
