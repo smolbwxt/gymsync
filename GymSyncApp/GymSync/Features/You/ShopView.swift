@@ -42,7 +42,7 @@ struct ShopView: View {
         NavigationLink {
             PaywallView()
         } label: {
-            card(title: "PRO", titleColor: theme.text, footer: "GYMSYNC PRO") {
+            card(title: "PRO", footer: "GYMSYNC PRO") {
                 Text("Coach programs, unlimited routines, the full ledger — see what's coming.")
                     .font(GSFont.body(13, relativeTo: .subheadline))
                     .foregroundStyle(theme.neutral700)
