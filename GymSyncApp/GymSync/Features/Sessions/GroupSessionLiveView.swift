@@ -6091,7 +6091,8 @@ struct GroupSessionLiveView: View {
             summary: PostSummary(
                 durationSeconds: duration,
                 totalVolumeLbs: Decimal(myVolume),
-                exercises: exercises),
+                exercises: exercises,
+                routineName: nil),
             avgBpm: hrStats?.avg,
             maxBpm: hrStats?.max,
             includeHRDefault: ThemeStore.shared.shareHeartRate && hrStats != nil,

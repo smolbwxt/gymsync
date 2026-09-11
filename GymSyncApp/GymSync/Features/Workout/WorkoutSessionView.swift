@@ -4320,6 +4320,7 @@ struct WorkoutSessionView: View {
         return PostSummary(
             durationSeconds: Int(recapDurationInterval),
             totalVolumeLbs: Decimal(HealthKitBridge.totalVolume(from: loggedSets)),
-            exercises: exercises)
+            exercises: exercises,
+            routineName: nil)
     }
 }

@@ -35,11 +35,22 @@ struct PostSummary: Codable, Sendable, Equatable {
     let durationSeconds: Int
     let totalVolumeLbs: Decimal
     let exercises: [ExerciseEntry]
+    /// The routine this session ran — spec §1 line 5's `Push day · 42 min ·
+    /// 7,240 lb`. Optional: a freeform workout has no routine, and every post
+    /// written before this field existed decodes with nil (a synthesized
+    /// `Decodable` uses `decodeIfPresent` for an Optional).
+    ///
+    /// SNAKE_CASE, unlike this plan's new columns: `PostSummary` declares its
+    /// keys explicitly and has spoken snake_case since 2026-07 (:20-25,
+    /// :39-43). One jsonb document may not speak two conventions (global
+    /// constraint 11).
+    let routineName: String?
 
     enum CodingKeys: String, CodingKey {
         case durationSeconds = "duration_seconds"
         case totalVolumeLbs = "total_volume_lbs"
         case exercises
+        case routineName = "routine_name"
     }
 }
 
@@ -54,6 +65,27 @@ struct WorkoutPost: Codable, Identifiable, Sendable {
     let maxBpm: Int?
     let isLate: Bool
     let createdAt: Date
+    /// The session's completion (spec §6), copied at post time. Optional
+    /// because old rows have none; `PostLateness` treats that as an absence
+    /// rather than as zero.
+    let completedAt: Date?
+    /// How many times the lifter re-shot before posting (spec §2). OPTIONAL
+    /// in Swift though the column is `NOT NULL DEFAULT 0`: a synthesized
+    /// `Decodable` does not fall back to a property's default for a missing
+    /// key, so an optional is what keeps the feed decoding if a client ever
+    /// meets a projection without it. `?? 0` at the one read site.
+    let retakeCount: Int?
+    let highlight: PostHighlight?
+    /// Lines 2 and 3, frozen (see `PostTrajectory`'s doc comment for why this
+    /// is not resolved from `goalID`).
+    let trajectory: PostTrajectory?
+    /// PROVENANCE, not the render source: which block this post belonged to.
+    let goalID: UUID?
+    /// The rung's week key, `yyyy-MM-dd`. A **String**, because DATE columns
+    /// must not go through the SDK's timestamp decoder — the `SessionSeries`
+    /// idiom `Models/ProgramEnrollment.swift:36-38` and `WeeklyGoal
+    /// .weekStartString` both record.
+    let weekStartString: String?
 
     enum CodingKeys: String, CodingKey {
         case id, summary
@@ -65,6 +97,12 @@ struct WorkoutPost: Codable, Identifiable, Sendable {
         case maxBpm = "max_bpm"
         case isLate = "is_late"
         case createdAt = "created_at"
+        case completedAt = "completed_at"
+        case retakeCount = "retake_count"
+        case highlight
+        case trajectory
+        case goalID = "goal_id"
+        case weekStartString = "week_start"
     }
 }
 

@@ -1294,7 +1294,9 @@ struct CatalogHostView: View {
                         summary: Self.pumpFixtureSummary,
                         includesHR: true, avgBpm: 142, maxBpm: 171,
                         isLate: false,
-                        createdAt: Date().addingTimeInterval(-3600)),
+                        createdAt: Date().addingTimeInterval(-3600),
+                        completedAt: nil, retakeCount: 0, highlight: nil,
+                        trajectory: nil, goalID: nil, weekStartString: nil),
                     author: nil, isMine: false,
                     myReactions: ["🔥"],
                     reactionCounts: ["🔥": 3, "💪": 1, "snd:airhorn": 2],
@@ -1308,7 +1310,9 @@ struct CatalogHostView: View {
                         summary: Self.pumpFixtureSummary,
                         includesHR: false, avgBpm: nil, maxBpm: nil,
                         isLate: true,
-                        createdAt: Date().addingTimeInterval(-7200)),
+                        createdAt: Date().addingTimeInterval(-7200),
+                        completedAt: nil, retakeCount: 0, highlight: nil,
+                        trajectory: nil, goalID: nil, weekStartString: nil),
                     author: nil, isMine: true,
                     myReactions: [],
                     reactionCounts: [:],
@@ -1331,7 +1335,8 @@ struct CatalogHostView: View {
             .init(name: "Walking Lunge", equipment: "bodyweight", sets: [
                 .init(weightLbs: nil, reps: 20, isPR: false, isFailed: false),
             ]),
-        ])
+        ],
+        routineName: nil)
 
     private func catalogDiscoveryRow(raised: Bool) -> some View {
         HStack(spacing: 13) {
