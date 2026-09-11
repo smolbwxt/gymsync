@@ -1327,12 +1327,22 @@ struct CatalogHostView: View {
         ],
         routineName: "Push day")
 
-    /// `pump-feed-post`: two feed cards — a friend's photo post (signed-URL
+    /// `pump-feed-post`: two feed cards from a world that HAS a block — a
+    /// friend's photo post carrying the full trajectory snapshot (signed-URL
     /// fetch fails in the harness, so the photo block shows its honest
-    /// placeholder) with reactions, and a summary-only late post of your
-    /// own. Exercises cover the barbell mini-bar and a bodyweight entry.
+    /// placeholder), and the viewer's own late, summary-only post. Exercises
+    /// cover the barbell mini-bar and a bodyweight entry.
+    ///
+    /// THE CLOCK ANCHOR IS INHERITED, NOT INTRODUCED (global constraint 7):
+    /// `createdAt` has been `Date().addingTimeInterval(…)` since 2026-07 so
+    /// the author row reads a stable `1 hour ago` rather than drifting into
+    /// `3 years ago`. Every NEW fact is anchored RELATIVE to it —
+    /// `completedAt` is 47 minutes before its own post — so `posted 47 min
+    /// after` is the same string on every run.
     private var content_pumpFeedPost: some View {
-        ScrollView {
+        let friendPostedAt = Date().addingTimeInterval(-3600)
+        let myPostedAt = Date().addingTimeInterval(-7200)
+        return ScrollView {
             VStack(spacing: 14) {
                 PumpPostCard(
                     post: WorkoutPost(
@@ -1340,10 +1350,15 @@ struct CatalogHostView: View {
                         photoPath: "posts/fixture/fixture.jpg",
                         summary: Self.pumpFixtureSummary,
                         includesHR: true, avgBpm: 142, maxBpm: 171,
-                        isLate: false,
-                        createdAt: Date().addingTimeInterval(-3600),
-                        completedAt: nil, retakeCount: 0, highlight: nil,
-                        trajectory: nil, goalID: nil, weekStartString: nil),
+                        isLate: true,
+                        createdAt: friendPostedAt,
+                        // Spec §2's own example, exactly: 47 minutes.
+                        completedAt: friendPostedAt.addingTimeInterval(-47 * 60),
+                        retakeCount: 2,
+                        highlight: Self.pumpFixtureHighlight,
+                        trajectory: Self.pumpFixtureTrajectory,
+                        goalID: StubBlockGoalRepository.fixtureGoalID,
+                        weekStartString: "2026-09-06"),
                     author: nil, isMine: false,
                     myReactions: ["🔥"],
                     reactionCounts: ["🔥": 3, "💪": 1, "snd:airhorn": 2],
@@ -1357,8 +1372,15 @@ struct CatalogHostView: View {
                         summary: Self.pumpFixtureSummary,
                         includesHR: false, avgBpm: nil, maxBpm: nil,
                         isLate: true,
-                        createdAt: Date().addingTimeInterval(-7200),
-                        completedAt: nil, retakeCount: 0, highlight: nil,
+                        createdAt: myPostedAt,
+                        // A DAY-SCALE tag beside the friend's minute-scale
+                        // one, so one frame shows both spellings.
+                        completedAt: myPostedAt.addingTimeInterval(-50 * 3600),
+                        retakeCount: 0,
+                        highlight: nil,
+                        // NO BLOCK on this one: spec §1's "An athlete with no
+                        // active block has no line 2 and no line 3" is a state
+                        // the reviewer has to be able to see.
                         trajectory: nil, goalID: nil, weekStartString: nil),
                     author: nil, isMine: true,
                     myReactions: [],
@@ -1383,7 +1405,29 @@ struct CatalogHostView: View {
                 .init(weightLbs: nil, reps: 20, isPR: false, isFailed: false),
             ]),
         ],
-        routineName: nil)
+        routineName: "Push day")
+
+    /// The pick `HighlightMath` would have proposed for the summary above —
+    /// the PR set, which suppresses the top set because they are one set.
+    private static let pumpFixtureHighlight = PostHighlight(
+        kind: .pr, text: "PR — Back Squat", weightLbs: 235, reps: 3)
+
+    /// THE CATALOG'S ONE BLOCK. Bench 225 by Oct 18, week 3 of 8 — the same
+    /// block `StubBlockGoalRepository` describes for the ladder page and the
+    /// goal door, so a reviewer paging through the artifact sees ONE athlete
+    /// rather than three who happen to lift similar numbers.
+    ///
+    /// `behind`, deliberately: `on track` is the easy frame, and spec §1's
+    /// binding ruling is that the hard one ships too, with no per-post hide.
+    private static let pumpFixtureTrajectory = PostTrajectory(
+        goalLine: "Bench 225 by Oct 18", weekNumber: 3, weekCount: 8,
+        standing: .behind,
+        chips: [
+            .init(name: "CHEST", done: 8, target: 12, fill: nil),
+            .init(name: "BACK", done: 10, target: 12, fill: nil),
+            .init(name: "LEGS", done: 6, target: 12, fill: nil),
+            .init(name: "ARMS", done: 8, target: 8, fill: nil),
+        ])
 
     private func catalogDiscoveryRow(raised: Bool) -> some View {
         HStack(spacing: 13) {
