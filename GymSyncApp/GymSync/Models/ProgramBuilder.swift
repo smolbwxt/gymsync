@@ -69,8 +69,8 @@ enum ProgramBuilder {
     /// gets a compile error instead, which is the point.
     ///
     /// **`blockGoalRepository` HAS NO DEFAULT EITHER, AND FOR THE SAME REASON.**
-    /// The plan writes `LiveBlockGoalRepository()` there; that type does not
-    /// exist until task A11, and the only conformer today is
+    /// The plan writes `LiveBlockGoalRepository()` there; when this was written
+    /// that type did not exist, and the only conformer was
     /// `StubBlockGoalRepository`, whose `save` returns **true**, whose
     /// `saveDerivedLadder` falls through to the protocol's nil default and whose
     /// `materialiseRung` returns nil. Defaulted, step 7b would have run its

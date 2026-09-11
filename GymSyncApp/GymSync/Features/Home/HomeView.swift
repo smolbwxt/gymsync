@@ -7,8 +7,8 @@ struct HomeView: View {
 
     // MARK: - Injected repositories (production plan, Task 0's interface)
     //
-    // I1 swaps these defaults for Stream A's live implementations: an empty
-    // friends repository WAS the shipping state of the crew pulse (owner
+    // I1 SWAPPED these defaults for the live implementations: an empty
+    // friends repository was the shipping state of the crew pulse (owner
     // ruling 2) only until a live one existed, and the stub goal repository
     // rendered the design's own fixture numbers only until Stream A's did.
     // Both stubs stay in the codebase — the catalog's fixture frames still
@@ -20,10 +20,9 @@ struct HomeView: View {
     /// This week's goal and its progress.
     let goalRepository: any WeeklyGoalRepository
     /// The block's goal and its ladder (goal-first plan, task D6).
-    /// `StubBlockGoalRepository` until Stream A's live one lands (I1). It is
-    /// only ever asked anything for an athlete whose week is a materialised
-    /// rung — which is no athlete until I2 stamps `goal_id` on those rows —
-    /// so production Home makes no extra read for it today.
+    /// `LiveBlockGoalRepository` as of I1's swap. It is only ever asked
+    /// anything for an athlete whose week is a materialised rung, so Home
+    /// makes no extra read for an athlete with no block.
     let blockGoalRepository: any BlockGoalRepository
 
     /// Declared EXPLICITLY, not left to the synthesised memberwise init.
@@ -771,7 +770,7 @@ struct HomeView: View {
     ///   * **goal present** — the kind's reading.
     ///   * **no goal** — `kind: nil`, the invitation line.
     ///
-    /// I1: the tap opens Stream C's `WeeklyGoalEditorSheet` —
+    /// The tap opens `WeeklyGoalEditorSheet` (I1) —
     /// `goalEditorWeeklySessionGoal` is snapshotted here, at tap time, not
     /// read live from `profile` inside the sheet's own builder (see that
     /// property's doc comment).
@@ -846,12 +845,12 @@ struct HomeView: View {
     /// repository (task review finding 2).
     ///
     /// It used to be `LadderPageView(goalID: goalID)`, which silently fell
-    /// back to that view's own default `StubBlockGoalRepository()`. Today
-    /// both sides are the stub and nothing looks wrong; at I1, when Home is
-    /// handed the live repository, Coach's line would have read the athlete's
-    /// real ladder while the page one tap away rendered the fixture "Bench
-    /// 225 by Oct 18". It fails silently and it looks correct, which is the
-    /// worst shape a defect can have.
+    /// back to that view's own default `StubBlockGoalRepository()`. While both
+    /// sides were the stub nothing looked wrong; once Home was handed the live
+    /// repository at I1, Coach's line would have read the athlete's real ladder
+    /// while the page one tap away rendered the fixture "Bench 225 by Oct 18".
+    /// It fails silently and it looks correct, which is the worst shape a
+    /// defect can have.
     ///
     /// A FUNCTION rather than an inline construction so the wiring is a value
     /// a test can hold — `HomeCompositionTests

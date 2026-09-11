@@ -111,8 +111,11 @@ struct WeeklyGoalEditorSheet: View {
     /// `WeekMath.weekStartString(_:)`'s value for the week being edited.
     /// Passed rather than computed so the sheet has no clock of its own.
     let weekStart: String
-    /// Where a save goes. `StubWeeklyGoalRepository` until integration task
-    /// I1 swaps the binding to Stream A's live one.
+    /// Where a save goes. The DEFAULT is the stub and it is catalog-only:
+    /// every production host injects its own (I1) — `HomeView.swift:297` and
+    /// `LadderPageView.rungEditor`, both pinned by tests — so a sheet that
+    /// reached this default would be a dropped injection rather than a
+    /// deliberate one.
     var repository: any WeeklyGoalRepository = StubWeeklyGoalRepository()
     /// Coach's standing suggestion, when there is one.
     var proposal: Proposal? = nil

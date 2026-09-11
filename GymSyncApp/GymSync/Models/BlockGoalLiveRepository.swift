@@ -11,7 +11,10 @@ import Supabase
 // FROZEN interface three other streams read, and keeping the persistence here
 // keeps those files untouched for the whole of the parallel build.
 //
-// THE DEFAULT BINDING IS STILL THE STUB. Integration task I1 swaps it.
+// THIS IS THE DEFAULT BINDING EVERYWHERE (I1's swap): Home, the ladder page,
+// the schedule page, the ledger and `ConsultEntryView.finish`'s build, each
+// pinned by `LadderRepositoryWiringTests`. `StubBlockGoalRepository` is the
+// catalog's.
 
 /// One row of `public.block_goals`.
 ///

@@ -2,12 +2,11 @@ import Foundation
 
 // MARK: - The block goal's repository surface
 //
-// Plan task 0.4. THIS IS THE INTERFACE STREAMS C AND D FORK AGAINST. Stream
-// A ships `LiveBlockGoalRepository` behind the same protocol and integration
-// task I1 swaps the binding; until then `StubBlockGoalRepository` is what
-// everything sees — deterministic, no network, no clock — so the door and the
-// ladder page are correct and capturable at every point in the build rather
-// than only at the end.
+// Plan task 0.4. THIS IS THE INTERFACE STREAMS C AND D FORKED AGAINST.
+// `LiveBlockGoalRepository` ships behind it and I1 swapped every production
+// binding to it. `StubBlockGoalRepository` below is now the CATALOG'S
+// repository — deterministic, no network, no clock — which is what keeps the
+// door's and the ladder page's frames values rather than fetches.
 
 /// Reads and writes the block's goal and its ladder.
 ///
@@ -105,8 +104,8 @@ extension BlockGoalRepository {
 
 // MARK: - The stub
 
-/// The shipping default until Stream A's `LiveBlockGoalRepository` lands
-/// (integration task I1).
+/// The CATALOG'S repository since I1 swapped the shipping default to
+/// `LiveBlockGoalRepository`.
 ///
 /// HERMETIC: no `AppState`, no repository, no `Date.now`. The fixture is the
 /// spec's own worked example — bench 225 by Oct 18, an eight-week block,

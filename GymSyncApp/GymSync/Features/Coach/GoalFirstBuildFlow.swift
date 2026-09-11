@@ -17,11 +17,11 @@ import SwiftUI
 /// the fourth host, onto this path.
 ///
 /// LANDING. `onBuilt` is handed the id of the goal row the build wrote
-/// (`ProgramBuilder.Outcome.goalID`), and every host pushes Stream D's ladder
-/// page (D1) for it — the real landing (spec §5.3), swapped in at
-/// integration task I1. A nil id (the enrollment or the save itself failed;
-/// the block still built) falls back to the plain schedule page, which the
-/// ladder page's own `SEE THE BLOCK ›` row keeps one tap away regardless.
+/// (`ProgramBuilder.Outcome.goalID`), and every host pushes the ladder page
+/// (D1) for it — the real landing (spec §5.3), wired at I1. A nil id (the
+/// enrollment or the save itself failed; the block still built) falls back to
+/// the plain schedule page, which the ladder page's own `SEE THE BLOCK ›` row
+/// keeps one tap away regardless.
 struct GoalFirstBuildFlow: View {
 
     var onBuilt: (UUID?) -> Void
@@ -44,12 +44,22 @@ struct GoalFirstBuildFlow: View {
 
     /// What the athlete's log says now, for the seeds and Coach's line.
     ///
-    /// EMPTY UNTIL STREAM A'S READERS LAND (task A5). An empty reading is
-    /// honest — the card seeds from its documented defaults and Coach says "I
-    /// haven't got a reading for this yet" rather than printing a zero — and
-    /// I1 wires the real readers in. It is never fetched by the milestone card
-    /// itself; it arrives here and is passed down, which is what keeps that
-    /// card capturable.
+    /// **STILL EMPTY, AND I1 DID NOT FILL IT** (final-fix round, recorded
+    /// rather than quietly left as a future-tense promise). A5's readers exist
+    /// as pure math — `BlockGoalMetricMath`, `WeeklyGoalProgressMath` — and
+    /// `LiveBlockGoalRepository.measuredByWeek` composes them per metric for
+    /// the LADDER, but nothing composes them for the DOOR, so every card opens
+    /// on its documented defaults and Coach's line reads "I haven't got a
+    /// reading for this yet" rather than spec §5.2's "You're at 205 now".
+    ///
+    /// An empty reading is honest rather than wrong — no zero is printed, no
+    /// number is invented — and the catalog frames pass their own `current`, so
+    /// they are unaffected. Filling it is a per-metric live read plus a re-seed
+    /// of a card whose `@State` draft is built in `init`; that is a task, not a
+    /// line, and it is the open item behind the door's silence on reach (F4).
+    ///
+    /// It is never fetched by the milestone card itself; it arrives here and is
+    /// passed down, which is what keeps that card capturable.
     @State private var current = GoalTarget()
     @State private var lifts: [WeeklyGoalEditorSheet.LiftOption] = []
     @State private var routines: [Routine] = []

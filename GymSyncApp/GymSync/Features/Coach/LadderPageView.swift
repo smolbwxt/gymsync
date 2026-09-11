@@ -525,7 +525,7 @@ struct LadderPageView: View {
     /// this used to be a bare `ProgramScheduleView()`, discarding the
     /// repository the ladder page itself was handed. Home → ladder → schedule
     /// → ladder is a real path, and every hop of it now carries one
-    /// repository, so I1 swaps them all together by changing one default.
+    /// repository, so I1's swap moved all of them by changing one default.
     ///
     /// A FUNCTION for the same reason `ladderPage(for:)` is one: the wiring
     /// becomes a value a test can hold.

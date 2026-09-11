@@ -12,7 +12,8 @@ import Supabase
 // `setAt` has no column of its own. Putting the persistence here keeps that
 // file untouched for the whole of the parallel build.
 //
-// THE DEFAULT BINDING IS STILL THE STUB. Integration task I1 swaps it.
+// THIS IS THE DEFAULT BINDING (I1's swap). `StubWeeklyGoalRepository` stays
+// for the catalog, which constructs it explicitly.
 
 /// One row of `public.weekly_goals`.
 ///
