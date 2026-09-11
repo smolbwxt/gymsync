@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(15);
+SELECT plan(23);
 
 -- Pump Check P1 (20260731000001): workout_posts + post_reactions RLS.
 -- Visibility matrix: author / accepted friend / stranger / blocked pair.
@@ -105,6 +105,80 @@ SELECT throws_ok(
     VALUES ('00000000-0000-4000-f000-000000000720',
             '00000000-0000-4000-f000-000000000702', '🙃')$$,
   '23514', NULL, 'emoji outside the kudos set rejected');
+
+-- 9b. The snapshot columns accept a full row.
+SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-f000-000000000701';
+SELECT lives_ok(
+  $$INSERT INTO workout_posts (id, author_id, session_id, summary, is_late,
+                               completed_at, retake_count, highlight, trajectory, week_start)
+    VALUES ('00000000-0000-4000-f000-000000000721',
+            '00000000-0000-4000-f000-000000000701',
+            '00000000-0000-4000-f000-000000000710',
+            '{"duration_seconds": 2520, "total_volume_lbs": 7240, "routine_name": "Push day", "exercises": []}',
+            true, now() - interval '47 minutes', 2,
+            '{"kind": "pr", "text": "PR", "weightLbs": 235, "reps": 3}',
+            '{"goalLine": "Bench 225 by Oct 18", "weekNumber": 3, "weekCount": 8,
+              "standing": "onTrack", "chips": [{"name": "CHEST", "done": 8, "target": 12}]}',
+            '2026-09-06')$$,
+  'a post carries its trajectory, highlight, retakes and completion');
+
+-- 9c. retake_count defaults to zero, never null.
+SELECT results_eq(
+  $$SELECT retake_count FROM workout_posts
+     WHERE id = '00000000-0000-4000-f000-000000000720'$$,
+  $$VALUES (0)$$, 'retake_count defaults to 0 on a row that never set it');
+
+-- 9d. A negative retake count is rejected.
+SELECT throws_ok(
+  $$INSERT INTO workout_posts (author_id, session_id, summary, retake_count)
+    VALUES ('00000000-0000-4000-f000-000000000701',
+            '00000000-0000-4000-f000-000000000710', '{}', -1)$$,
+  '23514', NULL, 'a negative retake count is rejected');
+
+-- 9e. A scalar where an object belongs is rejected.
+SELECT throws_ok(
+  $$INSERT INTO workout_posts (author_id, session_id, summary, highlight)
+    VALUES ('00000000-0000-4000-f000-000000000701',
+            '00000000-0000-4000-f000-000000000710', '{}', '"pr"')$$,
+  '23514', NULL, 'highlight must be a json object');
+
+-- 9e2. The kind domain: `milestone` is ACCEPTED though this release never
+-- proposes it (the You hero's MilestoneCatalog will), and an unknown kind is
+-- refused. This is the assertion that lets the milestone highlight ship later
+-- without a migration.
+SELECT lives_ok(
+  $$INSERT INTO workout_posts (id, author_id, session_id, summary, highlight)
+    VALUES ('00000000-0000-4000-f000-000000000722',
+            '00000000-0000-4000-f000-000000000701',
+            '00000000-0000-4000-f000-000000000710', '{}',
+            '{"kind": "milestone", "text": "Lifetime total crossed", "weightLbs": 1000000}')$$,
+  'the milestone kind is already in the column''s domain');
+SELECT throws_ok(
+  $$INSERT INTO workout_posts (author_id, session_id, summary, highlight)
+    VALUES ('00000000-0000-4000-f000-000000000701',
+            '00000000-0000-4000-f000-000000000710', '{}',
+            '{"kind": "vibes", "text": "felt strong"}')$$,
+  '23514', NULL, 'a kind outside the three is rejected');
+
+-- 9f. The snapshot is still IMMUTABLE — no UPDATE policy came with it.
+UPDATE workout_posts SET retake_count = 99
+  WHERE id = '00000000-0000-4000-f000-000000000721';
+SELECT results_eq(
+  $$SELECT retake_count FROM workout_posts
+     WHERE id = '00000000-0000-4000-f000-000000000721'$$,
+  $$VALUES (2)$$,
+  'the new columns are as immutable as the old ones');
+
+-- 9g. The friend sees the standing — spec §1's visibility ruling at the row
+-- level: `behind` included, no per-post hide, friends-scoped by the SELECT
+-- policy that already existed.
+SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-f000-000000000702';
+SELECT results_eq(
+  $$SELECT trajectory ->> 'standing' FROM workout_posts
+     WHERE id = '00000000-0000-4000-f000-000000000721'$$,
+  $$VALUES ('onTrack'::text)$$,
+  'an accepted friend reads the author''s standing');
+SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-f000-000000000701';
 
 -- 10. Stranger sees nothing…
 SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-f000-000000000703';
