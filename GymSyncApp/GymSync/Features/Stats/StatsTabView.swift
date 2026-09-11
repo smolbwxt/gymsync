@@ -269,7 +269,7 @@ struct StatsTabView: View {
                                 } label: {
                                     Text("Older workouts are PRO — the full ledger, all time.")
                                         .font(GSFont.bold(13, relativeTo: .subheadline))
-                                        .foregroundStyle(Color.gsHex(0xE8C33A))
+                                        .foregroundStyle(theme.accent700)
                                         .frame(maxWidth: .infinity)
                                         .padding(.vertical, 12)
                                         .contentShape(Rectangle())
