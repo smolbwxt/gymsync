@@ -140,6 +140,12 @@ enum LadderFixtures {
             switch row.weekNumber {
             case 1: return row.with(status: .overridden)
             case 2: return row.with(status: .missed)
+            // Week 3 is `current`, and spec §8 lets a re-ladder rewrite the
+            // CURRENT rung as well as the ones ahead — so it comes down with
+            // them. Left at the block's own `3 × 5 at 200 / ≈ 225 e1RM` it
+            // implied the athlete reaches the 225 milestone THIS WEEK, three
+            // rows above a standing that says the ladder tops out at 218.
+            case 3: return row.with(targetText: "3 × 5 at 185", implication: "≈ 205 e1RM")
             case 4: return row.with(targetText: "4 × 3 at 190", implication: "≈ 207 e1RM")
             case 5: return row.with(targetText: "4 × 3 at 195", implication: "≈ 212 e1RM")
             case 7: return row.with(targetText: "3 × 2 at 205", implication: "≈ 216 e1RM")

@@ -156,6 +156,21 @@ final class LadderFixtureCoherenceTests: XCTestCase {
         XCTAssertFalse(page.reachesMilestone)
     }
 
+    /// Every rung still ahead — the current one included, which spec §8 lets a
+    /// re-ladder rewrite — implies no more than the ladder's stated reach. A
+    /// row above the line claiming a bigger number is the same contradiction
+    /// one row down.
+    func testNoRungImpliesMoreThanTheLadderSaysItReaches() {
+        let reach = LadderFixtures.behindReachesE1RM
+        for row in LadderFixtures.behind.rows where row.status != .missed
+                                                && row.status != .overridden {
+            guard let implication = row.implication,
+                  let value = Int(implication.filter(\.isNumber)) else { continue }
+            XCTAssertLessThanOrEqual(value, reach,
+                                     "week \(row.weekNumber) implies \(value) above a standing of \(reach)")
+        }
+    }
+
     /// And it falls SHORT of the milestone it is a ladder to, or there is
     /// nothing to move the date for.
     func testTheBehindFixtureFallsShortOfTheMilestone() {
