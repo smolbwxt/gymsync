@@ -114,9 +114,19 @@ enum HealthKitBridge {
     /// mileage goal that ignored it would be wrong for most runners.
     ///
     /// Best-effort: `[]` on no availability, no permission, or any error.
+    ///
+    /// **`.strictStartDate`** (round 2, item O3). Without it the predicate
+    /// matches any workout whose interval OVERLAPS the window, so a ride that
+    /// began last Saturday night and ended after midnight counted for both
+    /// weeks. The batch readers below fetch one span and bucket by the
+    /// workout's START, so overlap-matching here would have made a single-window
+    /// read and a batch read disagree at exactly the week boundaries a ladder is
+    /// made of. One rule — a workout belongs to the week it STARTED in — and
+    /// both doors follow it.
     static func workouts(from start: Date, to end: Date) async -> [HKWorkout] {
         guard HKHealthStore.isHealthDataAvailable() else { return [] }
-        let predicate = HKQuery.predicateForSamples(withStart: start, end: end)
+        let predicate = HKQuery.predicateForSamples(withStart: start, end: end,
+                                                    options: .strictStartDate)
         return await withCheckedContinuation { continuation in
             let query = HKSampleQuery(sampleType: HKObjectType.workoutType(),
                                       predicate: predicate,
@@ -264,7 +274,7 @@ enum HealthKitBridge {
         guard let span = span(of: windows) else { return [] }
         let all = await workouts(from: span.start, to: span.end)
         return windows.map { window in
-            lissMinutes(in: all.filter { overlaps($0, window) })
+            lissMinutes(in: all.filter { startsWithin($0, window) })
         }
     }
 
@@ -279,18 +289,21 @@ enum HealthKitBridge {
         let all = await workouts(from: span.start, to: span.end)
             .filter { $0.workoutActivityType == type }
         return windows.map { window in
-            all.filter { overlaps($0, window) }
+            all.filter { startsWithin($0, window) }
                 .reduce(0.0) { $0 + ($1.totalDistance?.doubleValue(for: .meter()) ?? 0) }
         }
     }
 
     /// Every tag across the windows' whole span, in ONE array and ONE query.
     ///
-    /// Not bucketed, deliberately: `HealthWorkoutTag.matches(type:sessionStart:
-    /// sessionEnd:)` is an interval-overlap test that carries its own window, so
-    /// a consumer hands it the whole span and only the overlapping tags can
-    /// match. Bucketing first would risk dropping a tag that straddles a week
-    /// boundary.
+    /// Not bucketed, deliberately, and this is the ONE reader where that is
+    /// right: `HealthWorkoutTag.matches(type:sessionStart:sessionEnd:)` is an
+    /// interval-overlap test against A SESSION's window, not a week's — it asks
+    /// "did the watch record this piece of training", and a session that ran
+    /// across midnight has to be able to find the workout that corroborates it.
+    /// So a consumer hands it the whole span and lets `matches` do the pairing.
+    /// The start-strict bucketing the other two use is for weekly TOTALS, which
+    /// is a different question with a different right answer.
     static func workoutTags(windows: [(start: Date, end: Date)]) async -> [HealthWorkoutTag] {
         guard let span = span(of: windows) else { return [] }
         return await workoutTags(from: span.start, to: span.end)
@@ -306,11 +319,18 @@ enum HealthKitBridge {
         return (start: first, end: last)
     }
 
-    /// Bucketed by the workout's START, which is what a per-window query would
-    /// have returned: `HKQuery.predicateForSamples(withStart:end:)` matches a
-    /// sample whose start falls inside the window.
-    private static func overlaps(_ workout: HKWorkout,
-                                 _ window: (start: Date, end: Date)) -> Bool {
+    /// Does this workout belong to that window?
+    ///
+    /// BY ITS START, and `workouts(from:to:)` now asks HealthKit the same
+    /// question with `.strictStartDate`, so a per-window query and a bucketed
+    /// span return the same set. The comment here used to CLAIM that agreement
+    /// while the query was still overlap-matching (round 2, item O3); the
+    /// option makes the claim true instead of correcting it downward.
+    ///
+    /// Named `startsWithin` rather than `overlaps`, because overlap is precisely
+    /// what it does not test.
+    private static func startsWithin(_ workout: HKWorkout,
+                                     _ window: (start: Date, end: Date)) -> Bool {
         workout.startDate >= window.start && workout.startDate < window.end
     }
 
