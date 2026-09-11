@@ -435,16 +435,22 @@ extension LadderMath {
             ?? ladder.rungs.first(where: { $0.weekStartString == currentWeekKey })
         model.weekNumber = currentRung.map { $0.weekIndex + 1 } ?? 1
 
-        let dated = goal.byDate
-        model.dateLine = dated.map { longDate($0, calendar: calendar) } ?? ""
+        // HELD FOR THE BLOCK, KEYED ON THE PRESET (I1 audit, ruling 14) — NOT
+        // on `goal.byDate == nil`. Maintenance, Recovery and Consistency's
+        // `byDate` now carries the derived block length (Stream C round 2,
+        // `GoalMilestoneCopy.heldMilestoneDate`), not a real deadline, so a
+        // non-nil `byDate` no longer means the goal has a date to show. A nil
+        // `preset` (Coach-guided, phase 2) falls back to the plain nil check.
+        let held = goal.preset?.asksForDate == false
+        model.dateLine = held ? "" : (goal.byDate.map { longDate($0, calendar: calendar) } ?? "")
         model.headline = headline(goal: goal, liftName: liftName, unit: unit,
                                   calendar: calendar)
 
-        // A GOAL WITH NO DATE CANNOT FALL SHORT OF ONE. `reachesMilestone` asks
-        // whether the ladder still arrives BY THE DATE (spec §6), so a
-        // held-for-the-block goal is true by construction rather than by
-        // measuring a milestone it does not have.
-        if dated == nil {
+        // A HELD GOAL CANNOT FALL SHORT OF A DATE IT DOES NOT HAVE.
+        // `reachesMilestone` asks whether the ladder still arrives BY THE
+        // DATE (spec §6), so a held-for-the-block goal is true by
+        // construction rather than by measuring a milestone it does not have.
+        if held {
             model.reachesMilestone = true
             model.coachLine = "Held for the block."
             return model
@@ -596,19 +602,28 @@ extension LadderMath {
         // HELD FOR THE BLOCK gets its own two sentences, because "12 chest sets
         // a week by Oct 18" would put a deadline on a goal that has none.
         //
+        // KEYED ON `preset.asksForDate`, NOT `goal.byDate == nil` (I1 audit,
+        // ruling 14): Maintenance, Recovery and Consistency's `byDate` now
+        // carries the derived block length (Stream C round 2), not a
+        // deadline, so `byDate == nil` no longer means "held" — reading it
+        // that way stopped this branch from ever firing for a real
+        // door-built goal. A nil `preset` (Coach-guided, phase 2) falls back
+        // to the plain nil check below.
+        let held = goal.preset?.asksForDate == false
+        //
         // The preset is UNWRAPPED FIRST rather than switched over as an
         // optional. `HomeWeeklyGoalStrip.unitLabel` spells `.some(...)` for the
         // same reason; an `if let` reads better here because only two of the
         // eleven presets have an answer.
-        if goal.byDate == nil, let preset = goal.preset {
+        if held, let preset = goal.preset {
             switch preset {
             case .maintenance: return "Hold the recommended volumes"
             case .recovery:    return "A recovery block"
-            default: break
+            default: break   // consistency: the plain subject already reads as a held cadence
             }
         }
         let subject = headlineSubject(goal: goal, liftName: liftName, unit: unit)
-        guard let byDate = goal.byDate else { return subject }
+        guard !held, let byDate = goal.byDate else { return subject }
         return "\(subject) by \(shortDate(byDate, calendar: calendar))"
     }
 

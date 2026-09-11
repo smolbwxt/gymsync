@@ -123,15 +123,27 @@ enum GoalPreset: String, Codable, CaseIterable, Sendable {
     }
 
     /// Does the door ask for a date? Maintenance and Recovery do not — they
-    /// are "held for the block" (spec §2.1: `byDate == nil`), and asking for
-    /// one would invent a deadline for a goal that has none. **Nor does
-    /// Consistency**, whose milestone spec §2.3 gives as "days per week, held
-    /// for N weeks" — a count held, not a date met.
+    /// are "held for the block" (spec §2.1), and asking for one would invent
+    /// a deadline for a goal that has none. **Nor does Consistency**, whose
+    /// milestone spec §2.3 gives as "days per week, held for N weeks" — a
+    /// count held, not a date met.
     ///
     /// The comment used to name two where the code excluded three (review
     /// finding 8). The CODE was right; the comment is what Stream C's door
     /// reads, and `BlockGoalModelTests` now pins all three rather than the two
     /// the plan's own test asserted.
+    ///
+    /// **THIS, NOT `BlockGoal.byDate == nil`, IS "HELD" NOW** (Stream C round
+    /// 2, integration task I1's audit, ruling 14). A held preset's card
+    /// derives a real `byDate` from its week stepper
+    /// (`GoalMilestoneCopy.heldMilestoneDate`) so `ProgramBuilder.build` can
+    /// read the block length the same way every other preset does
+    /// (`goal.byDate.map { GoalBlockLength.weeks(byDate: $0) }`) — so the
+    /// stored `byDate` is non-nil for a held goal too, and every place that
+    /// used to ask "is this held" by checking `byDate == nil` had to be
+    /// re-keyed on `asksForDate` instead (`LadderMath.page`/`headline`,
+    /// `BlockGoalLiveRepository.page(goalID:)`'s ceiling gate,
+    /// `ProgramLedgerView.milestone`).
     var asksForDate: Bool {
         switch self {
         case .maintenance, .recovery, .consistency: return false
@@ -163,7 +175,7 @@ struct BlockGoal: Identifiable, Codable, Equatable, Sendable {
     let enrollmentID: UUID            // the block this goal drives (program_enrollments.id)
     var metric: GoalMetric            // what is measured (registry, §2.2)
     var target: GoalTarget            // the milestone value, typed per metric
-    var byDate: Date?                 // the milestone date; nil = "held for the block"
+    var byDate: Date?                 // the milestone date; see `GoalPreset.asksForDate` for what "held" means today
     var preset: GoalPreset?           // which preset produced it; nil = Coach-guided or custom
     var source: WeeklyGoalSource      // coach | user — who last set the milestone
     var outcome: GoalOutcome?         // phase 3

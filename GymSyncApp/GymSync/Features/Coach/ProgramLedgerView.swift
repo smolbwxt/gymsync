@@ -387,11 +387,19 @@ struct ProgramLedgerView: View {
 
     /// "BENCH 225 BY OCT 18". The subject and its number, then the date when
     /// the goal has one — Maintenance, Recovery and Consistency are held for
-    /// the block and carry none (spec §2.1).
+    /// the block and print no date (spec §2.1).
+    ///
+    /// KEYED ON `preset.asksForDate`, NOT `byDate == nil` (I1 audit, ruling
+    /// 14): a held preset's `byDate` now carries the derived block length
+    /// (Stream C round 2), not a deadline, so a non-nil `byDate` no longer
+    /// means the goal has one to print — reading it that way would trail
+    /// "BY OCT 18" onto a goal held for the block. A nil `preset`
+    /// (Coach-guided, phase 2) falls back to the plain nil check.
     private static func milestone(_ goal: BlockGoal, liftName: String,
                                   unit: WeightUnit, calendar: Calendar) -> String? {
         guard let subject = subject(goal, liftName: liftName, unit: unit) else { return nil }
-        guard let byDate = goal.byDate else { return subject.uppercased() }
+        let held = goal.preset?.asksForDate == false
+        guard !held, let byDate = goal.byDate else { return subject.uppercased() }
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d"
         formatter.calendar = calendar

@@ -87,6 +87,27 @@ final class LedgerGoalLineTests: XCTestCase {
             "PARTIAL — 4 DAYS A WEEK")
     }
 
+    /// **I1 audit, ruling 14.** Stream C round 2 made a held preset's door
+    /// derive a REAL `byDate` (the block length, not a deadline), so a
+    /// Consistency goal built through the real door carries a non-nil
+    /// `byDate` — the shape the test above (built by hand) does not cover.
+    /// The line must still stop at the subject, keyed on the preset rather
+    /// than on `byDate == nil`, or a real athlete's held goal would print a
+    /// "BY <date>" clause the milestone does not have.
+    func testAHeldGoalWithADoorDerivedByDateStillNamesNoDate() {
+        let held = BlockGoal(id: UUID(), userID: UUID(), enrollmentID: UUID(),
+                             metric: .trainingDaysPerWeek,
+                             target: GoalTarget(days: 4),
+                             byDate: Self.byDate, preset: .consistency, source: .user,
+                             outcome: .partial, outcomeValue: nil,
+                             createdAt: Date(timeIntervalSince1970: 0),
+                             updatedAt: Date(timeIntervalSince1970: 0))
+        XCTAssertEqual(
+            ProgramLedgerView.goalLine(held, liftName: "", unit: .lbs, calendar: calendar),
+            "PARTIAL — 4 DAYS A WEEK",
+            "held is a property of the preset, not of whether byDate happens to be nil")
+    }
+
     /// The canonical-pounds rule holds all the way to the ledger: a kg
     /// athlete reads their own number, not 225.
     func testTheMilestoneIsReadInTheAthletesOwnUnit() {

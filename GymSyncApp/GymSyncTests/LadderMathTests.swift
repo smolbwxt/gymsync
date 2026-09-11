@@ -270,6 +270,31 @@ final class LadderMathTests: XCTestCase {
                       "a goal with no date cannot fall short of one")
     }
 
+    /// **I1 audit, ruling 14.** Stream C round 2 made a held preset's own
+    /// door derive a REAL `byDate` from its week stepper (the block length,
+    /// not a deadline), so a Maintenance/Recovery/Consistency goal built
+    /// through the real door now carries a non-nil `byDate` — the exact
+    /// shape `testAHeldForTheBlockGoalHasNoDateLine` above does not cover.
+    /// `held` must still be true here, keyed on the preset rather than on
+    /// `byDate == nil`, or every held goal a real athlete builds would print
+    /// a date and a reachability standing it does not have.
+    func testAHeldGoalWithADoorDerivedByDateStillHasNoDateLine() {
+        let goal = strengthGoal(
+            target: GoalTarget(days: 4),
+            byDate: Date(timeIntervalSince1970: 1_800_000_000),
+            preset: .consistency,
+            metric: .trainingDaysPerWeek)
+        let page = LadderMath.page(
+            goal: goal, ladder: StubBlockGoalRepository.fixtureLadder,
+            liftName: "", rungSets: 3, notesByWeek: [:], unit: .lbs,
+            now: pageNow, calendar: pageCalendar)
+
+        XCTAssertEqual(page.dateLine, "")
+        XCTAssertEqual(page.coachLine, "Held for the block.")
+        XCTAssertTrue(page.reachesMilestone,
+                      "held is a property of the preset, not of whether byDate happens to be nil")
+    }
+
     func testADeloadRungCarriesItsFlagAndTheGeneratorsOwnNote() {
         var ladder = StubBlockGoalRepository.fixtureLadder
         ladder.rungs[5].status = .ahead
