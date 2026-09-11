@@ -66,11 +66,6 @@ struct BlockCalendarView: View {
 
     private var calendar: Calendar { .current }
 
-    /// The design system's `--onyx-gold` (goals, streaks, finish lines).
-    /// Not a GSTheme token — semantic colors outside the ramp follow the
-    /// HomeView precedent of a local `Color.gsHex` constant.
-    private let blockGold = Color.gsHex(0xE8C33A)
-
     var body: some View {
         Group {
             if embedded {
@@ -182,7 +177,7 @@ struct BlockCalendarView: View {
                     Text("ENDS \(short(last).uppercased())")
                         .font(GSFont.bold(10, relativeTo: .caption2))
                         .tracking(1.1)
-                        .foregroundStyle(blockGold)
+                        .foregroundStyle(theme.accent700)
                 }
             }
             VStack(spacing: 12) {
@@ -250,7 +245,7 @@ struct BlockCalendarView: View {
 
     private func fill(for day: Date) -> Color {
         let key = calendar.startOfDay(for: day)
-        if let last = blockEnd, calendar.isDate(key, inSameDayAs: last) { return blockGold }
+        if let last = blockEnd, calendar.isDate(key, inSameDayAs: last) { return theme.accent }
         if completedDays.contains(key) { return theme.text }
         if scheduledDays.contains(key) { return theme.accent }
         if plannedDays.contains(key) { return theme.accent.opacity(0.55) }
@@ -264,7 +259,7 @@ struct BlockCalendarView: View {
             legendDot(theme.text, "DONE")
             legendDot(theme.accent, "BOOKED")
             legendDot(theme.accent.opacity(0.55), "PLANNED")
-            legendDot(blockGold, "BLOCK ENDS")
+            legendDot(theme.accent, "BLOCK ENDS")
         }
     }
 
