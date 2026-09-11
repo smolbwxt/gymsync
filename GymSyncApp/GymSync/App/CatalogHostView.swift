@@ -61,6 +61,9 @@ enum CatalogScreen: String, CaseIterable {
     case paywall = "paywall"
     case pumpComposer = "pump-composer"
     case pumpFeedPost = "pump-feed-post"
+    // Social cards (Stage 2, task S2.6a): the composer's REVIEW state — the
+    // only place spec §1 line 4's highlight picker appears. Frame 102.
+    case pumpComposerHighlight = "pump-composer-highlight"
     case appearance = "appearance"
     case gymEquipment = "gym-equipment"
     case notificationPreferences = "notification-preferences"
@@ -181,6 +184,7 @@ struct CatalogHostView: View {
             case .paywall:                    PaywallView(highlight: .programs)
             case .pumpComposer:               content_pumpComposer
             case .pumpFeedPost:               content_pumpFeedPost
+            case .pumpComposerHighlight:      content_pumpComposerHighlight
             case .appearance:                 content_appearance
             case .gymEquipment:               content_gymEquipment
             case .notificationPreferences:    content_notificationPreferences
@@ -1284,6 +1288,44 @@ struct CatalogHostView: View {
                 .padding(16)
         }
     }
+
+    /// `pump-composer-highlight`: the composer's REVIEW state — the state a
+    /// capture lands in, and the only place spec §1 line 4's picker appears.
+    /// Two proposals (the top set and the PR — this release proposes no
+    /// milestone, task S2.5), the PR selected, `Post` still the one accent on
+    /// the card (design rule 4).
+    private var content_pumpComposerHighlight: some View {
+        ScrollView {
+            PumpCheckComposerCard(
+                context: PumpCheckContext(
+                    sessionID: UUID(),
+                    summary: Self.pumpComposerFixtureSummary,
+                    avgBpm: 142, maxBpm: 171,
+                    includeHRDefault: true,
+                    windowStart: Date(),
+                    completedAt: nil, trajectory: nil,
+                    goalID: nil, weekStartString: nil),
+                catalogPhoto: PumpComposerFixtures.photo)
+                .padding(16)
+        }
+    }
+
+    /// TWO candidate exercises, so the picker has TWO rows: a heavy top set
+    /// on one lift and a PR on another. A single PR set would collapse to one
+    /// proposal (S2.5's dedupe) and the frame would not show a choice being
+    /// made, which is the whole of what line 4 is.
+    private static let pumpComposerFixtureSummary = PostSummary(
+        durationSeconds: 2520,
+        totalVolumeLbs: 7240,
+        exercises: [
+            .init(name: "Back Squat", equipment: "barbell", sets: [
+                .init(weightLbs: 315, reps: 5, isPR: false, isFailed: false),
+            ]),
+            .init(name: "Bench Press", equipment: "barbell", sets: [
+                .init(weightLbs: 185, reps: 3, isPR: true, isFailed: false),
+            ]),
+        ],
+        routineName: "Push day")
 
     /// `pump-feed-post`: two feed cards — a friend's photo post (signed-URL
     /// fetch fails in the harness, so the photo block shows its honest

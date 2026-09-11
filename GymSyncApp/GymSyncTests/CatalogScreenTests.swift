@@ -44,6 +44,9 @@ final class CatalogScreenTests: XCTestCase {
             "paywall",
             "pump-composer",
             "pump-feed-post",
+            // Social cards (Stage 2): the composer's review state, where
+            // Coach's picks live.
+            "pump-composer-highlight",
             "appearance",
             "gym-equipment",
             "notification-preferences",

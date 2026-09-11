@@ -62,6 +62,25 @@ struct PumpCheckComposerCard: View {
         _includeHR = State(initialValue: context.includeHRDefault)
     }
 
+    #if DEBUG
+    /// The catalog's photo. Non-nil drops the card straight into its REVIEW
+    /// state — the same state a capture produces — without going anywhere
+    /// near `CameraPicker`/`UIImagePickerController`, which cannot be driven
+    /// headless and hangs a simulator run if it is presented.
+    ///
+    /// An IMAGE BUILT IN PROCESS, not a bundled asset: hermetic (global
+    /// constraint 7), no file to keep in the target, and identical on every
+    /// run.
+    init(context: PumpCheckContext, catalogPhoto: UIImage?) {
+        self.context = context
+        _includeHR = State(initialValue: context.includeHRDefault)
+        _photo = State(initialValue: catalogPhoto)
+        _retakeCount = State(initialValue: catalogPhoto == nil ? 0 : 2)
+        _highlight = State(initialValue: HighlightMath
+            .propose(summary: context.summary).first { $0.kind == .pr })
+    }
+    #endif
+
     /// Computed, not stored: the summary is immutable and
     /// `HighlightMath.propose` is pure, so there is nothing to keep in sync.
     private var proposals: [PostHighlight] {

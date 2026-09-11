@@ -395,6 +395,7 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogPaywall()                { captureCatalog("paywall") }
     func testCatalogPumpComposer()           { captureCatalog("pump-composer") }
     func testCatalogPumpFeedPost()           { captureCatalog("pump-feed-post") }
+    func testCatalogPumpComposerHighlight()  { captureCatalog("pump-composer-highlight") }
 
     // P2 restyle sweep (2026-09-03): the Settings subtree + Create Group.
     // `testYouAppearance` above is the only signed-in walk that reaches the

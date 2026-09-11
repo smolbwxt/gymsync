@@ -260,5 +260,9 @@
   "home-goal-strip-block": {
     "frame": 100,
     "title": "Weekly goal strip - the block kicker"
+  },
+  "pump-composer-highlight": {
+    "frame": 102,
+    "title": "Pump composer - Coach's picks"
   }
 }
