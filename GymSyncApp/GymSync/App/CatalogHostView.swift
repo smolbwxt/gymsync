@@ -1407,8 +1407,11 @@ struct CatalogHostView: View {
         ],
         routineName: "Push day")
 
-    /// The pick `HighlightMath` would have proposed for the summary above —
-    /// the PR set, which suppresses the top set because they are one set.
+    /// The pick the lifter made from what `HighlightMath` proposed for the
+    /// summary above. That summary yields TWO proposals, not one: `bestSet`
+    /// ranks by implied max, so 225 × 5 (262.5) is the top set while the
+    /// heavier 235 × 3 (258.5) is the PR — two different sets, two real
+    /// facts. This fixture is the PR, because that is what a lifter picks.
     private static let pumpFixtureHighlight = PostHighlight(
         kind: .pr, text: "PR — Back Squat", weightLbs: 235, reps: 3)
 

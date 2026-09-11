@@ -37,13 +37,37 @@ final class HighlightMathTests: XCTestCase {
         XCTAssertEqual(HighlightMath.bestSet(in: s)?.set.weightLbs, 185)
     }
 
+    /// THE FIXTURE IS THE PLAN'S, CORRECTED. Its draft was
+    /// `[225 × 5, 235 × 3 (PR)]`, which does NOT collide: `bestSet` ranks by
+    /// StatMath's Epley, and 225 × 5 implies 262.5 while the heavier 235 × 3
+    /// implies 258.5 — so the best set and the PR set are two different sets
+    /// and `propose` correctly returns both (CI run 34653333419 said so).
+    /// The rule under test is "the same SET offered twice", so the fixture now
+    /// makes the PR set the best set as well.
+    ///
+    /// Worth knowing, and recorded here rather than in a comment nobody
+    /// reads: a lifter's PR is the heaviest BAR and the top set is the best
+    /// implied MAX, so they are often different sets and the picker usually
+    /// offers two rows. That is correct — they are two facts — and the dedupe
+    /// exists only for the case where they are literally one.
     func testAPRSuppressesTheTopSetWhenTheyAreTheSameSet() {
+        let s = summary([
+            .init(name: "Back Squat", equipment: "barbell",
+                  sets: [set(225, 5), set(245, 5, pr: true)]),
+        ])
+        let proposals = HighlightMath.propose(summary: s)
+        XCTAssertEqual(proposals.map(\.kind), [.pr], "one fact, once")
+    }
+
+    /// The other half of the same rule, and the plan's own draft fixture: a
+    /// heavier PR that is NOT the best implied max is a SECOND fact, so both
+    /// rows are offered and the lifter chooses which one to say.
+    func testAHeavierPRThatIsNotTheTopSetIsAnExtraFactNotADuplicate() {
         let s = summary([
             .init(name: "Back Squat", equipment: "barbell",
                   sets: [set(225, 5), set(235, 3, pr: true)]),
         ])
-        let proposals = HighlightMath.propose(summary: s)
-        XCTAssertEqual(proposals.map(\.kind), [.pr], "one fact, once")
+        XCTAssertEqual(HighlightMath.propose(summary: s).map(\.kind), [.topSet, .pr])
     }
 
     func testATopSetAndADifferentPRAreBothOffered() {
