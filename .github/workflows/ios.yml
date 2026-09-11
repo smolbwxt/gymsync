@@ -144,8 +144,10 @@ jobs:
 
       # Same as build-test: must run BEFORE xcodegen. TEST_USER_EMAIL/
       # PASSWORD here double as the UITEST_EMAIL/PASSWORD launch-environment
-      # values passed to the `xcodebuild test` step below (same ci_test_user_2
-      # account GymSyncTests already signs in as).
+      # values passed to the `xcodebuild test` step below (same TEST_USER_EMAIL
+      # account GymSyncTests already signs in as — ci_test_user, the username
+      # the QA seed below builds its fixture world for; ci_test_user_2 is only
+      # the counterpart those unit tests query, never a sign-in identity).
       - name: Write Secrets.swift and TestSecrets.swift
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}

@@ -9,11 +9,16 @@ import XCTest
 /// a real Apple ID in CI), then walks each of the five tabs plus the
 /// You -> Appearance destination, attaching a screenshot for each.
 ///
-/// This account (ci_test_user — same one the GymSyncTests unit test target
-/// uses) is shared and its data mutates between runs; these screenshots are
-/// for layout/visual verification only, not content assertions. Deliberately
-/// no pixel-diffing here — that's a follow-up once this pipeline is proven
-/// stable.
+/// The account that signs in is the `TEST_USER_EMAIL`/`CI_TEST_USERNAME` one
+/// (`ci_test_user`): `ios.yml` passes those same repo secrets in as
+/// `UITEST_EMAIL`/`UITEST_PASSWORD`, and `scripts/seed_qa_fixtures.js
+/// --username "$CI_TEST_USERNAME"` builds the fixture world for it.
+/// `ci_test_user_2` is NOT that identity — it is the counterpart profile the
+/// GymSyncTests unit target queries as a friend/block/kudos target and never
+/// signs in as. This account is shared and its data mutates between runs;
+/// these screenshots are for layout/visual verification only, not content
+/// assertions. Deliberately no pixel-diffing here — that's a follow-up once
+/// this pipeline is proven stable.
 ///
 /// One test method per tab (rather than a single walk-through test) so a
 /// failure partway through (e.g. a slow network call on the Social tab)
@@ -445,7 +450,7 @@ final class ScreenshotTests: XCTestCase {
     // spends more minutes on this screen than any other and it had no
     // capture at all: none of the 16 signed-in walks starts a workout,
     // because starting one writes a real session and real set logs to the
-    // shared ci_test_user_2 account. The catalog builds it from fixture
+    // shared CI_TEST_USERNAME account. The catalog builds it from fixture
     // values instead (`content_soloLiveSet`), so the design round gets the
     // screen without the suite acquiring a write.
     func testCatalogSoloLiveSet()            { captureCatalog("solo-live-set") }
@@ -546,8 +551,9 @@ final class ScreenshotTests: XCTestCase {
 
     // MARK: - Seeded deep-screen captures
     //
-    // Reachable via the deterministic `ci_test_user_2` fixture world (Task 3,
-    // `scripts/seed_qa_fixtures.js`): a group named "[QA] Push Crew" with one
+    // Reachable via the deterministic fixture world the QA seed builds for the
+    // `CI_TEST_USERNAME` account (Task 3, `scripts/seed_qa_fixtures.js`, which
+    // takes that username): a group named "[QA] Push Crew" with one
     // session in every state (scheduled/lobby_open/voting/locked/in_progress/
     // completed), a 3-message chat thread, one accepted + one pending friend,
     // and three private routines ("[QA] Push Day/Pull Day/Leg Day").
