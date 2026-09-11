@@ -475,14 +475,19 @@ struct GroupView: View {
                 // Design language §2: no decorative emoji — SF Symbols for
                 // glyphs. Green means done (the same rule the gsSuccess
                 // token serves), neutral for an abandoned session.
+                // .accessibilityHidden: the state is printed in words three
+                // lines below (the capitalized session.state line), so the
+                // glyph would only make VoiceOver say it twice.
                 if session.state == "completed" {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 13, weight: .regular))
                         .foregroundStyle(Color.gsSuccess)
+                        .accessibilityHidden(true)
                 } else if session.state == "abandoned" {
                     Image(systemName: "xmark.circle")
                         .font(.system(size: 13, weight: .regular))
                         .foregroundStyle(theme.neutral500)
+                        .accessibilityHidden(true)
                 }
                 Text("Workout")
                     .font(GSFont.bold(14, relativeTo: .headline))
