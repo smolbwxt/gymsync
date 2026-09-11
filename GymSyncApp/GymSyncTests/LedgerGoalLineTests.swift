@@ -127,11 +127,25 @@ final class LedgerGoalLineTests: XCTestCase {
 
     // MARK: - The read is wired, not a placeholder (review finding 3)
 
-    /// A repository that knows one finished block's goal — the shape Stream
-    /// A's live one will have at I1, standing in for it here.
+    /// A repository that knows one FINISHED block's goal, **in a shape the
+    /// live repository can actually produce** (final review F3).
+    ///
+    /// `activeGoal()` answers nil, because the block has ended and
+    /// `LiveBlockGoalRepository.activeGoal()` resolves through
+    /// `ProgramRepository.active()` — `ended_at IS NULL`. The goal comes back
+    /// through the BATCH read instead, which is what a ledger row needs and
+    /// what the live type overrides.
+    ///
+    /// The fake this replaced answered `activeGoal()` with a goal on a finished
+    /// block — a value no live read can return — so the test below was green
+    /// while the shipped ledger rendered no goal line at all. A fake whose
+    /// shape production cannot produce proves nothing about production.
     private struct LedgerBlockGoalRepository: BlockGoalRepository {
         let goal: BlockGoal
-        func activeGoal() async -> BlockGoal? { goal }
+        func activeGoal() async -> BlockGoal? { nil }
+        func goals(enrollmentIDs: [UUID]) async -> [UUID: BlockGoal] {
+            enrollmentIDs.contains(goal.enrollmentID) ? [goal.enrollmentID: goal] : [:]
+        }
         func ladder(goalID: UUID) async -> Ladder? { nil }
         func page(goalID: UUID) async -> LadderPageModel? { nil }
         @discardableResult func save(_ goal: BlockGoal) async -> Bool { false }
@@ -140,11 +154,10 @@ final class LedgerGoalLineTests: XCTestCase {
         func materialiseRung(goalID: UUID, weekStart: String) async -> WeeklyGoal? { nil }
     }
 
-    /// THE WHOLE CHAIN, on a finished block: the injected repository answers,
-    /// `goals(for:repository:)` keys it by enrollment, and `goalLine` words
-    /// it. This is what makes D5 a wired read rather than a seam that always
-    /// answered `[:]` — hand the ledger a repository that knows the block and
-    /// the row says what the block was for.
+    /// THE WHOLE CHAIN, on a finished block: the injected repository answers
+    /// the BATCH read, `goals(for:repository:)` keys it by enrollment, and
+    /// `goalLine` words it. A row whose block has ended is the only kind the
+    /// ledger has, so this is the only chain worth proving.
     func testTheLedgerReadsItsGoalThroughTheInjectedRepository() async {
         let finished = goal(.met)
         let repository = LedgerBlockGoalRepository(goal: finished)
@@ -177,6 +190,21 @@ final class LedgerGoalLineTests: XCTestCase {
         let goals = await ProgramLedgerView.goals(for: [UUID(), UUID()],
                                                   repository: StubBlockGoalRepository())
         XCTAssertTrue(goals.isEmpty)
+    }
+
+    /// The protocol's DEFAULT batch read is the old narrowing, so a conformer
+    /// that never heard of F3 — every stub and marker in this suite — behaves
+    /// exactly as it did: the active block's goal, and only when it is one of
+    /// the rows asked about.
+    func testTheDefaultBatchReadIsStillTheActiveBlocksGoal() async {
+        let stub = StubBlockGoalRepository()
+        let active = StubBlockGoalRepository.fixtureEnrollmentID
+
+        let hit = await stub.goals(enrollmentIDs: [active, UUID()])
+        XCTAssertEqual(hit[active]?.id, StubBlockGoalRepository.fixtureGoalID)
+
+        let miss = await stub.goals(enrollmentIDs: [UUID()])
+        XCTAssertTrue(miss.isEmpty)
     }
 
     /// The shipping default is `LiveBlockGoalRepository` (integration task

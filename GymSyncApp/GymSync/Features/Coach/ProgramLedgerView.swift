@@ -26,18 +26,16 @@ struct ProgramLedgerView: View {
     let goalRepository: any BlockGoalRepository
 
     /// An override for the batch read, for a caller that has a better one
-    /// than the frozen protocol can express.
+    /// than the repository it was handed.
     ///
     /// **THE REPOSITORY IS THE REAL PATH** (task review finding 3, and the
     /// controller's ruling on it): `load()` reads through `goalRepository`,
     /// so a goal line renders as soon as the injected repository knows about
-    /// the block on screen. This closure exists only as the previewless
-    /// fallback — nil is the shipping value — and it is what integration task
-    /// I1 binds to Stream A's `.in("enrollment_id", …)` batch read, which is
-    /// the read the plan describes and the one the frozen protocol cannot
-    /// express: `BlockGoalRepository` answers `activeGoal()` and nothing
-    /// else, while a ledger row is a block that has already ended. Widening a
-    /// protocol three streams fork against is not this stream's call.
+    /// the block on screen. The read a ledger row needs — the goals for blocks
+    /// that have ENDED — is now `BlockGoalRepository.goals(enrollmentIDs:)`,
+    /// added additively with a default so no conformer had to change (final
+    /// review F3), and this closure stays as the previewless fallback. nil is
+    /// the shipping value.
     let goalsForEnrollments: (@Sendable ([UUID]) async -> [UUID: BlockGoal])?
 
     init(goalRepository: any BlockGoalRepository = LiveBlockGoalRepository(),
@@ -466,27 +464,23 @@ struct ProgramLedgerView: View {
         loading = false
     }
 
-    /// What the frozen `BlockGoalRepository` CAN answer, keyed the way the
-    /// rows need it.
+    /// The goals for the rows on screen — **the batch read** (final review F3).
     ///
-    /// The protocol has one read of a goal — `activeGoal()`, the goal driving
-    /// the athlete's active enrollment — so this returns at most one entry,
-    /// and only when that enrollment is actually one of the rows on screen.
-    /// That is a narrower answer than the plan's `.in("enrollment_id", …)`,
-    /// and it is the honest one this stream can give without widening a
-    /// surface three streams fork against; `goalsForEnrollments` is where I1
-    /// hands in the wider read.
+    /// This used to be `activeGoal()` narrowed to the ids asked about, which
+    /// could not render a single ledger row: `activeGoal()` resolves through
+    /// `ProgramRepository.active()` (`ended_at IS NULL`) and `pastRow` is
+    /// driven by `endedAt != nil`, so the intersection was empty BY
+    /// CONSTRUCTION and D5's goal line rendered for nobody. Its test was green
+    /// because the fake answered `activeGoal()` with a goal on a FINISHED
+    /// block — a value the live repository cannot produce.
     ///
-    /// It is a real read, not a placeholder: hand this a repository that
-    /// knows the block and the line renders.
-    /// `LedgerGoalLineTests.testTheLedgerReadsItsGoalThroughTheInjectedRepository`
-    /// proves the whole chain — repository → map → `goalLine` — on a FINISHED
-    /// block.
+    /// `BlockGoalRepository.goals(enrollmentIDs:)` is now the read, with the
+    /// old narrowing as its default so nothing that conforms broke; the live
+    /// repository overrides it with `.in("enrollment_id", …)`, the read the
+    /// plan describes.
     static func goals(for enrollmentIDs: [UUID],
                       repository: any BlockGoalRepository) async -> [UUID: BlockGoal] {
-        guard let goal = await repository.activeGoal(),
-              enrollmentIDs.contains(goal.enrollmentID) else { return [:] }
-        return [goal.enrollmentID: goal]
+        await repository.goals(enrollmentIDs: enrollmentIDs)
     }
 
     /// The exercise catalog, and only when a goal on screen names a lift.

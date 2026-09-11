@@ -18,6 +18,23 @@ protocol BlockGoalRepository: Sendable {
     /// The goal driving the active enrollment, or nil when there is no block
     /// or the block predates goals.
     func activeGoal() async -> BlockGoal?
+    /// The goals driving a SET of blocks, keyed by enrollment.
+    ///
+    /// **A LEDGER ROW IS A BLOCK THAT HAS ENDED** (final review F3), and
+    /// `activeGoal()` answers only for the one that has not — it resolves
+    /// through `ProgramRepository.active()`, which is `ended_at IS NULL` by
+    /// definition. `ProgramLedgerView.pastRow` is driven by
+    /// `enrollments.filter { $0.endedAt != nil }`, so the intersection of the
+    /// two was empty BY CONSTRUCTION and D5's "the ledger says what each block
+    /// was for" rendered for no row, ever.
+    ///
+    /// A REQUIREMENT WITH A DEFAULT, not an extension-only method, for the
+    /// reason `saveDerivedLadder` states below: an extension-only member
+    /// dispatches statically through `any BlockGoalRepository` and the live
+    /// type's version would never run. The default is the old narrowing —
+    /// whatever `activeGoal()` can answer — so every existing conformer keeps
+    /// compiling and keeps behaving exactly as it did.
+    func goals(enrollmentIDs: [UUID]) async -> [UUID: BlockGoal]
     /// The persisted rungs for a goal.
     func ladder(goalID: UUID) async -> Ladder?
     /// Everything the ladder page renders, already worded (task A12).
@@ -64,6 +81,16 @@ protocol BlockGoalRepository: Sendable {
 }
 
 extension BlockGoalRepository {
+    /// The narrowest honest answer a repository with one goal read can give:
+    /// the active block's goal, and only when that block is one of the rows
+    /// asked about. `LiveBlockGoalRepository` overrides it with the batch read
+    /// the plan describes (`.in("enrollment_id", …)`).
+    func goals(enrollmentIDs: [UUID]) async -> [UUID: BlockGoal] {
+        guard let goal = await activeGoal(),
+              enrollmentIDs.contains(goal.enrollmentID) else { return [:] }
+        return [goal.enrollmentID: goal]
+    }
+
     /// NO LADDER, and that is a legible state rather than a crash: the stub
     /// stores nothing, and a block whose ladder could not be derived is exactly
     /// the state task A13's detection fills on the next Home load — the same

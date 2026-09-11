@@ -173,6 +173,35 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
         await first(column: "enrollment_id", value: enrollmentID)
     }
 
+    /// The goals driving a set of blocks — **the ledger's read** (final review
+    /// F3), and the one the plan describes: `.in("enrollment_id", …)`.
+    ///
+    /// ONE ROUND TRIP for every row on screen, and it answers for blocks that
+    /// have ENDED, which `activeGoal()` cannot by definition. `UNIQUE
+    /// (enrollment_id)` means one goal per key, so the dictionary cannot lose a
+    /// row to a collision.
+    ///
+    /// An empty `enrollmentIDs` short-circuits rather than sending
+    /// `in.()`, which PostgREST reads as a one-element list containing the
+    /// empty string and answers with a 400 on a uuid column.
+    func goals(enrollmentIDs: [UUID]) async -> [UUID: BlockGoal] {
+        guard !enrollmentIDs.isEmpty else { return [:] }
+        let calendar = Calendar.current
+        do {
+            let rows: [BlockGoalRow] = try await client
+                .from("block_goals")
+                .select()
+                .in("enrollment_id", values: enrollmentIDs.map(\.uuidString))
+                .execute().value
+            return Dictionary(rows.compactMap { $0.model(calendar: calendar) }
+                                  .map { ($0.enrollmentID, $0) },
+                              uniquingKeysWith: { first, _ in first })
+        } catch {
+            AppLogger.db.error("block_goals batch read failed: \(error.localizedDescription, privacy: .public)")
+            return [:]
+        }
+    }
+
     /// **INTERNAL ONLY BECAUSE `BlockGoalLiveRepositoryTests` NEEDS IT** to read
     /// back what it just wrote — the posture `LiveWeeklyGoalRepository.deleteRow`
     /// states at :149-157. Production reads a goal through `activeGoal()`.
