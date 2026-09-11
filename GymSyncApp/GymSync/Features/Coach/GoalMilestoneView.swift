@@ -602,6 +602,18 @@ struct GoalMilestoneView: View {
     var unitOverride: WeightUnit? = nil
     var onBuild: (BlockGoalDraft) -> Void
 
+    /// Does the athlete have a routine to benchmark?
+    ///
+    /// THE SAME ANSWER THE GOAL SCREEN'S TILE GOT. `routines.isEmpty` is not
+    /// it: empty means "none" only once somebody has ASKED, and a signed-out
+    /// athlete is never asked. Reading the list raw here gave the tile no
+    /// warning — it is gated on the host's "we asked" flag — and then a card
+    /// asserting "You have no routines yet.", which is two screens disagreeing
+    /// about one fact. One flag, threaded one level further down.
+    ///
+    /// Defaults `true`, so a host that has not asked never accuses anyone.
+    var hasRoutines: Bool = true
+
     /// The block length the weeks stepper opens on.
     ///
     /// ADDITIVE to the plan's signature, and it exists for the two cards whose
@@ -640,6 +652,7 @@ struct GoalMilestoneView: View {
          routines: [Routine] = [],
          today: Date = .now,
          unitOverride: WeightUnit? = nil,
+         hasRoutines: Bool = true,
          blockWeeks: Int = GoalBlockLength.defaultWeeks,
          onBuild: @escaping (BlockGoalDraft) -> Void) {
         self.preset = preset
@@ -648,6 +661,7 @@ struct GoalMilestoneView: View {
         self.routines = routines
         self.today = today
         self.unitOverride = unitOverride
+        self.hasRoutines = hasRoutines
         self.blockWeeks = blockWeeks
         self.onBuild = onBuild
 
@@ -705,7 +719,7 @@ struct GoalMilestoneView: View {
 
     private var incompleteReason: String? {
         GoalMilestoneCopy.incompleteReason(preset: activePreset, draft: draft,
-                                           hasRoutines: !routines.isEmpty)
+                                           hasRoutines: hasRoutines)
     }
 
     // MARK: Body
@@ -968,7 +982,7 @@ struct GoalMilestoneView: View {
     private var benchmarkLevers: some View {
         let seconds = draft.target.targetSeconds ?? 60
         return VStack(alignment: .leading, spacing: 10) {
-            if routines.isEmpty {
+            if !hasRoutines {
                 // ONE PLAIN LINE where the picker would be, and the primary
                 // below says the same thing as its reason. A picker with
                 // nothing in it explains nothing.

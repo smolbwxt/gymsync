@@ -55,9 +55,15 @@ struct GoalFirstBuildFlow: View {
     /// False until `load()` has actually asked. See its own comment.
     @State private var routinesLoaded = false
 
+    /// ONE ANSWER TO "HAS THIS ATHLETE GOT A ROUTINE", for the tile and for
+    /// the card behind it. `routines.isEmpty` means "none" only once `load()`
+    /// has asked; a signed-out athlete is never asked, and two screens reading
+    /// the list raw would disagree about it.
+    private var hasRoutines: Bool { !routinesLoaded || !routines.isEmpty }
+
     var body: some View {
         GoalScreenView(onChosen: { chosen = $0.preset },
-                       hasRoutines: !routinesLoaded || !routines.isEmpty)
+                       hasRoutines: hasRoutines)
             .background(theme.bg)
             .navigationDestination(item: $chosen) { preset in
                 milestone(preset)
@@ -70,6 +76,7 @@ struct GoalFirstBuildFlow: View {
                           current: current,
                           lifts: lifts,
                           routines: routines,
+                          hasRoutines: hasRoutines,
                           onBuild: { draft in
                               goal = draft
                               building = true
