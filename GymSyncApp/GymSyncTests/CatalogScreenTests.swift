@@ -81,6 +81,13 @@ final class CatalogScreenTests: XCTestCase {
             "home-goal-editor",
             "home-goal-editor-lift",
             "calendar-scheduling",
+            // Goal-first programming (Stream D): the ladder page in its three
+            // standings, and the weekly strip once its rung belongs to a
+            // block.
+            "ladder-on-track",
+            "ladder-behind",
+            "ladder-met",
+            "home-goal-strip-block",
         ]
         for id in ids {
             XCTAssertNotNil(CatalogScreen(rawValue: id), "missing catalog case: \(id)")

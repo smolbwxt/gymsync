@@ -483,6 +483,63 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogHomeGoalEditor()          { captureCatalog("home-goal-editor") }
     func testCatalogHomeGoalEditorLift()      { captureCatalog("home-goal-editor-lift") }
 
+    // Goal-first programming (Stream D, task D7). The ladder page in the
+    // three standings a block can be in — on track, falling short, met — and
+    // the weekly strip once the rung it renders belongs to one.
+    //
+    // `home-goal-strip-block` deliberately repeats
+    // `home-goal-strip-muscle-sets`' four chips: the two frames differ ONLY
+    // in the kicker, which is the whole of what spec §6 changes about the
+    // strip, and putting them side by side in the artifact is how a reviewer
+    // sees that nothing else moved.
+    func testCatalogLadderBehind()            { captureCatalog("ladder-behind") }
+    func testCatalogLadderMet()               { captureCatalog("ladder-met") }
+    func testCatalogHomeGoalStripBlock()      { captureCatalog("home-goal-strip-block") }
+
+    /// `ladder-on-track`, in TWO captures from ONE id — the
+    /// `calendar-scheduling` precedent directly above, and for the identical
+    /// reason (task review of Stream D, finding 1).
+    ///
+    /// The ladder page is far taller than a phone. The headline, the date,
+    /// Coach's line and eight rungs fill the first screen, so **four of spec
+    /// §6's seven elements are below the fold in a single capture**: EDIT THE
+    /// DATE, EDIT THIS WEEK'S RUNG, LET COACH RE-LADDER and — the one the
+    /// controller's ruling for this stream is actually about — the page's ONE
+    /// ACCENT PRIMARY, plus the SEE THE BLOCK door under it. Without this
+    /// second frame "one primary per screen" is verifiable only by reading
+    /// the source, and D7's stated job is to PROVE the stream.
+    ///
+    /// ONLY the on-track id gets it. The three standings share one page
+    /// body — the levers and the primary are identical in all three — so a
+    /// second capture of `behind` and `met` would add two frames that say
+    /// what this one already says, and the artifact is a design medium, not
+    /// an inventory.
+    ///
+    /// `-2` is a second ATTACHMENT, not a second id: `CatalogScreen`, the
+    /// documented id list and `FLOOR` are all untouched, and `parity_diff.js`
+    /// reports it as an unmapped capture (a warning, not a failure). The
+    /// frame-map entry for 97 says so in its own `note`.
+    func testCatalogLadderOnTrack() {
+        let app = XCUIApplication()
+        var env = app.launchEnvironment
+        env["UITEST_CATALOG"] = "ladder-on-track"
+        app.launchEnvironment = env
+        app.launch()
+        // Same budget and same reasoning as `captureCatalog` — a catalog
+        // launch bypasses `RootView`, so there is no synchronization point
+        // and this sleep is the screen's whole render budget.
+        Thread.sleep(forTimeInterval: catalogRenderBudget)
+        attachScreenshot(app, named: "app-ladder-on-track.png")
+
+        // To the bottom. The page is a plain `ScrollView` with no competing
+        // gesture, so an ordinary swipe scrolls wherever it lands; two are
+        // enough to clear eight rungs and reach the foot.
+        app.swipeUp()
+        app.swipeUp()
+        Thread.sleep(forTimeInterval: catalogRenderBudget)
+        attachScreenshot(app, named: "app-ladder-on-track-2.png")
+    }
+
     // The page the calendar card is a door onto (Stream D). Rendered from a
     // fixture world — no clock, no repository — so the frame is comparable
     // against the v7 proof and against itself on any run day.
