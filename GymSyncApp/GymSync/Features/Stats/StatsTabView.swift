@@ -410,14 +410,12 @@ struct StatsTabView: View {
                 // Gold has exactly two jobs (design language §2): the
                 // week-streak number, and "the window is open, act now".
                 // A current streak is the first of those, so this tile is
-                // one of the few places gold belongs — 0xF6C945, the same
-                // check-in/streak gold HomeOneButton.top and
-                // LobbyView.checkInGold already carry. The longest-streak
-                // tile below stays default text: one gold number per card.
+                // one of the few places gold belongs. The longest-streak tile
+                // below stays default text: one gold number per card.
                 GSStatTile(
                     value: currentStreakValue,
                     label: "Current streak",
-                    valueColor: Color.gsHex(0xF6C945)
+                    valueColor: Color.gsStreakGold
                 )
                 GSStatTile(
                     value: "\(userStreak?.longestStreak ?? 0)",
@@ -431,9 +429,10 @@ struct StatsTabView: View {
     }
 
     /// Plain "N" — the redesign's emoji sweep (spec §7) replaced the "🔥 N"
-    /// tile value, and the owner's default-text law (2026-08-12) later
-    /// retired the live-streak accent tint too. The backend's push copy
-    /// keeps its own 🔥 — that's message text, not UI chrome.
+    /// tile value. The number itself reads gold (design language §2: the
+    /// week-streak number is one of gold's only two jobs); the colour is
+    /// applied at the tile's call site above. The backend's push copy keeps
+    /// its own 🔥 — that's message text, not UI chrome.
     private var currentStreakValue: String {
         "\(userStreak?.currentStreak ?? 0)"
     }
