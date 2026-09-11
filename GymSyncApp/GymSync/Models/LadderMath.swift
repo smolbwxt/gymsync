@@ -533,9 +533,17 @@ extension LadderMath {
                   let finish = milestone.distance, finish > start else { return nil }
             let reach = start * pow(1 + PercentRampLadderRule.enduranceStep,
                                     Double(weeks))
-            guard reach < finish else { return nil }
+            // ROUND BEFORE COMPARING (r2 open item 3). `reach < finish` on the
+            // unrounded value let a reach inside half a display step of the
+            // milestone round UP to it after the guard passed, so the
+            // proposal quoted the milestone straight back — "This ladder
+            // reaches 15 — move the date?" at a 15 mi milestone, the exact
+            // sentence this function exists to prevent.
+            let roundedReach = (reach * 10).rounded() / 10
+            let roundedFinish = (finish * 10).rounded() / 10
+            guard roundedReach < roundedFinish else { return nil }
             var ceiling = milestone
-            ceiling.distance = (reach * 10).rounded() / 10
+            ceiling.distance = roundedReach
             return ceiling
 
         case .trainingDaysPerWeek:
@@ -561,9 +569,14 @@ extension LadderMath {
                   let best = bestRecentWeekVolumeLbs, best > 0 else { return nil }
             let done = Swift.min(Swift.max(0, current.volumeLbs ?? 0), total)
             let reach = done + best * 1.1 * Double(weeks)
-            guard reach < total else { return nil }
+            // ROUND BEFORE COMPARING (r2 open item 3), same reasoning as
+            // Endurance above: a reach inside 50 lb of the milestone must not
+            // round up past it after the guard already let it through.
+            let roundedReach = (reach / 100).rounded() * 100
+            let roundedTotal = (total / 100).rounded() * 100
+            guard roundedReach < roundedTotal else { return nil }
             var ceiling = milestone
-            ceiling.volumeLbs = (reach / 100).rounded() * 100
+            ceiling.volumeLbs = roundedReach
             return ceiling
 
         case .liftOneRepMax, .liftRepsAtLoad, .weeklyMuscleSets, .bodyWeight,
