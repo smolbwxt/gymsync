@@ -1476,6 +1476,24 @@ struct GoalMilestoneView: View {
 
     /// One line, first person (design rule 7), on a `surface` strip at 14 pt —
     /// a line that belongs to the card above it (rule 1).
+    ///
+    /// **NO `reach:` IS PASSED, AND THAT IS A RECORDED DEFERRAL** (final review
+    /// F4). `coachLine`'s replacement branch — spec §3.2's "225 by Oct 18 needs
+    /// more than this block can safely give" — is unreachable because this
+    /// argument is omitted, and passing it today would not reach it either:
+    /// every reach model this codebase has starts from the MEASURED current
+    /// state, and `GoalFirstBuildFlow.current` is never filled (see its own doc
+    /// comment). With an empty `current` every ramp answers
+    /// `Array(repeating: milestone, count: weeks)` and every `rampCeiling`
+    /// guard returns nil, so `reach` would say "reaches" for all eleven presets
+    /// — a second piece of logic with no reachable call site, which is the
+    /// defect this round exists to stop shipping.
+    ///
+    /// The gap is told honestly one screen later: the ladder page's standing
+    /// runs the same `LadderMath.rampCeiling` against a real reading. Closing
+    /// it AT THE DOOR means giving the door a measured current state, which is
+    /// one reader per metric and must reuse the ladder's — two readers for one
+    /// metric is the drift the agreement law forbids.
     private var coachLine: some View {
         Text(GoalMilestoneCopy.coachLine(preset: activePreset, current: current,
                                          draft: draft, weeks: weeks, unit: unit,
