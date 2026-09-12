@@ -62,7 +62,7 @@ struct ConsultCloseView: View {
                 TextField("Tell your coach…", text: $draft, axis: .vertical)
                     .font(GSFont.body(14, relativeTo: .body))
                     .padding(10)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(theme.surface))
+                    .background(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).fill(theme.surface))
                 Button { send() } label: {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.system(size: 28))
@@ -82,7 +82,7 @@ struct ConsultCloseView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
             }
-            .buttonStyle(GS3DButtonStyle(face: theme.accent, cornerRadius: 16))
+            .buttonStyle(GS3DButtonStyle(face: theme.accent, cornerRadius: GSMetrics.radiusSm))
             .padding(.horizontal, 12)
             .padding(.bottom, 8)
         }
@@ -133,7 +133,7 @@ struct ConsultCloseView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
                 }
-                .buttonStyle(GS3DButtonStyle(face: theme.accent, cornerRadius: 13))
+                .buttonStyle(GS3DButtonStyle(face: theme.accent, cornerRadius: GSMetrics.radiusSm))
                 Button { reject(proposal) } label: {
                     Text("NOT QUITE")
                         .font(GSFont.bold(13, relativeTo: .headline))
@@ -144,12 +144,12 @@ struct ConsultCloseView: View {
                 }
                 .buttonStyle(GS3DButtonStyle(face: theme.raised3DFace,
                                              lip: theme.raised3DLip,
-                                             cornerRadius: 13))
+                                             cornerRadius: GSMetrics.radiusSm))
             }
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .gs3DCard(cornerRadius: 12)
+        .gs3DCard(cornerRadius: GSMetrics.radiusSm)
     }
 
     private func accept(_ proposal: StandingRuleProposal) {
@@ -193,7 +193,7 @@ struct ConsultCloseView: View {
             .font(GSFont.body(14, relativeTo: .body))
             .foregroundStyle(turn.isCoach ? theme.text : theme.bg)
             .padding(.horizontal, 13).padding(.vertical, 9)
-            .background(RoundedRectangle(cornerRadius: 14)
+            .background(RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
                 .fill(turn.isCoach ? theme.surface : theme.accent))
             .frame(maxWidth: .infinity,
                    alignment: turn.isCoach ? .leading : .trailing)

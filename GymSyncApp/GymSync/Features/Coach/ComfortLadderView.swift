@@ -69,7 +69,7 @@ struct ComfortLadderView: View {
             }
             .buttonStyle(GS3DButtonStyle(face: theme.raised3DFace,
                                          lip: theme.raised3DLip,
-                                         cornerRadius: 14))
+                                         cornerRadius: GSMetrics.radiusSm))
             .padding(.top, 2)
             Spacer(minLength: 0)
         }
@@ -116,7 +116,7 @@ struct ComfortLadderView: View {
             .padding(.vertical, 13)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .buttonStyle(.gs3DCardStyle(cornerRadius: 15))
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
         .transition(.opacity.combined(with: .move(edge: .trailing)))
     }
 

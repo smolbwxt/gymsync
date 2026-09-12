@@ -88,7 +88,7 @@ struct FocusLiftPickerView: View {
                 .padding(.vertical, 14)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(.gs3DCardStyle(cornerRadius: 15))
+            .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
         }
         .sheet(isPresented: $browsing) {
             CatalogLiftSheet(catalog: catalog, selection: $selection)
@@ -120,7 +120,7 @@ struct FocusLiftPickerView: View {
             .padding(.vertical, 13)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .buttonStyle(.gs3DCardStyle(cornerRadius: 15,
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm,
                                     face: picked ? theme.accent : nil))
     }
 }
@@ -173,7 +173,7 @@ struct CatalogLiftSheet: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .gs3DCard(cornerRadius: 14)
+            .gs3DCard(cornerRadius: GSMetrics.radiusSm)
 
             ScrollView {
                 LazyVStack(spacing: 6) {
@@ -198,7 +198,7 @@ struct CatalogLiftSheet: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 15)
             }
-            .buttonStyle(GS3DButtonStyle(face: theme.accent, cornerRadius: 14))
+            .buttonStyle(GS3DButtonStyle(face: theme.accent, cornerRadius: GSMetrics.radiusSm))
         }
         .padding(16)
         .background(theme.bg)

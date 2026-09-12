@@ -54,7 +54,7 @@ struct AnchorEntryView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 13)
                 }
-                .buttonStyle(.gs3DCardStyle(cornerRadius: 15))
+                .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
             }
             Spacer(minLength: 0)
         }
@@ -104,7 +104,7 @@ struct AnchorEntryView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .gs3DCard(cornerRadius: 15)
+        .gs3DCard(cornerRadius: GSMetrics.radiusSm)
     }
 
     private func stepButton(_ symbol: String, action: @escaping () -> Void) -> some View {
@@ -116,7 +116,7 @@ struct AnchorEntryView: View {
         }
         .buttonStyle(GS3DButtonStyle(face: theme.raised3DFace,
                                      lip: theme.raised3DLip,
-                                     cornerRadius: 10, lipHeight: 3))
+                                     cornerRadius: GSMetrics.radiusSm, lipHeight: 4))
     }
 
     // MARK: Wire
