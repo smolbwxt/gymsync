@@ -18,7 +18,8 @@ final class PumpCheckTests: XCTestCase {
                 .init(name: "Plank", equipment: "bodyweight", sets: [
                     .init(weightLbs: nil, reps: 1, isPR: false, isFailed: false),
                 ]),
-            ])
+            ],
+            routineName: nil)
     }
 
     func testSummaryEncodesTheContractKeys() throws {

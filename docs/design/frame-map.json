@@ -262,10 +262,18 @@
     "frame": 100,
     "title": "Weekly goal strip - the block kicker"
   },
+  "crews-tab": {
+    "frame": 101,
+    "title": "Crews tab - two crews, one with the honor line"
+  },
+  "pump-composer-highlight": {
+    "frame": 102,
+    "title": "Pump composer - Coach's picks"
+  },
   "block-calendar": {
     "frame": 103,
     "title": "The block, in time - flag and trophy",
-    "note": "congruence B2 T2.3 (owner round 12): a checkered flag on the block's first day, a trophy on its last. Frames 101 and 102 are reserved by the social-cards work on other branches. No proof frame is rendered into docs/design/mockups/ yet, so parity_diff.js logs 'skip block-calendar: no proof frame'."
+    "note": "congruence B2 T2.3 (owner round 12): a checkered flag on the block's first day, a trophy on its last. Frames 101 and 102 are crews-tab and pump-composer-highlight. No proof frame is rendered into docs/design/mockups/ yet, so parity_diff.js logs 'skip block-calendar: no proof frame'."
   },
   "crew-room": {
     "frame": 104,

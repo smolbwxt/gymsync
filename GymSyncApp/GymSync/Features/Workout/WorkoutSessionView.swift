@@ -4221,6 +4221,11 @@ struct WorkoutSessionView: View {
             // Pump Check window anchor: the 1:00 countdown starts the
             // moment the recap becomes visible.
             recapAppearedAt = Date()
+            // Spec §1 lines 2-3: the trajectory is resolved ONCE, here, as
+            // the author — `pumpCheckContext` is a computed property and may
+            // not await. Best-effort: a blip costs the post its trajectory,
+            // never the post itself.
+            resolvedTrajectory = await PostTrajectoryResolver.resolve()
             self.completed = true
             // Watch returns to idle — and stops accepting HR samples for
             // a session that no longer exists.
@@ -4288,8 +4293,17 @@ struct WorkoutSessionView: View {
             avgBpm: recapHRStats?.avg,
             maxBpm: recapHRStats?.max,
             includeHRDefault: ThemeStore.shared.shareHeartRate && recapHRStats != nil,
-            windowStart: windowStart)
+            windowStart: windowStart,
+            completedAt: session.completedAt,
+            trajectory: resolvedTrajectory?.trajectory,
+            goalID: resolvedTrajectory?.goalID,
+            weekStartString: resolvedTrajectory?.weekStartString)
     }
+
+    /// Resolved once, when the recap appears — `pumpCheckContext` is a
+    /// computed property and may not await.
+    @State private var resolvedTrajectory:
+        (trajectory: PostTrajectory, goalID: UUID, weekStartString: String)?
 
     /// The immutable snapshot frozen into the post: non-penalty sets
     /// grouped by exercise in first-logged order, canonical-lbs weights
@@ -4324,6 +4338,7 @@ struct WorkoutSessionView: View {
         return PostSummary(
             durationSeconds: Int(recapDurationInterval),
             totalVolumeLbs: Decimal(HealthKitBridge.totalVolume(from: loggedSets)),
-            exercises: exercises)
+            exercises: exercises,
+            routineName: routine?.name)
     }
 }

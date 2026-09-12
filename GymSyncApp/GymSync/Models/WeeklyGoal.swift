@@ -25,7 +25,7 @@ import Foundation
 /// here breaks the build until every one of them is closed, which is the
 /// point.
 ///
-/// **THIRTEEN SUCH SWITCHES, ACROSS TWELVE SITES**, grep-verified rather
+/// **FOURTEEN SUCH SWITCHES, ACROSS THIRTEEN SITES**, grep-verified rather
 /// than remembered (this count was wrong twice — the plan said nine sites,
 /// the first implementation said ten switches, and both undercounts sent a
 /// reader looking one site short of the end, which is exactly how
@@ -40,9 +40,12 @@ import Foundation
 ///   * `LiveWeeklyGoalRepository.progress(for:)`.
 ///   * `WeeklyGoalProposalRule` — **one site, two switches**:
 ///     `isMeaningful(user:coach:)` and `sentence(for:unit:)`.
+///   * `PostTrajectoryMath.chips(kind:progress:)` — the pump-check card's
+///     rung (social-cards plan task S2.4): a tenth kind must be a compile
+///     error here rather than a post that silently stops showing line 3.
 ///
-/// Twelve of the thirteen are the compiler's own proof. `meterFraction` was
-/// the thirteenth and used to be an `if case` chain, which would have
+/// Thirteen of the fourteen are the compiler's own proof. `meterFraction` was
+/// the fourteenth and used to be an `if case` chain, which would have
 /// absorbed a new kind silently and drawn a wrong meter for it; it is a
 /// closed switch now, so nothing on this list can be added to without being
 /// told.
