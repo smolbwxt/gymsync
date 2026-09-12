@@ -109,10 +109,27 @@ struct PostTrajectory: Codable, Sendable, Equatable {
 /// Spec §2 keeps the column and changes what fills it: elapsed time from the
 /// session's COMPLETION to the post. Old rows keep their boolean and the card
 /// falls back to it.
+///
+/// THE BOOLEAN ITSELF IS NO LONGER COMPUTED HERE. `isLate(completedAt:
+/// postedAt:fallback:)` lived on this type until review fix 6 moved the
+/// derivation into a BEFORE INSERT trigger
+/// (`20260912000002_workout_posts_is_late_trigger.sql`), so that the flag and
+/// the `created_at` the card measures its tag against come from ONE clock.
+/// With no production caller left it was deleted rather than kept alive by
+/// its own tests — the same rule that removed `WorkoutPostRepository.unreact`
+/// in task S2.8. What stays here is what the CARD needs: the elapsed time and
+/// the two tags it prints.
 enum PostLateness {
 
     /// The pump-check window, unchanged since 2026-07
-    /// (`PumpCheckComposer.swift:49`).
+    /// (`PumpCheckComposer.swift:49`). Read by the composer's countdown and
+    /// by `tag` below.
+    ///
+    /// SPELLED TWICE, in two languages: `interval '60 seconds'` in
+    /// `20260912000002_workout_posts_is_late_trigger.sql` is the same window
+    /// on the server side of the wire, where `is_late` is now derived. There
+    /// is no way to share one literal across that boundary; if the window
+    /// moves, both move together.
     static let windowSeconds: TimeInterval = 60
 
     /// Seconds from the session's completion to the post, or **nil when there
@@ -120,20 +137,6 @@ enum PostLateness {
     static func elapsed(completedAt: Date?, postedAt: Date) -> TimeInterval? {
         guard let completedAt else { return nil }
         return max(0, postedAt.timeIntervalSince(completedAt))
-    }
-
-    /// `workout_posts.is_late` for a NEW row (spec §6: "derived for new
-    /// ones").
-    ///
-    /// `fallback` is the composer's capture-time flag and is used only when
-    /// the session carries no `completed_at` — a shape this app no longer
-    /// writes but old sessions have. Guessing `false` there would quietly
-    /// un-late a genuinely late post.
-    static func isLate(completedAt: Date?, postedAt: Date, fallback: Bool) -> Bool {
-        guard let elapsed = elapsed(completedAt: completedAt, postedAt: postedAt) else {
-            return fallback
-        }
-        return elapsed > windowSeconds
     }
 
     /// The author row's tag — `posted 47 min after` — or **nil when the post

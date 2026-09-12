@@ -149,12 +149,15 @@ enum WorkoutPostRepository {
     /// HR values are hard-gated on `includesHR` here as well as by the
     /// table CHECK — the client must never ship bpm the user didn't share.
     ///
-    /// `isLate` IS NO LONGER A PARAMETER. Spec §2 makes it a derivation from
-    /// `postedAt − completedAt` (`PostLateness.isLate`), so the one place
-    /// that writes the row is the one place that decides it — a caller can no
-    /// longer hand in a lateness that disagrees with the timestamps beside it.
-    /// `capturedLate` survives as the FALLBACK for a session with no
-    /// `completed_at`, which is a shape this app no longer writes.
+    /// `isLate` IS NOT A PARAMETER AND IS NOT COMPUTED HERE. Spec §2 makes it
+    /// elapsed time from the session's completion to the post, and since
+    /// migration 20260912000002 the SERVER derives it at INSERT — against the
+    /// same `now()` that stamps `created_at`, which is the clock the card's
+    /// "posted 47 min after" tag is measured on. The client deriving it from
+    /// the DEVICE clock put two clocks behind one fact (review fix 6).
+    /// `capturedLate` is still sent, and still matters: the trigger leaves it
+    /// alone when the session carries no `completed_at`, which is the only
+    /// honest answer for a caller with nothing to measure from.
     static func create(sessionID: UUID,
                        summary: PostSummary,
                        photoJPEG: Data?,
@@ -167,8 +170,7 @@ enum WorkoutPostRepository {
                        highlight: PostHighlight?,
                        trajectory: PostTrajectory?,
                        goalID: UUID?,
-                       weekStartString: String?,
-                       postedAt: Date = .now) async throws -> WorkoutPost {
+                       weekStartString: String?) async throws -> WorkoutPost {
         guard let userID = await SupabaseService.shared.currentUserID() else {
             throw GymSyncError.unauthorized
         }
@@ -195,9 +197,9 @@ enum WorkoutPostRepository {
                     includesHR: includesHR,
                     avgBpm: includesHR ? avgBpm : nil,
                     maxBpm: includesHR ? maxBpm : nil,
-                    isLate: PostLateness.isLate(completedAt: completedAt,
-                                                postedAt: postedAt,
-                                                fallback: capturedLate),
+                    // The trigger overwrites this whenever `completedAt` is
+                    // present; it survives only for a session that has none.
+                    isLate: capturedLate,
                     completedAt: completedAt,
                     retakeCount: retakeCount,
                     highlight: highlight,

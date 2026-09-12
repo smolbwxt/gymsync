@@ -41,9 +41,8 @@ final class WorkoutPostLiveRepositoryTests: XCTestCase {
             sessionID: session.id, summary: summary, photoJPEG: nil,
             includesHR: false, avgBpm: nil, maxBpm: nil,
             completedAt: farFuture.addingTimeInterval(-47 * 60),
-            capturedLate: false, retakeCount: 2, highlight: highlight,
-            trajectory: trajectory, goalID: nil, weekStartString: "2099-01-04",
-            postedAt: farFuture)
+            capturedLate: true, retakeCount: 2, highlight: highlight,
+            trajectory: trajectory, goalID: nil, weekStartString: "2099-01-04")
         createdID = post.id
 
         XCTAssertEqual(post.retakeCount, 2)
@@ -51,17 +50,31 @@ final class WorkoutPostLiveRepositoryTests: XCTestCase {
         XCTAssertEqual(post.highlight, highlight)
         XCTAssertEqual(post.weekStartString, "2099-01-04")
         XCTAssertEqual(post.summary.routineName, "Push day")
-        XCTAssertTrue(post.isLate, "47 minutes after the session is late, derived")
+        // THE SERVER OWNS `is_late` NOW (review fix 6). This call passes
+        // `capturedLate: true` and a completion in 2099 — a session that, from
+        // the server's 2026 `now()`, has not happened yet — so the BEFORE
+        // INSERT trigger must overrule the client and store false. That is a
+        // stronger statement than the old `XCTAssertTrue` was: it proves the
+        // client no longer decides, rather than proving the two agreed.
+        //
+        // The window's two directions are asserted against real elapsed time
+        // in pgTAP (9h, 9i), where the clock that decides them lives; a
+        // live-DB test whose dates must be 2099 (global constraint 6) cannot
+        // manufacture a real 47-minute-old completion without leaving a
+        // present-day row in the shared CI account's feed.
+        XCTAssertFalse(post.isLate,
+                       "a completion the server has not reached yet is not late, "
+                       + "whatever the posting device claimed")
 
         // DEVIATION from the plan's draft, which measured the round-tripped
         // completion against `post.createdAt`. That assertion cannot hold:
         // `created_at` is server-defaulted to now() (2026) while every date
         // this test CONTROLS is 2099 (global constraint 6), so
         // `postedAt - completedAt` is negative, `elapsed` clamps to 0, and
-        // `tag` correctly returns nil. Measured against the `postedAt` the
-        // test actually passed, the assertion says the stronger true thing:
-        // the column round-trips the instant precisely enough to re-derive
-        // the spec's own 47-minute tag.
+        // `tag` correctly returns nil. Measured against `farFuture` — the
+        // instant the completion was written 47 minutes before — it says the
+        // stronger true thing: the column round-trips that instant precisely
+        // enough to re-derive the spec's own 47-minute tag.
         let completedAt = post.completedAt
         let unwrapped = try XCTUnwrap(completedAt)   // bind, THEN unwrap
         XCTAssertEqual(PostLateness.tag(completedAt: unwrapped, postedAt: farFuture),

@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(23);
+SELECT plan(26);
 
 -- Pump Check P1 (20260731000001): workout_posts + post_reactions RLS.
 -- Visibility matrix: author / accepted friend / stranger / blocked pair.
@@ -179,6 +179,49 @@ SELECT results_eq(
   $$VALUES ('onTrack'::text)$$,
   'an accepted friend reads the author''s standing');
 SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-f000-000000000701';
+
+-- 9h. `is_late` IS THE SERVER'S ANSWER, NOT THE CLIENT'S (20260912000002).
+-- The insert below SAYS false and the completion is 47 minutes old, so the
+-- BEFORE INSERT trigger must overrule it. Before the trigger this row would
+-- have kept whatever the posting device believed.
+INSERT INTO workout_posts (id, author_id, session_id, summary, is_late, completed_at)
+  VALUES ('00000000-0000-4000-f000-000000000723',
+          '00000000-0000-4000-f000-000000000701',
+          '00000000-0000-4000-f000-000000000710', '{}',
+          false, now() - interval '47 minutes');
+SELECT results_eq(
+  $$SELECT is_late FROM workout_posts
+     WHERE id = '00000000-0000-4000-f000-000000000723'$$,
+  $$VALUES (true)$$,
+  'the server derives is_late = true 47 minutes after the session');
+
+-- 9i. The other direction: a prompt post whose client claimed lateness.
+INSERT INTO workout_posts (id, author_id, session_id, summary, is_late, completed_at)
+  VALUES ('00000000-0000-4000-f000-000000000724',
+          '00000000-0000-4000-f000-000000000701',
+          '00000000-0000-4000-f000-000000000710', '{}',
+          true, now() - interval '10 seconds');
+SELECT results_eq(
+  $$SELECT is_late FROM workout_posts
+     WHERE id = '00000000-0000-4000-f000-000000000724'$$,
+  $$VALUES (false)$$,
+  'the server derives is_late = false inside the 60 s window');
+
+-- 9j. NO COMPLETION, NO DERIVATION. The trigger's null branch is the contract
+-- for old callers, not an oversight: with nothing to measure from, the
+-- client's capture-time flag is the only honest signal, and guessing false
+-- would quietly un-late a genuinely late post. Asserted because an untested
+-- branch in a trigger that decides what every new row says about itself is
+-- exactly what this suite is for.
+INSERT INTO workout_posts (id, author_id, session_id, summary, is_late)
+  VALUES ('00000000-0000-4000-f000-000000000725',
+          '00000000-0000-4000-f000-000000000701',
+          '00000000-0000-4000-f000-000000000710', '{}', true);
+SELECT results_eq(
+  $$SELECT is_late FROM workout_posts
+     WHERE id = '00000000-0000-4000-f000-000000000725'$$,
+  $$VALUES (true)$$,
+  'with no completed_at the client''s own flag survives');
 
 -- 10. Stranger sees nothing…
 SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-f000-000000000703';
