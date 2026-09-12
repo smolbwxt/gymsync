@@ -143,6 +143,15 @@ enum CatalogScreen: String, CaseIterable {
     case warmupSoloA = "warmup-solo-a"
     case warmupSoloB = "warmup-solo-b"
     case warmupCrew = "warmup-crew"
+    // The same round, continued: the three styles. Rounds' rest screen in
+    // two compositions plus its two other states, then Freestyle's rail and
+    // Together's clock. Frames 112-117.
+    case roundWaitA = "round-wait-a"
+    case roundWaitB = "round-wait-b"
+    case roundSkipOffer = "round-skip-offer"
+    case roundSpotter = "round-spotter"
+    case freestyleRail = "freestyle-rail"
+    case togetherClock = "together-clock"
 }
 
 struct CatalogHostView: View {
@@ -250,6 +259,12 @@ struct CatalogHostView: View {
             case .warmupSoloA:                content_warmupSoloA
             case .warmupSoloB:                content_warmupSoloB
             case .warmupCrew:                 content_warmupCrew
+            case .roundWaitA:                 content_roundWaitA
+            case .roundWaitB:                 content_roundWaitB
+            case .roundSkipOffer:             content_roundSkipOffer
+            case .roundSpotter:               content_roundSpotter
+            case .freestyleRail:              content_freestyleRail
+            case .togetherClock:              content_togetherClock
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -2474,6 +2489,30 @@ struct CatalogHostView: View {
 
     private var content_warmupCrew: some View {
         WarmupCrewView()
+    }
+
+    private var content_roundWaitA: some View {
+        RoundWaitAView()
+    }
+
+    private var content_roundWaitB: some View {
+        RoundWaitBView()
+    }
+
+    private var content_roundSkipOffer: some View {
+        RoundSkipOfferView()
+    }
+
+    private var content_roundSpotter: some View {
+        RoundSpotterView()
+    }
+
+    private var content_freestyleRail: some View {
+        FreestyleRailView()
+    }
+
+    private var content_togetherClock: some View {
+        TogetherClockView()
     }
 }
 

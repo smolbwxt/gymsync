@@ -610,8 +610,17 @@ struct SVAvatarMark: View {
     let lifter: SVLifter
     var size: CGFloat = 42
     var ring: Bool = false
+    /// nil = accent, the current-item job. A frame that has spent its accent
+    /// elsewhere (the skip offer, the spotter's CHEER) passes a neutral tone
+    /// so the eye still finds the person without the page carrying two
+    /// accents.
+    var ringColor: Color? = nil
     var showsReady: Bool = false
     var showsLogged: Bool = false
+    /// The column this mark occupies. nil = the avatar plus breathing room;
+    /// the station cards pass a tighter number because two cards share the
+    /// page width and a three-deep rotation has to fit inside one of them.
+    var columnWidth: CGFloat? = nil
 
     var body: some View {
         VStack(spacing: 5) {
@@ -620,15 +629,20 @@ struct SVAvatarMark: View {
                 .font(GSFont.bodyMedium(11, relativeTo: .caption2))
                 .foregroundStyle(theme.neutral700)
                 .lineLimit(1)
+                .minimumScaleFactor(0.8)
             if let scaleDown = lifter.scaleDown {
+                // Spec §3.4 mode 2: the personal scale-down, never broadcast,
+                // visible only where the crew already looks. Two lines
+                // allowed — a truncated substitution names nothing.
                 Text(scaleDown)
                     .font(GSFont.body(10, relativeTo: .caption2))
                     .foregroundStyle(theme.neutral500)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.75)
             }
         }
-        .frame(width: size + 24)
+        .frame(width: columnWidth ?? (size + 24))
     }
 
     private var avatar: some View {
@@ -636,7 +650,7 @@ struct SVAvatarMark: View {
             .overlay(alignment: .bottomTrailing) { badge }
             .overlay(
                 ring
-                    ? Circle().strokeBorder(theme.accent, lineWidth: 2)
+                    ? Circle().strokeBorder(ringColor ?? theme.accent, lineWidth: 2)
                     : nil
             )
     }

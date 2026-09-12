@@ -115,6 +115,15 @@ final class CatalogScreenTests: XCTestCase {
             "warmup-solo-a",
             "warmup-solo-b",
             "warmup-crew",
+            // The same round, continued: Rounds' rest screen in two
+            // compositions plus the hold threshold and spotter mode, then
+            // Freestyle's shared rail and Together's one clock.
+            "round-wait-a",
+            "round-wait-b",
+            "round-skip-offer",
+            "round-spotter",
+            "freestyle-rail",
+            "together-clock",
         ]
         for id in ids {
             XCTAssertNotNil(CatalogScreen(rawValue: id), "missing catalog case: \(id)")

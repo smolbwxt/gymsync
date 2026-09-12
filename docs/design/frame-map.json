@@ -309,5 +309,29 @@
   "warmup-crew": {
     "frame": 111,
     "title": "Shared warm-up in its crew frame - who's warm"
+  },
+  "round-wait-a": {
+    "frame": 112,
+    "title": "Rounds, the round wait - who's still to go as a strip"
+  },
+  "round-wait-b": {
+    "frame": 113,
+    "title": "Rounds, the round wait - the crew on the station cards"
+  },
+  "round-skip-offer": {
+    "frame": 114,
+    "title": "Rounds - the hold threshold's quiet skip line"
+  },
+  "round-spotter": {
+    "frame": 115,
+    "title": "Rounds - spotter mode, cheer and film beside the dock"
+  },
+  "freestyle-rail": {
+    "frame": 116,
+    "title": "Freestyle - the shared progress rail and the stretched rest"
+  },
+  "together-clock": {
+    "frame": 117,
+    "title": "Together - one interval clock, four hearts on one timeline"
   }
 }

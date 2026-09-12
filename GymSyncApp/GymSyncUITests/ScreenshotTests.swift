@@ -706,6 +706,16 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogWarmupSoloB()            { captureCatalog("warmup-solo-b") }
     func testCatalogWarmupCrew()             { captureCatalog("warmup-crew") }
 
+    // THE THREE STYLES (frames 112-117). Rounds' rest screen in its two
+    // compositions, then the two states only Rounds has — the hold threshold
+    // and spotter mode — then Freestyle's shared rail and Together's clock.
+    func testCatalogRoundWaitA()             { captureCatalog("round-wait-a") }
+    func testCatalogRoundWaitB()             { captureCatalog("round-wait-b") }
+    func testCatalogRoundSkipOffer()         { captureCatalog("round-skip-offer") }
+    func testCatalogRoundSpotter()           { captureCatalog("round-spotter") }
+    func testCatalogFreestyleRail()          { captureCatalog("freestyle-rail") }
+    func testCatalogTogetherClock()          { captureCatalog("together-clock") }
+
     // MARK: - Seeded deep-screen captures
     //
     // Reachable via the deterministic fixture world the QA seed builds for the
