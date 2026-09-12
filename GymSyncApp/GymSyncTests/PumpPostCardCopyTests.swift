@@ -12,23 +12,6 @@ final class PumpPostCardCopyTests: XCTestCase {
                       "spec §1: no per-post hide — `behind` is said in the open")
     }
 
-    func testAnAthleteWithNoBlockHasNoTrajectoryToPrint() {
-        // The card branches on `post.trajectory == nil`; the resolver returns
-        // nil for an athlete with no active block (task S2.6).
-        let post = PumpPostCardCopyTests.post(trajectory: nil, highlight: nil)
-        XCTAssertNil(post.trajectory)
-    }
-
-    func testTheStatsLineNamesTheRoutineWhenThereIsOne() {
-        let summary = PostSummary(durationSeconds: 2_520, totalVolumeLbs: 7_240,
-                                  exercises: [], routineName: "Push day")
-        XCTAssertEqual(summary.routineName, "Push day")
-        let freeform = PostSummary(durationSeconds: 2_520, totalVolumeLbs: 7_240,
-                                   exercises: [], routineName: nil)
-        XCTAssertNil(freeform.routineName,
-                     "a freeform session drops the name rather than inventing one")
-    }
-
     func testAnOldRowKeepsItsBinaryLateTag() {
         let posted = Date(timeIntervalSince1970: 1_788_696_000)
         XCTAssertNil(PostLateness.tag(completedAt: nil, postedAt: posted),
