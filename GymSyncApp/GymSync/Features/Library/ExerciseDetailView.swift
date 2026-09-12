@@ -156,26 +156,14 @@ struct ExerciseDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(theme.surface, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                // Canvas nav "+" icon — no add-to-routine route exists from this
-                // screen yet (same gap the sticky bottom CTA below already defers
-                // on), so this is a visual affordance only for now.
-                Button {
-                } label: {
-                    Image(systemName: "plus")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(theme.text)
-                        .frame(minWidth: 44, minHeight: 44)
-                        .contentShape(Rectangle())
-                }
-            }
-        }
+        // (Add-to-routine has no route from this screen — the affordance was removed 2026-09-06.)
         // Canvas: sticky "Add to Routine" CTA at bottom — deferred (no route in current app)
         .task { await load() }
     }
 
-    // Canvas: small bordered stat tile — kicker + bold value
+    // Canvas: small stat tile — kicker + bold value. Congruence B3 T3.3: the
+    // extruded face + lip replaces the `theme.surface` fill and its 1 pt
+    // outline, matching the "HOW TO" card above at tile scale.
     private func statTile(kicker: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(kicker.uppercased())
@@ -189,8 +177,7 @@ struct ExerciseDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .background(theme.surface)
-        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
+        .gs3DCard(cornerRadius: GSMetrics.radiusSm, lipHeight: 5)
     }
 
     // "190 × 5" — weight-first, matches the app-wide PR/set-display
