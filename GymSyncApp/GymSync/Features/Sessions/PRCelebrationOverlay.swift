@@ -49,7 +49,8 @@ struct PRCelebrationOverlay: View {
     // current theme from the main lobby and my turn/spectator screen"):
     // the accent flood becomes the Onyx floor — near-black bg, accent
     // reserved for the record itself and the primary CTA, big fixed-size
-    // numerals with the 3pt accent underline (the "yours" mark), floating
+    // numerals, the 3pt accent line (the "yours" mark — T6.1 moved it out
+    // from under the numerals to sweep under the headline), floating
     // rounded cards for the chip and CTAs.
     var body: some View {
         ZStack {
@@ -63,20 +64,23 @@ struct PRCelebrationOverlay: View {
             }
 
             VStack(spacing: 0) {
-                Spacer()
+                // Rule 8 (T6.1): the headline first, big, in accent; a line
+                // sweeps under it; then the lift and the number land with the
+                // ring. The old order was inverted — a 40pt accent flame led,
+                // then the record itself arrived as a 12pt muted kicker.
+                Color.clear.frame(height: 72)
 
-                Image(systemName: "flame.fill")
-                    .font(.system(size: 40))
+                Text("New personal record.")
+                    .font(GSFont.heading(34, relativeTo: .largeTitle))
                     .foregroundStyle(theme.accent)
+                    .multilineTextAlignment(.center)
 
-                Color.clear.frame(height: 16)
+                Color.clear.frame(height: 12)
 
-                Text("NEW PERSONAL RECORD")
-                    .font(GSFont.bold(12, relativeTo: .caption))
-                    .tracking(3.0)
-                    .foregroundStyle(theme.neutral700)
+                Capsule().fill(theme.accent)
+                    .frame(width: 96, height: 3)
 
-                Color.clear.frame(height: 14)
+                Spacer()
 
                 // Rep-PR form (owner item 6, 2026-08-13): weight == 0 means
                 // a bodyweight rep record — the rep count IS the headline,
@@ -104,9 +108,6 @@ struct PRCelebrationOverlay: View {
                             .foregroundStyle(theme.neutral700)
                     }
                 }
-                Capsule().fill(theme.accent)
-                    .frame(width: 56, height: 3)
-                    .padding(.top, 8)
 
                 Color.clear.frame(height: 16)
 
