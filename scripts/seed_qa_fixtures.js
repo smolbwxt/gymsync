@@ -309,7 +309,22 @@ async function main() {
     const row = { group_id: group.id, organizer_id: me.id, state, scheduled_for: now };
     if (state === 'in_progress') row.started_at = now;
     if (state === 'completed') { row.started_at = now; row.completed_at = now; }
-    await rest('sessions', { method: 'POST', body: JSON.stringify(row) });
+    const [created] = await rest('sessions', { method: 'POST', headers: rep,
+      body: JSON.stringify(row) });
+    // ONLY the completed one gets a participant row, and only because
+    // `group_consistency_honor` (20260911000001) credits ATTENDANCE rather
+    // than the organizer — without it the CI account's crew has no honor line
+    // and `app-tab-social` proves nothing. The other five states are left
+    // exactly as they were: adding participants to them would change what
+    // testLobby/testSessionRecap capture.
+    if (state === 'completed') {
+      await rest('session_participants', { method: 'POST',
+        headers: { Prefer: 'resolution=merge-duplicates' },
+        body: JSON.stringify({
+          session_id: created.id, user_id: me.id,
+          check_in_state: 'ready',
+        }) });
+    }
   }
   console.log(`  sessions: ${states.join(', ')}`);
 

@@ -125,6 +125,10 @@ enum CatalogScreen: String, CaseIterable {
     case ladderBehind = "ladder-behind"
     case ladderMet = "ladder-met"
     case homeGoalStripBlock = "home-goal-strip-block"
+    // Social cards (Stage 1, frame 101): the Crews tab's FIRST catalog id —
+    // two crews, one carrying spec §3's honor line and one a crew at rest.
+    // See `content_crewsTab`.
+    case crewsTab = "crews-tab"
     case blockCalendar = "block-calendar"
 }
 
@@ -224,6 +228,7 @@ struct CatalogHostView: View {
             case .ladderBehind:               content_ladderBehind
             case .ladderMet:                  content_ladderMet
             case .homeGoalStripBlock:         content_homeGoalStripBlock
+            case .crewsTab:                   content_crewsTab
             case .blockCalendar:              content_blockCalendar
             }
         }
@@ -2114,6 +2119,29 @@ struct CatalogHostView: View {
     /// the whole of what spec §6 changes about the strip.
     private var content_homeGoalStripBlock: some View {
         WeeklyGoalStripFrame(kind: .muscleSets, progress: GoalStripFixtures.block)
+    }
+
+    // MARK: - Crews tab
+
+    /// `crews-tab`: the Crews tab from a fixture world — two crew cards (one
+    /// with spec §3's honor line, one a crew at rest), the "+ New Crew"
+    /// control, and the three Outside the Box rows. The FIRST catalog id this
+    /// tab has ever had: `app-tab-social` is the live-account walk, so until
+    /// now the crew card has only ever been reviewed against whatever the CI
+    /// account happened to contain.
+    ///
+    /// `SocialTabView` carries `.gsSpotlightTour(GuidanceTours.crews)` (:349),
+    /// which would otherwise draw its scrim over this frame. Nothing is done
+    /// about that HERE: `captureCatalog()` now passes
+    /// `-guidanceTipsEnabled NO`, the same switch `launchApp()` has always
+    /// used, which suppresses every tip and tour for the whole capture suite.
+    private var content_crewsTab: some View {
+        SocialTabView(catalogFixtureGroups: CrewsTabFixtures.groups,
+                      catalogFixtureBars: CrewsTabFixtures.bars,
+                      catalogFixtureHonors: CrewsTabFixtures.honors,
+                      catalogFixtureFriendCount: 12,
+                      catalogFixturePendingCount: 2,
+                      catalogSkipLoad: true)
     }
 
     private static let calendarPushCrew = GSGroupColor.palette[4]

@@ -722,9 +722,14 @@ struct HomeView: View {
     /// lifting. When nobody is, nothing renders at all and everything below
     /// shifts up — no empty state and no reserved gap. The 2 pt-tighter foot
     /// is 08a's `homeV3Strip()`: a strip belongs to what follows it.
+    /// **PRESENCE IS NEVER GATED** (spec §4, owner decision 6). See
+    /// `VenueHubView.showsWhosHere(isCheckedIn:)` for the full law; the same
+    /// arity guard applies here.
+    static func showsCrewPulse(liveFriendCount: Int) -> Bool { liveFriendCount > 0 }
+
     @ViewBuilder
     private var crewPulseSection: some View {
-        if let friend = friendsLive.first {
+        if Self.showsCrewPulse(liveFriendCount: friendsLive.count), let friend = friendsLive.first {
             HomeCrewPulseStrip(initials: friend.initials,
                                headline: crewPulseHeadline(friend),
                                detail: crewPulseDetail(friend),

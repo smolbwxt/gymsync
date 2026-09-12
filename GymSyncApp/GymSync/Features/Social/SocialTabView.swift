@@ -5,6 +5,9 @@ struct SocialTabView: View {
     @State private var unread: Set<UUID> = []
     /// Crew-widget bar meta per group (owner 2026-08-12) — fed by refresh().
     @State private var barByGroup: [UUID: CrewBarMeta] = [:]
+    /// The crew's 30-day frequency crown, per group (spec §3). Absent for a crew
+    /// nobody has trained with in the window — the crown DECAYS by disappearing.
+    @State private var honorByGroup: [UUID: CrewHonor] = [:]
     @State private var previews: [UUID: String] = [:]
     @State private var friendCount = 0
     @State private var pendingCount = 0
@@ -35,6 +38,30 @@ struct SocialTabView: View {
     /// Staleness bookkeeping for the retained-tab refresh (RootView holds
     /// every visited tab alive, so `.task` fires once per app run).
     @State private var lastRefreshedAt: Date = .distantPast
+
+    #if DEBUG
+    var catalogSkipLoad = false
+
+    /// The catalog's world (plan task S1.6). `VenueHubView`'s own init is the
+    /// precedent; the same rule applies — `catalogSkipLoad` suppresses
+    /// `refresh()` entirely, so no repository, no clock and no network is
+    /// reachable from a frame.
+    init(catalogFixtureGroups: [GymGroup] = [],
+         catalogFixtureBars: [UUID: CrewBarMeta] = [:],
+         catalogFixtureHonors: [UUID: CrewHonor] = [:],
+         catalogFixtureFriendCount: Int = 0,
+         catalogFixturePendingCount: Int = 0,
+         catalogSkipLoad: Bool = false) {
+        _groups = State(initialValue: catalogFixtureGroups)
+        _barByGroup = State(initialValue: catalogFixtureBars)
+        _honorByGroup = State(initialValue: catalogFixtureHonors)
+        _friendCount = State(initialValue: catalogFixtureFriendCount)
+        _pendingCount = State(initialValue: catalogFixturePendingCount)
+        self.catalogSkipLoad = catalogSkipLoad
+    }
+    #else
+    init() {}
+    #endif
 
     var body: some View {
         NavigationStack {
@@ -326,6 +353,14 @@ struct SocialTabView: View {
                 }
             }
             .task {
+                // The catalog seam reaches past `refresh()` here: this block
+                // also opens a realtime subscription and touches AppState's
+                // launch accounting, neither of which may run from a frame
+                // (global constraint 7). `VenueHubView`'s precedent needs no
+                // equivalent — its `.task` is only `await load()`.
+                #if DEBUG
+                if catalogSkipLoad { return }
+                #endif
                 // Launch-readiness accounting (RootView's overlay hold).
                 appState.beginLaunchFetch()
                 await refresh()
@@ -338,6 +373,10 @@ struct SocialTabView: View {
                 await consumePendingRouteIfNeeded()
             }
             .onChange(of: scenePhase) {
+                #if DEBUG
+                // Same reason as `.task` above — this path subscribes too.
+                if catalogSkipLoad { return }
+                #endif
                 guard scenePhase == .active else { return }
                 Task {
                     await refresh()
@@ -449,6 +488,21 @@ struct SocialTabView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
                 .monospacedDigit()
+
+            // Spec §3's honor line — absent when there is no crown, because
+            // a blank line is not a state. Same type scale, tracking and
+            // tint as the meta line above it (design rule 3: kickers are
+            // muted caps), and no accent: a finished month is not an
+            // invitation (rule 2).
+            if let honor = honorByGroup[group.id] {
+                Text(CrewHonorMath.line(honor))
+                    .font(GSFont.bold(9.5, relativeTo: .caption2))
+                    .kerning(0.8)
+                    .foregroundStyle(theme.neutral500)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .monospacedDigit()
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
@@ -494,6 +548,9 @@ struct SocialTabView: View {
     }
 
     private func refresh() async {
+        #if DEBUG
+        if catalogSkipLoad { return }
+        #endif
         lastRefreshedAt = .now
         do {
             groups = try await GroupRepository.myGroups()
@@ -531,12 +588,52 @@ struct SocialTabView: View {
             // CrewRoomView's routines-together card — completed = this
             // week's completed sessions, next lift = earliest upcoming.
             // Best-effort per group, stale entries preserved on failure.
-            var barMeta = barByGroup
-            await withTaskGroup(of: (UUID, CrewBarMeta?).self) { taskGroup in
+            //
+            // ONE TASK GROUP FOR BOTH READS, and both reads inside it run
+            // CONCURRENTLY. The bar's session list and the honor RPC are
+            // independent questions about the same crew, so running them in
+            // series cost the card two paints and put the honor line one
+            // network hop behind the meta line above it — long enough that
+            // `app-tab-social` captured the line on one run and missed it on
+            // the next (`ScreenshotTests.settleAfterNavigation` is a fixed
+            // 1.0 s). One group, `async let` inside it, one paint.
+            //
+            // BOTH DICTIONARIES ARE REBUILT FROM `currentGroups`, never
+            // carried forward wholesale: a crew you left kept its bar (and
+            // would have kept its crown) for the life of the process.
+            let currentIDs = Set(currentGroups.map(\.id))
+            var barMeta = barByGroup.filter { currentIDs.contains($0.key) }
+            var honorMeta = honorByGroup.filter { currentIDs.contains($0.key) }
+            await withTaskGroup(of: (UUID, CrewBarMeta?, CrewHonor?, Bool).self) { taskGroup in
                 for group in currentGroups {
+                    // Capture the id only — a whole `GymGroup` crossing into
+                    // the child task buys nothing the id does not.
+                    let groupID = group.id
                     taskGroup.addTask {
-                        guard let sessions = try? await SessionRepository.groupSessions(groupID: group.id) else {
-                            return (group.id, nil)
+                        async let sessionsRead = SessionRepository.groupSessions(groupID: groupID)
+                        // The crew's frequency honor (spec §3), widened to 30
+                        // days and read through `group_consistency_honor`
+                        // rather than the bar's own session list — the bar
+                        // counts what RLS lets THIS VIEWER see
+                        // (organizer-or-participant,
+                        // 20260709000006_create_sessions.sql:50-56), which is
+                        // the wrong question for a line that says "who showed
+                        // up most".
+                        async let honorRead = GroupRepository.consistencyHonor(groupID: groupID)
+
+                        // `honorOK` distinguishes "the RPC answered, and the
+                        // answer is that nobody has trained in the window"
+                        // from "the RPC failed". Only the first may clear the
+                        // card's line — that IS spec §3's decay.
+                        var honor: CrewHonor?
+                        var honorOK = false
+                        if let rows = try? await honorRead {
+                            honor = CrewHonorMath.crown(rows)
+                            honorOK = true
+                        }
+
+                        guard let sessions = try? await sessionsRead else {
+                            return (groupID, nil, honor, honorOK)
                         }
                         let calendar = Calendar.current
                         let now = Date.now
@@ -553,16 +650,23 @@ struct SocialTabView: View {
                             .filter { upcomingStates.contains($0.state) }
                             .sorted { ($0.scheduledFor ?? .distantFuture) < ($1.scheduledFor ?? .distantFuture) }
                             .first?.scheduledFor
-                        return (group.id, CrewBarMeta(completedThisWeek: completed,
-                                                      plannedThisWeek: completed + upcoming,
-                                                      nextLift: next))
+                        return (groupID, CrewBarMeta(completedThisWeek: completed,
+                                                     plannedThisWeek: completed + upcoming,
+                                                     nextLift: next),
+                                honor, honorOK)
                     }
                 }
-                for await (id, meta) in taskGroup {
+                for await (id, meta, honor, honorOK) in taskGroup {
                     if let meta { barMeta[id] = meta }
+                    // Assigned even when `honor` is nil — a nil subscript
+                    // assignment REMOVES the key, which is how the crown
+                    // decays. Seeding from the previous dictionary and only
+                    // ever adding left a stale crown on the card forever.
+                    if honorOK { honorMeta[id] = honor }
                 }
             }
             barByGroup = barMeta
+            honorByGroup = honorMeta
 
             errorText = nil
         } catch {

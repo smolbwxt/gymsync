@@ -97,6 +97,9 @@ final class CatalogScreenTests: XCTestCase {
             "ladder-behind",
             "ladder-met",
             "home-goal-strip-block",
+            // Social cards (Stage 1): the Crews tab's first fixture world —
+            // two crews, one with the honor line and one without.
+            "crews-tab",
             // congruence B2 T2.3: the block calendar's flag/trophy glyphs.
             "block-calendar",
         ]

@@ -262,6 +262,10 @@
     "frame": 100,
     "title": "Weekly goal strip - the block kicker"
   },
+  "crews-tab": {
+    "frame": 101,
+    "title": "Crews tab - two crews, one with the honor line"
+  },
   "block-calendar": {
     "frame": 103,
     "title": "The block, in time - flag and trophy",

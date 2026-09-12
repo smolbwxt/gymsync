@@ -523,9 +523,22 @@ struct VenueHubView: View {
         .padding(.horizontal, 16)
     }
 
+    /// **PRESENCE IS NEVER GATED** (spec §4, owner decision 6).
+    ///
+    /// The ONLY precondition this surface may carry is physical: you are
+    /// checked in to this venue. Never a post, never a streak, never an
+    /// entitlement — the reference scan's Peloton note
+    /// (`.superpowers/sdd/2026-09-07-social-cards-round/reference-scan.md`)
+    /// is what that costs when it is broken.
+    ///
+    /// A ONE-PARAMETER STATIC, on purpose: it is the guard. Adding a gate
+    /// means adding a parameter, which breaks `PresenceIsUngatedTests` and
+    /// makes the change a conversation rather than a quiet edit.
+    static func showsWhosHere(isCheckedIn: Bool) -> Bool { isCheckedIn }
+
     @ViewBuilder
     private var whosHereSection: some View {
-        if isCheckedIn {
+        if Self.showsWhosHere(isCheckedIn: isCheckedIn) {
             VStack(alignment: .leading, spacing: 8) {
                 GSSectionHeader("Who's here")
                     .padding(.horizontal, 16)

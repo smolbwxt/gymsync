@@ -307,6 +307,19 @@ final class ScreenshotTests: XCTestCase {
         guard waitForTabBar(app) else { return }
         selectTab(app, label: "Crews")
         settleAfterNavigation()
+        // Wait for spec §3's honor line before the shutter. It is the last
+        // thing the crew card learns — `SocialTabView.refresh()` reads groups,
+        // friends and requests, then one task group per crew — and a fixed
+        // 1.0 s settle caught it on one run and missed it on the next, which
+        // made whether this capture proves the seeded crown a coin flip.
+        // NOT an assertion: this file is continue-on-error by design (every
+        // other wait here is a `guard … else { return }` or a bare
+        // `waitForExistence`), so a crew with no crown still captures its
+        // screen rather than failing the suite.
+        _ = app.staticTexts
+            .matching(NSPredicate(format: "label BEGINSWITH 'MOST CONSISTENT'"))
+            .firstMatch
+            .waitForExistence(timeout: 10)
         attachScreenshot(app, named: "app-tab-social.png")
     }
 
@@ -389,6 +402,24 @@ final class ScreenshotTests: XCTestCase {
     /// Launches directly into a debug catalog screen and captures it.
     private func captureCatalog(_ id: String) {
         let app = XCUIApplication()
+        // Kill tips and tours for catalog captures too. `launchApp()` has
+        // always passed this; `captureCatalog()` passed no launch arguments
+        // at all, so any catalog id whose view carries `.gsSpotlight(_:)` or
+        // `.gsSpotlightTour(_:)` rendered its scrim instead of its screen —
+        // `GSSpotlightTourModifier.presentIfNeeded()` and the single-tip
+        // modifier both gate on `GuidanceTip.tipsEnabled`. `content_soloLiveSet`
+        // worked around it per-tip with `GuidanceTip.workout.markSeen()` and
+        // `crews-tab` briefly did the same with the crews tour; this one line
+        // covers both, and covers every full-tab id added later (Home and You
+        // carry tours as well). The overlay itself is still reviewed through
+        // the `guidance-spotlight` catalog case, which builds
+        // `GSSpotlightOverlay` directly and is unaffected.
+        //
+        // Literal rather than `GuidanceTip.tipsEnabledKey` for the reason
+        // `launchApp()` gives: this target runs out-of-process and links no
+        // app code, and `GuidanceTipTests` asserts the key string so a rename
+        // cannot silently orphan it.
+        app.launchArguments += ["-guidanceTipsEnabled", "NO"]
         var env = app.launchEnvironment
         env["UITEST_CATALOG"] = id
         app.launchEnvironment = env
@@ -648,6 +679,11 @@ final class ScreenshotTests: XCTestCase {
         captureCatalog("goal-milestone-body-composition")
     }
     func testCatalogGoalMilestoneRecovery()  { captureCatalog("goal-milestone-recovery") }
+
+    // Social cards (Stage 1, frame 101) — the Crews tab's first fixture
+    // world. Two crews: Push Crew carries spec §3's honor line, Sunday Squad
+    // is a crew at rest and carries none (the decay is the line's absence).
+    func testCatalogCrewsTab()               { captureCatalog("crews-tab") }
 
     // MARK: - Seeded deep-screen captures
     //
