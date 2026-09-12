@@ -367,7 +367,15 @@ jobs:
           # — where T9.2's chat preview and T9.1's state glyphs live — on no
           # frame. testCrewRoom and testGroupSessions add one capture each:
           # 109 -> 111.
-          FLOOR=111
+          # social cards (I1, 2026-09-11-social-cards-plan.md): 111 -> 114.
+          # THREE new captures: two catalog ids (crews-tab frame 101,
+          # pump-composer-highlight frame 102) and ONE live-walk capture
+          # (app-pump-feed, testPumpFeedLive — no frame-map entry, the
+          # app-group-stats precedent). `pump-feed-post` was RE-RENDERED
+          # rather than added (spec §7), so it moves no count. The plan wrote
+          # 107 -> 110 against master's FLOOR before B2+B9 merged; the +3 is
+          # the invariant, not the literal 110.
+          FLOOR=114
           # `|| true` + the `:-0` default for the same `set -eo pipefail`
           # reason as the simulator picker above: a missing $SCREENS makes
           # `find` exit 1, which would kill the step before it printed the

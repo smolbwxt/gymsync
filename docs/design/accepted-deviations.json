@@ -182,5 +182,13 @@
   {
     "screenId": "home-goal-strip-block",
     "reason": "Goal-first programming, integration task I4. Frame 100 (Stream D task D7) has no numbered canvas frame — the authority is spec §6's Home bullet (\"the kicker gains the block context: `WEEK 3 OF 8 . COACH'S GOAL`\"). Identical to `home-goal-strip-muscle-sets` (frame 83) except the kicker, by construction (`GoalStripFixtures.block` derives from `WeeklyGoalFixtures.muscleSets` and changes exactly that one field) — the whole of what spec §6 changes about the strip."
+  },
+  {
+    "screenId": "crews-tab",
+    "reason": "Social cards, integration task I1. Frame 101 (Stage 1 task S1.6) has no numbered canvas frame - the authority is spec 3 of 2026-09-11-social-cards-design.md ('the meta line names who showed up most this month - MOST CONSISTENT . SAM . 9 SESSIONS - a crown that decays when they stop'). The Crews tab has never had a catalog fixture at all: app-tab-social is the live-account walk, so this is the first frame in which the crew card, its plate bar, the honor line and the Outside the Box rows are rendered from values rather than from whatever the CI account happened to contain. Two crews, and the SECOND one carries no honor line on purpose - the decay is the line's absence."
+  },
+  {
+    "screenId": "pump-composer-highlight",
+    "reason": "Social cards, integration task I1. Frame 102 (Stage 2 task S2.6a) has no numbered canvas frame - the authority is spec 1 line 4 of 2026-09-11-social-cards-design.md ('Coach proposes up to three highlights from the session; the lifter picks one or none. No free text'). The composer's REVIEW state had never been rendered by CI because CameraPicker cannot be driven headless; S2.6a adds a DEBUG-only catalogPhoto seam that drops the card into that state with an in-process fixture image, so the picker is reviewed before it ships. TWO proposals, not three: this release proposes topSet and pr only - the milestone proposal waits for the You hero's MilestoneCatalog rather than shipping a second ladder."
   }
 ]
