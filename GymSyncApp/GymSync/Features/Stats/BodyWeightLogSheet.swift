@@ -40,6 +40,7 @@ struct BodyWeightLogSheet: View {
                     // other weight field. No equipment convention applies —
                     // this sheet logs a BODY weight, not a load.
                     label: "BODY WEIGHT · \(unit.label.uppercased())",
+                    accessibilityLabel: "Body weight",
                     value: $weight,
                     // Accent discipline (design language §2): the field is
                     // furniture — flat and neutral; "Save" is the one act.

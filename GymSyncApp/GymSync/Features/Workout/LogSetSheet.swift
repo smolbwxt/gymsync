@@ -126,6 +126,7 @@ struct LogSetSheet: View {
                             label: Units.weightKicker(unit: unit,
                                                       equipment: exercise.equipment,
                                                       unilateral: exercise.unilateral),
+                            accessibilityLabel: "Weight",
                             value: $weight,
                             // Accent discipline (design language §2): an input
                             // is furniture — flat and neutral, matching Reps
@@ -353,6 +354,9 @@ extension LogSetSheet {
 func stepperCell(
     theme: GSTheme,
     label: String,
+    /// What VoiceOver speaks, when the visible kicker is the wrong thing to
+    /// hear. Defaulted, so all five existing call sites compile unchanged.
+    accessibilityLabel: String? = nil,
     value: Binding<String>,
     borderColor: Color,
     valueColor: Color,
@@ -362,8 +366,14 @@ func stepperCell(
 ) -> some View {
     VStack(alignment: .leading, spacing: 5) {
         // Design language §3: a field label is a caps kicker in `muted`.
-        // Uppercased for display only — `.accessibilityLabel(label)` below
-        // and the two stepper buttons keep reading the un-uppercased text.
+        // Two labels, deliberately: the kicker is UPPERCASED for the eye,
+        // while the three `.accessibilityLabel` sites below speak
+        // `accessibilityLabel ?? label` — sentence case, for the ear. A
+        // caller whose kicker is a long shouted string (T8.1's
+        // "WEIGHT · LBS TOTAL INCL. BAR") passes a plain "Weight" so
+        // VoiceOver reads the field and its two steppers as words rather
+        // than spelling out caps and abbreviations. Omit it and the
+        // behaviour is what it always was: the label itself, un-uppercased.
         Text(label.uppercased())
             .font(GSFont.bold(11, relativeTo: .caption))
             .tracking(1.1)
@@ -383,7 +393,7 @@ func stepperCell(
                     .frame(width: 56, height: 48)
                     .contentShape(Rectangle())
             }
-            .accessibilityLabel("Decrease \(label)")
+            .accessibilityLabel("Decrease \(accessibilityLabel ?? label)")
             .overlay(alignment: .trailing) {
                 Rectangle().fill(borderColor.opacity(0.6)).frame(width: 1)
             }
@@ -394,7 +404,7 @@ func stepperCell(
                 .font(GSFont.heading(22, relativeTo: .title2))
                 .foregroundStyle(valueColor)
                 .frame(maxWidth: .infinity, minHeight: 48)
-                .accessibilityLabel(label)
+                .accessibilityLabel(accessibilityLabel ?? label)
 
             Button(action: onIncrement) {
                 Text("+")
@@ -405,7 +415,7 @@ func stepperCell(
                     .frame(width: 56, height: 48)
                     .contentShape(Rectangle())
             }
-            .accessibilityLabel("Increase \(label)")
+            .accessibilityLabel("Increase \(accessibilityLabel ?? label)")
             .overlay(alignment: .leading) {
                 Rectangle().fill(borderColor.opacity(0.6)).frame(width: 1)
             }

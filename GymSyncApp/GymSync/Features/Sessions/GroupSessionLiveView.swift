@@ -3618,6 +3618,7 @@ struct GroupSessionLiveView: View {
                     label: Units.weightKicker(unit: ThemeStore.shared.weightUnit,
                                               equipment: currentExerciseForSheet?.equipment,
                                               unilateral: currentExerciseForSheet?.unilateral),
+                    accessibilityLabel: "Weight",
                     value: $logWeight,
                     // Accent discipline (design language §2): the weight cell
                     // matches Reps beside it — flat, neutral furniture.
