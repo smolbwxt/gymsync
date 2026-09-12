@@ -370,6 +370,16 @@
   },
   "together-clock-v2": {
     "frame": 126,
-    "title": "Together, second pass - neutral BPM ink, the zone as a word"
+    "title": "Together, second pass - neutral BPM ink, the zone as a word",
+    "note": "DROPPED CONCEPTUALLY by the owner's third-pass reversal: heart-rate zone colours STAY, an explicit exception to the colour rules (design language rule 2's own heart-rate clause already exempted them). together-clock (v1, frame 117) is what the plan cites. This id and its capture are kept only so the pair can still be looked at - do not re-apply the neutral-BPM rule from this frame."
+  },
+  "lobby-crew-ready-v3": {
+    "frame": 127,
+    "title": "Crew lobby locked in - the arrival widget IS the primary",
+    "note": "The session design round's THIRD and last pass (frames 127-128). Every round-1 (106-119) and second-pass (120-126) id is frozen and still renders; these two are the frames the owner's accent move and colour reversal change. Catalog-only, so no proof frame in docs/design/mockups/ and parity_diff.js logs 'skip <id>: no proof frame' - the Home v3 precedent (frames 71-82)."
+  },
+  "round-spotter-v3": {
+    "frame": 128,
+    "title": "Spotter mode - the crew's heart rates, zone colours restored"
   }
 }

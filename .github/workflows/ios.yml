@@ -406,7 +406,13 @@ jobs:
           # together-clock-v2. Every ROUND-1 id is frozen and still captured,
           # so the pairs can be composed two-up; pump-check-card-v2 gained a
           # photo caption but is the same id and moves no count.
-          FLOOR=135
+          # The session round's THIRD and last pass: 135 -> 137. TWO new
+          # catalog ids, frames 127-128, one capture each -
+          # lobby-crew-ready-v3 and round-spotter-v3. together-clock-v2 is
+          # dropped CONCEPTUALLY by the owner's colour reversal but keeps its
+          # id and its capture so the pair can still be compared, so it
+          # subtracts nothing from the count.
+          FLOOR=137
           # `|| true` + the `:-0` default for the same `set -eo pipefail`
           # reason as the simulator picker above: a missing $SCREENS makes
           # `find` exit 1, which would kill the step before it printed the

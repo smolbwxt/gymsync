@@ -137,6 +137,10 @@ final class CatalogScreenTests: XCTestCase {
             "round-spotter-v2",
             "swap-consensus-card-v2",
             "together-clock-v2",
+            // The THIRD and last pass (frames 127-128): the arrival widget as
+            // the primary, and spotter mode with the zone colours put back.
+            "lobby-crew-ready-v3",
+            "round-spotter-v3",
         ]
         for id in ids {
             XCTAssertNotNil(CatalogScreen(rawValue: id), "missing catalog case: \(id)")

@@ -738,6 +738,14 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogSwapConsensusCardV2()    { captureCatalog("swap-consensus-card-v2") }
     func testCatalogTogetherClockV2()        { captureCatalog("together-clock-v2") }
 
+    // THE THIRD AND LAST PASS (frames 127-128). The owner approved the v2
+    // additions with one reversal — heart-rate zone colours stay — so
+    // `together-clock` v1 is what the plan cites and `-v2` keeps its capture
+    // only so the pair can still be compared. These two are the frames that
+    // reversal and the owner's accent move actually change.
+    func testCatalogLobbyCrewReadyV3()       { captureCatalog("lobby-crew-ready-v3") }
+    func testCatalogRoundSpotterV3()         { captureCatalog("round-spotter-v3") }
+
     // MARK: - Seeded deep-screen captures
     //
     // Reachable via the deterministic fixture world the QA seed builds for the

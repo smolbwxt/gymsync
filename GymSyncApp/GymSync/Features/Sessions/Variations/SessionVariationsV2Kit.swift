@@ -22,12 +22,19 @@ import SwiftUI
 //     therefore reserves FIXED SLOTS — a name row is a name row's height
 //     whether or not the person under it has a substitution — so alignment
 //     is a property of the layout rather than a coincidence of the fixture.
-//   * **NO ZONE COLOUR ON A HEART RATE.** Round 1 tinted BPM by zone on the
-//     Together timeline, on `GSHeartRatePill`'s precedent. The owner's
-//     ruling for this pass: the language reserves red and gold, so a heart
-//     rate is neutral ink and the zone is a WORD (`Z4`). `SVZoneWord` below
-//     is that word, and it reads the same `HeartRateZone.zone(bpm:)` the
-//     pill does, so the two cannot disagree about which zone a number is in.
+//   * ~~**NO ZONE COLOUR ON A HEART RATE.**~~ **REVERSED BY THE OWNER, third
+//     pass.** This pass proposed neutral BPM ink with the zone as a word
+//     (`Z4`), on the reading that the language reserves red and gold. The
+//     owner's ruling: **heart-rate zone colours STAY — an explicit exception
+//     to the colour rules**, which is what design language rule 2 already
+//     said in its own heart-rate clause ("like plate colours, this is data
+//     colour, not accent, and is exempt"). So `together-clock` (v1, frame
+//     117) stands and `together-clock-v2` (126) is dropped conceptually —
+//     its id and capture stay so the pair can still be looked at, and the
+//     plan cites v1. `round-spotter-v3` (128) is `-v2` with the colours put
+//     back. `SVZoneWord` survives the reversal and is kept BESIDE the
+//     colour: a word a colour-blind reader can read is worth its 22 points
+//     whatever the ink is doing.
 //   * **CHECKED IN IS READY.** The round-1 lobby carried two signals — an
 //     arrival stage and a separate readiness tick — and the owner removed
 //     the second: the READY TO START roster is redundant. So the v2 lobby
@@ -407,6 +414,15 @@ struct SVEnergyMeter: View {
     @Environment(\.gsTheme) private var theme
 
     let value: Int?
+    /// Drawn on an ACCENT face (`lobby-crew-ready-v3`'s arrival widget), so
+    /// the pips invert: the page ground becomes the ink, exactly as
+    /// `GSPrimaryButtonStyle` puts `theme.bg` on an accent fill. Defaulted
+    /// false, so the v2 frames the owner approved are untouched.
+    var onAccent: Bool = false
+
+    private var filledInk: Color { onAccent ? theme.bg : theme.text }
+    private var emptyInk: Color { onAccent ? theme.bg.opacity(0.3) : theme.neutral300 }
+    private var absentInk: Color { onAccent ? theme.bg.opacity(0.7) : theme.neutral500 }
 
     var body: some View {
         Group {
@@ -414,14 +430,14 @@ struct SVEnergyMeter: View {
                 HStack(spacing: 3) {
                     ForEach(1...5, id: \.self) { step in
                         RoundedRectangle(cornerRadius: 1.5)
-                            .fill(step <= value ? theme.text : theme.neutral300)
+                            .fill(step <= value ? filledInk : emptyInk)
                             .frame(width: 6, height: 8)
                     }
                 }
             } else {
                 Text("not yet")
                     .font(GSFont.body(10, relativeTo: .caption2))
-                    .foregroundStyle(theme.neutral500)
+                    .foregroundStyle(absentInk)
             }
         }
         .frame(height: 12)
@@ -584,8 +600,21 @@ struct SVLiveHRRow: View {
     let name: String
     let bpm: Int
     /// The one who is lifting right now. Marked by WEIGHT, not by colour —
-    /// this pass spends no accent on a readout.
+    /// no readout in this round spends accent.
     var isLifting: Bool = false
+    /// THE OWNER'S REVERSAL (third pass): heart-rate zone colours stay, as an
+    /// explicit exception to the colour rules. `true` tints the NUMBER with
+    /// `SVZoneColor.of(bpm)` — the same mapping, the same tokens and the same
+    /// values `together-clock` (v1) paints its bars and its `GSHeartRatePill`s
+    /// with, so two frames cannot disagree about what 158 looks like. `BPM`
+    /// stays `neutral500` and the zone word stays `neutral700`, which is
+    /// exactly how the pill treats its own caption. Defaulted false, so
+    /// `round-spotter-v2` is untouched.
+    var zoneTinted: Bool = false
+
+    private var numberInk: Color {
+        zoneTinted ? SVZoneColor.of(bpm) : theme.text
+    }
 
     var body: some View {
         HStack(spacing: 10) {
@@ -599,7 +628,7 @@ struct SVLiveHRRow: View {
             Text("\(bpm)")
                 .font(GSFont.bold(15, relativeTo: .subheadline))
                 .monospacedDigit()
-                .foregroundStyle(theme.text)
+                .foregroundStyle(numberInk)
                 .frame(width: 34, alignment: .trailing)
             Text("BPM")
                 .font(GSFont.bold(9, relativeTo: .caption2))

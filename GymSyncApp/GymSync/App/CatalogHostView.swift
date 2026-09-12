@@ -167,6 +167,10 @@ enum CatalogScreen: String, CaseIterable {
     case roundSpotterV2 = "round-spotter-v2"
     case swapConsensusCardV2 = "swap-consensus-card-v2"
     case togetherClockV2 = "together-clock-v2"
+    // The THIRD and last pass: the owner approved the v2 additions with one
+    // reversal (heart-rate zone colours stay). Frames 127-128.
+    case lobbyCrewReadyV3 = "lobby-crew-ready-v3"
+    case roundSpotterV3 = "round-spotter-v3"
 }
 
 struct CatalogHostView: View {
@@ -289,6 +293,8 @@ struct CatalogHostView: View {
             case .roundSpotterV2:             content_roundSpotterV2
             case .swapConsensusCardV2:        content_swapConsensusCardV2
             case .togetherClockV2:            content_togetherClockV2
+            case .lobbyCrewReadyV3:           content_lobbyCrewReadyV3
+            case .roundSpotterV3:             content_roundSpotterV3
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -2603,6 +2609,29 @@ struct CatalogHostView: View {
 
     private var content_togetherClockV2: some View {
         TogetherClockV2View()
+    }
+
+    // MARK: - The session round, third and last pass
+    //
+    // The owner approved every second-pass addition with ONE REVERSAL:
+    // heart-rate zone colours STAY, as an explicit exception to the colour
+    // rules — which is what design language rule 2's own heart-rate clause
+    // already said ("like plate colours, this is data colour, not accent, and
+    // is exempt"). So `together-clock` (v1, frame 117) stands and
+    // `together-clock-v2` (126) is dropped conceptually: its id and its
+    // capture stay so the pair can still be looked at, and the plan cites v1.
+    //
+    // Two ids, frames 127-128. Every v1 and v2 id is frozen and still
+    // renders; the two seams this pass needed (`SVEnergyMeter.onAccent`,
+    // `SVLiveHRRow.zoneTinted` / `SVCrewHeartRatesCard.zoneTinted`) are
+    // additive and defaulted off, so no approved frame moves.
+
+    private var content_lobbyCrewReadyV3: some View {
+        LobbyCrewReadyV3View()
+    }
+
+    private var content_roundSpotterV3: some View {
+        RoundSpotterV3View()
     }
 }
 

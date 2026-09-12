@@ -265,6 +265,11 @@ struct RoundSpotterV2View: View {
 struct SVCrewHeartRatesCard: View {
     @Environment(\.gsTheme) private var theme
 
+    /// The owner's third-pass reversal: zone colours stay. Defaulted off so
+    /// `round-spotter-v2` renders exactly as it was approved; `-v3` passes
+    /// true and is otherwise the same frame.
+    var zoneTinted: Bool = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack {
@@ -277,7 +282,10 @@ struct SVCrewHeartRatesCard: View {
                     .fixedSize()
             }
             ForEach(Array(SVFixturesV2.spotterHeartRates.enumerated()), id: \.offset) { _, row in
-                SVLiveHRRow(name: row.name, bpm: row.bpm, isLifting: row.isLifting)
+                SVLiveHRRow(name: row.name,
+                            bpm: row.bpm,
+                            isLifting: row.isLifting,
+                            zoneTinted: zoneTinted)
             }
         }
         .padding(14)
