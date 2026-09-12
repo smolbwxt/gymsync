@@ -38,6 +38,11 @@ struct BlockCalendarView: View {
     /// Told when THIS view's own sheet changes a schedule, so the host
     /// can refresh its week buttons.
     var onScheduleChanged: (() async -> Void)? = nil
+    /// Debug-only seam for the design-parity screen catalog: the
+    /// `block-calendar` frame seeds its own day sets, so `load()` must never
+    /// reach a repository. Same idiom as `CampaignsTabView.catalogSkipLoad`
+    /// (`Features/Library/CampaignsTabView.swift:54`).
+    var catalogSkipLoad = false
 
     @Environment(AppState.self) private var appState
     @Environment(\.gsTheme) private var theme
@@ -77,11 +82,6 @@ struct BlockCalendarView: View {
     private struct WeekRef: Identifiable { let id: Int }
 
     private var calendar: Calendar { .current }
-
-    /// The design system's `--onyx-gold` (goals, streaks, finish lines).
-    /// Not a GSTheme token — semantic colors outside the ramp follow the
-    /// HomeView precedent of a local `Color.gsHex` constant.
-    private let blockGold = Color.gsHex(0xE8C33A)
 
     var body: some View {
         Group {
@@ -200,7 +200,7 @@ struct BlockCalendarView: View {
                     Text("ENDS \(short(last).uppercased())")
                         .font(GSFont.bold(10, relativeTo: .caption2))
                         .tracking(1.1)
-                        .foregroundStyle(blockGold)
+                        .foregroundStyle(theme.accent700)
                 }
             }
             VStack(spacing: 12) {
@@ -251,24 +251,58 @@ struct BlockCalendarView: View {
     @ViewBuilder
     private func dayCell(_ day: Date?) -> some View {
         if let day {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(fill(for: day))
-                .frame(height: 10)
-                .frame(maxWidth: .infinity)
-                .overlay {
-                    if calendar.isDateInToday(day) {
-                        RoundedRectangle(cornerRadius: 2)
-                            .strokeBorder(theme.accent, lineWidth: 1.5)
-                    }
+            ZStack {
+                // Owner round 12 (2026-09-11): the block's first day carries a
+                // checkered flag and its last day a trophy. A glyph channel,
+                // because no colour could tell "block ends" from BOOKED. The
+                // glyph REPLACES that day's bar; its colour still follows
+                // DONE > BOOKED like every other day.
+                if let glyph = blockGlyph(for: day) {
+                    Image(systemName: glyph)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(blockGlyphColor(for: day, glyph: glyph))
+                        .frame(height: 10)
+                        .frame(maxWidth: .infinity)
+                        .accessibilityHidden(true)
+                } else {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(fill(for: day))
+                        .frame(height: 10)
+                        .frame(maxWidth: .infinity)
                 }
+                if calendar.isDateInToday(day) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .strokeBorder(theme.accent, lineWidth: 1.5)
+                        .frame(height: 10)
+                        .frame(maxWidth: .infinity)
+                }
+            }
         } else {
             Color.clear.frame(height: 10).frame(maxWidth: .infinity)
         }
     }
 
+    /// `flag.checkered` on the block's first day, `trophy.fill` on its last, nil elsewhere.
+    private func blockGlyph(for day: Date) -> String? {
+        let key = calendar.startOfDay(for: day)
+        if let last = blockEnd, calendar.isDate(key, inSameDayAs: last) { return "trophy.fill" }
+        if let first = startDate, calendar.isDate(key, inSameDayAs: first) { return "flag.checkered" }
+        return nil
+    }
+
+    /// DONE paints the glyph in text; the trophy is otherwise the block's accent
+    /// (the finish line), and the flag is neutral unless that day is booked.
+    private func blockGlyphColor(for day: Date, glyph: String) -> Color {
+        let key = calendar.startOfDay(for: day)
+        if completedDays.contains(key) { return theme.text }
+        if glyph == "trophy.fill" || scheduledDays.contains(key) { return theme.accent }
+        return theme.neutral700
+    }
+
     private func fill(for day: Date) -> Color {
         let key = calendar.startOfDay(for: day)
-        if let last = blockEnd, calendar.isDate(key, inSameDayAs: last) { return blockGold }
+        // The block's first and last days carry glyphs (dayCell / blockGlyph);
+        // this fill is the bar under every other day, DONE > BOOKED > PLANNED.
         if completedDays.contains(key) { return theme.text }
         if scheduledDays.contains(key) { return theme.accent }
         if plannedDays.contains(key) { return theme.accent.opacity(0.55) }
@@ -278,11 +312,30 @@ struct BlockCalendarView: View {
     }
 
     private var legend: some View {
-        HStack(spacing: 12) {
-            legendDot(theme.text, "DONE")
-            legendDot(theme.accent, "BOOKED")
-            legendDot(theme.accent.opacity(0.55), "PLANNED")
-            legendDot(blockGold, "BLOCK ENDS")
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 12) {
+                legendDot(theme.text, "DONE")
+                legendDot(theme.accent, "BOOKED")
+                legendDot(theme.accent.opacity(0.55), "PLANNED")
+            }
+            HStack(spacing: 12) {
+                legendGlyph("flag.checkered", theme.neutral700, "BLOCK STARTS")
+                legendGlyph("trophy.fill", theme.accent, "BLOCK ENDS")
+            }
+        }
+    }
+
+    private func legendGlyph(_ symbol: String, _ color: Color, _ label: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: symbol)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(color)
+                .frame(width: 10, height: 8)
+                .accessibilityHidden(true)
+            Text(label)
+                .font(GSFont.bold(8, relativeTo: .caption2))
+                .tracking(0.8)
+                .foregroundStyle(theme.neutral700)
         }
     }
 
@@ -452,6 +505,7 @@ struct BlockCalendarView: View {
     // MARK: Load
 
     private func load() async {
+        if catalogSkipLoad { loading = false; return }
         guard loading else { return }
         defer { loading = false }
         await reloadAll()
@@ -460,6 +514,7 @@ struct BlockCalendarView: View {
     /// Every read, re-runnable: the embedded copy on the program page
     /// re-reads when that page books a week.
     private func reloadAll() async {
+        if catalogSkipLoad { return }
         if let enrollment, !weeks.isEmpty {
             selectedWeek = highlightedWeek
                 ?? ProgramMath.currentWeek(startedOn: enrollment.startedOn,
@@ -782,3 +837,35 @@ struct WeekScheduleSheet: View {
         return "\(formatter.string(from: window.start)) - \(formatter.string(from: last))"
     }
 }
+
+// MARK: - Catalog fixture seam (`block-calendar` catalog case)
+
+#if DEBUG
+extension BlockCalendarView {
+    /// Debug-only seam for the design-parity screen catalog: seeds the day
+    /// sets `reloadAll()` would otherwise fetch and sets `catalogSkipLoad`, so
+    /// the frame renders with no repository call and no clock. Same idiom as
+    /// `CampaignsTabView.init(catalogFixtureActive:…)`
+    /// (`Features/Library/CampaignsTabView.swift:341-362`) — a dedicated init
+    /// in an extension rather than the memberwise one, because
+    /// `_completedDays` and its siblings are `private @State` and only
+    /// reachable from inside this file, and because an init declared in the
+    /// struct body would suppress the memberwise init every production call
+    /// site uses.
+    init(catalogFixtureEnrollment enrollment: ProgramEnrollment,
+         catalogFixtureWeeks weeks: [ProgramWeek],
+         catalogFixtureCompleted completed: Set<Date>,
+         catalogFixtureScheduled scheduled: Set<Date>,
+         catalogFixtureSelectedWeek week: Int = 1) {
+        // Delegate to the memberwise init (internal — CalendarTimelineRows
+        // and ProgramScheduleView both call it) rather than assigning the
+        // `let`s here, then seed the state the fetch would have filled.
+        self.init(enrollment: enrollment, weeks: weeks)
+        _completedDays = State(initialValue: completed)
+        _scheduledDays = State(initialValue: scheduled)
+        _selectedWeek = State(initialValue: week)
+        _loading = State(initialValue: false)
+        catalogSkipLoad = true
+    }
+}
+#endif
