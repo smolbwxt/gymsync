@@ -15,6 +15,13 @@ on:
   # gates it to master, so a dispatch off any other ref build-tests only.
   workflow_dispatch:
 
+# One run per branch (2026-09-12): a push to a branch with an open PR used to start
+# both a push run and a pull_request run for the same commit, doubling the load on the
+# shared live CI account. The later run cancels the earlier one; master never cancels.
+concurrency:
+  group: ios-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: ${{ github.ref_name != 'master' }}
+
 jobs:
   build-test:
     runs-on: macos-15
@@ -125,6 +132,13 @@ jobs:
     timeout-minutes: 45
     needs: build-test
     continue-on-error: true
+    # The seed DELETEs and re-creates the QA crew's world on ONE shared live account; two
+    # runs seeding at once race each other (2026-09-12: a duplicate-key 409 killed build
+    # 968's seed while build 969 seeded the same rows; earlier, a concurrent seed wiped the
+    # participants the honor line needs). One seed-and-walk at a time, never cancelled.
+    concurrency:
+      group: qa-seed-live-account
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 
