@@ -583,6 +583,7 @@ public struct GSStatTile: View {
     private let valueFontSize: CGFloat
     private let labelColor: Color?
     private let uppercaseLabel: Bool
+    private let raised: Bool
 
     /// `valueFontSize` defaults to the canonical 20pt (Home tab tiles); callers
     /// matching a canvas spec with a smaller scale (e.g. You tab's 18pt stat
@@ -592,13 +593,20 @@ public struct GSStatTile: View {
     /// sentence-case look — opt in per-instance (e.g. Exercise History's
     /// tracked, accent-colored, all-caps tile labels) without touching any
     /// other call site.
+    ///
+    /// `raised` opts a tile into the extruded face. It DEFAULTS TO FALSE
+    /// because almost every call site sits INSIDE a raised card, where design
+    /// language §1 says furniture stays flat. Only a tile standing on its own
+    /// on the page passes `true` (today: `StatTilesRow`, which is
+    /// catalog-only).
     public init(
         value: String,
         label: String,
         valueColor: Color? = nil,
         valueFontSize: CGFloat = 20,
         labelColor: Color? = nil,
-        uppercaseLabel: Bool = false
+        uppercaseLabel: Bool = false,
+        raised: Bool = false
     ) {
         self.value = value
         self.label = label
@@ -606,9 +614,21 @@ public struct GSStatTile: View {
         self.valueFontSize = valueFontSize
         self.labelColor = labelColor
         self.uppercaseLabel = uppercaseLabel
+        self.raised = raised
     }
 
     public var body: some View {
+        if raised {
+            tileContent
+                .gs3DCard(cornerRadius: GSMetrics.radiusSm, lipHeight: 5)
+        } else {
+            tileContent
+                .background(theme.surface)
+                .cornerRadius(GSMetrics.radiusSm)
+        }
+    }
+
+    private var tileContent: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(value)
                 .font(GSFont.bold(valueFontSize, relativeTo: .title3))
@@ -620,8 +640,6 @@ public struct GSStatTile: View {
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.surface)
-        .cornerRadius(GSMetrics.radiusSm)
     }
 }
 

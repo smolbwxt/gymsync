@@ -53,13 +53,19 @@ struct StatTilesRow: View {
 
     private func loadedRow(workoutsThisWeek: Int, lifetimeLbs: Decimal, prsThisMonth: Int) -> some View {
         HStack(spacing: 8) {
-            GSStatTile(value: "\(workoutsThisWeek)", label: "Workouts this week")
+            // Congruence B3 T3.8: these tiles stand on their own on the page,
+            // not inside a raised card, so they opt into a face. Every OTHER
+            // `GSStatTile` call site in the app sits inside a card and keeps
+            // the default `raised: false`.
+            GSStatTile(value: "\(workoutsThisWeek)", label: "Workouts this week", raised: true)
             GSStatTile(value: StatMath.compactNumber(Units.fromPounds(lifetimeLbs, to: ThemeStore.shared.weightUnit)),
-                       label: "Lifetime \(ThemeStore.shared.weightUnit.label)")
+                       label: "Lifetime \(ThemeStore.shared.weightUnit.label)",
+                       raised: true)
             GSStatTile(
                 value: "\(prsThisMonth)",
                 label: "PRs this month",
-                valueColor: theme.accent700
+                valueColor: theme.accent700,
+                raised: true
             )
         }
     }
@@ -73,31 +79,34 @@ struct StatTilesRow: View {
 
     private var skeletonRow: some View {
         HStack(spacing: 8) {
-            GSStatTile(value: "0", label: "Workouts this week")
-            GSStatTile(value: "0", label: "Lifetime \(ThemeStore.shared.weightUnit.label)")
-            GSStatTile(value: "0", label: "PRs this month")
+            GSStatTile(value: "0", label: "Workouts this week", raised: true)
+            GSStatTile(value: "0", label: "Lifetime \(ThemeStore.shared.weightUnit.label)", raised: true)
+            GSStatTile(value: "0", label: "PRs this month", raised: true)
         }
         .redacted(reason: .placeholder)
     }
 
     // MARK: - FIRST-SESSION·ZERO
     //
-    // Dashed-border card that REPLACES the tile row entirely — copy verbatim
-    // from canvas frame 41 ("No lifts logged yet" / "Your first workout
-    // unlocks these stats."). Dash style (`[4, 3]`) matches the app's one
-    // existing dashed-stroke precedent (PTTDockRow's unavailable-mic ring,
-    // GSComponents.swift:1328) rather than inventing new values.
+    // The card that REPLACES the tile row entirely.
     //
-    // "Start" calls `onStart` — the caller (HomeView) passes the SAME
-    // closure body as its existing "Start Solo Workout" CTA
-    // (HomeView.swift's `startSoloWorkoutButton`, ~line 146-157:
+    // Congruence B3 T3.8: it used to be a DASHED outline — a third surface
+    // idiom outside the vocabulary (design language §1 has exactly two raised
+    // surfaces and flat furniture; nothing dashed). It now wears the same
+    // extruded face as every other card. Copy leads with the invitation
+    // (§9, "Empty states invite") instead of naming the absence.
+    //
+    // "Start your first workout" calls `onStart` — the caller (HomeView)
+    // passes the SAME closure body as its existing "Start Solo Workout" CTA
+    // (HomeView.swift's `startSoloWorkoutButton`:
     // `routinePickerPreselected = nil; showRoutinePicker = true`). No new
-    // session-start path is introduced here.
+    // session-start path is introduced here, and this is an empty-state
+    // invitation, not a rename of a shipped primary label.
 
     private var zeroCard: some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("No lifts logged yet")
+                Text("Log your first lift")
                     .font(GSFont.heading(16, relativeTo: .headline))
                     .foregroundStyle(theme.text)
                 Text("Your first workout unlocks these stats.")
@@ -105,15 +114,12 @@ struct StatTilesRow: View {
                     .foregroundStyle(theme.neutral500)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Button("Start", action: onStart)
+            Button("Start your first workout", action: onStart)
                 .buttonStyle(GSPrimaryButtonStyle(fontSize: 14, verticalPadding: 10))
                 .frame(minHeight: 44)
         }
         .padding(16)
-        .overlay(
-            RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
-                .strokeBorder(theme.neutral400, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-        )
+        .gs3DCard(cornerRadius: GSMetrics.radiusSm, lipHeight: 5)
     }
 
     // MARK: - OFFLINE·STALE-CACHE
@@ -131,19 +137,27 @@ struct StatTilesRow: View {
             HStack(spacing: 8) {
                 GSStatTile(
                     value: staleValue(snapshot.workoutsThisWeek.map { "\($0)" }),
-                    label: "Workouts this week"
+                    label: "Workouts this week",
+                    raised: true
                 )
                 GSStatTile(
                     value: staleValue(snapshot.lifetimeLbs.map { StatMath.compactNumber(Units.fromPounds($0, to: ThemeStore.shared.weightUnit)) }),
-                    label: "Lifetime \(ThemeStore.shared.weightUnit.label)"
+                    label: "Lifetime \(ThemeStore.shared.weightUnit.label)",
+                    raised: true
                 )
                 GSStatTile(
+                    // Congruence B3 T3.8: `valueColor: theme.accent700` is
+                    // gone — the "—" placeholder for a value that never
+                    // cached must not read as the screen's act.
                     value: staleValue(snapshot.prsThisMonth.map { "\($0)" }),
                     label: "PRs this month",
-                    valueColor: theme.accent700
+                    raised: true
                 )
             }
-            Text("· = last synced value · dashes couldn't load")
+            // Congruence B3 T3.8: the old caption explained the notation but
+            // named no cause and offered no retry (design language §9,
+            // "Errors say what happened and how to fix it").
+            Text("Couldn't reach the server — · marks the last synced value. Pull to refresh.")
                 .font(GSFont.body(11, relativeTo: .caption2))
                 .foregroundStyle(theme.neutral500)
         }

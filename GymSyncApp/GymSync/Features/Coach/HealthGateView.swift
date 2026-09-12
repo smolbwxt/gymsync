@@ -95,7 +95,7 @@ struct HealthGateView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .gs3DCard(cornerRadius: 18)
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd)
 
         HStack(spacing: 10) {
             Button { clearByPreScreen() } label: {
@@ -106,7 +106,7 @@ struct HealthGateView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 16)
             }
-            .buttonStyle(GS3DButtonStyle(face: theme.accent, cornerRadius: 15))
+            .buttonStyle(GS3DButtonStyle(face: theme.accent, cornerRadius: GSMetrics.radiusSm))
 
             Button {
                 withAnimation(.easeOut(duration: 0.18)) { phase = .screening }
@@ -120,7 +120,7 @@ struct HealthGateView: View {
             }
             .buttonStyle(GS3DButtonStyle(face: theme.raised3DFace,
                                          lip: theme.raised3DLip,
-                                         cornerRadius: 15))
+                                         cornerRadius: GSMetrics.radiusSm))
         }
         Spacer(minLength: 0)
     }
@@ -156,7 +156,7 @@ struct HealthGateView: View {
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .gs3DCard(cornerRadius: 18)
+            .gs3DCard(cornerRadius: GSMetrics.radiusMd)
 
             HStack(spacing: 10) {
                 chip("NO", answer: false, question: question)
@@ -185,7 +185,7 @@ struct HealthGateView: View {
         .buttonStyle(GS3DButtonStyle(
             face: answer ? theme.raised3DFace : theme.accent,
             lip: answer ? theme.raised3DLip : nil,
-            cornerRadius: 15))
+            cornerRadius: GSMetrics.radiusSm))
     }
 
     /// Step 2. Same grammar as Step 1 deliberately — this is the same
@@ -211,7 +211,7 @@ struct HealthGateView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .gs3DCard(cornerRadius: 18)
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd)
 
         VStack(spacing: 10) {
             ForEach(followUp.options) { option in
@@ -224,7 +224,7 @@ struct HealthGateView: View {
                         .padding(.horizontal, 15)
                         .padding(.vertical, 14)
                 }
-                .buttonStyle(.gs3DCardStyle(cornerRadius: 15))
+                .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
             }
         }
         Spacer(minLength: 0)
@@ -249,12 +249,12 @@ struct HealthGateView: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 15)
                 }
-                .buttonStyle(GS3DButtonStyle(face: theme.accent, cornerRadius: 15))
+                .buttonStyle(GS3DButtonStyle(face: theme.accent, cornerRadius: GSMetrics.radiusSm))
             }
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .gs3DCard(cornerRadius: 18)
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd)
     }
 
     private func copy(for outcome: HealthTriage.Outcome) -> String {

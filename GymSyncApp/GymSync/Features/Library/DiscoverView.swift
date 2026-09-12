@@ -205,11 +205,15 @@ struct DiscoverView: View {
                         .onTapGesture { featuredOnly = false; metricFilter = nil }
                 }
             }
-            .padding(.horizontal, 16)
         }
         // The row is its own scroll view — keep the parent's dock margin off
-        // it (the Group-cascade bug this file's own comment below records).
-        .contentMargins(.horizontal, 0, for: .scrollContent)
+        // it (the Group-cascade bug this file's own comment below records);
+        // an explicit value still overrides the cascade, it is just 16 now.
+        //
+        // Congruence B3 T3.9: the 16pt inset moved OFF the HStack and onto
+        // the scroll content, so the last chip can scroll fully clear of the
+        // right edge instead of clipping flush against it.
+        .contentMargins(.horizontal, 16, for: .scrollContent)
     }
 
     private func chip(text: String, icon: String?, active: Bool) -> some View {
@@ -344,9 +348,14 @@ struct DiscoverView: View {
             // uniform regardless of optional chips/attempt lines.
             //
             // 3D pass (2026-08 sweep): 84 → 78 so the 6pt lip added by the
-            // NavigationLink's `.gs3DCardStyle` keeps the tile's total at
-            // the same 168pt (84 art + 78 text + 6 lip).
-            .frame(height: 78, alignment: .topLeading)
+            // NavigationLink's `.gs3DCardStyle` kept the tile's total at
+            // 168pt (84 art + 78 text + 6 lip).
+            //
+            // Congruence B3 T3.9: 78 → 96. The zone holds name + owner + an
+            // OPTIONAL metric-chip row + a stars/attempts row, which overflows
+            // 78 and sliced the attempts line off. The tile total becomes
+            // 186pt (84 art + 96 text + 6 lip).
+            .frame(height: 96, alignment: .topLeading)
         }
         // 3D pass (2026-08 sweep): chrome comes from the NavigationLink's
         // `.gs3DCardStyle` — this is the LABEL only (a flat surface fill and

@@ -220,11 +220,12 @@ struct RoutineBuilderView: View {
             Spacer(minLength: 8)
             GSToggle(isOn: $publishAsFeatured, label: "Publish to Discover")
         }
+        // Congruence B3 T3.4: a standalone row on the page, not furniture
+        // inside a card — so it gets a face of its own.
         .padding(.horizontal, 12)
         .padding(.vertical, 12)
         .frame(minHeight: 44)
-        .background(theme.surface)
-        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
+        .gs3DCard(cornerRadius: GSMetrics.radiusSm, lipHeight: 5)
     }
 
     /// Curator-only: the Library spotlight flag (`is_featured`).
@@ -241,11 +242,11 @@ struct RoutineBuilderView: View {
             Spacer(minLength: 8)
             GSToggle(isOn: $featureOnSpotlight, label: "Feature in Library spotlight")
         }
+        // Congruence B3 T3.4: standalone row, same as `publishToggleRow`.
         .padding(.horizontal, 12)
         .padding(.vertical, 12)
         .frame(minHeight: 44)
-        .background(theme.surface)
-        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
+        .gs3DCard(cornerRadius: GSMetrics.radiusSm, lipHeight: 5)
     }
 
     // MARK: - Publish fields (Phase L Task 4)
@@ -701,9 +702,12 @@ struct RoutineBuilderView: View {
 
             structureRow(item)
         }
+        // Congruence B3 T3.4: the per-exercise card is "the static extruded
+        // card for things you read". Everything inside it — the name/target
+        // fields and the set-structure chips — stays flat furniture: the
+        // extrusion is spent on the object, not on every row inside it.
         .padding(12)
-        .background(theme.surface)
-        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
+        .gs3DCard(cornerRadius: GSMetrics.radiusSm, lipHeight: 5)
     }
 
     // MARK: - Set structures (owner 2026-08-13/14; schema 20260814000003)

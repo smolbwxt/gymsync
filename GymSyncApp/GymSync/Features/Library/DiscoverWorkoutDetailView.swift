@@ -326,16 +326,20 @@ struct DiscoverWorkoutDetailView: View {
             }
         }
         .padding(12)
-        .background(theme.surface)
-        .cornerRadius(GSMetrics.radiusSm)
-        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
         .contentShape(Rectangle())
 
+        // Congruence B3 T3.3: chrome belongs to the link, the label is bare —
+        // the same pattern `DiscoverView.swift:161` and `:271` already use.
+        // The extruded face + lip replace the flat `theme.surface` fill and
+        // its 1 pt outline, and the row now sinks on press.
         if let ex {
             NavigationLink { ExerciseDetailView(exercise: ex) } label: { rowContent }
-                .buttonStyle(.plain)
+                .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
         } else {
+            // Unresolved exercise id — not tappable, so it takes the static
+            // sibling rather than losing its surface entirely.
             rowContent
+                .gs3DCard(cornerRadius: GSMetrics.radiusSm)
         }
     }
 

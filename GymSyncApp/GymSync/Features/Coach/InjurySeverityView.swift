@@ -50,7 +50,7 @@ struct InjurySeverityView: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .gs3DCard(cornerRadius: 15)
+        .gs3DCard(cornerRadius: GSMetrics.radiusSm)
     }
 
     private func choice(_ label: String, detail: String, picked: Bool,
@@ -75,6 +75,6 @@ struct InjurySeverityView: View {
         }
         .buttonStyle(.gs3D(face: picked ? theme.accent : theme.raised3DFace,
                            lip: theme.raised3DLip,
-                           cornerRadius: 10, lipHeight: 3))
+                           cornerRadius: GSMetrics.radiusSm, lipHeight: 4))
     }
 }

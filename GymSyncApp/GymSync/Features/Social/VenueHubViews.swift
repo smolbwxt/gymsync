@@ -652,8 +652,11 @@ struct VenueHubView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 16)
             }
+            // Congruence B3 T3.9: the 16pt inset moved OFF the HStack and
+            // onto the scroll content, so the last chip can scroll fully
+            // clear of the right edge instead of clipping flush against it.
+            .contentMargins(.horizontal, 16, for: .scrollContent)
         }
     }
 
