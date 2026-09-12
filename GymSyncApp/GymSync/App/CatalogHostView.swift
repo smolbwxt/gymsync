@@ -2128,24 +2128,18 @@ struct CatalogHostView: View {
     /// now the crew card has only ever been reviewed against whatever the CI
     /// account happened to contain.
     ///
-    /// The tour is marked seen first. `SocialTabView` carries
-    /// `.gsSpotlightTour(GuidanceTours.crews)` (:349), which is gated on a
-    /// `UserDefaults` flag (`GSSpotlight.swift:109`) that a catalog launch
-    /// never has — every `UITEST_CATALOG` capture is a fresh process — so the
-    /// frame rendered behind the tour's scrim with two Outside the Box rows
-    /// occluded. This is the first catalog id to render a whole TAB, which is
-    /// why no existing frame had to deal with it. Same shape as
-    /// `content_sessionChat`'s `AppState.shared.currentProfile` assignment,
-    /// and safe for the same reason: the mutation cannot leak into another
-    /// capture's process.
+    /// `SocialTabView` carries `.gsSpotlightTour(GuidanceTours.crews)` (:349),
+    /// which would otherwise draw its scrim over this frame. Nothing is done
+    /// about that HERE: `captureCatalog()` now passes
+    /// `-guidanceTipsEnabled NO`, the same switch `launchApp()` has always
+    /// used, which suppresses every tip and tour for the whole capture suite.
     private var content_crewsTab: some View {
-        GuidanceTours.crews.markSeen()
-        return SocialTabView(catalogFixtureGroups: CrewsTabFixtures.groups,
-                             catalogFixtureBars: CrewsTabFixtures.bars,
-                             catalogFixtureHonors: CrewsTabFixtures.honors,
-                             catalogFixtureFriendCount: 12,
-                             catalogFixturePendingCount: 2,
-                             catalogSkipLoad: true)
+        SocialTabView(catalogFixtureGroups: CrewsTabFixtures.groups,
+                      catalogFixtureBars: CrewsTabFixtures.bars,
+                      catalogFixtureHonors: CrewsTabFixtures.honors,
+                      catalogFixtureFriendCount: 12,
+                      catalogFixturePendingCount: 2,
+                      catalogSkipLoad: true)
     }
 
     private static let calendarPushCrew = GSGroupColor.palette[4]
