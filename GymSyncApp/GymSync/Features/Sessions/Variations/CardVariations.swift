@@ -265,12 +265,31 @@ struct PumpCheckCardV2View: View {
         .gs3DCard(cornerRadius: GSMetrics.radiusSm, lipHeight: 5)
     }
 
+    /// SECOND PASS: the caption. The owner read the thumbnail correctly ("the
+    /// grey square is the photo") and named what it does — tapping it opens
+    /// the whole workout's metrics — which the frame did not say anywhere. An
+    /// 88 pt tile that is also a door needs one line telling you so, or the
+    /// composition's whole argument (the picture shrinks, the detail moves
+    /// behind it) is a claim the card never makes to its reader.
+    ///
+    /// Under the tile and inside its column, at the caption's own size, so it
+    /// reads as a label on the picture rather than as a sixth line of the
+    /// card. No accent: it describes an affordance, it is not the card's act,
+    /// and this card still spends no accent at all.
     private var photo: some View {
-        Image(uiImage: PumpComposerFixtures.photo)
-            .resizable()
-            .scaledToFill()
-            .frame(width: 88, height: 88)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
+        VStack(spacing: 5) {
+            Image(uiImage: PumpComposerFixtures.photo)
+                .resizable()
+                .scaledToFill()
+                .frame(width: 88, height: 88)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+            Text(SVFixturesV2.pumpPhotoCaption)
+                .font(GSFont.body(10, relativeTo: .caption2))
+                .foregroundStyle(theme.neutral500)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .frame(width: 88)
+        }
     }
 
     /// Lines 2 and 3 — the trajectory and this week's rung. A STRIP, at 14 pt

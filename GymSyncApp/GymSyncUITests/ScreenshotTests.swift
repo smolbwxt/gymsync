@@ -735,6 +735,7 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogWarmupSoloV2()           { captureCatalog("warmup-solo-v2") }
     func testCatalogRoundWaitV2()            { captureCatalog("round-wait-v2") }
     func testCatalogRoundSpotterV2()         { captureCatalog("round-spotter-v2") }
+    func testCatalogSwapConsensusCardV2()    { captureCatalog("swap-consensus-card-v2") }
     func testCatalogTogetherClockV2()        { captureCatalog("together-clock-v2") }
 
     // MARK: - Seeded deep-screen captures

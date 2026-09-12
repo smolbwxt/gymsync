@@ -135,6 +135,7 @@ final class CatalogScreenTests: XCTestCase {
             "warmup-solo-v2",
             "round-wait-v2",
             "round-spotter-v2",
+            "swap-consensus-card-v2",
             "together-clock-v2",
         ]
         for id in ids {

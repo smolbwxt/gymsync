@@ -398,7 +398,15 @@ jobs:
           # swap-consensus-card, pump-check-card-v2. `pump-feed-post` is
           # untouched: pump-check-card-v2 is a SECOND id beside it, not a
           # re-render of it, because the two frames exist to be compared.
-          FLOOR=128
+          # The session round's SECOND PASS (the owner reviewed all fourteen
+          # round-1 frames and picked): 128 -> 135. SEVEN new catalog ids,
+          # frames 120-126, one capture each and no second attachment among
+          # them - lobby-crew-waiting-v2, lobby-crew-ready-v2, warmup-solo-v2,
+          # round-wait-v2, round-spotter-v2, swap-consensus-card-v2,
+          # together-clock-v2. Every ROUND-1 id is frozen and still captured,
+          # so the pairs can be composed two-up; pump-check-card-v2 gained a
+          # photo caption but is the same id and moves no count.
+          FLOOR=135
           # `|| true` + the `:-0` default for the same `set -eo pipefail`
           # reason as the simulator picker above: a missing $SCREENS makes
           # `find` exit 1, which would kill the step before it printed the

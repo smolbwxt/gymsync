@@ -165,6 +165,7 @@ enum CatalogScreen: String, CaseIterable {
     case warmupSoloV2 = "warmup-solo-v2"
     case roundWaitV2 = "round-wait-v2"
     case roundSpotterV2 = "round-spotter-v2"
+    case swapConsensusCardV2 = "swap-consensus-card-v2"
     case togetherClockV2 = "together-clock-v2"
 }
 
@@ -286,6 +287,7 @@ struct CatalogHostView: View {
             case .warmupSoloV2:               content_warmupSoloV2
             case .roundWaitV2:                content_roundWaitV2
             case .roundSpotterV2:             content_roundSpotterV2
+            case .swapConsensusCardV2:        content_swapConsensusCardV2
             case .togetherClockV2:            content_togetherClockV2
             }
         }
@@ -2591,6 +2593,12 @@ struct CatalogHostView: View {
 
     private var content_roundSpotterV2: some View {
         RoundSpotterV2View()
+    }
+
+    /// The consensus swap with both exercises tappable. `swap-consensus-card`
+    /// is untouched beside it — the pair is the frame the owner compares.
+    private var content_swapConsensusCardV2: some View {
+        SwapConsensusCardV2View()
     }
 
     private var content_togetherClockV2: some View {

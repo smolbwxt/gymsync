@@ -364,6 +364,10 @@
     "frame": 124,
     "title": "Spotter mode, second pass - the crew's live heart rates"
   },
+  "swap-consensus-card-v2": {
+    "frame": 125,
+    "title": "The consensus swap - both exercises tappable"
+  },
   "together-clock-v2": {
     "frame": 126,
     "title": "Together, second pass - neutral BPM ink, the zone as a word"
