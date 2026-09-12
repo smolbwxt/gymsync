@@ -63,7 +63,7 @@ checked-in lifter has marked ready (consensus). "Start anyway" stays for the lea
 
 Gone from the lobby: the routine proposal-and-vote flow and its three realtime subscriptions (the `editing`,
 `voting`, `locked` states were designed for it and are dead), the warm-up minutes stepper (warm-up is a phase, not
-a number), and every soundboard reference (§6).
+a number), and every soundboard reference (§5).
 
 ### 3.2 Start is walking into the gym together — then warm up together
 
