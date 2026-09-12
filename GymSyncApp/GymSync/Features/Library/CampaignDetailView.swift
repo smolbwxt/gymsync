@@ -194,17 +194,25 @@ struct CampaignDetailView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 16)
                 .padding(.bottom, 10)
-            ForEach(Array(curatedWorkouts.enumerated()), id: \.element.id) { index, workout in
-                NavigationLink {
-                    DiscoverWorkoutDetailView(workout: workout)
-                } label: {
-                    curatedWorkoutRow(workout)
-                }
-                .buttonStyle(.plain)
-                if index < curatedWorkouts.count - 1 {
-                    Rectangle().fill(theme.divider).frame(height: 1).padding(.horizontal, 16)
+            // Congruence B3 T3.1: the workout list is ONE raised object
+            // (design language §1, "one raised object per idea"); the rows
+            // inside stay flat furniture, delineated by `GSDivider` rather
+            // than by a face of their own.
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(curatedWorkouts.enumerated()), id: \.element.id) { index, workout in
+                    NavigationLink {
+                        DiscoverWorkoutDetailView(workout: workout)
+                    } label: {
+                        curatedWorkoutRow(workout)
+                    }
+                    .buttonStyle(.plain)
+                    if index < curatedWorkouts.count - 1 {
+                        GSDivider()
+                    }
                 }
             }
+            .gs3DCard(cornerRadius: GSMetrics.radiusMd)
+            .padding(.horizontal, 16)
         }
     }
 
@@ -238,22 +246,30 @@ struct CampaignDetailView: View {
     private var communitySection: some View {
         VStack(alignment: .leading, spacing: 8) {
             GSSectionHeader("Community Progress")
-            // Units sweep: totals and the goal convert together — the
-            // completion FRACTION is unit-free, so the bar is untouched.
-            let unit = ThemeStore.shared.weightUnit
-            let achieved = community?.volumeLifted ?? 0
-            if let target = campaign.globalTarget?.target, target > 0 {
-                CampaignProgressBar(fraction: min(1, max(0, decimalToDouble(achieved) / target)))
-                Text("Together we've moved \(formattedNumber(Units.fromPounds(achieved, to: unit))) \(unit.label) of the \(formattedNumber(Units.fromPounds(Decimal(target), to: unit))) \(unit == .kg ? "kg" : "lb") goal.")
-                    .font(GSFont.body(13, relativeTo: .subheadline))
-                    .foregroundStyle(theme.neutral500)
-            } else {
-                Text("\(formattedNumber(Units.fromPounds(achieved, to: unit))) \(unit.label) lifted so far by the community.")
-                    .font(GSFont.body(13, relativeTo: .subheadline))
-                    .foregroundStyle(theme.neutral500)
+                .padding(.horizontal, 16)
+            // Congruence B3 T3.1: the readout is a small raised card; the
+            // progress bar itself stays flat furniture inside it.
+            VStack(alignment: .leading, spacing: 8) {
+                // Units sweep: totals and the goal convert together — the
+                // completion FRACTION is unit-free, so the bar is untouched.
+                let unit = ThemeStore.shared.weightUnit
+                let achieved = community?.volumeLifted ?? 0
+                if let target = campaign.globalTarget?.target, target > 0 {
+                    CampaignProgressBar(fraction: min(1, max(0, decimalToDouble(achieved) / target)))
+                    Text("Together we've moved \(formattedNumber(Units.fromPounds(achieved, to: unit))) \(unit.label) of the \(formattedNumber(Units.fromPounds(Decimal(target), to: unit))) \(unit == .kg ? "kg" : "lb") goal.")
+                        .font(GSFont.body(13, relativeTo: .subheadline))
+                        .foregroundStyle(theme.neutral500)
+                } else {
+                    Text("\(formattedNumber(Units.fromPounds(achieved, to: unit))) \(unit.label) lifted so far by the community.")
+                        .font(GSFont.body(13, relativeTo: .subheadline))
+                        .foregroundStyle(theme.neutral500)
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .gs3DCard(cornerRadius: GSMetrics.radiusSm)
+            .padding(.horizontal, 16)
         }
-        .padding(.horizontal, 16)
         .padding(.top, 16)
     }
 
@@ -262,25 +278,33 @@ struct CampaignDetailView: View {
     private var myProgressSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             GSSectionHeader("Your Progress")
-            if let resolved = campaign.individualTarget?.resolvedTarget {
-                let achieved = CampaignProgressMath.achievedCount(progress: myProgress, target: campaign.individualTarget) ?? 0
-                let fraction = CampaignProgressMath.fractionComplete(progress: myProgress, target: campaign.individualTarget) ?? 0
-                CampaignProgressBar(fraction: fraction)
-                HStack(spacing: 8) {
-                    Text("\(achieved)/\(resolved.count) \(resolved.unitLabel)")
+                .padding(.horizontal, 16)
+            // Congruence B3 T3.1: same small raised card as `communitySection`
+            // — the bar inside stays flat furniture.
+            VStack(alignment: .leading, spacing: 8) {
+                if let resolved = campaign.individualTarget?.resolvedTarget {
+                    let achieved = CampaignProgressMath.achievedCount(progress: myProgress, target: campaign.individualTarget) ?? 0
+                    let fraction = CampaignProgressMath.fractionComplete(progress: myProgress, target: campaign.individualTarget) ?? 0
+                    CampaignProgressBar(fraction: fraction)
+                    HStack(spacing: 8) {
+                        Text("\(achieved)/\(resolved.count) \(resolved.unitLabel)")
+                            .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
+                            .foregroundStyle(theme.text)
+                        if CampaignProgressMath.isComplete(progress: myProgress, target: campaign.individualTarget) {
+                            GSTag(text: "Completed", style: .success)
+                        }
+                    }
+                } else {
+                    Text("\(formattedNumber(Units.fromPounds(myProgress?.volumeLifted ?? 0, to: ThemeStore.shared.weightUnit))) \(ThemeStore.shared.weightUnit.label) lifted")
                         .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
                         .foregroundStyle(theme.text)
-                    if CampaignProgressMath.isComplete(progress: myProgress, target: campaign.individualTarget) {
-                        GSTag(text: "Completed", style: .success)
-                    }
                 }
-            } else {
-                Text("\(formattedNumber(Units.fromPounds(myProgress?.volumeLifted ?? 0, to: ThemeStore.shared.weightUnit))) \(ThemeStore.shared.weightUnit.label) lifted")
-                    .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
-                    .foregroundStyle(theme.text)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .gs3DCard(cornerRadius: GSMetrics.radiusSm)
+            .padding(.horizontal, 16)
         }
-        .padding(.horizontal, 16)
         .padding(.top, 20)
     }
 
@@ -298,12 +322,18 @@ struct CampaignDetailView: View {
                     .foregroundStyle(theme.neutral500)
                     .padding(.horizontal, 16)
             } else {
-                ForEach(Array(leaderboard.enumerated()), id: \.element.id) { index, row in
-                    leaderboardRow(rank: index + 1, row: row)
-                    if index < leaderboard.count - 1 {
-                        Rectangle().fill(theme.divider).frame(height: 1).padding(.horizontal, 16)
+                // Congruence B3 T3.1: the board is one raised object; the
+                // `isYou` tint rides on its face rather than on `bg`.
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(leaderboard.enumerated()), id: \.element.id) { index, row in
+                        leaderboardRow(rank: index + 1, row: row)
+                        if index < leaderboard.count - 1 {
+                            GSDivider()
+                        }
                     }
                 }
+                .gs3DCard(cornerRadius: GSMetrics.radiusMd)
+                .padding(.horizontal, 16)
             }
         }
     }
