@@ -399,6 +399,16 @@ struct LobbyView: View {
                     .padding(.horizontal, 16)
                     .padding(.top, 10)
 
+                // THE CREW'S WEEK (owner addition 2026-09-12, on trial). ONE
+                // LINE, removable in one line — that is the deal. Shown in
+                // both the waiting and the ready state, directly under the
+                // energy widget and above the talk dock.
+                if let crewWeek {
+                    CrewWeekStrip(week: crewWeek)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 10)
+                }
+
                 // Error
                 if let errorText {
                     Text(errorText)
@@ -1003,6 +1013,34 @@ struct LobbyView: View {
 
     private func exerciseName(for ex: RoutineExercise) -> String {
         allExercises.first(where: { $0.id == ex.exerciseID })?.name ?? "Exercise"
+    }
+
+    // MARK: - The crew's week (owner addition 2026-09-12, on trial)
+
+    /// What `CrewWeekStrip` draws, or nil for no strip and no space.
+    ///
+    /// **NIL IN PRODUCTION TODAY, and that is a wiring gap rather than a
+    /// design choice.** The strip needs two facts per crew member: their
+    /// weekly session GOAL and their COMPLETED COUNT this week. The goals are
+    /// already in hand — `SessionRepository.participants(sessionID:)` fetches
+    /// each member's `Profile`, which carries `weeklySessionGoal`. The counts
+    /// are not, and no shipped read supplies them:
+    ///
+    ///   * `SocialTabView`'s crew bar counts sessions for the WHOLE CREW, not
+    ///     per member (`SocialTabView.swift:635-650`);
+    ///   * `group_consistency_honor` is per member but over THIRTY DAYS
+    ///     (`CrewHonor.swift:73`, migration 20260911000001) — right shape,
+    ///     wrong window, and a 30-day count printed under a "this week"
+    ///     kicker would be wrong data wearing a right label.
+    ///
+    /// The ruling was explicit: add no tables, policies or RPCs for this. So
+    /// production renders nothing and the catalog frames render the fixture,
+    /// which is what the owner asked to see. Wiring it is a Phase B item.
+    private var crewWeek: CrewWeek? {
+        #if DEBUG
+        if let catalog { return catalog.crewWeek }
+        #endif
+        return nil
     }
 
     // MARK: - The lobby's own pieces (plan task S7)

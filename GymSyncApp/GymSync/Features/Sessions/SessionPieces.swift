@@ -55,6 +55,8 @@ enum SessionCopy {
     static let talkToCoachDetail = "This session's focus · form questions · demo videos"
     /// The swap control on a plan row — flat furniture on a raised card.
     static let swap = "Swap"
+    /// THE CREW'S WEEK (owner addition 2026-09-12, on trial in Phase A).
+    static let theCrewsWeek = "THE CREW'S WEEK"
 
     /// First name only, for the places a full name would wrap a 40 pt column.
     static func firstName(_ full: String) -> String {
@@ -910,5 +912,126 @@ struct WarmUpClockStrip: View {
                 .frame(maxWidth: 128, alignment: .trailing)
         }
         .sessionStrip()
+    }
+}
+
+// MARK: - The crew's week (owner addition 2026-09-12, controller ruling)
+
+/// `THE CREW'S WEEK` — where the crew is against the pace it set itself.
+///
+/// **ON TRIAL.** The owner asked to see how this looks and feels on the Phase
+/// A proof frames before it becomes permanent, so it is one self-contained
+/// component over one value type (`CrewWeek`), placed by a single line in
+/// `LobbyView.lobbyScroll` and removable by deleting that line.
+///
+/// **INK AND `neutral700` ONLY.** No accent, no green, no gold. Design rule 2
+/// spends accent on the screen's one invitation (Start), green on done and
+/// gold on the check-in window; a crew one session behind on a Wednesday is
+/// none of the three. The verdict is a caption in WORDS, which is also the
+/// only form a colour-blind reader gets for free.
+///
+/// Same surface treatment as the energy widget it sits under.
+struct CrewWeekStrip: View {
+    @Environment(\.gsTheme) private var theme
+
+    let week: CrewWeek
+
+    /// Small enough that it never competes with the plan above it — the
+    /// largest thing in a lobby is what the crew is about to lift.
+    private static let chartHeight: CGFloat = 40
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .firstTextBaseline) {
+                GSSectionHeader(SessionCopy.theCrewsWeek)
+                Spacer(minLength: 8)
+                Text(CrewWeekMath.caption(week))
+                    .font(GSFont.bold(10, relativeTo: .caption2))
+                    .tracking(0.8)
+                    .monospacedDigit()
+                    .foregroundStyle(theme.neutral700)
+                    .fixedSize()
+            }
+            chart
+            chips
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+
+    /// x is Monday…Sunday, y is the crew's cumulative sessions. The dotted
+    /// line is the plan; the solid one is what happened, ending in a filled
+    /// dot on today so the eye knows where "now" is on a week that has not
+    /// finished.
+    private var chart: some View {
+        GeometryReader { proxy in
+            let planned = CrewWeekMath.plannedSeries(week)
+            let actual = CrewWeekMath.actualSeries(week)
+            // Both lines share one scale, or the comparison they exist to
+            // make is meaningless.
+            let ceiling = max(planned.last ?? 0, actual.max() ?? 0, 1)
+            let width = proxy.size.width
+            let height = proxy.size.height
+
+            func point(_ index: Int, of count: Int, value: Double) -> CGPoint {
+                let steps = max(count - 1, 1)
+                return CGPoint(x: width * CGFloat(index) / CGFloat(steps),
+                               y: height * (1 - CGFloat(value / ceiling)))
+            }
+
+            // The actual line spans Monday..today, so its x must be measured
+            // against the WEEK's span, not its own point count.
+            func actualPoint(_ index: Int) -> CGPoint {
+                let span = CGFloat(CrewWeekMath.daysInWeek)
+                let x: CGFloat = actual.count == 2
+                    ? width * CGFloat(index) * CGFloat(CrewWeekMath.today(week) + 1) / span
+                    : width * CGFloat(index) / span
+                return CGPoint(x: x,
+                               y: height * (1 - CGFloat(actual[index] / ceiling)))
+            }
+
+            ZStack {
+                Path { path in
+                    for (index, value) in planned.enumerated() {
+                        let p = point(index, of: planned.count, value: value)
+                        index == 0 ? path.move(to: p) : path.addLine(to: p)
+                    }
+                }
+                .stroke(theme.neutral700,
+                        style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
+
+                Path { path in
+                    for index in actual.indices {
+                        let p = actualPoint(index)
+                        index == 0 ? path.move(to: p) : path.addLine(to: p)
+                    }
+                }
+                .stroke(theme.text, style: StrokeStyle(lineWidth: 2,
+                                                       lineCap: .round,
+                                                       lineJoin: .round))
+
+                if let last = actual.indices.last {
+                    Circle()
+                        .fill(theme.text)
+                        .frame(width: 5, height: 5)
+                        .position(actualPoint(last))
+                }
+            }
+        }
+        .frame(height: Self.chartHeight)
+    }
+
+    /// One chip per lifter, in the existing tag style — `Alex 2/3`, and
+    /// `Mo 2/–` for a lifter who set no goal.
+    private var chips: some View {
+        HStack(spacing: 6) {
+            ForEach(week.lifters) { lifter in
+                GSTag(text: CrewWeekMath.chip(lifter), style: .outline)
+            }
+            Spacer(minLength: 0)
+        }
     }
 }

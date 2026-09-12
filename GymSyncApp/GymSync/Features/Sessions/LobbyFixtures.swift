@@ -38,6 +38,10 @@ struct LobbyWorld {
     /// a capture, so `isOrganizer` cannot be derived — and the leader's Swap
     /// chips and tappable ready widget are half of what these frames show.
     let isOrganizer: Bool
+    /// THE CREW'S WEEK (owner addition 2026-09-12), on trial. Always supplied
+    /// here so the owner sees the strip on the proof frames; nil in
+    /// production until a per-member weekly read exists.
+    let crewWeek: CrewWeek?
 }
 
 enum LobbyFixtures {
@@ -115,6 +119,33 @@ enum LobbyFixtures {
                    energy: energy, isYou: isYou, isLate: isLate)
     }
 
+    // MARK: - The crew's week (owner addition 2026-09-12)
+
+    /// The owner's own chip numbers — Alex 2/3 · Sam 3/3 · Dana 1/4 · Lee 2/3
+    /// — on a fixed THURSDAY (`todayIndex: 3`), never `Date.now`.
+    ///
+    /// 8 done against a 13-session plan puts the crew one ahead of Thursday's
+    /// pace (13 × 4/7 = 7.4 → 7), so the caption reads `1 AHEAD · 8 OF 13`.
+    /// The three caption FORMS the ruling gives are formats, not one dataset:
+    /// no weekday makes 8-of-13 read exactly ON PACE, and inventing chip
+    /// numbers that did would be a frame that proves a sentence rather than a
+    /// component.
+    ///
+    /// Per-day counts are supplied so the frames show the real stepped shape
+    /// rather than the straight line a bare total honestly is.
+    static let crewWeek = CrewWeek(
+        lifters: [
+            CrewWeekLifter(id: alexID, name: "Alex Rue", goal: 3, done: 2,
+                           doneByDay: [1, 0, 1, 0, 0, 0, 0]),
+            CrewWeekLifter(id: samID, name: "Sam Obi", goal: 3, done: 3,
+                           doneByDay: [1, 1, 0, 1, 0, 0, 0]),
+            CrewWeekLifter(id: danaID, name: "Dana Kord", goal: 4, done: 1,
+                           doneByDay: [0, 0, 1, 0, 0, 0, 0]),
+            CrewWeekLifter(id: leeID, name: "Lee Vance", goal: 3, done: 2,
+                           doneByDay: [0, 1, 0, 1, 0, 0, 0]),
+        ],
+        todayIndex: 3)
+
     // MARK: - The three worlds
 
     /// `session-lobby-waiting` (frame 129): two checked in, one at the gym,
@@ -131,7 +162,8 @@ enum LobbyFixtures {
         ],
         rungLine: rungLine,
         planRows: planRows,
-        isOrganizer: true)
+        isOrganizer: true,
+        crewWeek: crewWeek)
 
     /// `session-lobby-ready` (frame 130): everyone checked in. The accent
     /// moves to the arrival widget and the foot's Start becomes the neutral
@@ -149,7 +181,8 @@ enum LobbyFixtures {
         ],
         rungLine: rungLine,
         planRows: planRows,
-        isOrganizer: true)
+        isOrganizer: true,
+        crewWeek: crewWeek)
 
     /// `session-lobby-late` (frame 131): three checked in, one late. Start is
     /// LIVE for the leader and still captioned `3 of 4 checked in`; tapping it
@@ -165,5 +198,6 @@ enum LobbyFixtures {
         ],
         rungLine: rungLine,
         planRows: planRows,
-        isOrganizer: true)
+        isOrganizer: true,
+        crewWeek: crewWeek)
 }
