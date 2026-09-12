@@ -149,11 +149,25 @@ struct GroupView: View {
                 } label: {
                     Text(tab.rawValue)
                         .font(GSFont.bold(11, relativeTo: .caption))
-                        .foregroundStyle(subTab == tab ? theme.bg : theme.text)
+                        .foregroundStyle(theme.text)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)
-                        .background(subTab == tab ? theme.accent : Color.clear)
                         .frame(maxWidth: .infinity)
+                        // Congruence B3 T3.5, mirroring
+                        // `DiscoverWorkoutDetailView.sortSegmentOption`: the
+                        // solid-accent selected block was heavier than
+                        // anything else on the screen. The face marks the
+                        // segment; a 2 pt accent underline marks the CURRENT
+                        // item — the one legal accent use here. The control
+                        // itself stays flat (design language §1 names
+                        // segmented controls as furniture).
+                        .background(subTab == tab ? theme.raised3DFace : Color.clear)
+                        .overlay(alignment: .bottom) {
+                            if subTab == tab {
+                                Rectangle().fill(theme.accent).frame(height: 2)
+                            }
+                        }
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
@@ -281,12 +295,15 @@ struct GroupView: View {
             }
         }
 
-        // Sticky footer — extruded neutral CTA, accent text, pinned below a divider
+        // Sticky footer — extruded neutral CTA, default ink, pinned below a divider
         GSDivider()
         // 3D pass (2026-08 sweep): the sticky footer CTA wears the neutral
-        // raised pair (accent label kept). Footprint math: the old bordered
-        // box was minHeight 44 — the face is now 37 and the 7pt lip sits
-        // below it, so the footer's total height is unchanged at 44.
+        // raised pair. Footprint math: the old bordered box was minHeight 44
+        // — the face is now 37 and the 7pt lip sits below it, so the footer's
+        // total height is unchanged at 44.
+        // Congruence B3 T3.5: the label was accent. Leaving is a destructive
+        // ESCAPE, not an invitation, and it competed with the "Add" button
+        // above it — default text ink (design language §2).
         Button(role: .destructive) {
             Task {
                 try? await GroupRepository.leave(groupID: group.id)
@@ -295,7 +312,7 @@ struct GroupView: View {
         } label: {
             Text("Leave Group")
                 .font(GSFont.bodyMedium(14, relativeTo: .body))
-                .foregroundStyle(theme.accent)
+                .foregroundStyle(theme.text)
                 .frame(maxWidth: .infinity, minHeight: 37)
         }
         .buttonStyle(.gs3D(face: theme.raised3DFace,
@@ -403,7 +420,9 @@ struct GroupView: View {
                     HStack(spacing: 12) {
                         Image(systemName: "figure.strengthtraining.functional")
                             .font(.system(size: 18, weight: .regular))
-                            .foregroundStyle(theme.accent)
+                            // Congruence B3 T3.5: a row glyph is not the
+                            // screen's act (design language §2).
+                            .foregroundStyle(theme.neutral700)
                         Text("Burpee Ledger")
                             .font(GSFont.bodyMedium(14, relativeTo: .subheadline))
                             .foregroundStyle(theme.text)
