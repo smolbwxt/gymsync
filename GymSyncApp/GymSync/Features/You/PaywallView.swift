@@ -46,9 +46,11 @@ struct PaywallView: View {
                                title: "Export your data",
                                detail: "Your training log is yours — take it anywhere.")
                 }
+                // Congruence B3 T3.2: the feature block is a thing you read,
+                // so it is the static extruded card — never `theme.surface`
+                // as a face (design language §1).
                 .padding(16)
-                .background(theme.surface)
-                .cornerRadius(GSMetrics.radiusMd)
+                .gs3DCard(cornerRadius: GSMetrics.radiusMd, lipHeight: 7)
 
                 // M1 (2026-08-14): a REAL store the moment products exist
                 // in App Store Connect (owner-side setup: paid-apps
