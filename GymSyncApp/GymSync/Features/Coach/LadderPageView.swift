@@ -40,6 +40,14 @@ struct LadderPageView: View {
     /// the rung belongs to, so it carries one — `LiveWeeklyGoalRepository` by
     /// default, injected by a host that has its own.
     var weeklyGoalRepository: any WeeklyGoalRepository = LiveWeeklyGoalRepository()
+    /// Coach's re-ladder, waiting on the athlete (spec §4, plan task S2).
+    ///
+    /// AN INPUT, not a read. Home already computes it — it is the one screen
+    /// that knows the block goal's id before the page is opened — and handing
+    /// the value down means Home's card and this page's card are the same
+    /// proposal rather than two derivations a minute apart. Nil is no card,
+    /// which is what every other opener of this page gets.
+    var proposal: LadderProposal? = nil
 
     @Environment(\.gsTheme) private var theme
 
@@ -55,6 +63,10 @@ struct LadderPageView: View {
     @State private var goal: BlockGoal?
     @State private var loading = true
     @State private var reLaddering = false
+    /// Whether the athlete has answered `proposal` on THIS visit. The
+    /// proposal itself is an input and cannot be cleared from here; this is
+    /// what makes both answers close the card.
+    @State private var proposalAnswered = false
     @State private var saving = false
     @State private var errorText: String?
     @State private var coachThread: CoachOpener?
@@ -133,6 +145,7 @@ struct LadderPageView: View {
                 if let page = resolved {
                     milestoneHeader(page)
                     coachLine(page)
+                    proposalCard
                     ladderCard(page)
                     levers
                     saveRow
@@ -235,6 +248,52 @@ struct LadderPageView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Coach: \(page.coachLine). Talk it through.")
         }
+    }
+
+    // MARK: - 3b: Coach proposes a new ladder (spec §4, plan task S2)
+
+    /// **ABOVE THE RUNGS AND BELOW THE COACH LINE.** The rungs are what the
+    /// proposal is about, so the question sits above its own subject (rule 4).
+    ///
+    /// NO ACCENT — this page already has one primary, the save (this file's
+    /// header), and a page never has two accent buttons (rule 2).
+    /// `GSConsentCard` is drawn without accent for exactly that reason.
+    @ViewBuilder
+    private var proposalCard: some View {
+        if let proposal, !proposalAnswered {
+            GSConsentCard(
+                kicker: GSConsentCopy.ladderKicker,
+                sentence: LadderProposalMath.sentence(proposal,
+                                                      unit: ThemeStore.shared.weightUnit),
+                detail: LadderProposalMath.detail(proposal),
+                acceptTitle: GSConsentCopy.accept,
+                declineTitle: GSConsentCopy.decline,
+                onAccept: {
+                    proposalAnswered = true
+                    Task { await acceptProposal() }
+                },
+                onDecline: {
+                    // The card only. The next Home load recomputes it, which
+                    // is correct: the proposal is a fact about the ladder, not
+                    // a dismissible notice.
+                    proposalAnswered = true
+                })
+        }
+    }
+
+    /// Accept applies the proposal through **the exact pair `reLadder()`
+    /// already calls**, in the same order, so the consent card and
+    /// `LET COACH RE-LADDER` are one code path and cannot drift — then
+    /// re-reads the page, because `LadderMath.page` is the one place the
+    /// ladder's words are chosen.
+    private func acceptProposal() async {
+        guard world == nil else { return }
+        reLaddering = true
+        defer { reLaddering = false }
+        _ = await repository.reLadder(goalID: goalID)
+        await repository.materialiseRung(goalID: goalID,
+                                         weekStart: WeekMath.weekStartString())
+        fetched = await repository.page(goalID: goalID)
     }
 
     // MARK: - 4: the ladder

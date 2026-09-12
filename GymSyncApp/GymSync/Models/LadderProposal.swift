@@ -81,6 +81,24 @@ enum LadderProposalMath {
             + " — the next is \(target)."
     }
 
+    /// The consent card's consequence line — what the athlete is agreeing to
+    /// beyond the one week the sentence names (plan task S2).
+    ///
+    /// Absent when the proposal moves a single rung, because then the
+    /// sentence has already said all of it, and a detail line that restates
+    /// its own headline is furniture.
+    ///
+    /// It says what does NOT change as well as what does. A re-ladder never
+    /// touches the milestone or its date — `LadderMath.reLaddered` re-derives
+    /// the rungs *toward* them — and an athlete asked to accept "a new
+    /// ladder" with no such assurance would reasonably read it as Coach
+    /// moving the goalposts.
+    static func detail(_ proposal: LadderProposal) -> String? {
+        guard proposal.changed.count > 1 else { return nil }
+        return "\(proposal.changed.count) remaining weeks change."
+            + " Your milestone and its date don't."
+    }
+
     /// A rung's target as the ladder page spells it, plus the unit.
     ///
     /// `LadderReadout.strengthRungText` is the app's one strength spelling —
