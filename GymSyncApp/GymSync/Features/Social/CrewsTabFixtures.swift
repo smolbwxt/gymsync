@@ -46,10 +46,14 @@ enum CrewsTabFixtures {
     /// Thursday 2026-09-10, noon UTC — the next lift the meta line names.
     ///
     /// NOON, not the evening hour a crew would really book. The meta line
-    /// prints an abbreviated weekday (`crewMetaLine`), and only noon survives
-    /// the UTC-11…UTC+14 span without the date rolling: at 18:00 UTC a
-    /// simulator anywhere past UTC+6 reads Friday, and the frame would name a
-    /// different day than the one this constant does.
+    /// prints an abbreviated weekday (`crewMetaLine`), and noon is the hour
+    /// that survives the widest span of simulator time zones without the date
+    /// rolling: **UTC-11 to UTC+11**, which is every offset a CI simulator has
+    /// ever been set to. It is NOT the whole UTC-11…UTC+14 span the world
+    /// uses — noon UTC is midnight at UTC+12, so Kiritimati (UTC+14), Chatham
+    /// (UTC+12:45) and NZDT (UTC+13) all read the NEXT day and the frame would
+    /// name a weekday this constant does not. An evening hour is far worse:
+    /// at 18:00 UTC a simulator anywhere past UTC+6 already reads Friday.
     static let nextLift = utcDate(year: 2026, month: 9, day: 10, hour: 12)
     static let createdAt = utcDate(year: 2026, month: 6, day: 1, hour: 12)
 

@@ -1664,19 +1664,25 @@ struct CatalogHostView: View {
     // `exerciseID` against `allExercises` (:337) — so three RoutineExercises
     // plus their three matching Exercises put the real page on screen.
     //
-    // TWO side effects before the view is built, both of which are the
-    // difference between a screen and a scrim — same builder-side-effect
-    // idiom `content_topLifters` above already uses for identity:
+    // TWO side effects before the view is built — same builder-side-effect
+    // idiom `content_topLifters` above already uses for identity. The second
+    // is still the difference between a screen and a scrim; the first stopped
+    // being that when `captureCatalog()` learned to disable tips (see below):
     //
-    // 1. `GuidanceTip.workout.markSeen()`. `sessionChrome` carries
-    //    `.gsSpotlight(.workout)` (:360), which presents a full-screen
-    //    modal scrim 450 ms after appear (GSSpotlight.swift:67-75) on any
-    //    device that has not seen it. `ScreenshotTests.launchApp()` kills
-    //    tips with `-guidanceTipsEnabled NO`, but `captureCatalog()` sets
-    //    NO launch arguments at all — so without this line the capture is
-    //    the spotlight card, not the set page. Marking the one tip seen is
-    //    narrower than flipping the global switch and cannot affect any
-    //    other capture: `.workout` fires nowhere else.
+    // 1. `GuidanceTip.workout.markSeen()` — REDUNDANT SINCE 2026-09-12, and
+    //    kept only because deleting a working call proves nothing.
+    //    `sessionChrome` carries `.gsSpotlight(.workout)` (:360), which
+    //    presents a full-screen modal scrim 450 ms after appear
+    //    (GSSpotlight.swift:67-75) on any device that has not seen it. This
+    //    line existed because `ScreenshotTests.launchApp()` killed tips with
+    //    `-guidanceTipsEnabled NO` while `captureCatalog()` set no launch
+    //    arguments at all, so without it the capture was the spotlight card
+    //    rather than the set page. `captureCatalog()` now passes
+    //    `-guidanceTipsEnabled NO` too (social-cards Stage 1 fix round: the
+    //    `crews-tab` id photographed a tour scrim), which covers this tip,
+    //    every full-tab id that carries a tour, and every id added later. So
+    //    the line is now belt beside braces, not the difference between a
+    //    screen and a scrim.
     //
     // 2. A pre-seeded `AppState.shared.liveSoloSession`. `startIfNeeded()`
     //    (:3610) ADOPTS a live solo session for the same routine (:3635-3646)
