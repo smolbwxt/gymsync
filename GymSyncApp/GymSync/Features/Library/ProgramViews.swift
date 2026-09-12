@@ -561,13 +561,19 @@ struct ProgramTemplateDetailView: View {
 
     var body: some View {
         ScrollView {
+            // Order (T11.1): the question comes before the readout. The three
+            // required `Choose…` pickers gate `Start program`, so they lead —
+            // an eight-row week table above them pushed the ask below the
+            // fold and nobody answered it. `baselineSection` follows the
+            // picks it is derived from (`selectedExercises`), which keeps the
+            // causal reading order; THE PLAN sits under both.
             VStack(alignment: .leading, spacing: 20) {
                 aboutSection
-                planSection
                 focusSection
                 if isPercentBased, !selectedExercises.isEmpty {
                     baselineSection
                 }
+                planSection
                 startSection
             }
             .padding(.vertical, 16)
