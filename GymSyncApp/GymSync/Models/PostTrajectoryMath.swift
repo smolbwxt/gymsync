@@ -16,8 +16,9 @@ enum PostTrajectoryMath {
     /// and their own post telling their crew they are behind.
     ///
     /// ORDERED: an outcome the block already recorded beats a ladder still
-    /// being re-derived; a last rung already met beats everything ahead of
-    /// it; otherwise the ladder's own reach decides.
+    /// being re-derived; a last rung already met counts as met only while
+    /// the ladder still reaches (final-review fix 3); otherwise the ladder's
+    /// own reach decides, exactly as the ladder page's coach line does.
     ///
     /// NO MISSED-RUNG BRANCH (review fix 1 — supersedes the plan's S2.4
     /// snippet). It used to read `if page.rows.contains { $0.status == .missed

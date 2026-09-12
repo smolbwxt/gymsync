@@ -38,15 +38,4 @@ final class PumpPostCardCopyTests: XCTestCase {
                        "PR — Back Squat 235 lbs × 3")
         XCTAssertTrue(HighlightText.line(highlight, unit: .kg).contains("kg"))
     }
-
-    private static func post(trajectory: PostTrajectory?,
-                             highlight: PostHighlight?) -> WorkoutPost {
-        WorkoutPost(id: UUID(), authorID: UUID(), sessionID: UUID(), photoPath: nil,
-                    summary: PostSummary(durationSeconds: 2_520, totalVolumeLbs: 7_240,
-                                         exercises: [], routineName: nil),
-                    includesHR: false, avgBpm: nil, maxBpm: nil, isLate: false,
-                    createdAt: Date(timeIntervalSince1970: 1_788_696_000),
-                    completedAt: nil, retakeCount: 0, highlight: highlight,
-                    trajectory: trajectory, goalID: nil, weekStartString: nil)
-    }
 }
