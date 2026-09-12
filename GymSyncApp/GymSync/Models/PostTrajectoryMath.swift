@@ -27,7 +27,7 @@ enum PostTrajectoryMath {
     /// absorbed is history, not standing.
     static func standing(goal: BlockGoal, page: LadderPageModel) -> PostTrajectory.Standing {
         if goal.outcome == .met { return .met }
-        if let last = page.rows.last, last.status == .met { return .met }
+        if let last = page.rows.last, last.status == .met, page.reachesMilestone { return .met }
         return page.reachesMilestone ? .onTrack : .behind
     }
 

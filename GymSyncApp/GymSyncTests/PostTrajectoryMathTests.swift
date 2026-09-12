@@ -68,6 +68,13 @@ final class PostTrajectoryMathTests: XCTestCase {
             .met)
     }
 
+    func testAMetLastRungOnALadderThatFallsShortIsBehind() {
+        XCTAssertEqual(
+            PostTrajectoryMath.standing(goal: goal(),
+                                        page: page([.met, .met, .met], reaches: false)),
+            .behind)
+    }
+
     // MARK: - chips
 
     func testMuscleSetsChipsPassThroughUnchanged() {
