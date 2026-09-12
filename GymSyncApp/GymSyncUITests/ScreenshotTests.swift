@@ -686,6 +686,26 @@ final class ScreenshotTests: XCTestCase {
     // is a crew at rest and carries none (the decay is the line's absence).
     func testCatalogCrewsTab()               { captureCatalog("crews-tab") }
 
+    // The focused session design round (group-session-and-lobby spec §8 step
+    // 1, owner decision 10 — "proof frames for the live session are part of
+    // the plan, after a focused design round"). Fourteen catalog ids, frames
+    // 106-119, one capture each.
+    //
+    // Same reason the Home v3 ten exist: the group live workout has never had
+    // a catalog frame at all (spec §7), the owner picks a composition before
+    // any production view is touched, and the CI artifact is the only way a
+    // design round sees a screen before TestFlight. Ids are ordered so that
+    // the two-up pairs the controller composes — waiting a|b, warm-up solo
+    // a|b, round wait a|b — are just the sorted list.
+    //
+    // THE LOBBY AND THE SHARED WARM-UP (frames 106-111).
+    func testCatalogLobbyCrewWaitingA()      { captureCatalog("lobby-crew-waiting-a") }
+    func testCatalogLobbyCrewWaitingB()      { captureCatalog("lobby-crew-waiting-b") }
+    func testCatalogLobbyCrewReady()         { captureCatalog("lobby-crew-ready") }
+    func testCatalogWarmupSoloA()            { captureCatalog("warmup-solo-a") }
+    func testCatalogWarmupSoloB()            { captureCatalog("warmup-solo-b") }
+    func testCatalogWarmupCrew()             { captureCatalog("warmup-crew") }
+
     // MARK: - Seeded deep-screen captures
     //
     // Reachable via the deterministic fixture world the QA seed builds for the

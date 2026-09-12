@@ -284,5 +284,30 @@
     "frame": 105,
     "title": "Crew sessions list - state glyphs",
     "note": "congruence B9 T9.1: GroupView's sessions list, stopped on the LIST so the SF Symbol state glyphs are in frame (testLobby and testSessionRecap both tap straight through it). The seed has no abandoned session, so only the completed tick is exercised. No proof frame in docs/design/mockups/ yet."
+  },
+  "lobby-crew-waiting-a": {
+    "frame": 106,
+    "title": "Crew lobby, waiting - arrival as a rail",
+    "note": "The focused session design round (2026-09-12 group-session-and-lobby spec, §8 step 1 / owner decision 10). Frames 106-119 are this round; 105 was master's maximum when it branched. Catalog-only compositions - no production view is touched until Phase A - so there is no proof frame in docs/design/mockups/ and parity_diff.js logs 'skip lobby-crew-waiting-a: no proof frame'. The Home v3 round (frames 71-82) set this precedent."
+  },
+  "lobby-crew-waiting-b": {
+    "frame": 107,
+    "title": "Crew lobby, waiting - the stage on each roster row"
+  },
+  "lobby-crew-ready": {
+    "frame": 108,
+    "title": "Crew lobby - everyone checked in, Start live"
+  },
+  "warmup-solo-a": {
+    "frame": 109,
+    "title": "Solo warm-up - plan card leads, Coach answers under it"
+  },
+  "warmup-solo-b": {
+    "frame": 110,
+    "title": "Solo warm-up - Coach is the plan card's second line"
+  },
+  "warmup-crew": {
+    "frame": 111,
+    "title": "Shared warm-up in its crew frame - who's warm"
   }
 }

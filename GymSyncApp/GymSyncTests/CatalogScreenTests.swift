@@ -105,6 +105,16 @@ final class CatalogScreenTests: XCTestCase {
             "crews-tab",
             // congruence B2 T2.3: the block calendar's flag/trophy glyphs.
             "block-calendar",
+            // The focused session design round (group-session-and-lobby spec
+            // §8 step 1, owner decision 10): the lobby's two compositions and
+            // its everyone-ready state, and the shared warm-up screen's two
+            // compositions and its crew frame.
+            "lobby-crew-waiting-a",
+            "lobby-crew-waiting-b",
+            "lobby-crew-ready",
+            "warmup-solo-a",
+            "warmup-solo-b",
+            "warmup-crew",
         ]
         for id in ids {
             XCTAssertNotNil(CatalogScreen(rawValue: id), "missing catalog case: \(id)")

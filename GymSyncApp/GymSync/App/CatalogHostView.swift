@@ -133,6 +133,16 @@ enum CatalogScreen: String, CaseIterable {
     // See `content_crewsTab`.
     case crewsTab = "crews-tab"
     case blockCalendar = "block-calendar"
+    // The focused session design round (group-session-and-lobby spec §8
+    // step 1): the lobby and the shared warm-up screen, as catalog-only
+    // compositions for the owner to pick from. Frames 106-111. See
+    // `content_lobbyCrewWaitingA` for the whole story.
+    case lobbyCrewWaitingA = "lobby-crew-waiting-a"
+    case lobbyCrewWaitingB = "lobby-crew-waiting-b"
+    case lobbyCrewReady = "lobby-crew-ready"
+    case warmupSoloA = "warmup-solo-a"
+    case warmupSoloB = "warmup-solo-b"
+    case warmupCrew = "warmup-crew"
 }
 
 struct CatalogHostView: View {
@@ -234,6 +244,12 @@ struct CatalogHostView: View {
             case .homeGoalStripBlock:         content_homeGoalStripBlock
             case .crewsTab:                   content_crewsTab
             case .blockCalendar:              content_blockCalendar
+            case .lobbyCrewWaitingA:          content_lobbyCrewWaitingA
+            case .lobbyCrewWaitingB:          content_lobbyCrewWaitingB
+            case .lobbyCrewReady:             content_lobbyCrewReady
+            case .warmupSoloA:                content_warmupSoloA
+            case .warmupSoloB:                content_warmupSoloB
+            case .warmupCrew:                 content_warmupCrew
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -2402,6 +2418,63 @@ struct CatalogHostView: View {
         ProgramWeek(percentOfBaseline: 82.5, sets: 4, reps: 3),
         ProgramWeek(sets: 3, reps: 5, isDeload: true, note: "Deload - leave two in the tank"),
     ]
+
+    // MARK: - The focused session design round
+    //
+    // Spec: `docs/superpowers/specs/2026-09-12-group-session-and-lobby
+    // -design.md` §8 step 1 — "a focused design round first … the session
+    // screens … and the pump-check cards brought onto the design language,
+    // as rendered proofs for the owner, the way the Home and You rounds were
+    // run." Owner decision 10 makes the round a precondition of the plan.
+    //
+    // FOURTEEN IDS, frames 106-119, in the brief's order: the lobby (two
+    // compositions plus the everyone-ready state), the shared warm-up screen
+    // (two compositions plus its crew frame), Rounds (two compositions of the
+    // round wait, plus the skip offer and spotter mode), Freestyle, Together,
+    // the consensus swap card and the pump-check card re-composed.
+    //
+    // Same contract as the Home v3 ten (`content_homeV3Tiles` above): each is
+    // a plain value-driven view from `SVFixtures`, reads no `AppState`, makes
+    // no repository call, holds no `.task`, and takes no parameters — the
+    // fixtures live in `Features/Sessions/Variations/SessionVariationKit.swift`
+    // beside the views that render them, the way `HomeV2Fixtures` does, so a
+    // frame and the world it draws are read together. Production `LobbyView`,
+    // `GroupSessionLiveView` and `WarmUpPhaseView` are untouched: spec §8
+    // puts their rework in Phases A and B, after the owner picks.
+    //
+    // PROOF AUTHORITY: none, exactly as for the Home v3 round. These frames
+    // ARE the proof. `docs/design/frame-map.json` reserves 106-119 and
+    // `parity_diff.js` logs `skip <id>: no proof frame` for all fourteen
+    // until something is rendered into `docs/design/mockups/`.
+    //
+    // TWO ANIMATIONS SURVIVE, both shipped components' own: `PTTDockRow`'s
+    // resting accent waveform (already captured by `voice-idle`) and
+    // `GSHeartRatePill`'s beat on `together-clock` (already captured by
+    // `heart-rate-pill`). Nothing else here moves, and no view reads a clock.
+
+    private var content_lobbyCrewWaitingA: some View {
+        LobbyCrewWaitingAView()
+    }
+
+    private var content_lobbyCrewWaitingB: some View {
+        LobbyCrewWaitingBView()
+    }
+
+    private var content_lobbyCrewReady: some View {
+        LobbyCrewReadyView()
+    }
+
+    private var content_warmupSoloA: some View {
+        WarmupSoloAView()
+    }
+
+    private var content_warmupSoloB: some View {
+        WarmupSoloBView()
+    }
+
+    private var content_warmupCrew: some View {
+        WarmupCrewView()
+    }
 }
 
 // MARK: - Profile fixture
