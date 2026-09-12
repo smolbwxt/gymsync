@@ -6086,16 +6086,26 @@ struct GroupSessionLiveView: View {
             hrStats = await HealthKitBridge.heartRateStats(start: start, end: end)
         }
 
+        // Spec §1 lines 2-3: resolved ONCE, here, as the author — the only
+        // reads RLS permits. Best-effort: a blip costs the post its
+        // trajectory, never the post itself.
+        let resolved = await PostTrajectoryResolver.resolve()
+
         return PumpCheckContext(
             sessionID: session.id,
             summary: PostSummary(
                 durationSeconds: duration,
                 totalVolumeLbs: Decimal(myVolume),
-                exercises: exercises),
+                exercises: exercises,
+                routineName: routineName),
             avgBpm: hrStats?.avg,
             maxBpm: hrStats?.max,
             includeHRDefault: ThemeStore.shared.shareHeartRate && hrStats != nil,
-            windowStart: Date())
+            windowStart: Date(),
+            completedAt: session.completedAt,
+            trajectory: resolved?.trajectory,
+            goalID: resolved?.goalID,
+            weekStartString: resolved?.weekStartString)
     }
 
     /// Hero total only — abbreviated ("24.6k"), matches SessionRecapView/

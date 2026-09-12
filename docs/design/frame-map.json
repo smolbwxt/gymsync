@@ -266,6 +266,10 @@
     "frame": 101,
     "title": "Crews tab - two crews, one with the honor line"
   },
+  "pump-composer-highlight": {
+    "frame": 102,
+    "title": "Pump composer - Coach's picks"
+  },
   "block-calendar": {
     "frame": 103,
     "title": "The block, in time - flag and trophy",

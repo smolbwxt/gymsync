@@ -1119,6 +1119,84 @@ async function main() {
     { method: 'DELETE' });
   console.log(`  weekly goal: cleared week ${weekStart} — the app must materialise rung 2 of block goal ${blockGoal.id} on Home's first load`);
 
+  // --- the CI account's pump check: a post that carries a trajectory -------
+  // Plan task S2.10 (spec §1, §6). The FIRST workout_posts row this script
+  // has ever written. Its job is end-to-end proof that the six columns
+  // migration 20260912000001 added accept what the client writes into them —
+  // the script fails loudly on any 4xx (see `rest`, :55-61), so a column
+  // whose type or CHECK disagrees with `PostTrajectory` turns the seed step
+  // red rather than failing silently on a device months later.
+  //
+  // Attached to the MURPH ATTEMPT session: workout_posts' INSERT policy is
+  // is_session_participant (20260731000001:64-69) and that session already
+  // has a real participant row for `me`. (This script runs as the service
+  // role, which bypasses RLS — the point of matching the policy anyway is
+  // that the fixture describes a state a real client could have produced.)
+  //
+  // Idempotent on a FIXED id, because workout_posts has no natural key:
+  // upsert on `id` converges a re-run instead of stacking a post per run.
+  //
+  // THE TRAJECTORY IS A LITERAL, and deliberately so. `goalLine` is worded by
+  // `LadderMath.page` in Swift; re-deriving that wording in JavaScript would
+  // be a second opinion about the same milestone, and the wording's
+  // authority is the catalog fixture plus PostTrajectoryMathTests. This row
+  // proves the COLUMNS, not the copy.
+  //
+  // THE POST OWNS BOTH OF ITS TIMESTAMPS (review fix 11a). It used to read
+  // `completed_at` off the Murph attempt session and let the server default
+  // `created_at` to now(), which made the live card read "posted 55 days
+  // after" — the Murph fixture's completion is a fixed date in the past
+  // (`MURPH_ATTEMPT_COMPLETED_AT`, :645) and now() walks away from it every
+  // day. Worse, a re-run kept the FIRST run's created_at while now() moved on,
+  // so the gap only ever grew. Writing both explicitly, relative to this run,
+  // pins the tag at "posted 47 min after" on every seed — which is spec §2's
+  // own example and what the capture is there to show.
+  //
+  // `MURPH_ATTEMPT_COMPLETED_AT` is deliberately NOT touched: that constant is
+  // the attempt fixture's own contract and other assertions read it.
+  const QA_POST_ID = '00000000-0000-4000-f000-000000000730';
+  const qaPostCreatedAt = new Date(Date.now() - 60 * 60 * 1000);          // now - 1 h
+  const qaPostCompletedAt = new Date(qaPostCreatedAt.getTime() - 47 * 60 * 1000); // - 47 min
+  await rest('workout_posts?on_conflict=id', { method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+    body: JSON.stringify({
+      id: QA_POST_ID,
+      author_id: me.id,
+      session_id: murphSession.id,
+      photo_path: null,
+      summary: {
+        duration_seconds: 2520,
+        total_volume_lbs: 7240,
+        routine_name: 'Push day',
+        exercises: [{
+          name: 'Back Squat', equipment: 'barbell',
+          sets: [
+            { weight_lbs: 225, reps: 5, is_pr: false, is_failed: false },
+            { weight_lbs: 235, reps: 3, is_pr: true, is_failed: false },
+          ],
+        }],
+      },
+      includes_hr: false,
+      is_late: true,
+      created_at: qaPostCreatedAt.toISOString(),
+      completed_at: qaPostCompletedAt.toISOString(),
+      retake_count: 2,
+      highlight: { kind: 'pr', text: 'PR — Back Squat', weightLbs: 235, reps: 3 },
+      trajectory: {
+        goalLine: 'Bench 225 by Oct 18', weekNumber: 3, weekCount: 8,
+        standing: 'onTrack',
+        chips: [
+          { name: 'CHEST', done: 8, target: 12 },
+          { name: 'BACK', done: 10, target: 12 },
+          { name: 'LEGS', done: 6, target: 12 },
+          { name: 'ARMS', done: 8, target: 8 },
+        ],
+      },
+      goal_id: blockGoal.id,
+      week_start: currentWeekStart,
+    }) });
+  console.log(`  workout post ${QA_POST_ID}: a pump check carrying block goal ${blockGoal.id}'s week 3, posted 47 min after its session`);
+
   console.log('\ndone — QA fixture world seeded (idempotent).');
 }
 main().catch((e) => { console.error('Fatal:', e.message); process.exit(1); });

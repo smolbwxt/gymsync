@@ -47,7 +47,7 @@ struct PumpFeedView: View {
                         reactionCounts: countsByPost[post.id] ?? [:],
                         ownedSoundSlugs: ownedSoundSlugs,
                         soundNames: soundNames,
-                        onReact: { emoji in Task { await toggleReaction(post: post, emoji: emoji) } },
+                        onReact: { emoji in Task { await commitReaction(post: post, emoji: emoji) } },
                         onDelete: { deleteTarget = post },
                         onReport: { reportTarget = post }
                     )
@@ -160,32 +160,39 @@ struct PumpFeedView: View {
 
     // MARK: - Actions
 
-    /// Optimistic toggle — the server is authoritative; a failure rolls the
-    /// tap back.
+    /// Optimistic, and ONE-WAY. Spec §2 (Strava's kudos): a reaction commits.
+    /// A second tap on a chip you already own does nothing — it is not an
+    /// error and it gets no message, because nothing went wrong; the gesture
+    /// simply has no second half any more.
+    ///
+    /// Still optimistic, still rolled back on failure: a tap that never
+    /// reached the server must not leave a count that says it did.
+    ///
+    /// A CONFLICT IS NOT A FAILURE (review fix 9). The guard above reads
+    /// CLIENT state, and client state can be behind the server's — the same
+    /// reaction from another device, or a row this page loaded before the
+    /// hydrate that would have revealed it. `post_reactions`' primary key is
+    /// (post_id, user_id, emoji), so that insert comes back 23505 / HTTP 409,
+    /// which `ErrorMapping` already distinguishes as `.conflict`. Rolling the
+    /// optimistic count back there un-lit a chip the server was holding lit,
+    /// and the next refresh silently put it back — the user saw their own
+    /// kudos flicker off. The row exists, which is exactly what the tap
+    /// wanted, so the chip stays lit and the counts are re-read from the
+    /// server rather than guessed at.
     @MainActor
-    private func toggleReaction(post: WorkoutPost, emoji: String) async {
-        let had = mineByPost[post.id, default: []].contains(emoji)
-        if had {
+    private func commitReaction(post: WorkoutPost, emoji: String) async {
+        guard !mineByPost[post.id, default: []].contains(emoji) else { return }
+        mineByPost[post.id, default: []].insert(emoji)
+        countsByPost[post.id, default: [:]][emoji, default: 0] += 1
+        do {
+            try await WorkoutPostRepository.react(postID: post.id, emoji: emoji)
+        } catch GymSyncError.conflict {
+            // Already committed, by this account, before this tap. Keep the
+            // chip lit; let the server say what the counts are.
+            await hydrate([post])
+        } catch {
             mineByPost[post.id, default: []].remove(emoji)
             countsByPost[post.id, default: [:]][emoji, default: 1] -= 1
-        } else {
-            mineByPost[post.id, default: []].insert(emoji)
-            countsByPost[post.id, default: [:]][emoji, default: 0] += 1
-        }
-        do {
-            if had {
-                try await WorkoutPostRepository.unreact(postID: post.id, emoji: emoji)
-            } else {
-                try await WorkoutPostRepository.react(postID: post.id, emoji: emoji)
-            }
-        } catch {
-            if had {
-                mineByPost[post.id, default: []].insert(emoji)
-                countsByPost[post.id, default: [:]][emoji, default: 0] += 1
-            } else {
-                mineByPost[post.id, default: []].remove(emoji)
-                countsByPost[post.id, default: [:]][emoji, default: 1] -= 1
-            }
         }
     }
 
@@ -234,16 +241,37 @@ struct PumpPostCard: View {
             authorRow
                 .padding(12)
 
+            // SPEC §1'S ANATOMY, IN ITS ORDER: 1 who and when, 2 the
+            // trajectory, 3 this week's rung, 4 the highlight, 5 the workout
+            // in plain terms, 6 the picture, 7 reactions.
+            //
+            // The picture is SIXTH. Lines 2-5 are the reason the card exists
+            // ("a snapshot of where people are in their fitness trajectory")
+            // and a 300 pt photo above any of them buries it below the fold.
+            // This is review fix 4 and it supersedes the plan's S2.7 snippet,
+            // which left the photo between line 3 and line 4 and so shipped
+            // the order 1, 2, 3, picture, 4, 5, 7.
+            //
+            // `summaryBlock` carries lines 4 and 5 and the per-exercise rows
+            // they sit with. The exercise rows are not one of the seven lines
+            // — they are the detail this card has shown since 2026-07 — so
+            // they travel with the summary rather than being split from it.
+            if let trajectory = post.trajectory {
+                trajectoryBlock(trajectory)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 12)
+            }
+
+            summaryBlock
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
+
             if post.photoPath != nil {
                 photoBlock
             }
 
-            summaryBlock
-                .padding(12)
-
             reactionsRow
-                .padding(.horizontal, 12)
-                .padding(.bottom, 12)
+                .padding(12)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .gs3DCard(cornerRadius: GSMetrics.radiusMd)
@@ -277,10 +305,56 @@ struct PumpPostCard: View {
                     .foregroundStyle(theme.neutral500)
             }
             Spacer()
-            if post.isLate {
+            // Spec §2: the binary `late` chip becomes elapsed time, and the
+            // retake count shows above zero. An OLD row (no `completed_at`)
+            // keeps the chip it was written with — an honest fallback rather
+            // than a computed "0 min".
+            if let retakes = PostLateness.retakeTag(post.retakeCount ?? 0) {
+                GSTag(text: retakes, style: .neutral)
+            }
+            if let lateness = PostLateness.tag(completedAt: post.completedAt,
+                                               postedAt: post.createdAt) {
+                GSTag(text: lateness, style: .neutral)
+            } else if post.isLate {
                 GSTag(text: "late", style: .neutral)
             }
         }
+    }
+
+    /// Lines 2 and 3 — the trajectory and this week's rung (spec §1).
+    ///
+    /// A STRIP, not a card: `surface` at 14 pt, design rule 1's "lines that
+    /// belong to the card above them". The card is already the one raised
+    /// object on this idea and a second extrusion inside it would make two.
+    ///
+    /// NO ACCENT anywhere in here, `behind` included. Accent has three jobs
+    /// (rule 2) and none of them is "a fact about someone else's week"; red
+    /// is errors only, and being behind is not an error. The standing is
+    /// carried by the WORD, which is what spec §1 asks for.
+    private func trajectoryBlock(_ trajectory: PostTrajectory) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text(trajectory.line)
+                .font(GSFont.bodyMedium(12.5, relativeTo: .caption).monospacedDigit())
+                .foregroundStyle(theme.neutral700)
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
+
+            if !trajectory.chips.isEmpty {
+                HStack(spacing: 8) {
+                    ForEach(Array(trajectory.chips.enumerated()), id: \.offset) { _, chip in
+                        // isNext is never set: a finished post is not an
+                        // invitation (design rule 2).
+                        GSGoalChip(name: chip.name, done: chip.done,
+                                   target: chip.target, fill: chip.fill)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 10)
+        .background(theme.surface)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 
     private var photoBlock: some View {
@@ -308,8 +382,25 @@ struct PumpPostCard: View {
                 exerciseRow(exercise)
             }
 
+            // Line 4 — the lifter's one pick. Bold body text, no glyph and no
+            // colour: the set rows below already carry a `PR` tag in accent,
+            // and a second accent on the same card would be two.
+            if let highlight = post.highlight {
+                Text(HighlightText.line(highlight, unit: unit))
+                    .font(GSFont.bold(13, relativeTo: .subheadline))
+                    .foregroundStyle(theme.text)
+                    .lineLimit(2)
+            }
+
+            // Line 5 — `Push day · 42 min · 7,240 lb`. The routine name is
+            // dropped rather than replaced for a freeform session; "Workout ·
+            // 42 min" names nothing.
             HStack(spacing: 6) {
                 let minutes = max(1, post.summary.durationSeconds / 60)
+                if let routineName = post.summary.routineName, !routineName.isEmpty {
+                    Text(routineName)
+                    Text("·")
+                }
                 Text("\(minutes) min")
                 Text("·")
                 Text("\(StatMath.compactNumber(Units.fromPounds(post.summary.totalVolumeLbs, to: unit))) \(unit.label)")
@@ -418,15 +509,6 @@ struct PumpPostCard: View {
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .contextMenu {
-                    if myReactions.contains(key) {
-                        Button(role: .destructive) {
-                            onReact(key)
-                        } label: {
-                            Label("Remove my sound", systemImage: "speaker.slash")
-                        }
-                    }
-                }
             }
 
             if !ownedSoundSlugs.isEmpty {
