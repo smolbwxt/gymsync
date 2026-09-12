@@ -381,9 +381,13 @@ struct ProgramDetailView: View {
             // `role: .destructive` and "Your history stays — only the plan
             // stops." The two `.red` labels in this file stay red: both are
             // genuine `errorText`.
+            //
+            // `theme.text`, not `neutral500`: off the error palette but still
+            // full-contrast, because this is a control. Muted would have read
+            // as a caption sitting under the actions rather than one of them.
             Button("Abandon program") { confirmAbandon = true }
                 .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
-                .foregroundStyle(theme.neutral500)
+                .foregroundStyle(theme.text)
                 .padding(.horizontal, 16)
                 .padding(.top, 2)
         }

@@ -379,7 +379,12 @@ func stepperCell(
             .tracking(1.1)
             .foregroundStyle(theme.neutral500)
             .lineLimit(1)
-            .minimumScaleFactor(0.75)
+            // 0.6, not 0.75: the longest kicker is 28 characters
+            // ("WEIGHT · LBS TOTAL INCL. BAR") and the sheet lays two of
+            // these cells side by side, so on a 375pt device the cell is
+            // ~166pt and a 0.75 floor clips. Reps is four characters and
+            // never reaches any floor.
+            .minimumScaleFactor(0.6)
 
         // Canvas: bordered row — minus button | value | plus button, height 48
         HStack(spacing: 0) {

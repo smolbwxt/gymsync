@@ -42,6 +42,10 @@ struct BlockedUsersView: View {
                     title: "Nobody blocked",
                     message: "Block someone and they land here — they won't be able to message you or send friend requests."
                 )
+                // Same 16pt inset the error card above carries, so the two
+                // states sit on one gutter instead of the empty one going
+                // full-bleed.
+                .padding(.horizontal, 16)
                 .padding(.top, 60)
             } else {
                 List {
@@ -58,9 +62,15 @@ struct BlockedUsersView: View {
                             // `HStack { label; Spacer(minLength: 0) }`, so a
                             // frame inside the label leaves the pill itself
                             // still stretchy — and it would measure 92 + 24pt
-                            // of horizontal padding rather than 92.
-                            Button("Unblock") {
+                            // of horizontal padding rather than 92. The
+                            // label then takes `maxWidth: .infinity` to
+                            // starve that internal Spacer, so "Unblock"
+                            // centres in the pill instead of hugging its
+                            // left edge.
+                            Button {
                                 Task { await unblock(profile) }
+                            } label: {
+                                Text("Unblock").frame(maxWidth: .infinity)
                             }
                             .buttonStyle(GSSecondaryButtonStyle(fontSize: 12, horizontalPadding: 12, verticalPadding: 6))
                             .frame(width: 92)
