@@ -221,7 +221,7 @@ struct BurpeeLedgerView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.accent)
         // Onyx alignment (2026-07-31): the banner is a floating widget now.
-        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .clipShape(RoundedRectangle(cornerRadius: GSMetrics.radiusMd))
     }
 
     /// Shared visual content for the "Log burpees now" CTA — identical
@@ -272,7 +272,7 @@ struct BurpeeLedgerView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         // 3D pass (2026-08): static extruded card (the lip replaces the
         // old neutral stroke).
-        .gs3DCard(cornerRadius: 20)
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd)
     }
 
     // MARK: - Crew debts
@@ -295,7 +295,7 @@ struct BurpeeLedgerView: View {
             // (2026-08): that card is extruded now — static face + lip;
             // the inner rows (dividers, isMe tint) sit ON the face and are
             // clipped by the card shape exactly as before.
-            .gs3DCard(cornerRadius: 20)
+            .gs3DCard(cornerRadius: GSMetrics.radiusMd)
         }
     }
 
