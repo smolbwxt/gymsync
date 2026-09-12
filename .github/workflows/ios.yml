@@ -129,17 +129,42 @@ jobs:
   # the artifact existing is the goal, not this job's pass/fail status.
   screenshots:
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 120
     needs: build-test
     continue-on-error: true
     # The seed DELETEs and re-creates the QA crew's world on ONE shared live account; two
     # runs seeding at once race each other (2026-09-12: a duplicate-key 409 killed build
     # 968's seed while build 969 seeded the same rows; earlier, a concurrent seed wiped the
     # participants the honor line needs). One seed-and-walk at a time, never cancelled.
-    concurrency:
-      group: qa-seed-live-account
-      cancel-in-progress: false
+    #
+    # NOT a job-level `concurrency` group: GitHub keeps ONE pending job per group and
+    # cancels the older pending one, so with three runs overlapping the middle run's
+    # screenshots were cancelled outright (master run 34725020273, 2026-09-12 23:48 UTC,
+    # the second a third run's screenshots queued). The first step below waits instead:
+    # every earlier run (lower run id) finishes or abandons its screenshots job before
+    # this one seeds. A lower id never waits on a higher one, so the wait always drains.
     steps:
+      - name: Wait for earlier screenshots jobs (shared live account)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ME: ${{ github.run_id }}
+        run: |
+          for i in $(seq 1 60); do
+            busy=""
+            for rid in $(gh run list -R "$GITHUB_REPOSITORY" --workflow ios.yml --limit 40 \
+                --json databaseId,status \
+                --jq ".[] | select(.status != \"completed\" and .databaseId < $ME) | .databaseId"); do
+              st=$(gh run view "$rid" -R "$GITHUB_REPOSITORY" --json jobs \
+                --jq '.jobs[] | select(.name == "screenshots") | .status' 2>/dev/null || true)
+              case "$st" in ""|completed) ;; *) busy="$busy $rid";; esac
+            done
+            if [ -z "$busy" ]; then echo "clear after $i check(s)"; exit 0; fi
+            echo "waiting on earlier run(s):$busy ($i/60)"
+            sleep 60
+          done
+          echo "::error::gave up after 60 minutes waiting for earlier screenshots jobs"
+          exit 1
+
       - uses: actions/checkout@v4
 
       # Same Xcode the deploy job archives with (owner 2026-08-22):
