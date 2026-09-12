@@ -319,7 +319,11 @@ async function main() {
     // testLobby/testSessionRecap capture.
     if (state === 'completed') {
       await rest('session_participants', { method: 'POST',
-        body: JSON.stringify({ session_id: created.id, user_id: me.id }) });
+        headers: { Prefer: 'resolution=merge-duplicates' },
+        body: JSON.stringify({
+          session_id: created.id, user_id: me.id,
+          check_in_state: 'ready',
+        }) });
     }
   }
   console.log(`  sessions: ${states.join(', ')}`);
