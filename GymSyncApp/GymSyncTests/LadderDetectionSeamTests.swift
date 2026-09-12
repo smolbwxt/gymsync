@@ -11,6 +11,16 @@ import XCTest
 //   > week, and returns that row — so a new week re-ladders itself on its first
 //   > Home load"
 //
+// **HALF OF THAT RULING IS SUPERSEDED** — spec §4 / owner decision 4
+// (docs/superpowers/plans/2026-09-12-group-session-phase-a-plan.md, task S1).
+// "A new week re-ladders itself on its first Home load" is a change to the
+// athlete's plan that nothing on screen asked for, so `detectGoalIfMissing`
+// no longer calls `reLadder`: it materialises the current week's rung from the
+// ladder AS IT STANDS, and the re-laddered ladder is OFFERED through
+// `BlockGoalRepository.reLadderProposal` and applied only on accept. The
+// `materialiseRung` half, and both halves this file actually tests — the
+// ordering seam and `LadderMath.reLaddered`'s own answer — are unchanged.
+//
 // THE WORLD THESE TESTS DESCRIBE IS WEEK 2 OF AN EIGHT-WEEK BLOCK: a
 // `weekly_goals` row for last week only, an active goal, a ladder whose rungs
 // still stand, and a changed actual. That is the world the ruling names and the

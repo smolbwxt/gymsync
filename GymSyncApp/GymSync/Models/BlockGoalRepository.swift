@@ -47,6 +47,14 @@ protocol BlockGoalRepository: Sendable {
     /// persist them. Rewrites only rungs whose status is `ahead` or
     /// `current` (spec §8), so a missed or overridden week stays visible.
     func reLadder(goalID: UUID) async -> Ladder?
+    /// The re-ladder as a proposal (spec §4). Default nil, so a conforming
+    /// stub that has no opinion is not forced to invent one.
+    ///
+    /// The same computation `reLadder` performs, stopping short of the write:
+    /// nothing on this surface rewrites a ladder the athlete has not accepted
+    /// (plan task S1). Nil when there is nothing to propose — no goal, no
+    /// ladder, or a re-ladder that moves no target.
+    func reLadderProposal(goalID: UUID) async -> LadderProposal?
     /// Write this week's rung into `weekly_goals` as the current weekly goal
     /// (spec §4). Returns the row now in effect — which may be the athlete's
     /// own, because this consults `WeeklyGoalWriteRule` exactly as every
@@ -89,6 +97,12 @@ extension BlockGoalRepository {
               enrollmentIDs.contains(goal.enrollmentID) else { return [:] }
         return [goal.enrollmentID: goal]
     }
+
+    /// NOTHING TO PROPOSE, which is an absence rather than an empty card
+    /// (`LadderProposal`'s own doc comment). A repository that cannot
+    /// re-ladder cannot propose one either, and saying so by returning nil
+    /// costs a conformer nothing.
+    func reLadderProposal(goalID: UUID) async -> LadderProposal? { nil }
 
     /// NO LADDER, and that is a legible state rather than a crash: the stub
     /// stores nothing, and a block whose ladder could not be derived is exactly
@@ -243,6 +257,47 @@ struct StubBlockGoalRepository: BlockGoalRepository {
         ],
         derivedAt: fixtureCreatedAt)
 
+    /// **THE CATALOG'S PROPOSAL** — what `ladder-reladder-proposal` (plan
+    /// task S11) renders over `fixturePage`.
+    ///
+    /// Coach's re-ladder off five weeks of actuals: the athlete has been
+    /// clearing the standing rungs, so weeks 4-8 move up by 10 lb and the
+    /// week-6 deload moves with them (a deload is a fraction of the wave, not
+    /// a fixed number). Weeks 1-3 are met or current and a re-ladder never
+    /// touches them — `LadderMath.reLaddered`'s own law, which is why the
+    /// fixture shows five changed rungs and not eight.
+    ///
+    /// **THE PROPOSED RUNGS CARRY `targetReps`, THE STANDING ONES DO NOT.**
+    /// That is not drift: `fixtureLadder` predates the strength door writing
+    /// reps onto a rung and is frozen by
+    /// `BlockGoalModelTests.testTheStubIsHermeticAndConsistent`, while a rung
+    /// Coach derives today carries both numbers. It also means the card can
+    /// spell "3 × 5 at 215 lbs" — a proposal the athlete cannot read is not a
+    /// proposal — and `LadderProposalTests` pins that sentence.
+    static let fixtureProposal = LadderProposal(
+        goalID: fixtureGoalID,
+        current: fixtureLadder,
+        proposed: Ladder(
+            goalID: fixtureGoalID,
+            rungs: fixtureLadder.rungs.map { rung in
+                guard rung.weekIndex >= 3,
+                      let standing = rung.target.targetWeightLbs else { return rung }
+                var moved = rung
+                moved.target = GoalTarget(targetWeightLbs: standing + 10, targetReps: 5)
+                return moved
+            },
+            derivedAt: fixtureCreatedAt),
+        changed: fixtureLadder.rungs
+            .filter { $0.weekIndex >= 3 }
+            .map { rung in
+                var moved = rung
+                moved.target = GoalTarget(
+                    targetWeightLbs: (rung.target.targetWeightLbs ?? 0) + 10,
+                    targetReps: 5)
+                return moved
+            },
+        derivedAt: fixtureCreatedAt)
+
     /// The page as the spec words it (§6): the milestone as the headline,
     /// the date, Coach's one line on standing.
     static let fixturePage = LadderPageModel(
@@ -277,7 +332,9 @@ struct StubBlockGoalRepository: BlockGoalRepository {
     /// The stub stores nothing — a save "succeeds" so the page's happy path
     /// is walkable and the next read still returns the fixture.
     @discardableResult func save(_ goal: BlockGoal) async -> Bool { true }
+    /// Still `fixtureLadder`, and still writes nothing.
     func reLadder(goalID: UUID) async -> Ladder? { Self.fixtureLadder }
+    func reLadderProposal(goalID: UUID) async -> LadderProposal? { Self.fixtureProposal }
     @discardableResult
     func materialiseRung(goalID: UUID, weekStart: String) async -> WeeklyGoal? { nil }
 }

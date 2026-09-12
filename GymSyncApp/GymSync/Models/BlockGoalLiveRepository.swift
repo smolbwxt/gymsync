@@ -493,6 +493,47 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
     /// `LadderMath.reLadder`'s own law, every rung already met, missed or
     /// overridden.
     func reLadder(goalID: UUID) async -> Ladder? {
+        guard let computed = await computeReLadder(goalID: goalID) else { return nil }
+        await upsertRungs(computed.changed, goalID: goalID,
+                          derivedAt: computed.derivedAt)
+        return computed.fresh
+    }
+
+    /// The re-ladder Coach WOULD apply, as a proposal — the same computation
+    /// `reLadder(goalID:)` performs, stopping one line short of `upsertRungs`.
+    ///
+    /// Returns nil when there is nothing to propose: no goal, no ladder, no
+    /// enrollment template, or a re-ladder that changes no rung. "No changed
+    /// rung" is the common case and it must be an ABSENCE — a card reading
+    /// "Coach proposes: nothing" is worse than no card.
+    ///
+    /// **ONE COMPUTATION, TWO ENDINGS.** `computeReLadder` below is shared
+    /// with `reLadder`, deliberately: two copies of the re-ladder maths is
+    /// precisely the drift that let the detect path rewrite a ladder unasked
+    /// in the first place, and a proposal that disagreed with what Accept
+    /// then applied would be a consent card for a different change.
+    func reLadderProposal(goalID: UUID) async -> LadderProposal? {
+        guard let computed = await computeReLadder(goalID: goalID) else { return nil }
+        // The TARGET diff, not `computed.changed` — see
+        // `LadderProposalMath.changedRungs`. `changed` is what gets written;
+        // this is what gets offered.
+        let moved = LadderProposalMath.changedRungs(current: computed.existing,
+                                                    proposed: computed.fresh)
+        guard !moved.isEmpty else { return nil }
+        return LadderProposal(goalID: goalID,
+                              current: computed.existing, proposed: computed.fresh,
+                              changed: moved, derivedAt: computed.derivedAt)
+    }
+
+    /// Everything `reLadder` did except the write (plan task S1).
+    ///
+    /// `existing` is the ladder as PERSISTED — what "Not today" keeps and what
+    /// the diff is measured against. `changed` is the whole-rung diff the
+    /// write takes, unchanged from the shipped behaviour: `upsertRungs` still
+    /// receives every rung that differs in any field, status included.
+    private func computeReLadder(
+        goalID: UUID
+    ) async -> (existing: Ladder, fresh: Ladder, changed: [LadderRung], derivedAt: Date)? {
         guard let userID = await SupabaseService.shared.currentUserID(),
               let goal = await goal(id: goalID),
               let existing = await ladder(goalID: goalID) else { return nil }
@@ -525,8 +566,7 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
             // element and that element is the pair.
             .filter { $0.0 != $0.1 }
             .map(\.1)
-        await upsertRungs(changed, goalID: goalID, derivedAt: now)
-        return fresh
+        return (existing: existing, fresh: fresh, changed: changed, derivedAt: now)
     }
 
     /// The weeks the athlete took back. An override is not a flag of its own:
@@ -1069,12 +1109,26 @@ extension LiveBlockGoalRepository {
         let currentWeek = weekStart ?? WeekMath.weekStartString(now, calendar: calendar)
 
         if let existing = await goal(enrollmentID: enrollment.id) {
-            // The re-laddered ladder is handed straight to materialisation
-            // rather than being dropped and re-read (finding F5).
-            guard let fresh = await reLadder(goalID: existing.id) else {
+            // SPEC §4 / owner decision 4: this path used to call
+            // `reLadder(goalID:)`, which ends in `upsertRungs` — so the first
+            // Home load of a new week rewrote the athlete's ladder with no
+            // consent anywhere on screen. It now materialises this week's rung
+            // from the ladder AS IT STANDS; the re-laddered ladder is offered
+            // instead, by `reLadderProposal(goalID:)`, and applied only when
+            // the athlete accepts (plan task S2). `LET COACH RE-LADDER`
+            // (LadderPageView.swift:380) is unchanged and still applies
+            // immediately, because there the athlete asked.
+            //
+            // `materialiseRung` still writes `weekly_goals`, and must: a week
+            // with no rung row is a Home with no target. It is gated by
+            // `WeeklyGoalWriteRule.shouldOverwrite`, which already refuses to
+            // overwrite the athlete's own row. MATERIALISING A RUNG THE
+            // STANDING LADDER ALREADY CONTAINS IS NOT A CHANGE TO A PLAN; IT
+            // IS THE PLAN — the copy of it that Home reads (spec §4).
+            guard let standing = await ladder(goalID: existing.id) else {
                 return DetectedBlockWeek(goal: existing, week: nil)
             }
-            let week = await materialiseRung(goal: existing, ladder: fresh,
+            let week = await materialiseRung(goal: existing, ladder: standing,
                                              weekStart: currentWeek)
             return DetectedBlockWeek(goal: existing, week: week)
         }
