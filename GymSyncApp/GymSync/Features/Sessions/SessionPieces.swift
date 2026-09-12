@@ -85,6 +85,57 @@ struct SessionPlanRow: Identifiable, Equatable {
     var isCurrent: Bool = false
 }
 
+extension SessionPlanRow {
+
+    /// One `RoutineExercise` as a plan row — the lobby (S7) and the warm-up
+    /// screen (S9) both build rows this way, so the wording lives here rather
+    /// than twice.
+    ///
+    /// The NAME is the caller's to supply: it needs the 1,300-row exercise
+    /// catalog, which the two screens already hold and this file must not
+    /// reach for (constraint 11).
+    init(exercise: RoutineExercise, name: String, isCurrent: Bool = false) {
+        self.init(id: exercise.id, name: name,
+                  prescription: Self.prescription(for: exercise),
+                  isCurrent: isCurrent)
+    }
+
+    /// `4 × 5 @ 225`, `3 × 8-12`, `Z2 · 20 min`, or the honest `—`.
+    ///
+    /// Cardio branches FIRST, on the presence of its own pair, because the
+    /// generator writes `cardioZone`/`cardioMinutes` instead of sets and reps
+    /// — a cardio row read as `sets × reps` prints a dash for a prescription
+    /// that exists. A rep RANGE beats the legacy text field, which the
+    /// generator fills with the same numbers less precisely.
+    static func prescription(for exercise: RoutineExercise) -> String {
+        if let zone = exercise.cardioZone, let minutes = exercise.cardioMinutes {
+            return "Z\(zone) · \(minutes) min"
+        }
+        var reps: String?
+        if let low = exercise.targetRepsLow, let high = exercise.targetRepsHigh {
+            reps = low == high ? "\(low)" : "\(low)-\(high)"
+        } else if let text = exercise.targetReps, !text.isEmpty {
+            reps = text
+        } else if exercise.targetFailure {
+            // A prescribed failure IS the assignment (the failure doctrine),
+            // so it is printed as the rep target rather than left blank.
+            reps = "AMRAP"
+        }
+
+        var parts: [String] = []
+        switch (exercise.targetSets, reps) {
+        case let (sets?, reps?): parts.append("\(sets) × \(reps)")
+        case let (sets?, nil):   parts.append("\(sets) × —")
+        case let (nil, reps?):   parts.append(reps)
+        case (nil, nil):         break
+        }
+        if let weight = exercise.targetWeight, !weight.isEmpty {
+            parts.append("@ \(weight)")
+        }
+        return parts.isEmpty ? "—" : parts.joined(separator: " ")
+    }
+}
+
 /// One lifter in the crew warm-up's readiness row.
 ///
 /// Its own value rather than `ArrivalRow`: arrival and warmth are different
