@@ -378,10 +378,6 @@ struct PumpPostCard: View {
 
     private var summaryBlock: some View {
         VStack(alignment: .leading, spacing: 10) {
-            ForEach(Array(post.summary.exercises.enumerated()), id: \.offset) { _, exercise in
-                exerciseRow(exercise)
-            }
-
             // Line 4 — the lifter's one pick. Bold body text, no glyph and no
             // colour: the set rows below already carry a `PR` tag in accent,
             // and a second accent on the same card would be two.
@@ -390,6 +386,10 @@ struct PumpPostCard: View {
                     .font(GSFont.bold(13, relativeTo: .subheadline))
                     .foregroundStyle(theme.text)
                     .lineLimit(2)
+            }
+
+            ForEach(Array(post.summary.exercises.enumerated()), id: \.offset) { _, exercise in
+                exerciseRow(exercise)
             }
 
             // Line 5 — `Push day · 42 min · 7,240 lb`. The routine name is
