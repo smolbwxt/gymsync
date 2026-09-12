@@ -47,19 +47,31 @@ the next prescription, and the "is the plan still achievable" check). Nothing he
 shipped, named so the crew flow can be described against it.
 
 The **warm-up screen** is where the decision moments live that a confirmatory lobby would have held: the **plan
-card** (the routine, or today's rung when a program is running, with a swap control) and **one Coach line** (a
-readiness suggestion — *"today is 4×5 at 225; you slept five hours — want 3×5?"* — accepted with one tap or
-ignored). Owner decision: no separate confirmatory screen for solo.
+card** carrying **the whole day** (today's rung on top, every exercise with its prescription under it, a swap
+control) with **Coach's one suggestion as the card's second line** (*"you slept five hours and today is 4×5 at
+225 — want 3×5?"*, Accept / Not today), and a **where-you-are line** — the block's rungs as a small ladder with
+the milestone flagged (`WEEK 3 OF 8 · Bench 225 by Oct 18`). Owner decisions: no separate confirmatory screen
+for solo; the design round's `warmup-solo-v2` is the reference frame.
 
 ## 3. Crew: lobby, Start, warm up together, then the chosen style
 
 ### 3.1 The lobby (crew only)
 
-Three things, on the design language's surfaces: the **roster** as an arrival track (`ON THE WAY · AT THE GYM ·
-CHECKED IN`, replacing the check-in chips; stages derive from `check_in_state` plus the geofence/travel signals the
-lobby already has), the **talk dock** (push-to-talk stays, as shipped in `PTTDockRow`), and **Start**. The plan
-card sits above them so the crew sees what it is about to do. **Start** is the leader's tap, or fires when every
-checked-in lifter has marked ready (consensus). "Start anyway" stays for the leader when someone is late.
+Top to bottom, on the design language's surfaces (reference frame `lobby-crew-waiting-v2`): the **arrival
+track** (`ON THE WAY · AT THE GYM · CHECKED IN` with each lifter's avatar in its column; stages derive from the
+geofence and the lobby's travel override; **checked in is ready** — there is no separate roster and no separate
+ready tick); **Talk to Coach** (this session's focus, a pointed form question, a demo video — one entry row);
+**the session** (the whole plan: every exercise with sets × reps @ load, today's rung line on top, a Swap control
+per row for the leader); **how the crew feels** (each lifter's self-reported energy, 1–5, shown as a group, with
+your own "How are you feeling?" control until you answer); the **talk dock** (push-to-talk stays, as shipped in
+`PTTDockRow`); and **Start**, captioned with the count (`2 of 4 checked in`). **Start** is the leader's tap, or
+fires when everyone is checked in (consensus). "Start anyway" stays for the leader when someone is late.
+
+**When everyone is in, the arrival track itself changes** (reference frame `lobby-crew-ready-v3`): the widget
+fills with the screen's one accent, reads **"Everyone's here. Let's work."** over the four avatars and their
+energy, and becomes the start control — the leader taps it to start; everyone else reads *"Waiting for Alex — or
+it starts on its own"*. The bottom Start stays in the thumb zone as a neutral raised secondary for the same
+action, so the screen keeps one accent. The first exercise shows large beneath it.
 
 Gone from the lobby: the routine proposal-and-vote flow and its three realtime subscriptions (the `editing`,
 `voting`, `locked` states were designed for it and are dead), the warm-up minutes stepper (warm-up is a phase, not
@@ -84,28 +96,44 @@ split so no rotation is deeper than three (five → three and two); groupings re
 people rest together, and the app measures each lifter's actual rest and re-mixes only while averages are close.
 Both stations end together because the workout is counted in rounds. **Spotter mode** fills a lifter's idle rounds.
 
-The two solo screens map onto Rounds unchanged: **your turn** is the set screen; **the round** is the rest screen,
-where the countdown becomes "who is still to go" beside elapsed rest, the recovery readout, the next prescription
-and the achievability check.
+The two solo screens map onto Rounds unchanged: **your turn** is the set screen; **the round** is the rest screen
+(reference frame `round-wait-v2`): the crew on **station cards** (Rack A / Rack B, each lifter's avatar, a tick
+when they have logged, the current lifter ringed, a personal scale-down printed under its lifter), the **rest
+card** with elapsed rest beside the **recovery curve** (heart rate over the rest, not two numbers), the next
+prescription and the achievability line, then **the session — where we are** (every exercise, the current one
+marked, sets done over total), and **this session's Coach thread** as an entry row (§3.6). Station cards are built
+from fixed slots so two cards can never misalign. **Spotter mode** (reference frame `round-spotter-v3`): Cheer as
+the primary, Film beside it, talk on the dock, **the crew's live heart rates** with their zone colours, and the
+Coach thread row.
 
 **Freestyle.** Own pace, with glue: a shared progress rail (sets done over total, per lifter) and an end-together
 nudge — a lifter two sets ahead sees their rest stretch and a Coach suggestion for an accessory; a lifter behind
 sees the crew's rest wait. The recap is shared. Freestyle without the rail recreates the detachment the owner
 described.
 
-**Together** (default for cardio, HIIT, biking). Everyone runs the same interval clock; there is no turn. The crew
-frame shows every lifter's readout on one timeline.
+**Together** (default for cardio, HIIT, biking; reference frame `together-clock`, the v1 render). Everyone runs the
+same interval clock; there is no turn. The crew frame shows every lifter's heart rate on one timeline, **coloured
+by zone** — the owner's explicit exception to the colour rules (§4a).
 
 ### 3.4 Two modes of exercise change in a crew (answer 7)
 
 1. **A change to the routine for everyone** — proposed to the crew, consensus sought, applied for all on
    acceptance. This is what the shipped `SwapProposal` / group swap sheet does; it stays, redesigned as a consent
-   card in the design language.
+   card (reference frame `swap-consensus-card-v2`): the current and the proposed exercise as two **tappable rows**
+   that open their exercise pages, the countable pips, the consequence line, Agree / Keep.
 2. **A personal scale-down for one lifter** — never broadcast, applied only to that lifter's prescription (Coach's
    substitution graph, as solo uses it), and visible where the crew looks anyway: in "who's up next and what they
    are doing". Nothing is pushed to anyone.
 
 ### 3.5 Ending
+
+### 3.6 The session's Coach thread
+
+Every crew session has **one Coach thread shared by the whole crew**, reachable from the lobby's Talk to Coach
+row, the round wait and spotter mode. It is **unlocked for everyone while at least one participant is Pro** for
+that session (the rule the owner set: any member's Pro opens it for the crew); with no Pro member the row says so
+and offers the paywall to whoever taps. A solo session uses the athlete's own Coach thread. Coach's answers in the
+thread are suggestions under §4.
 
 Unchanged mechanics: leave hands off your turn; the last present lifter's leave ends the session; "End for
 everyone" is the leader's. The recap is one shared recap, reached together by design of the styles above.
@@ -122,6 +150,13 @@ ladder page, applied on accept; `LET COACH RE-LADDER` remains the explicit trigg
 comply; build-time volume titration is not a change to an existing plan and is untouched. The consent-card pattern
 is the one Coach chat already uses for swaps and rules.
 
+### 4a. One colour exception: heart-rate zones
+
+The design language reserves green for done/present, gold for streak and check-in, red for errors. The owner
+made **one explicit exception on 2026-09-12: heart-rate zones keep their zone colours** wherever a heart rate is
+shown — Together's bars and readouts, the spotter's crew readouts, the recovery curve's endpoint. The zone word
+(`Z1`–`Z4`) accompanies the colour so the meaning does not rest on colour alone. Nothing else gains a colour.
+
 ## 5. What leaves the app
 
 - **The soundboard and the throwable plates are tabled indefinitely** (answer 6). Everything that points to them is
@@ -134,6 +169,10 @@ is the one Coach chat already uses for swaps and rules.
 - **The spectate subtree, the BOARD scoreboard, and the two-participant-only branches** go with the rotation view
   they served; the round model has no equivalent and the parked crash's two leading hypotheses lived there.
 - **The dead session states** `editing`, `voting`, `locked` and the proposal-vote flow.
+- **The shipped pump-check card composition.** The design round's `pump-check-card-v2` replaces it: the highlight
+  leads as a raised island with the photo beside it (tapping the photo opens the whole workout's metrics), the
+  trajectory strip and rung chips under it, the set rows collapsed to one line, the plain-terms line, emoji
+  reactions only. Same seven facts, about half the height.
 
 ## 6. Data
 
@@ -147,12 +186,22 @@ is the one Coach chat already uses for swaps and rules.
   exercise); readable by crewmates for "who's up next".
 - Warm-up readiness: the existing `mark_warmup_ready` / `start_lifting` RPCs; the `warmup_minutes` column becomes
   unused.
+- Lobby readiness: `session_participants.energy smallint` (1–5, null until reported) written by the lifter from the
+  lobby; read by the crew with the existing participant policy.
+- The session's Coach thread: the existing coach-chat thread model keyed by `session_id`, with a read policy for
+  the session's participants and the any-member-Pro gate evaluated server-side.
+- The recovery curve reads the heart-rate samples the watch bridge already records for the rest; no new store.
 - The suggestion principle needs no new table: proposals render from the values Coach would have written.
 - RLS: unchanged in shape; the station and substitution reads are crew-scoped like `session_participants`.
 
 ## 7. Catalog and proof
 
-The group live workout has never had a catalog frame (context map §5). This spec requires frames for: the lobby
+The design round of 2026-09-12 (`feat/session-variations`, ids `lobby-crew-waiting-v2`, `lobby-crew-ready-v3`,
+`warmup-solo-v2`, `warmup-crew`, `round-wait-v2`, `round-skip-offer`, `round-spotter-v3`, `freestyle-rail`,
+`together-clock`, `swap-consensus-card-v2`, `pump-check-card-v2`) is the **reference composition** for every screen
+named above; the plan builds the production screens to those frames and retires the variation ids as each
+production frame replaces them. The group live workout had never had a catalog frame before it (context map §5).
+This spec requires production frames for: the lobby
 (waiting, everyone ready, a late arrival), the shared warm-up in its crew frame, Rounds (your turn; the round wait
 with two stations; spotter mode), Freestyle (the rail with one lifter ahead), Together (the shared clock), the
 consensus swap card, and a personal scale-down visible in "who's up next". The solo warm-up screen with the plan
@@ -213,3 +262,10 @@ rule follows it.
 13. Together sessions share heart-rate readouts by default.
 14. The soundboard tables drop in this iteration (a migration in Phase B, after the git-tag archive).
 15. Live encouragement stays verbal, over voice chat; nothing is built for it.
+16. The design round's v2 compositions are approved as the reference frames (lobby, warm-up, round wait, spotter,
+    swap card, pump-check card v2), with `lobby-crew-ready` in its v3 form.
+17. Heart-rate zone colours stay — the one exception to the colour rules (§4a).
+18. The lobby carries the crew's self-reported energy (1–5) as a group, in scope for Phase A.
+19. Every crew session has one shared Coach thread, unlocked while any member is Pro (§3.6).
+20. When everyone is in, the arrival track itself turns accent, reads "Everyone's here. Let's work." and starts
+    the session; the bottom Start becomes a neutral secondary.
