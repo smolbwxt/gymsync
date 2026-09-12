@@ -120,7 +120,12 @@ struct LogSetSheet: View {
                             theme: theme,
                             // Units sweep: the USER'S unit, not the
                             // exercise's default — entry parses in this.
-                            label: "Weight (\(unit.label))",
+                            // Design language §9 (T8.2): the kicker states
+                            // the loading convention, derived from the same
+                            // `equipment` field `tunerStep` above reads.
+                            label: Units.weightKicker(unit: unit,
+                                                      equipment: exercise.equipment,
+                                                      unilateral: exercise.unilateral),
                             value: $weight,
                             // Accent discipline (design language §2): an input
                             // is furniture — flat and neutral, matching Reps

@@ -36,7 +36,10 @@ struct BodyWeightLogSheet: View {
             VStack(alignment: .leading, spacing: 0) {
                 stepperCell(
                     theme: theme,
-                    label: "Weight (\(unit.label))",
+                    // Design language §9 (T8.2): a caps kicker like every
+                    // other weight field. No equipment convention applies —
+                    // this sheet logs a BODY weight, not a load.
+                    label: "BODY WEIGHT · \(unit.label.uppercased())",
                     value: $weight,
                     // Accent discipline (design language §2): the field is
                     // furniture — flat and neutral; "Save" is the one act.

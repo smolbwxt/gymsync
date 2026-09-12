@@ -3613,7 +3613,11 @@ struct GroupSessionLiveView: View {
                     theme: theme,
                     // Units sweep: the USER'S unit, not the exercise's
                     // default — commitInlineLog parses in this.
-                    label: "Weight (\(ThemeStore.shared.weightUnit.label))",
+                    // Design language §9 (T8.2): the kicker states the
+                    // loading convention, same helper as the turn card.
+                    label: Units.weightKicker(unit: ThemeStore.shared.weightUnit,
+                                              equipment: currentExerciseForSheet?.equipment,
+                                              unilateral: currentExerciseForSheet?.unilateral),
                     value: $logWeight,
                     // Accent discipline (design language §2): the weight cell
                     // matches Reps beside it — flat, neutral furniture.
