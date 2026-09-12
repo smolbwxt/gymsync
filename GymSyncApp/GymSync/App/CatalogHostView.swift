@@ -157,6 +157,15 @@ enum CatalogScreen: String, CaseIterable {
     // re-composed on the design language. Frames 118-119.
     case swapConsensusCard = "swap-consensus-card"
     case pumpCheckCardV2 = "pump-check-card-v2"
+    // The session round's SECOND PASS (the owner reviewed all fourteen and
+    // picked; these sit BESIDE the v1 ids, which are frozen). Frames 120-126.
+    // See `content_lobbyCrewWaitingV2` for the whole story.
+    case lobbyCrewWaitingV2 = "lobby-crew-waiting-v2"
+    case lobbyCrewReadyV2 = "lobby-crew-ready-v2"
+    case warmupSoloV2 = "warmup-solo-v2"
+    case roundWaitV2 = "round-wait-v2"
+    case roundSpotterV2 = "round-spotter-v2"
+    case togetherClockV2 = "together-clock-v2"
 }
 
 struct CatalogHostView: View {
@@ -272,6 +281,12 @@ struct CatalogHostView: View {
             case .togetherClock:              content_togetherClock
             case .swapConsensusCard:          content_swapConsensusCard
             case .pumpCheckCardV2:            content_pumpCheckCardV2
+            case .lobbyCrewWaitingV2:         content_lobbyCrewWaitingV2
+            case .lobbyCrewReadyV2:           content_lobbyCrewReadyV2
+            case .warmupSoloV2:               content_warmupSoloV2
+            case .roundWaitV2:                content_roundWaitV2
+            case .roundSpotterV2:             content_roundSpotterV2
+            case .togetherClockV2:            content_togetherClockV2
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -2535,6 +2550,51 @@ struct CatalogHostView: View {
     /// else.
     private var content_pumpCheckCardV2: some View {
         PumpCheckCardV2View()
+    }
+
+    // MARK: - The session round, second pass
+    //
+    // The owner reviewed all fourteen round-1 frames (run 34706889112) and
+    // picked: the lobby's arrival track, the warm-up screen as rendered, the
+    // round wait's station cards, and the skip offer, Freestyle, Together,
+    // the swap card and the pump card as they stand. This pass adds SEVEN ids
+    // beside them, frames 120-126.
+    //
+    // EVERY v1 ID IS FROZEN. The owner has approved those renders, so a moved
+    // pixel in one of them is a moved decision: `SessionVariationKit.swift`
+    // gains exactly one additive defaulted field (`SVLifter.energy`) and
+    // nothing else, and the v2 pieces live in their own files. The v1 and v2
+    // frames are meant to be looked at as pairs.
+    //
+    // Three rules are added by this pass and are recorded in
+    // `SessionVariationsV2Kit.swift`'s header: alignment is a rule (fixed
+    // slots, so two cards cannot disagree about a baseline); a heart rate is
+    // neutral ink with the zone as a word (the language reserves red and
+    // gold); and checked in IS ready, one signal, which also settles the
+    // round-1 lobby fixture's own inconsistency.
+
+    private var content_lobbyCrewWaitingV2: some View {
+        LobbyCrewWaitingV2View()
+    }
+
+    private var content_lobbyCrewReadyV2: some View {
+        LobbyCrewReadyV2View()
+    }
+
+    private var content_warmupSoloV2: some View {
+        WarmupSoloV2View()
+    }
+
+    private var content_roundWaitV2: some View {
+        RoundWaitV2View()
+    }
+
+    private var content_roundSpotterV2: some View {
+        RoundSpotterV2View()
+    }
+
+    private var content_togetherClockV2: some View {
+        TogetherClockV2View()
     }
 }
 

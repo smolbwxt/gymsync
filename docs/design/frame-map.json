@@ -341,6 +341,31 @@
   "pump-check-card-v2": {
     "frame": 119,
     "title": "Pump-check post, re-composed - the same seven lines, tightened",
-    "note": "The last of frames 106-119 (the focused session design round). Renders the SAME values as the pump-feed-post capture (CatalogHostView's pumpFixtureSummary / pumpFixtureTrajectory / pumpFixtureHighlight, re-spelled as literals in SVFixtures) so the two captures are a before/after of the composition and of nothing else. Catalog-only: PumpPostCard itself is untouched."
+    "note": "The last of frames 106-119 (the focused session design round). Renders the SAME values as the pump-feed-post capture (CatalogHostView's pumpFixtureSummary / pumpFixtureTrajectory / pumpFixtureHighlight, re-spelled as literals in SVFixtures) so the two captures are a before/after of the composition and of nothing else. Catalog-only: PumpPostCard itself is untouched. SECOND PASS: approved as rendered, with one addition the owner asked for - a caption under the photo reading 'Tap for the full workout', because the thumbnail opens the whole workout's metrics and nothing said so. No new id and no new frame."
+  },
+  "lobby-crew-waiting-v2": {
+    "frame": 120,
+    "title": "Crew lobby, second pass - the whole plan, the crew's energy, Coach",
+    "note": "The session design round's SECOND PASS (frames 120-126), after the owner reviewed all fourteen round-1 renders and picked. These ids sit BESIDE the round-1 ids (frames 106-119), which are frozen and still render, so every pair can be composed two-up. Catalog-only, so no proof frame in docs/design/mockups/ and parity_diff.js logs 'skip <id>: no proof frame' for all seven - the Home v3 precedent (frames 71-82)."
+  },
+  "lobby-crew-ready-v2": {
+    "frame": 121,
+    "title": "Crew lobby - locked in, everyone's here"
+  },
+  "warmup-solo-v2": {
+    "frame": 122,
+    "title": "Solo warm-up, second pass - the whole day and the block ladder"
+  },
+  "round-wait-v2": {
+    "frame": 123,
+    "title": "Rounds, second pass - aligned stations, recovery curve, the plan"
+  },
+  "round-spotter-v2": {
+    "frame": 124,
+    "title": "Spotter mode, second pass - the crew's live heart rates"
+  },
+  "together-clock-v2": {
+    "frame": 126,
+    "title": "Together, second pass - neutral BPM ink, the zone as a word"
   }
 }

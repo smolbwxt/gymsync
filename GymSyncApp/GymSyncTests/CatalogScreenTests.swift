@@ -128,6 +128,14 @@ final class CatalogScreenTests: XCTestCase {
             // card, and the pump-check post re-composed.
             "swap-consensus-card",
             "pump-check-card-v2",
+            // The session round's SECOND PASS (frames 120-126): the ids the
+            // owner's picks produced, beside the frozen v1 ids they answer.
+            "lobby-crew-waiting-v2",
+            "lobby-crew-ready-v2",
+            "warmup-solo-v2",
+            "round-wait-v2",
+            "round-spotter-v2",
+            "together-clock-v2",
         ]
         for id in ids {
             XCTAssertNotNil(CatalogScreen(rawValue: id), "missing catalog case: \(id)")

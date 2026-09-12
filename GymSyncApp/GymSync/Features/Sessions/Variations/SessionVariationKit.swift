@@ -98,6 +98,11 @@ struct SVLifter: Identifiable {
     var bpm: Int? = nil
     /// Rounds: has this lifter logged the current round's set?
     var hasLogged: Bool = false
+    /// Round 2, the lobby's buy-in widget: self-reported energy, 1 to 5.
+    /// `nil` = has not answered yet. Additive and defaulted, so no round-1
+    /// frame changes — the v1 ids are frozen and the owner has approved
+    /// their renders.
+    var energy: Int? = nil
 }
 
 // MARK: - The world

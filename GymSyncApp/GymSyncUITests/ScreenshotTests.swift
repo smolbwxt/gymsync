@@ -724,6 +724,19 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogSwapConsensusCard()      { captureCatalog("swap-consensus-card") }
     func testCatalogPumpCheckCardV2()        { captureCatalog("pump-check-card-v2") }
 
+    // THE SECOND PASS (frames 120-126). The owner reviewed all fourteen
+    // round-1 frames and picked; these are the ids those picks produced, and
+    // they sit BESIDE the v1 ids rather than replacing them, so every pair
+    // (waiting-a | waiting-v2, warmup-solo-b | warmup-solo-v2, round-wait-b |
+    // round-wait-v2, together-clock | together-clock-v2) can be composed
+    // two-up. Every v1 capture is unchanged.
+    func testCatalogLobbyCrewWaitingV2()     { captureCatalog("lobby-crew-waiting-v2") }
+    func testCatalogLobbyCrewReadyV2()       { captureCatalog("lobby-crew-ready-v2") }
+    func testCatalogWarmupSoloV2()           { captureCatalog("warmup-solo-v2") }
+    func testCatalogRoundWaitV2()            { captureCatalog("round-wait-v2") }
+    func testCatalogRoundSpotterV2()         { captureCatalog("round-spotter-v2") }
+    func testCatalogTogetherClockV2()        { captureCatalog("together-clock-v2") }
+
     // MARK: - Seeded deep-screen captures
     //
     // Reachable via the deterministic fixture world the QA seed builds for the
