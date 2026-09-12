@@ -2416,10 +2416,14 @@ struct WorkoutSessionView: View {
 
             Color.clear.frame(height: 12)
             HStack(spacing: 0) {
-                Text("WEIGHT · \(soloUnit.label.uppercased())")
+                Text(Units.weightKicker(unit: soloUnit,
+                                        equipment: currentExercise?.equipment,
+                                        unilateral: currentExercise?.unilateral))
                     .font(GSFont.bold(13, relativeTo: .footnote))
                     .tracking(0.9)
                     .foregroundStyle(theme.text.opacity(0.78))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
                     .frame(width: 229, alignment: .leading)
                 Text(repTargetLabel)
                     .font(GSFont.bold(13, relativeTo: .footnote))

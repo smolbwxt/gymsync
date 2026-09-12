@@ -1592,10 +1592,14 @@ struct GroupSessionLiveView: View {
 
             Color.clear.frame(height: 10)
             HStack(spacing: 0) {
-                Text("WEIGHT · \(turnUnit.label.uppercased())")
+                Text(Units.weightKicker(unit: turnUnit,
+                                        equipment: currentExerciseForSheet?.equipment,
+                                        unilateral: currentExerciseForSheet?.unilateral))
                     .font(GSFont.bold(13, relativeTo: .footnote))
                     .tracking(0.9)
                     .foregroundStyle(theme.text.opacity(0.78))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
                     .frame(width: 229, alignment: .leading)
                 Text(targetReps.map { "REPS · \($0)" } ?? "REPS")
                     .font(GSFont.bold(13, relativeTo: .footnote))
@@ -3609,7 +3613,12 @@ struct GroupSessionLiveView: View {
                     theme: theme,
                     // Units sweep: the USER'S unit, not the exercise's
                     // default — commitInlineLog parses in this.
-                    label: "Weight (\(ThemeStore.shared.weightUnit.label))",
+                    // Design language §9 (T8.2): the kicker states the
+                    // loading convention, same helper as the turn card.
+                    label: Units.weightKicker(unit: ThemeStore.shared.weightUnit,
+                                              equipment: currentExerciseForSheet?.equipment,
+                                              unilateral: currentExerciseForSheet?.unilateral),
+                    accessibilityLabel: "Weight",
                     value: $logWeight,
                     // Accent discipline (design language §2): the weight cell
                     // matches Reps beside it — flat, neutral furniture.

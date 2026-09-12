@@ -157,6 +157,23 @@ enum Units {
         }
     }
 
+    /// The weight-entry kicker for a lift (design language §9). Equipment strings
+    /// are the catalog's vocabulary: barbell, ez-bar, smith, dumbbell, machine,
+    /// cable, bodyweight. `unilateral` overrides equipment — one limb at a time is
+    /// always per side.
+    static func weightKicker(unit: WeightUnit,
+                             equipment: String?,
+                             unilateral: Bool? = nil) -> String {
+        let base = "WEIGHT · \(unit.label.uppercased())"
+        if unilateral == true { return base + " PER SIDE" }
+        switch equipment {
+        case "barbell", "ez-bar", "smith":  return base + " TOTAL INCL. BAR"
+        case "dumbbell", "kettlebell":      return base + " PER HAND"
+        case "machine":                     return base + " TOTAL ADDED"
+        default:                            return base
+        }
+    }
+
     static func format(pounds: Decimal, unit: WeightUnit,
                        rounded: Bool = true, includeUnit: Bool = true) -> String {
         let converted = fromPounds(pounds, to: unit)

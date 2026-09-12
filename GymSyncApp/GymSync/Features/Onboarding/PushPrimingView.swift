@@ -42,6 +42,16 @@ struct PushPrimingView: View {
     /// simulator's real permission decision. Always false in every other
     /// path (including normal debug builds); compiled out of release
     /// entirely.
+    ///
+    /// It guards BOTH live reads, not just the mount check: `.task` above is
+    /// the check on mount, and `.onChange(of: scenePhase)` is the re-check on
+    /// foreground return. The second one matters because scenePhase reaches
+    /// `.active` moments after launch — with no guard there,
+    /// `handleForegroundReturn()` -> `pushReceiver.refreshAuthorizationStatus()`
+    /// re-read the simulator's real `.notDetermined` straight back over the
+    /// forced `.denied`, and the capture rendered the priming state instead.
+    /// Because the guard is only ever true under this `#if DEBUG` fixture
+    /// init, no production path loses its foreground re-check.
     var catalogSkipCheckInitialState = false
 
     /// Debug-only: the catalog's forced authorization status (screen catalog

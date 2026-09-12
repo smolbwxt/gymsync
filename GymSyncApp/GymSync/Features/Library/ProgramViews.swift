@@ -375,9 +375,19 @@ struct ProgramDetailView: View {
             .opacity(busy ? 0.6 : 1)
             .padding(.horizontal, 16)
 
+            // Red is for errors only (design language §2). Abandoning is a
+            // deliberate choice, not a fault — the weight belongs on the
+            // confirmation dialog above, which already carries
+            // `role: .destructive` and "Your history stays — only the plan
+            // stops." The two `.red` labels in this file stay red: both are
+            // genuine `errorText`.
+            //
+            // `theme.text`, not `neutral500`: off the error palette but still
+            // full-contrast, because this is a control. Muted would have read
+            // as a caption sitting under the actions rather than one of them.
             Button("Abandon program") { confirmAbandon = true }
                 .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
-                .foregroundStyle(.red)
+                .foregroundStyle(theme.text)
                 .padding(.horizontal, 16)
                 .padding(.top, 2)
         }
