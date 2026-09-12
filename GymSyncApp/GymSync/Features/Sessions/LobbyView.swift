@@ -24,7 +24,16 @@ struct LobbyView: View {
     /// to decide whether Starting should also fire the group-attempt hook.
     /// See that function's doc comment for the full gating rationale.
     @State private var routineForSession: Routine? = nil
-    @State private var presenceSet: Set<UUID> = []
+    /// Who has the lobby open, and where each device says it is — user id →
+    /// `ArrivalStage.rawValue` (plan task S3).
+    ///
+    /// It was a `Set<UUID>`, which could only answer "is this lifter's app
+    /// open". The arrival track needs to know AT THE GYM from ON THE WAY, and
+    /// no column stores that: each device evaluates the geofence for itself
+    /// and publishes the answer. A user present with no published stage still
+    /// has a key here, so `presenceStages[id] != nil` is the same question the
+    /// old `presenceSet.contains(id)` asked.
+    @State private var presenceStages: [UUID: String] = [:]
     @State private var realtime = LobbyRealtimeService()
 
     @State private var errorText: String?
@@ -964,7 +973,7 @@ struct LobbyView: View {
 
                 // Presence online dot
                 Circle()
-                    .fill(presenceSet.contains(item.participant.userID) ? Color.gsSuccess : theme.neutral400)
+                    .fill(presenceStages[item.participant.userID] != nil ? Color.gsSuccess : theme.neutral400)
                     .frame(width: 9, height: 9)
                     .overlay(Circle().strokeBorder(theme.bg, lineWidth: 1.5))
                     .offset(x: 3, y: 3)
@@ -1388,7 +1397,7 @@ struct LobbyView: View {
             sessionID: session.id,
             selfID: selfID,
             username: username,
-            onPresence: { [self] set in presenceSet = set },
+            onPresence: { [self] stages in presenceStages = stages },
             onChange:   { [self] in Task { await reload() } }
         )
     }
