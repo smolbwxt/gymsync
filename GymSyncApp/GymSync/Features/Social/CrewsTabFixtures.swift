@@ -1,3 +1,4 @@
+#if DEBUG
 import Foundation
 
 // MARK: - The Crews tab's fixture world
@@ -74,3 +75,4 @@ enum CrewsTabFixtures {
         pushCrewID: CrewHonor(username: "sam", sessions: 9),
     ]
 }
+#endif
