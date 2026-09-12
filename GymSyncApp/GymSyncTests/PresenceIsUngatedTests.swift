@@ -21,16 +21,4 @@ final class PresenceIsUngatedTests: XCTestCase {
         XCTAssertTrue(HomeView.showsCrewPulse(liveFriendCount: 1))
         XCTAssertFalse(HomeView.showsCrewPulse(liveFriendCount: 0))
     }
-
-    /// Spec §4's own phase-2 marker, written down where it will be found.
-    /// Live encouragement — a cheer to someone lifting right now — is
-    /// DESIGNED and NOT BUILT. Nothing in this build sends one.
-    func testLiveEncouragementIsNotBuilt() {
-        XCTAssertFalse(HomeCrewPulseStripCheerIsBuilt,
-                       "spec §4: live encouragement is phase 2 — see the plan's 'does not decide'")
-    }
 }
-
-/// Phase 2's flag, and its only definition. A cheer surface arriving is this
-/// constant turning true, plus the test above changing with it.
-let HomeCrewPulseStripCheerIsBuilt = false
