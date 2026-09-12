@@ -588,12 +588,52 @@ struct SocialTabView: View {
             // CrewRoomView's routines-together card — completed = this
             // week's completed sessions, next lift = earliest upcoming.
             // Best-effort per group, stale entries preserved on failure.
-            var barMeta = barByGroup
-            await withTaskGroup(of: (UUID, CrewBarMeta?).self) { taskGroup in
+            //
+            // ONE TASK GROUP FOR BOTH READS, and both reads inside it run
+            // CONCURRENTLY. The bar's session list and the honor RPC are
+            // independent questions about the same crew, so running them in
+            // series cost the card two paints and put the honor line one
+            // network hop behind the meta line above it — long enough that
+            // `app-tab-social` captured the line on one run and missed it on
+            // the next (`ScreenshotTests.settleAfterNavigation` is a fixed
+            // 1.0 s). One group, `async let` inside it, one paint.
+            //
+            // BOTH DICTIONARIES ARE REBUILT FROM `currentGroups`, never
+            // carried forward wholesale: a crew you left kept its bar (and
+            // would have kept its crown) for the life of the process.
+            let currentIDs = Set(currentGroups.map(\.id))
+            var barMeta = barByGroup.filter { currentIDs.contains($0.key) }
+            var honorMeta = honorByGroup.filter { currentIDs.contains($0.key) }
+            await withTaskGroup(of: (UUID, CrewBarMeta?, CrewHonor?, Bool).self) { taskGroup in
                 for group in currentGroups {
+                    // Capture the id only — a whole `GymGroup` crossing into
+                    // the child task buys nothing the id does not.
+                    let groupID = group.id
                     taskGroup.addTask {
-                        guard let sessions = try? await SessionRepository.groupSessions(groupID: group.id) else {
-                            return (group.id, nil)
+                        async let sessionsRead = SessionRepository.groupSessions(groupID: groupID)
+                        // The crew's frequency honor (spec §3), widened to 30
+                        // days and read through `group_consistency_honor`
+                        // rather than the bar's own session list — the bar
+                        // counts what RLS lets THIS VIEWER see
+                        // (organizer-or-participant,
+                        // 20260709000006_create_sessions.sql:50-56), which is
+                        // the wrong question for a line that says "who showed
+                        // up most".
+                        async let honorRead = GroupRepository.consistencyHonor(groupID: groupID)
+
+                        // `honorOK` distinguishes "the RPC answered, and the
+                        // answer is that nobody has trained in the window"
+                        // from "the RPC failed". Only the first may clear the
+                        // card's line — that IS spec §3's decay.
+                        var honor: CrewHonor?
+                        var honorOK = false
+                        if let rows = try? await honorRead {
+                            honor = CrewHonorMath.crown(rows)
+                            honorOK = true
+                        }
+
+                        guard let sessions = try? await sessionsRead else {
+                            return (groupID, nil, honor, honorOK)
                         }
                         let calendar = Calendar.current
                         let now = Date.now
@@ -610,37 +650,22 @@ struct SocialTabView: View {
                             .filter { upcomingStates.contains($0.state) }
                             .sorted { ($0.scheduledFor ?? .distantFuture) < ($1.scheduledFor ?? .distantFuture) }
                             .first?.scheduledFor
-                        return (group.id, CrewBarMeta(completedThisWeek: completed,
-                                                      plannedThisWeek: completed + upcoming,
-                                                      nextLift: next))
+                        return (groupID, CrewBarMeta(completedThisWeek: completed,
+                                                     plannedThisWeek: completed + upcoming,
+                                                     nextLift: next),
+                                honor, honorOK)
                     }
                 }
-                for await (id, meta) in taskGroup {
+                for await (id, meta, honor, honorOK) in taskGroup {
                     if let meta { barMeta[id] = meta }
+                    // Assigned even when `honor` is nil — a nil subscript
+                    // assignment REMOVES the key, which is how the crown
+                    // decays. Seeding from the previous dictionary and only
+                    // ever adding left a stale crown on the card forever.
+                    if honorOK { honorMeta[id] = honor }
                 }
             }
             barByGroup = barMeta
-
-            // The crew's frequency honor (spec §3), widened to 30 days and read
-            // through `group_consistency_honor` rather than the bar's own
-            // session list — the bar counts what RLS lets THIS VIEWER see
-            // (organizer-or-participant,
-            // 20260709000006_create_sessions.sql:50-56), which is the wrong
-            // question for a line that says "who showed up most".
-            var honorMeta = honorByGroup
-            await withTaskGroup(of: (UUID, CrewHonor?).self) { taskGroup in
-                for group in currentGroups {
-                    taskGroup.addTask {
-                        guard let rows = try? await GroupRepository.consistencyHonor(groupID: group.id) else {
-                            return (group.id, nil)
-                        }
-                        return (group.id, CrewHonorMath.crown(rows))
-                    }
-                }
-                for await (id, honor) in taskGroup {
-                    if let honor { honorMeta[id] = honor }
-                }
-            }
             honorByGroup = honorMeta
 
             errorText = nil
