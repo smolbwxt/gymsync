@@ -105,6 +105,42 @@ final class CatalogScreenTests: XCTestCase {
             "crews-tab",
             // congruence B2 T2.3: the block calendar's flag/trophy glyphs.
             "block-calendar",
+            // The focused session design round (group-session-and-lobby spec
+            // §8 step 1, owner decision 10): the lobby's two compositions and
+            // its everyone-ready state, and the shared warm-up screen's two
+            // compositions and its crew frame.
+            "lobby-crew-waiting-a",
+            "lobby-crew-waiting-b",
+            "lobby-crew-ready",
+            "warmup-solo-a",
+            "warmup-solo-b",
+            "warmup-crew",
+            // The same round, continued: Rounds' rest screen in two
+            // compositions plus the hold threshold and spotter mode, then
+            // Freestyle's shared rail and Together's one clock.
+            "round-wait-a",
+            "round-wait-b",
+            "round-skip-offer",
+            "round-spotter",
+            "freestyle-rail",
+            "together-clock",
+            // The round's last two: the crew's consensus swap as a consent
+            // card, and the pump-check post re-composed.
+            "swap-consensus-card",
+            "pump-check-card-v2",
+            // The session round's SECOND PASS (frames 120-126): the ids the
+            // owner's picks produced, beside the frozen v1 ids they answer.
+            "lobby-crew-waiting-v2",
+            "lobby-crew-ready-v2",
+            "warmup-solo-v2",
+            "round-wait-v2",
+            "round-spotter-v2",
+            "swap-consensus-card-v2",
+            "together-clock-v2",
+            // The THIRD and last pass (frames 127-128): the arrival widget as
+            // the primary, and spotter mode with the zone colours put back.
+            "lobby-crew-ready-v3",
+            "round-spotter-v3",
         ]
         for id in ids {
             XCTAssertNotNil(CatalogScreen(rawValue: id), "missing catalog case: \(id)")

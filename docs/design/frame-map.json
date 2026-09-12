@@ -284,5 +284,102 @@
     "frame": 105,
     "title": "Crew sessions list - state glyphs",
     "note": "congruence B9 T9.1: GroupView's sessions list, stopped on the LIST so the SF Symbol state glyphs are in frame (testLobby and testSessionRecap both tap straight through it). The seed has no abandoned session, so only the completed tick is exercised. No proof frame in docs/design/mockups/ yet."
+  },
+  "lobby-crew-waiting-a": {
+    "frame": 106,
+    "title": "Crew lobby, waiting - arrival as a rail",
+    "note": "The focused session design round (2026-09-12 group-session-and-lobby spec, §8 step 1 / owner decision 10). Frames 106-119 are this round; 105 was master's maximum when it branched. Catalog-only compositions - no production view is touched until Phase A - so there is no proof frame in docs/design/mockups/ and parity_diff.js logs 'skip lobby-crew-waiting-a: no proof frame'. The Home v3 round (frames 71-82) set this precedent."
+  },
+  "lobby-crew-waiting-b": {
+    "frame": 107,
+    "title": "Crew lobby, waiting - the stage on each roster row"
+  },
+  "lobby-crew-ready": {
+    "frame": 108,
+    "title": "Crew lobby - everyone checked in, Start live"
+  },
+  "warmup-solo-a": {
+    "frame": 109,
+    "title": "Solo warm-up - plan card leads, Coach answers under it"
+  },
+  "warmup-solo-b": {
+    "frame": 110,
+    "title": "Solo warm-up - Coach is the plan card's second line"
+  },
+  "warmup-crew": {
+    "frame": 111,
+    "title": "Shared warm-up in its crew frame - who's warm"
+  },
+  "round-wait-a": {
+    "frame": 112,
+    "title": "Rounds, the round wait - who's still to go as a strip"
+  },
+  "round-wait-b": {
+    "frame": 113,
+    "title": "Rounds, the round wait - the crew on the station cards"
+  },
+  "round-skip-offer": {
+    "frame": 114,
+    "title": "Rounds - the hold threshold's quiet skip line"
+  },
+  "round-spotter": {
+    "frame": 115,
+    "title": "Rounds - spotter mode, cheer and film beside the dock"
+  },
+  "freestyle-rail": {
+    "frame": 116,
+    "title": "Freestyle - the shared progress rail and the stretched rest"
+  },
+  "together-clock": {
+    "frame": 117,
+    "title": "Together - one interval clock, four hearts on one timeline"
+  },
+  "swap-consensus-card": {
+    "frame": 118,
+    "title": "The crew's routine change as a consent card"
+  },
+  "pump-check-card-v2": {
+    "frame": 119,
+    "title": "Pump-check post, re-composed - the same seven lines, tightened",
+    "note": "The last of frames 106-119 (the focused session design round). Renders the SAME values as the pump-feed-post capture (CatalogHostView's pumpFixtureSummary / pumpFixtureTrajectory / pumpFixtureHighlight, re-spelled as literals in SVFixtures) so the two captures are a before/after of the composition and of nothing else. Catalog-only: PumpPostCard itself is untouched. SECOND PASS: approved as rendered, with one addition the owner asked for - a caption under the photo reading 'Tap for the full workout', because the thumbnail opens the whole workout's metrics and nothing said so. No new id and no new frame."
+  },
+  "lobby-crew-waiting-v2": {
+    "frame": 120,
+    "title": "Crew lobby, second pass - the whole plan, the crew's energy, Coach",
+    "note": "The session design round's SECOND PASS (frames 120-126), after the owner reviewed all fourteen round-1 renders and picked. These ids sit BESIDE the round-1 ids (frames 106-119), which are frozen and still render, so every pair can be composed two-up. Catalog-only, so no proof frame in docs/design/mockups/ and parity_diff.js logs 'skip <id>: no proof frame' for all seven - the Home v3 precedent (frames 71-82)."
+  },
+  "lobby-crew-ready-v2": {
+    "frame": 121,
+    "title": "Crew lobby - locked in, everyone's here"
+  },
+  "warmup-solo-v2": {
+    "frame": 122,
+    "title": "Solo warm-up, second pass - the whole day and the block ladder"
+  },
+  "round-wait-v2": {
+    "frame": 123,
+    "title": "Rounds, second pass - aligned stations, recovery curve, the plan"
+  },
+  "round-spotter-v2": {
+    "frame": 124,
+    "title": "Spotter mode, second pass - the crew's live heart rates"
+  },
+  "swap-consensus-card-v2": {
+    "frame": 125,
+    "title": "The consensus swap - both exercises tappable"
+  },
+  "together-clock-v2": {
+    "frame": 126,
+    "title": "Together, second pass - neutral BPM ink, the zone as a word",
+    "note": "DROPPED CONCEPTUALLY by the owner's third-pass reversal: heart-rate zone colours STAY, an explicit exception to the colour rules (design language rule 2's own heart-rate clause already exempted them). together-clock (v1, frame 117) is what the plan cites. This id and its capture are kept only so the pair can still be looked at - do not re-apply the neutral-BPM rule from this frame."
+  },
+  "lobby-crew-ready-v3": {
+    "frame": 127,
+    "title": "Crew lobby locked in - the arrival widget IS the primary",
+    "note": "The session design round's THIRD and last pass (frames 127-128). Every round-1 (106-119) and second-pass (120-126) id is frozen and still renders; these two are the frames the owner's accent move and colour reversal change. Catalog-only, so no proof frame in docs/design/mockups/ and parity_diff.js logs 'skip <id>: no proof frame' - the Home v3 precedent (frames 71-82)."
+  },
+  "round-spotter-v3": {
+    "frame": 128,
+    "title": "Spotter mode - the crew's heart rates, zone colours restored"
   }
 }

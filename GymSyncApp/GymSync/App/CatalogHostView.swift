@@ -133,6 +133,44 @@ enum CatalogScreen: String, CaseIterable {
     // See `content_crewsTab`.
     case crewsTab = "crews-tab"
     case blockCalendar = "block-calendar"
+    // The focused session design round (group-session-and-lobby spec §8
+    // step 1): the lobby and the shared warm-up screen, as catalog-only
+    // compositions for the owner to pick from. Frames 106-111. See
+    // `content_lobbyCrewWaitingA` for the whole story.
+    case lobbyCrewWaitingA = "lobby-crew-waiting-a"
+    case lobbyCrewWaitingB = "lobby-crew-waiting-b"
+    case lobbyCrewReady = "lobby-crew-ready"
+    case warmupSoloA = "warmup-solo-a"
+    case warmupSoloB = "warmup-solo-b"
+    case warmupCrew = "warmup-crew"
+    // The same round, continued: the three styles. Rounds' rest screen in
+    // two compositions plus its two other states, then Freestyle's rail and
+    // Together's clock. Frames 112-117.
+    case roundWaitA = "round-wait-a"
+    case roundWaitB = "round-wait-b"
+    case roundSkipOffer = "round-skip-offer"
+    case roundSpotter = "round-spotter"
+    case freestyleRail = "freestyle-rail"
+    case togetherClock = "together-clock"
+    // The round's last two: not screens but objects that sit on them — the
+    // crew's consensus swap as a consent card, and the pump-check post
+    // re-composed on the design language. Frames 118-119.
+    case swapConsensusCard = "swap-consensus-card"
+    case pumpCheckCardV2 = "pump-check-card-v2"
+    // The session round's SECOND PASS (the owner reviewed all fourteen and
+    // picked; these sit BESIDE the v1 ids, which are frozen). Frames 120-126.
+    // See `content_lobbyCrewWaitingV2` for the whole story.
+    case lobbyCrewWaitingV2 = "lobby-crew-waiting-v2"
+    case lobbyCrewReadyV2 = "lobby-crew-ready-v2"
+    case warmupSoloV2 = "warmup-solo-v2"
+    case roundWaitV2 = "round-wait-v2"
+    case roundSpotterV2 = "round-spotter-v2"
+    case swapConsensusCardV2 = "swap-consensus-card-v2"
+    case togetherClockV2 = "together-clock-v2"
+    // The THIRD and last pass: the owner approved the v2 additions with one
+    // reversal (heart-rate zone colours stay). Frames 127-128.
+    case lobbyCrewReadyV3 = "lobby-crew-ready-v3"
+    case roundSpotterV3 = "round-spotter-v3"
 }
 
 struct CatalogHostView: View {
@@ -234,6 +272,29 @@ struct CatalogHostView: View {
             case .homeGoalStripBlock:         content_homeGoalStripBlock
             case .crewsTab:                   content_crewsTab
             case .blockCalendar:              content_blockCalendar
+            case .lobbyCrewWaitingA:          content_lobbyCrewWaitingA
+            case .lobbyCrewWaitingB:          content_lobbyCrewWaitingB
+            case .lobbyCrewReady:             content_lobbyCrewReady
+            case .warmupSoloA:                content_warmupSoloA
+            case .warmupSoloB:                content_warmupSoloB
+            case .warmupCrew:                 content_warmupCrew
+            case .roundWaitA:                 content_roundWaitA
+            case .roundWaitB:                 content_roundWaitB
+            case .roundSkipOffer:             content_roundSkipOffer
+            case .roundSpotter:               content_roundSpotter
+            case .freestyleRail:              content_freestyleRail
+            case .togetherClock:              content_togetherClock
+            case .swapConsensusCard:          content_swapConsensusCard
+            case .pumpCheckCardV2:            content_pumpCheckCardV2
+            case .lobbyCrewWaitingV2:         content_lobbyCrewWaitingV2
+            case .lobbyCrewReadyV2:           content_lobbyCrewReadyV2
+            case .warmupSoloV2:               content_warmupSoloV2
+            case .roundWaitV2:                content_roundWaitV2
+            case .roundSpotterV2:             content_roundSpotterV2
+            case .swapConsensusCardV2:        content_swapConsensusCardV2
+            case .togetherClockV2:            content_togetherClockV2
+            case .lobbyCrewReadyV3:           content_lobbyCrewReadyV3
+            case .roundSpotterV3:             content_roundSpotterV3
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -2402,6 +2463,176 @@ struct CatalogHostView: View {
         ProgramWeek(percentOfBaseline: 82.5, sets: 4, reps: 3),
         ProgramWeek(sets: 3, reps: 5, isDeload: true, note: "Deload - leave two in the tank"),
     ]
+
+    // MARK: - The focused session design round
+    //
+    // Spec: `docs/superpowers/specs/2026-09-12-group-session-and-lobby
+    // -design.md` §8 step 1 — "a focused design round first … the session
+    // screens … and the pump-check cards brought onto the design language,
+    // as rendered proofs for the owner, the way the Home and You rounds were
+    // run." Owner decision 10 makes the round a precondition of the plan.
+    //
+    // FOURTEEN IDS, frames 106-119, in the brief's order: the lobby (two
+    // compositions plus the everyone-ready state), the shared warm-up screen
+    // (two compositions plus its crew frame), Rounds (two compositions of the
+    // round wait, plus the skip offer and spotter mode), Freestyle, Together,
+    // the consensus swap card and the pump-check card re-composed.
+    //
+    // Same contract as the Home v3 ten (`content_homeV3Tiles` above): each is
+    // a plain value-driven view from `SVFixtures`, reads no `AppState`, makes
+    // no repository call, holds no `.task`, and takes no parameters — the
+    // fixtures live in `Features/Sessions/Variations/SessionVariationKit.swift`
+    // beside the views that render them, the way `HomeV2Fixtures` does, so a
+    // frame and the world it draws are read together. Production `LobbyView`,
+    // `GroupSessionLiveView` and `WarmUpPhaseView` are untouched: spec §8
+    // puts their rework in Phases A and B, after the owner picks.
+    //
+    // PROOF AUTHORITY: none, exactly as for the Home v3 round. These frames
+    // ARE the proof. `docs/design/frame-map.json` reserves 106-119 and
+    // `parity_diff.js` logs `skip <id>: no proof frame` for all fourteen
+    // until something is rendered into `docs/design/mockups/`.
+    //
+    // TWO ANIMATIONS SURVIVE, both shipped components' own: `PTTDockRow`'s
+    // resting accent waveform (already captured by `voice-idle`) and
+    // `GSHeartRatePill`'s beat on `together-clock` (already captured by
+    // `heart-rate-pill`). Nothing else here moves, and no view reads a clock.
+
+    private var content_lobbyCrewWaitingA: some View {
+        LobbyCrewWaitingAView()
+    }
+
+    private var content_lobbyCrewWaitingB: some View {
+        LobbyCrewWaitingBView()
+    }
+
+    private var content_lobbyCrewReady: some View {
+        LobbyCrewReadyView()
+    }
+
+    private var content_warmupSoloA: some View {
+        WarmupSoloAView()
+    }
+
+    private var content_warmupSoloB: some View {
+        WarmupSoloBView()
+    }
+
+    private var content_warmupCrew: some View {
+        WarmupCrewView()
+    }
+
+    private var content_roundWaitA: some View {
+        RoundWaitAView()
+    }
+
+    private var content_roundWaitB: some View {
+        RoundWaitBView()
+    }
+
+    private var content_roundSkipOffer: some View {
+        RoundSkipOfferView()
+    }
+
+    private var content_roundSpotter: some View {
+        RoundSpotterView()
+    }
+
+    private var content_freestyleRail: some View {
+        FreestyleRailView()
+    }
+
+    private var content_togetherClock: some View {
+        TogetherClockView()
+    }
+
+    private var content_swapConsensusCard: some View {
+        SwapConsensusCardView()
+    }
+
+    /// The pump card re-composed. Deliberately does NOT reuse `PumpPostCard`:
+    /// the shipped card runs a signed-URL `.task` for its photo, and this
+    /// round's frames read nothing off the network. The values are
+    /// `pumpFixtureSummary` / `pumpFixtureTrajectory` / `pumpFixtureHighlight`
+    /// re-spelled as literals in `SVFixtures`, so the `pump-feed-post` capture
+    /// and this frame are a before/after of the composition and of nothing
+    /// else.
+    private var content_pumpCheckCardV2: some View {
+        PumpCheckCardV2View()
+    }
+
+    // MARK: - The session round, second pass
+    //
+    // The owner reviewed all fourteen round-1 frames (run 34706889112) and
+    // picked: the lobby's arrival track, the warm-up screen as rendered, the
+    // round wait's station cards, and the skip offer, Freestyle, Together,
+    // the swap card and the pump card as they stand. This pass adds SEVEN ids
+    // beside them, frames 120-126.
+    //
+    // EVERY v1 ID IS FROZEN. The owner has approved those renders, so a moved
+    // pixel in one of them is a moved decision: `SessionVariationKit.swift`
+    // gains exactly one additive defaulted field (`SVLifter.energy`) and
+    // nothing else, and the v2 pieces live in their own files. The v1 and v2
+    // frames are meant to be looked at as pairs.
+    //
+    // Three rules are added by this pass and are recorded in
+    // `SessionVariationsV2Kit.swift`'s header: alignment is a rule (fixed
+    // slots, so two cards cannot disagree about a baseline); a heart rate is
+    // neutral ink with the zone as a word (the language reserves red and
+    // gold); and checked in IS ready, one signal, which also settles the
+    // round-1 lobby fixture's own inconsistency.
+
+    private var content_lobbyCrewWaitingV2: some View {
+        LobbyCrewWaitingV2View()
+    }
+
+    private var content_lobbyCrewReadyV2: some View {
+        LobbyCrewReadyV2View()
+    }
+
+    private var content_warmupSoloV2: some View {
+        WarmupSoloV2View()
+    }
+
+    private var content_roundWaitV2: some View {
+        RoundWaitV2View()
+    }
+
+    private var content_roundSpotterV2: some View {
+        RoundSpotterV2View()
+    }
+
+    /// The consensus swap with both exercises tappable. `swap-consensus-card`
+    /// is untouched beside it — the pair is the frame the owner compares.
+    private var content_swapConsensusCardV2: some View {
+        SwapConsensusCardV2View()
+    }
+
+    private var content_togetherClockV2: some View {
+        TogetherClockV2View()
+    }
+
+    // MARK: - The session round, third and last pass
+    //
+    // The owner approved every second-pass addition with ONE REVERSAL:
+    // heart-rate zone colours STAY, as an explicit exception to the colour
+    // rules — which is what design language rule 2's own heart-rate clause
+    // already said ("like plate colours, this is data colour, not accent, and
+    // is exempt"). So `together-clock` (v1, frame 117) stands and
+    // `together-clock-v2` (126) is dropped conceptually: its id and its
+    // capture stay so the pair can still be looked at, and the plan cites v1.
+    //
+    // Two ids, frames 127-128. Every v1 and v2 id is frozen and still
+    // renders; the two seams this pass needed (`SVEnergyMeter.onAccent`,
+    // `SVLiveHRRow.zoneTinted` / `SVCrewHeartRatesCard.zoneTinted`) are
+    // additive and defaulted off, so no approved frame moves.
+
+    private var content_lobbyCrewReadyV3: some View {
+        LobbyCrewReadyV3View()
+    }
+
+    private var content_roundSpotterV3: some View {
+        RoundSpotterV3View()
+    }
 }
 
 // MARK: - Profile fixture
