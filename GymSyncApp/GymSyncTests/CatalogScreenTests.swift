@@ -97,6 +97,8 @@ final class CatalogScreenTests: XCTestCase {
             "ladder-behind",
             "ladder-met",
             "home-goal-strip-block",
+            // congruence B2 T2.3: the block calendar's flag/trophy glyphs.
+            "block-calendar",
         ]
         for id in ids {
             XCTAssertNotNil(CatalogScreen(rawValue: id), "missing catalog case: \(id)")

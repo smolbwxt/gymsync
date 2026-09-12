@@ -402,7 +402,7 @@ struct MyRackView: View {
                     Text(rotationText)
                         .font(GSFont.bold(9.5, relativeTo: .caption2))
                         .kerning(1.0)
-                        .foregroundStyle(Color.gsHex(0xE8C33A))
+                        .foregroundStyle(theme.neutral700)
                         .monospacedDigit()
                 }
                 VStack(spacing: 8) {

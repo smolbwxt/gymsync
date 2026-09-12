@@ -13,7 +13,8 @@
   },
   "tab-stats": {
     "frame": 63,
-    "title": "Onyx Stats (redesign)"
+    "title": "Onyx Stats (redesign)",
+    "note": "two captures from this one id: app-tab-stats (the viewport: lifetime volume, weekly volume, the LEDGER door) and app-tab-stats-2 (scrolled to the streak card, where the gold current-streak number lives). The -2 attachment has no frame-map entry of its own by design."
   },
   "tab-you": {
     "frame": 64,
@@ -260,5 +261,20 @@
   "home-goal-strip-block": {
     "frame": 100,
     "title": "Weekly goal strip - the block kicker"
+  },
+  "block-calendar": {
+    "frame": 103,
+    "title": "The block, in time - flag and trophy",
+    "note": "congruence B2 T2.3 (owner round 12): a checkered flag on the block's first day, a trophy on its last. Frames 101 and 102 are reserved by the social-cards work on other branches. No proof frame is rendered into docs/design/mockups/ yet, so parity_diff.js logs 'skip block-calendar: no proof frame'."
+  },
+  "crew-room": {
+    "frame": 104,
+    "title": "Crew room - THE CHAT preview",
+    "note": "congruence B9 T9.2: the crew room itself, captured for its chat-preview card (CrewRoomView.chatPreview reads bodies through ChatMessage.displayBody). Nothing framed this screen after T-F.1 moved app-session-recap onto the real recap. No proof frame in docs/design/mockups/ yet."
+  },
+  "group-sessions": {
+    "frame": 105,
+    "title": "Crew sessions list - state glyphs",
+    "note": "congruence B9 T9.1: GroupView's sessions list, stopped on the LIST so the SF Symbol state glyphs are in frame (testLobby and testSessionRecap both tap straight through it). The seed has no abandoned session, so only the completed tick is exercised. No proof frame in docs/design/mockups/ yet."
   }
 }

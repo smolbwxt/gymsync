@@ -77,6 +77,10 @@ public extension Color {
     static let gsSuccess = Color.gsHex(0x2FA45C)
     /// 12% wash of `gsSuccess`, for tag/row fills.
     static let gsSuccessSoft = Color.gsHex(0x2FA45C, 0.12)
+
+    /// Streak / check-in gold — design language §2's two gold jobs (the
+    /// week-streak number, and "the window is open, act now").
+    static let gsStreakGold = Color.gsHex(0xF6C945)
 }
 
 private struct GSAccentKey: EnvironmentKey {

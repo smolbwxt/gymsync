@@ -269,7 +269,7 @@ struct StatsTabView: View {
                                 } label: {
                                     Text("Older workouts are PRO — the full ledger, all time.")
                                         .font(GSFont.bold(13, relativeTo: .subheadline))
-                                        .foregroundStyle(Color.gsHex(0xE8C33A))
+                                        .foregroundStyle(theme.accent700)
                                         .frame(maxWidth: .infinity)
                                         .padding(.vertical, 12)
                                         .contentShape(Rectangle())
@@ -407,11 +407,15 @@ struct StatsTabView: View {
         VStack(alignment: .leading, spacing: 10) {
             GSSectionHeader("Streak")
             HStack(spacing: 8) {
-                // Default value color (owner's text law, 2026-08-12) — the
-                // old live-streak accent tint retired with the sweep.
+                // Gold has exactly two jobs (design language §2): the
+                // week-streak number, and "the window is open, act now".
+                // A current streak is the first of those, so this tile is
+                // one of the few places gold belongs. The longest-streak tile
+                // below stays default text: one gold number per card.
                 GSStatTile(
                     value: currentStreakValue,
-                    label: "Current streak"
+                    label: "Current streak",
+                    valueColor: Color.gsStreakGold
                 )
                 GSStatTile(
                     value: "\(userStreak?.longestStreak ?? 0)",
@@ -425,9 +429,10 @@ struct StatsTabView: View {
     }
 
     /// Plain "N" — the redesign's emoji sweep (spec §7) replaced the "🔥 N"
-    /// tile value, and the owner's default-text law (2026-08-12) later
-    /// retired the live-streak accent tint too. The backend's push copy
-    /// keeps its own 🔥 — that's message text, not UI chrome.
+    /// tile value. The number itself reads gold (design language §2: the
+    /// week-streak number is one of gold's only two jobs); the colour is
+    /// applied at the tile's call site above. The backend's push copy keeps
+    /// its own 🔥 — that's message text, not UI chrome.
     private var currentStreakValue: String {
         "\(userStreak?.currentStreak ?? 0)"
     }
