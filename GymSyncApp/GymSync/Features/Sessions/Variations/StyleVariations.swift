@@ -34,6 +34,7 @@ struct SVFreestyleRail: View {
                     .font(GSFont.bold(11, relativeTo: .caption2))
                     .tracking(0.8)
                     .foregroundStyle(theme.neutral700)
+                    .fixedSize()
             }
 
             track
@@ -238,6 +239,7 @@ struct SVTogetherTimeline: View {
                     .font(GSFont.bold(9, relativeTo: .caption2))
                     .tracking(0.8)
                     .foregroundStyle(theme.neutral500)
+                    .fixedSize()
             }
             ForEach(Array(SVFixtures.togetherTimeline.enumerated()), id: \.offset) { _, row in
                 lane(name: row.name, bpm: row.bpm, trace: row.trace)

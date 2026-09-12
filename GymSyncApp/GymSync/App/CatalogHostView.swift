@@ -152,6 +152,11 @@ enum CatalogScreen: String, CaseIterable {
     case roundSpotter = "round-spotter"
     case freestyleRail = "freestyle-rail"
     case togetherClock = "together-clock"
+    // The round's last two: not screens but objects that sit on them — the
+    // crew's consensus swap as a consent card, and the pump-check post
+    // re-composed on the design language. Frames 118-119.
+    case swapConsensusCard = "swap-consensus-card"
+    case pumpCheckCardV2 = "pump-check-card-v2"
 }
 
 struct CatalogHostView: View {
@@ -265,6 +270,8 @@ struct CatalogHostView: View {
             case .roundSpotter:               content_roundSpotter
             case .freestyleRail:              content_freestyleRail
             case .togetherClock:              content_togetherClock
+            case .swapConsensusCard:          content_swapConsensusCard
+            case .pumpCheckCardV2:            content_pumpCheckCardV2
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -2513,6 +2520,21 @@ struct CatalogHostView: View {
 
     private var content_togetherClock: some View {
         TogetherClockView()
+    }
+
+    private var content_swapConsensusCard: some View {
+        SwapConsensusCardView()
+    }
+
+    /// The pump card re-composed. Deliberately does NOT reuse `PumpPostCard`:
+    /// the shipped card runs a signed-URL `.task` for its photo, and this
+    /// round's frames read nothing off the network. The values are
+    /// `pumpFixtureSummary` / `pumpFixtureTrajectory` / `pumpFixtureHighlight`
+    /// re-spelled as literals in `SVFixtures`, so the `pump-feed-post` capture
+    /// and this frame are a before/after of the composition and of nothing
+    /// else.
+    private var content_pumpCheckCardV2: some View {
+        PumpCheckCardV2View()
     }
 }
 

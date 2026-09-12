@@ -124,6 +124,10 @@ final class CatalogScreenTests: XCTestCase {
             "round-spotter",
             "freestyle-rail",
             "together-clock",
+            // The round's last two: the crew's consensus swap as a consent
+            // card, and the pump-check post re-composed.
+            "swap-consensus-card",
+            "pump-check-card-v2",
         ]
         for id in ids {
             XCTAssertNotNil(CatalogScreen(rawValue: id), "missing catalog case: \(id)")

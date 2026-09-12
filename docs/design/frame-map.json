@@ -333,5 +333,14 @@
   "together-clock": {
     "frame": 117,
     "title": "Together - one interval clock, four hearts on one timeline"
+  },
+  "swap-consensus-card": {
+    "frame": 118,
+    "title": "The crew's routine change as a consent card"
+  },
+  "pump-check-card-v2": {
+    "frame": 119,
+    "title": "Pump-check post, re-composed - the same seven lines, tightened",
+    "note": "The last of frames 106-119 (the focused session design round). Renders the SAME values as the pump-feed-post capture (CatalogHostView's pumpFixtureSummary / pumpFixtureTrajectory / pumpFixtureHighlight, re-spelled as literals in SVFixtures) so the two captures are a before/after of the composition and of nothing else. Catalog-only: PumpPostCard itself is untouched."
   }
 }

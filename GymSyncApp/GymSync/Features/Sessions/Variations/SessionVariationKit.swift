@@ -578,6 +578,12 @@ struct SVDoor: View {
     /// and its ink in `theme.bg`, the way `GSPrimaryButtonStyle` does.
     var isPrimary: Bool = false
 
+    /// nil hands `GS3DCardStyle` the theme's neutral raised pair; an accent
+    /// face derives its own darker lip, the accent-button path.
+    private var face: Color? {
+        isPrimary ? theme.accent : nil
+    }
+
     var body: some View {
         Button(action: {}) {
             VStack(alignment: .leading, spacing: 8) {
@@ -594,7 +600,7 @@ struct SVDoor: View {
         }
         .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm,
                                     lipHeight: 5,
-                                    face: isPrimary ? theme.accent : nil))
+                                    face: face))
     }
 }
 
@@ -648,11 +654,18 @@ struct SVAvatarMark: View {
     private var avatar: some View {
         GSInitialsAvatar(name: lifter.name, size: size)
             .overlay(alignment: .bottomTrailing) { badge }
-            .overlay(
-                ring
-                    ? Circle().strokeBorder(ringColor ?? theme.accent, lineWidth: 2)
-                    : nil
-            )
+            .overlay(ringOverlay)
+    }
+
+    /// A ROUNDED RECTANGLE, not a circle: `GSInitialsAvatar` clips itself to
+    /// `RoundedRectangle(cornerRadius: size * 0.28)`, and a circular ring
+    /// around a rounded square reads as a rendering bug.
+    @ViewBuilder
+    private var ringOverlay: some View {
+        if ring {
+            RoundedRectangle(cornerRadius: size * 0.28)
+                .strokeBorder(ringColor ?? theme.accent, lineWidth: 2)
+        }
     }
 
     @ViewBuilder
@@ -795,14 +808,20 @@ struct SVArrivalRail: View {
             .minimumScaleFactor(0.75)
 
             if people.isEmpty {
-                Circle()
+                // Same shape as an avatar (`GSInitialsAvatar` clips to
+                // `size * 0.28`), so an empty stage reads as a missing person
+                // rather than as a different kind of thing.
+                RoundedRectangle(cornerRadius: 30 * 0.28)
                     .strokeBorder(theme.neutral400, lineWidth: 1)
                     .frame(width: 30, height: 30)
             } else {
                 HStack(spacing: -8) {
                     ForEach(people) { person in
                         GSInitialsAvatar(name: person.name, size: 30)
-                            .overlay(Circle().strokeBorder(theme.surface, lineWidth: 2))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 30 * 0.28)
+                                    .strokeBorder(theme.surface, lineWidth: 2)
+                            )
                     }
                 }
             }
@@ -834,6 +853,7 @@ struct SVReadinessRow: View {
                     .font(GSFont.bold(11, relativeTo: .caption2))
                     .tracking(0.8)
                     .foregroundStyle(theme.neutral700)
+                    .fixedSize()
             }
             HStack(spacing: 4) {
                 ForEach(lifters) { lifter in

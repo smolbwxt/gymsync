@@ -65,6 +65,11 @@ struct SVWhoIsToGo: View {
     /// CHEER) marks the current lifter in a neutral tone instead.
     var accentsCurrent: Bool = true
 
+    /// nil means `SVAvatarMark`'s default, which is accent.
+    private var currentRingColor: Color? {
+        accentsCurrent ? nil : theme.neutral500
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -74,12 +79,13 @@ struct SVWhoIsToGo: View {
                     .font(GSFont.bold(11, relativeTo: .caption2))
                     .tracking(0.8)
                     .foregroundStyle(theme.neutral700)
+                    .fixedSize()
             }
             HStack(alignment: .top, spacing: 4) {
                 SVAvatarMark(lifter: lifting,
                              size: 44,
                              ring: true,
-                             ringColor: accentsCurrent ? nil : theme.neutral500)
+                             ringColor: currentRingColor)
                 if !queued.isEmpty {
                     Text("THEN")
                         .font(GSFont.bold(9, relativeTo: .caption2))
@@ -107,7 +113,9 @@ struct SVStationCard: View {
     let name: String
     let lifters: [SVLifter]
     /// Who is lifting on this station right now, by id — the accent ring.
-    var liftingID: Int?
+    /// Explicitly defaulted rather than relying on the memberwise init's
+    /// optional-var nil, so the Rack B call site reads as a choice.
+    var liftingID: Int? = nil
 
     /// Logged over rotation depth — the round's progress on this station,
     /// countable without a second widget.
@@ -125,6 +133,7 @@ struct SVStationCard: View {
                     .font(GSFont.bold(11, relativeTo: .caption2))
                     .monospacedDigit()
                     .foregroundStyle(theme.neutral700)
+                    .fixedSize()
             }
             HStack(alignment: .top, spacing: 0) {
                 ForEach(lifters) { lifter in

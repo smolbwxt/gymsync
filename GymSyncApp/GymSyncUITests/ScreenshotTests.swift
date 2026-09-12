@@ -716,6 +716,14 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogFreestyleRail()          { captureCatalog("freestyle-rail") }
     func testCatalogTogetherClock()          { captureCatalog("together-clock") }
 
+    // THE TWO CARDS (frames 118-119). Not screens — objects that sit on
+    // them, rendered alone on the ground the way pump-composer-highlight is,
+    // because what is being judged is the card. `pump-check-card-v2` is the
+    // owner's "along with the pump check cards": the same seven lines the
+    // shipped card renders, on the same fixture values, re-composed.
+    func testCatalogSwapConsensusCard()      { captureCatalog("swap-consensus-card") }
+    func testCatalogPumpCheckCardV2()        { captureCatalog("pump-check-card-v2") }
+
     // MARK: - Seeded deep-screen captures
     //
     // Reachable via the deterministic fixture world the QA seed builds for the

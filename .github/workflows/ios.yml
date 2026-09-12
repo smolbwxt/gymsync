@@ -389,7 +389,16 @@ jobs:
           # rather than added (spec §7), so it moves no count. The plan wrote
           # 107 -> 110 against master's FLOOR before B2+B9 merged; the +3 is
           # the invariant, not the literal 110.
-          FLOOR=114
+          # The focused session design round (2026-09-12 group-session-and-
+          # lobby spec §8 step 1, owner decision 10): 114 -> 128. FOURTEEN new
+          # catalog ids, frames 106-119, one capture each and no second
+          # attachment among them — lobby-crew-waiting-a/-b, lobby-crew-ready,
+          # warmup-solo-a/-b, warmup-crew, round-wait-a/-b, round-skip-offer,
+          # round-spotter, freestyle-rail, together-clock,
+          # swap-consensus-card, pump-check-card-v2. `pump-feed-post` is
+          # untouched: pump-check-card-v2 is a SECOND id beside it, not a
+          # re-render of it, because the two frames exist to be compared.
+          FLOOR=128
           # `|| true` + the `:-0` default for the same `set -eo pipefail`
           # reason as the simulator picker above: a missing $SCREENS makes
           # `find` exit 1, which would kill the step before it printed the
