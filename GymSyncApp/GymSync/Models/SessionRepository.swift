@@ -612,6 +612,32 @@ enum SessionRepository {
         } catch { throw ErrorMapping.map(error) }
     }
 
+    /// Write my own energy for this session (spec §6, owner decision 18).
+    ///
+    /// A direct UPDATE, not an RPC: "participant updates own check-in"
+    /// (20260712000001:22-25) already scopes the write to my own row, and the
+    /// column's CHECK (1-5) is the backstop — the same reasoning
+    /// `setWarmupMinutes` records for the organizer's own column.
+    ///
+    /// Clamped to `1...5` client-side before the write. A UI that can only
+    /// send 1-5 still should not be the only guard: the clamp turns a caller's
+    /// bug into a wrong-but-legal number instead of a 23514 the lobby would
+    /// have to render as an error.
+    static func setEnergy(sessionID: UUID, value: Int) async throws {
+        guard let userID = await SupabaseService.shared.currentUserID() else {
+            throw GymSyncError.unauthorized
+        }
+        let clamped = min(5, max(1, value))
+        do {
+            _ = try await client
+                .from("session_participants")
+                .update(["energy": clamped])
+                .eq("session_id", value: sessionID.uuidString)
+                .eq("user_id", value: userID.uuidString)
+                .execute()
+        } catch { throw ErrorMapping.map(error) }
+    }
+
     /// All sessions for a group (upcoming + past), server-side filtered by group_id.
     /// Participant-only RLS automatically scopes results.
     static func groupSessions(groupID: UUID, pastLimit: Int = 10) async throws -> [WorkoutSession] {

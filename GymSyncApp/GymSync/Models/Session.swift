@@ -136,6 +136,14 @@ struct SessionParticipant: Codable, Sendable {
     /// "I'm warm" vote (20260803000004). When every PRESENT participant
     /// (advance_turn's online/ready/late trio) has voted, lifting begins.
     let warmupReady: Bool
+    /// Self-reported energy for this session, 1-5 (20260912000101). NULL until
+    /// the lifter answers — decoded with the same safe-decode guard
+    /// `warmupReady` uses below, because a projected select or a client
+    /// running ahead of the migration must not fail the whole row.
+    ///
+    /// NEVER 0. An absence is not a reading of one, which is why the meter
+    /// draws the words `not yet` rather than five empty pips (plan task S4).
+    let energy: Int?
 
     enum CodingKeys: String, CodingKey {
         case sessionID = "session_id"
@@ -147,6 +155,7 @@ struct SessionParticipant: Codable, Sendable {
         case lateMinutes = "late_minutes"
         case burpeesOwed = "burpees_owed"
         case warmupReady = "warmup_ready"
+        case energy
     }
 
     // Safe decode: warmup_ready has DB DEFAULT false so full-row selects
@@ -165,6 +174,7 @@ struct SessionParticipant: Codable, Sendable {
         lateMinutes   = try c.decode(Int.self,    forKey: .lateMinutes)
         burpeesOwed   = try c.decode(Int.self,    forKey: .burpeesOwed)
         warmupReady   = (try? c.decodeIfPresent(Bool.self, forKey: .warmupReady)) ?? false
+        energy        = (try? c.decodeIfPresent(Int.self, forKey: .energy)) ?? nil
     }
 }
 
