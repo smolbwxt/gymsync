@@ -17,14 +17,24 @@ import Foundation
 // decay is the line's absence, never a line reading zero).
 enum CrewsTabFixtures {
 
-    static let pushCrewID = UUID(uuidString: "00000000-0000-0000-0000-0000000000d1") ?? UUID()
-    static let sundaySquadID = UUID(uuidString: "00000000-0000-0000-0000-0000000000d2") ?? UUID()
-    static let creatorID = UUID(uuidString: "00000000-0000-0000-0000-0000000000d3") ?? UUID()
+    // Force-unwrapped on purpose. `?? UUID()` would have silently swapped a
+    // typo'd literal for a random id — which is precisely the failure the
+    // fixed ids exist to prevent, arriving as a quietly repainted avatar in
+    // a screenshot diff instead of a crash. These three literals are
+    // constants in a DEBUG-reachable fixture; if one stops parsing, it should
+    // stop the frame.
+    static let pushCrewID = UUID(uuidString: "00000000-0000-0000-0000-0000000000d1")!
+    static let sundaySquadID = UUID(uuidString: "00000000-0000-0000-0000-0000000000d2")!
+    static let creatorID = UUID(uuidString: "00000000-0000-0000-0000-0000000000d3")!
 
-    /// A calendar date at noon UTC from its COMPONENTS, the idiom
+    /// A calendar date from its COMPONENTS, the idiom
     /// `StubBlockGoalRepository.utcDate` records: an epoch literal is
-    /// unreadable and therefore unreviewable, and noon survives a simulator
-    /// anywhere from UTC-11 to UTC+11 printing the same weekday.
+    /// unreadable and therefore unreviewable.
+    ///
+    /// Every caller passes `hour: 12`, and must: noon UTC is the only hour
+    /// that survives a simulator anywhere from UTC-11 to UTC+11 printing the
+    /// same weekday (12:00 ± 11 h stays inside one calendar day). The `hour`
+    /// parameter is here to keep the components readable, not to be varied.
     private static func utcDate(year: Int, month: Int, day: Int, hour: Int) -> Date {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
@@ -33,8 +43,14 @@ enum CrewsTabFixtures {
             ?? Date(timeIntervalSince1970: 0)
     }
 
-    /// Thursday 2026-09-10, 18:30 UTC — the next lift the meta line names.
-    static let nextLift = utcDate(year: 2026, month: 9, day: 10, hour: 18)
+    /// Thursday 2026-09-10, noon UTC — the next lift the meta line names.
+    ///
+    /// NOON, not the evening hour a crew would really book. The meta line
+    /// prints an abbreviated weekday (`crewMetaLine`), and only noon survives
+    /// the UTC-11…UTC+14 span without the date rolling: at 18:00 UTC a
+    /// simulator anywhere past UTC+6 reads Friday, and the frame would name a
+    /// different day than the one this constant does.
+    static let nextLift = utcDate(year: 2026, month: 9, day: 10, hour: 12)
     static let createdAt = utcDate(year: 2026, month: 6, day: 1, hour: 12)
 
     static let groups: [GymGroup] = [
