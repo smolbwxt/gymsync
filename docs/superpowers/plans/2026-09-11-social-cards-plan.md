@@ -155,6 +155,16 @@ These bind **every** task. A task that breaks one says so in its commit body, an
     and why **S2.6a** and **S2.10** exist at all: the goal-first final review caught three defects that
     fixture frames had hidden while the production path was broken, so new UI gets a real CI render and a
     seeded row gets a real walk.
+15. **Catalog captures launch with tips and tours OFF.** *(ADDED at integration, 2026-09-12 — Stage 1 fix
+    round 1.)* `ScreenshotTests.captureCatalog(_:)` now passes `-guidanceTipsEnabled NO`, the same launch
+    argument `launchApp()` has always passed. Before it, `captureCatalog()` passed **no** launch arguments at
+    all, so any catalog id whose view carries `.gsSpotlight(_:)` or `.gsSpotlightTour(_:)` photographed the
+    scrim instead of the screen (both modifiers gate on `GuidanceTip.tipsEnabled`); `crews-tab` is the id that
+    found it. **The consequence for this plan: no `content_*` builder needs to mark a tour seen.** A
+    per-builder `GuidanceTip.…markSeen()` is now redundant rather than load-bearing — `content_soloLiveSet`'s
+    call is kept only because deleting a working call proves nothing, and its comment is corrected to say so.
+    The overlay itself is still reviewed, through the `guidance-spotlight` catalog case, which builds
+    `GSSpotlightOverlay` directly and is unaffected.
 
 ---
 
@@ -751,6 +761,23 @@ await withTaskGroup(of: (UUID, CrewHonor?).self) { taskGroup in
 }
 honorByGroup = honorMeta
 ```
+
+> **AMENDED (integration, 2026-09-12) — fix round 1 supersedes the snippet above.** Two things were wrong
+> with it and both shipped differently (`SocialTabView.swift`, `refresh()`):
+>
+> 1. **The crown decays.** `if let honor { honorMeta[id] = honor }` could only ever ADD a crown: a crew whose
+>    30-day window had emptied kept the last crown it was given for the life of the process, which is the
+>    exact opposite of spec §3's "a crown that decays when they stop". The shipped read carries an explicit
+>    `honorOK` flag that separates *"the RPC answered, and the answer is nobody"* from *"the RPC failed"*, and
+>    assigns on the first — `honorMeta[id] = honor` with a **nil** `honor` removes the key, and the line
+>    disappears. A failed read still preserves the previous value. Both dictionaries are also rebuilt from
+>    `currentGroups` rather than carried forward wholesale, so a crew you left cannot keep its bar or its
+>    crown.
+> 2. **One task group, not two.** The bar read and the honor read run **concurrently inside one task group,
+>    one child task per crew** (`async let sessionsRead` beside `async let honorRead`), rather than in a
+>    second group after the bar's. Two sequential groups meant two `@State` writes and therefore two paints,
+>    and `ScreenshotTests.settleAfterNavigation` is a fixed 1.0 s — the capture could land between them and
+>    photograph a card with a bar and no honor line.
 
 **The seed.** `scripts/seed_qa_fixtures.js`, in the "sessions in each state" block (:305-315): the crew's
 sessions are created with a `group_id` and **no participants**, so the honor read returns nothing for the one
@@ -1823,6 +1850,33 @@ enum PostTrajectoryMath {
 }
 ```
 
+> **AMENDED (integration, 2026-09-12) — fix round 1 supersedes the `PostTrajectoryMath` snippet above.**
+> Three corrections, all shipped in `GymSyncApp/GymSync/Models/PostTrajectoryMath.swift`:
+>
+> 1. **`standing` has no missed-rung branch.** The snippet's
+>    `if page.rows.contains(where: { $0.status == .missed }) { return .behind }` pinned the card to `behind`
+>    for the rest of the block after a single bad week, even once the ladder had re-derived and still reached
+>    the date. The card must **agree with the ladder page's own coach line**, which says "On track" whenever
+>    the ladder still `reachesMilestone`; anything else prints two verdicts on one block — the page telling
+>    the athlete they are on track while their post tells their crew they are behind. Shipped:
+>    `if goal.outcome == .met { .met }`, then `if page.rows.last?.status == .met { .met }`, then
+>    `page.reachesMilestone ? .onTrack : .behind`. A missed week the ladder has absorbed is history, not
+>    standing.
+> 2. **A `days` rung renders ONE chip, not four.** `days` carries **seven** weekday chips, so the snippet's
+>    `prefix(4)` was Monday-to-Thursday: a lifter who trains Thursday to Saturday posted
+>    `0/0 · 0/0 · 0/0 · 0/0` — four empty chips under a line claiming a rung. Shipped: `days` gets its own
+>    `case`, returning a single `DAYS` chip carrying the strip's own reading (`progress.value` over
+>    `progress.target`) and no `fill`, because days-done over days-asked-for already IS the meter's fraction.
+> 3. **The `recovery` comment is corrected.** The snippet's "their `chips` array IS the strip's reading"
+>    claimed too much for the whole family: the strip renders recovery as a meter plus two lines, not as a
+>    chip row. Recovery's chips still pass through, but they are the strip's **facts in the card's own shape**
+>    rather than a copy of the strip's layout. `muscleSets` is the only kind for which the stronger claim
+>    holds.
+>
+> So the shipped switch has **three** families where the snippet had two: `muscleSets`/`recovery` (pass
+> through, at most four), `days` (one `DAYS` chip), and everything else (one subject chip). Still exhaustive,
+> still no `default:`.
+
 `WeeklyGoal.swift`'s `WeeklyGoalKind` doc comment (:28-48) is amended: **fourteen** switches across
 **thirteen** sites, with `PostTrajectoryMath.chips(kind:progress:)` added to the list. That count has been
 wrong twice before; this task keeps it right.
@@ -2402,6 +2456,28 @@ with `PostInsert` gaining the matching seven keys (`completed_at`, `is_late`, `r
 `trajectory`, `goal_id`, `week_start`) and the body computing
 `isLate: PostLateness.isLate(completedAt: completedAt, postedAt: postedAt, fallback: capturedLate)`.
 
+> **AMENDED (integration, 2026-09-12) — `is_late` is derived SERVER-side, not by the client.** Fix round 1
+> added a third migration, `supabase/migrations/20260912000002_workout_posts_is_late_trigger.sql`: a
+> `BEFORE INSERT` trigger (`public.workout_posts_derive_is_late`) sets
+> `NEW.is_late := (now() - NEW.completed_at) > interval '60 seconds'` whenever `completed_at` is present.
+>
+> The reason is that the client derived the boolean from the **device** clock while the tag the card prints
+> beside it — "posted 47 min after" — is computed from `created_at`, which is the **server's** `now()`. Two
+> clocks, one fact: a device an hour fast wrote `is_late = true` onto a post whose own timestamps said it was
+> prompt, and nothing in the row disagreed with itself loudly enough to be noticed.
+>
+> Still **not** a generated column, for the reason 20260912000001 already gives: making a populated boolean
+> generated means dropping it, which would erase what every pre-2026-09 row says about itself. A `BEFORE
+> INSERT` trigger touches new rows only. **The NULL branch is the contract:** a row with no `completed_at`
+> keeps whatever the client sent, because there is nothing to measure from and guessing `false` would quietly
+> un-late a genuinely late post. The 60 s window is therefore spelled twice, in two languages — here and as
+> `PostLateness.windowSeconds` in Swift — and there is no way to share one literal across the wire.
+>
+> `PostLateness.isLate` and the `capturedLate` fallback both **stay** in the client: they still decide what is
+> sent for a completion-less row, and `PostLatenessTests` still covers them. The trigger overrides the value
+> whenever it can measure one. This also amends the self-review's deviation note below, which states the
+> opposite.
+
 **The composer.** Three changes to `PumpCheckComposerCard`:
 
 1. `@State private var retakeCount = 0`, incremented in the Retake button (:175-178) before it re-opens the
@@ -2805,7 +2881,16 @@ Spec §1's anatomy, top to bottom, inside the card that already exists. Nothing 
         }
 ```
 
-`authorRow`'s trailing edge (:279-283):
+> **AMENDED (integration, 2026-09-12) — the card ships spec §1's order; the snippet above did not.** Fix
+> round 1 (review fix 4) found the snippet left the photo between line 3 and line 4, so the card would have
+> rendered **1, 2, 3, picture, 4, 5, 7** — the highlight and the plain-terms line pushed *below* a 300 pt
+> photo. Spec §1's anatomy is 1 who and when, 2 the trajectory, 3 this week's rung, 4 the highlight, 5 the
+> workout in plain terms, **6 the picture**, 7 reactions.
+>
+> Shipped (`PumpFeedView.swift`, `PumpPostCard.body`): `authorRow`, then `trajectoryBlock` (lines 2-3), then
+> `summaryBlock` (lines 4-5 and the per-exercise rows they sit with), then `photoBlock`, then `reactionsRow`.
+> The picture is **sixth**. The per-exercise rows are not one of the seven lines — they are detail this card
+> has shown since 2026-07 — so they travel with the summary rather than being split from it.
 
 ```swift
             Spacer()
@@ -3299,11 +3384,21 @@ the four append-only catalog files — concatenate in frame order, never renumbe
 
 ### I1 — `FLOOR`, the frame-map and the accepted deviations — **S**
 
-- `.github/workflows/ios.yml:358` — `FLOOR=107` → `FLOOR=110`. One edit, this task only. Extend the comment
-  block above it in the style the goal-first plan's I4 established:
+- `.github/workflows/ios.yml` — **the FLOOR rises by +3 over master's FLOOR at integration**, which is the
+  invariant; the literal `110` in the line below was written against master's FLOOR of 107 and is amended.
+  One edit, this task only. Extend the comment block above it in the style the goal-first plan's I4
+  established:
+
+  > **AMENDED (integration, 2026-09-12).** Master moved before this branch merged: the B2+B9 congruence merge
+  > (`aa04eed`) took the FLOOR to **111** — T2.4's `app-tab-stats-2`, T2.3's `app-block-calendar`, and B9's
+  > `app-crew-room` and `app-group-sessions`. So the edit is `FLOOR=111` → `FLOOR=114` at **`ios.yml:370`**,
+  > not `FLOOR=107` → `FLOOR=110` at `:358`. The +3 does not change: two catalog ids and one live walk.
+  > Arithmetic, verified: `ScreenshotTests` carries 108 `func test` methods on master and 111 after the two
+  > stream merges, and three methods attach a SECOND file each (`app-tab-stats-2`,
+  > `app-ladder-on-track-2`, `app-calendar-scheduling-2`) — 108 + 3 = 111, 111 + 3 = 114.
 
   ```
-  # social cards (I1, 2026-09-11-social-cards-plan.md): 107 -> 110. THREE new
+  # social cards (I1, 2026-09-11-social-cards-plan.md): 111 -> 114. THREE new
   # captures: two catalog ids (crews-tab frame 101, pump-composer-highlight
   # frame 102) and ONE live-walk capture (app-pump-feed, testPumpFeedLive —
   # no frame-map entry, the app-group-stats precedent). `pump-feed-post` was
@@ -3331,7 +3426,8 @@ the four append-only catalog files — concatenate in frame order, never renumbe
   }
   ```
 
-Commit: `chore(social): FLOOR 107 -> 110, frames 101-102, accepted deviations` + the trailer.
+Commit: `chore(social): FLOOR 111 -> 114, frames 101-102, accepted deviations` + the trailer
+(amended from `107 -> 110`, above).
 
 ### I2 — end-to-end CI, then by eye — **M**
 
@@ -3343,7 +3439,8 @@ Push and read the run.
   `PresenceIsUngatedTests`, `PostTrajectoryModelTests`, `GSGoalChipTests`, `PostTrajectoryMathTests`,
   `HighlightMathTests`, `PostLatenessTests`, `WorkoutPostLiveRepositoryTests`, `PumpPostCardCopyTests` — and
   the `CatalogScreenTests` count guard, which now carries two more ids;
-- the screenshot job exports **≥ 110** app captures and "Verify capture count" passes.
+- the screenshot job exports **≥ 114** app captures and "Verify capture count" passes *(amended from 110 —
+  see I1)*.
 
 **Backend workflow**
 - pgTAP green for `crew_consistency_honor_test.sql` (new, 8 assertions) and `workout_posts_test.sql`
@@ -3352,9 +3449,16 @@ Push and read the run.
 
 **Then read the artifact, by eye, in this order:**
 
-1. `app-home-v3-08a-targets-above-calendar` and `-08b-targets-above-join` — **byte-identical**. These are the
-   canary for S2.3's extraction; if either moved, stop and fix S2.3 rather than re-approving a frame.
-2. `app-home-goal-strip-muscle-sets` — **identical**, and the tighter canary: it renders the *production*
+> **AMENDED (integration, 2026-09-12) — what "unchanged" means for items 1, 2, 8 and 9.** The canary is
+> **0 % of pixels differ below the status bar and above the home-indicator band** — the controller's
+> `compare_frames.py` definition — **not** "byte-identical". A PNG re-encoded by a different simulator run is
+> not byte-identical even when nothing on the screen moved, and the status-bar clock and the home indicator
+> move on every run by construction. Read the frames below against that definition.
+
+1. `app-home-v3-08a-targets-above-calendar` and `-08b-targets-above-join` — **unchanged** (0 % pixels differ
+   in the compared band). These are the canary for S2.3's extraction; if either moved, stop and fix S2.3
+   rather than re-approving a frame.
+2. `app-home-goal-strip-muscle-sets` — **unchanged**, and the tighter canary: it renders the *production*
    strip through `HomeWeeklyGoalStrip`, whose `chipRow` S2.3 rewrote.
 3. `app-crews-tab` — two crew cards; the first carries `MOST CONSISTENT · SAM · 9 SESSIONS` under its meta
    line, the second carries no honor line at all; both bars, both next-lift lines, the three Outside the Box
@@ -3386,8 +3490,8 @@ Fix-forward any red; each fix is its own commit on the integration branch.
 
 1. **What shipped**, in the spec's own vocabulary: the card is a trajectory snapshot; the Crews card carries
    frequency honor; presence stays ungated.
-2. **The two new catalog ids, the one new walk capture, and the FLOOR change** (107 → 110), as the table from
-   this plan.
+2. **The two new catalog ids, the one new walk capture, and the FLOOR change** (111 → 114 — amended from
+   107 → 110, see I1), as the table from this plan.
 3. **The two migrations**, and how and when each was applied to `chjkkwqwdlmaxacwglzm`.
 4. **The deliberate deviations**, each with its reason:
    - **a `trajectory jsonb` column the spec does not list.** Spec §6 names `goal_id` and `week_start` as "the
@@ -3412,6 +3516,38 @@ Fix-forward any red; each fix is its own commit on the integration branch.
    - **`PumpCheckContext` gained four fields rather than the composer gaining a fetch** — a catalog builder
      must never reach a repository (constraint 7), and the composer is one `#if DEBUG` seam away from being
      a catalog view.
+
+   **AMENDED (integration, 2026-09-12) — nine more, from the two fix rounds and this integration.** Each is a
+   deliberate departure from what this plan or the spec wrote down, and each belongs in the PR body beside
+   the seven above:
+
+   - **`standing` has no missed-rung branch** — the card agrees with the ladder page's coach line rather than
+     printing a second verdict on the same block. (S2.4, fix round 1.)
+   - **a `days` rung renders ONE `DAYS value/target` chip**, not `prefix(4)` of seven weekday states — four
+     empty chips under a line claiming a rung. (S2.4, fix round 1.)
+   - **`is_late` is derived by a server-side `BEFORE INSERT` trigger**, a THIRD migration
+     (`20260912000002_workout_posts_is_late_trigger.sql`) the plan did not list — the client derived it from
+     the device clock while the tag beside it is computed from the server's `created_at`. (S2.6, fix round 1.)
+   - **the card's order is spec §1's, with the picture SIXTH** — the plan's S2.7 snippet left the photo
+     between lines 3 and 4. (S2.7, fix round 1.)
+   - **the crown decays** — the honor read assigns nil on a *successful empty* result, and the bar and honor
+     reads share one task group per crew so the card paints once. (S1.4, fix round 1.)
+   - **catalog captures launch with `-guidanceTipsEnabled NO`** — `captureCatalog()` passed no launch
+     arguments, so a tour scrim photographed itself over `crews-tab`. (Global constraint 15, fix round 1.)
+   - **the unit suffix is `lbs`, not `lb`** — `HighlightText` follows the app's shipped spelling rather than
+     this plan's prose.
+   - **`let`-optional memberwise-init repair** — a fixture could not be constructed as written.
+   - **the live test asserts a controlled `postedAt`** rather than restating the seed's content — a live test
+     that repeats the seed proves the seed, not the code.
+   - **the milestone proposal is deferred**, so Coach proposes TWO — already listed above; repeated here
+     because it is the one deviation the frame shows.
+   - **the seed writes `created_at` explicitly** — a re-run kept the first run's value while `now()` moved on,
+     and the live card read "posted 55 days after".
+   - **`PostTrajectoryResolverTests` was added** — the resolver's injection seam had no test.
+   - **the retake counter increments when the photo ARRIVES**, not when Retake is tapped — a cancelled
+     retake counted itself.
+   - **a unique-violation on react is treated as already committed**, not as a failure — a kudos the server
+     already holds is a kudos.
 5. **Proof cards**, each a CI run URL plus its specific evidence:
    - **Stage 1** — Backend green (`crew_consistency_honor_test.sql`, 8/8); `app-crews-tab` and
      `app-tab-social` both carrying the honor line; `PresenceIsUngatedTests` green and `app-venue-hub`
@@ -3542,6 +3678,11 @@ The arithmetic that matters is the artifact's, and it is **107 → 110**.
   about itself. The derivation therefore lives in `PostLateness.isLate` and is enforced by `create` owning it
   (no caller can pass a lateness in) rather than by a constraint. A row written by anything other than this
   client could still disagree with its own timestamps.
+  > **AMENDED (integration, 2026-09-12) — this is no longer true, and the last sentence is why it changed.**
+  > Fix round 1 moved the derivation to a `BEFORE INSERT` trigger
+  > (`20260912000002_workout_posts_is_late_trigger.sql`) so the boolean is measured on the same clock that
+  > stamps `created_at`. Still not a generated column, for exactly the reason given above. See the amendment
+  > under S2.6.
 
 **2. Placeholder scan.** Grepped the finished document for `TBD`, `TODO`, `FIXME`, `XXX`, `add validation`,
 `similar to`, `same as above`, `<fill`, `and so on`, `…etc`: **zero hits**. Every task names its files, its

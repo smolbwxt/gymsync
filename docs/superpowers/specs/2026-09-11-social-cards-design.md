@@ -67,6 +67,13 @@ job stays "get me into the crew, and tell me the next lift": avatar, name, the p
 honor line. Source: `sessions` completed by group members in the last 30 days — the same read the plate bar
 already makes, widened to 30 days.
 
+**AMENDED (2026-09-12, implementation):** the honor's source is a `SECURITY DEFINER` RPC,
+`group_consistency_honor` (`20260911000001_crew_consistency_honor.sql`), **not** "the same read the plate bar
+already makes". That read is RLS-scoped to the viewer — `sessions` SELECT policy admits only sessions the
+viewer organised or attended — so counting it client-side would have answered "who showed up most *that I can
+see*" under a label that says "who showed up most". The line has to speak for the whole crew, so the count
+happens once, inside the database, above RLS.
+
 ## 4. Presence surfaces stay ambient and ungated
 
 The venue hub's "who's here" rows and Home's crew pulse never require a post, a streak or a payment to be seen
