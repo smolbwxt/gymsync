@@ -39,8 +39,8 @@ struct BlockedUsersView: View {
             } else if blocked.isEmpty {
                 GSEmptyState(
                     icon: "person.crop.circle.badge.xmark",
-                    title: "No blocked users",
-                    message: "Users you block won't be able to message you or send friend requests."
+                    title: "Nobody blocked",
+                    message: "Block someone and they land here — they won't be able to message you or send friend requests."
                 )
                 .padding(.top, 60)
             } else {
@@ -49,13 +49,28 @@ struct BlockedUsersView: View {
                         HStack(spacing: 10) {
                             GSInitialsAvatar(name: profile.username, avatarURL: profile.avatarURL, size: 36)
                             nameBlock(profile)
-                            Spacer()
+                            Spacer(minLength: 8)
+                            // Fixed width so every row's pill is the same
+                            // size with the same left edge, right-aligned to
+                            // the 16pt trailing inset below. The frame goes
+                            // on the BUTTON, not its label: this style wraps
+                            // `configuration.label` in
+                            // `HStack { label; Spacer(minLength: 0) }`, so a
+                            // frame inside the label leaves the pill itself
+                            // still stretchy — and it would measure 92 + 24pt
+                            // of horizontal padding rather than 92.
                             Button("Unblock") {
                                 Task { await unblock(profile) }
                             }
                             .buttonStyle(GSSecondaryButtonStyle(fontSize: 12, horizontalPadding: 12, verticalPadding: 6))
+                            .frame(width: 92)
                         }
-                        .listRowBackground(theme.surface)
+                        // Clear, not `theme.surface`: the surface painted only
+                        // behind rows, so it stopped mid-page against
+                        // `theme.bg` and read as a hard seam. With clear rows
+                        // the page is one ground and the separator tint below
+                        // carries the structure.
+                        .listRowBackground(Color.clear)
                         .listRowSeparatorTint(theme.divider)
                         .listRowInsets(EdgeInsets(top: 10, leading: 16, bottom: 10, trailing: 16))
                     }
