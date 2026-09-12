@@ -30,7 +30,7 @@ interleaved through the live view (21+ symbols), nine more files, three tables, 
 | Word | Meaning |
 |---|---|
 | **Session** | One workout, solo or crew, from check-in to recap. |
-| **Lobby** | Where a crew waits for its people. Crew sessions only. |
+| **Lobby** | Where a crew waits for its people. Crew sessions only. A lifter with the lobby open outside the gym's geofence is *on the way*; inside it, *at the gym*; checked in once they tap (or the geofence confirms). |
 | **Start** | The moment the crew walks into the gym together: the leader taps it, or it fires when everyone is ready (consensus). After Start there is no lobby. |
 | **Warm-up** | The first phase of every session, solo or crew, on the shared warm-up screen. |
 | **Style** | How a crew session moves: **Rounds**, **Freestyle**, or **Together**. Chosen by the organizer at scheduling, defaulted by routine type, changeable in the lobby until Start. |
@@ -176,13 +176,21 @@ captures at integration.
 
 ## 9. What this design does not decide
 
-1. The round-hold threshold before a skip is offered, and the copy of the skip.
-2. How "on the way" is signalled for the arrival track — the geofence and travel override exist; whether an ETA is
-   asked for is open.
-3. Whether Together sessions share heart-rate readouts by default (the HR share setting exists per user).
-4. When the soundboard's tables are dropped.
-5. Live encouragement (a cheer to someone lifting now) — phase 2 of the social cards spec; the round wait is its
-   natural surface, and it is still not built here.
+Nothing material remains open. The five items left open in the first draft were decided by the owner on
+2026-09-12 (decisions 11–15 below).
+
+### 9a. The round-hold threshold, elaborated
+
+In Rounds the round closes when the last lifter logs, so one lifter who is still resting, chatting, or away holds
+the whole crew. The **hold threshold** is how long after everyone else has logged the app waits before offering
+the crew a skip. Rule: `max(90 s, 1.5 × the median rest of the current round)`, capped at 180 s, measured from the
+moment the second-to-last lifter logged. At the threshold the crew's rest screens show one quiet line — *"Sam's
+still resting — go ahead without him?"* — and any crewmate can tap it; nothing happens on its own. A skipped
+lifter's set stays in their plan (they log it in the next round, or in spotter time), nothing is recorded against
+them, and they rejoin at the top of the next round. The lifter can pre-empt the offer once per exercise with an
+**"I need a minute"** tap, which extends the threshold by 60 s and tells the crew why. The multiplier and the floor
+are constants the plan pins in one place; a crew that always waits is a crew whose median rest is long, and the
+rule follows it.
 
 ## Owner decisions (2026-09-12) — binding
 
@@ -199,3 +207,9 @@ captures at integration.
 9. Two modes of exercise change in a crew: a routine change with consensus, and a quiet personal scale-down.
 10. Proof frames for the live session are part of the plan, after a focused design round that also covers the
     pump-check cards.
+11. The round-hold threshold is `max(90 s, 1.5 × median rest of the round)`, capped at 180 s; the skip is a crewmate's
+    tap, never automatic; "I need a minute" extends it once per exercise (§9a).
+12. "On the way" means the lifter has the lobby open but is not inside the gym's geofence circle.
+13. Together sessions share heart-rate readouts by default.
+14. The soundboard tables drop in this iteration (a migration in Phase B, after the git-tag archive).
+15. Live encouragement stays verbal, over voice chat; nothing is built for it.
