@@ -48,10 +48,13 @@ enum WarmUpGate {
     /// and this is where that costs something rather than a second control.
     static func leaderNote(isOrganizer: Bool, stillWarming: [String]) -> String? {
         guard isOrganizer, let first = stillWarming.first else { return nil }
-        let who = stillWarming.count == 1
-            ? first
-            : "\(first) and \(stillWarming.count - 1) more"
-        return "You're the leader · \(who) is still warming up"
+        // Subject-verb agreement (review push-5 R-18, finding 8): one name
+        // is singular ("Sam is"); a name plus a count is plural ("Sam and 1
+        // more ARE"), not the "is" a naive single template produced.
+        if stillWarming.count == 1 {
+            return "You're the leader · \(first) is still warming up"
+        }
+        return "You're the leader · \(first) and \(stillWarming.count - 1) more are still warming up"
     }
 }
 
@@ -59,7 +62,6 @@ enum WarmUpGate {
 struct WarmUpScreen: View {
     @Environment(\.gsTheme) private var theme
 
-    let session: WorkoutSession
     /// The crew, already staged for the readiness row. Empty in the solo
     /// frame, which is what `isSolo` means here rather than a second source.
     let warmthRows: [SessionWarmthRow]

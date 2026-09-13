@@ -93,7 +93,7 @@ final class WarmUpScreenGateTests: XCTestCase {
             "You're the leader · Sam is still warming up")
         XCTAssertEqual(
             WarmUpGate.leaderNote(isOrganizer: true, stillWarming: ["Sam", "Lee"]),
-            "You're the leader · Sam and 1 more is still warming up")
+            "You're the leader · Sam and 1 more are still warming up")
     }
 
     /// No note for a crewmate — it is not their decision — and none when

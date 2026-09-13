@@ -771,8 +771,19 @@ struct EveryoneHereCard: View {
 /// button let any crewmate start the session), which `GS3DCardStyle` dims to
 /// 0.5 opacity on its own. The crewmate's explanation lives on the widget
 /// above (`LobbyCopy.readyCrewmateCaption`), not on this button's note.
+///
+/// THE NOTE ITSELF IS GATED TOO (review push-5 R-18, finding 11):
+/// `GS3DCardStyle` only dims the button's own face, not this VStack's other
+/// child — a plain `Text` does not dim on `isEnabled` by itself — so a
+/// crewmate saw a full-opacity "Same action, in the thumb zone" caption
+/// under a dead button. Reading `\.isEnabled` here (the same environment
+/// value `.disabled(!isOrganizer)` sets at the call site) and hiding the
+/// note when it is false makes the two speak the same truth: the caller's
+/// note text is the LEADER's explanation of the live control, and a
+/// crewmate's explanation is the widget's, not a second copy here.
 struct SecondaryStartButton: View {
     @Environment(\.gsTheme) private var theme
+    @Environment(\.isEnabled) private var isEnabled
 
     let title: String
     let note: String
@@ -789,10 +800,12 @@ struct SecondaryStartButton: View {
             }
             .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm, lipHeight: 5))
 
-            Text(note)
-                .font(GSFont.body(12, relativeTo: .caption))
-                .foregroundStyle(theme.neutral500)
-                .frame(maxWidth: .infinity, alignment: .center)
+            if isEnabled {
+                Text(note)
+                    .font(GSFont.body(12, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral500)
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
         }
     }
 }

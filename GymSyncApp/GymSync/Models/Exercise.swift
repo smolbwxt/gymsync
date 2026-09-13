@@ -104,7 +104,18 @@ extension Exercise {
 }
 
 enum ExerciseRepository {
+    /// Process-wide, same shape as `CorpusResearchStore.cached`: the
+    /// catalog is ~1,300 rows and effectively static within a run, so
+    /// every caller shares one fetch instead of paying its own two-page
+    /// round trip. Review push-5 R-18: `SessionRunnerView` paid this again
+    /// on every fresh warm-up mount even though the lobby the athlete was
+    /// just in had already fetched the identical rows into its own
+    /// `allExercises`. Never invalidated — a reference catalog changing
+    /// mid-session is not a case this app handles anywhere else either.
+    private static var cached: [Exercise]?
+
     static func fetchAll() async throws -> [Exercise] {
+        if let cached { return cached }
         // Paged on purpose: PostgREST silently caps un-ranged selects at
         // 1000 rows and the machine sweeps pushed the catalog past 1300 —
         // without explicit ranges the tail of the alphabet vanishes from
@@ -125,6 +136,7 @@ enum ExerciseRepository {
                 if rows.count < pageSize { break }
                 from += pageSize
             }
+            cached = all
             return all
         } catch {
             throw ErrorMapping.map(error)

@@ -114,7 +114,6 @@ struct SessionRunnerView: View {
         Group {
             if warmingUp {
                 WarmUpScreen(
-                    session: effective,
                     warmthRows: isSolo ? [] : warmthRows,
                     isSolo: isSolo,
                     isOrganizer: effective.organizerID == selfID,

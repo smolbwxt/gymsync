@@ -358,9 +358,18 @@ struct LobbyView: View {
                 // resolved ON TAP, never on load: a lobby that opened a Coach
                 // room every time it appeared would create a thread for a
                 // session nobody asked Coach about.
+                //
+                // No note pre-tap (review push-5 R-18, finding 6/12,
+                // deleting `lockedNote`): `openedCoachThread` is only ever
+                // set on the reachable branch (`openCoachThread()` presents
+                // `PaywallView` on the other one), so a locked-room note
+                // could never fire from here even before the paywall's own
+                // dormancy made the question moot. A genuine pre-tap
+                // indicator needs the reachability check available before a
+                // tap, which is Phase B's.
                 CoachDoorRow(title: SessionCopy.talkToCoach,
                              detail: SessionCopy.talkToCoachDetail,
-                             note: coachDoorNote,
+                             note: nil,
                              onTap: { Task { await openCoachThread() } })
                     .padding(.horizontal, 16)
                     .padding(.top, 10)
@@ -1066,13 +1075,6 @@ struct LobbyView: View {
         let leader = arrivalRows.first { $0.id == leaderID }?.name
         return LobbyCopy.readyCrewmateCaption(
             leaderFirstName: SessionCopy.firstName(leader ?? "the leader"))
-    }
-
-    /// Why Coach's door is not open, or nil when it is. Nil today: the
-    /// paywall is dormant, so `SessionCoachThreadRepository.isReachable` is
-    /// true for everyone (`CrewCoachEngine`'s convention).
-    private var coachDoorNote: String? {
-        openedCoachThread.map { SessionCoachThreadRepository.lockedNote($0.thread) } ?? nil
     }
 
     /// The plan card's empty state. A session with no routine is a legible

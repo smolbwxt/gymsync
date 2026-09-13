@@ -80,7 +80,5 @@ final class SessionCoachThreadLiveTests: XCTestCase {
         let unlocked = SessionCoachThread(threadID: UUID(), unlocked: true)
         XCTAssertTrue(SessionCoachThreadRepository.isReachable(locked))
         XCTAssertTrue(SessionCoachThreadRepository.isReachable(unlocked))
-        XCTAssertNil(SessionCoachThreadRepository.lockedNote(locked),
-                     "an explanation of a restriction that is not in force is furniture")
     }
 }

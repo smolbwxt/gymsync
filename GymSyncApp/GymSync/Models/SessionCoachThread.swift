@@ -68,11 +68,4 @@ enum SessionCoachThreadRepository {
         guard Monetization.paywallEnabled else { return true }
         return thread.unlocked
     }
-
-    /// The line under Coach's door when the crew cannot reach the room.
-    /// Nil when they can, so `CoachDoorRow` renders no note — an explanation
-    /// of a restriction that is not in force is furniture.
-    static func lockedNote(_ thread: SessionCoachThread) -> String? {
-        isReachable(thread) ? nil : "Nobody in the crew has Pro yet — see plans"
-    }
 }

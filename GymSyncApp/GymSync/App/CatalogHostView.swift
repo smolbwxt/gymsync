@@ -2645,8 +2645,7 @@ struct CatalogHostView: View {
     /// capture). Retires `warmup-solo-v2` (122).
     private var content_sessionWarmupSolo: some View {
         let world = WarmUpFixtures.solo
-        return WarmUpScreen(session: world.session,
-                            warmthRows: world.warmthRows,
+        return WarmUpScreen(warmthRows: world.warmthRows,
                             isSolo: world.isSolo,
                             isOrganizer: world.isOrganizer,
                             planRows: world.planRows,
@@ -2664,8 +2663,7 @@ struct CatalogHostView: View {
     /// going. Retires `warmup-crew` (frame 111).
     private var content_sessionWarmupCrew: some View {
         let world = WarmUpFixtures.crew
-        return WarmUpScreen(session: world.session,
-                            warmthRows: world.warmthRows,
+        return WarmUpScreen(warmthRows: world.warmthRows,
                             isSolo: world.isSolo,
                             isOrganizer: world.isOrganizer,
                             planRows: world.planRows,
