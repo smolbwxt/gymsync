@@ -55,6 +55,70 @@ final class WarmUpScreenGateTests: XCTestCase {
                       "an in-flight session re-enters the screen once, by design")
     }
 
+    // MARK: - N1: showsWarmUp, the runner's own restatement of the gate
+
+    /// Every state the app uses × both lifting values, for `isWarmingUp`
+    /// AND `showsWarmUp` side by side. This is the exact shape of the
+    /// desync review push-5's N1 named: before this test existed,
+    /// `isWarmingUp` had never been asked about `scheduled` or
+    /// `lobby_open` at all, even though `SessionRunnerView` (inlining its
+    /// own, different law) relied on getting `scheduled` right.
+    func testIsWarmingUpAndShowsWarmUpAcrossEveryStateAndLiftingValue() {
+        let cases: [(state: String, isWarmingUp: Bool, showsWarmUp: Bool)] = [
+            ("scheduled", false, true),
+            ("lobby_open", false, true),
+            ("in_progress", true, true),
+            ("completed", false, false),
+            ("abandoned", false, false),
+        ]
+        for testCase in cases {
+            XCTAssertEqual(
+                WarmUpGate.isWarmingUp(state: testCase.state, liftingStartedAt: nil),
+                testCase.isWarmingUp,
+                "\(testCase.state) + nil lifting: isWarmingUp")
+            XCTAssertFalse(
+                WarmUpGate.isWarmingUp(state: testCase.state, liftingStartedAt: noon),
+                "\(testCase.state) + set lifting: isWarmingUp is always false once lifting has started")
+            XCTAssertEqual(
+                WarmUpGate.showsWarmUp(state: testCase.state, liftingStartedAt: nil),
+                testCase.showsWarmUp,
+                "\(testCase.state) + nil lifting: showsWarmUp")
+            XCTAssertFalse(
+                WarmUpGate.showsWarmUp(state: testCase.state, liftingStartedAt: noon),
+                "\(testCase.state) + set lifting: showsWarmUp is always false once lifting has started")
+        }
+    }
+
+    /// The review's own words, asserted rather than trusted: for every
+    /// state (crossed with solo and crew rosters) where `SessionRouter.route`
+    /// returns `.warmUp` with a nil lifting date, `showsWarmUp` must also be
+    /// true — otherwise the runner would draw `SessionInProgressView` for a
+    /// session the router just sent to warm-up, exactly the contradiction
+    /// finding 2 found in `isWarmingUp` alone.
+    func testShowsWarmUpAgreesWithRouterWhereverRouterSaysWarmUp() {
+        let states = ["scheduled", "lobby_open", "in_progress", "completed", "abandoned"]
+        let rosters: [(participantCount: Int, roomCode: String?)] = [
+            (1, nil),   // solo
+            (4, nil),   // crew
+        ]
+        var sawAtLeastOneWarmUpRoute = false
+        for state in states {
+            for roster in rosters {
+                let route = SessionRouter.route(state: state, liftingStartedAt: nil,
+                                                participantCount: roster.participantCount,
+                                                roomCode: roster.roomCode)
+                guard route == .warmUp else { continue }
+                sawAtLeastOneWarmUpRoute = true
+                XCTAssertTrue(
+                    WarmUpGate.showsWarmUp(state: state, liftingStartedAt: nil),
+                    "\(state) with \(roster.participantCount) participant(s) routes to " +
+                    ".warmUp but showsWarmUp says the runner would not draw it")
+            }
+        }
+        XCTAssertTrue(sawAtLeastOneWarmUpRoute,
+                      "the fixture above must exercise at least one .warmUp route")
+    }
+
     // MARK: - The clock
 
     func testElapsedCountsFromTheSessionsStart() {

@@ -26,6 +26,26 @@ enum WarmUpGate {
         state == "in_progress" && liftingStartedAt == nil
     }
 
+    /// The runner's own restatement of this gate (review push-5 finding 2)
+    /// — `SessionRunnerView` is the destination of both `.warmUp` and
+    /// `.live` from `SessionRouter`, and must not draw a screen that
+    /// contradicts the route that sent it here. Unlike `isWarmingUp`, this
+    /// also covers `scheduled` and `lobby_open`: `SessionEntryView` sends a
+    /// SCHEDULED solo session straight to the runner too (spec §2, owner
+    /// decision 3 — solo has no lobby), a case `isWarmingUp` alone has never
+    /// seen. A terminal session stays false regardless of
+    /// `liftingStartedAt`: it self-presents its recap through
+    /// `SessionInProgressView` rather than re-entering warm-up.
+    ///
+    /// N1 (review push-5): this used to be a second, untested law inlined
+    /// as `SessionRunnerView.warmingUp`. Named and tested here instead, so
+    /// the two gates cannot silently diverge again the way they did when
+    /// `isWarmingUp` alone produced finding 2.
+    static func showsWarmUp(state: String, liftingStartedAt: Date?) -> Bool {
+        if state == "completed" || state == "abandoned" { return false }
+        return liftingStartedAt == nil
+    }
+
     /// `"12:04"` — the phase's elapsed time, as the clock strip prints it.
     ///
     /// A pure function of two dates so the screen has no clock of its own and

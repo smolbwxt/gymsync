@@ -56,18 +56,15 @@ struct SessionRunnerView: View {
         liveParticipants.isEmpty ? participants : liveParticipants
     }
 
-    /// Show the warm-up screen instead of `SessionInProgressView` — the
-    /// runner's own restatement of `SessionRouter`'s `.warmUp` vs. `.live`
-    /// split, since the runner is both routes' destination and must not
-    /// contradict the route that sent it here (review push-5 finding 2).
-    /// `WarmUpGate.isWarmingUp` alone only covers a session already
-    /// `in_progress`; `SessionEntryView` also sends a SCHEDULED solo session
-    /// here (spec §2, owner decision 3 — solo has no lobby), which needs the
-    /// warm-up screen too. A terminal session never does: it self-presents
-    /// its recap through `SessionInProgressView`.
+    /// Show the warm-up screen instead of `SessionInProgressView` —
+    /// `WarmUpGate.showsWarmUp`, the runner's own restatement of
+    /// `SessionRouter`'s `.warmUp` vs. `.live` split, since the runner is
+    /// both routes' destination and must not contradict the route that sent
+    /// it here (review push-5 finding 2; named and tested as of N1 rather
+    /// than inlined here a second time).
     private var warmingUp: Bool {
-        effective.state != "completed" && effective.state != "abandoned"
-            && effective.liftingStartedAt == nil
+        WarmUpGate.showsWarmUp(state: effective.state,
+                               liftingStartedAt: effective.liftingStartedAt)
     }
 
     private var selfID: UUID? { appState.currentProfile?.id }
