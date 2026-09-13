@@ -71,10 +71,15 @@
 -- rotation deals turns to, and the stations cover exactly that same roster.
 -- One definition of "here", used in all three places.
 --
--- The states outside it are 'invited', 'no_show' and NULL (the CHECK,
--- 20260709000006_create_sessions.sql:22, admits no others -- there is no
--- 'left'). NULL falls out for free: IN () is false for NULL, exactly as it
--- is in advance_turn.
+-- The states outside it are 'invited', 'left', 'no_show' and NULL --
+-- session_participants_check_in_state_check (20260709000006_create_
+-- sessions.sql:22, widened by 20260803000003_routine_visibility_left_
+-- state.sql to add 'left') admits exactly ('invited','online','ready',
+-- 'late','no_show','left'), no others. A leaver is excluded from the round
+-- and the roster exactly like an invited or no-show lifter -- no extra
+-- case needed, since the positive list IN ('online','ready','late')
+-- already excludes all four. NULL falls out for free: IN () is false for
+-- NULL, exactly as it is in advance_turn.
 
 
 -- ── (a) private.session_round_guard() ────────────────────────────────────
