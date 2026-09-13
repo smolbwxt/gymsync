@@ -71,7 +71,10 @@ fires when everyone is checked in (consensus). "Start anyway" stays for the lead
 fills with the screen's one accent, reads **"Everyone's here. Let's work."** over the four avatars and their
 energy, and becomes the start control — the leader taps it to start; everyone else reads *"Waiting for Alex — or
 it starts on its own"*. The bottom Start stays in the thumb zone as a neutral raised secondary for the same
-action, so the screen keeps one accent. The first exercise shows large beneath it.
+action, so the screen keeps one accent. **Everything else on the lobby stays as it is in the waiting state** — the
+whole session plan with its rows and the leader's Swaps, the crew's energy, Talk to Coach — the reference frame's
+compressed "first up" card is superseded (owner, 2026-09-12: "we decided on the expanded breakdown of the
+exercises"). The only thing that changes between waiting and ready is the arrival widget and the foot Start.
 
 Gone from the lobby: the routine proposal-and-vote flow and its three realtime subscriptions (the `editing`,
 `voting`, `locked` states were designed for it and are dead), the warm-up minutes stepper (warm-up is a phase, not
