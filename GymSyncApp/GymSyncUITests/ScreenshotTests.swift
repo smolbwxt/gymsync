@@ -688,27 +688,18 @@ final class ScreenshotTests: XCTestCase {
 
     // The focused session design round (group-session-and-lobby spec §8 step
     // 1, owner decision 10 — "proof frames for the live session are part of
-    // the plan, after a focused design round"). Fourteen catalog ids, frames
-    // 106-119, one capture each.
+    // the plan, after a focused design round"). Originally fourteen catalog
+    // ids across three passes, frames 106-128. The group-session Phase A plan
+    // (task S11) retired ten of them once production was built to the
+    // owner's picks — every lobby and warm-up id, all three passes — leaving
+    // only the Phase B families below, which are Phase B's own to retire.
+    // See `testCatalogSessionLobbyWaiting` and its neighbours for what
+    // replaced them, and `docs/design/frame-map.json`'s note on frame 129.
     //
-    // Same reason the Home v3 ten exist: the group live workout has never had
-    // a catalog frame at all (spec §7), the owner picks a composition before
-    // any production view is touched, and the CI artifact is the only way a
-    // design round sees a screen before TestFlight. Ids are ordered so that
-    // the two-up pairs the controller composes — waiting a|b, warm-up solo
-    // a|b, round wait a|b — are just the sorted list.
-    //
-    // THE LOBBY AND THE SHARED WARM-UP (frames 106-111).
-    func testCatalogLobbyCrewWaitingA()      { captureCatalog("lobby-crew-waiting-a") }
-    func testCatalogLobbyCrewWaitingB()      { captureCatalog("lobby-crew-waiting-b") }
-    func testCatalogLobbyCrewReady()         { captureCatalog("lobby-crew-ready") }
-    func testCatalogWarmupSoloA()            { captureCatalog("warmup-solo-a") }
-    func testCatalogWarmupSoloB()            { captureCatalog("warmup-solo-b") }
-    func testCatalogWarmupCrew()             { captureCatalog("warmup-crew") }
-
-    // THE THREE STYLES (frames 112-117). Rounds' rest screen in its two
-    // compositions, then the two states only Rounds has — the hold threshold
-    // and spotter mode — then Freestyle's shared rail and Together's clock.
+    // THE THREE STYLES (frames 112-117, unchanged). Rounds' rest screen in
+    // its two compositions, then the two states only Rounds has — the hold
+    // threshold and spotter mode — then Freestyle's shared rail and
+    // Together's clock.
     func testCatalogRoundWaitA()             { captureCatalog("round-wait-a") }
     func testCatalogRoundWaitB()             { captureCatalog("round-wait-b") }
     func testCatalogRoundSkipOffer()         { captureCatalog("round-skip-offer") }
@@ -716,35 +707,43 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogFreestyleRail()          { captureCatalog("freestyle-rail") }
     func testCatalogTogetherClock()          { captureCatalog("together-clock") }
 
-    // THE TWO CARDS (frames 118-119). Not screens — objects that sit on
-    // them, rendered alone on the ground the way pump-composer-highlight is,
-    // because what is being judged is the card. `pump-check-card-v2` is the
-    // owner's "along with the pump check cards": the same seven lines the
-    // shipped card renders, on the same fixture values, re-composed.
+    // THE TWO CARDS (frames 118-119, unchanged). Not screens — objects that
+    // sit on them, rendered alone on the ground the way
+    // pump-composer-highlight is, because what is being judged is the card.
+    // `pump-check-card-v2` is the owner's "along with the pump check cards":
+    // the same seven lines the shipped card renders, on the same fixture
+    // values, re-composed.
     func testCatalogSwapConsensusCard()      { captureCatalog("swap-consensus-card") }
     func testCatalogPumpCheckCardV2()        { captureCatalog("pump-check-card-v2") }
 
-    // THE SECOND PASS (frames 120-126). The owner reviewed all fourteen
-    // round-1 frames and picked; these are the ids those picks produced, and
-    // they sit BESIDE the v1 ids rather than replacing them, so every pair
-    // (waiting-a | waiting-v2, warmup-solo-b | warmup-solo-v2, round-wait-b |
-    // round-wait-v2, together-clock | together-clock-v2) can be composed
-    // two-up. Every v1 capture is unchanged.
-    func testCatalogLobbyCrewWaitingV2()     { captureCatalog("lobby-crew-waiting-v2") }
-    func testCatalogLobbyCrewReadyV2()       { captureCatalog("lobby-crew-ready-v2") }
-    func testCatalogWarmupSoloV2()           { captureCatalog("warmup-solo-v2") }
+    // THE SECOND PASS'S SURVIVORS (frames 123-126). `round-wait-v2` and
+    // `round-spotter-v2` pair with `-a`/`-b` and `round-spotter` above;
+    // `together-clock-v2` pairs with `together-clock`. The lobby and
+    // warm-up members of this pass (frames 120-122) retired with the rest.
     func testCatalogRoundWaitV2()            { captureCatalog("round-wait-v2") }
     func testCatalogRoundSpotterV2()         { captureCatalog("round-spotter-v2") }
     func testCatalogSwapConsensusCardV2()    { captureCatalog("swap-consensus-card-v2") }
     func testCatalogTogetherClockV2()        { captureCatalog("together-clock-v2") }
 
-    // THE THIRD AND LAST PASS (frames 127-128). The owner approved the v2
-    // additions with one reversal — heart-rate zone colours stay — so
-    // `together-clock` v1 is what the plan cites and `-v2` keeps its capture
-    // only so the pair can still be compared. These two are the frames that
-    // reversal and the owner's accent move actually change.
-    func testCatalogLobbyCrewReadyV3()       { captureCatalog("lobby-crew-ready-v3") }
+    // THE THIRD PASS'S SURVIVOR (frame 128). The owner approved the v2
+    // additions with one reversal — heart-rate zone colours stay — so this
+    // is spotter mode with the ramp put back. Frame 127
+    // (`lobby-crew-ready-v3`) retired with the rest of the lobby's ids.
     func testCatalogRoundSpotterV3()         { captureCatalog("round-spotter-v3") }
+
+    // THE PRODUCTION SESSION SCREENS (frames 129-134, group-session Phase A,
+    // task S11) — what the ten retired ids above became once the owner
+    // picked. `session-lobby-waiting`/`-ready`/`-late` render the production
+    // `LobbyView` over `LobbyFixtures`; `session-warmup-solo`/`-crew` render
+    // the production `WarmUpScreen` over `WarmUpFixtures`;
+    // `ladder-reladder-proposal` is `LadderPageView` with Coach's re-ladder
+    // card showing, over `StubBlockGoalRepository.fixtureProposal`.
+    func testCatalogSessionLobbyWaiting()    { captureCatalog("session-lobby-waiting") }
+    func testCatalogSessionLobbyReady()      { captureCatalog("session-lobby-ready") }
+    func testCatalogSessionLobbyLate()       { captureCatalog("session-lobby-late") }
+    func testCatalogSessionWarmupSolo()      { captureCatalog("session-warmup-solo") }
+    func testCatalogSessionWarmupCrew()      { captureCatalog("session-warmup-crew") }
+    func testCatalogLadderReladderProposal() { captureCatalog("ladder-reladder-proposal") }
 
     // MARK: - Seeded deep-screen captures
     //

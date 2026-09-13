@@ -134,18 +134,11 @@ enum CatalogScreen: String, CaseIterable {
     case crewsTab = "crews-tab"
     case blockCalendar = "block-calendar"
     // The focused session design round (group-session-and-lobby spec §8
-    // step 1): the lobby and the shared warm-up screen, as catalog-only
-    // compositions for the owner to pick from. Frames 106-111. See
-    // `content_lobbyCrewWaitingA` for the whole story.
-    case lobbyCrewWaitingA = "lobby-crew-waiting-a"
-    case lobbyCrewWaitingB = "lobby-crew-waiting-b"
-    case lobbyCrewReady = "lobby-crew-ready"
-    case warmupSoloA = "warmup-solo-a"
-    case warmupSoloB = "warmup-solo-b"
-    case warmupCrew = "warmup-crew"
-    // The same round, continued: the three styles. Rounds' rest screen in
-    // two compositions plus its two other states, then Freestyle's rail and
-    // Together's clock. Frames 112-117.
+    // step 1) — the three styles. Rounds' rest screen in two compositions
+    // plus its two other states, then Freestyle's rail and Together's
+    // clock. Frames 112-117. The round's lobby and warm-up ids (106-111)
+    // retired to production in the group-session Phase A plan (task S11) —
+    // see `content_sessionLobbyWaiting` below for what replaced them.
     case roundWaitA = "round-wait-a"
     case roundWaitB = "round-wait-b"
     case roundSkipOffer = "round-skip-offer"
@@ -158,19 +151,26 @@ enum CatalogScreen: String, CaseIterable {
     case swapConsensusCard = "swap-consensus-card"
     case pumpCheckCardV2 = "pump-check-card-v2"
     // The session round's SECOND PASS (the owner reviewed all fourteen and
-    // picked; these sit BESIDE the v1 ids, which are frozen). Frames 120-126.
-    // See `content_lobbyCrewWaitingV2` for the whole story.
-    case lobbyCrewWaitingV2 = "lobby-crew-waiting-v2"
-    case lobbyCrewReadyV2 = "lobby-crew-ready-v2"
-    case warmupSoloV2 = "warmup-solo-v2"
+    // picked; these sit BESIDE the v1 ids, which are frozen). Frames
+    // 123-126 survive — the pass's lobby and warm-up ids (120-122) retired
+    // alongside their v1 counterparts (task S11).
     case roundWaitV2 = "round-wait-v2"
     case roundSpotterV2 = "round-spotter-v2"
     case swapConsensusCardV2 = "swap-consensus-card-v2"
     case togetherClockV2 = "together-clock-v2"
     // The THIRD and last pass: the owner approved the v2 additions with one
-    // reversal (heart-rate zone colours stay). Frames 127-128.
-    case lobbyCrewReadyV3 = "lobby-crew-ready-v3"
+    // reversal (heart-rate zone colours stay). Frame 128 survives; frame 127
+    // (`lobby-crew-ready-v3`) retired with the rest of the round's lobby ids.
     case roundSpotterV3 = "round-spotter-v3"
+    // The production session screens (group-session Phase A plan, task
+    // S11), frames 129-134 — what the ten retired ids above became once the
+    // owner picked. See `content_sessionLobbyWaiting` for the whole story.
+    case sessionLobbyWaiting = "session-lobby-waiting"
+    case sessionLobbyReady = "session-lobby-ready"
+    case sessionLobbyLate = "session-lobby-late"
+    case sessionWarmupSolo = "session-warmup-solo"
+    case sessionWarmupCrew = "session-warmup-crew"
+    case ladderReladderProposal = "ladder-reladder-proposal"
 }
 
 struct CatalogHostView: View {
@@ -272,12 +272,6 @@ struct CatalogHostView: View {
             case .homeGoalStripBlock:         content_homeGoalStripBlock
             case .crewsTab:                   content_crewsTab
             case .blockCalendar:              content_blockCalendar
-            case .lobbyCrewWaitingA:          content_lobbyCrewWaitingA
-            case .lobbyCrewWaitingB:          content_lobbyCrewWaitingB
-            case .lobbyCrewReady:             content_lobbyCrewReady
-            case .warmupSoloA:                content_warmupSoloA
-            case .warmupSoloB:                content_warmupSoloB
-            case .warmupCrew:                 content_warmupCrew
             case .roundWaitA:                 content_roundWaitA
             case .roundWaitB:                 content_roundWaitB
             case .roundSkipOffer:             content_roundSkipOffer
@@ -286,15 +280,17 @@ struct CatalogHostView: View {
             case .togetherClock:              content_togetherClock
             case .swapConsensusCard:          content_swapConsensusCard
             case .pumpCheckCardV2:            content_pumpCheckCardV2
-            case .lobbyCrewWaitingV2:         content_lobbyCrewWaitingV2
-            case .lobbyCrewReadyV2:           content_lobbyCrewReadyV2
-            case .warmupSoloV2:               content_warmupSoloV2
             case .roundWaitV2:                content_roundWaitV2
             case .roundSpotterV2:             content_roundSpotterV2
             case .swapConsensusCardV2:        content_swapConsensusCardV2
             case .togetherClockV2:            content_togetherClockV2
-            case .lobbyCrewReadyV3:           content_lobbyCrewReadyV3
             case .roundSpotterV3:             content_roundSpotterV3
+            case .sessionLobbyWaiting:        content_sessionLobbyWaiting
+            case .sessionLobbyReady:          content_sessionLobbyReady
+            case .sessionLobbyLate:           content_sessionLobbyLate
+            case .sessionWarmupSolo:          content_sessionWarmupSolo
+            case .sessionWarmupCrew:          content_sessionWarmupCrew
+            case .ladderReladderProposal:     content_ladderReladderProposal
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -2475,54 +2471,31 @@ struct CatalogHostView: View {
     // as rendered proofs for the owner, the way the Home and You rounds were
     // run." Owner decision 10 makes the round a precondition of the plan.
     //
-    // FOURTEEN IDS, frames 106-119, in the brief's order: the lobby (two
-    // compositions plus the everyone-ready state), the shared warm-up screen
-    // (two compositions plus its crew frame), Rounds (two compositions of the
+    // FOURTEEN IDS ORIGINALLY, frames 106-119: the lobby (two compositions
+    // plus the everyone-ready state), the shared warm-up screen (two
+    // compositions plus its crew frame), Rounds (two compositions of the
     // round wait, plus the skip offer and spotter mode), Freestyle, Together,
-    // the consensus swap card and the pump-check card re-composed.
+    // the consensus swap card and the pump-check card re-composed. TEN OF
+    // THEM RETIRED — every lobby and warm-up id, across all three passes —
+    // once the group-session Phase A plan (task S11) built production to the
+    // owner's picks; see `content_sessionLobbyWaiting` below for what
+    // replaced them. What remains here is Rounds, Freestyle, Together and
+    // the two cards, which are Phase B's own to retire.
     //
     // Same contract as the Home v3 ten (`content_homeV3Tiles` above): each is
     // a plain value-driven view from `SVFixtures`, reads no `AppState`, makes
     // no repository call, holds no `.task`, and takes no parameters — the
     // fixtures live in `Features/Sessions/Variations/SessionVariationKit.swift`
     // beside the views that render them, the way `HomeV2Fixtures` does, so a
-    // frame and the world it draws are read together. Production `LobbyView`,
-    // `GroupSessionLiveView` and `WarmUpPhaseView` are untouched: spec §8
-    // puts their rework in Phases A and B, after the owner picks.
+    // frame and the world it draws are read together.
     //
     // PROOF AUTHORITY: none, exactly as for the Home v3 round. These frames
-    // ARE the proof. `docs/design/frame-map.json` reserves 106-119 and
-    // `parity_diff.js` logs `skip <id>: no proof frame` for all fourteen
-    // until something is rendered into `docs/design/mockups/`.
+    // ARE the proof.
     //
     // TWO ANIMATIONS SURVIVE, both shipped components' own: `PTTDockRow`'s
     // resting accent waveform (already captured by `voice-idle`) and
     // `GSHeartRatePill`'s beat on `together-clock` (already captured by
     // `heart-rate-pill`). Nothing else here moves, and no view reads a clock.
-
-    private var content_lobbyCrewWaitingA: some View {
-        LobbyCrewWaitingAView()
-    }
-
-    private var content_lobbyCrewWaitingB: some View {
-        LobbyCrewWaitingBView()
-    }
-
-    private var content_lobbyCrewReady: some View {
-        LobbyCrewReadyView()
-    }
-
-    private var content_warmupSoloA: some View {
-        WarmupSoloAView()
-    }
-
-    private var content_warmupSoloB: some View {
-        WarmupSoloBView()
-    }
-
-    private var content_warmupCrew: some View {
-        WarmupCrewView()
-    }
 
     private var content_roundWaitA: some View {
         RoundWaitAView()
@@ -2568,8 +2541,10 @@ struct CatalogHostView: View {
     // The owner reviewed all fourteen round-1 frames (run 34706889112) and
     // picked: the lobby's arrival track, the warm-up screen as rendered, the
     // round wait's station cards, and the skip offer, Freestyle, Together,
-    // the swap card and the pump card as they stand. This pass adds SEVEN ids
-    // beside them, frames 120-126.
+    // the swap card and the pump card as they stand. This pass added SEVEN
+    // ids beside them, frames 120-126 — FOUR SURVIVE below; the pass's
+    // lobby and warm-up ids (120-122) retired alongside their v1 siblings
+    // (group-session Phase A plan, task S11).
     //
     // EVERY v1 ID IS FROZEN. The owner has approved those renders, so a moved
     // pixel in one of them is a moved decision: `SessionVariationKit.swift`
@@ -2583,18 +2558,6 @@ struct CatalogHostView: View {
     // neutral ink with the zone as a word (the language reserves red and
     // gold); and checked in IS ready, one signal, which also settles the
     // round-1 lobby fixture's own inconsistency.
-
-    private var content_lobbyCrewWaitingV2: some View {
-        LobbyCrewWaitingV2View()
-    }
-
-    private var content_lobbyCrewReadyV2: some View {
-        LobbyCrewReadyV2View()
-    }
-
-    private var content_warmupSoloV2: some View {
-        WarmupSoloV2View()
-    }
 
     private var content_roundWaitV2: some View {
         RoundWaitV2View()
@@ -2624,17 +2587,107 @@ struct CatalogHostView: View {
     // `together-clock-v2` (126) is dropped conceptually: its id and its
     // capture stay so the pair can still be looked at, and the plan cites v1.
     //
-    // Two ids, frames 127-128. Every v1 and v2 id is frozen and still
-    // renders; the two seams this pass needed (`SVEnergyMeter.onAccent`,
-    // `SVLiveHRRow.zoneTinted` / `SVCrewHeartRatesCard.zoneTinted`) are
-    // additive and defaulted off, so no approved frame moves.
-
-    private var content_lobbyCrewReadyV3: some View {
-        LobbyCrewReadyV3View()
-    }
+    // Two ids originally, frames 127-128 — frame 128 survives below (its
+    // seam, `SVLiveHRRow.zoneTinted` / `SVCrewHeartRatesCard.zoneTinted`, is
+    // additive and defaulted off, so no approved frame moves). Frame 127
+    // (`lobby-crew-ready-v3`) retired with the rest of the round's lobby ids
+    // (group-session Phase A plan, task S11); its own seam,
+    // `SVEnergyMeter.onAccent`, retired with it — `SVEnergyMeter` had no
+    // other caller.
 
     private var content_roundSpotterV3: some View {
         RoundSpotterV3View()
+    }
+
+    // MARK: - The production session screens (group-session Phase A plan,
+    // task S11), frames 129-134
+    //
+    // What the ten retired ids above became once the owner picked (spec §8's
+    // own "Home v3 -> production" precedent: no numbered mockup frame, the
+    // spec and the retired design-round frames are the authority). Unlike
+    // the design round, these render PRODUCTION views — `LobbyView` and
+    // `WarmUpScreen` — over the app's own fixture worlds
+    // (`LobbyFixtures`, `WarmUpFixtures`), so a moved pixel here is a moved
+    // pixel in the shipping app, not a mockup.
+    //
+    // Wrapped in `NavigationStack` where the production view sets
+    // `.navigationTitle` or carries toolbar items (`content_ladderOnTrack`'s
+    // precedent) — the two lobby ids and the ladder id. `WarmUpScreen` is a
+    // bare `VStack` with no navigation chrome, so its two ids are not
+    // wrapped.
+
+    /// `session-lobby-waiting`: the production `LobbyView` over a fixture
+    /// crew — two checked in, one at the gym, one on the way. Built to the
+    /// design round's `lobby-crew-waiting-v2` (frame 120), which this id
+    /// retires.
+    private var content_sessionLobbyWaiting: some View {
+        NavigationStack { LobbyView(catalog: LobbyFixtures.waiting) }
+    }
+
+    /// `session-lobby-ready`: everyone's here — the accent arrival widget
+    /// becomes the button, and the owner's correction of 2026-09-12 keeps
+    /// the whole plan card, the energy widget and Coach's door under it (no
+    /// `FirstUpCard`). Retires `lobby-crew-ready-v2` (121).
+    private var content_sessionLobbyReady: some View {
+        NavigationStack { LobbyView(catalog: LobbyFixtures.ready) }
+    }
+
+    /// `session-lobby-late`: three checked in, one late — Start is live for
+    /// the leader and captioned, and the shipped "Start anyway" confirmation
+    /// is reachable. No design-round id to retire; this state is new.
+    private var content_sessionLobbyLate: some View {
+        NavigationStack { LobbyView(catalog: LobbyFixtures.late) }
+    }
+
+    /// `session-warmup-solo`: the production `WarmUpScreen` in its solo
+    /// frame, checked-in state (matching the reference frame — the
+    /// pre-check-in state is proven by `WarmUpScreenGateTests`, not a second
+    /// capture). Retires `warmup-solo-v2` (122).
+    private var content_sessionWarmupSolo: some View {
+        let world = WarmUpFixtures.solo
+        return WarmUpScreen(session: world.session,
+                            warmthRows: world.warmthRows,
+                            isSolo: world.isSolo,
+                            isOrganizer: world.isOrganizer,
+                            planRows: world.planRows,
+                            rungHeadline: world.rungHeadline,
+                            rungDetail: world.rungDetail,
+                            coachLine: world.coachLine,
+                            blockWeek: world.blockWeek,
+                            blockWeeks: world.blockWeeks,
+                            blockMilestone: world.blockMilestone,
+                            elapsed: world.elapsed)
+    }
+
+    /// `session-warmup-crew`: the production `WarmUpScreen` in its crew
+    /// frame — two of four warm, the leader's note naming who is still
+    /// going. Retires `warmup-crew` (frame 111).
+    private var content_sessionWarmupCrew: some View {
+        let world = WarmUpFixtures.crew
+        return WarmUpScreen(session: world.session,
+                            warmthRows: world.warmthRows,
+                            isSolo: world.isSolo,
+                            isOrganizer: world.isOrganizer,
+                            planRows: world.planRows,
+                            rungHeadline: world.rungHeadline,
+                            rungDetail: world.rungDetail,
+                            coachLine: world.coachLine,
+                            blockWeek: world.blockWeek,
+                            blockWeeks: world.blockWeeks,
+                            blockMilestone: world.blockMilestone,
+                            elapsed: world.elapsed)
+    }
+
+    /// `ladder-reladder-proposal`: Coach's re-ladder consent card, live on
+    /// the ladder page. `StubBlockGoalRepository.fixtureProposal` was built
+    /// for exactly this id (see its own doc comment) — five changed rungs
+    /// over `fixturePage`'s standing eight.
+    private var content_ladderReladderProposal: some View {
+        NavigationStack {
+            LadderPageView(goalID: StubBlockGoalRepository.fixtureGoalID,
+                           world: StubBlockGoalRepository.fixturePage,
+                           proposal: StubBlockGoalRepository.fixtureProposal)
+        }
     }
 }
 
