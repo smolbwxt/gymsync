@@ -89,10 +89,24 @@ enum WarmUpFixtures {
         isSolo: true,
         isOrganizer: true,
         planRows: soloPlanRows,
-        rungHeadline: "Bench 4 × 5 at 225",
-        rungDetail: "Week 3 of 8 · the rung the block asks for today",
-        coachLine: "Last week's top set moved fast. Take the 225 for five and "
-            + "leave the sixth in the tank.",
+        // HONEST FRAMES (review push-5 R-17, the R-6 class): production's
+        // rung headline is the routine's own name and nothing else
+        // (`SessionRunnerView.swift`'s `routineName`) — a plausible title,
+        // not a computed prescription sentence, matching
+        // `LobbyFixtures.rungLine`'s "Leg Day A". `rungDetail` is always ""
+        // in production; this fixture now says so too.
+        rungHeadline: "Push Day A",
+        rungDetail: "",
+        // Coach's readiness suggestion is Phase B: production always passes
+        // nil (`SessionRunnerView.swift`), so the frame shows none either —
+        // `SessionPlanCardWithSuggestion` renders with no suggestion and no
+        // rule when `suggestion` is nil.
+        coachLine: nil,
+        // NOT dishonest: `SessionRunnerView` now wires this from the
+        // athlete's own active block goal (`BlockGoalRepository.activeGoal()`
+        // → `.page(goalID:)`), so a lifter mid-block genuinely sees this —
+        // matching `StubBlockGoalRepository`'s bench block the ladder page's
+        // own frames describe (week 3 of 8, bench 225 by Oct 18).
         blockWeek: 3,
         blockWeeks: 8,
         blockMilestone: "Bench 225 by Oct 18",
@@ -126,8 +140,10 @@ enum WarmUpFixtures {
         planRows: LobbyFixtures.planRows,
         rungHeadline: LobbyFixtures.rungLine,
         rungDetail: "",
-        coachLine: "Your left shoulder was the limiter last week — two sets of "
-            + "band pull-aparts before you load the bar.",
+        // Coach's per-lifter warm-up line is Phase B: production always
+        // passes nil (review push-5 R-17), so `CoachSuggestionBlock` does
+        // not render on this frame either.
+        coachLine: nil,
         blockWeek: 3,
         blockWeeks: 8,
         blockMilestone: "",

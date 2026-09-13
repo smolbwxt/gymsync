@@ -34,6 +34,15 @@ struct SessionRunnerView: View {
     /// so the plan card reads the same on both screens.
     @State private var planRows: [SessionPlanRow] = []
     @State private var routineName = ""
+    // The athlete's own block, solo only — `BlockLadderStrip` never renders
+    // in the crew frame. Review push-5 R-17: HONEST FRAMES applies to
+    // production too, not just fixtures — the strip is absent (blockWeeks
+    // stays 0) rather than wrong when there is no active block or the fetch
+    // fails, matching `loadPlan()`'s own best-effort contract.
+    @State private var blockWeek = 0
+    @State private var blockWeeks = 0
+    @State private var blockMilestone = ""
+    private let blockGoalRepository: any BlockGoalRepository = LiveBlockGoalRepository()
     // Check-in — solo only (spec §2's path is check-in → warm-up; a
     // scheduled solo session never passes through a lobby to find the
     // button there). Same shape as `LobbyView`'s: `isCheckingIn` and
@@ -118,9 +127,9 @@ struct SessionRunnerView: View {
                     // Coach's per-lifter warm-up line is Phase B too; the
                     // card renders without a suggestion and no rule appears.
                     coachLine: nil,
-                    blockWeek: 0,
-                    blockWeeks: 0,
-                    blockMilestone: "",
+                    blockWeek: blockWeek,
+                    blockWeeks: blockWeeks,
+                    blockMilestone: blockMilestone,
                     elapsed: WarmUpGate.elapsed(since: effective.startedAt, now: now),
                     // Solo only, and only before check-in — spec §2's path.
                     showsCheckIn: isSolo && !isCheckedIn,
@@ -151,6 +160,9 @@ struct SessionRunnerView: View {
         // The plan, once. It cannot change during a warm-up — the leader
         // picks the routine before Start — so this is a `.task`, not a poll.
         .task { await loadPlan() }
+        // The block ladder, once, solo only. Same reasoning as the plan
+        // above: a block enrollment does not change mid-warm-up.
+        .task { await loadBlock() }
         // THE POLL, five seconds, only while warming up. `.task(id:)` cancels
         // itself the moment the gate flips, so the live view never runs two
         // pollers.
@@ -180,6 +192,23 @@ struct SessionRunnerView: View {
         } message: {
             Text("Couldn't verify you're at your gym. Check in as traveling?")
         }
+    }
+
+    /// The athlete's own block ladder, solo only — `BlockLadderStrip` never
+    /// renders in the crew frame, so a crew warm-up does not pay this round
+    /// trip. Best-effort: no active block, or a failed fetch, leaves
+    /// `blockWeeks == 0`, which is what makes `WarmUpScreen` show no strip
+    /// at all rather than a wrong or an empty one (review push-5 R-17 —
+    /// HONEST FRAMES for code, not just for the catalog's fixtures).
+    @MainActor
+    private func loadBlock() async {
+        guard warmingUp, isSolo, blockWeeks == 0,
+              let goal = await blockGoalRepository.activeGoal(),
+              let page = await blockGoalRepository.page(goalID: goal.id)
+        else { return }
+        blockWeek = page.weekNumber
+        blockWeeks = page.weekCount
+        blockMilestone = page.headline
     }
 
     /// The routine, resolved to worded rows. Best-effort, like every other
