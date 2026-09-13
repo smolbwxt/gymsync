@@ -121,6 +121,42 @@ enum RoundCopy {
     /// The line under it, so the tap says exactly what happens (rule 9).
     static let needAMinuteDetail = "Adds a minute before the crew is offered a skip."
 
+    // MARK: - Spotter mode (spec §1, owner decision 7, plan task S8)
+
+    /// Why this screen is up. Owner decision 7: spotter mode is what a lifter
+    /// does in the rounds their prescription has no set for.
+    static let spotterNoSet = "Your plan has no set this round."
+
+    /// The promise the mode exists to keep — "with the crew, not a solo
+    /// recap".
+    ///
+    /// THE REFERENCE FRAME SAYS "until round 5" AND PRODUCTION DOES NOT.
+    /// Which round a lifter rejoins on depends on how fast four other people
+    /// get through their remaining sets, and this file's own
+    /// `upcomingTurnHint` already refuses to fabricate the same kind of
+    /// number ("the proof's '~2 min' isn't backed by any duration data we
+    /// track"). A wrong round in the copy is worse than no round.
+    static let spotterWithTheCrew = "You're with the crew — not in a recap on your own."
+
+    /// The crew's live readings. Owner decision 13 shares heart rate by
+    /// default, and the card says so out loud rather than leaving the lifter
+    /// to discover it.
+    static let crewRightNow = "THE CREW, RIGHT NOW"
+    static let sharedByDefault = "SHARED BY DEFAULT"
+
+    /// `2 STILL TO GO` — how much of this round is left. A kicker, so caps.
+    static func stillToGo(_ count: Int) -> String {
+        "\(count) STILL TO GO"
+    }
+
+    /// The spotter's one act, and the screen's one accent.
+    static let cheer = "Cheer"
+
+    /// What CHEER puts on the wire — the applause pill, on the reaction
+    /// channel the strip already uses. Cheering IS reacting, loudly; a
+    /// separate kind for the same act would be two ways to clap.
+    static let cheerEmoji = "👏"
+
     /// What "I need a minute" puts on the wire.
     ///
     /// The EXISTING reaction channel (plan task S7: "no new channel"), so
@@ -607,6 +643,191 @@ struct StationCard: View {
             RoundedRectangle(cornerRadius: Self.avatarSize * 0.28)
                 .strokeBorder(theme.accent, lineWidth: 2)
         }
+    }
+}
+
+// MARK: - The turn strip
+
+/// NOW / NEXT / 3RD / 4TH — who is lifting and who is behind them.
+///
+/// Moved out of `SessionLiveView` (plan task S8), where it had had no call
+/// site since the strip took the page that mounted it, and made value-in so
+/// spotter mode can render it. The drawing is unchanged.
+struct TurnStrip: View {
+    @Environment(\.gsTheme) private var theme
+
+    struct Tile: Identifiable, Equatable {
+        let id: UUID
+        /// `NOW`, `NEXT`, `3RD` …
+        let label: String
+        /// "You" rather than your own name.
+        let name: String
+        let isNow: Bool
+        /// The speaking ring — `VoiceRoomService.speakingParticipantIDs`,
+        /// resolved by the caller because only it holds the identity map.
+        var isSpeaking: Bool = false
+    }
+
+    let tiles: [Tile]
+
+    /// THE CURRENT TILE'S FILL, independent of everything else. A screen that
+    /// has spent its one accent elsewhere — spotter mode's CHEER — marks NOW
+    /// with the raised neutral face instead (rule 2).
+    var accentsCurrent: Bool = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            GSSectionHeader("ROTATION")
+            HStack(spacing: 6) {
+                ForEach(tiles) { tile in
+                    self.tile(tile)
+                }
+            }
+        }
+    }
+
+    private func tile(_ tile: Tile) -> some View {
+        let filled = tile.isNow && accentsCurrent
+        return VStack(spacing: 4) {
+            Text(tile.label)
+                .font(GSFont.bold(9, relativeTo: .caption2))
+                .tracking(0.6)
+                .foregroundStyle(filled ? theme.bg.opacity(0.85) : theme.neutral500)
+            Text(tile.name)
+                .font(GSFont.bold(13, relativeTo: .body))
+                .foregroundStyle(filled ? theme.bg : theme.text)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .background(filled ? theme.accent : theme.surface)
+        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(
+            tile.isSpeaking ? theme.accent700
+                : (tile.isNow && !accentsCurrent ? theme.neutral500
+                   : (filled ? Color.clear : theme.divider)),
+            lineWidth: tile.isSpeaking ? 2 : 1))
+    }
+}
+
+// MARK: - The crew's heart rates
+
+/// `THE CREW, RIGHT NOW` — the card that turns spotter mode from a waiting
+/// room into a job (plan task S8, reference `round-spotter-v3`).
+///
+/// The reason to be at the rack is that you can see Dana is at 158 and Lee
+/// has come down to 121. Owner decision 13 already shares heart rate by
+/// default; this is the first screen that uses it for anybody other than the
+/// lifter it belongs to, which is why the card says SHARED BY DEFAULT out
+/// loud instead of leaving it to be discovered.
+///
+/// COLOUR AND WORD TOGETHER (§4a, owner decision 17). `GSHeartRatePill`
+/// already tints by zone; the WORD beside it is what this card adds, so the
+/// meaning never rests on colour alone. Who is LIFTING is marked by WEIGHT,
+/// not by colour — the screen's accent is CHEER.
+///
+/// A STALE READING IS AN EM DASH, never a last-known number: the caller's
+/// `heartRateFor(_:)` gate has already turned it into `nil`, and a heart rate
+/// that stopped arriving is not a heart rate.
+struct CrewHeartRatesCard: View {
+    @Environment(\.gsTheme) private var theme
+
+    struct Row: Identifiable, Equatable {
+        let id: UUID
+        let name: String
+        /// Marked by weight, not colour.
+        let isLifting: Bool
+        /// Nil when the reading is stale or was never shared.
+        let bpm: Int?
+        let zone: HeartRateZone?
+    }
+
+    let rows: [Row]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                GSSectionHeader(RoundCopy.crewRightNow)
+                Spacer(minLength: 8)
+                Text(RoundCopy.sharedByDefault)
+                    .font(GSFont.bold(9, relativeTo: .caption2))
+                    .tracking(0.8)
+                    .foregroundStyle(theme.neutral500)
+                    .fixedSize()
+            }
+            ForEach(rows) { row in
+                self.row(row)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd, lipHeight: 6)
+    }
+
+    private func row(_ row: Row) -> some View {
+        HStack(spacing: 10) {
+            Text(row.isLifting ? "\(row.name) · lifting" : row.name)
+                .font(row.isLifting ? GSFont.bold(12.5, relativeTo: .caption)
+                                    : GSFont.body(12.5, relativeTo: .caption))
+                .foregroundStyle(row.isLifting ? theme.text : theme.neutral700)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            Spacer(minLength: 6)
+            reading(row)
+        }
+        .frame(height: 24)
+    }
+
+    @ViewBuilder
+    private func reading(_ row: Row) -> some View {
+        if let bpm = row.bpm {
+            GSHeartRatePill(bpm: bpm, zone: row.zone)
+            Text(row.zone.map { HeartRateZoneDisplay.word($0) } ?? "—")
+                .font(GSFont.bold(11, relativeTo: .caption2))
+                .tracking(0.4)
+                .foregroundStyle(theme.neutral700)
+                .frame(width: 22, alignment: .trailing)
+        } else {
+            Text("—")
+                .font(GSFont.bold(15, relativeTo: .subheadline))
+                .foregroundStyle(theme.neutral500)
+            Text(" ")
+                .font(GSFont.bold(11, relativeTo: .caption2))
+                .frame(width: 22, alignment: .trailing)
+        }
+    }
+}
+
+// MARK: - A door
+
+/// A small raised tile with a glyph and two words (rule 4). The screen's one
+/// primary act paints its face accent and its ink `theme.bg`, the way
+/// `GSPrimaryButtonStyle` does.
+struct RoundDoor: View {
+    @Environment(\.gsTheme) private var theme
+
+    let glyph: String
+    let title: String
+    var isPrimary: Bool = false
+    var onTap: () -> Void = {}
+
+    var body: some View {
+        Button(action: onTap) {
+            VStack(alignment: .leading, spacing: 8) {
+                Image(systemName: glyph)
+                    .font(.system(size: 17, weight: .bold))
+                Text(title)
+                    .font(GSFont.bold(13.5, relativeTo: .subheadline))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(isPrimary ? theme.bg : theme.text)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 13)
+        }
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm,
+                                    lipHeight: 5,
+                                    face: isPrimary ? theme.accent : nil))
     }
 }
 

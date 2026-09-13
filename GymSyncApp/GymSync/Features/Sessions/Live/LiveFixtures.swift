@@ -42,6 +42,18 @@ struct RoundWaitWorld {
     var skip: SkipOffer? = nil
 }
 
+/// One catalog world for `SpotterView` (plan task S8).
+struct SpotterWorld {
+    let kicker: String
+    let title: String
+    let turn: [TurnStrip.Tile]
+    let stillToGo: String
+    let crew: [CrewHeartRatesCard.Row]
+    let coach: CoachDoorRow.Model
+    let dockNames: [String]
+    let reactionEmojis: [String]
+}
+
 enum LiveFixtures {
 
     // MARK: - Fixed ids
@@ -201,6 +213,46 @@ enum LiveFixtures {
         waited: 151,
         threshold: RoundHold.threshold(medianRestSeconds: 96),
         isActionable: true)
+
+    // MARK: - Spotter mode (frame 139)
+
+    /// `session-round-spotter`: round 4, Dana lifting, Lee next, and the
+    /// crew's live readings across all four zones — a frame that showed one
+    /// zone would prove nothing about the ramp.
+    ///
+    /// The bpm values are the design round's own (`SVFixturesV2
+    /// .spotterHeartRates`); the ZONES come from `HeartRateZone.zone(bpm:)`
+    /// rather than being written down, so the frame cannot disagree with the
+    /// app about what 158 is.
+    static let spotter = SpotterWorld(
+        kicker: RoundCopy.kicker(crew: crewName, round: 4),
+        title: "You're spotting",
+        turn: [
+            TurnStrip.Tile(id: danaID, label: "NOW", name: "Dana", isNow: true),
+            TurnStrip.Tile(id: leeID, label: "NEXT", name: "Lee", isNow: false),
+            TurnStrip.Tile(id: samID, label: "3RD", name: "Sam", isNow: false),
+            TurnStrip.Tile(id: alexID, label: "4TH", name: "You", isNow: false),
+        ],
+        stillToGo: RoundCopy.stillToGo(2),
+        crew: [
+            crewRow(danaID, "Dana Kord", isLifting: true, bpm: 158),
+            crewRow(leeID, "Lee Vance", isLifting: false, bpm: 121),
+            crewRow(samID, "Sam Obi", isLifting: false, bpm: 143),
+            // Mo's watch stopped reporting: the freshness gate turns a stale
+            // reading into nothing, and the card prints an em dash. The frame
+            // carries the case on purpose — it is the one a screenshot proves
+            // and a unit test cannot.
+            crewRow(moID, "Mo Adeyemi", isLifting: false, bpm: nil),
+        ],
+        coach: coach,
+        dockNames: dockNames,
+        reactionEmojis: reactionEmojis)
+
+    private static func crewRow(_ id: UUID, _ name: String,
+                                isLifting: Bool, bpm: Int?) -> CrewHeartRatesCard.Row {
+        CrewHeartRatesCard.Row(id: id, name: name, isLifting: isLifting,
+                               bpm: bpm, zone: bpm.map { HeartRateZone.zone(bpm: $0) })
+    }
 
     static let roundHold = RoundWaitWorld(
         kicker: RoundCopy.kicker(crew: crewName, round: 3),

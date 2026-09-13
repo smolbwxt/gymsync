@@ -2190,7 +2190,9 @@ struct SessionLiveView: View {
             // ROUND WAIT in their place, and everyone else — every lifter on
             // their turn, and every lifter in Freestyle and Together, which
             // have no turn at all — gets the my-turn page.
-            if showsRoundWait {
+            if showsSpotter {
+                spotterPage
+            } else if showsRoundWait {
                 roundWaitPage
             } else {
                 myTurnFixedPage
@@ -2290,13 +2292,13 @@ struct SessionLiveView: View {
 
     /// The pinned bottom chrome (extracted from the safeAreaInset closure).
     ///
-    /// EMPTY WHILE THE ROUND WAIT IS UP (plan task S6): `RoundPage` pins its
-    /// own foot inside the page, so a chrome here would put a second dock
+    /// EMPTY WHILE A CREW PAGE IS UP (plan tasks S6 and S8): `RoundPage` pins
+    /// its own foot inside the page, so a chrome here would put a second dock
     /// under the first one. The my-turn page has no foot of its own, which is
     /// why it still needs this.
     @ViewBuilder
     private var bottomChrome: some View {
-        if !showsRoundWait { turnChrome }
+        if !showsCrewPage { turnChrome }
     }
 
     /// Squad-swap vote banner: visible to everyone while a proposal is
@@ -2821,43 +2823,13 @@ struct SessionLiveView: View {
     // `decrementDecimal`/`incrementDecimal`) so this view no longer duplicates them.
 
     // MARK: - Rotation strip (my turn) — p06 "NOW / NEXT / 3RD / 4TH" tiles
-
-    private var rotationStrip: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("ROTATION")
-                .font(GSFont.bold(10, relativeTo: .caption2))
-                .tracking(1.2)
-                .foregroundStyle(theme.neutral500)
-
-            HStack(spacing: 6) {
-                ForEach(rotationTiles, id: \.userID) { tile in
-                    let isNow = tile.label == "NOW"
-                    // Speaking ring (Task 4) — only the "talking" sub-state is
-                    // derivable here (the roster card that first documented
-                    // this left with the spectate page, plan task S4).
-                    let isSpeaking = VoiceRoomService.shared.speakingParticipantIDs
-                        .contains(tile.userID.uuidString.lowercased())
-                    VStack(spacing: 4) {
-                        Text(tile.label)
-                            .font(GSFont.bold(9, relativeTo: .caption2))
-                            .tracking(0.6)
-                            .foregroundStyle(isNow ? theme.bg.opacity(0.85) : theme.neutral500)
-                        Text(tile.userID == selfID ? "You" : tile.profile.username)
-                            .font(GSFont.bold(13, relativeTo: .body))
-                            .foregroundStyle(isNow ? theme.bg : theme.text)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                    }
-                    .padding(.vertical, 10)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .background(isNow ? theme.accent : theme.surface)
-                    .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(
-                        isSpeaking ? theme.accent700 : (isNow ? Color.clear : theme.divider),
-                        lineWidth: isSpeaking ? 2 : 1))
-                }
-            }
-        }
-    }
+    //
+    // MOVED TO `Live/RoundPieces.swift` as the value-in `TurnStrip` (plan
+    // task S8). It had had no call site since the strip took the page that
+    // mounted it; spotter mode is the caller, and `turnStripTiles` below
+    // builds its tiles from `rotationTiles`, which is unchanged. Nothing
+    // about the drawing changed — only who owns it and whether the current
+    // tile is filled with accent, which is now the caller's to say.
 
     // MARK: - Bottom action bar
     // CALLERLESS SINCE PLAN TASK S4, with `upcomingTurnHint` below it: the
@@ -3935,7 +3907,8 @@ struct SessionLiveView: View {
     // "no new store" is what makes the recovery curve `RecoveryBuffer`'s
     // sparkline rather than a second history.
 
-    /// ROUNDS ONLY, and only when somebody else holds the turn.
+    /// ROUNDS ONLY, and only when somebody else holds the turn — the state in
+    /// which this body shows THE CREW rather than my own entry card.
     ///
     /// `currentTurnUserID != nil` and a non-empty roster are both required
     /// because `isMyTurn` is an equality on two optionals: with no signed-in
@@ -3943,12 +3916,25 @@ struct SessionLiveView: View {
     /// failed to load it would answer `false` and strand the reader on a page
     /// with no stations. Either way the my-turn page -- which is what renders
     /// today -- is the honest fallback.
-    private var showsRoundWait: Bool {
+    private var showsCrewPage: Bool {
         style == .rounds
             && liveSession.currentTurnUserID != nil
             && !isMyTurn
             && !participants.isEmpty
     }
+
+    /// SPOTTER MODE takes the crew page when my prescription has no set left
+    /// in this round (plan task S8, owner decision 7); the round wait takes it
+    /// otherwise. Two pages, one gate, so they can never both be up.
+    private var showsSpotter: Bool { showsCrewPage && hasNoSetThisRound }
+    private var showsRoundWait: Bool { showsCrewPage && !hasNoSetThisRound }
+
+    /// Have I finished my prescription for the exercise the crew is on?
+    ///
+    /// Answered from the ROUTINE'S OWN target and my own logged count, which
+    /// is what `turnSetsPage` already counts with. A routine with no target
+    /// sets prescribes no end, so it never answers yes — an unbounded
+    /// prescription is not a finished one.
 
     /// The page, on a one-second tick.
     ///
@@ -4173,6 +4159,71 @@ struct SessionLiveView: View {
             errorText = error.errorDescription
         } catch {
             errorText = error.localizedDescription
+        }
+    }
+
+    private var hasNoSetThisRound: Bool {
+        guard let exercise = currentExerciseForSheet,
+              let target = currentRoutineExercise?.targetSets, target > 0 else { return false }
+        return mySetCount(for: exercise.id) >= target
+    }
+
+    // MARK: - Spotter mode (spec §1, owner decision 7, plan task S8)
+
+    private var spotterPage: some View {
+        SpotterView(
+            kicker: RoundCopy.kicker(crew: ledgerGroup?.name ?? "", round: liveSession.round),
+            title: "You're spotting",
+            turn: turnStripTiles,
+            stillToGo: stillToGoLine,
+            crew: crewHeartRateRows,
+            coach: CoachDoorRow.Model(title: SessionCopy.talkToCoach,
+                                      detail: SessionCopy.talkToCoachDetail),
+            dockNames: otherParticipantNames,
+            reactionEmojis: reactionEmojis,
+            voice: voiceFoot,
+            onCoachTap: { Task { await openCoachThread() } },
+            onReaction: { emoji in Task { await tapReaction(emoji: emoji) } },
+            onCheer: { Task { await tapReaction(emoji: RoundCopy.cheerEmoji) } })
+    }
+
+    /// `rotationTiles`, worded for the strip. The speaking ring is resolved
+    /// here because only this view holds the identity map
+    /// (`VoiceRoomService` knows LiveKit identity strings, never usernames).
+    private var turnStripTiles: [TurnStrip.Tile] {
+        rotationTiles.map { tile in
+            TurnStrip.Tile(
+                id: tile.userID,
+                label: tile.label,
+                name: tile.userID == selfID ? "You" : tile.profile.username,
+                isNow: tile.label == "NOW",
+                isSpeaking: VoiceRoomService.shared.speakingParticipantIDs
+                    .contains(tile.userID.uuidString.lowercased()))
+        }
+    }
+
+    /// `2 STILL TO GO` — how much of this round is left. Empty when nobody
+    /// is outstanding, so no count is drawn rather than a zero.
+    private var stillToGoLine: String {
+        let outstanding = presentRotation.filter { !hasLoggedThisRound($0.participant.userID) }.count
+        return outstanding > 0 ? RoundCopy.stillToGo(outstanding) : ""
+    }
+
+    /// The crew's readings, in rotation order so the card and the strip above
+    /// it agree about who is who.
+    ///
+    /// EVERY ROW READS `heartRateFor(_:)`, the 15 s freshness gate, so a
+    /// reading that stopped arriving becomes `nil` here and an em dash on the
+    /// card — never a last-known number.
+    private var crewHeartRateRows: [CrewHeartRatesCard.Row] {
+        presentRotation.map { row in
+            let reading = heartRateFor(row.participant.userID)
+            return CrewHeartRatesCard.Row(
+                id: row.participant.userID,
+                name: row.participant.userID == selfID ? "You" : row.profile.username,
+                isLifting: row.participant.userID == liveSession.currentTurnUserID,
+                bpm: reading?.bpm,
+                zone: reading?.zone)
         }
     }
 

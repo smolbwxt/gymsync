@@ -266,6 +266,54 @@ final class RoundWaitCopyTests: XCTestCase {
         XCTAssertEqual(unticked.first?.id, LiveFixtures.samID)
     }
 
+    // MARK: - Spotter mode's copy (spec §1, owner decision 7, plan task S8)
+
+    func testTheSpottersFourStrings() {
+        XCTAssertEqual(RoundCopy.spotterNoSet, "Your plan has no set this round.")
+        XCTAssertEqual(RoundCopy.spotterWithTheCrew,
+                       "You're with the crew — not in a recap on your own.")
+        XCTAssertEqual(RoundCopy.crewRightNow, "THE CREW, RIGHT NOW")
+        XCTAssertEqual(RoundCopy.sharedByDefault, "SHARED BY DEFAULT")
+        XCTAssertEqual(RoundCopy.cheer, "Cheer")
+    }
+
+    /// THE REFERENCE FRAME SAYS "until round 5" AND PRODUCTION DOES NOT.
+    /// Which round a lifter rejoins on depends on four other people's
+    /// remaining sets; `upcomingTurnHint` already refuses to fabricate the
+    /// same kind of number. This assertion is the refusal, written down.
+    func testTheWithTheCrewLineNamesNoRound() {
+        XCTAssertFalse(RoundCopy.spotterWithTheCrew.lowercased().contains("round"))
+    }
+
+    func testTheStillToGoCount() {
+        XCTAssertEqual(RoundCopy.stillToGo(2), "2 STILL TO GO")
+        XCTAssertEqual(RoundCopy.stillToGo(1), "1 STILL TO GO")
+    }
+
+    /// Frame 139: four lifters, one lifting, all four zones across the ramp,
+    /// and one STALE reading — the em-dash case a screenshot proves and a
+    /// unit test cannot draw.
+    func testTheSpotterWorld() {
+        let world = LiveFixtures.spotter
+        XCTAssertEqual(world.kicker, "PUSH CREW · ROUND 4")
+        XCTAssertEqual(world.crew.count, 4)
+        XCTAssertEqual(world.crew.filter(\.isLifting).count, 1)
+        XCTAssertEqual(world.crew.first?.name, "Dana Kord")
+        XCTAssertNil(world.crew.last?.bpm)
+        XCTAssertNil(world.crew.last?.zone)
+        XCTAssertEqual(world.turn.filter(\.isNow).count, 1)
+        XCTAssertEqual(world.stillToGo, "2 STILL TO GO")
+    }
+
+    /// The frame's zones are DERIVED from its bpm values, never written down,
+    /// so a fixture cannot disagree with the app about what 158 is.
+    func testTheSpottersZonesAreDerivedFromTheReadings() {
+        for row in LiveFixtures.spotter.crew {
+            XCTAssertEqual(row.zone, row.bpm.map { HeartRateZone.zone(bpm: $0) },
+                           "\(row.name)")
+        }
+    }
+
     /// The threshold on the frame is `RoundHold`'s answer for a 96 s median —
     /// `1.5 × 96 = 144`, between the floor and the cap — so the frame shows
     /// the MULTIPLIER doing the work rather than a clamp. Never a literal.
