@@ -65,12 +65,6 @@ final class SessionPiecesCopyTests: XCTestCase {
 
     // MARK: - Coach
 
-    /// Spec §3.2: a crew screen that shows a Coach line without saying so
-    /// reads as a broadcast.
-    func testThePrivacyNote() {
-        XCTAssertEqual(SessionCopy.onlyYouSeeThis, "Only you see this.")
-    }
-
     /// **THE SAME TWO WORDS `GSConsentCard` USES** (plan task S2), asserted
     /// against that enum rather than against two literals — so a suggestion
     /// answers the same way everywhere in the app, and a later edit to one

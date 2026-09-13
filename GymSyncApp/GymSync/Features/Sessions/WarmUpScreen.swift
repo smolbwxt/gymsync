@@ -171,9 +171,14 @@ struct WarmUpScreen: View {
 
     // MARK: - Crew (`warmup-crew`)
 
-    /// Who's warm, the plan, Coach's PRIVATE line, then the clock. The
-    /// readiness row is what crew presence adds; the order below it is the
-    /// solo order minus the block strip, which is a personal fact.
+    /// Who's warm, then the plan, then the clock. The readiness row is what
+    /// crew presence adds; the order below it is the solo order minus the
+    /// block strip, which is a personal fact. Coach's PRIVATE line is
+    /// Phase B's: `CoachSuggestionBlock`, the type that used to render it
+    /// here, had no path anywhere in the app after R-17 (production and
+    /// both fixtures always pass `coachLine == nil`) and was deleted
+    /// (review push-5 N4); `coachLine` itself stays, still read by
+    /// `soloBody`, for Phase B's re-add with the readiness signal.
     @ViewBuilder
     private var crewBody: some View {
         SessionReadinessRow(rows: warmthRows,
@@ -183,19 +188,6 @@ struct WarmUpScreen: View {
         SessionPlanCard(kicker: SessionCopy.theSession,
                         rungLine: rungHeadline,
                         rows: planRows)
-        if let coachLine {
-            CoachSuggestionBlock(line: coachLine,
-                                 // Spec §3.2: in a crew Coach speaks to each
-                                 // lifter privately, and a crew screen that
-                                 // shows a Coach line without saying so reads
-                                 // as a broadcast.
-                                 isPrivate: true,
-                                 onAccept: onAcceptSuggestion,
-                                 onDecline: onDeclineSuggestion)
-                .padding(14)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .gs3DCard(cornerRadius: GSMetrics.radiusMd, lipHeight: 6)
-        }
         WarmUpClockStrip(elapsed: elapsed)
     }
 

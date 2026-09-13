@@ -43,9 +43,6 @@ enum SessionCopy {
     static let noTargetGoWhenReady = "No target. Go when you're ready."
     /// The crew warm-up's readiness kicker.
     static let whosWarm = "WHO'S WARM"
-    /// Spec §3.2: in a crew, Coach speaks to each lifter privately, and a crew
-    /// screen that shows a Coach line without saying so reads as a broadcast.
-    static let onlyYouSeeThis = "Only you see this."
     /// The same two words `GSConsentCard` uses, so a suggestion answers the
     /// same way everywhere in the app.
     static let accept = GSConsentCopy.accept
@@ -405,14 +402,13 @@ struct SessionPlanCardWithSuggestion: View {
             ForEach(rows) { row in
                 SessionPlanRowView(row: row)
             }
-            if let suggestion {
-                GSDivider().padding(.top, 3)
-                CoachSuggestionBlock(line: suggestion,
-                                     isPrivate: isPrivate,
-                                     onAccept: onAccept,
-                                     onDecline: onDecline)
-                    .padding(.top, 6)
-            }
+            // `suggestion` (and `isPrivate`/`onAccept`/`onDecline` below)
+            // render nothing today: `CoachSuggestionBlock`, the type that
+            // used to read them here, had no path anywhere in the app after
+            // R-17 (production and both fixtures always pass nil) and was
+            // deleted (review push-5 N4). Left wired rather than removed —
+            // Phase B re-adds the block with the readiness signal, on this
+            // same card.
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -431,74 +427,6 @@ struct SessionPlanCardWithSuggestion: View {
                     .foregroundStyle(theme.neutral700)
             }
         }
-    }
-}
-
-// MARK: - Coach's suggestion
-
-/// Coach's `CO` tile, the first-person line, the privacy note, and the two
-/// raised pills — `SVSuggestionBody`'s composition.
-///
-/// **Accept / Not today**, the same two words `GSConsentCard` uses (plan task
-/// S2), so a suggestion answers the same way everywhere in the app.
-struct CoachSuggestionBlock: View {
-    @Environment(\.gsTheme) private var theme
-
-    let line: String
-    /// Spec §3.2: in a crew Coach speaks to each lifter privately, and the
-    /// frame has to say so or the crew reads it as a broadcast.
-    var isPrivate: Bool = false
-    var onAccept: () -> Void = {}
-    var onDecline: () -> Void = {}
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            coachLine
-            if isPrivate {
-                Text(SessionCopy.onlyYouSeeThis)
-                    .font(GSFont.body(11, relativeTo: .caption2))
-                    .foregroundStyle(theme.neutral500)
-            }
-            HStack(spacing: 8) {
-                pill(SessionCopy.accept, action: onAccept)
-                pill(SessionCopy.decline, action: onDecline)
-                Spacer(minLength: 0)
-            }
-        }
-    }
-
-    private var coachLine: some View {
-        HStack(alignment: .top, spacing: 10) {
-            RoundedRectangle(cornerRadius: tileRadius(30))
-                .fill(theme.neutral300)
-                .frame(width: 30, height: 30)
-                .overlay(
-                    Text("CO")
-                        .font(GSFont.bold(10, relativeTo: .caption2))
-                        .tracking(0.6)
-                        .foregroundStyle(theme.neutral700)
-                )
-            (
-                Text("Coach: ")
-                    .font(GSFont.bold(13, relativeTo: .subheadline))
-                    .foregroundStyle(theme.text)
-                + Text(line)
-                    .font(GSFont.body(13, relativeTo: .subheadline))
-                    .foregroundStyle(theme.neutral700)
-            )
-            .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    private func pill(_ title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
-                .foregroundStyle(theme.text)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-        }
-        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm, lipHeight: 4))
     }
 }
 
