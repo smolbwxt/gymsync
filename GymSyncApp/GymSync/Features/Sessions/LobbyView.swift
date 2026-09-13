@@ -519,7 +519,10 @@ struct LobbyView: View {
         }
         .onChange(of: scenePhase) {
             guard scenePhase == .active else { return }
-            Task { await reload() }
+            // Coming back to the app is the moment the geofence answer is
+            // most likely to have changed — the lifter walked in while the
+            // phone was in their pocket.
+            Task { await reload(); await publishOwnStage() }
         }
         // CONSENSUS START (spec §3.1). Watches the roster the way the
         // auto-forward below watches the state: `allReady` turning true arms
@@ -1334,6 +1337,42 @@ struct LobbyView: View {
             onPresence: { [self] stages in presenceStages = stages },
             onChange:   { [self] in Task { await reload() } }
         )
+        await publishOwnStage()
+    }
+
+    /// Tell the crew where THIS device is (plan task S3, spec §1).
+    ///
+    /// AT THE GYM is the one arrival fact no column holds: the geofence is
+    /// evaluated on each device, so each device publishes the answer for
+    /// itself and `ArrivalLaw.stage` folds it in behind the DB's own
+    /// `check_in_state`.
+    ///
+    /// **GLOBAL CONSTRAINT 10 IS THE WHOLE SHAPE OF THIS FUNCTION.** It reads
+    /// `CheckInService.locationIfAlreadyAuthorized()`, which returns nil
+    /// rather than raising a prompt when authorization is `.notDetermined`,
+    /// `.denied` or `.restricted` — a location sheet raised from the lobby's
+    /// own `.task` would hang `testLobby()` the way the HealthKit sheet hung
+    /// `build-test`. The authorization check comes FIRST, before the gym read,
+    /// so the common unauthorized case costs no round trip either.
+    ///
+    /// Publishing nothing leaves ON THE WAY standing, which `subscribe` has
+    /// already sent and which is the honest default: a device that cannot say
+    /// where it is has not said it is at the gym.
+    ///
+    /// `.checkedIn` is never published — that stage belongs to
+    /// `session_participants.check_in_state` and nothing else
+    /// (`LobbyRealtimeService.publishStage` refuses it).
+    @MainActor
+    private func publishOwnStage() async {
+        #if DEBUG
+        if catalog != nil { return }
+        #endif
+        guard !isCheckedIn,
+              let location = await CheckInService.locationIfAlreadyAuthorized(),
+              let gym = try? await CheckInService.primaryGym() else { return }
+        await realtime.publishStage(
+            CheckInService.distanceCheck(gym: gym, location: location)
+                ? .atTheGym : .onTheWay)
     }
 
     @MainActor
