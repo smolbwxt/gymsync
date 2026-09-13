@@ -1680,6 +1680,7 @@ struct SessionLiveView: View {
                 burpeeDebtStrip
                 Color.clear.frame(height: 6)
             }
+            voiceNotices
             turnMicRail
             Color.clear.frame(height: 6)
 
@@ -1741,6 +1742,38 @@ struct SessionLiveView: View {
         let reps = leadingInt(logReps).map { "\($0)" } ?? "—"
         let rpe = logIsFailed ? "RPE 10 · MISS" : "RPE \(Int(logRPE))"
         return "\(weight) \(turnUnit.label) × \(reps) · \(rpe)"
+    }
+
+    /// THE TWO VOICE NOTICES, above whichever dock is on screen — the
+    /// degraded banner and the first-run coach mark (fix round 1 / F2, ruling
+    /// R-B12).
+    ///
+    /// Both lived in `legacyBottomChrome`, which plan task S4 deleted with the
+    /// page it served. That left `showVoiceCoachMark` and
+    /// `VoiceCoachMarkStore.markShown()` WRITE-ONLY: the one-shot flag was
+    /// consumed by a live session with nothing rendered, so a lifter who first
+    /// connected voice here (`BurpeeLedgerView`'s direct route does exactly
+    /// that) spent their single teaching moment on a blank screen. Neither
+    /// object is spectate furniture — the mark teaches the dock, and the
+    /// banner is how a degraded room is retried — so both come back above the
+    /// dock, same gates and same paddings as before the strip.
+    ///
+    /// `voicePersistsOnPop`'s doc comment is the reason this cannot be left to
+    /// `LobbyView`'s copy: the lobby is not always the route in.
+    @ViewBuilder
+    private var voiceNotices: some View {
+        if isVoiceEligible, case .unavailable = VoiceRoomService.shared.state {
+            GSVoiceUnavailableBanner(retry: {
+                Task { await VoiceRoomService.shared.retry() }
+            })
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
+        }
+        if showVoiceCoachMark {
+            GSVoiceCoachMark(onDismiss: { showVoiceCoachMark = false })
+                .padding(.horizontal, 16)
+                .padding(.bottom, 6)
+        }
     }
 
     /// The mic rail: what is left of the plate dock (plan task S4) once the
