@@ -1242,10 +1242,22 @@ struct LobbyView: View {
     /// been set" are the same fact — which is why a session already reading
     /// `freestyle` or `together` is left alone even when the routine derives
     /// something else. A derived default never overrides a decision.
+    ///
+    /// FREESTYLE IS NEVER WHAT A DEFAULT WRITES (owner decision 1, fix round
+    /// 1 / F1 — `LobbyStyleCardTests.testFreestyleIsNeverWrittenByTheDefault`
+    /// caught this on run 34781441881). `SessionStyleDefault` can only ever
+    /// answer `.rounds` or `.together`, so this refusal changes nothing that
+    /// production reaches today — which is exactly why it belongs here rather
+    /// than only there: this predicate is the LAST gate before the PATCH, and
+    /// the owner's rule is a property of what may be written silently, not of
+    /// one function's current return set. A fourth style, or a caller that
+    /// derives differently, meets the rule at the gate instead of getting a
+    /// crew's Freestyle written for them.
     static func shouldApplyDefault(current: SessionStyle,
                                    derived: SessionStyle,
                                    hasApplied: Bool) -> Bool {
-        !hasApplied && current == .rounds && derived != .rounds
+        guard derived != .freestyle else { return false }
+        return !hasApplied && current == .rounds && derived != .rounds
     }
 
     /// Apply the derived default once, from the organizer's client only.
