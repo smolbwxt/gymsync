@@ -10,13 +10,15 @@
 -- key: it cannot be unique, cannot be joined, and cannot be the subject of an
 -- RLS predicate. A crew-readable thread needs all three.
 --
--- WHY THE PRO GATE IS SERVER-SIDE. profiles.pro_until is not readable across
--- users (20260730000004_pro_entitlement.sql), so a client asking "is anyone in
--- this session Pro" would be asking about rows it cannot see and would answer
--- "no" for everyone but itself. SECURITY DEFINER is what makes the answer
--- true. The shape is CrewCoachEngine.crewHasCoach's ("one Pro member lights
--- @Coach for the whole crew", CrewCoachEngine.swift:22-25), moved to the
--- server and scoped to session participants instead of group members.
+-- WHY THE PRO GATE IS SERVER-SIDE. Not secrecy: the profiles SELECT policy
+-- (20260709000001_create_profiles.sql:15-18) has no column list and nothing
+-- revokes pro_until specifically, so profiles.pro_until is already readable
+-- by any authenticated user. SECURITY DEFINER instead buys one server-side
+-- JOIN over the crew in place of N client reads, and guarantees every
+-- participant sees the identical answer. The shape is still
+-- CrewCoachEngine.crewHasCoach's ("one Pro member lights @Coach for the
+-- whole crew", CrewCoachEngine.swift:22-25), moved to the server and scoped
+-- to session participants instead of group members.
 
 -- 1. The key.
 ALTER TABLE public.coach_chat_threads

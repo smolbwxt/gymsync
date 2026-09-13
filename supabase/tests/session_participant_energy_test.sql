@@ -88,7 +88,7 @@ SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-f000-000000000a02';
 -- leaves zero rows matching user_id = A -- the UPDATE silently affects
 -- nothing rather than raising, hence a row-count comparison rather than
 -- throws_ok. The UPDATE is wrapped in its own WITH and passed as SQL text
--- (house precedent: campaigns_test.sql:513-517, block_goals_test.sql:280-283)
+-- (house precedent: campaigns_test.sql:513-517, block_goals_test.sql:279-284)
 -- rather than nested inside is()'s argument list -- a data-modifying CTE
 -- must be the top-level statement of the query that executes it, and
 -- results_eq's dynamic-text argument is exactly that; a literal subquery

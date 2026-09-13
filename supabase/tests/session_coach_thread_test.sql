@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(10);
+SELECT plan(11);
 
 -- Migration under test: 20260912000102_session_coach_thread.sql
 -- (coach_chat_threads.session_id, private.session_has_pro,
@@ -122,6 +122,38 @@ SELECT is(
   (SELECT count(*) FROM coach_chat_threads
      WHERE session_id = '00000000-0000-4000-f000-000000000e10')::int,
   0, 'D cannot see e10''s thread exists');
+
+SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-f000-000000000e01';
+
+-- 11. ADDITIVE, NOT SUBTRACTIVE. Proves the migration's own claim ("own
+-- threads stays exactly as it is", 20260912000102:67-69): a personal thread
+-- (session_id NULL) stays invisible to the new participant policy, which
+-- requires session_id IS NOT NULL. B's otherwise-unreachable count is
+-- captured into a temp table under B's role (the assertion-6 pattern,
+-- applied to a second value) so one results_eq can compare it against A's
+-- live count without a second call racing.
+CREATE TEMP TABLE a_personal_thread AS
+WITH ins AS (
+  INSERT INTO public.coach_chat_threads (user_id, session_id, title)
+  VALUES ('00000000-0000-4000-f000-000000000e01', NULL, 'personal')
+  RETURNING id
+)
+SELECT id FROM ins;
+
+SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-f000-000000000e02';
+
+CREATE TEMP TABLE b_personal_count AS
+SELECT count(*)::int AS n FROM public.coach_chat_threads
+  WHERE id = (SELECT id FROM a_personal_thread);
+
+SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-f000-000000000e01';
+
+SELECT results_eq(
+  $$SELECT b.n, (SELECT count(*)::int FROM public.coach_chat_threads
+                   WHERE id = (SELECT id FROM a_personal_thread))
+    FROM b_personal_count b$$,
+  $$VALUES (0, 1)$$,
+  'personal thread stays private -- B (a fellow e10 participant) sees 0, A still sees 1');
 
 SELECT * FROM finish();
 ROLLBACK;
