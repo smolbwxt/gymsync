@@ -317,7 +317,13 @@ struct SVTogetherTimeline: View {
 ///
 /// ACCENT: the interval ring — the current item (rule 2). Everything else in
 /// the readouts is heart-rate data colour, which rule 2 exempts.
-struct TogetherClockView: View {
+///
+/// RENAMED `TogetherClockV1View` by plan task S9. The production twin took
+/// the name `TogetherClockView`, and two types cannot share one inside a
+/// module — `#if DEBUG` still compiles into every Debug build, CI's included.
+/// Frame 117 renders byte-for-byte what it rendered before: only the type's
+/// spelling and its one catalog arm moved, and S13 deletes this file.
+struct TogetherClockV1View: View {
     var body: some View {
         SVScreen(kicker: "\(SVFixtures.crewName.uppercased()) · TOGETHER",
                  title: SVFixtures.togetherTitle) {

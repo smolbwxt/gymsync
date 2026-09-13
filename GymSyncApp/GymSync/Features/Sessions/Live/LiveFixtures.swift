@@ -42,6 +42,22 @@ struct RoundWaitWorld {
     var skip: SkipOffer? = nil
 }
 
+/// One catalog world for `TogetherClockView` (plan task S9).
+struct TogetherWorld {
+    let kicker: String
+    let title: String
+    let intervalKicker: String
+    let phase: String
+    let phaseDetail: String
+    let readout: String
+    let progress: Double
+    let nextLine: String
+    let lanes: [TogetherLane]
+    let axisStart: String
+    let axisEnd: String
+    let dockNames: [String]
+}
+
 /// One catalog world for `SpotterView` (plan task S8).
 struct SpotterWorld {
     let kicker: String
@@ -253,6 +269,48 @@ enum LiveFixtures {
         CrewHeartRatesCard.Row(id: id, name: name, isLifting: isLifting,
                                bpm: bpm, zone: bpm.map { HeartRateZone.zone(bpm: $0) })
     }
+
+    // MARK: - Together (frame 140)
+
+    /// The design round's own twelve-slot traces: rounds 1-6 recorded, 7-12
+    /// still empty, which is what a session six intervals in looks like. The
+    /// empty slots are `0` and the timeline draws them as empty rather than
+    /// as nothing, so the four lanes keep one axis.
+    static let togetherLanes: [TogetherLane] = [
+        lane(alexID, "You",  trace: [118, 141, 152, 158, 163, 168, 0, 0, 0, 0, 0, 0]),
+        lane(danaID, "Dana", trace: [112, 132, 143, 149, 151, 154, 0, 0, 0, 0, 0, 0]),
+        lane(samID,  "Sam",  trace: [124, 148, 161, 168, 172, 176, 0, 0, 0, 0, 0, 0]),
+        lane(leeID,  "Lee",  trace: [104, 121, 128, 134, 137, 139, 0, 0, 0, 0, 0, 0]),
+    ]
+
+    /// The live reading is the LAST recorded slot, and the zone is derived
+    /// from it — a lane cannot disagree with its own trace.
+    private static func lane(_ id: UUID, _ name: String, trace: [Int]) -> TogetherLane {
+        let bpm = trace.last(where: { $0 > 0 })
+        return TogetherLane(id: id, name: name, bpm: bpm,
+                            zone: bpm.map { HeartRateZone.zone(bpm: $0) },
+                            trace: trace)
+    }
+
+    /// `session-together-clock` (frame 140): interval 6 of 12, 18 s left of a
+    /// 40 s work interval, four hearts on one axis.
+    ///
+    /// The readout and the ring agree by construction — `0:18` left of 40 s
+    /// is `22/40` through it — because a frame whose numbers contradicted
+    /// each other would teach the wrong thing about the clock.
+    static let together = TogetherWorld(
+        kicker: "PUSH CREW · TOGETHER",
+        title: "HIIT · 40 / 20",
+        intervalKicker: RoundCopy.intervalKicker(index: 5, count: 12),
+        phase: "WORK",
+        phaseDetail: "Z4 · 1 min",
+        readout: RoundCopy.clock(18),
+        progress: 22.0 / 40.0,
+        nextLine: RoundCopy.nextInterval("Z2 · 1 min"),
+        lanes: togetherLanes,
+        axisStart: RoundCopy.intervalKicker(index: 0, count: 12),
+        axisEnd: RoundCopy.intervalKicker(index: 11, count: 12),
+        dockNames: dockNames)
 
     static let roundHold = RoundWaitWorld(
         kicker: RoundCopy.kicker(crew: crewName, round: 3),

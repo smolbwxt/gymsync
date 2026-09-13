@@ -191,6 +191,13 @@ struct SessionLiveView: View {
     /// two different meanings. Cleared optimistically at the start of every
     /// `logSetAndAdvance` call, same convention as `logSetErrorText`.
     @State private var didQueueSetOffline = false
+    /// THE CREW'S READINGS PER INTERVAL (plan task S9). Session-local,
+    /// bounded and it dies with this view -- `RecoveryBuffer`'s own category,
+    /// which is what spec §6's "no new store" blesses. Filled by
+    /// `receiveHeartRate` from the samples the broadcast already carries;
+    /// nothing else in the app remembers them, and without it Together's
+    /// timeline could only ever draw one column.
+    @State private var togetherTrace = TogetherTrace()
     /// "I NEED A MINUTE", ONCE PER EXERCISE (plan task S7, owner decision
     /// 11). The exercise ids the held lifter has already spent their minute
     /// on -- a set rather than a flag, because the routine moves on and the
@@ -2190,7 +2197,9 @@ struct SessionLiveView: View {
             // ROUND WAIT in their place, and everyone else — every lifter on
             // their turn, and every lifter in Freestyle and Together, which
             // have no turn at all — gets the my-turn page.
-            if showsSpotter {
+            if style == .together {
+                togetherPage
+            } else if showsSpotter {
                 spotterPage
             } else if showsRoundWait {
                 roundWaitPage
@@ -2298,7 +2307,7 @@ struct SessionLiveView: View {
     /// why it still needs this.
     @ViewBuilder
     private var bottomChrome: some View {
-        if !showsCrewPage { turnChrome }
+        if style != .together, !showsCrewPage { turnChrome }
     }
 
     /// Squad-swap vote banner: visible to everyone while a proposal is
@@ -3785,6 +3794,12 @@ struct SessionLiveView: View {
     private func receiveHeartRate(userID: UUID, bpm: Int, zone: String?) {
         let now = Date()
         heartRates[userID] = (bpm, HeartRateZone(rawValue: zone ?? ""), now)
+        // Together's timeline (plan task S9): the last reading of each
+        // interval, per lifter. A no-op for the other two styles, which draw
+        // no timeline -- and free, because the sample is already here.
+        if style == .together, let position = togetherPosition {
+            togetherTrace.record(userID: userID, bpm: bpm, interval: position.index)
+        }
         heartRateExpiryTasks[userID]?.cancel()
         heartRateExpiryTasks[userID] = Task { @MainActor in
             try? await Task.sleep(nanoseconds: UInt64(Self.heartRateStaleAfter * 1_000_000_000))
@@ -4224,6 +4239,89 @@ struct SessionLiveView: View {
                 isLifting: row.participant.userID == liveSession.currentTurnUserID,
                 bpm: reading?.bpm,
                 zone: reading?.zone)
+        }
+    }
+
+    // MARK: - Together (spec §3.3, owner decisions 1 and 13, plan task S9)
+
+    /// The routine's cardio rows as intervals. A routine with none is ONE
+    /// OPEN interval, which `TogetherIntervals.plan(from:)` decides -- not
+    /// this view, and not a literal.
+    private var togetherIntervals: [TogetherIntervals.Interval] {
+        TogetherIntervals.plan(from: effectiveRoutineExercises.map { re in
+            (id: re.id,
+             name: allExercises.first(where: { $0.id == re.exerciseID })?.name
+                 ?? exerciseNames[re.exerciseID] ?? TogetherIntervals.openIntervalName,
+             cardioZone: re.cardioZone,
+             cardioMinutes: re.cardioMinutes)
+        })
+    }
+
+    /// Where the crew is, measured from LIFTING START -- not `startedAt`,
+    /// which is when the session opened and includes the warm-up phase
+    /// (`20260803000004_session_warmup_phase.sql`; the same distinction
+    /// `advance_round` was fixed for in 20260913000105).
+    ///
+    /// Nil before lifting begins, which is the honest answer: no interval has
+    /// started.
+    private var togetherPosition: TogetherIntervals.Position? {
+        guard let start = liveSession.liftingStartedAt else { return nil }
+        return TogetherIntervals.position(in: togetherIntervals,
+                                          elapsed: Date().timeIntervalSince(start))
+    }
+
+    /// The page, on a one-second tick -- the countdown is the screen's
+    /// largest numeral, and the same reasoning as the round wait's clock.
+    private var togetherPage: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            togetherScreen(now: context.date)
+        }
+    }
+
+    private func togetherScreen(now: Date) -> TogetherClockView {
+        let intervals = togetherIntervals
+        let elapsed = liveSession.liftingStartedAt.map { now.timeIntervalSince($0) } ?? 0
+        let position = TogetherIntervals.position(in: intervals, elapsed: elapsed)
+        let index = position?.index ?? 0
+        let current = intervals.indices.contains(index) ? intervals[index] : nil
+        let next = intervals.indices.contains(index + 1) ? intervals[index + 1] : nil
+        return TogetherClockView(
+            kicker: togetherKicker,
+            title: routineName ?? "Together",
+            intervalKicker: RoundCopy.intervalKicker(index: index, count: max(intervals.count, 1)),
+            phase: (current?.name ?? TogetherIntervals.openIntervalName).uppercased(),
+            phaseDetail: current?.detail ?? "",
+            // An OPEN interval counts UP: there is no end to count down to,
+            // and a zero would claim one.
+            readout: RoundCopy.clock(position?.remaining ?? position?.elapsedInInterval ?? 0),
+            progress: position?.progress ?? 0,
+            nextLine: RoundCopy.nextInterval(next.map { $0.detail.isEmpty ? $0.name : $0.detail }),
+            lanes: togetherLanes(intervalCount: intervals.count),
+            axisStart: RoundCopy.intervalKicker(index: 0, count: intervals.count),
+            axisEnd: RoundCopy.intervalKicker(index: max(intervals.count - 1, 0),
+                                              count: intervals.count),
+            dockNames: otherParticipantNames,
+            voice: voiceFoot,
+            onEnd: { showEndConfirmation = true })
+    }
+
+    private var togetherKicker: String {
+        let crew = (ledgerGroup?.name ?? "").uppercased()
+        return crew.isEmpty ? "TOGETHER" : "\(crew) · TOGETHER"
+    }
+
+    /// One lane per present lifter, on the shared interval axis.
+    private func togetherLanes(intervalCount: Int) -> [TogetherLane] {
+        presentRotation.map { row in
+            let reading = heartRateFor(row.participant.userID)
+            return TogetherLane(
+                id: row.participant.userID,
+                name: row.participant.userID == selfID
+                    ? "You" : SessionCopy.firstName(row.profile.username),
+                bpm: reading?.bpm,
+                zone: reading?.zone,
+                trace: togetherTrace.trace(for: row.participant.userID,
+                                           count: max(intervalCount, 1)))
         }
     }
 

@@ -157,6 +157,30 @@ enum RoundCopy {
     /// separate kind for the same act would be two ways to clap.
     static let cheerEmoji = "👏"
 
+    // MARK: - Together (spec §3.3, owner decisions 1 and 13, plan task S9)
+
+    /// `INTERVAL 6 OF 12` — the clock's kicker.
+    static func intervalKicker(index: Int, count: Int) -> String {
+        "INTERVAL \(index + 1) OF \(count)"
+    }
+
+    /// `Next: Z2 · 3 min`, or the honest end of the run.
+    static func nextInterval(_ detail: String?) -> String {
+        guard let detail, !detail.isEmpty else { return "Last interval" }
+        return "Next: \(detail)"
+    }
+
+    /// Together's whole point, said out loud so nobody waits for a turn that
+    /// is never coming.
+    static let togetherNoTurn = "Everyone runs this clock. There is no turn."
+
+    /// The crew's card on the Together screen.
+    static let crewOneTimeline = "THE CREW · ONE TIMELINE"
+
+    /// The foot's shipped End control — the same confirmation the header's X
+    /// raises.
+    static let endSession = "End"
+
     /// What "I need a minute" puts on the wire.
     ///
     /// The EXISTING reaction channel (plan task S7: "no new channel"), so
@@ -166,7 +190,8 @@ enum RoundCopy {
     /// hourglass is, in the moment, the message. It is not one of the four
     /// pills `ReactionStrip` offers, so no tap can send it by accident.
     static let minuteMarker = "⏳"
-}
+
+    // MARK: - The round wait's own lines
 
     /// `WAITING ON SAM AND LEE` — the foot's gated control.
     ///

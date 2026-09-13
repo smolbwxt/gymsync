@@ -2521,8 +2521,10 @@ struct CatalogHostView: View {
         FreestyleRailView()
     }
 
+    /// `TogetherClockV1View`, renamed by plan task S9 — the production screen
+    /// took the name `TogetherClockView`. Frame 117 is unchanged.
     private var content_togetherClock: some View {
-        TogetherClockView()
+        TogetherClockV1View()
     }
 
     private var content_swapConsensusCard: some View {
