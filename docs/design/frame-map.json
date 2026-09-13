@@ -357,11 +357,11 @@
   },
   "session-warmup-solo": {
     "frame": 132,
-    "title": "Solo warm-up - the whole day, Coach's line, the block ladder"
+    "title": "Solo warm-up - the day's plan card, the block ladder strip, the warm-up clock, Check In / Start lifting"
   },
   "session-warmup-crew": {
     "frame": 133,
-    "title": "Shared warm-up, crew frame - who's warm, the private Coach line"
+    "title": "Shared warm-up, crew frame - the readiness row, the plan, the leader's Start lifting"
   },
   "ladder-reladder-proposal": {
     "frame": 134,
