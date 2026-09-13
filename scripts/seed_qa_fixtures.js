@@ -305,6 +305,16 @@ async function main() {
   await rest(`sessions?group_id=eq.${group.id}`, { method: 'DELETE' });
   const states = ['scheduled', 'lobby_open', 'voting', 'locked', 'in_progress', 'completed'];
   const now = new Date().toISOString();
+  // Review push-5 (R-16): the lobby_open session's other member, looked up
+  // here rather than reusing the `acceptedFriend` fetch below (that happens
+  // later in the script, after this loop runs) — same account, same natural
+  // key, `ci_test_user_2` per ACCEPTED_FRIEND_USERNAME's own doc comment.
+  const [lobbyOtherMember] = await rest(
+    `profiles?select=id,username&username=ilike.${ACCEPTED_FRIEND_USERNAME}`);
+  if (!lobbyOtherMember) {
+    console.error(`No profile for "${ACCEPTED_FRIEND_USERNAME}" (expected lobby_open's other member)`);
+    process.exit(1);
+  }
   for (const state of states) {
     const row = { group_id: group.id, organizer_id: me.id, state, scheduled_for: now };
     if (state === 'in_progress') row.started_at = now;
@@ -314,9 +324,9 @@ async function main() {
     // ONLY the completed one gets a participant row, and only because
     // `group_consistency_honor` (20260911000001) credits ATTENDANCE rather
     // than the organizer — without it the CI account's crew has no honor line
-    // and `app-tab-social` proves nothing. The other five states are left
+    // and `app-tab-social` proves nothing. The other four states are left
     // exactly as they were: adding participants to them would change what
-    // testLobby/testSessionRecap capture.
+    // testSessionRecap captures.
     if (state === 'completed') {
       await rest('session_participants', { method: 'POST',
         headers: { Prefer: 'resolution=merge-duplicates' },
@@ -324,6 +334,21 @@ async function main() {
           session_id: created.id, user_id: me.id,
           check_in_state: 'ready',
         }) });
+    }
+    // Review push-5 (R-16): lobby_open had ZERO session_participants rows,
+    // so SessionRepository.participants(sessionID:) returned [] and
+    // SessionShape.isSolo(0, nil) read true — app-lobby silently rendered
+    // the warm-up screen instead of the lobby (finding 4). Two rows, distinct
+    // check-in states, make it a genuine crew lobby with a populated arrival
+    // track: the organizer checked in, the crew's other member still on the
+    // way — same upsert shape as the completed row above.
+    if (state === 'lobby_open') {
+      await rest('session_participants', { method: 'POST',
+        headers: { Prefer: 'resolution=merge-duplicates' },
+        body: JSON.stringify([
+          { session_id: created.id, user_id: me.id, check_in_state: 'ready' },
+          { session_id: created.id, user_id: lobbyOtherMember.id, check_in_state: 'invited' },
+        ]) });
     }
   }
   console.log(`  sessions: ${states.join(', ')}`);
