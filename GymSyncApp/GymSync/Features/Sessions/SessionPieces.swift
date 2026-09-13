@@ -274,7 +274,7 @@ struct SessionArrivalTrack: View {
                             // initials.
                             if person.isLate {
                                 Text(SessionCopy.late)
-                                    .font(GSFont.body(9, relativeTo: .caption2))
+                                    .font(GSFont.body(10, relativeTo: .caption2))
                                     .foregroundStyle(theme.neutral700)
                                     .fixedSize()
                             }
