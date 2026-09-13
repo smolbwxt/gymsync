@@ -173,6 +173,15 @@ private extension View {
     func sessionStrip() -> some View { modifier(SessionStripModifier()) }
 }
 
+/// The corner radius of an avatar-sized tile at `size`.
+///
+/// `GSInitialsAvatar` clips itself to `RoundedRectangle(cornerRadius: size *
+/// 0.28)`, so anything drawn BESIDE an avatar — the arrival track's empty
+/// slot, Coach's `CO` tile — has to use the same ratio or it reads as a
+/// different kind of thing. This file had three idioms for it (0.28, a
+/// hard 9, a hard 10); now it has one (review finding F8).
+private func tileRadius(_ size: CGFloat) -> CGFloat { size * 0.28 }
+
 // MARK: - The arrival track
 
 /// Who is where, as three fixed columns with a chevron between them —
@@ -191,9 +200,9 @@ struct SessionArrivalTrack: View {
     let rows: [ArrivalRow]
 
     private static let avatar: CGFloat = 30
-    /// `GSInitialsAvatar` clips itself to `size * 0.28`; the empty tile
-    /// matches so the two read as the same shape.
-    private static let avatarRadius: CGFloat = 30 * 0.28
+    /// The empty slot matches the avatar's own clip, so the two read as the
+    /// same shape rather than two different ones.
+    private static let avatarRadius: CGFloat = tileRadius(30)
 
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
@@ -224,8 +233,12 @@ struct SessionArrivalTrack: View {
                 Image(systemName: stage.glyph)
                     .font(.system(size: 9, weight: .bold))
                 Text(stage.caps)
-                    .font(GSFont.bold(9, relativeTo: .caption2))
-                    .tracking(0.9)
+                    // 10 pt: design rule 3 puts kickers at 10-11, and 9 was
+                    // below the floor the language sets (review finding F6).
+                    // `minimumScaleFactor` below still lets `ON THE WAY` fit
+                    // a third of the width on the narrowest device.
+                    .font(GSFont.bold(10, relativeTo: .caption2))
+                    .tracking(1.0)
             }
             .foregroundStyle(people.isEmpty ? theme.neutral500 : theme.neutral700)
             .lineLimit(1)
@@ -449,7 +462,7 @@ struct CoachSuggestionBlock: View {
 
     private var coachLine: some View {
         HStack(alignment: .top, spacing: 10) {
-            RoundedRectangle(cornerRadius: 9)
+            RoundedRectangle(cornerRadius: tileRadius(30))
                 .fill(theme.neutral300)
                 .frame(width: 30, height: 30)
                 .overlay(
@@ -617,7 +630,7 @@ struct CoachDoorRow: View {
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 12) {
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: tileRadius(34))
                     .fill(theme.neutral300)
                     .frame(width: 34, height: 34)
                     .overlay(
@@ -880,8 +893,8 @@ struct BlockLadderStrip: View {
 
 // MARK: - The warm-up clock
 
-/// A STRIP at 22 pt, not a hero: the largest thing on the warm-up screen is
-/// what you are about to lift.
+/// A STRIP at 18 pt, not a hero: the largest thing on the warm-up screen is
+/// what you are about to lift, and the plan card's rung headline is 19.
 ///
 /// `warmup_minutes` is not read here and there is no target — spec §6 retires
 /// the number, and the clock that used to end the phase is now a readout.
@@ -899,7 +912,11 @@ struct WarmUpClockStrip: View {
             VStack(alignment: .leading, spacing: 1) {
                 GSSectionHeader(SessionCopy.warmingUp)
                 Text(elapsed)
-                    .font(GSFont.bold(22, relativeTo: .title3))
+                    // 18 pt, UNDER the plan card's 19 pt rung headline — this
+                    // strip's own doc comment promises the largest thing on
+                    // the warm-up screen is what you are about to lift, and at
+                    // 22 the clock was contradicting it (review finding F7).
+                    .font(GSFont.bold(18, relativeTo: .title3))
                     .monospacedDigit()
                     .foregroundStyle(theme.text)
             }

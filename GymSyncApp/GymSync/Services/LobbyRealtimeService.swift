@@ -123,11 +123,21 @@ final class LobbyRealtimeService {
                     tracked.removeValue(forKey: key)
                 }
                 // Keyed by USER, not by presence key: one lifter with the app
-                // open on two devices is one row in the track, and the last
-                // join wins — which is the device that most recently said
-                // where it is.
+                // open on two devices is ONE row in the track. Which device
+                // wins is decided by the FURTHER-ALONG stage, never by
+                // arrival order — `tracked.values` iterates a Dictionary,
+                // whose order is unspecified, so "last join wins" made a
+                // two-device lifter's column oscillate between renders
+                // (review finding F5). Further along is also the right
+                // answer: a phone that has reached the gym knows something
+                // the one left in the car does not.
                 var byUser: [UUID: String] = [:]
-                for entry in tracked.values { byUser[entry.id] = entry.stage }
+                for entry in tracked.values {
+                    let incoming = ArrivalStage(rawValue: entry.stage) ?? .onTheWay
+                    let standing = byUser[entry.id].flatMap(ArrivalStage.init(rawValue:))
+                    if let standing, Self.rank(standing) >= Self.rank(incoming) { continue }
+                    byUser[entry.id] = incoming.rawValue
+                }
                 onPresence(byUser)
             }
         }
@@ -182,6 +192,17 @@ final class LobbyRealtimeService {
                     for await _ in participantDeletes { onChange() }
                 }
             }
+        }
+    }
+
+    /// How far along an arrival stage is. `checkedIn` outranks both even
+    /// though a device may not publish it — a payload from an older build
+    /// could still carry it, and ranking it correctly costs one line.
+    private static func rank(_ stage: ArrivalStage) -> Int {
+        switch stage {
+        case .onTheWay:  return 0
+        case .atTheGym:  return 1
+        case .checkedIn: return 2
         }
     }
 
