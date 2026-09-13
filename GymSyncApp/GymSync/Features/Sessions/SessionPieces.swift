@@ -1078,3 +1078,65 @@ struct CrewWeekStrip: View {
         }
     }
 }
+
+// MARK: - Check in
+
+/// The gold Check In control, lifted out of the lobby's foot so the warm-up
+/// screen presses the same button (plan task S9).
+///
+/// **GOLD'S SECOND JOB, ONCE** (design rule 2). Gold has exactly two: the
+/// week-streak number, and "the window is open, act now". This is the second,
+/// and it is the only gold anywhere in Phase A — which is also why it is one
+/// component rather than two drawings: a second copy is a second chance for
+/// one of them to stop being gold.
+///
+/// It renders three states and no fourth: checking in, waiting for the window
+/// (with the time it opens), and open. The caller owns `canCheckIn`,
+/// `checkInOpensAtText` and the tap, exactly as `LobbyView` computed them
+/// before this moved.
+struct SessionCheckInControl: View {
+    /// HomeView's ready-state palette (`goldTop`/`goldInk`) — the fixed STATUS
+    /// colour. The lip derives from the face, never a lighter tint.
+    static let gold = Color.gsHex(0xF6C945)
+    static let goldInk = Color.gsHex(0x261A02)
+
+    let isCheckingIn: Bool
+    let canCheckIn: Bool
+    /// `"7:40 AM"` — empty when the session has no scheduled time, which is
+    /// the fail-open case `canCheckIn` already answers true for.
+    let opensAtText: String
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack {
+                if isCheckingIn {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(Self.goldInk)
+                    Text("Checking in…")
+                        .font(GSFont.bold(15, relativeTo: .body))
+                } else if !canCheckIn {
+                    Image(systemName: "clock")
+                        .font(.system(size: 15))
+                    Text("Check-in opens at \(opensAtText)")
+                        .font(GSFont.bold(15, relativeTo: .body))
+                } else {
+                    Image(systemName: "location.circle.fill")
+                        .font(.system(size: 15))
+                    Text("Check In")
+                        .font(GSFont.bold(15, relativeTo: .body))
+                }
+                Spacer()
+            }
+            .foregroundStyle(Self.goldInk)
+            .padding(.horizontal, 16)
+            // 8.5 pt vertical: content + 17 + the 7 pt lip keeps the button's
+            // exact footprint from before it was lifted.
+            .padding(.vertical, 8.5)
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.gs3D(face: Self.gold, cornerRadius: GSMetrics.radiusSm))
+        .disabled(isCheckingIn || !canCheckIn)
+    }
+}

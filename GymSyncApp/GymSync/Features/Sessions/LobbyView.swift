@@ -761,7 +761,10 @@ struct LobbyView: View {
     /// .navigationTitle("") calls are no-ops outside a stack, and its
     /// chat/detail sheets carry their own stacks).
     private var liveSessionSheetContent: some View {
-        SessionInProgressView(session: effectiveSession, participants: participants)
+        // `SessionRunnerView`, not `SessionInProgressView`: the warm-up phase
+        // is a SCREEN now, not a page inside the live view (plan task S9), and
+        // the runner is the router that decides which one the session is on.
+        SessionRunnerView(session: effectiveSession, participants: participants)
             .id(effectiveSession.id)
     }
 
@@ -1145,53 +1148,19 @@ struct LobbyView: View {
     // named two acts in one label; a button says exactly what happens (rule
     // 9), so it says Start and the count is the line beneath it.
 
-    /// Check-in gold — HomeView's ready-state palette (`goldTop`/`goldInk`),
-    /// the fixed STATUS color that means "check-in, act now" and nothing
-    /// else. The lobby's Check In button is the check-in action itself, so
-    /// it wears the gold face (3D pass 2026-08); the lip derives from the
-    /// face — never a lighter tint.
-    private static let checkInGold = Color.gsHex(0xF6C945)
-    private static let checkInGoldInk = Color.gsHex(0x261A02)
-
     private var actionBar: some View {
         VStack(spacing: 0) {
             GSDivider()
 
             VStack(spacing: 8) {
-                // Check-in button (if not yet checked in)
+                // Check in — the gold control, now shared with the warm-up
+                // screen (plan task S9) so gold's second job is one object.
                 if !isCheckedIn {
-                    Button {
-                        Task { await initiateCheckIn() }
-                    } label: {
-                        HStack {
-                            if isCheckingIn {
-                                ProgressView()
-                                    .controlSize(.small)
-                                    .tint(Self.checkInGoldInk)
-                                Text("Checking in…")
-                                    .font(GSFont.bold(15, relativeTo: .body))
-                            } else if !canCheckIn {
-                                Image(systemName: "clock")
-                                    .font(.system(size: 15))
-                                Text("Check-in opens at \(checkInOpensAtText)")
-                                    .font(GSFont.bold(15, relativeTo: .body))
-                            } else {
-                                Image(systemName: "location.circle.fill")
-                                    .font(.system(size: 15))
-                                Text("Check In")
-                                    .font(GSFont.bold(15, relativeTo: .body))
-                            }
-                            Spacer()
-                        }
-                        .foregroundStyle(Self.checkInGoldInk)
-                        .padding(.horizontal, 16)
-                        // 8.5pt vertical (was 12): content + 17 + the 7pt
-                        // lip keeps the button's exact prior footprint.
-                        .padding(.vertical, 8.5)
-                        .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.gs3D(face: Self.checkInGold, cornerRadius: GSMetrics.radiusSm))
-                    .disabled(isCheckingIn || !canCheckIn)
+                    SessionCheckInControl(
+                        isCheckingIn: isCheckingIn,
+                        canCheckIn: canCheckIn,
+                        opensAtText: checkInOpensAtText,
+                        onTap: { Task { await initiateCheckIn() } })
                 }
 
                 // START.
