@@ -68,11 +68,22 @@ struct RoundWaitView: View {
     /// (fix round 1 / F2, ruling R-B12).
     var voice: VoiceFoot = VoiceFoot()
 
+    /// THE HOLD (plan task S7, spec §9a). Nil until one lifter is past the
+    /// threshold — which is most of the time, and the screen must read the
+    /// same with it as without it, so the line goes at the TOP of the scroll
+    /// rather than between two cards that would jump apart to admit it.
+    var skip: SkipOffer?
+
     var onCoachTap: () -> Void = {}
     var onReaction: (String) -> Void = { _ in }
+    var onSkip: () -> Void = {}
 
     var body: some View {
         RoundPage(kicker: kicker, title: title) {
+            if let skip {
+                SkipOfferLine(offer: skip, onTap: onSkip)
+            }
+
             HStack(alignment: .top, spacing: 10) {
                 ForEach(stations) { station in
                     StationCard(model: station)

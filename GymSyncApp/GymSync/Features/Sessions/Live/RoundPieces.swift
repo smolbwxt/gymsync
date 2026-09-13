@@ -73,14 +73,64 @@ enum RoundCopy {
         crew.isEmpty ? "ROUND \(round)" : "\(crew.uppercased()) · ROUND \(round)"
     }
 
+    /// `"2:31"` — a duration, minutes and padded seconds. Negative reads
+    /// `0:00`: nothing in this app has waited a negative amount of time.
+    static func clock(_ seconds: TimeInterval) -> String {
+        let whole = Int(max(0, seconds))
+        return "\(whole / 60):\(String(format: "%02d", whole % 60))"
+    }
+
     /// `"1:42"` — the rest clock. `WarmUpGate.elapsed(since:now:)`'s law,
     /// verbatim: nil and negative both read `0:00`, because a rest that has
     /// not started has not run backwards.
     static func elapsed(since startedAt: Date?, now: Date) -> String {
         guard let startedAt else { return "0:00" }
-        let seconds = Int(max(0, now.timeIntervalSince(startedAt)))
-        return "\(seconds / 60):\(String(format: "%02d", seconds % 60))"
+        return clock(now.timeIntervalSince(startedAt))
     }
+
+    // MARK: - The hold (spec §9a, owner decision 11, plan task S7)
+
+    /// `Sam's still resting — go ahead without them?`
+    ///
+    /// The spec writes "without him". The app knows no pronoun for anybody —
+    /// `profiles` has no gender column and inventing one from a name is how
+    /// software insults people — so the production string is THEM, and
+    /// `RoundWaitCopyTests` pins it so a later edit cannot quietly guess.
+    static func skipOffer(name: String) -> String {
+        "\(name)'s still resting — go ahead without them?"
+    }
+
+    /// `Waited 2:31 — past the 2:24 the crew's own rest sets.`
+    ///
+    /// §9a's rule made legible: the threshold is not a policy number, it is
+    /// this crew's own measured rest × 1.5 (floored at 90 s, capped at 180).
+    /// Printing both figures is what stops the offer reading as the app
+    /// deciding somebody is slow.
+    static func skipWaited(waited: TimeInterval, threshold: TimeInterval) -> String {
+        "Waited \(clock(waited)) — past the \(clock(threshold)) the crew's own rest sets."
+    }
+
+    /// What the skip costs the lifter: nothing. Their set stays in their plan
+    /// and they rejoin at the top of the next round — which is already true
+    /// of the data model, and the task's job is to keep it true.
+    static let skipConsequence = "Nothing is recorded against them. They rejoin next round."
+
+    /// The held lifter's own control (owner decision 11). Once per exercise.
+    static let needAMinute = "I need a minute"
+
+    /// The line under it, so the tap says exactly what happens (rule 9).
+    static let needAMinuteDetail = "Adds a minute before the crew is offered a skip."
+
+    /// What "I need a minute" puts on the wire.
+    ///
+    /// The EXISTING reaction channel (plan task S7: "no new channel"), so
+    /// this is a reaction payload rather than a new broadcast kind. An
+    /// hourglass, because a client that has not been taught the marker floats
+    /// a harmless glyph rather than raw text — and because the crew seeing an
+    /// hourglass is, in the moment, the message. It is not one of the four
+    /// pills `ReactionStrip` offers, so no tap can send it by accident.
+    static let minuteMarker = "⏳"
+}
 
     /// `WAITING ON SAM AND LEE` — the foot's gated control.
     ///
@@ -316,6 +366,118 @@ struct GatedControl: View {
         .frame(maxWidth: .infinity)
         .gs3DCard(cornerRadius: GSMetrics.radiusSm, lipHeight: 5)
     }
+}
+
+// MARK: - The skip offer
+
+/// The three lines the crew is offered when one lifter is past the threshold
+/// (plan task S7).
+struct SkipOffer: Equatable {
+    /// The held lifter, first name — the crew's own word for them.
+    let name: String
+    /// How long the crew has waited, in seconds. A NUMBER, not a string:
+    /// `RoundCopy.skipWaited` is the one place it becomes `2:31`, and that
+    /// law is what the copy test asserts.
+    let waited: TimeInterval
+    /// The threshold they are past, in seconds — `RoundHold`'s own answer for
+    /// this crew, never a literal.
+    let threshold: TimeInterval
+    /// True when the tap can actually move the crew on. See
+    /// `SkipOfferLine`'s doc comment: `public.advance_round` has no skip
+    /// path, and `advance_turn` authorises only the current lifter and the
+    /// ORGANIZER, so for everybody else the same three lines render as a
+    /// NOTE rather than as a button that would do nothing.
+    var isActionable: Bool = false
+}
+
+/// ONE QUIET LINE, NEVER A DIALOG (spec §9a). Nothing happens on its own.
+///
+/// Accent INK on a `surface` strip with an accent hairline — an invitation,
+/// not a filled slab, which would read as the crew's next step rather than as
+/// an option. It is the round wait's second accent-bearing element and the
+/// only one on screen when it shows, because at the threshold the ring on the
+/// held lifter and this line are the same fact.
+///
+/// **WHY IT IS NOT ALWAYS TAPPABLE.** Spec §9a says any crewmate may tap it,
+/// and the plan says the tap calls `advanceRound`. The shipped
+/// `public.advance_round` (plan task D3) cannot do it: its close predicate
+/// requires a non-penalty set from EVERY present lifter since the round
+/// opened, so with one lifter unlogged it returns the current round unchanged
+/// — that migration's own header says "there is no skip". The only shipped
+/// call that moves a rotation off a lifter is `advance_turn`, which
+/// authorises the current lifter and the organizer and nobody else
+/// (`20260801000001_advance_turn_version_guard.sql:84-86`). So the offer is a
+/// BUTTON for whoever the server will actually obey and a NOTE for everyone
+/// else — a line that looked tappable and did nothing would be the worse of
+/// the two lies. The gap is recorded for Stream D.
+struct SkipOfferLine: View {
+    @Environment(\.gsTheme) private var theme
+
+    let offer: SkipOffer
+    var onTap: () -> Void = {}
+
+    var body: some View {
+        Button(action: onTap) {
+            lines
+                .roundStrip()
+                .overlay(RoundedRectangle(cornerRadius: 14)
+                    .strokeBorder(theme.accent, lineWidth: 1))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!offer.isActionable)
+        .accessibilityHint(offer.isActionable
+                           ? "Moves the crew on without them"
+                           : "Waiting on them — only the session's organizer can move the crew on")
+    }
+
+    private var lines: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 8) {
+                Image(systemName: "forward.end")
+                    .font(.system(size: 12, weight: .bold))
+                Text(RoundCopy.skipOffer(name: offer.name))
+                    .font(GSFont.bodyMedium(14, relativeTo: .subheadline))
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(theme.accent)
+
+            Text(RoundCopy.skipWaited(waited: offer.waited, threshold: offer.threshold))
+                .font(GSFont.body(11.5, relativeTo: .caption2))
+                .foregroundStyle(theme.neutral700)
+            Text(RoundCopy.skipConsequence)
+                .font(GSFont.body(11.5, relativeTo: .caption2))
+                .foregroundStyle(theme.neutral500)
+        }
+    }
+}
+
+// MARK: - The strip
+
+/// The chrome a strip wears on these screens: `theme.surface`, 14 pt — a
+/// strip, not a card (rule 1). `SessionPieces`' own `sessionStrip()` is
+/// file-private to that file; this is the same five values, and the two are
+/// asserted identical by eye rather than by a shared symbol because making
+/// the Phase A modifier internal is a change to a frozen file that buys one
+/// call site.
+struct RoundStripModifier: ViewModifier {
+    @Environment(\.gsTheme) private var theme
+
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(theme.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+}
+
+extension View {
+    /// Internal, not file-private: spotter mode (plan task S8) is a second
+    /// file that needs the same five values.
+    func roundStrip() -> some View { modifier(RoundStripModifier()) }
 }
 
 // MARK: - The station card

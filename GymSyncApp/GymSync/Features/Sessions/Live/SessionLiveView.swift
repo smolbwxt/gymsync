@@ -191,6 +191,16 @@ struct SessionLiveView: View {
     /// two different meanings. Cleared optimistically at the start of every
     /// `logSetAndAdvance` call, same convention as `logSetErrorText`.
     @State private var didQueueSetOffline = false
+    /// "I NEED A MINUTE", ONCE PER EXERCISE (plan task S7, owner decision
+    /// 11). The exercise ids the held lifter has already spent their minute
+    /// on -- a set rather than a flag, because the routine moves on and the
+    /// next exercise is a fresh minute.
+    @State private var minuteTakenForExercise: Set<UUID> = []
+    /// Extensions this client has SEEN this round, its own included. Any
+    /// count above one buys nothing (`RoundHold.threshold(_:extensionsTaken:)`
+    /// refuses to stack), which is exactly why a double-counted self-echo is
+    /// harmless -- and why this needs no de-duplication.
+    @State private var minuteExtensionsThisRound = 0
     /// COACH'S DOOR (plan task S6, spec §3.6). The lobby's pair, mirrored —
     /// see `openCoachThread()` below for why the thread is resolved on tap
     /// and never on load.
@@ -1685,6 +1695,7 @@ struct SessionLiveView: View {
                 burpeeDebtStrip
                 Color.clear.frame(height: 6)
             }
+            needAMinuteRow
             voiceNotices
             turnMicRail
             Color.clear.frame(height: 6)
@@ -1971,6 +1982,13 @@ struct SessionLiveView: View {
         // policy in 20260803000003, this covers the mid-session swap).
         .onChange(of: liveSession.routineID) { _, _ in
             Task { await reload() }
+        }
+        // A new round is a new wait (plan task S7). The minute a lifter took
+        // in round 3 must not still be holding the crew off in round 4; the
+        // once-per-exercise gate is deliberately NOT reset here, because a
+        // minute is once per exercise and an exercise outlives a round.
+        .onChange(of: liveSession.round) { _, _ in
+            minuteExtensionsThisRound = 0
         }
         // Rest buzz (owner 2026-08-14) — one observation point for the
         // self-rotation interlude, same shape as solo's restEndAt wire.
@@ -3572,6 +3590,14 @@ struct SessionLiveView: View {
             onSoundboard: { _, _ in },
             onReaction: { _, emoji in
                 Task { @MainActor in
+                    // "I need a minute" rides this channel (plan task S7):
+                    // the marker extends THIS client's threshold as well as
+                    // floating its glyph, so the whole crew's skip offer
+                    // moves out together. Any count above one buys nothing,
+                    // so a self-echo double-count is harmless.
+                    if emoji == RoundCopy.minuteMarker {
+                        minuteExtensionsThisRound += 1
+                    }
                     await showReactionOverlay(emoji)
                 }
             },
@@ -3950,8 +3976,10 @@ struct SessionLiveView: View {
                 dockNames: otherParticipantNames,
                 reactionEmojis: reactionEmojis,
                 voice: voiceFoot,
+                skip: skipOffer(now: context.date),
                 onCoachTap: { Task { await openCoachThread() } },
-                onReaction: { emoji in Task { await tapReaction(emoji: emoji) } })
+                onReaction: { emoji in Task { await tapReaction(emoji: emoji) } },
+                onSkip: { Task { await skipHeldLifter() } })
         }
     }
 
@@ -4145,6 +4173,174 @@ struct SessionLiveView: View {
             errorText = error.errorDescription
         } catch {
             errorText = error.localizedDescription
+        }
+    }
+
+    // MARK: - The hold, the skip and the minute (spec §9a, plan task S7)
+
+    /// The present crew's own measured rests, this session.
+    ///
+    /// The WHOLE session and not the round: the threshold wants each lifter's
+    /// typical pace, and one round is one data point. `allSessionSets` is the
+    /// uncapped `logged_at ASC` array -- never `feedSets`, which caps at 30
+    /// rows across all participants.
+    private var sessionRestMedians: [UUID: TimeInterval] {
+        RestMeasure.medians(from: allSessionSets,
+                            since: liveSession.startedAt ?? .distantPast)
+    }
+
+    /// The single lifter this round is still waiting on, if there is exactly
+    /// one. More than one and nobody is being held; none and the round closes
+    /// on its own.
+    private var heldLifter: (participant: SessionParticipant, profile: Profile)? {
+        let outstanding = presentRotation.filter { !hasLoggedThisRound($0.participant.userID) }
+        return outstanding.count == 1 ? outstanding.first : nil
+    }
+
+    /// When the crew began waiting: the SECOND-TO-LAST log of the round, from
+    /// `allSessionSets` and never from a view timer (`RoundHold`'s own law).
+    private var holdStartedAt: Date? {
+        let since = liveSession.roundStartedAt
+        let times = presentRotation.compactMap { row -> Date? in
+            allSessionSets
+                .filter {
+                    $0.userID == row.participant.userID && !$0.isPenalty
+                        && (since.map { start in $0.loggedAt >= start } ?? true)
+                }
+                .map(\.loggedAt)
+                .max()
+        }
+        return RoundHold.holdStartedAt(roundLogTimes: times,
+                                       presentCount: presentRotation.count)
+    }
+
+    /// The held lifter's own median, or the CREW'S when nobody has measured
+    /// them yet -- a lifter with one log has no median (`RestMeasure`'s law),
+    /// and falling back to zero would put the bare 90 s floor on the person
+    /// the crew is waiting for. With no crew median either, zero floors it,
+    /// which is the honest answer for a session nobody has rested in yet.
+    private var heldMedianRest: TimeInterval {
+        let medians = sessionRestMedians
+        if let held = heldLifter, let mine = medians[held.participant.userID] { return mine }
+        guard !medians.isEmpty else { return 0 }
+        return medians.values.reduce(0, +) / Double(medians.count)
+    }
+
+    /// The three lines, once the crew is past the threshold. Nil the rest of
+    /// the time, which is nearly always.
+    private func skipOffer(now: Date) -> SkipOffer? {
+        guard let held = heldLifter, let since = holdStartedAt else { return nil }
+        let median = heldMedianRest
+        guard RoundHold.isHeld(since: since, now: now,
+                               medianRestSeconds: median,
+                               extensionsTaken: minuteExtensionsThisRound) else { return nil }
+        return SkipOffer(
+            name: SessionCopy.firstName(held.profile.username),
+            waited: now.timeIntervalSince(since),
+            threshold: RoundHold.threshold(medianRestSeconds: median,
+                                           extensionsTaken: minuteExtensionsThisRound),
+            isActionable: isOrganizer)
+    }
+
+    /// The crew's tap. NOTHING HAPPENS ON ITS OWN (spec §9a) and nothing is
+    /// recorded against the skipped lifter: their set stays in their plan,
+    /// no `skipped` flag is written, no penalty row is inserted, and they
+    /// rejoin at the top of the next round. The task's job here is to not add
+    /// anything that would make that untrue, and it adds nothing.
+    ///
+    /// TWO CALLS, AND ONLY ONE OF THEM CAN MOVE THE CREW.
+    /// `public.advance_round` (plan task D3) closes a round only when every
+    /// present lifter has logged, so with one lifter out it returns the
+    /// current round unchanged -- a success, and a no-op. `advance_turn` is
+    /// the shipped call that moves a rotation off a lifter, and it authorises
+    /// the current lifter and the ORGANIZER only
+    /// (`20260801000001_advance_turn_version_guard.sql:84-86`), which is why
+    /// `SkipOffer.isActionable` is the organizer's alone. Both are safe to
+    /// repeat and safe to lose.
+    ///
+    /// THE ROUND COUNTER STILL CANNOT PASS A LIFTER WHO NEVER LOGS. That is a
+    /// server-side gap -- D3's own header says "there is no skip" -- and
+    /// closing it needs a Stream D change this task may not write
+    /// (constraint 2). Recorded in the report.
+    @MainActor
+    private func skipHeldLifter() async {
+        do {
+            if isOrganizer {
+                try await SessionRepository.advanceTurn(sessionID: liveSession.id)
+            }
+            _ = try await SessionRepository.advanceRound(sessionID: liveSession.id,
+                                                         expectedRound: liveSession.round)
+        } catch let error as GymSyncError {
+            errorText = error.errorDescription
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    /// Is "I need a minute" mine to tap right now?
+    ///
+    /// Only in Rounds, only when the crew is genuinely waiting on ME, and only
+    /// once for this exercise. It appears BEFORE the threshold on purpose --
+    /// the point is to head the offer off, not to answer it after the fact.
+    private var canTakeAMinute: Bool {
+        guard style == .rounds, let selfID, let exercise = currentExerciseForSheet else { return false }
+        guard heldLifter?.participant.userID == selfID else { return false }
+        return !minuteTakenForExercise.contains(exercise.id)
+    }
+
+    /// Spend it: remember the exercise, extend this client's own threshold,
+    /// and tell the crew.
+    ///
+    /// The message rides the EXISTING reaction channel (plan task S7 -- no new
+    /// channel, no new broadcast kind), carrying `RoundCopy.minuteMarker`.
+    /// Every client, this one included through the self-echo, reads that
+    /// marker in `subscribeBroadcast` and extends its own threshold, so the
+    /// whole crew's offer moves out together. Double-counting is harmless:
+    /// `RoundHold.threshold(_:extensionsTaken:)` refuses to stack.
+    @MainActor
+    private func takeAMinute() async {
+        guard let exercise = currentExerciseForSheet else { return }
+        minuteTakenForExercise.insert(exercise.id)
+        minuteExtensionsThisRound += 1
+        await broadcastService.sendReaction(sessionID: liveSession.id,
+                                            emoji: RoundCopy.minuteMarker)
+    }
+
+    /// The held lifter's own control, on their own screen -- the my-turn
+    /// page's chrome, because in Rounds the last outstanding lifter is the one
+    /// holding the turn.
+    ///
+    /// A FLAT, QUIET row above the mic rail. It is not a second accent (rule
+    /// 2): the my-turn page already spends its accent on LOG SET & PASS, and
+    /// asking for a minute is not the act the screen is for.
+    @ViewBuilder
+    private var needAMinuteRow: some View {
+        if canTakeAMinute {
+            Button {
+                Task { await takeAMinute() }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "hourglass")
+                        .font(.system(size: 12, weight: .bold))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(RoundCopy.needAMinute)
+                            .font(GSFont.bold(13, relativeTo: .subheadline))
+                        Text(RoundCopy.needAMinuteDetail)
+                            .font(GSFont.body(11, relativeTo: .caption2))
+                            .foregroundStyle(theme.neutral500)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(theme.neutral700)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(theme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .padding(.horizontal, 16)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
     }
 

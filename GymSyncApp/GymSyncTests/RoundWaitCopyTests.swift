@@ -199,4 +199,84 @@ final class RoundWaitCopyTests: XCTestCase {
     func testTheReactionStripHasItsFourPills() {
         XCTAssertEqual(LiveFixtures.roundWait.reactionEmojis, ["🔥", "💪", "😂", "👏"])
     }
+
+    // MARK: - The hold's copy (spec §9a, plan task S7)
+
+    /// THE PRONOUN. The spec writes "without him"; the app knows no pronoun
+    /// for anybody — `profiles` has no gender column, and guessing one from a
+    /// name is how software insults people — so production says THEM, and
+    /// this assertion is what stops a later edit guessing.
+    func testTheSkipOfferSaysThem() {
+        XCTAssertEqual(RoundCopy.skipOffer(name: "Sam"),
+                       "Sam's still resting — go ahead without them?")
+    }
+
+    /// §9a's rule made legible: both figures, so the offer reads as the
+    /// crew's own measured rest and not as the app deciding somebody is slow.
+    func testTheWaitedLinePrintsBothFigures() {
+        XCTAssertEqual(RoundCopy.skipWaited(waited: 151, threshold: 144),
+                       "Waited 2:31 — past the 2:24 the crew's own rest sets.")
+    }
+
+    /// The skip costs the lifter nothing, and the line says so — no penalty
+    /// row, no `skipped` flag, their set still in their plan.
+    func testTheConsequenceLineIsTheWholeCost() {
+        XCTAssertEqual(RoundCopy.skipConsequence,
+                       "Nothing is recorded against them. They rejoin next round.")
+    }
+
+    /// The held lifter's own control, and the line under it that says exactly
+    /// what the tap does (rule 9).
+    func testTheMinutesCopy() {
+        XCTAssertEqual(RoundCopy.needAMinute, "I need a minute")
+        XCTAssertEqual(RoundCopy.needAMinuteDetail,
+                       "Adds a minute before the crew is offered a skip.")
+    }
+
+    /// The marker rides the reaction channel, so it must not be one of the
+    /// pills a crewmate can tap — otherwise a 🔥 would buy somebody a minute.
+    func testTheMinuteMarkerIsNotAReactionPill() {
+        XCTAssertFalse(LiveFixtures.reactionEmojis.contains(RoundCopy.minuteMarker))
+    }
+
+    func testDurationsAreMinutesAndPaddedSeconds() {
+        XCTAssertEqual(RoundCopy.clock(0), "0:00")
+        XCTAssertEqual(RoundCopy.clock(9), "0:09")
+        XCTAssertEqual(RoundCopy.clock(151), "2:31")
+        XCTAssertEqual(RoundCopy.clock(-30), "0:00")
+    }
+
+    // MARK: - The hold's world (frame 138)
+
+    /// Frame 138 is the SAME screen with the line present — and with ONE
+    /// lifter out, not two: `RoundHold.holdStartedAt` returns nil while two
+    /// are outstanding, so a world that showed the offer over an unticked Lee
+    /// would contradict the law the frame illustrates.
+    func testTheHoldWorldIsTheSameScreenWithOneLifterOut() {
+        let hold = LiveFixtures.roundHold
+        let wait = LiveFixtures.roundWait
+        XCTAssertEqual(hold.kicker, wait.kicker)
+        XCTAssertEqual(hold.plan, wait.plan)
+        XCTAssertEqual(hold.rest, wait.rest)
+        XCTAssertEqual(hold.waitingOn, ["Sam"])
+        XCTAssertNil(wait.skip)
+        XCTAssertNotNil(hold.skip)
+        let unticked = hold.stations.flatMap(\.lifters).filter { !$0.hasLogged }
+        XCTAssertEqual(unticked.count, 1)
+        XCTAssertEqual(unticked.first?.id, LiveFixtures.samID)
+    }
+
+    /// The threshold on the frame is `RoundHold`'s answer for a 96 s median —
+    /// `1.5 × 96 = 144`, between the floor and the cap — so the frame shows
+    /// the MULTIPLIER doing the work rather than a clamp. Never a literal.
+    func testTheHoldWorldsNumbersComeFromRoundHold() {
+        let skip = LiveFixtures.skipOffer
+        XCTAssertEqual(skip.threshold, RoundHold.threshold(medianRestSeconds: 96))
+        XCTAssertEqual(skip.threshold, 144)
+        XCTAssertGreaterThan(skip.waited, skip.threshold)
+        XCTAssertEqual(RoundCopy.skipWaited(waited: skip.waited, threshold: skip.threshold),
+                       "Waited 2:31 — past the 2:24 the crew's own rest sets.")
+        XCTAssertEqual(RoundCopy.skipOffer(name: skip.name),
+                       "Sam's still resting — go ahead without them?")
+    }
 }

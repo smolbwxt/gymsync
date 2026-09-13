@@ -56,4 +56,49 @@ enum RoundHold {
         let base = threshold(medianRestSeconds: medianRestSeconds)
         return extensionsTaken > 0 ? base + extensionSeconds : base
     }
+
+    // MARK: - When the wait started (plan task S7)
+
+    /// The moment the crew began waiting on ONE lifter: the SECOND-TO-LAST
+    /// log of the round.
+    ///
+    /// Derived from the logs, never from a timer that starts when a view
+    /// appears (spec §9a, and plan task S7 says so in as many words). A view
+    /// timer measures how long a phone has been on a screen; the crew is held
+    /// from the moment everybody but one is done, whoever is looking at what.
+    ///
+    /// NIL WHILE MORE THAN ONE LIFTER IS OUT. A crew waiting on two people is
+    /// not being held by one, and there is nobody to name in the offer. Nil
+    /// too once everybody has logged — then the round closes on its own and
+    /// no skip is needed.
+    ///
+    /// `presentCount` is the PRESENT crew — `check_in_state IN
+    /// ('online','ready','late')`, ruling R-B7 — the same set
+    /// `public.advance_round` counts, because a round that waited on an
+    /// invited lifter who never arrived would be held forever.
+    ///
+    /// **A lifter who arrives MID-ROUND joins that set** (R-B7), so
+    /// `presentCount` rises and this correctly goes nil again: the round
+    /// LENGTHENS rather than closing, and the wait must stop reading as a
+    /// hold on the person who was nearly last.
+    static func holdStartedAt(roundLogTimes: [Date], presentCount: Int) -> Date? {
+        guard presentCount >= 2, roundLogTimes.count == presentCount - 1 else { return nil }
+        return roundLogTimes.max()
+    }
+
+    /// Has the crew waited past the threshold?
+    ///
+    /// One function so the round wait and any later caller cannot disagree
+    /// about the comparison — `>=`, so the offer appears AT the threshold and
+    /// not a second after it.
+    static func isHeld(since holdStartedAt: Date?,
+                       now: Date,
+                       medianRestSeconds: TimeInterval,
+                       extensionsTaken: Int) -> Bool {
+        guard let holdStartedAt else { return false }
+        let waited = now.timeIntervalSince(holdStartedAt)
+        guard waited >= 0 else { return false }
+        return waited >= threshold(medianRestSeconds: medianRestSeconds,
+                                   extensionsTaken: extensionsTaken)
+    }
 }

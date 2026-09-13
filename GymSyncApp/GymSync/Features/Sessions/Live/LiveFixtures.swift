@@ -37,6 +37,9 @@ struct RoundWaitWorld {
     let waitingOn: [String]
     let dockNames: [String]
     let reactionEmojis: [String]
+    /// Nil in the ordinary round wait; frame 138 is the same world with it
+    /// present (plan task S7).
+    var skip: SkipOffer? = nil
 }
 
 enum LiveFixtures {
@@ -123,6 +126,20 @@ enum LiveFixtures {
         ],
         liftingID: nil)
 
+    /// Rack B in the HOLD world (frame 138): Lee has logged too, so Sam is
+    /// the ONE lifter still out. `RoundHold.holdStartedAt` returns nil while
+    /// two are outstanding, so a frame that showed the offer over an unticked
+    /// Lee would contradict the law it is meant to illustrate.
+    static let rackBHold = StationCard.Model(
+        name: "RACK B",
+        lifters: [
+            StationCard.Lifter(id: leeID, name: "Lee Vance", isYou: false,
+                               hasLogged: true, scaleDown: nil),
+            StationCard.Lifter(id: moID, name: "Mo Adeyemi", isYou: false,
+                               hasLogged: true, scaleDown: nil),
+        ],
+        liftingID: nil)
+
     // MARK: - The rest
 
     /// 128 falling to 96 across the rest, normalized the way
@@ -165,4 +182,37 @@ enum LiveFixtures {
         waitingOn: ["Sam", "Lee"],
         dockNames: dockNames,
         reactionEmojis: reactionEmojis)
+
+    /// `session-round-skip` (frame 138): THE SAME SCREEN with the quiet line
+    /// present, and one lifter out instead of two — a crew waiting on two
+    /// people is not being held by one, so a world that showed the offer over
+    /// a two-name gate would contradict `RoundHold.holdStartedAt`.
+    ///
+    /// Sam is the one still resting. 151 s waited against a 144 s threshold:
+    /// `RoundHold.threshold(medianRestSeconds: 96)` is `1.5 × 96 = 144`,
+    /// between the 90 s floor and the 180 s cap, so the frame shows the
+    /// multiplier doing the work rather than a clamp. `2:31` past `2:24`,
+    /// which is the reference frame's own pair.
+    ///
+    /// `isActionable: true` — the frame is the organizer's, the one lifter
+    /// the server lets move the crew on. See `SkipOfferLine`.
+    static let skipOffer = SkipOffer(
+        name: "Sam",
+        waited: 151,
+        threshold: RoundHold.threshold(medianRestSeconds: 96),
+        isActionable: true)
+
+    static let roundHold = RoundWaitWorld(
+        kicker: RoundCopy.kicker(crew: crewName, round: 3),
+        title: "The round",
+        stations: [rackA, rackBHold],
+        rest: rest,
+        planKicker: planKicker,
+        rungLine: rungLine,
+        plan: plan,
+        coach: coach,
+        waitingOn: ["Sam"],
+        dockNames: dockNames,
+        reactionEmojis: reactionEmojis,
+        skip: skipOffer)
 }
