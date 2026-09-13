@@ -437,7 +437,9 @@ jobs:
           # dropped CONCEPTUALLY by the owner's colour reversal but keeps its
           # id and its capture so the pair can still be compared, so it
           # subtracts nothing from the count.
-          FLOOR=137
+          # Phase A (2026-09-13): six production session frames in (129-134), ten design-round
+          # variation frames out (106-111, 120-122, 127): 137 -> 133.
+          FLOOR=133
           # `|| true` + the `:-0` default for the same `set -eo pipefail`
           # reason as the simulator picker above: a missing $SCREENS makes
           # `find` exit 1, which would kill the step before it printed the
