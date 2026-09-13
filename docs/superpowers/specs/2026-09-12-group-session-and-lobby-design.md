@@ -63,7 +63,9 @@ geofence and the lobby's travel override; **checked in is ready** — there is n
 ready tick); **Talk to Coach** (this session's focus, a pointed form question, a demo video — one entry row);
 **the session** (the whole plan: every exercise with sets × reps @ load, today's rung line on top, a Swap control
 per row for the leader); **how the crew feels** (each lifter's self-reported energy, 1–5, shown as a group, with
-your own "How are you feeling?" control until you answer); the **talk dock** (push-to-talk stays, as shipped in
+your own "How are you feeling?" control until you answer); **the crew's week** (a strip under the energy widget:
+the crew's planned pace for the week against sessions done, in words and one small line, with a chip per lifter —
+owner decision 21; Phase A rendered it on frame 135, Phase B wires its read); the **talk dock** (push-to-talk stays, as shipped in
 `PTTDockRow`); and **Start**, captioned with the count (`2 of 4 checked in`). **Start** is the leader's tap, or
 fires when everyone is checked in (consensus). "Start anyway" stays for the leader when someone is late.
 
@@ -191,6 +193,8 @@ shown — Together's bars and readouts, the spotter's crew readouts, the recover
   unused.
 - Lobby readiness: `session_participants.energy smallint` (1–5, null until reported) written by the lifter from the
   lobby; read by the crew with the existing participant policy.
+- The crew's week: an RPC `crew_week(session_id)` (SECURITY DEFINER, participants only) returning, per participant,
+  sessions done this week and the weekly session goal — the one cross-member weekly read the strip needs (Phase B).
 - The session's Coach thread: the existing coach-chat thread model keyed by `session_id`, with a read policy for
   the session's participants and the any-member-Pro gate evaluated server-side.
 - The recovery curve reads the heart-rate samples the watch bridge already records for the rest; no new store.
@@ -272,3 +276,8 @@ rule follows it.
 19. Every crew session has one shared Coach thread, unlocked while any member is Pro (§3.6).
 20. When everyone is in, the arrival track itself turns accent, reads "Everyone's here. Let's work." and starts
     the session; the bottom Start becomes a neutral secondary.
+21. THE CREW'S WEEK stays (owner, 2026-09-13, on the Phase A frame 135): the strip is part of the lobby; Phase B
+    wires `crew_week(session_id)` so production shows it.
+22. `profiles.pro_until` stays readable by any authenticated user (owner and controller, 2026-09-13): an
+    entitlement date, not payment data; the any-member-Pro gate is evaluated server-side regardless; revisit only
+    if a paywall or social-pressure concern appears.
