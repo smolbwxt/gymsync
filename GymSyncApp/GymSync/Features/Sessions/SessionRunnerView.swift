@@ -265,13 +265,23 @@ struct SessionRunnerView: View {
 
     /// `START LIFTING`.
     ///
-    /// THE RPCs ARE UNCHANGED (constraint 18). In the crew frame this is
-    /// `markWarmupReady`; when it returns `true` the vote completed unanimity
-    /// (or lifting had already begun) and the screen hands off. In the SOLO
-    /// frame it is the same call — a party of one satisfies unanimity in one
-    /// call, because `mark_warmup_ready`'s `EXISTS … AND NOT warmup_ready`
-    /// finds nobody — preceded by `start(sessionID:)` when the session is not
-    /// yet `in_progress`.
+    /// THE RPCs ARE UNCHANGED (constraint 18). In the SOLO frame this is
+    /// `markWarmupReady` — a party of one satisfies unanimity in one call,
+    /// because `mark_warmup_ready`'s `EXISTS … AND NOT warmup_ready` finds
+    /// nobody — preceded by `start(sessionID:)` when the session is not yet
+    /// `in_progress`.
+    ///
+    /// In the CREW frame it depends on who taps: the ORGANIZER's tap calls
+    /// `startLifting` (`start_lifting`, the AFK escape hatch,
+    /// `SessionRepository.swift:798-813`) and ends the warm-up for
+    /// everyone regardless of unanimity — restoring the capability
+    /// `GroupSessionLiveView.forceStartLifting()` used to give the leader,
+    /// which S9 removed with the rest of that view's warm-up branch and
+    /// nothing replaced (review push-4/5 finding 3, R-15). A CREWMATE's tap
+    /// still calls `markWarmupReady`: the readiness row and
+    /// `WarmUpGate.leaderNote` are what make that tap cost something,
+    /// unchanged. Not a new `forceStartLifting()` — the same primary, the
+    /// same private method, branched on role.
     @MainActor
     private func startLifting() async {
         isStarting = true
@@ -281,7 +291,11 @@ struct SessionRunnerView: View {
             if effective.state != "in_progress" {
                 try await SessionRepository.start(sessionID: session.id)
             }
-            _ = try await SessionRepository.markWarmupReady(sessionID: session.id)
+            if !isSolo, effective.organizerID == selfID {
+                _ = try await SessionRepository.startLifting(sessionID: session.id)
+            } else {
+                _ = try await SessionRepository.markWarmupReady(sessionID: session.id)
+            }
             if let fresh = try? await SessionRepository.session(id: session.id) {
                 liveSession = fresh
             }
