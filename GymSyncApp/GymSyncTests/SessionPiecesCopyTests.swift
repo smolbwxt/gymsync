@@ -97,4 +97,12 @@ final class SessionPiecesCopyTests: XCTestCase {
         XCTAssertEqual(SessionCopy.firstName("Alex"), "Alex")
         XCTAssertEqual(SessionCopy.firstName(""), "")
     }
+
+    // MARK: - Lateness (review-final.md B2)
+
+    /// SessionArrivalTrack's only lateness signal - never a colour (design
+    /// rule 2: red is errors).
+    func testTheLateCaption() {
+        XCTAssertEqual(SessionCopy.late, "late")
+    }
 }

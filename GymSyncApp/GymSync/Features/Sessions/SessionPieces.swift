@@ -25,6 +25,13 @@ import SwiftUI
 /// hoisted here and asserted in `SessionPiecesCopyTests`. Two surfaces print
 /// several of them and a second copy is a copy that drifts.
 enum SessionCopy {
+    /// The arrival track's caption under a late lifter's tile (spec 3.1's
+    /// late lane, `ArrivalLaw.isLate`). Review-final.md B2: `isLate` had no
+    /// reader anywhere, so a late lifter read identically to one simply not
+    /// yet arrived - this is the only thing that changes, and it is never a
+    /// colour (design rule 2 reserves red for errors).
+    static let late = "late"
+
     /// The plan card's kicker in the lobby (spec §3.1: the whole session).
     static let theSession = "THE SESSION"
     /// The energy card's kicker.
@@ -249,15 +256,29 @@ struct SessionArrivalTrack: View {
                     .strokeBorder(theme.neutral400, lineWidth: 1)
                     .frame(width: Self.avatar, height: Self.avatar)
             } else {
-                HStack(spacing: -8) {
+                HStack(alignment: .top, spacing: -8) {
                     ForEach(people) { person in
-                        GSInitialsAvatar(name: person.name,
-                                         avatarURL: person.avatarURL,
-                                         size: Self.avatar)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: Self.avatarRadius)
-                                    .strokeBorder(theme.surface, lineWidth: 2)
-                            )
+                        VStack(spacing: 2) {
+                            GSInitialsAvatar(name: person.name,
+                                             avatarURL: person.avatarURL,
+                                             size: Self.avatar)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: Self.avatarRadius)
+                                        .strokeBorder(theme.surface, lineWidth: 2)
+                                )
+                            // B2 (review-final.md): isLate had no reader
+                            // anywhere, so a late lifter read identically to
+                            // one simply not yet arrived. Never a colour -
+                            // red is errors (design rule 2) - and the name
+                            // stays exactly as it was, via the avatar's own
+                            // initials.
+                            if person.isLate {
+                                Text(SessionCopy.late)
+                                    .font(GSFont.body(9, relativeTo: .caption2))
+                                    .foregroundStyle(theme.neutral700)
+                                    .fixedSize()
+                            }
+                        }
                     }
                 }
             }
