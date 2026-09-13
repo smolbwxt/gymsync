@@ -111,61 +111,6 @@ struct SVLifter: Identifiable {
 enum SVFixtures {
 
     static let crewName = "Push Crew"
-    static let blockLine = "Bench 225 by Oct 18 · week 3 of 8"
-
-    // MARK: Lobby (ids 1–3)
-
-    /// The brief's arrival state, exactly: one ON THE WAY, two AT THE GYM,
-    /// one CHECKED IN — and two of the four ready, which is what the
-    /// disabled Start counts.
-    static let lobbyWaiting: [SVLifter] = [
-        SVLifter(id: 1, name: "Alex Rue", stage: .atTheGym, isReady: true, isYou: true),
-        SVLifter(id: 2, name: "Dana Kord", stage: .checkedIn, isReady: true),
-        SVLifter(id: 3, name: "Sam Obi", stage: .atTheGym, isReady: false),
-        SVLifter(id: 4, name: "Lee Vance", stage: .onTheWay, isReady: false),
-    ]
-
-    /// Everyone checked in and ready — the moment Start becomes the leader's
-    /// (spec §3.1: the leader's tap, or consensus).
-    static let lobbyReady: [SVLifter] = [
-        SVLifter(id: 1, name: "Alex Rue", stage: .checkedIn, isReady: true, isYou: true),
-        SVLifter(id: 2, name: "Dana Kord", stage: .checkedIn, isReady: true),
-        SVLifter(id: 3, name: "Sam Obi", stage: .checkedIn, isReady: true),
-        SVLifter(id: 4, name: "Lee Vance", stage: .checkedIn, isReady: true),
-    ]
-
-    static let crewSessionTitle = "Leg day"
-    static let crewSessionRung = "Back squat 4×5 @ 225"
-    static let crewSessionWhen = "6:30 PM · Iron Yard"
-
-    // MARK: Warm-up (ids 4–6)
-
-    static let soloSessionTitle = "Push day"
-    static let soloRung = "Bench 4×5 @ 225"
-    static let soloRungDetail = "week 3 of 8 · Push day"
-
-    /// Spec §2's own example, in Coach's first person (rule 7).
-    static let soloSuggestion = SVSuggestion(
-        line: "you slept five hours and today is 4×5 at 225 — want 3×5?",
-        accept: "Accept",
-        decline: "Not today")
-
-    /// The crew warm-up's Coach line is PRIVATE to the lifter reading it
-    /// (spec §3.2), which is why the frame labels it so.
-    static let crewWarmupSuggestion = SVSuggestion(
-        line: "your knee logged tight on Tuesday — two more minutes on the bike?",
-        accept: "Accept",
-        decline: "Not today")
-
-    static let warmupClock = "6:12"
-
-    /// Three warm, one not (the brief's crew warm-up state).
-    static let warmupCrew: [SVLifter] = [
-        SVLifter(id: 1, name: "Alex Rue", isReady: true, isYou: true),
-        SVLifter(id: 2, name: "Dana Kord", isReady: true),
-        SVLifter(id: 3, name: "Sam Obi", isReady: false),
-        SVLifter(id: 4, name: "Lee Vance", isReady: true),
-    ]
 
     // MARK: Rounds (ids 7–10)
 
@@ -365,78 +310,13 @@ struct SVScreen<Content: View, Foot: View>: View {
     }
 }
 
-// MARK: - The plan card
+// MARK: - Coach's suggestion
 
-/// The plan card: what the crew (or the lifter) is about to do, and the one
-/// control that changes it.
-///
-/// A raised static card (`gs3DCard`, 24 pt) — it is a thing you read, and it
-/// is the one raised object on its idea. The swap control is NOT accent: the
-/// screen's accent belongs to the primary act, and swapping the routine is
-/// an alternative, not the next physical act.
-///
-/// `suggestion` is what separates `warmup-solo-a` from `-b`: pass nil and
-/// the card is the plan alone (the suggestion becomes its own strip beside
-/// it); pass one and it becomes the card's second line, under a divider.
-struct SVPlanCard: View {
-    @Environment(\.gsTheme) private var theme
-
-    let kicker: String
-    let title: String
-    let detail: String
-    var suggestion: SVSuggestion? = nil
-    var showsSwap: Bool = true
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            planRow
-            if let suggestion {
-                GSDivider().padding(.vertical, 12)
-                SVSuggestionBody(suggestion: suggestion, isPrivate: false)
-            }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .gs3DCard(cornerRadius: GSMetrics.radiusMd, lipHeight: 6)
-    }
-
-    private var planRow: some View {
-        HStack(alignment: .top, spacing: 10) {
-            VStack(alignment: .leading, spacing: 4) {
-                GSSectionHeader(kicker)
-                Text(title)
-                    .font(GSFont.bold(19, relativeTo: .title3))
-                    .foregroundStyle(theme.text)
-                Text(detail)
-                    .font(GSFont.body(12.5, relativeTo: .caption))
-                    .foregroundStyle(theme.neutral700)
-            }
-            Spacer(minLength: 8)
-            if showsSwap { swapControl }
-        }
-    }
-
-    /// Flat furniture on a raised card (rule 1) — a chip, not a second
-    /// extrusion.
-    private var swapControl: some View {
-        HStack(spacing: 5) {
-            Image(systemName: "arrow.triangle.2.circlepath")
-                .font(.system(size: 11, weight: .bold))
-            Text("Swap")
-                .font(GSFont.bodyMedium(12, relativeTo: .caption))
-        }
-        .foregroundStyle(theme.neutral700)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .background(theme.neutral300)
-        .clipShape(Capsule())
-    }
-}
-
-/// Coach's line plus the two answers. Shared by the in-card form
-/// (`SVPlanCard`) and the strip form (`SVSuggestionStrip`) so the two
-/// warm-up variations differ in WHERE the suggestion sits and in nothing
-/// else.
+/// Coach's line plus the two answers, drawn either bare (inside
+/// `SVSuggestionStrip`, below) or embedded by a caller of its own. Used to
+/// be shared with an in-card form too (`SVPlanCard`, retired with
+/// `warmup-solo-a`/`-b` in the group-session Phase A round, task S11); this
+/// is what remains.
 struct SVSuggestionBody: View {
     @Environment(\.gsTheme) private var theme
 
@@ -485,8 +365,8 @@ struct SVSuggestionBody: View {
     }
 }
 
-/// The suggestion as its own object beside the plan card — `warmup-solo-a`'s
-/// half of the pair, and the shape Freestyle's nudge uses.
+/// The suggestion as its own object, wrapped in a strip — the shape
+/// Freestyle's nudge uses.
 struct SVSuggestionStrip: View {
     let suggestion: SVSuggestion
     var isPrivate: Bool = false
@@ -700,174 +580,6 @@ struct SVTick: View {
 enum SVName {
     static func first(_ full: String) -> String {
         String(full.split(separator: " ").first ?? "")
-    }
-}
-
-/// A roster row: flat furniture inside a raised box (rule 1). `showsStage`
-/// is the whole of what separates lobby variation b from variation a.
-struct SVRosterRow: View {
-    @Environment(\.gsTheme) private var theme
-
-    let lifter: SVLifter
-    var showsStage: Bool
-
-    var body: some View {
-        HStack(spacing: 11) {
-            GSInitialsAvatar(name: lifter.name, size: 34)
-            Text(lifter.isYou ? "\(lifter.name) · you" : lifter.name)
-                .font(GSFont.bodyMedium(14, relativeTo: .subheadline))
-                .foregroundStyle(theme.text)
-                .lineLimit(1)
-            Spacer(minLength: 6)
-            if showsStage {
-                GSTag(text: lifter.stage.caps,
-                      style: lifter.stage == .checkedIn ? .success : .neutral)
-            }
-            readiness
-        }
-        .padding(.vertical, 4)
-    }
-
-    @ViewBuilder
-    private var readiness: some View {
-        if lifter.isReady {
-            HStack(spacing: 5) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(Color.gsSuccess)
-                Text("ready")
-                    .font(GSFont.bodyMedium(11.5, relativeTo: .caption2))
-                    .foregroundStyle(Color.gsSuccess)
-            }
-        } else {
-            Text("not ready")
-                .font(GSFont.body(11.5, relativeTo: .caption2))
-                .foregroundStyle(theme.neutral500)
-        }
-    }
-}
-
-/// The roster as one raised island holding flat rows.
-struct SVRosterCard: View {
-    let lifters: [SVLifter]
-    var showsStage: Bool
-    var kicker: String = "WHO'S HERE"
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            GSSectionHeader(kicker)
-            ForEach(lifters) { lifter in
-                SVRosterRow(lifter: lifter, showsStage: showsStage)
-            }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .gs3DCard(cornerRadius: GSMetrics.radiusMd, lipHeight: 6)
-    }
-}
-
-/// The arrival track as a horizontal rail — lobby variation a's whole
-/// argument. Three stages left to right, each holding the people in it, with
-/// a chevron between them so the rail reads as a journey rather than three
-/// buckets. An empty stage stays in place and dims: a track whose columns
-/// move is not a track.
-struct SVArrivalRail: View {
-    @Environment(\.gsTheme) private var theme
-
-    let lifters: [SVLifter]
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 6) {
-            column(.onTheWay)
-            chevron
-            column(.atTheGym)
-            chevron
-            column(.checkedIn)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 12)
-        .frame(maxWidth: .infinity)
-        .background(theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-    }
-
-    private var chevron: some View {
-        Image(systemName: "chevron.right")
-            .font(.system(size: 11, weight: .bold))
-            .foregroundStyle(theme.neutral400)
-            .padding(.top, 16)
-    }
-
-    private func column(_ stage: SVStage) -> some View {
-        let people = lifters.filter { $0.stage == stage }
-        return VStack(spacing: 8) {
-            HStack(spacing: 4) {
-                Image(systemName: stage.glyph)
-                    .font(.system(size: 9, weight: .bold))
-                Text(stage.caps)
-                    .font(GSFont.bold(9, relativeTo: .caption2))
-                    .tracking(0.9)
-            }
-            .foregroundStyle(people.isEmpty ? theme.neutral500 : theme.neutral700)
-            .lineLimit(1)
-            .minimumScaleFactor(0.75)
-
-            if people.isEmpty {
-                // Same shape as an avatar (`GSInitialsAvatar` clips to
-                // `size * 0.28`), so an empty stage reads as a missing person
-                // rather than as a different kind of thing.
-                RoundedRectangle(cornerRadius: 30 * 0.28)
-                    .strokeBorder(theme.neutral400, lineWidth: 1)
-                    .frame(width: 30, height: 30)
-            } else {
-                HStack(spacing: -8) {
-                    ForEach(people) { person in
-                        GSInitialsAvatar(name: person.name, size: 30)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 30 * 0.28)
-                                    .strokeBorder(theme.surface, lineWidth: 2)
-                            )
-                    }
-                }
-            }
-
-            Text(people.isEmpty ? "—" : "\(people.count)")
-                .font(GSFont.bold(12, relativeTo: .caption))
-                .monospacedDigit()
-                .foregroundStyle(people.isEmpty ? theme.neutral500 : theme.text)
-        }
-        .frame(maxWidth: .infinity)
-    }
-}
-
-/// The crew's readiness as one row of marked avatars — the crew warm-up's
-/// version of the roster, and the shape "who's still to go" borrows.
-struct SVReadinessRow: View {
-    @Environment(\.gsTheme) private var theme
-
-    let lifters: [SVLifter]
-    let kicker: String
-    let count: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                GSSectionHeader(kicker)
-                Spacer(minLength: 8)
-                Text(count)
-                    .font(GSFont.bold(11, relativeTo: .caption2))
-                    .tracking(0.8)
-                    .foregroundStyle(theme.neutral700)
-                    .fixedSize()
-            }
-            HStack(spacing: 4) {
-                ForEach(lifters) { lifter in
-                    SVAvatarMark(lifter: lifter, size: 40, showsReady: true)
-                }
-                Spacer(minLength: 0)
-            }
-        }
-        .svStrip()
     }
 }
 

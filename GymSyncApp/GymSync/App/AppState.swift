@@ -58,14 +58,14 @@ final class AppState {
     /// lobby/session, SocialTabView for chat/friends).
     ///
     /// `.lobby` and `.session` both resolve to the same destination
-    /// (`LobbyView(session:)`) on the consuming side — LobbyView is already
-    /// the app's single entry point for a session regardless of its current
-    /// state (see HomeView's existing `upcomingSection` NavigationLink,
-    /// which routes every session there whether scheduled or in_progress),
-    /// so there's no need for a separate "already in progress" destination
-    /// in v1. Kept as two cases anyway so the category → route mapping in
-    /// AppDelegate stays self-documenting (OPEN_LOBBY → .lobby, OPEN_SESSION
-    /// → .session).
+    /// (`SessionEntryView(session:)`, plan task S10) on the consuming side —
+    /// it is the app's single entry point for a session regardless of its
+    /// current state, deciding lobby vs. warm-up vs. live itself (see
+    /// HomeView's existing `upcomingSection` NavigationLink, which routes
+    /// every session there whether scheduled or in_progress), so there's no
+    /// need for a separate "already in progress" destination in v1. Kept as
+    /// two cases anyway so the category → route mapping in AppDelegate stays
+    /// self-documenting (OPEN_LOBBY → .lobby, OPEN_SESSION → .session).
     enum PendingRoute: Equatable {
         case lobby(sessionID: UUID)
         case session(sessionID: UUID)

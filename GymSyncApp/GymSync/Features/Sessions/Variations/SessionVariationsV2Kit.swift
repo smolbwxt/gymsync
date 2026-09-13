@@ -81,30 +81,9 @@ struct SVPlanRow: Identifiable {
 
 enum SVFixturesV2 {
 
-    // MARK: Lobby (frames 120-121)
-
-    /// ONE SIGNAL. Two checked in, one at the gym, one on the way — so all
-    /// three of the track's stages are occupied AND Start's caption ("2 of 4
-    /// checked in") is read straight off the CHECKED IN column. Round 1's
-    /// separate readiness tick is gone.
-    ///
-    /// Energy is the new buy-in: three have answered, and the one who has
-    /// not is you, which is why the widget carries a control rather than a
-    /// reminder about somebody else.
-    static let lobbyWaiting: [SVLifter] = [
-        SVLifter(id: 1, name: "Alex Rue", stage: .atTheGym, isYou: true, energy: nil),
-        SVLifter(id: 2, name: "Dana Kord", stage: .checkedIn, energy: 4),
-        SVLifter(id: 3, name: "Sam Obi", stage: .checkedIn, energy: 3),
-        SVLifter(id: 4, name: "Lee Vance", stage: .onTheWay, energy: 5),
-    ]
-
-    /// Everyone in, everyone answered. The payoff the locked-in card renders.
-    static let lobbyReady: [SVLifter] = [
-        SVLifter(id: 1, name: "Alex Rue", stage: .checkedIn, isYou: true, energy: 4),
-        SVLifter(id: 2, name: "Dana Kord", stage: .checkedIn, energy: 4),
-        SVLifter(id: 3, name: "Sam Obi", stage: .checkedIn, energy: 3),
-        SVLifter(id: 4, name: "Lee Vance", stage: .checkedIn, energy: 5),
-    ]
+    // MARK: Lobby (frames 120-121, retired — group-session Phase A plan,
+    // task S11). `crewPlan` and `crewRungLine` outlived the two frames:
+    // `round-wait-v2` (`RoundVariationsV2.swift`) reuses both.
 
     /// The WHOLE session, not a one-line rung. Four exercises is what a leg
     /// day is; a lobby that shows one of them is asking the crew to buy into
@@ -121,33 +100,10 @@ enum SVFixturesV2 {
     ]
 
     static let crewRungLine = "Today's rung: Back squat 4 × 5 @ 225 · week 3 of 8"
-    static let checkedInCaption = "2 of 4 checked in"
-    static let energyReported = "3 OF 4 REPORTED"
-
-    static let coachLobbyTitle = "Talk to Coach"
-    static let coachLobbyDetail = "This session's focus · form questions · demo videos"
-
-    static let lockedInHeadline = "Everyone's here."
-    static let lockedInDetail = "All four checked in at Iron Yard, 6:28 PM."
-    static let lockedInFirstUp = "Back squat 4 × 5 @ 225"
-    static let lockedInThen = "then Romanian deadlift, leg press, walking lunge"
-    static let lockedInStartNote = "Yours to start, or it fires on its own"
 
     // MARK: Warm-up (frame 122)
 
-    /// The whole of Push day, so the warm-up screen shows the day rather
-    /// than its first line.
-    static let soloPlan: [SVPlanRow] = [
-        SVPlanRow(id: 1, name: "Bench press", prescription: "4 × 5 @ 225", isCurrent: true),
-        SVPlanRow(id: 2, name: "Incline dumbbell press", prescription: "3 × 10 @ 60"),
-        SVPlanRow(id: 3, name: "Cable fly", prescription: "3 × 12 @ 40"),
-        SVPlanRow(id: 4, name: "Overhead triceps", prescription: "3 × 12 @ 50"),
-    ]
-
     static let soloRungLine = "Today's rung: Bench 4 × 5 @ 225"
-    static let programWeek = 3
-    static let programWeeks = 8
-    static let programMilestone = "Bench 225 by Oct 18"
 
     // MARK: Rounds (frames 123-124)
 
@@ -327,120 +283,6 @@ struct SVPlanListCard: View {
         .background(theme.neutral300)
         .clipShape(Capsule())
         .fixedSize()
-    }
-}
-
-// MARK: - The crew's buy-in
-
-/// Each lifter's self-reported energy, as a group — the one buy-in widget
-/// the lobby keeps now that the readiness roster is gone.
-///
-/// A five-pip meter rather than a number and a word: energy is a scale, and
-/// four scales side by side is a shape you read in one glance. No colour is
-/// spent on it — `text` for a filled pip, `neutral300` for an empty one — so
-/// a low reading is quiet rather than an alarm. Nobody's honest 3 should
-/// look like a warning to the rest of the crew.
-///
-/// Columns are FIXED width and height, so the four avatars share a baseline
-/// and the four meters share theirs whether a lifter has answered or not.
-struct SVCrewEnergyCard: View {
-    @Environment(\.gsTheme) private var theme
-
-    let lifters: [SVLifter]
-    let reported: String
-    /// The control that belongs to whoever has not answered — you.
-    var askTitle: String? = "How are you feeling?"
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 11) {
-            HStack {
-                GSSectionHeader("HOW THE CREW FEELS")
-                Spacer(minLength: 8)
-                Text(reported)
-                    .font(GSFont.bold(10, relativeTo: .caption2))
-                    .tracking(0.8)
-                    .foregroundStyle(theme.neutral700)
-                    .fixedSize()
-            }
-
-            HStack(spacing: 0) {
-                ForEach(lifters) { lifter in
-                    column(lifter)
-                }
-            }
-
-            if let askTitle {
-                Button(action: {}) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "figure.mind.and.body")
-                            .font(.system(size: 12, weight: .bold))
-                        Text(askTitle)
-                            .font(GSFont.bold(13, relativeTo: .subheadline))
-                        Spacer(minLength: 0)
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 11, weight: .bold))
-                    }
-                    .foregroundStyle(theme.text)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                }
-                .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm, lipHeight: 4))
-            }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .gs3DCard(cornerRadius: GSMetrics.radiusMd, lipHeight: 6)
-    }
-
-    private func column(_ lifter: SVLifter) -> some View {
-        VStack(spacing: 6) {
-            GSInitialsAvatar(name: lifter.name, size: 34)
-            Text(lifter.isYou ? "You" : SVName.first(lifter.name))
-                .font(GSFont.bodyMedium(11, relativeTo: .caption2))
-                .foregroundStyle(theme.neutral700)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .frame(height: 13)
-            SVEnergyMeter(value: lifter.energy)
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 70, alignment: .top)
-    }
-}
-
-/// Five pips. `nil` draws five empty ones and a dash — an absence, never a
-/// zero, the same rule the pump card's lateness tag follows.
-struct SVEnergyMeter: View {
-    @Environment(\.gsTheme) private var theme
-
-    let value: Int?
-    /// Drawn on an ACCENT face (`lobby-crew-ready-v3`'s arrival widget), so
-    /// the pips invert: the page ground becomes the ink, exactly as
-    /// `GSPrimaryButtonStyle` puts `theme.bg` on an accent fill. Defaulted
-    /// false, so the v2 frames the owner approved are untouched.
-    var onAccent: Bool = false
-
-    private var filledInk: Color { onAccent ? theme.bg : theme.text }
-    private var emptyInk: Color { onAccent ? theme.bg.opacity(0.3) : theme.neutral300 }
-    private var absentInk: Color { onAccent ? theme.bg.opacity(0.7) : theme.neutral500 }
-
-    var body: some View {
-        Group {
-            if let value {
-                HStack(spacing: 3) {
-                    ForEach(1...5, id: \.self) { step in
-                        RoundedRectangle(cornerRadius: 1.5)
-                            .fill(step <= value ? filledInk : emptyInk)
-                            .frame(width: 6, height: 8)
-                    }
-                }
-            } else {
-                Text("not yet")
-                    .font(GSFont.body(10, relativeTo: .caption2))
-                    .foregroundStyle(absentInk)
-            }
-        }
-        .frame(height: 12)
     }
 }
 
@@ -645,49 +487,4 @@ struct SVLiveHRRow: View {
     }
 }
 
-/// Where you are in the block: eight rungs, three behind you, the milestone
-/// at the end. The ladder page's own shape, shrunk to a strip.
-///
-/// No colour: a done rung is `text`, the week you are in is `text` and
-/// taller, the weeks ahead are `neutral300`. Green would read as "goal met"
-/// on a week that only means "logged", and accent belongs to the primary.
-struct SVProgramLadder: View {
-    @Environment(\.gsTheme) private var theme
-
-    let week: Int
-    let weeks: Int
-    let milestone: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                GSSectionHeader("WHERE YOU ARE")
-                Spacer(minLength: 8)
-                Text("WEEK \(week) OF \(weeks)")
-                    .font(GSFont.bold(10, relativeTo: .caption2))
-                    .tracking(0.8)
-                    .foregroundStyle(theme.text)
-                    .fixedSize()
-            }
-            HStack(alignment: .bottom, spacing: 5) {
-                ForEach(1...weeks, id: \.self) { rung in
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(rung <= week ? theme.text : theme.neutral300)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: rung == week ? 18 : 10)
-                }
-                Image(systemName: "flag.checkered")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(theme.neutral700)
-                    .fixedSize()
-            }
-            .frame(height: 20)
-            Text(milestone)
-                .font(GSFont.bodyMedium(12, relativeTo: .caption))
-                .foregroundStyle(theme.neutral700)
-                .lineLimit(1)
-        }
-        .svStrip()
-    }
-}
 #endif

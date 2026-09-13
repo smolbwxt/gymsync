@@ -149,6 +149,17 @@ struct HomeView: View {
     /// Home is Coach's line (task D6) — Home does no ladder arithmetic, and
     /// the strip's numbers still come from `goalProgress` alone.
     @State private var ladderPage: LadderPageModel?
+    /// Coach's re-ladder, waiting on the athlete (spec §4, plan task S2).
+    ///
+    /// It used to APPLY itself on this very fetch — `detectGoalIfMissing`
+    /// called `reLadder`, which writes — so the first Home load of a new week
+    /// rewrote the ladder with nothing on screen asking. Now it is a value
+    /// Home renders as a consent card, and nil means no card and no space.
+    ///
+    /// NOT named `ladderProposal`: `Self.ladderProposal(from:)` is Coach's
+    /// SENTENCE about a ladder that cannot reach its milestone, which is a
+    /// different thing that reads the same.
+    @State private var pendingLadderProposal: LadderProposal?
     /// The pushed ladder page. Deliberately NOT an `AppState.PendingRoute`
     /// case, for the same reason `showCoach` below is not: that enum is the
     /// push DEEP-LINK enum (`App/AppState.swift:70-75`), and this is a local
@@ -208,6 +219,7 @@ struct HomeView: View {
                     crewPulseSection
                     goalStripSection
                         .gsSpotlightTarget(key: "tour.home.goal")
+                    ladderProposalSection
                     calendarCardSection
                         .gsSpotlightTarget(key: "tour.home.calendar")
                     if !activeCampaigns.isEmpty {
@@ -350,7 +362,7 @@ struct HomeView: View {
                     // session re-resolved kept its @State — including
                     // navigateToInProgress and the live view's session —
                     // and wrote sets into the NEXT SCHEDULED occurrence).
-                    LobbyView(session: session)
+                    SessionEntryView(session: session)
                         .id(session.id)
                 }
             }
@@ -366,10 +378,12 @@ struct HomeView: View {
 
     // MARK: - Push deep-link routing (Phase 3d Task 5)
 
-    /// Consumes `.lobby`/`.session` — both resolve to `LobbyView(session:)`,
-    /// the app's single entry point for a session regardless of its current
-    /// state (see `upcomingSection`'s existing NavigationLink, which routes
-    /// every session there whether scheduled or in_progress). Clears
+    /// Consumes `.lobby`/`.session` — both resolve to
+    /// `SessionEntryView(session:)`, the app's single entry point for a
+    /// session regardless of its current state (plan task S10 — it decides
+    /// lobby vs. warm-up vs. live; see `upcomingSection`'s existing
+    /// NavigationLink, which routes every session there whether scheduled or
+    /// in_progress). Clears
     /// `pendingRoute` immediately so a later `.onChange` firing (or this
     /// `.task` re-running) doesn't re-navigate.
     private func consumePendingRouteIfNeeded() async {
@@ -819,6 +833,64 @@ struct HomeView: View {
         .padding(.bottom, 12)
     }
 
+    // MARK: - The ladder proposal (spec §4, plan task S2)
+
+    /// Coach proposes a new ladder, and nothing happens until the athlete
+    /// says so.
+    ///
+    /// **ITS OWN SECTION, DELIBERATELY OUTSIDE `goalStripSection`.**
+    /// `HomeWeeklyGoalStrip` is frozen (global constraint 14): the two
+    /// owner-approved Home compositions `app-home-v3-08a` / `-08b` render it
+    /// over a fixture world with no proposal in it, and a card added INSIDE
+    /// the strip would move both of them. Here it is a sibling that is absent
+    /// — no card, no space — whenever there is nothing to propose, which is
+    /// every account that has not drifted from its ladder.
+    ///
+    /// The kicker, and both answers, come from `GSConsentCopy`: the ladder
+    /// page shows the same card and a second copy of the words is a second
+    /// card that drifts.
+    @ViewBuilder
+    private var ladderProposalSection: some View {
+        if let proposal = pendingLadderProposal {
+            GSConsentCard(
+                kicker: GSConsentCopy.ladderKicker,
+                // `ThemeStore.shared` is the house idiom on this view for the
+                // display unit (`:1519`); it is MainActor-isolated and a view
+                // body is on the MainActor, so this needs no hop.
+                sentence: LadderProposalMath.sentence(proposal,
+                                                      unit: ThemeStore.shared.weightUnit),
+                detail: LadderProposalMath.detail(proposal),
+                acceptTitle: GSConsentCopy.accept,
+                declineTitle: GSConsentCopy.decline,
+                onAccept: {
+                    pendingLadderProposal = nil
+                    Task { await acceptLadderProposal(proposal) }
+                },
+                onDecline: {
+                    // The card only. `refresh()` recomputes it, and that is
+                    // correct: the proposal is a fact about the ladder, not a
+                    // dismissible notice.
+                    pendingLadderProposal = nil
+                })
+            .padding(.horizontal, 16)
+            .padding(.bottom, 12)
+        }
+    }
+
+    /// Accept applies **the proposal the athlete just read**, through
+    /// `applyLadderProposal` — the one method the ladder page's Accept and
+    /// `LET COACH RE-LADDER` both end in (controller ruling R-F11).
+    ///
+    /// It does NOT recompute. Calling `reLadder(goalID:)` here would
+    /// re-derive from actuals at accept time, so a set logged between the card
+    /// rendering and the tap could write a ladder the athlete never saw.
+    ///
+    /// Then Home refreshes, which is what puts the new rung in the strip.
+    private func acceptLadderProposal(_ proposal: LadderProposal) async {
+        await blockGoalRepository.applyLadderProposal(proposal)
+        await refresh()
+    }
+
     /// Where the goal strip's tap lands.
     ///
     /// A VALUE rather than a closure, so the rule can be asserted without a
@@ -866,9 +938,31 @@ struct HomeView: View {
     /// and an editor reached from Home that wrote through a different
     /// repository than Home's own strip reads would be the same silent
     /// mismatch this function was written to prevent.
+    ///
+    /// IT CARRIES THE PROPOSAL TOO (plan task S2). Spec §4 puts the consent
+    /// card on Home **and** the ladder page, and Home has already computed it
+    /// — handing the value down means the page one tap away shows the same
+    /// proposal rather than reading a second one that could have been derived
+    /// a minute later against a different clock. A page opened from anywhere
+    /// else gets `nil`, which is no card.
+    ///
+    /// AND IT LEARNS THE ANSWER BACK (review finding F4). Home refreshes only
+    /// on `.task`, pull-to-refresh, a scene-phase change or a tab switch — so
+    /// without this closure, answering the card on the ladder page and popping
+    /// back left Home still showing its own copy, and tapping Accept there
+    /// wrote the same proposal a second time.
     func ladderPage(for goalID: UUID) -> LadderPageView {
         LadderPageView(goalID: goalID, repository: blockGoalRepository,
-                       weeklyGoalRepository: goalRepository)
+                       weeklyGoalRepository: goalRepository,
+                       proposal: pendingLadderProposal?.goalID == goalID
+                           ? pendingLadderProposal : nil,
+                       // Fix round 3 R-4: clearing the card without
+                       // refreshing left the weekly strip quoting the
+                       // replaced rung after an Accept on the ladder page.
+                       onAnswered: {
+                           pendingLadderProposal = nil
+                           Task { await refresh() }
+                       })
     }
 
     /// The strip's own chrome — `surface` fill, 14 pt radius, 12 pt padding
@@ -1601,6 +1695,7 @@ struct HomeView: View {
         goalProposal = goal.proposal
         blockGoalID = goal.blockGoalID
         ladderPage = goal.ladder
+        pendingLadderProposal = goal.ladderProposal
         goalLoaded = true
         statsLoading = false
 
@@ -1791,30 +1886,47 @@ struct HomeView: View {
                                                           progress: WeeklyGoalProgress,
                                                           proposal: WeeklyGoalEditorSheet.Proposal?,
                                                           blockGoalID: UUID?,
-                                                          ladder: LadderPageModel?) {
-        guard userID != nil else { return (nil, WeeklyGoalProgress(), nil, nil, nil) }
+                                                          ladder: LadderPageModel?,
+                                                          ladderProposal: LadderProposal?) {
+        guard userID != nil else { return (nil, WeeklyGoalProgress(), nil, nil, nil, nil) }
         let week = WeekMath.weekStartString()
         var standing = await goalRepository.goal(weekStart: week)
         if standing == nil {
             standing = await goalRepository.detectIfMissing(weekStart: week)
         }
-        guard let goal = standing else { return (nil, WeeklyGoalProgress(), nil, nil, nil) }
+        guard let goal = standing else {
+            return (nil, WeeklyGoalProgress(), nil, nil, nil, nil)
+        }
         let progress = await goalRepository.progress(for: goal)
         let block = Self.goalStripDestination(for: goal).ladderGoalID
         var ladder: LadderPageModel?
+        // Coach's re-ladder, as a PROPOSAL (spec §4, plan task S2). Read in
+        // the one branch that already holds the block goal's id, so the
+        // consent card costs no second lookup of which block this week
+        // belongs to.
+        var ladderProposal: LadderProposal?
         if let block {
-            ladder = await blockGoalRepository.page(goalID: block)
+            // BOTH AT ONCE. This runs inside the launch fetch
+            // (`beginLaunchFetch`/`endLaunchFetch`), and `reLadderProposal`
+            // repeats the goal, ladder and enrollment reads that `page` makes
+            // plus `measuredByWeek` and `overriddenWeeks` — sequentially that
+            // is the slowest thing on Home's critical path (review finding
+            // F2).
+            async let pageRead = blockGoalRepository.page(goalID: block)
+            async let proposalRead = blockGoalRepository.reLadderProposal(goalID: block)
+            ladder = await pageRead
+            ladderProposal = await proposalRead
         }
         guard goal.source == .user,
               let coach = await goalRepository.propose(weekStart: week) else {
-            return (goal, progress, nil, block, ladder)
+            return (goal, progress, nil, block, ladder, ladderProposal)
         }
         // The display unit is `ThemeStore`'s, read the way
         // `LiveWeeklyGoalRepository.detect` reads it — the store is
         // MainActor-isolated and this fetch is not.
         let unit = await MainActor.run { ThemeStore.shared.weightUnit }
         return (goal, progress, coachProposal(user: goal, coach: coach, unit: unit),
-                block, ladder)
+                block, ladder, ladderProposal)
     }
 
     /// Coach's suggestion as the editor's own input, or nothing at all when

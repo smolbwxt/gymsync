@@ -186,7 +186,7 @@ struct TrainingCalendarWidget: View {
                 NavigationLink {
                     // .id — session-identity pin (HomeView's navigateToJoined
                     // destination comment has the full field-bug story).
-                    LobbyView(session: session)
+                    SessionEntryView(session: session)
                         .id(session.id)
                 } label: {
                     upcomingRow(session)
