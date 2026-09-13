@@ -40,8 +40,9 @@ struct LobbyWorld {
     let rungLine: String
     let planRows: [SessionPlanRow]
     /// Whether the frame is the leader's. `appState.currentProfile` is nil in
-    /// a capture, so `isOrganizer` cannot be derived — and the leader's Swap
-    /// chips and tappable ready widget are half of what these frames show.
+    /// a capture, so `isOrganizer` cannot be derived — and the leader's
+    /// Change routine control and tappable ready widget are half of what
+    /// these frames show.
     let isOrganizer: Bool
     /// THE CREW'S WEEK (owner addition 2026-09-12), on trial. Always supplied
     /// here so the owner sees the strip on the proof frames; nil in
