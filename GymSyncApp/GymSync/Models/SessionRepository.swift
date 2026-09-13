@@ -840,6 +840,119 @@ enum SessionRepository {
         } catch { throw ErrorMapping.map(error) }
     }
 
+    // MARK: - Phase B1: style, round, stations (20260913000101/…102)
+
+    /// Set how this session moves (plan task S1; written by the lobby card,
+    /// plan task S2).
+    ///
+    /// A direct PATCH, the same path `setWarmupMinutes` above takes: the
+    /// shipped "organizer or participant can update session" policy already
+    /// grants the write to ANY participant, which is the point — the style is
+    /// the crew's decision, not the organizer's (owner decision 1). Two
+    /// backstops narrow it, both server-side: the column's own CHECK, and
+    /// `private.session_round_guard`, which rejects a style change once
+    /// `lifting_started_at` is set. The card stops rendering at that same
+    /// moment, so the UI never offers a write the server will reject.
+    static func setStyle(sessionID: UUID, style: SessionStyle) async throws {
+        guard await SupabaseService.shared.currentUserID() != nil else {
+            throw GymSyncError.unauthorized
+        }
+        do {
+            _ = try await client
+                .from("sessions")
+                .update(["style": style.rawValue])
+                .eq("id", value: sessionID.uuidString)
+                .execute()
+        } catch { throw ErrorMapping.map(error) }
+    }
+
+    /// Close the current round — the server decides whether it actually
+    /// closes (`public.advance_round`, 20260913000102).
+    ///
+    /// Returns the round number in force AFTER the call, which is not always
+    /// one more than before: the RPC returns the current round unchanged when
+    /// the crew is not done (some present lifter has no non-penalty set since
+    /// `round_started_at`), and when `expectedRound` no longer matches. Both
+    /// are successes, not failures — a client cannot push the round forward
+    /// early, and a client that crashes cannot hold it back, because anyone's
+    /// call closes it once the condition is true.
+    ///
+    /// `expectedRound` makes the call REPLAYABLE in `advanceTurn`'s own idiom
+    /// (see that function): pass the round observed when the set was logged
+    /// and a queued replay becomes a no-op if the round has since moved. The
+    /// round is monotonic — unlike the rotation, which wraps — so comparing
+    /// it is safe.
+    ///
+    /// `advance_turn` is NOT replaced by this (plan constraint 20): the
+    /// client that logs calls `advanceTurn` as it always has, then this. The
+    /// second call is cheap, safe to repeat and safe to lose.
+    @discardableResult
+    static func advanceRound(sessionID: UUID, expectedRound: Int? = nil) async throws -> Int {
+        guard await SupabaseService.shared.currentUserID() != nil else {
+            throw GymSyncError.unauthorized
+        }
+        do {
+            if let expectedRound {
+                let round: Int = try await client
+                    .rpc("advance_round", params: [
+                        "p_session_id": AnyJSON.string(sessionID.uuidString),
+                        "p_expected_round": AnyJSON.integer(expectedRound),
+                    ])
+                    .execute().value
+                return round
+            } else {
+                let round: Int = try await client
+                    .rpc("advance_round", params: ["p_session_id": sessionID.uuidString])
+                    .execute().value
+                return round
+            }
+        } catch { throw ErrorMapping.map(error) }
+    }
+
+    private struct SetStationsParams: Encodable {
+        let sessionID: UUID
+        let exercisePosition: Int
+        let stations: [SessionStations.Station]
+        enum CodingKeys: String, CodingKey {
+            case sessionID = "p_session_id"
+            case exercisePosition = "p_exercise_position"
+            case stations = "p_stations"
+        }
+    }
+
+    /// Write the station assignment for one exercise
+    /// (`public.set_session_stations`, 20260913000102).
+    ///
+    /// Returns what is STORED, which is not always what was sent: the RPC is
+    /// idempotent on `exercisePosition`, so a second call at the same
+    /// exercise reads the first one back unchanged. Turn order is fixed
+    /// within an exercise (owner decision 6) and this is what enforces it —
+    /// two clients re-mixing at the same exercise change cannot disagree.
+    ///
+    /// Throws P0001 when a station is deeper than three or when the union of
+    /// `lifterIDs` is not exactly the present participants; the caller keeps
+    /// the previous assignment and logs, because a failed re-mix must never
+    /// block a round.
+    static func setStations(
+        sessionID: UUID,
+        exercisePosition: Int,
+        stations: [SessionStations.Station]
+    ) async throws -> SessionStations {
+        guard await SupabaseService.shared.currentUserID() != nil else {
+            throw GymSyncError.unauthorized
+        }
+        do {
+            let stored: SessionStations = try await client
+                .rpc("set_session_stations", params: SetStationsParams(
+                    sessionID: sessionID,
+                    exercisePosition: exercisePosition,
+                    stations: stations
+                ))
+                .execute().value
+            return stored
+        } catch { throw ErrorMapping.map(error) }
+    }
+
     // MARK: - Phase 3b: Duration editing
 
     /// Edit a completed session's start/end timestamps.
