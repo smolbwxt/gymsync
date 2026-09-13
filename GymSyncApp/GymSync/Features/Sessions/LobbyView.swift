@@ -78,13 +78,16 @@ struct LobbyView: View {
     /// (plan task S6). `Identifiable` through `SessionCoachThread`'s own
     /// `threadID`, wrapped so `navigationDestination(item:)` can drive it.
     @State private var openedCoachThread: OpenedCoachThread?
+    /// Fix round 3 R-3: `open()` used to navigate unconditionally, even when
+    /// `!isReachable(thread)` — the paywall the door is supposed to raise
+    /// never appeared. Set instead of `openedCoachThread` in that branch.
+    @State private var showCoachPaywall = false
     /// The consensus Start, armed when the last lifter checks in. Held so the
     /// leader tapping first — or the roster changing — can cancel it.
     @State private var consensusStart: Task<Void, Never>?
     @State private var allExercises: [Exercise] = []
     @State private var currentSession: WorkoutSession?
     @State private var groupName: String?
-    @State private var primaryGymName: String?
 
     // MARK: - Manage menu state
 
@@ -128,9 +131,9 @@ struct LobbyView: View {
     private var isOrganizer: Bool {
         #if DEBUG
         // A capture has no signed-in profile, so `organizerID == selfID`
-        // would be false for every frame and the leader's controls — the Swap
-        // chips, the tappable ready widget — would never render. The world
-        // states which side of that line it is on.
+        // would be false for every frame and the leader's controls — the
+        // Change routine chip, the tappable ready widget — would never
+        // render. The world states which side of that line it is on.
         if let catalog { return catalog.isOrganizer }
         #endif
         return (currentSession ?? session).organizerID == selfID
@@ -363,17 +366,19 @@ struct LobbyView: View {
                     .padding(.top, 10)
 
                 // THE WHOLE PLAN, one row per exercise (spec §3.1) — not the
-                // first exercise and a "Then:" list. `Swap` per row for the
-                // leader presents the SHIPPED routine picker: spec §3.4 mode 1
-                // is what a swap becomes AFTER Start and is Phase B's; before
-                // Start the leader is simply choosing the session's routine,
-                // which is what the picker already does.
+                // first exercise and a "Then:" list. ONE card-level
+                // `Change routine` control for the leader (fix round 3 R-7 —
+                // ten identical per-row `Swap` chips all opened the same
+                // picker) presents the SHIPPED routine picker: spec §3.4
+                // mode 1 is what a swap becomes AFTER Start and is Phase
+                // B's; before Start the leader is simply choosing the
+                // session's routine, which is what the picker already does.
                 if !planRows.isEmpty {
                     SessionPlanCard(kicker: SessionCopy.theSession,
                                     rungLine: planRungLine,
                                     rows: planRows,
-                                    showsSwap: isOrganizer,
-                                    onSwap: { _ in showRoutinePicker = true })
+                                    onChangeRoutine: isOrganizer
+                                        ? { showRoutinePicker = true } : nil)
                         .padding(.horizontal, 16)
                         .padding(.top, 10)
                 } else {
@@ -444,8 +449,12 @@ struct LobbyView: View {
                 // resolved there): whether the PTT dock replaces, stacks
                 // above, or sits below the existing `actionBar`. ASSUMPTION
                 // (judgment call, no design ruling to follow): stacks above,
-                // matching how GroupSessionLiveView already stacks its own
-                // soundboard dock above its bottom action bar.
+                // matching GroupSessionLiveView's own `PTTDockRow`, which
+                // sits between its content and its bottom action bar the
+                // same way (GroupSessionLiveView.swift:2885-2894). Fix round
+                // 3 R-11: previously cited as "GroupSessionLiveView's
+                // soundboard dock" — a literal grep for that word finds
+                // nothing, so the precedent is named directly instead.
                 if isVoiceEligible {
                     // Same retry closure the degraded banner above receives,
                     // so the dock's RETRY and the banner's Retry are one
@@ -519,9 +528,14 @@ struct LobbyView: View {
         }
         .onChange(of: scenePhase) {
             guard scenePhase == .active else { return }
-            // Coming back to the app is the moment the geofence answer is
-            // most likely to have changed — the lifter walked in while the
-            // phone was in their pocket.
+            // Coming back to the app is ONE moment the geofence answer is
+            // likely to have changed — the lifter walked in while the phone
+            // was in their pocket. Fix round 3 R-9: not the only one; the
+            // realtime `onChange` callback and the pre-live poll's
+            // routine-drift branch below now republish too. None of this is
+            // live geofence monitoring (a background trigger on location
+            // change) — that's Phase B. Every path here is a snapshot taken
+            // at a moment the lobby already had a reason to re-sync.
             Task { await reload(); await publishOwnStage() }
         }
         // CONSENSUS START (spec §3.1). Watches the roster the way the
@@ -588,6 +602,12 @@ struct LobbyView: View {
                     // state flip.
                     if fresh.routineID != currentSession?.routineID {
                         await reload()
+                        // Fix round 3 R-9: the pre-live poll is this lobby's
+                        // stand-in for pull-to-refresh (there is no
+                        // `.refreshable` here) — a dead realtime socket is
+                        // exactly the case where this device's last
+                        // published stage is most likely stale too.
+                        await publishOwnStage()
                     } else {
                         currentSession = fresh
                     }
@@ -659,6 +679,14 @@ struct LobbyView: View {
         }
         // This session's Coach room (plan task S6). One room for the whole
         // crew, opened find-or-create on the tap.
+        //
+        // Fix round 3 R-10: messages post and read through the PERSONAL
+        // `CoachChatRepository` (append stamps `user_id = me`; `threads()`
+        // filters `user_id = me`) — cross-member access here rests entirely
+        // on D3/D5's RLS (coach_chat_messages scoped to the thread's
+        // participants), not on this view. Acceptable because this thread is
+        // only ever reached from the lobby, never from the personal Coach
+        // list, so a member can't stumble into another session's room.
         .navigationDestination(item: $openedCoachThread) { opened in
             CoachThreadView(thread: CoachChatThread(
                 id: opened.thread.threadID,
@@ -669,6 +697,13 @@ struct LobbyView: View {
                 .background(theme.bg)
                 .navigationTitle(SessionCopy.talkToCoach)
                 .navigationBarTitleDisplayMode(.inline)
+        }
+        // Fix round 3 R-3: the door's paywall, for the branch `open()` takes
+        // when the crew can't reach the room. No `highlight`: none of
+        // `Monetization.Feature`'s four cases name a session Coach room, and
+        // inventing one is a product decision this fix round isn't making.
+        .sheet(isPresented: $showCoachPaywall) {
+            PaywallView()
         }
         // Change time sheet
         .sheet(isPresented: $showChangeTimeSheet) {
@@ -1094,7 +1129,16 @@ struct LobbyView: View {
         do {
             let thread = try await SessionCoachThreadRepository.open(
                 sessionID: effectiveSession.id)
-            openedCoachThread = OpenedCoachThread(thread: thread)
+            // Fix round 3 R-3: branch on reachability instead of navigating
+            // unconditionally. Inert today (Monetization.paywallEnabled =
+            // false, so isReachable is always true) — this is what makes the
+            // branch correct once it flips live, rather than a product
+            // change nobody asked for today.
+            if SessionCoachThreadRepository.isReachable(thread) {
+                openedCoachThread = OpenedCoachThread(thread: thread)
+            } else {
+                showCoachPaywall = true
+            }
         } catch let error as GymSyncError {
             errorText = error.errorDescription
         } catch {
@@ -1177,9 +1221,19 @@ struct LobbyView: View {
                 // GONE: the widget's own caption says the same thing and says
                 // what else will happen.
                 if allReady {
+                    // Fix round 3 R-2: this was live for every participant —
+                    // `startSession()` (below) has no organizer guard of its
+                    // own, so any crewmate's tap could start the session.
+                    // Disabled dims it via `GS3DCardStyle`'s own
+                    // `isEnabled`-driven opacity (see the struct's doc
+                    // comment); the crewmate's readout already lives on the
+                    // widget above (`readyCaption` /
+                    // `LobbyCopy.readyCrewmateCaption`), so this button adds
+                    // no second copy of it.
                     SecondaryStartButton(title: "Start",
                                          note: LobbyCopy.secondaryStartNote,
                                          onTap: { Task { await startSession() } })
+                        .disabled(!isOrganizer)
                 } else if isOrganizer {
                     startPrimary(enabled: true) { showStartDialog = true }
                 } else {
@@ -1304,7 +1358,12 @@ struct LobbyView: View {
             selfID: selfID,
             username: username,
             onPresence: { [self] stages in presenceStages = stages },
-            onChange:   { [self] in Task { await reload() } }
+            // Fix round 3 R-9: also republish on the realtime refresh path,
+            // not just at launch and scene-active. `publishStage` no-ops
+            // when the stage has not moved, so a burst of unrelated
+            // `session_participants` events (someone else checking in) costs
+            // this device nothing beyond the `reload()` it was already doing.
+            onChange:   { [self] in Task { await reload(); await publishOwnStage() } }
         )
         await publishOwnStage()
     }
@@ -1331,6 +1390,15 @@ struct LobbyView: View {
     /// `.checkedIn` is never published — that stage belongs to
     /// `session_participants.check_in_state` and nothing else
     /// (`LobbyRealtimeService.publishStage` refuses it).
+    ///
+    /// Called at the end of `openAndLoad()`, on scene reactivation, from the
+    /// realtime `onChange` callback, and from the pre-live poll's
+    /// routine-drift branch (fix round 3 R-9 — it used to run only at launch
+    /// and scene-active, which undersold how often the geofence answer
+    /// actually gets rechecked). Each call is still a snapshot, not a
+    /// monitor: nothing here subscribes to location changes in the
+    /// background, and `CheckInService.locationIfAlreadyAuthorized()` still
+    /// never prompts. A true live trigger is Phase B's.
     @MainActor
     private func publishOwnStage() async {
         #if DEBUG
@@ -1352,6 +1420,13 @@ struct LobbyView: View {
         do {
             currentSession = try? await SessionRepository.session(id: session.id)
 
+            // Fix round 3 R-1: e16c59b (S8) deleted this along with the
+            // `async let` proposal fetch it used to run beside, even though
+            // its own commit message promised the one remaining read would
+            // survive. Without it `participants` never fills: the arrival
+            // track is permanently empty, `allReady` never true, and Start
+            // is dead.
+            participants = try await SessionRepository.participants(sessionID: session.id)
 
             let effectiveRoutineID = (currentSession ?? session).routineID
             if let routineID = effectiveRoutineID {
@@ -1384,10 +1459,6 @@ struct LobbyView: View {
             if groupName == nil, let groupID = (currentSession ?? session).groupID {
                 let groups = (try? await GroupRepository.fetchMany(ids: [groupID])) ?? []
                 groupName = groups.first?.name
-            }
-
-            if primaryGymName == nil {
-                primaryGymName = (try? await CheckInService.primaryGym())?.name
             }
 
             errorText = nil

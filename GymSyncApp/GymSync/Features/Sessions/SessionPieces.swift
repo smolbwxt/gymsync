@@ -53,8 +53,11 @@ enum SessionCopy {
     /// Coach's door (spec §3.6).
     static let talkToCoach = "Talk to Coach"
     static let talkToCoachDetail = "This session's focus · form questions · demo videos"
-    /// The swap control on a plan row — flat furniture on a raised card.
-    static let swap = "Swap"
+    /// The leader's one control on the whole plan card, before Start — flat
+    /// furniture on a raised card. Fix round 3 R-7: replaces a `Swap` chip
+    /// repeated on every row, which discarded the row it sat on and opened
+    /// the same whole-routine picker regardless of which one was tapped.
+    static let changeRoutine = "Change routine"
     /// THE CREW'S WEEK (owner addition 2026-09-12, on trial in Phase A).
     static let theCrewsWeek = "THE CREW'S WEEK"
 
@@ -276,10 +279,9 @@ struct SessionArrivalTrack: View {
 /// The whole routine, one row per exercise — `lobby-crew-waiting-v2`'s plan
 /// card. A raised card, because the leader presses things on it.
 ///
-/// A FIXED 28 pt row height, so four rows make four straight edges whether or
-/// not a row carries a chip; and a 3 pt gutter reserved whether or not a row
-/// is current, so the current row's mark cannot shift the names out of their
-/// column.
+/// A FIXED 28 pt row height, so four rows make four straight edges; and a
+/// 3 pt gutter reserved whether or not a row is current, so the current
+/// row's mark cannot shift the names out of their column.
 struct SessionPlanCard: View {
     @Environment(\.gsTheme) private var theme
 
@@ -287,14 +289,24 @@ struct SessionPlanCard: View {
     /// Today's rung, above the rows: what the block asks of this session.
     let rungLine: String
     let rows: [SessionPlanRow]
-    /// The leader can swap any row before Start (spec §3.1).
-    var showsSwap: Bool = false
-    /// What a `Swap` chip does. Nil is the same as `showsSwap: false`.
-    var onSwap: ((SessionPlanRow) -> Void)?
+    /// The leader's one control for the whole card, before Start (spec
+    /// §3.1, fix round 3 R-7 — replaces a `Swap` chip repeated on every row,
+    /// which discarded the row it sat on and opened the same whole-routine
+    /// picker regardless of which one was tapped). Nil hides it: a
+    /// crewmate, or the card once lifting has begun, gets no control at all
+    /// — swapping mid-session is spec §3.4 mode 1's consensus card, and
+    /// that is Phase B's.
+    var onChangeRoutine: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
-            GSSectionHeader(kicker)
+            HStack {
+                GSSectionHeader(kicker)
+                Spacer(minLength: 8)
+                if let onChangeRoutine {
+                    changeRoutineChip(onTap: onChangeRoutine)
+                }
+            }
             if !rungLine.isEmpty {
                 Text(rungLine)
                     .font(GSFont.bodyMedium(12.5, relativeTo: .caption))
@@ -303,14 +315,33 @@ struct SessionPlanCard: View {
             }
             GSDivider()
             ForEach(rows) { row in
-                SessionPlanRowView(row: row,
-                                   showsSwap: showsSwap && onSwap != nil,
-                                   onSwap: { onSwap?(row) })
+                SessionPlanRowView(row: row)
             }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .gs3DCard(cornerRadius: GSMetrics.radiusMd, lipHeight: 6)
+    }
+
+    /// A FLAT capsule chip on the raised card — furniture inside a raised box
+    /// stays flat (rule 1). The same drawing the retired per-row `Swap` chip
+    /// used, spent once per card instead of once per row.
+    private func changeRoutineChip(onTap: @escaping () -> Void) -> some View {
+        Button(action: onTap) {
+            HStack(spacing: 4) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 9, weight: .bold))
+                Text(SessionCopy.changeRoutine)
+                    .font(GSFont.bodyMedium(11, relativeTo: .caption2))
+            }
+            .foregroundStyle(theme.neutral700)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .background(theme.neutral300)
+            .clipShape(Capsule())
+            .fixedSize()
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -321,8 +352,6 @@ private struct SessionPlanRowView: View {
     @Environment(\.gsTheme) private var theme
 
     let row: SessionPlanRow
-    let showsSwap: Bool
-    let onSwap: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
@@ -343,30 +372,8 @@ private struct SessionPlanRowView: View {
                 .font(GSFont.body(12, relativeTo: .caption).monospacedDigit())
                 .foregroundStyle(theme.neutral500)
                 .fixedSize()
-
-            if showsSwap { swapChip }
         }
         .frame(height: 28)
-    }
-
-    /// A FLAT capsule chip on the raised card — furniture inside a raised box
-    /// stays flat (rule 1).
-    private var swapChip: some View {
-        Button(action: onSwap) {
-            HStack(spacing: 4) {
-                Image(systemName: "arrow.triangle.2.circlepath")
-                    .font(.system(size: 9, weight: .bold))
-                Text(SessionCopy.swap)
-                    .font(GSFont.bodyMedium(11, relativeTo: .caption2))
-            }
-            .foregroundStyle(theme.neutral700)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 5)
-            .background(theme.neutral300)
-            .clipShape(Capsule())
-            .fixedSize()
-        }
-        .buttonStyle(.plain)
     }
 }
 
@@ -396,7 +403,7 @@ struct SessionPlanCardWithSuggestion: View {
             header
             GSDivider()
             ForEach(rows) { row in
-                SessionPlanRowView(row: row, showsSwap: false, onSwap: {})
+                SessionPlanRowView(row: row)
             }
             if let suggestion {
                 GSDivider().padding(.top, 3)
@@ -756,9 +763,14 @@ struct EveryoneHereCard: View {
 /// Full-width raised neutral face with the note centred beneath — the foot's
 /// Start once the accent has gone up the page.
 ///
-/// Ink is `theme.text`, **not** the inert `neutral700` of a gated control:
-/// this one is live, and a secondary that reads as disabled would tell the
-/// leader the only reachable control does nothing.
+/// Ink is `theme.text`, **not** the inert `neutral700` a gated control reads
+/// in its label — this button's own opacity is what tells the two roles
+/// apart. For the leader it renders enabled (full opacity, live tap); a
+/// crewmate's caller passes `.disabled(true)` (fix round 3 R-2 —
+/// `startSession()` has no organizer guard, so an ungated copy of this
+/// button let any crewmate start the session), which `GS3DCardStyle` dims to
+/// 0.5 opacity on its own. The crewmate's explanation lives on the widget
+/// above (`LobbyCopy.readyCrewmateCaption`), not on this button's note.
 struct SecondaryStartButton: View {
     @Environment(\.gsTheme) private var theme
 
@@ -972,11 +984,10 @@ struct CrewWeekStrip: View {
             chart
             chips
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 11)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 14))
+        // Fix round 3 R-8: was five modifier lines duplicating
+        // `SessionStripModifier` inline; every other strip in this file
+        // already shares the one definition.
+        .sessionStrip()
     }
 
     /// x is Monday…Sunday, y is the crew's cumulative sessions. The dotted

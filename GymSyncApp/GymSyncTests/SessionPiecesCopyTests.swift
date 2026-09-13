@@ -25,10 +25,10 @@ final class SessionPiecesCopyTests: XCTestCase {
         XCTAssertEqual(SessionCopy.theSession, "THE SESSION")
     }
 
-    /// Flat furniture on a raised card (rule 1), and one word, because the
-    /// chip has a row's worth of space.
-    func testTheSwapChip() {
-        XCTAssertEqual(SessionCopy.swap, "Swap")
+    /// Flat furniture on a raised card (rule 1) — ONE per card now, not one
+    /// per row (fix round 3 R-7).
+    func testTheChangeRoutineControl() {
+        XCTAssertEqual(SessionCopy.changeRoutine, "Change routine")
     }
 
     // MARK: - The crew's energy

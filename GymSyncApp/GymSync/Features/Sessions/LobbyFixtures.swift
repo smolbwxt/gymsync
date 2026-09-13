@@ -31,7 +31,12 @@ struct LobbyWorld {
     /// verbatim in catalog mode, so no `ArrivalLaw` input is needed and no
     /// presence socket is reachable.
     let rows: [ArrivalRow]
-    /// Today's rung, above the plan's rows.
+    /// The routine's own name, above the plan's rows — fix round 3 R-6:
+    /// this used to read "Today's rung: Back squat 4 × 5 @ 225 · week 3 of
+    /// 8", a line production cannot produce (`LobbyView.planRungLine` is
+    /// `routineInfo?.name` and nothing else; the per-lifter rung is Phase
+    /// B). HONEST FRAMES: the fixture prints what production actually
+    /// would.
     let rungLine: String
     let planRows: [SessionPlanRow]
     /// Whether the frame is the leader's. `appState.currentProfile` is nil in
@@ -108,7 +113,9 @@ enum LobbyFixtures {
                        name: "Walking lunge", prescription: "3 × 20 steps"),
     ]
 
-    static let rungLine = "Today's rung: Back squat 4 × 5 @ 225 · week 3 of 8"
+    /// A plausible ROUTINE TITLE, not a computed prescription line — the
+    /// leader named this routine, they did not compose this sentence.
+    static let rungLine = "Leg Day A"
 
     // MARK: - The crew
 

@@ -954,7 +954,13 @@ struct HomeView: View {
                        weeklyGoalRepository: goalRepository,
                        proposal: pendingLadderProposal?.goalID == goalID
                            ? pendingLadderProposal : nil,
-                       onAnswered: { pendingLadderProposal = nil })
+                       // Fix round 3 R-4: clearing the card without
+                       // refreshing left the weekly strip quoting the
+                       // replaced rung after an Accept on the ladder page.
+                       onAnswered: {
+                           pendingLadderProposal = nil
+                           Task { await refresh() }
+                       })
     }
 
     /// The strip's own chrome — `surface` fill, 14 pt radius, 12 pt padding
