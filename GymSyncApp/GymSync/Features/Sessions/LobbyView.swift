@@ -6,6 +6,31 @@ import UIKit
 struct LobbyView: View {
     let session: WorkoutSession
 
+    #if DEBUG
+    /// The catalog's world (plan task S7, global constraint 11). With one set,
+    /// `openAndLoad()` and `reload()` return immediately — no repository, no
+    /// realtime, no `CheckInService` and no clock is reachable from a frame —
+    /// and every presentation value below reads the fixture instead.
+    /// `SocialTabView`'s DEBUG init is the shape; `VenueHubView`'s is the
+    /// precedent.
+    var catalog: LobbyWorld?
+
+    init(session: WorkoutSession) {
+        self.session = session
+        self.catalog = nil
+    }
+
+    /// The catalog's entry point. It takes NO `session:` — the world carries
+    /// its own, so a frame cannot be built half from a fixture and half from
+    /// a row somebody fetched.
+    init(catalog: LobbyWorld) {
+        self.session = catalog.session
+        self.catalog = catalog
+        _currentSession = State(initialValue: catalog.session)
+        _groupName = State(initialValue: catalog.groupName)
+    }
+    #endif
+
     @Environment(AppState.self) private var appState
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
@@ -14,9 +39,6 @@ struct LobbyView: View {
     // MARK: - State
 
     @State private var participants: [(participant: SessionParticipant, profile: Profile)] = []
-    @State private var proposals: [RoutineProposal] = []
-    @State private var proposalVotes: [UUID: [ProposalVote]] = [:]
-    @State private var proposerUsernames: [UUID: String] = [:]
     @State private var routineInfo: (name: String, exercises: [RoutineExercise])? = nil
     /// Task 7 item 1 (pre-GA ledger): the full `Routine` row (not just
     /// `routineInfo`'s name/exercises projection) for this session's
@@ -24,7 +46,16 @@ struct LobbyView: View {
     /// to decide whether Starting should also fire the group-attempt hook.
     /// See that function's doc comment for the full gating rationale.
     @State private var routineForSession: Routine? = nil
-    @State private var presenceSet: Set<UUID> = []
+    /// Who has the lobby open, and where each device says it is — user id →
+    /// `ArrivalStage.rawValue` (plan task S3).
+    ///
+    /// It was a `Set<UUID>`, which could only answer "is this lifter's app
+    /// open". The arrival track needs to know AT THE GYM from ON THE WAY, and
+    /// no column stores that: each device evaluates the geofence for itself
+    /// and publishes the answer. A user present with no published stage still
+    /// has a key here, so `presenceStages[id] != nil` is the same question the
+    /// old `presenceSet.contains(id)` asked.
+    @State private var presenceStages: [UUID: String] = [:]
     @State private var realtime = LobbyRealtimeService()
 
     @State private var errorText: String?
@@ -38,14 +69,25 @@ struct LobbyView: View {
     /// (leave voice) apart from browsing away while the session is still
     /// live (keep voice — the SESSION LIVE pill re-enters).
     @State private var exitingSession = false
-    @State private var showProposalComposer = false
     /// "Choose routine" picker (user report 2026-07-29 — the lobby had no
     /// path to a routine you'd already built).
     @State private var showRoutinePicker = false
+    /// The 1-5 energy picker (plan tasks S5, S7).
+    @State private var showEnergyPicker = false
+    /// This session's Coach thread, once somebody has tapped the door
+    /// (plan task S6). `Identifiable` through `SessionCoachThread`'s own
+    /// `threadID`, wrapped so `navigationDestination(item:)` can drive it.
+    @State private var openedCoachThread: OpenedCoachThread?
+    /// Fix round 3 R-3: `open()` used to navigate unconditionally, even when
+    /// `!isReachable(thread)` — the paywall the door is supposed to raise
+    /// never appeared. Set instead of `openedCoachThread` in that branch.
+    @State private var showCoachPaywall = false
+    /// The consensus Start, armed when the last lifter checks in. Held so the
+    /// leader tapping first — or the roster changing — can cancel it.
+    @State private var consensusStart: Task<Void, Never>?
     @State private var allExercises: [Exercise] = []
     @State private var currentSession: WorkoutSession?
     @State private var groupName: String?
-    @State private var primaryGymName: String?
 
     // MARK: - Manage menu state
 
@@ -86,7 +128,82 @@ struct LobbyView: View {
     // MARK: - Computed helpers
 
     private var selfID: UUID? { appState.currentProfile?.id }
-    private var isOrganizer: Bool { (currentSession ?? session).organizerID == selfID }
+    private var isOrganizer: Bool {
+        #if DEBUG
+        // A capture has no signed-in profile, so `organizerID == selfID`
+        // would be false for every frame and the leader's controls — the
+        // Change routine chip, the tappable ready widget — would never
+        // render. The world states which side of that line it is on.
+        if let catalog { return catalog.isOrganizer }
+        #endif
+        return (currentSession ?? session).organizerID == selfID
+    }
+
+    // MARK: - The arrival track's rows (plan tasks S3, S7)
+    //
+    // THE LOBBY'S ONE PRESENCE SIGNAL. Spec §3.1 and owner decision 16: there
+    // is no separate roster and no separate ready tick, so this is what the
+    // track, the energy card, the ready widget, Start's caption and
+    // `allReady` all read. One derivation, so the caption can never disagree
+    // with the track above it.
+
+    /// Every lifter, staged. `ArrivalLaw` decides; this only supplies the two
+    /// facts it takes — the DB's `check_in_state` and the stage that lifter's
+    /// own device published.
+    private var arrivalRows: [ArrivalRow] {
+        #if DEBUG
+        if let catalog { return catalog.rows }
+        #endif
+        return participants.map { item in
+            ArrivalRow(
+                id: item.participant.userID,
+                name: item.profile.username,
+                avatarURL: item.profile.avatarURL,
+                stage: ArrivalLaw.stage(
+                    checkInState: item.participant.checkInState,
+                    publishedStage: presenceStages[item.participant.userID]),
+                energy: item.participant.energy,
+                isYou: item.participant.userID == selfID,
+                isLate: ArrivalLaw.isLate(checkInState: item.participant.checkInState))
+        }
+    }
+
+    /// My own row, when I am in this session.
+    private var myArrivalRow: ArrivalRow? { arrivalRows.first(where: \.isYou) }
+
+    private var checkedInCount: Int {
+        arrivalRows.filter { $0.stage == .checkedIn }.count
+    }
+
+    /// Spec 3.1: "Start anyway" stays the leader's when someone is late
+    /// (coordinator fix round 6, item 5) - `startPrimary`'s only reader. Read
+    /// through `arrivalRows`, the same one derivation everything else on this
+    /// screen reads, so this can never disagree with what the track draws.
+    private var hasLateArrival: Bool {
+        arrivalRows.contains(where: \.isLate)
+    }
+
+    /// The plan card's rows, already worded. `exerciseName(for:)` resolves the
+    /// catalog's 1,300 exercises, which a frame cannot reach, so the fixture
+    /// supplies worded rows instead (constraint 11).
+    private var planRows: [SessionPlanRow] {
+        #if DEBUG
+        if let catalog { return catalog.planRows }
+        #endif
+        guard let info = routineInfo else { return [] }
+        return info.exercises.map { exercise in
+            SessionPlanRow(exercise: exercise, name: exerciseName(for: exercise))
+        }
+    }
+
+    /// Today's rung, above the plan's rows. The routine's own name until the
+    /// block's rung reaches this screen — Phase B's, not this plan's.
+    private var planRungLine: String {
+        #if DEBUG
+        if let catalog { return catalog.rungLine }
+        #endif
+        return routineInfo?.name ?? ""
+    }
 
     private var effectiveSession: WorkoutSession { currentSession ?? session }
     private var effectiveSeriesID: UUID? { effectiveSession.seriesID }
@@ -96,20 +213,23 @@ struct LobbyView: View {
         return isOrganizer && (state == "scheduled" || state == "lobby_open")
     }
 
-    private var ownParticipant: SessionParticipant? {
-        participants.first(where: { $0.participant.userID == selfID })?.participant
-    }
-
+    /// **UNCHANGED IN MEANING, restated over the one derivation.**
+    /// `ArrivalLaw.stage` returns `.checkedIn` if and only if
+    /// `check_in_state == "ready"` — a device may not publish itself into that
+    /// stage, which `SessionArrivalTests` asserts — so this is exactly the
+    /// shipped `participants.allSatisfy { $0.checkInState == "ready" }`, read
+    /// through the same rows the track draws. Reading it twice is how a Start
+    /// caption comes to disagree with the track above it.
     private var allReady: Bool {
-        !participants.isEmpty
-            && participants.allSatisfy { $0.participant.checkInState == "ready" }
+        let rows = arrivalRows
+        return !rows.isEmpty && rows.allSatisfy { $0.stage == .checkedIn }
     }
 
     private var notReadyCount: Int {
-        participants.filter { $0.participant.checkInState != "ready" }.count
+        arrivalRows.filter { $0.stage != .checkedIn }.count
     }
 
-    private var isCheckedIn: Bool { ownParticipant?.checkInState == "ready" }
+    private var isCheckedIn: Bool { myArrivalRow?.stage == .checkedIn }
 
     // MARK: - Voice (Task 4 — PTT dock, Dossier §A.1's locked session-state scope)
 
@@ -185,12 +305,6 @@ struct LobbyView: View {
         return checkInOpensAt.formatted(date: .omitted, time: .shortened)
     }
 
-    private var checkInStatusSubtitle: String {
-        guard isCheckedIn else { return "Tap Check In below" }
-        guard let primaryGymName else { return "Geofence confirmed" }
-        return "\(primaryGymName) · Geofence confirmed"
-    }
-
     private var notReadyDialogTitle: String {
         notReadyCount == 1
             ? "1 person hasn't checked in"
@@ -213,25 +327,6 @@ struct LobbyView: View {
                 // Room code banner (canvas: full-width accent fill, large monospaced code)
                 roomCodeBanner
 
-                // Check-in status card (canvas: bordered card, accent left border, location icon)
-                checkInStatusCard
-                    .padding(.horizontal, 16)
-                    .padding(.top, 14)
-
-                // Proposals section
-                if !proposals.isEmpty {
-                    GSDivider()
-                        .padding(.horizontal, 16)
-                        .padding(.top, 14)
-
-                    proposalsSection
-                        .padding(.top, 8)
-                }
-
-                GSDivider()
-                    .padding(.horizontal, 16)
-                    .padding(.top, 14)
-
                 // Voice degraded banner (Dossier §A.2 lobby frame) — sits
                 // beside the roster it degrades, not pinned to the dock
                 // (contrast the live-session dock, which pins its own copy
@@ -244,26 +339,92 @@ struct LobbyView: View {
                     .padding(.top, 14)
                 }
 
-                // Participants "Who's here"
-                participantsSection
-
-                GSDivider()
-                    .padding(.horizontal, 16)
-                    .padding(.top, 8)
-
-                // Routine section
-                routineSection
-                    .padding(.top, 8)
-
-                // Warm-up window (2026-08 warm-up phase): organizer control,
-                // or a read-only line for the crew once a window is set.
-                if isOrganizer || effectiveSession.warmupMinutes > 0 {
-                    GSDivider()
+                // WHO IS WHERE — the lobby's ONLY presence signal (spec §3.1,
+                // owner decision 16). It replaces the check-in status card,
+                // the participants section, the participant row, the check-in
+                // badge and the check-in subtitle: five objects saying one
+                // thing, four of them about a roster that no longer exists.
+                //
+                // ALL-READY (owner ruling 2026-09-12): the track becomes the
+                // accent widget and NOTHING ELSE MOVES. Everything below —
+                // the plan, the energy, Coach's door — stays exactly where it
+                // is in the waiting state.
+                if allReady {
+                    EveryoneHereCard(rows: arrivalRows,
+                                     caption: readyCaption,
+                                     isTappable: isOrganizer,
+                                     onTap: { Task { await startSession() } })
                         .padding(.horizontal, 16)
                         .padding(.top, 14)
+                } else {
+                    SessionArrivalTrack(rows: arrivalRows)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 14)
+                }
 
-                    warmupSection
-                        .padding(.top, 8)
+                // Coach's door (spec §3.6, plan task S6). The thread is
+                // resolved ON TAP, never on load: a lobby that opened a Coach
+                // room every time it appeared would create a thread for a
+                // session nobody asked Coach about.
+                //
+                // No note pre-tap (review push-5 R-18, finding 6/12,
+                // deleting `lockedNote`): `openedCoachThread` is only ever
+                // set on the reachable branch (`openCoachThread()` presents
+                // `PaywallView` on the other one), so a locked-room note
+                // could never fire from here even before the paywall's own
+                // dormancy made the question moot. A genuine pre-tap
+                // indicator needs the reachability check available before a
+                // tap, which is Phase B's.
+                CoachDoorRow(title: SessionCopy.talkToCoach,
+                             detail: SessionCopy.talkToCoachDetail,
+                             note: nil,
+                             onTap: { Task { await openCoachThread() } })
+                    .padding(.horizontal, 16)
+                    .padding(.top, 10)
+
+                // THE WHOLE PLAN, one row per exercise (spec §3.1) — not the
+                // first exercise and a "Then:" list. ONE card-level
+                // `Change routine` control for the leader (fix round 3 R-7 —
+                // ten identical per-row `Swap` chips all opened the same
+                // picker) presents the SHIPPED routine picker: spec §3.4
+                // mode 1 is what a swap becomes AFTER Start and is Phase
+                // B's; before Start the leader is simply choosing the
+                // session's routine, which is what the picker already does.
+                if !planRows.isEmpty {
+                    SessionPlanCard(kicker: SessionCopy.theSession,
+                                    rungLine: planRungLine,
+                                    rows: planRows,
+                                    onChangeRoutine: isOrganizer
+                                        ? { showRoutinePicker = true } : nil)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 10)
+                } else {
+                    noRoutineYet
+                        .padding(.horizontal, 16)
+                        .padding(.top, 10)
+                }
+
+                // HOW THE CREW FEELS (owner decision 18). The ask belongs to
+                // whoever has not answered — me — and disappears once I have;
+                // the card never nags about somebody else.
+                CrewEnergyCard(rows: arrivalRows,
+                               reported: LobbyCopy.energyReported(
+                                   reported: arrivalRows.filter { $0.energy != nil }.count,
+                                   total: arrivalRows.count),
+                               askTitle: myArrivalRow?.energy == nil
+                                   ? SessionCopy.howAreYouFeeling : nil,
+                               onAsk: { showEnergyPicker = true })
+                    .padding(.horizontal, 16)
+                    .padding(.top, 10)
+
+                // THE CREW'S WEEK (owner addition 2026-09-12, on trial). ONE
+                // LINE, removable in one line — that is the deal. Shown in
+                // both the waiting and the ready state, directly under the
+                // energy widget and above the talk dock.
+                if let crewWeek {
+                    CrewWeekStrip(week: crewWeek)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 10)
                 }
 
                 // Error
@@ -305,8 +466,12 @@ struct LobbyView: View {
                 // resolved there): whether the PTT dock replaces, stacks
                 // above, or sits below the existing `actionBar`. ASSUMPTION
                 // (judgment call, no design ruling to follow): stacks above,
-                // matching how GroupSessionLiveView already stacks its own
-                // soundboard dock above its bottom action bar.
+                // matching GroupSessionLiveView's own `PTTDockRow`, which
+                // sits between its content and its bottom action bar the
+                // same way (GroupSessionLiveView.swift:2885-2894). Fix round
+                // 3 R-11: previously cited as "GroupSessionLiveView's
+                // soundboard dock" — a literal grep for that word finds
+                // nothing, so the precedent is named directly instead.
                 if isVoiceEligible {
                     // Same retry closure the degraded banner above receives,
                     // so the dock's RETRY and the banner's Retry are one
@@ -380,8 +545,23 @@ struct LobbyView: View {
         }
         .onChange(of: scenePhase) {
             guard scenePhase == .active else { return }
-            Task { await reload() }
+            // Coming back to the app is ONE moment the geofence answer is
+            // likely to have changed — the lifter walked in while the phone
+            // was in their pocket. Fix round 3 R-9: not the only one; the
+            // realtime `onChange` callback and the pre-live poll's
+            // routine-drift branch below now republish too. None of this is
+            // live geofence monitoring (a background trigger on location
+            // change) — that's Phase B. Every path here is a snapshot taken
+            // at a moment the lobby already had a reason to re-sync.
+            Task { await reload(); await publishOwnStage() }
         }
+        // CONSENSUS START (spec §3.1). Watches the roster the way the
+        // auto-forward below watches the state: `allReady` turning true arms
+        // one cancellable shot, and anything that moves the roster — or the
+        // leader tapping first — cancels it.
+        .onChange(of: allReady) { _, _ in updateConsensusStart() }
+        .onChange(of: isStarting) { _, _ in updateConsensusStart() }
+        .onDisappear { consensusStart?.cancel(); consensusStart = nil }
         // Members' start signal (user field test 2026-07-30: only the
         // organizer navigated — everyone else sat on "Waiting for organizer
         // to start…" forever). The organizer's start reaches this client as
@@ -439,6 +619,12 @@ struct LobbyView: View {
                     // state flip.
                     if fresh.routineID != currentSession?.routineID {
                         await reload()
+                        // Fix round 3 R-9: the pre-live poll is this lobby's
+                        // stand-in for pull-to-refresh (there is no
+                        // `.refreshable` here) — a dead realtime socket is
+                        // exactly the case where this device's last
+                        // published stage is most likely stale too.
+                        await publishOwnStage()
                     } else {
                         currentSession = fresh
                     }
@@ -475,10 +661,6 @@ struct LobbyView: View {
     /// the rejoin bar.
     var body: some View {
         lobbyWithLifecycle
-        // Proposal composer sheet
-        .sheet(isPresented: $showProposalComposer) {
-            proposalComposerSheet
-        }
         // Routine picker (user report 2026-07-29)
         .sheet(isPresented: $showRoutinePicker) {
             LobbyRoutinePickerSheet(
@@ -501,6 +683,44 @@ struct LobbyView: View {
         // Session chat sheet (Task 3)
         .sheet(isPresented: $showChatSheet) {
             chatSheet
+        }
+        // HOW ARE YOU FEELING? (plan tasks S5, S7) — five answers and a
+        // cancel, the shape the lobby already raises its other two questions
+        // in.
+        .confirmationDialog(SessionCopy.howAreYouFeeling,
+                            isPresented: $showEnergyPicker,
+                            titleVisibility: .visible) {
+            energyPickerButtons
+        } message: {
+            Text("Only your crew sees this, and only for this session.")
+        }
+        // This session's Coach room (plan task S6). One room for the whole
+        // crew, opened find-or-create on the tap.
+        //
+        // Fix round 3 R-10: messages post and read through the PERSONAL
+        // `CoachChatRepository` (append stamps `user_id = me`; `threads()`
+        // filters `user_id = me`) — cross-member access here rests entirely
+        // on D3/D5's RLS (coach_chat_messages scoped to the thread's
+        // participants), not on this view. Acceptable because this thread is
+        // only ever reached from the lobby, never from the personal Coach
+        // list, so a member can't stumble into another session's room.
+        .navigationDestination(item: $openedCoachThread) { opened in
+            CoachThreadView(thread: CoachChatThread(
+                id: opened.thread.threadID,
+                title: SessionCopy.talkToCoach,
+                summary: "",
+                summarizedThrough: nil,
+                updatedAt: effectiveSession.scheduledFor ?? effectiveSession.createdAt))
+                .background(theme.bg)
+                .navigationTitle(SessionCopy.talkToCoach)
+                .navigationBarTitleDisplayMode(.inline)
+        }
+        // Fix round 3 R-3: the door's paywall, for the branch `open()` takes
+        // when the crew can't reach the room. No `highlight`: none of
+        // `Monetization.Feature`'s four cases name a session Coach room, and
+        // inventing one is a product decision this fix round isn't making.
+        .sheet(isPresented: $showCoachPaywall) {
+            PaywallView()
         }
         // Change time sheet
         .sheet(isPresented: $showChangeTimeSheet) {
@@ -593,7 +813,10 @@ struct LobbyView: View {
     /// .navigationTitle("") calls are no-ops outside a stack, and its
     /// chat/detail sheets carry their own stacks).
     private var liveSessionSheetContent: some View {
-        SessionInProgressView(session: effectiveSession, participants: participants)
+        // `SessionRunnerView`, not `SessionInProgressView`: the warm-up phase
+        // is a SCREEN now, not a page inside the live view (plan task S9), and
+        // the runner is the router that decides which one the session is on.
+        SessionRunnerView(session: effectiveSession, participants: participants)
             .id(effectiveSession.id)
     }
 
@@ -816,527 +1039,215 @@ struct LobbyView: View {
         }
     }
 
-    // MARK: - Check-in status card
-    // Canvas: bordered card with 3px accent left border, location icon, name/status, checkmark
-
-    @ViewBuilder
-    private var checkInStatusCard: some View {
-        HStack(spacing: 10) {
-            Image(systemName: isCheckedIn ? "location.fill" : "location")
-                .font(.system(size: 20))
-                .foregroundStyle(theme.accent)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(isCheckedIn ? "You're checked in" : "Not checked in")
-                    .font(GSFont.bold(14, relativeTo: .headline))
-                    .foregroundStyle(theme.text)
-                Text(checkInStatusSubtitle)
-                    .font(GSFont.body(11, relativeTo: .caption))
-                    .foregroundStyle(theme.neutral500)
-            }
-
-            Spacer()
-
-            if isCheckedIn {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(theme.accent700)
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        // Onyx alignment (2026-07-31): stripe-and-hairline chrome out,
-        // floating-widget card in. 3D pass (2026-08): the card is extruded
-        // now — static face + lip, no stroke. NOT the gold check-in BUTTON
-        // in the action bar (already 3D) — this is only its status card.
-        .gs3DCard(cornerRadius: 16)
-    }
-
-    // MARK: - Proposals Section
-    // Canvas: "Proposal · from Jordan" kicker card, progress bar, Veto/Approve buttons
-
-    @ViewBuilder
-    private var proposalsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            GSSectionHeader("Routine Proposals")
-                .padding(.horizontal, 16)
-
-            ForEach(proposals) { proposal in
-                ProposalCardView(
-                    proposal: proposal,
-                    votes: proposalVotes[proposal.id] ?? [],
-                    usernames: proposerUsernames,
-                    myID: selfID,
-                    onApprove: { await castVote(proposalID: proposal.id, approve: true) },
-                    onVeto:    { await castVote(proposalID: proposal.id, approve: false) }
-                )
-            }
-        }
-    }
-
-    // MARK: - Participants Section
-    // Canvas: "Who's here" kicker, bordered rows with initials avatar + name/status + check-in tag
-
-    private var participantsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline) {
-                GSSectionHeader("Who's here")
-                    .padding(.horizontal, 16)
-                    .padding(.top, 14)
-
-                Spacer()
-
-                let readyCount = participants.filter { $0.participant.checkInState == "ready" }.count
-                if !participants.isEmpty {
-                    Text("\(readyCount) of \(participants.count) ready")
-                        .font(GSFont.body(11, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral500)
-                        .padding(.horizontal, 16)
-                        .padding(.top, 14)
-                }
-            }
-
-            // 3D pass: 4 → 8pt row spacing so each card's 4pt lip keeps a
-            // sliver of ground beneath it instead of touching the next row.
-            VStack(spacing: 8) {
-                ForEach(participants, id: \.participant.userID) { item in
-                    participantRow(item)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
-        }
-    }
-
-    // Canvas participant row: initials avatar + name/status + check-in tag or clock
-    private func participantRow(
-        _ item: (participant: SessionParticipant, profile: Profile)
-    ) -> some View {
-        // Speaking ring (Task 4, Dossier §A.2 lobby "Who's here · voice on"
-        // strip's "talking" state) — accent border + animated bars + label,
-        // driven by `speakingParticipantIDs` (LiveKit identity = user UUID
-        // string, per T1).
-        let identity = item.participant.userID.uuidString.lowercased()
-        let voice = VoiceRoomService.shared
-        let isSpeaking = voice.speakingParticipantIDs.contains(identity)
-
-        // Phase O Task 5 item 4 ("muted-others roster rows"): VoiceRoomService
-        // now exposes a roster (connectedParticipantIDs) plus both mute-state
-        // sets, closing the gap this doc comment used to describe (git blame:
-        // "it exposes no roster of who else has joined the room at all, so
-        // the strip's 'listening'/'muted' sub-states for OTHER participants
-        // can't be rendered honestly here"). A participant not in
-        // `connectedParticipantIDs` at all still falls through to the
-        // unchanged check-in-only row below — that "haven't joined voice"
-        // case is still not a "muted" state. "Muted" covers EITHER they
-        // muted their own mic (remoteMutedParticipantIDs) OR you've locally
-        // silenced them via the voice mixer sheet
-        // (locallyMutedParticipantIDs) — live-voice frame 2's roster rows
-        // use one shared "muted" caption for both, so this does too.
-        let isInVoiceRoom = voice.connectedParticipantIDs.contains(identity)
-        let isMuted = isInVoiceRoom && !isSpeaking &&
-            (voice.remoteMutedParticipantIDs.contains(identity) || voice.locallyMutedParticipantIDs.contains(identity))
-
-        return HStack(spacing: 10) {
-            // Presence dot + initials avatar
-            ZStack(alignment: .bottomTrailing) {
-                let initials = String(item.profile.username.prefix(2)).uppercased()
-                // Onyx alignment (2026-07-31): circles, like every avatar
-                // on the live pages — the square zero-radius avatars were
-                // the pre-redesign canvas literal.
-                ZStack {
-                    Circle()
-                        .fill(item.participant.checkInState == "ready" ? theme.accent : theme.neutral400)
-                        .frame(width: 32, height: 32)
-                    Text(initials)
-                        .font(GSFont.bold(11, relativeTo: .caption2))
-                        .foregroundStyle(theme.bg)
-                }
-                // Avatar glow while talking — the blessed frames' solid 3px
-                // accent-30% spread, now a circular halo to match.
-                .background {
-                    if isSpeaking {
-                        Circle()
-                            .fill(theme.accent.opacity(0.3))
-                            .frame(width: 38, height: 38)
-                    }
-                }
-
-                // Presence online dot
-                Circle()
-                    .fill(presenceSet.contains(item.participant.userID) ? Color.gsSuccess : theme.neutral400)
-                    .frame(width: 9, height: 9)
-                    .overlay(Circle().strokeBorder(theme.bg, lineWidth: 1.5))
-                    .offset(x: 3, y: 3)
-            }
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(item.profile.username)
-                    .font(GSFont.bold(13, relativeTo: .body))
-                    .foregroundStyle(theme.text)
-                Text(checkInSubtitle(for: item.participant))
-                    .font(GSFont.body(10, relativeTo: .caption))
-                    .foregroundStyle(theme.neutral500)
-            }
-
-            if isSpeaking {
-                HStack(spacing: 4) {
-                    GSTalkingBars(color: theme.accent700, barWidth: 2, maxHeight: 10)
-                    Text("talking")
-                        .font(GSFont.bold(9, relativeTo: .caption2))
-                        .foregroundStyle(theme.accent700)
-                }
-            } else if isMuted {
-                // Live-voice frame 2's dimmed "muted" caption (no bars) —
-                // Phase O Task 5 item 4.
-                Text("muted")
-                    .font(GSFont.body(9, relativeTo: .caption2))
-                    .foregroundStyle(theme.neutral500)
-            }
-
-            Spacer()
-
-            // Check-in status tag or burpees
-            checkInBadge(for: item.participant)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        // 3D pass (2026-08): each roster card is a quiet static extrusion —
-        // 4pt lip (compact rows; full cards wear 6). The old neutral/divider
-        // stroke is gone (the lip delineates), but the SPEAKING accent ring
-        // stays as a semantic overlay on the face.
-        .overlay {
-            if isSpeaking {
-                RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
-                    .strokeBorder(theme.accent, lineWidth: 2)
-            }
-        }
-        .gs3DCard(cornerRadius: GSMetrics.radiusSm, lipHeight: 4)
-        .opacity(isMuted ? 0.7 : 1)
-    }
-
-    @ViewBuilder
-    private func checkInBadge(for participant: SessionParticipant) -> some View {
-        if participant.burpeesOwed > 0 {
-            Text("\(participant.burpeesOwed) burpees")
-                .font(GSFont.bold(10, relativeTo: .caption2))
-                .foregroundStyle(theme.accent700)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(theme.accent100)
-        } else {
-            switch participant.checkInState {
-            case "ready":
-                // Canvas: accent tag "Ready"
-                GSTag(text: "Ready", style: .accent)
-            case "invited":
-                // Canvas: outlined "Pending" pill for not-yet-arrived
-                GSTag(text: "Pending", style: .outline)
-            default:
-                // Traveling / unknown
-                Image(systemName: "clock")
-                    .font(.system(size: 14))
-                    .foregroundStyle(theme.neutral500)
-            }
-        }
-    }
-
-    private func checkInSubtitle(for participant: SessionParticipant) -> String {
-        switch participant.checkInState {
-        case "ready":              return "Checked in"
-        case "traveling_override": return "Traveling"
-        case "invited":            return "Invited"
-        default:                   return participant.checkInState ?? "Invited"
-        }
-    }
-
-    // MARK: - Routine Section
-
-    private var routineSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            GSSectionHeader("Routine")
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-
-            routineContent
-                .padding(.horizontal, 16)
-
-            // User report 2026-07-29: "the routine selection here is non
-            // intuitive. You also can't select one of the routines you have
-            // built." Both were true. The only affordance was a button
-            // labelled "Edit Routine" that actually opened a "Propose
-            // Exercise" composer — a DIFFERENT thing (one exercise at a
-            // time, put to a group vote) — and nothing anywhere let you say
-            // "we're doing Push Day A". Now the primary action is choosing
-            // one of your routines, and proposing a single exercise is the
-            // clearly-labelled secondary.
-            HStack(spacing: 10) {
-                Button {
-                    showRoutinePicker = true
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "list.bullet.rectangle")
-                            .font(.system(size: 14))
-                        Text(routineInfo == nil ? "Choose routine" : "Change routine")
-                            .font(GSFont.bodyMedium(14, relativeTo: .body))
-                    }
-                    .foregroundStyle(theme.accent)
-                    .frame(minHeight: 44)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    showProposalComposer = true
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "pencil.and.list.clipboard")
-                            .font(.system(size: 14))
-                        Text("Propose exercise")
-                            .font(GSFont.bodyMedium(14, relativeTo: .body))
-                    }
-                    .foregroundStyle(theme.neutral700)
-                    .frame(minHeight: 44)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
-        }
-    }
-
-    @ViewBuilder
-    private var routineContent: some View {
-        if let info = routineInfo, let first = info.exercises.first {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(info.name)
-                    .font(GSFont.bold(14, relativeTo: .headline))
-                    .foregroundStyle(theme.text)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("FIRST UP")
-                        .font(GSFont.bold(10, relativeTo: .caption2))
-                        .tracking(1.2)
-                        .foregroundStyle(theme.accent)
-                    Text(exerciseName(for: first))
-                        .font(GSFont.bold(16, relativeTo: .title3))
-                        .foregroundStyle(theme.text)
-
-                    HStack(spacing: 6) {
-                        if let equipment = exerciseEquipment(for: first) {
-                            GSTag(text: equipment, style: .outline)
-                        }
-                        if let sets = first.targetSets {
-                            GSTag(text: "\(sets) sets each", style: .outline)
-                        }
-                    }
-
-                    let rest = info.exercises.dropFirst()
-                    if !rest.isEmpty {
-                        Text("Then: \(rest.map { exerciseName(for: $0) }.joined(separator: " · "))")
-                            .font(GSFont.body(11, relativeTo: .caption))
-                            .foregroundStyle(theme.neutral500)
-                    }
-                }
-            }
-        } else {
-            // Copy names the actual affordances now. It used to read
-            // "propose one below" while the only button said "Edit Routine"
-            // and opened a single-exercise proposal composer — three
-            // different names for two different things.
-            Text("No routine yet — choose one of yours, or propose a single exercise for the crew to vote on.")
-                .font(GSFont.body(13, relativeTo: .subheadline))
-                .foregroundStyle(theme.neutral500)
-        }
-    }
-
     private func exerciseName(for ex: RoutineExercise) -> String {
         allExercises.first(where: { $0.id == ex.exerciseID })?.name ?? "Exercise"
     }
 
-    private func exerciseEquipment(for ex: RoutineExercise) -> String? {
-        allExercises.first(where: { $0.id == ex.exerciseID })?.equipment.capitalized
+    // MARK: - The crew's week (owner addition 2026-09-12, on trial)
+
+    /// What `CrewWeekStrip` draws, or nil for no strip and no space.
+    ///
+    /// **NIL IN PRODUCTION TODAY, and that is a wiring gap rather than a
+    /// design choice.** The strip needs two facts per crew member: their
+    /// weekly session GOAL and their COMPLETED COUNT this week. The goals are
+    /// already in hand — `SessionRepository.participants(sessionID:)` fetches
+    /// each member's `Profile`, which carries `weeklySessionGoal`. The counts
+    /// are not, and no shipped read supplies them:
+    ///
+    ///   * `SocialTabView`'s crew bar counts sessions for the WHOLE CREW, not
+    ///     per member (`SocialTabView.swift:635-650`);
+    ///   * `group_consistency_honor` is per member but over THIRTY DAYS
+    ///     (`CrewHonor.swift:73`, migration 20260911000001) — right shape,
+    ///     wrong window, and a 30-day count printed under a "this week"
+    ///     kicker would be wrong data wearing a right label.
+    ///
+    /// The ruling was explicit: add no tables, policies or RPCs for this. So
+    /// production renders nothing and the catalog frames render the fixture,
+    /// which is what the owner asked to see. Wiring it is a Phase B item.
+    private var crewWeek: CrewWeek? {
+        #if DEBUG
+        if let catalog { return catalog.crewWeek }
+        #endif
+        return nil
     }
 
-    // MARK: - Warm-up Section (2026-08 warm-up phase, 20260803000004)
-    //
-    // Organizer: − / value / + control (0–30 min, step 5) writing
-    // `warmup_minutes` through the same sessions-UPDATE path the routine
-    // picker uses (`SessionRepository.setWarmupMinutes`, sibling of
-    // `setRoutine`). Non-organizers: a read-only "WARM-UP · N MIN" line
-    // whenever a window is set. Another device's change reaches this one
-    // via the lobby realtime echo / 5s pre-live poll into `currentSession`,
-    // so both render live values.
+    // MARK: - The lobby's own pieces (plan task S7)
 
-    @ViewBuilder
-    private var warmupSection: some View {
-        if isOrganizer {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("WARM-UP")
-                    .font(GSFont.bold(10, relativeTo: .caption2))
-                    .tracking(1.2)
-                    .foregroundStyle(theme.neutral700)
+    /// The caption on the accent widget. The leader's says it is theirs; the
+    /// crew's names the leader — and both say the session starts on its own,
+    /// because it does (the consensus Start below). A caption that promised
+    /// nothing would leave a crewmate watching a screen that looks stalled.
+    private var readyCaption: String {
+        if isOrganizer { return LobbyCopy.readyLeaderCaption }
+        let leaderID = effectiveSession.organizerID
+        let leader = arrivalRows.first { $0.id == leaderID }?.name
+        return LobbyCopy.readyCrewmateCaption(
+            leaderFirstName: SessionCopy.firstName(leader ?? "the leader"))
+    }
 
-                HStack(spacing: 14) {
-                    warmupStepButton(systemName: "minus", delta: -5)
-                    Text(effectiveSession.warmupMinutes == 0 ? "OFF" : "\(effectiveSession.warmupMinutes) MIN")
-                        .font(GSFont.bold(16, relativeTo: .title3).monospacedDigit())
+    /// The plan card's empty state. A session with no routine is a legible
+    /// state, not a blank: the leader picks one, and the copy names the
+    /// affordance that exists rather than one that does not.
+    private var noRoutineYet: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            GSSectionHeader(SessionCopy.theSession)
+            Text(isOrganizer
+                 ? "No routine yet — choose one of yours and the crew sees it here."
+                 : "No routine yet. The leader picks one before Start.")
+                .font(GSFont.body(13, relativeTo: .subheadline))
+                .foregroundStyle(theme.neutral500)
+                .fixedSize(horizontal: false, vertical: true)
+            if isOrganizer {
+                Button { showRoutinePicker = true } label: {
+                    Text("Choose routine")
+                        .font(GSFont.bold(13, relativeTo: .subheadline))
                         .foregroundStyle(theme.text)
-                        .frame(minWidth: 64)
-                    warmupStepButton(systemName: "plus", delta: 5)
-                    Spacer()
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
                 }
-
-                Text("Warm up together after start — everyone votes \u{201C}I'm warm\u{201D}, the last vote begins lifting.")
-                    .font(GSFont.body(11, relativeTo: .caption))
-                    .foregroundStyle(theme.neutral500)
+                .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm, lipHeight: 4))
             }
-            .padding(.horizontal, 16)
-        } else if effectiveSession.warmupMinutes > 0 {
-            Text("WARM-UP · \(effectiveSession.warmupMinutes) MIN")
-                .font(GSFont.bold(10, relativeTo: .caption2))
-                .tracking(1.2)
-                .foregroundStyle(theme.neutral700)
-                .padding(.horizontal, 16)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd, lipHeight: 6)
+    }
+
+    /// `navigationDestination(item:)` needs an `Identifiable`;
+    /// `SessionCoachThread` is a plain value, so this is the wrapper rather
+    /// than a conformance the model does not need.
+    private struct OpenedCoachThread: Identifiable, Hashable {
+        let thread: SessionCoachThread
+        var id: UUID { thread.threadID }
+
+        static func == (lhs: OpenedCoachThread, rhs: OpenedCoachThread) -> Bool {
+            lhs.thread == rhs.thread
+        }
+        func hash(into hasher: inout Hasher) { hasher.combine(thread.threadID) }
+    }
+
+    /// Find-or-create this session's Coach room, then open it (plan task S6).
+    ///
+    /// ON TAP, not on load — see the door's own comment in `lobbyScroll`. A
+    /// catalog frame never reaches this: nothing taps in a capture, and the
+    /// guard below is belt as well as braces.
+    @MainActor
+    private func openCoachThread() async {
+        #if DEBUG
+        if catalog != nil { return }
+        #endif
+        do {
+            let thread = try await SessionCoachThreadRepository.open(
+                sessionID: effectiveSession.id)
+            // Fix round 3 R-3: branch on reachability instead of navigating
+            // unconditionally. Inert today (Monetization.paywallEnabled =
+            // false, so isReachable is always true) — this is what makes the
+            // branch correct once it flips live, rather than a product
+            // change nobody asked for today.
+            if SessionCoachThreadRepository.isReachable(thread) {
+                openedCoachThread = OpenedCoachThread(thread: thread)
+            } else {
+                showCoachPaywall = true
+            }
+        } catch let error as GymSyncError {
+            errorText = error.errorDescription
+        } catch {
+            errorText = error.localizedDescription
         }
     }
 
-    private func warmupStepButton(systemName: String, delta: Int) -> some View {
-        Button { adjustWarmup(delta) } label: {
-            Image(systemName: systemName)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(theme.neutral700)
-                .frame(width: 36, height: 36)
-                .background(theme.surface)
-                .overlay(Circle().strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
-                .clipShape(Circle())
-                .contentShape(Circle())
+    /// The 1-5 picker behind `How are you feeling?` (plan task S5).
+    ///
+    /// A confirmation dialog rather than a sheet: five choices and a cancel is
+    /// exactly what the shape is for, and the lobby already raises two others
+    /// this way (the travel dialog, Start anyway).
+    @ViewBuilder
+    private var energyPickerButtons: some View {
+        ForEach([5, 4, 3, 2, 1], id: \.self) { value in
+            Button(Self.energyLabel(value)) {
+                Task { await setEnergy(value) }
+            }
         }
-        .buttonStyle(.plain)
-        .disabled(delta > 0 ? effectiveSession.warmupMinutes >= 30 : effectiveSession.warmupMinutes <= 0)
-        .accessibilityLabel(delta > 0 ? "Longer warm-up" : "Shorter warm-up")
+        Button("Cancel", role: .cancel) {}
     }
 
-    /// Optimistic local update + the write; a failed write reverts via
-    /// reload() (the same failure shape as the routine picker's onPick).
-    private func adjustWarmup(_ delta: Int) {
-        let current = effectiveSession.warmupMinutes
-        let next = min(30, max(0, current + delta))
-        guard next != current else { return }
-        var updated = effectiveSession
-        updated.warmupMinutes = next
-        currentSession = updated
-        Task {
-            do {
-                try await SessionRepository.setWarmupMinutes(sessionID: session.id, minutes: next)
-            } catch let error as GymSyncError {
-                errorText = error.errorDescription
-                await reload()
-            } catch {
-                errorText = error.localizedDescription
-                await reload()
-            }
+    /// The five answers, in Coach's own register — a number alone is a survey.
+    static func energyLabel(_ value: Int) -> String {
+        switch value {
+        case 5:  return "5 — Ready for anything"
+        case 4:  return "4 — Good"
+        case 3:  return "3 — Average"
+        case 2:  return "2 — Running low"
+        default: return "1 — Empty"
+        }
+    }
+
+    @MainActor
+    private func setEnergy(_ value: Int) async {
+        do {
+            try await SessionRepository.setEnergy(sessionID: effectiveSession.id,
+                                                  value: value)
+            await reload()
+        } catch let error as GymSyncError {
+            errorText = error.errorDescription
+        } catch {
+            errorText = error.localizedDescription
         }
     }
 
     // MARK: - Action bar (pinned bottom)
-    // Canvas: "Lock in & Start" primary button; check-in ghost button above if not checked in
-
-    /// Check-in gold — HomeView's ready-state palette (`goldTop`/`goldInk`),
-    /// the fixed STATUS color that means "check-in, act now" and nothing
-    /// else. The lobby's Check In button is the check-in action itself, so
-    /// it wears the gold face (3D pass 2026-08); the lip derives from the
-    /// face — never a lighter tint.
-    private static let checkInGold = Color.gsHex(0xF6C945)
-    private static let checkInGoldInk = Color.gsHex(0x261A02)
+    //
+    // The gold Check In, the talk dock, then Start (rule 6 gives the talk
+    // control its home directly above the primary). The old canvas primary
+    // named two acts in one label; a button says exactly what happens (rule
+    // 9), so it says Start and the count is the line beneath it.
 
     private var actionBar: some View {
         VStack(spacing: 0) {
             GSDivider()
 
             VStack(spacing: 8) {
-                // Check-in button (if not yet checked in)
+                // Check in — the gold control, now shared with the warm-up
+                // screen (plan task S9) so gold's second job is one object.
                 if !isCheckedIn {
-                    Button {
-                        Task { await initiateCheckIn() }
-                    } label: {
-                        HStack {
-                            if isCheckingIn {
-                                ProgressView()
-                                    .controlSize(.small)
-                                    .tint(Self.checkInGoldInk)
-                                Text("Checking in…")
-                                    .font(GSFont.bold(15, relativeTo: .body))
-                            } else if !canCheckIn {
-                                Image(systemName: "clock")
-                                    .font(.system(size: 15))
-                                Text("Check-in opens at \(checkInOpensAtText)")
-                                    .font(GSFont.bold(15, relativeTo: .body))
-                            } else {
-                                Image(systemName: "location.circle.fill")
-                                    .font(.system(size: 15))
-                                Text("Check In")
-                                    .font(GSFont.bold(15, relativeTo: .body))
-                            }
-                            Spacer()
-                        }
-                        .foregroundStyle(Self.checkInGoldInk)
-                        .padding(.horizontal, 16)
-                        // 8.5pt vertical (was 12): content + 17 + the 7pt
-                        // lip keeps the button's exact prior footprint.
-                        .padding(.vertical, 8.5)
-                        .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.gs3D(face: Self.checkInGold, cornerRadius: GSMetrics.radiusSm))
-                    .disabled(isCheckingIn || !canCheckIn)
+                    SessionCheckInControl(
+                        isCheckingIn: isCheckingIn,
+                        canCheckIn: canCheckIn,
+                        opensAtText: checkInOpensAtText,
+                        onTap: { Task { await initiateCheckIn() } })
                 }
 
-                // Start / Waiting row (organizer vs attendee)
-                if isOrganizer {
-                    Button {
-                        if allReady {
-                            Task { await startSession() }
-                        } else {
-                            showStartDialog = true
-                        }
-                    } label: {
-                        HStack {
-                            if isStarting {
-                                ProgressView()
-                                    .controlSize(.small)
-                                    .tint(theme.bg)
-                                Text("Starting…")
-                                    .font(GSFont.bold(15, relativeTo: .body))
-                            } else {
-                                Text("Lock in & Start")
-                                    .font(GSFont.bold(15, relativeTo: .body))
-                            }
-                        }
-                        .foregroundStyle(theme.bg)
-                        .padding(.horizontal, 16)
-                        // 10.5pt vertical (was 14): content + 21 + the 7pt
-                        // lip keeps the button's exact prior footprint.
-                        .padding(.vertical, 10.5)
-                        .frame(maxWidth: .infinity, alignment: .center)
-                    }
-                    .buttonStyle(.gs3D(face: isStarting ? theme.accent600 : theme.accent,
-                                       cornerRadius: GSMetrics.radiusSm))
-                    .disabled(isStarting)
-                } else if isCheckedIn {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .controlSize(.small)
-                            .tint(theme.neutral500)
-                        Text("Waiting for organizer to start…")
-                            .font(GSFont.body(13, relativeTo: .subheadline))
-                            .foregroundStyle(theme.neutral500)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 14)
+                // START.
+                //
+                // ALL-READY: the accent has moved up the page to the arrival
+                // widget, so the foot's Start is the NEUTRAL secondary — same
+                // action, one accent on the page (rule 2).
+                //
+                // WAITING: the accent primary, disabled, captioned with the
+                // count. `Start anyway` is the leader's, and the shipped
+                // confirmation is what it raises.
+                //
+                // The crewmate's "Waiting for organizer to start…" row is
+                // GONE: the widget's own caption says the same thing and says
+                // what else will happen.
+                if allReady {
+                    // Fix round 3 R-2: this was live for every participant —
+                    // `startSession()` (below) has no organizer guard of its
+                    // own, so any crewmate's tap could start the session.
+                    // Disabled dims it via `GS3DCardStyle`'s own
+                    // `isEnabled`-driven opacity (see the struct's doc
+                    // comment); the crewmate's readout already lives on the
+                    // widget above (`readyCaption` /
+                    // `LobbyCopy.readyCrewmateCaption`), so this button adds
+                    // no second copy of it.
+                    SecondaryStartButton(title: "Start",
+                                         note: LobbyCopy.secondaryStartNote,
+                                         onTap: { Task { await startSession() } })
+                        .disabled(!isOrganizer)
+                } else if isOrganizer {
+                    startPrimary(enabled: true) { showStartDialog = true }
+                } else {
+                    startPrimary(enabled: false) {}
                 }
             }
             .padding(.horizontal, 16)
@@ -1358,20 +1269,90 @@ struct LobbyView: View {
         }
     }
 
-    // MARK: - Proposal Composer Sheet
+    /// The foot's accent primary while the crew is still arriving.
+    ///
+    /// LIVE for the leader — spec §3.1 lets them start anyway, and the shipped
+    /// confirmation counts who is missing — and DISABLED for everyone else,
+    /// because Start is the leader's tap. The caption beneath counts the
+    /// CHECKED IN column and nothing else: a button says exactly what happens
+    /// (rule 9), so "2 of 4 checked in" is a line under it and not inside it.
+    private func startPrimary(enabled: Bool, action: @escaping () -> Void) -> some View {
+        VStack(spacing: 7) {
+            Button(action: action) {
+                HStack {
+                    if isStarting {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(theme.bg)
+                        Text("Starting…")
+                            .font(GSFont.bold(15, relativeTo: .body))
+                    } else {
+                        // Spec 3.1: "Start anyway" for the leader when a
+                        // lifter is late (coordinator fix round 6, item 5).
+                        Text(isOrganizer && hasLateArrival ? LobbyCopy.startAnyway : "Start")
+                            .font(GSFont.bold(15, relativeTo: .body))
+                    }
+                }
+                .foregroundStyle(theme.bg)
+                .padding(.horizontal, 16)
+                // 10.5pt vertical: content + 21 + the 7pt lip keeps the
+                // button's exact prior footprint.
+                .padding(.vertical, 10.5)
+                .frame(maxWidth: .infinity, alignment: .center)
+            }
+            .buttonStyle(.gs3D(face: isStarting ? theme.accent600 : theme.accent,
+                               cornerRadius: GSMetrics.radiusSm))
+            .disabled(isStarting || !enabled)
 
-    private var proposalComposerSheet: some View {
-        ProposalComposerView(
-            session: session,
-            allExercises: allExercises,
-            onProposed: { _ in Task { await reload() } }
-        )
+            Text(LobbyCopy.checkedInCaption(checkedIn: checkedInCount,
+                                            total: arrivalRows.count))
+                .font(GSFont.body(12, relativeTo: .caption))
+                .monospacedDigit()
+                .foregroundStyle(theme.neutral500)
+                .frame(maxWidth: .infinity, alignment: .center)
+        }
+    }
+
+    // MARK: - Consensus Start (spec §3.1)
+    //
+    // "Start is the leader's tap, or fires when everyone is checked in." The
+    // SERVER has no consensus rule and this plan does not add one —
+    // `start_session` is frozen and organizer-gated (constraint 18) — so
+    // consensus is the ORGANIZER'S CLIENT firing the tap it would have fired.
+    //
+    // One shot, cancellable, never a timer: the `checkInWindowRefreshTick`
+    // idiom. Everyone else's caption says exactly what will happen
+    // (`or it starts on its own`), which is why that caption is not
+    // decoration.
+
+    /// Arm or cancel the consensus Start as the roster changes.
+    @MainActor
+    private func updateConsensusStart() {
+        guard isOrganizer, allReady, !isStarting, !navigateToInProgress else {
+            consensusStart?.cancel()
+            consensusStart = nil
+            return
+        }
+        guard consensusStart == nil else { return }
+        consensusStart = Task { @MainActor in
+            // Long enough for the leader to reach the button first, short
+            // enough that a crew standing at the rack is not waiting on a
+            // countdown nobody can see.
+            try? await Task.sleep(for: .seconds(3))
+            guard !Task.isCancelled, allReady, !isStarting else { return }
+            await startSession()
+        }
     }
 
     // MARK: - Data Loading
 
     @MainActor
     private func openAndLoad() async {
+        #if DEBUG
+        // Global constraint 11: a frame is a value, never a fetch. No
+        // repository, no realtime, no `CheckInService`, no clock.
+        if catalog != nil { return }
+        #endif
         if session.state == "scheduled" {
             do {
                 try await SessionRepository.openLobby(sessionID: session.id)
@@ -1388,35 +1369,76 @@ struct LobbyView: View {
             sessionID: session.id,
             selfID: selfID,
             username: username,
-            onPresence: { [self] set in presenceSet = set },
-            onChange:   { [self] in Task { await reload() } }
+            onPresence: { [self] stages in presenceStages = stages },
+            // Fix round 3 R-9: also republish on the realtime refresh path,
+            // not just at launch and scene-active. `publishStage` no-ops
+            // when the stage has not moved, so a burst of unrelated
+            // `session_participants` events (someone else checking in) costs
+            // this device nothing beyond the `reload()` it was already doing.
+            onChange:   { [self] in Task { await reload(); await publishOwnStage() } }
         )
+        await publishOwnStage()
+    }
+
+    /// Tell the crew where THIS device is (plan task S3, spec §1).
+    ///
+    /// AT THE GYM is the one arrival fact no column holds: the geofence is
+    /// evaluated on each device, so each device publishes the answer for
+    /// itself and `ArrivalLaw.stage` folds it in behind the DB's own
+    /// `check_in_state`.
+    ///
+    /// **GLOBAL CONSTRAINT 10 IS THE WHOLE SHAPE OF THIS FUNCTION.** It reads
+    /// `CheckInService.locationIfAlreadyAuthorized()`, which returns nil
+    /// rather than raising a prompt when authorization is `.notDetermined`,
+    /// `.denied` or `.restricted` — a location sheet raised from the lobby's
+    /// own `.task` would hang `testLobby()` the way the HealthKit sheet hung
+    /// `build-test`. The authorization check comes FIRST, before the gym read,
+    /// so the common unauthorized case costs no round trip either.
+    ///
+    /// Publishing nothing leaves ON THE WAY standing, which `subscribe` has
+    /// already sent and which is the honest default: a device that cannot say
+    /// where it is has not said it is at the gym.
+    ///
+    /// `.checkedIn` is never published — that stage belongs to
+    /// `session_participants.check_in_state` and nothing else
+    /// (`LobbyRealtimeService.publishStage` refuses it).
+    ///
+    /// Called at the end of `openAndLoad()`, on scene reactivation, from the
+    /// realtime `onChange` callback, and from the pre-live poll's
+    /// routine-drift branch (fix round 3 R-9 — it used to run only at launch
+    /// and scene-active, which undersold how often the geofence answer
+    /// actually gets rechecked). Each call is still a snapshot, not a
+    /// monitor: nothing here subscribes to location changes in the
+    /// background, and `CheckInService.locationIfAlreadyAuthorized()` still
+    /// never prompts. A true live trigger is Phase B's.
+    @MainActor
+    private func publishOwnStage() async {
+        #if DEBUG
+        if catalog != nil { return }
+        #endif
+        guard !isCheckedIn,
+              let location = await CheckInService.locationIfAlreadyAuthorized(),
+              let gym = try? await CheckInService.primaryGym() else { return }
+        await realtime.publishStage(
+            CheckInService.distanceCheck(gym: gym, location: location)
+                ? .atTheGym : .onTheWay)
     }
 
     @MainActor
     private func reload() async {
+        #if DEBUG
+        if catalog != nil { return }
+        #endif
         do {
             currentSession = try? await SessionRepository.session(id: session.id)
 
-            async let pFetch    = SessionRepository.participants(sessionID: session.id)
-            async let propFetch = ProposalRepository.open(sessionID: session.id)
-            let (fetchedParticipants, fetchedProposals) = try await (pFetch, propFetch)
-            participants = fetchedParticipants
-            proposals    = fetchedProposals
-
-            if !fetchedProposals.isEmpty {
-                let votes = try await ProposalRepository.votes(
-                    proposalIDs: fetchedProposals.map(\.id))
-                proposalVotes = Dictionary(grouping: votes, by: \.proposalID)
-
-                let unknownIDs = Set(fetchedProposals.map(\.proposerID))
-                    .subtracting(proposerUsernames.keys)
-                if !unknownIDs.isEmpty {
-                    let profiles = (try? await ProfileRepository.fetchMany(
-                        ids: Array(unknownIDs))) ?? []
-                    for p in profiles { proposerUsernames[p.id] = p.username }
-                }
-            }
+            // Fix round 3 R-1: e16c59b (S8) deleted this along with the
+            // `async let` proposal fetch it used to run beside, even though
+            // its own commit message promised the one remaining read would
+            // survive. Without it `participants` never fills: the arrival
+            // track is permanently empty, `allReady` never true, and Start
+            // is dead.
+            participants = try await SessionRepository.participants(sessionID: session.id)
 
             let effectiveRoutineID = (currentSession ?? session).routineID
             if let routineID = effectiveRoutineID {
@@ -1449,10 +1471,6 @@ struct LobbyView: View {
             if groupName == nil, let groupID = (currentSession ?? session).groupID {
                 let groups = (try? await GroupRepository.fetchMany(ids: [groupID])) ?? []
                 groupName = groups.first?.name
-            }
-
-            if primaryGymName == nil {
-                primaryGymName = (try? await CheckInService.primaryGym())?.name
             }
 
             errorText = nil
@@ -1655,20 +1673,6 @@ struct LobbyView: View {
         }
     }
 
-    // MARK: - Proposals
-
-    @MainActor
-    private func castVote(proposalID: UUID, approve: Bool) async {
-        do {
-            try await ProposalRepository.vote(proposalID: proposalID, approve: approve)
-            await reload()
-        } catch let error as GymSyncError {
-            errorText = error.errorDescription
-        } catch {
-            errorText = error.localizedDescription
-        }
-    }
-
     // MARK: - Manage actions
 
     @MainActor
@@ -1773,9 +1777,6 @@ struct LobbyView: View {
     }
 }
 
-// MARK: - ProposalComposerView
-
-/// Inline sheet for proposing a new exercise to the session's routine.
 // MARK: - Lobby routine picker (user report 2026-07-29)
 //
 // "You can't select one of the routines you have built." This is that
@@ -1886,209 +1887,6 @@ private struct LobbyRoutinePickerSheet: View {
         do {
             routines = try await RoutineRepository.fetchAll(ownerID: userID)
             errorText = nil
-        } catch let error as GymSyncError {
-            errorText = error.errorDescription
-        } catch {
-            errorText = error.localizedDescription
-        }
-    }
-}
-
-private struct ProposalComposerView: View {
-    let session: WorkoutSession
-    let allExercises: [Exercise]
-    let onProposed: (RoutineProposal) -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.gsTheme) private var theme
-
-    @State private var selectedExercise: Exercise?
-    @State private var targetSets: String = "3"
-    @State private var targetReps: String = "8-12"
-    @State private var targetWeight: String = ""
-    @State private var showExercisePicker = false
-    @State private var pickerSearchText = ""
-    @State private var isProposing = false
-    @State private var errorText: String?
-
-    var body: some View {
-        NavigationStack {
-            List {
-                // Exercise section
-                Section {
-                    if let ex = selectedExercise {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(ex.name)
-                                .font(GSFont.bold(14, relativeTo: .headline))
-                                .foregroundStyle(theme.text)
-                            Text(ex.primaryMuscle.capitalized)
-                                .font(GSFont.body(12, relativeTo: .caption))
-                                .foregroundStyle(theme.neutral500)
-                        }
-                        .listRowBackground(theme.surface)
-                    }
-                    Button {
-                        pickerSearchText = ""
-                        showExercisePicker = true
-                    } label: {
-                        Label(
-                            selectedExercise == nil ? "Pick an exercise" : "Change exercise",
-                            systemImage: "magnifyingglass"
-                        )
-                        .font(GSFont.bodyMedium(14, relativeTo: .body))
-                        .foregroundStyle(theme.accent)
-                    }
-                    .listRowBackground(theme.surface)
-                } header: {
-                    GSSectionHeader("Exercise")
-                }
-                .listRowSeparatorTint(theme.divider)
-
-                // Targets section
-                Section {
-                    targetRow(label: "Sets", placeholder: "3", text: $targetSets,
-                              keyboard: .numberPad)
-                    targetRow(label: "Reps", placeholder: "8-12", text: $targetReps,
-                              keyboard: .default)
-                    targetRow(label: "Weight (optional)", placeholder: "e.g. BW",
-                              text: $targetWeight, keyboard: .default)
-                } header: {
-                    GSSectionHeader("Targets")
-                }
-                .listRowBackground(theme.surface)
-                .listRowSeparatorTint(theme.divider)
-
-                if let errorText {
-                    Section {
-                        Text(errorText)
-                            .font(GSFont.body(12, relativeTo: .footnote))
-                            .foregroundStyle(.red)
-                            .listRowBackground(theme.bg)
-                    }
-                }
-            }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .background(theme.bg)
-            .navigationTitle("Propose Exercise")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                        .foregroundStyle(theme.neutral700)
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Propose") { Task { await propose() } }
-                        .font(GSFont.bold(14, relativeTo: .body))
-                        .foregroundStyle(selectedExercise == nil || isProposing
-                                         ? theme.neutral500 : theme.accent700)
-                        .disabled(selectedExercise == nil || isProposing)
-                }
-            }
-            .sheet(isPresented: $showExercisePicker) {
-                exercisePickerSheet
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func targetRow(label: String, placeholder: String, text: Binding<String>,
-                            keyboard: UIKeyboardType) -> some View {
-        HStack {
-            Text(label)
-                .font(GSFont.body(14, relativeTo: .body))
-                .foregroundStyle(theme.text)
-            Spacer()
-            TextField(placeholder, text: text)
-                .keyboardType(keyboard)
-                .multilineTextAlignment(.trailing)
-                .font(GSFont.bodyMedium(14, relativeTo: .body))
-                .foregroundStyle(theme.text)
-                .tint(theme.accent)
-                .frame(width: 100)
-        }
-    }
-
-    private var filteredPickerExercises: [Exercise] {
-        pickerSearchText.isEmpty ? allExercises
-            : allExercises.filter { $0.name.localizedCaseInsensitiveContains(pickerSearchText) }
-    }
-
-    private var exercisePickerSheet: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                // Shared in-content search field shape (ExercisesListView /
-                // ExercisePickSheet idiom).
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(theme.neutral500)
-                    TextField("Search exercises", text: $pickerSearchText)
-                        .font(GSFont.body(14, relativeTo: .body))
-                        .foregroundStyle(theme.text)
-                        .autocorrectionDisabled()
-                }
-                .padding(.horizontal, 13)
-                .padding(.vertical, 10)
-                .background(theme.surface)
-                .cornerRadius(GSMetrics.radiusSm)
-                .padding(16)
-
-                List(filteredPickerExercises, id: \.id) { ex in
-                    Button {
-                        selectedExercise = ex
-                        showExercisePicker = false
-                    } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(ex.name)
-                                .font(GSFont.bodyMedium(14, relativeTo: .body))
-                                .foregroundStyle(theme.text)
-                            Text(ex.primaryMuscle.capitalized)
-                                .font(GSFont.body(12, relativeTo: .caption))
-                                .foregroundStyle(theme.neutral500)
-                        }
-                    }
-                    .listRowBackground(theme.surface)
-                    .listRowSeparatorTint(theme.divider)
-                }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
-            }
-            .background(theme.bg)
-            .navigationTitle("Add exercise")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { showExercisePicker = false }
-                        .foregroundStyle(theme.neutral700)
-                }
-            }
-        }
-    }
-
-    @MainActor
-    private func propose() async {
-        guard let exercise = selectedExercise else { return }
-        isProposing = true
-        defer { isProposing = false }
-        errorText = nil
-
-        let payload = RoutineProposal.addExercisePayload(
-            exerciseID: exercise.id,
-            targetSets: Int(targetSets),
-            targetReps: targetReps.isEmpty ? nil : targetReps,
-            targetWeight: targetWeight.isEmpty ? nil : targetWeight
-        )
-
-        do {
-            let proposal = try await ProposalRepository.propose(
-                sessionID: session.id,
-                type: .addExercise,
-                payload: payload,
-                affectsExerciseID: exercise.id
-            )
-            onProposed(proposal)
-            dismiss()
         } catch let error as GymSyncError {
             errorText = error.errorDescription
         } catch {

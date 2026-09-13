@@ -52,13 +52,42 @@ const headers = {
   apikey: SUPABASE_SECRET_KEY, Authorization: `Bearer ${SUPABASE_SECRET_KEY}`,
   'Content-Type': 'application/json',
 };
+// Transient failures: on 2026-09-13 two seeds died on PostgREST 504 Gateway Timeouts
+// (a group_members lookup, then a body_weight_logs lookup) with nothing stuck on the
+// database, and each one cost a whole screenshot walk. Idempotent calls (anything but a
+// plain POST; upsert POSTs with Prefer: resolution=... count as idempotent) are retried
+// three times with backoff on a 5xx or a network error. A plain POST is never replayed:
+// a 504 can arrive after the row was committed, and the replay would be a 409.
+const RETRY_ATTEMPTS = 3;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function rest(pathAndQuery, opts = {}) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${pathAndQuery}`, {
-    ...opts, headers: { ...headers, ...(opts.headers || {}) },
-  });
-  if (!res.ok) throw new Error(`${pathAndQuery}: ${res.status} ${await res.text()}`);
-  const text = await res.text();
-  return text ? JSON.parse(text) : null;
+  const method = (opts.method || 'GET').toUpperCase();
+  const prefer = (opts.headers && opts.headers.Prefer) || '';
+  const retryable = method !== 'POST' || /resolution=/.test(prefer);
+  for (let attempt = 1; ; attempt++) {
+    let res;
+    try {
+      res = await fetch(`${SUPABASE_URL}/rest/v1/${pathAndQuery}`, {
+        ...opts, headers: { ...headers, ...(opts.headers || {}) },
+      });
+    } catch (e) {
+      if (retryable && attempt < RETRY_ATTEMPTS) {
+        console.warn(`retry ${attempt}/${RETRY_ATTEMPTS} after network error on ${pathAndQuery}: ${e.message}`);
+        await sleep(attempt * 3000);
+        continue;
+      }
+      throw e;
+    }
+    if (res.status >= 500 && retryable && attempt < RETRY_ATTEMPTS) {
+      const body = await res.text();
+      console.warn(`retry ${attempt}/${RETRY_ATTEMPTS} after ${res.status} on ${pathAndQuery}: ${body.slice(0, 120)}`);
+      await sleep(attempt * 3000);
+      continue;
+    }
+    if (!res.ok) throw new Error(`${pathAndQuery}: ${res.status} ${await res.text()}`);
+    const text = await res.text();
+    return text ? JSON.parse(text) : null;
+  }
 }
 const rep = { Prefer: 'return=representation' };
 const MARK = '[QA]'; // stable marker: name-prefix for fixture rows we own
@@ -305,6 +334,16 @@ async function main() {
   await rest(`sessions?group_id=eq.${group.id}`, { method: 'DELETE' });
   const states = ['scheduled', 'lobby_open', 'voting', 'locked', 'in_progress', 'completed'];
   const now = new Date().toISOString();
+  // Review push-5 (R-16): the lobby_open session's other member, looked up
+  // here rather than reusing the `acceptedFriend` fetch below (that happens
+  // later in the script, after this loop runs) — same account, same natural
+  // key, `ci_test_user_2` per ACCEPTED_FRIEND_USERNAME's own doc comment.
+  const [lobbyOtherMember] = await rest(
+    `profiles?select=id,username&username=ilike.${ACCEPTED_FRIEND_USERNAME}`);
+  if (!lobbyOtherMember) {
+    console.error(`No profile for "${ACCEPTED_FRIEND_USERNAME}" (expected lobby_open's other member)`);
+    process.exit(1);
+  }
   for (const state of states) {
     const row = { group_id: group.id, organizer_id: me.id, state, scheduled_for: now };
     if (state === 'in_progress') row.started_at = now;
@@ -314,9 +353,9 @@ async function main() {
     // ONLY the completed one gets a participant row, and only because
     // `group_consistency_honor` (20260911000001) credits ATTENDANCE rather
     // than the organizer — without it the CI account's crew has no honor line
-    // and `app-tab-social` proves nothing. The other five states are left
+    // and `app-tab-social` proves nothing. The other four states are left
     // exactly as they were: adding participants to them would change what
-    // testLobby/testSessionRecap capture.
+    // testSessionRecap captures.
     if (state === 'completed') {
       await rest('session_participants', { method: 'POST',
         headers: { Prefer: 'resolution=merge-duplicates' },
@@ -324,6 +363,21 @@ async function main() {
           session_id: created.id, user_id: me.id,
           check_in_state: 'ready',
         }) });
+    }
+    // Review push-5 (R-16): lobby_open had ZERO session_participants rows,
+    // so SessionRepository.participants(sessionID:) returned [] and
+    // SessionShape.isSolo(0, nil) read true — app-lobby silently rendered
+    // the warm-up screen instead of the lobby (finding 4). Two rows, distinct
+    // check-in states, make it a genuine crew lobby with a populated arrival
+    // track: the organizer checked in, the crew's other member still on the
+    // way — same upsert shape as the completed row above.
+    if (state === 'lobby_open') {
+      await rest('session_participants', { method: 'POST',
+        headers: { Prefer: 'resolution=merge-duplicates' },
+        body: JSON.stringify([
+          { session_id: created.id, user_id: me.id, check_in_state: 'ready' },
+          { session_id: created.id, user_id: lobbyOtherMember.id, check_in_state: 'invited' },
+        ]) });
     }
   }
   console.log(`  sessions: ${states.join(', ')}`);

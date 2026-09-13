@@ -464,7 +464,10 @@ enum PublicWorkoutRepository {
     /// etc.) because this call has a genuine `boolean` parameter alongside
     /// the two uuid ones — a dictionary literal can't mix value types, and
     /// `AnyJSON` is already this codebase's established typed-JSON-payload
-    /// vocabulary (`RoutineProposal.swift:68-72`), giving `p_opt_in` a real
+    /// vocabulary — the precedent was the routine-proposal vote insert, which left with
+    /// the proposal-and-vote flow (docs/superpowers/plans/2026-09-12-group-session-phase-a-plan.md,
+    /// task S8); `SessionRepository.setRoutine` carries the same idiom today —
+    /// giving `p_opt_in` a real
     /// JSON boolean rather than a stringified "true"/"false" that would rely
     /// on PostgREST's parameter coercion.
     static func startAttempt(routineID: UUID, sessionID: UUID, optIn: Bool) async throws -> UUID {

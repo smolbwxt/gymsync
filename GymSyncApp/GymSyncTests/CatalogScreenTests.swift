@@ -106,18 +106,12 @@ final class CatalogScreenTests: XCTestCase {
             // congruence B2 T2.3: the block calendar's flag/trophy glyphs.
             "block-calendar",
             // The focused session design round (group-session-and-lobby spec
-            // §8 step 1, owner decision 10): the lobby's two compositions and
-            // its everyone-ready state, and the shared warm-up screen's two
-            // compositions and its crew frame.
-            "lobby-crew-waiting-a",
-            "lobby-crew-waiting-b",
-            "lobby-crew-ready",
-            "warmup-solo-a",
-            "warmup-solo-b",
-            "warmup-crew",
-            // The same round, continued: Rounds' rest screen in two
+            // §8 step 1, owner decision 10): Rounds' rest screen in two
             // compositions plus the hold threshold and spotter mode, then
-            // Freestyle's shared rail and Together's one clock.
+            // Freestyle's shared rail and Together's one clock. The round's
+            // lobby and warm-up ids (frames 106-111) retired to production
+            // in the group-session Phase A plan (task S11) — see the
+            // "production session screens" block below.
             "round-wait-a",
             "round-wait-b",
             "round-skip-offer",
@@ -128,19 +122,31 @@ final class CatalogScreenTests: XCTestCase {
             // card, and the pump-check post re-composed.
             "swap-consensus-card",
             "pump-check-card-v2",
-            // The session round's SECOND PASS (frames 120-126): the ids the
-            // owner's picks produced, beside the frozen v1 ids they answer.
-            "lobby-crew-waiting-v2",
-            "lobby-crew-ready-v2",
-            "warmup-solo-v2",
+            // The session round's SECOND PASS (frames 123-126 survive): the
+            // ids the owner's picks produced, beside the frozen v1 ids they
+            // answer. The pass's lobby and warm-up ids (120-122) retired
+            // alongside their v1 siblings (task S11).
             "round-wait-v2",
             "round-spotter-v2",
             "swap-consensus-card-v2",
             "together-clock-v2",
-            // The THIRD and last pass (frames 127-128): the arrival widget as
-            // the primary, and spotter mode with the zone colours put back.
-            "lobby-crew-ready-v3",
+            // The THIRD and last pass (frame 128 survives): spotter mode
+            // with the zone colours put back. Frame 127
+            // (`lobby-crew-ready-v3`) retired with the rest of the round's
+            // lobby ids (task S11).
             "round-spotter-v3",
+            // The production session screens (group-session Phase A plan,
+            // task S11), frames 129-134 — what the ten retired ids above
+            // became once the owner picked.
+            "session-lobby-waiting",
+            "session-lobby-ready",
+            "session-lobby-late",
+            "session-warmup-solo",
+            "session-warmup-crew",
+            "ladder-reladder-proposal",
+            // Fix round 6, item 4: the lobby's own second screen (below the
+            // fold on 129/130), so the owner can judge THE CREW'S WEEK trial.
+            "session-lobby-week",
         ]
         for id in ids {
             XCTAssertNotNil(CatalogScreen(rawValue: id), "missing catalog case: \(id)")

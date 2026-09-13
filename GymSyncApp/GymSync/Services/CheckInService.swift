@@ -68,6 +68,30 @@ enum CheckInService {
     static func requestLocation() async throws -> CLLocation {
         try await LocationOneShotHelper().fetchLocation()
     }
+
+    /// The device's location ONLY if location authorization has already been
+    /// granted. Returns nil — never a prompt — when the status is
+    /// `.notDetermined`, `.denied` or `.restricted`.
+    ///
+    /// Global constraint 10: `requestLocation()` (:68) drives
+    /// `LocationOneShotHelper`, which calls `requestWhenInUseAuthorization()`
+    /// on `.notDetermined` (:101-104). A prompt raised from the lobby's own
+    /// `.task` would hang `testLobby()` the way the HealthKit sheet hung
+    /// `build-test`. The arrival track is this function's ONLY caller.
+    ///
+    /// The status is read BEFORE `LocationOneShotHelper` is constructed, not
+    /// after: the helper's own `fetchLocation()` is where the prompt lives, so
+    /// the only safe order is to never reach it. A failure to fix is nil too —
+    /// AT THE GYM is a claim, and an unknown position is not one.
+    @MainActor
+    static func locationIfAlreadyAuthorized() async -> CLLocation? {
+        switch CLLocationManager().authorizationStatus {
+        case .authorizedWhenInUse, .authorizedAlways:
+            return try? await LocationOneShotHelper().fetchLocation()
+        default:
+            return nil
+        }
+    }
 }
 
 // MARK: - LocationOneShotHelper

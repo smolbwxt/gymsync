@@ -239,7 +239,7 @@ struct CalendarSchedulingView: View {
                 // `.id` — session-identity pin, the rule every lobby push in
                 // this app follows (`HomeView.navigateToJoined`'s destination
                 // comment has the field-bug story).
-                LobbyView(session: session)
+                SessionEntryView(session: session)
                     .id(session.id)
             }
         }

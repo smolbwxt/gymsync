@@ -40,6 +40,19 @@ struct LadderPageView: View {
     /// the rung belongs to, so it carries one — `LiveWeeklyGoalRepository` by
     /// default, injected by a host that has its own.
     var weeklyGoalRepository: any WeeklyGoalRepository = LiveWeeklyGoalRepository()
+    /// Coach's re-ladder, waiting on the athlete (spec §4, plan task S2).
+    ///
+    /// AN INPUT, not a read. Home already computes it — it is the one screen
+    /// that knows the block goal's id before the page is opened — and handing
+    /// the value down means Home's card and this page's card are the same
+    /// proposal rather than two derivations a minute apart. Nil is no card,
+    /// which is what every other opener of this page gets.
+    var proposal: LadderProposal? = nil
+    /// Told when the athlete answers the card — accept, decline, or the
+    /// lever, all three of which make Home's own copy stale (review finding
+    /// F4). Home clears `pendingLadderProposal`; every other opener passes
+    /// nothing and nothing happens.
+    var onAnswered: (() -> Void)?
 
     @Environment(\.gsTheme) private var theme
 
@@ -55,6 +68,10 @@ struct LadderPageView: View {
     @State private var goal: BlockGoal?
     @State private var loading = true
     @State private var reLaddering = false
+    /// Whether the athlete has answered `proposal` on THIS visit. The
+    /// proposal itself is an input and cannot be cleared from here; this is
+    /// what makes both answers close the card.
+    @State private var proposalAnswered = false
     @State private var saving = false
     @State private var errorText: String?
     @State private var coachThread: CoachOpener?
@@ -133,6 +150,7 @@ struct LadderPageView: View {
                 if let page = resolved {
                     milestoneHeader(page)
                     coachLine(page)
+                    proposalCard
                     ladderCard(page)
                     levers
                     saveRow
@@ -151,6 +169,10 @@ struct LadderPageView: View {
         .navigationTitle("The ladder")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
+        // A SURVIVING PAGE INSTANCE MUST REOPEN FOR A NEW PROPOSAL (review
+        // finding F4). `proposalAnswered` is about the proposal that was on
+        // screen; a different one arriving is a different question.
+        .onChange(of: proposal) { _, _ in proposalAnswered = false }
         .navigationDestination(item: $coachThread) { opener in
             CoachThreadLauncher(title: opener.title, opener: opener.opener)
                 .background(theme.bg)
@@ -235,6 +257,56 @@ struct LadderPageView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Coach: \(page.coachLine). Talk it through.")
         }
+    }
+
+    // MARK: - 3b: Coach proposes a new ladder (spec §4, plan task S2)
+
+    /// **ABOVE THE RUNGS AND BELOW THE COACH LINE.** The rungs are what the
+    /// proposal is about, so the question sits above its own subject (rule 4).
+    ///
+    /// NO ACCENT — this page already has one primary, the save (this file's
+    /// header), and a page never has two accent buttons (rule 2).
+    /// `GSConsentCard` is drawn without accent for exactly that reason.
+    @ViewBuilder
+    private var proposalCard: some View {
+        if let proposal, !proposalAnswered {
+            GSConsentCard(
+                kicker: GSConsentCopy.ladderKicker,
+                sentence: LadderProposalMath.sentence(proposal,
+                                                      unit: ThemeStore.shared.weightUnit),
+                detail: LadderProposalMath.detail(proposal),
+                acceptTitle: GSConsentCopy.accept,
+                declineTitle: GSConsentCopy.decline,
+                onAccept: {
+                    proposalAnswered = true
+                    Task { await acceptProposal(proposal) }
+                },
+                onDecline: {
+                    // The card only. The next Home load recomputes it, which
+                    // is correct: the proposal is a fact about the ladder, not
+                    // a dismissible notice. Home is told so it does not keep
+                    // showing its own copy of a card this page just answered
+                    // (review finding F4).
+                    proposalAnswered = true
+                    onAnswered?()
+                })
+        }
+    }
+
+    /// Accept applies **the proposal the athlete just read**, through
+    /// `applyLadderProposal` — the one method `LET COACH RE-LADDER` ends in
+    /// too (controller ruling R-F11).
+    ///
+    /// It does NOT recompute. The old shape called `reLadder(goalID:)`, which
+    /// re-derives from actuals at accept time, so a set logged between the
+    /// card rendering and the tap could write a different ladder than the one
+    /// on screen. Accepting a suggestion has to apply that suggestion.
+    private func acceptProposal(_ proposal: LadderProposal) async {
+        guard world == nil else { return }
+        reLaddering = true
+        defer { reLaddering = false }
+        fetched = await repository.applyLadderProposal(proposal) ?? fetched
+        onAnswered?()
     }
 
     // MARK: - 4: the ladder
@@ -656,10 +728,16 @@ struct LadderPageView: View {
         guard world == nil else { return }
         reLaddering = true
         defer { reLaddering = false }
+        // `reLadder(goalID:)` now computes and then applies through
+        // `applyLadderProposal` itself — the materialise and the re-read moved
+        // INSIDE it (controller ruling R-F11), so the three verbatim copies of
+        // this block are one method. The page read below is this view's own,
+        // because the repository call hands back a `Ladder` and this screen
+        // renders a `LadderPageModel`.
         _ = await repository.reLadder(goalID: goalID)
-        await repository.materialiseRung(goalID: goalID,
-                                         weekStart: WeekMath.weekStartString())
         fetched = await repository.page(goalID: goalID)
+        // The lever re-ladders too, so whatever Home was offering is stale.
+        onAnswered?()
     }
 
     /// The other write on this page, and it is world-safe **structurally**
