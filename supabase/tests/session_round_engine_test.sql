@@ -105,6 +105,29 @@ INSERT INTO sessions (id, organizer_id, state) VALUES
   ('00000000-0000-4000-f000-000000001020',
    '00000000-0000-4000-f000-000000001001', 'lobby_open');
 
+-- S3: in_progress, round_started_at still NULL (round 1 never closed),
+-- lifting_started_at set two minutes ago. A is both organizer and the
+-- only present participant -- for assertion 14. Fixed here, in the TOP
+-- fixture block alongside S1/S2, after backend run 34782471024 caught it
+-- placed after assertion 13's SET LOCAL (as C): a sessions INSERT with
+-- organizer_id = A run while authenticated as C violated RLS ("new row
+-- violates row-level security policy for table sessions") -- no
+-- assertion's role may leak into a later fixture INSERT.
+INSERT INTO sessions (id, organizer_id, state, lifting_started_at) VALUES
+  ('00000000-0000-4000-f000-000000001030',
+   '00000000-0000-4000-f000-000000001001',
+   'in_progress', now() - interval '2 minutes');
+INSERT INTO session_participants (session_id, user_id, check_in_state) VALUES
+  ('00000000-0000-4000-f000-000000001030', '00000000-0000-4000-f000-000000001001', 'ready');
+-- A's only set in S3 was logged BEFORE lifting_started_at -- three minutes
+-- before it, i.e. during the warm-up phase set_logs_reject_prelive_session
+-- does not gate on (finding 2).
+INSERT INTO set_logs (id, user_id, session_id, exercise_id, set_index, reps, logged_at) VALUES
+  ('00000000-0000-4000-f000-000000001105', '00000000-0000-4000-f000-000000001001',
+   '00000000-0000-4000-f000-000000001030',
+   (SELECT id FROM exercises WHERE slug = 'bench-press' LIMIT 1), 1, 10,
+   now() - interval '5 minutes');
+
 INSERT INTO session_participants (session_id, user_id, turn_order, check_in_state) VALUES
   ('00000000-0000-4000-f000-000000001010', '00000000-0000-4000-f000-000000001001', 1, 'ready'),
   ('00000000-0000-4000-f000-000000001010', '00000000-0000-4000-f000-000000001002', 2, 'ready'),
@@ -330,26 +353,9 @@ SELECT results_eq(
   'a second re-mix at the same exercise position returns the stored assignment unchanged');
 
 -- ── FIX ROUND 1 ADDITIONS (2026-09-13) ────────────────────────────────────
-
--- S3: a fresh in_progress session for assertion 14 -- round_started_at is
--- still NULL (round 1 has never closed), lifting_started_at is set two
--- minutes ago. A is both organizer and the only present participant.
-INSERT INTO sessions (id, organizer_id, state, lifting_started_at) VALUES
-  ('00000000-0000-4000-f000-000000001030',
-   '00000000-0000-4000-f000-000000001001',
-   'in_progress', now() - interval '2 minutes');
-
-INSERT INTO session_participants (session_id, user_id, check_in_state) VALUES
-  ('00000000-0000-4000-f000-000000001030', '00000000-0000-4000-f000-000000001001', 'ready');
-
--- A's only set in S3 was logged BEFORE lifting_started_at -- three minutes
--- before it, i.e. during the warm-up phase set_logs_reject_prelive_session
--- does not gate on (finding 2).
-INSERT INTO set_logs (id, user_id, session_id, exercise_id, set_index, reps, logged_at) VALUES
-  ('00000000-0000-4000-f000-000000001105', '00000000-0000-4000-f000-000000001001',
-   '00000000-0000-4000-f000-000000001030',
-   (SELECT id FROM exercises WHERE slug = 'bench-press' LIMIT 1), 1, 10,
-   now() - interval '5 minutes');
+-- S3's fixture (session, participant, one set_log) lives in the TOP
+-- fixture block above, with S1/S2 -- not here -- so its INSERTs run before
+-- any role switch. See that block's own comment for why.
 
 SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-f000-000000001001';
 
