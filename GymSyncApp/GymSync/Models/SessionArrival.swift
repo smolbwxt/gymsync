@@ -99,6 +99,11 @@ enum LobbyCopy {
         "\(checkedIn) of \(total) checked in"
     }
 
+    /// The leader's Start button, spelled this way instead of plain "Start"
+    /// whenever a lifter is in the late lane (spec 3.1) - coordinator fix
+    /// round 6, item 5. The tap raises the same confirmation either way.
+    static let startAnyway = "Start anyway"
+
     /// "Everyone's here. Let's work." — owner decision 20, verbatim.
     static let everyoneHere = "Everyone's here. Let's work."
 

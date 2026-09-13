@@ -175,6 +175,14 @@ struct LobbyView: View {
         arrivalRows.filter { $0.stage == .checkedIn }.count
     }
 
+    /// Spec 3.1: "Start anyway" stays the leader's when someone is late
+    /// (coordinator fix round 6, item 5) - `startPrimary`'s only reader. Read
+    /// through `arrivalRows`, the same one derivation everything else on this
+    /// screen reads, so this can never disagree with what the track draws.
+    private var hasLateArrival: Bool {
+        arrivalRows.contains(where: \.isLate)
+    }
+
     /// The plan card's rows, already worded. `exerciseName(for:)` resolves the
     /// catalog's 1,300 exercises, which a frame cannot reach, so the fixture
     /// supplies worded rows instead (constraint 11).
@@ -1279,7 +1287,9 @@ struct LobbyView: View {
                         Text("Starting…")
                             .font(GSFont.bold(15, relativeTo: .body))
                     } else {
-                        Text("Start")
+                        // Spec 3.1: "Start anyway" for the leader when a
+                        // lifter is late (coordinator fix round 6, item 5).
+                        Text(isOrganizer && hasLateArrival ? LobbyCopy.startAnyway : "Start")
                             .font(GSFont.bold(15, relativeTo: .body))
                     }
                 }

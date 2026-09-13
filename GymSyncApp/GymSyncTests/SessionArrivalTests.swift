@@ -84,6 +84,13 @@ final class SessionArrivalTests: XCTestCase {
                        "2 of 4 checked in")
     }
 
+    /// Spec 3.1: the leader's Start reads this instead of plain "Start"
+    /// whenever a lifter is in the late lane (fix round 6, item 5) - the tap
+    /// itself is unchanged, only what it's called.
+    func testStartAnywayIsVerbatim() {
+        XCTAssertEqual(LobbyCopy.startAnyway, "Start anyway")
+    }
+
     func testEnergyReportedIsCaps() {
         XCTAssertEqual(LobbyCopy.energyReported(reported: 3, total: 4),
                        "3 OF 4 REPORTED")
