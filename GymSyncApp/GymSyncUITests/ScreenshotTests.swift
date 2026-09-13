@@ -42,6 +42,65 @@ final class ScreenshotTests: XCTestCase {
     /// only use site for why this is a constant of its own and not `settle()`.
     private let catalogRenderBudget: TimeInterval = 2.0
 
+    /// One warm-up launch, paid once for the whole class instead of by
+    /// whichever test XCTest happens to run first.
+    ///
+    /// EVIDENCE (fix round 4, `fix4-ci-warmup.md`), two runs, different
+    /// branches, same single failure, 136/137 captures each:
+    ///   - PR #66 attempt 2 (master code): `testActivityFeed` — "Tab bar did
+    ///     not appear within 60.0s" (this file, the `waitForTabBar` assert).
+    ///   - Run 34762787008 (app branch @ 035c7d0): `testActivityFeed` —
+    ///     "Failed to get matching snapshots: Timed out while evaluating UI
+    ///     query"; the launch idled at t=32.8s, the Home-button wait began at
+    ///     35.8s, and the snapshot query itself timed out. The VERY NEXT
+    ///     test's launch idled at 28s and passed; 133 later launches passed.
+    ///   - Master attempt 2 (00:20 UTC) passed 137/137 on the SAME code as PR
+    ///     #66.
+    /// Marginal cold-start timing on the runner image — the fresh simulator's
+    /// first install/boot, paid by whichever test happens to launch first —
+    /// not a login problem and not flaky product code. This warm-up pays that
+    /// cost here instead, once, before any test's own clock starts.
+    ///
+    /// A SEPARATE, TOLERANT launch, not `launchApp()`: this must never fail
+    /// the class — a missing "Home" button here should cost nothing, because
+    /// every test still runs its own `launchApp()` + `waitForTabBar()` gate
+    /// regardless — so it does not share `launchApp()`'s hard `XCTFail` on
+    /// missing credentials. Same launch arguments and environment as
+    /// `launchApp()`, duplicated rather than factored out, so `launchApp()`'s
+    /// existing 19 call sites stay untouched.
+    ///
+    /// `launchTimeout` (60s, above) is UNCHANGED for the tests themselves —
+    /// this warm-up's own budget is a separate, more generous 120s, spent
+    /// once, not per test.
+    override class func setUp() {
+        super.setUp()
+        let app = XCUIApplication()
+        app.launchArguments += ["-hasSeenWalkthroughV1", "YES"]
+        app.launchArguments += ["-guidanceTipsEnabled", "NO"]
+        app.launchArguments += ["-gsPalette", "onyx", "-gsAccent", "sky"]
+        var env = app.launchEnvironment
+        env["UITEST_EMAIL"] = ProcessInfo.processInfo.environment["UITEST_EMAIL"] ?? ""
+        env["UITEST_PASSWORD"] = ProcessInfo.processInfo.environment["UITEST_PASSWORD"] ?? ""
+        app.launchEnvironment = env
+        app.launch()
+
+        let warmUpTimeout: TimeInterval = 120
+        let pollInterval: TimeInterval = 0.5
+        let deadline = Date().addingTimeInterval(warmUpTimeout)
+        var seen = false
+        while Date() < deadline {
+            if app.buttons["Home"].exists {
+                seen = true
+                break
+            }
+            Thread.sleep(forTimeInterval: pollInterval)
+        }
+        if !seen {
+            NSLog("[ScreenshotTests warm-up] \"Home\" button did not appear within \(warmUpTimeout)s — proceeding anyway; each test still gates on its own launchApp()/waitForTabBar().")
+        }
+        app.terminate()
+    }
+
     override func setUp() {
         super.setUp()
         // Abort a test at its first failure: without this, XCTFail (e.g. the
