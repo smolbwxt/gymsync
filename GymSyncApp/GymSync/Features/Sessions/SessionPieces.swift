@@ -983,62 +983,88 @@ struct CrewWeekStrip: View {
     /// line is the plan; the solid one is what happened, ending in a filled
     /// dot on today so the eye knows where "now" is on a week that has not
     /// finished.
+    ///
+    /// **EVERY CALCULATION IS A PLAIN FUNCTION BELOW, NOT A LOCAL ONE INSIDE
+    /// THE `GeometryReader`.** Local `func`s with `return` statements in a
+    /// `@ViewBuilder` closure do not compile — the builder cannot infer its
+    /// `Content` and rejects the returns outright (CI at d513c94,
+    /// SessionPieces.swift:987 and :998). The builder closure now contains
+    /// nothing but view expressions, and the geometry is ordinary Swift that
+    /// hands back `Path` and `CGPoint`.
     private var chart: some View {
         GeometryReader { proxy in
-            let planned = CrewWeekMath.plannedSeries(week)
-            let actual = CrewWeekMath.actualSeries(week)
-            // Both lines share one scale, or the comparison they exist to
-            // make is meaningless.
-            let ceiling = max(planned.last ?? 0, actual.max() ?? 0, 1)
-            let width = proxy.size.width
-            let height = proxy.size.height
-
-            func point(_ index: Int, of count: Int, value: Double) -> CGPoint {
-                let steps = max(count - 1, 1)
-                return CGPoint(x: width * CGFloat(index) / CGFloat(steps),
-                               y: height * (1 - CGFloat(value / ceiling)))
-            }
-
-            // The actual line spans Monday..today, so its x must be measured
-            // against the WEEK's span, not its own point count.
-            func actualPoint(_ index: Int) -> CGPoint {
-                let span = CGFloat(CrewWeekMath.daysInWeek)
-                let x: CGFloat = actual.count == 2
-                    ? width * CGFloat(index) * CGFloat(CrewWeekMath.today(week) + 1) / span
-                    : width * CGFloat(index) / span
-                return CGPoint(x: x,
-                               y: height * (1 - CGFloat(actual[index] / ceiling)))
-            }
-
             ZStack {
-                Path { path in
-                    for (index, value) in planned.enumerated() {
-                        let p = point(index, of: planned.count, value: value)
-                        index == 0 ? path.move(to: p) : path.addLine(to: p)
-                    }
-                }
-                .stroke(theme.neutral700,
-                        style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
-
-                Path { path in
-                    for index in actual.indices {
-                        let p = actualPoint(index)
-                        index == 0 ? path.move(to: p) : path.addLine(to: p)
-                    }
-                }
-                .stroke(theme.text, style: StrokeStyle(lineWidth: 2,
-                                                       lineCap: .round,
-                                                       lineJoin: .round))
-
-                if let last = actual.indices.last {
-                    Circle()
-                        .fill(theme.text)
-                        .frame(width: 5, height: 5)
-                        .position(actualPoint(last))
-                }
+                plannedPath(in: proxy.size)
+                    .stroke(theme.neutral700,
+                            style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
+                actualPath(in: proxy.size)
+                    .stroke(theme.text, style: StrokeStyle(lineWidth: 2,
+                                                           lineCap: .round,
+                                                           lineJoin: .round))
+                Circle()
+                    .fill(theme.text)
+                    .frame(width: 5, height: 5)
+                    .position(actualEnd(in: proxy.size))
             }
         }
         .frame(height: Self.chartHeight)
+    }
+
+    /// Both lines share one scale, or the comparison they exist to make is
+    /// meaningless. Never zero — a crew with no plan and no sessions still
+    /// gets a chart with a floor rather than a division by nothing.
+    private var ceiling: Double {
+        max(CrewWeekMath.plannedSeries(week).last ?? 0,
+            CrewWeekMath.actualSeries(week).max() ?? 0,
+            1)
+    }
+
+    /// The dotted plan: eight points across the full width, Monday morning's
+    /// nothing to Sunday night's whole plan.
+    private func plannedPath(in size: CGSize) -> Path {
+        let planned = CrewWeekMath.plannedSeries(week)
+        var path = Path()
+        for (index, value) in planned.enumerated() {
+            let steps = CGFloat(max(planned.count - 1, 1))
+            let point = CGPoint(x: size.width * CGFloat(index) / steps,
+                                y: size.height * (1 - CGFloat(value / ceiling)))
+            if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
+        }
+        return path
+    }
+
+    /// The solid actual, Monday to today.
+    private func actualPath(in size: CGSize) -> Path {
+        let actual = CrewWeekMath.actualSeries(week)
+        var path = Path()
+        for index in actual.indices {
+            let point = actualPoint(index, in: size)
+            if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
+        }
+        return path
+    }
+
+    /// The filled dot: where "now" is on a week that has not finished.
+    private func actualEnd(in size: CGSize) -> CGPoint {
+        let actual = CrewWeekMath.actualSeries(week)
+        return actualPoint(max(actual.count - 1, 0), in: size)
+    }
+
+    /// The actual line spans Monday…today, so its x is measured against the
+    /// WEEK's span and never against its own point count — otherwise a
+    /// Tuesday's two points would stretch across the whole chart and the crew
+    /// would look a week ahead of itself.
+    private func actualPoint(_ index: Int, in size: CGSize) -> CGPoint {
+        let actual = CrewWeekMath.actualSeries(week)
+        guard actual.indices.contains(index) else { return .zero }
+        let span = CGFloat(CrewWeekMath.daysInWeek)
+        // Two points means "a total, drawn straight": the second one belongs
+        // on today's x, not on day one's.
+        let x: CGFloat = actual.count == 2
+            ? size.width * CGFloat(index) * CGFloat(CrewWeekMath.today(week) + 1) / span
+            : size.width * CGFloat(index) / span
+        return CGPoint(x: x,
+                       y: size.height * (1 - CGFloat(actual[index] / ceiling)))
     }
 
     /// One chip per lifter, in the existing tag style — `Alex 2/3`, and
