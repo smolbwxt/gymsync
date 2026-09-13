@@ -34,15 +34,31 @@ struct SessionRunnerView: View {
     /// so the plan card reads the same on both screens.
     @State private var planRows: [SessionPlanRow] = []
     @State private var routineName = ""
+    // Check-in — solo only (spec §2's path is check-in → warm-up; a
+    // scheduled solo session never passes through a lobby to find the
+    // button there). Same shape as `LobbyView`'s: `isCheckingIn` and
+    // `showTravelDialog` mirror its state, `initiateCheckIn()`/`checkIn(
+    // method:)` below mirror its functions. Review push-5 finding 2.
+    @State private var isCheckingIn = false
+    @State private var showTravelDialog = false
 
     private var effective: WorkoutSession { liveSession ?? session }
     private var roster: [(participant: SessionParticipant, profile: Profile)] {
         liveParticipants.isEmpty ? participants : liveParticipants
     }
 
+    /// Show the warm-up screen instead of `SessionInProgressView` — the
+    /// runner's own restatement of `SessionRouter`'s `.warmUp` vs. `.live`
+    /// split, since the runner is both routes' destination and must not
+    /// contradict the route that sent it here (review push-5 finding 2).
+    /// `WarmUpGate.isWarmingUp` alone only covers a session already
+    /// `in_progress`; `SessionEntryView` also sends a SCHEDULED solo session
+    /// here (spec §2, owner decision 3 — solo has no lobby), which needs the
+    /// warm-up screen too. A terminal session never does: it self-presents
+    /// its recap through `SessionInProgressView`.
     private var warmingUp: Bool {
-        WarmUpGate.isWarmingUp(state: effective.state,
-                               liftingStartedAt: effective.liftingStartedAt)
+        effective.state != "completed" && effective.state != "abandoned"
+            && effective.liftingStartedAt == nil
     }
 
     private var selfID: UUID? { appState.currentProfile?.id }
@@ -53,6 +69,36 @@ struct SessionRunnerView: View {
     private var isSolo: Bool {
         SessionShape.isSolo(participantCount: roster.count,
                             roomCode: effective.roomCode)
+    }
+
+    // MARK: - Check-in (solo only)
+    //
+    // Wired to the same computation `LobbyView` uses for a crew's check-in
+    // window and geofence, so a solo lifter's check-in behaves identically
+    // to a crew member's — just reached from this screen instead of the
+    // lobby (review push-5 finding 2's fix).
+
+    private var myCheckInState: String? {
+        roster.first(where: { $0.participant.userID == selfID })?.participant.checkInState
+    }
+
+    private var isCheckedIn: Bool { myCheckInState == "ready" }
+
+    /// Same 20-minute window as `LobbyView.checkInOpensAt`
+    /// (`supabase/migrations/20260715000003_checkin_window.sql` enforces it
+    /// server-side too). `nil` when the session has no `scheduledFor`.
+    private var checkInOpensAt: Date? {
+        effective.scheduledFor?.addingTimeInterval(-20 * 60)
+    }
+
+    private var canCheckIn: Bool {
+        guard let checkInOpensAt else { return true }
+        return Date() >= checkInOpensAt
+    }
+
+    private var checkInOpensAtText: String {
+        guard let checkInOpensAt else { return "" }
+        return checkInOpensAt.formatted(date: .omitted, time: .shortened)
     }
 
     var body: some View {
@@ -76,6 +122,12 @@ struct SessionRunnerView: View {
                     blockWeeks: 0,
                     blockMilestone: "",
                     elapsed: WarmUpGate.elapsed(since: effective.startedAt, now: now),
+                    // Solo only, and only before check-in — spec §2's path.
+                    showsCheckIn: isSolo && !isCheckedIn,
+                    isCheckingIn: isCheckingIn,
+                    canCheckIn: canCheckIn,
+                    checkInOpensAtText: checkInOpensAtText,
+                    onCheckIn: { Task { await initiateCheckIn() } },
                     onStartLifting: { Task { await startLifting() } },
                     isStarting: isStarting)
             } else {
@@ -116,6 +168,18 @@ struct SessionRunnerView: View {
                 }
             }
         }
+        // Same dialog, same copy, same fallback as `LobbyView`'s: the
+        // geofence couldn't confirm the gym, so the lifter confirms instead.
+        .confirmationDialog(
+            "Check In Anyway?",
+            isPresented: $showTravelDialog,
+            titleVisibility: .visible
+        ) {
+            Button("I'm traveling") { Task { await checkIn(method: "traveling_override") } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Couldn't verify you're at your gym. Check in as traveling?")
+        }
     }
 
     /// The routine, resolved to worded rows. Best-effort, like every other
@@ -134,6 +198,58 @@ struct SessionRunnerView: View {
         planRows = exercises.map { exercise in
             SessionPlanRow(exercise: exercise,
                            name: byID[exercise.exerciseID] ?? "Exercise")
+        }
+    }
+
+    /// Same flow as `LobbyView.initiateCheckIn()`: try the geofence, fall
+    /// back to the travel dialog when it can't confirm the gym. The solo
+    /// lifter's only check-in surface (spec §2) — a scheduled solo session
+    /// never reaches `LobbyView` at all (plan task S10).
+    @MainActor
+    private func initiateCheckIn() async {
+        guard canCheckIn else { return }
+        isCheckingIn = true
+        defer { isCheckingIn = false }
+        errorText = nil
+        do {
+            if let gym = try await CheckInService.primaryGym() {
+                do {
+                    let location = try await CheckInService.requestLocation()
+                    if CheckInService.distanceCheck(gym: gym, location: location) {
+                        await checkIn(method: "geofence")
+                    } else {
+                        showTravelDialog = true
+                    }
+                } catch {
+                    showTravelDialog = true
+                }
+            } else {
+                showTravelDialog = true
+            }
+        } catch let error as GymSyncError {
+            if case .validation = error {
+                showTravelDialog = true
+            } else {
+                errorText = error.errorDescription
+            }
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func checkIn(method: String) async {
+        isCheckingIn = true
+        defer { isCheckingIn = false }
+        do {
+            try await SessionRepository.checkIn(sessionID: session.id, method: method)
+            if let fresh = try? await SessionRepository.participants(sessionID: session.id) {
+                liveParticipants = fresh
+            }
+        } catch let error as GymSyncError {
+            errorText = error.errorDescription
+        } catch {
+            errorText = error.localizedDescription
         }
     }
 
