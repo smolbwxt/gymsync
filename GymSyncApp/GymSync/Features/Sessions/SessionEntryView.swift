@@ -38,6 +38,16 @@ enum SessionRouter {
         if WarmUpGate.isWarmingUp(state: state, liftingStartedAt: liftingStartedAt) {
             return .warmUp
         }
+        // CI fix round (898e624 review): `in_progress` with lifting already
+        // started fell through to `.lobby` — nothing above catches it, since
+        // `isWarmingUp` is false once `liftingStartedAt` is set. `.live` is
+        // right and belongs AHEAD of the solo check: once lifting has begun,
+        // `SessionRunnerView` routes itself to `SessionInProgressView`
+        // (`SessionRunnerView.warmingUp`) regardless of solo vs. crew, so
+        // solo no longer decides anything for an in-progress session.
+        if state == "in_progress" {
+            return .live
+        }
         if SessionShape.isSolo(participantCount: participantCount, roomCode: roomCode) {
             return .warmUp
         }
