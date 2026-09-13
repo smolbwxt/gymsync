@@ -27,6 +27,14 @@ enum RoundHold {
     /// Three minutes is the most a crew waits on one person.
     static let capSeconds: TimeInterval = 180
 
+    /// The re-mix law's one number (spec §3.3, plan task S3): while the
+    /// crew's measured rests are within 45 s of each other they are close
+    /// enough to rotate freely; past that, pairing the long resters together
+    /// stops the fast lifters waiting behind them. It lives beside the hold's
+    /// constants because it is the same question — how far apart is too far
+    /// apart — asked about the crew instead of about one lifter.
+    static let remixSpreadSeconds: TimeInterval = 45
+
     /// What "I need a minute" buys the held lifter — once per exercise
     /// (plan task S7 owns the once-per-exercise state; see
     /// `threshold(medianRestSeconds:extensionsTaken:)` below for why the

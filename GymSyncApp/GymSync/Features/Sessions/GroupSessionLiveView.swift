@@ -2134,6 +2134,14 @@ struct GroupSessionLiveView: View {
                     }
                 }
             }
+            // THE STATION SPLIT (plan task S3). `.task(id:)` rather than
+            // `.onChange` so the crew's FIRST exercise is assigned too, and
+            // `set_session_stations`' idempotency on the exercise position is
+            // what makes every repeat free.
+            .task(id: currentRoutineExercise?.position) {
+                guard let position = currentRoutineExercise?.position else { return }
+                await remixStations(exercisePosition: position)
+            }
     }
 
     /// The pinned bottom chrome (extracted from the safeAreaInset closure).
@@ -3772,6 +3780,59 @@ struct GroupSessionLiveView: View {
     private func reloadParticipants() async {
         if let fetched = try? await SessionRepository.participants(sessionID: session.id) {
             participants = fetched
+        }
+    }
+
+    // MARK: - The station split (spec §3.3, owner decisions 2 and 6)
+
+    /// Write the crew's station assignment for one exercise (plan task S3).
+    ///
+    /// A crew of three or fewer IS one station: there is nothing to split and
+    /// nothing to re-mix, so the column is left alone rather than written with
+    /// an answer nobody reads.
+    ///
+    /// The roster sent is `presentRotation` — `check_in_state` in
+    /// online/ready/late, `advance_turn`'s own next-picker
+    /// (`20260802000001_rotation_presence.sql:77,87`) — which is exactly the
+    /// set `set_session_stations` validates against (plan ruling R-B7). An
+    /// invited lifter who never arrived is not standing at a rack.
+    ///
+    /// The medians are measured over the WHOLE SESSION, not the round: the
+    /// re-mix wants each lifter's typical pace, and one round is one data
+    /// point. `allSessionSets` is the uncapped, `logged_at ASC` array — never
+    /// `feedSets`, which caps at 30 rows across all participants.
+    ///
+    /// FAILURE IS NOT FATAL. A re-mix that cannot be written leaves the
+    /// previous assignment standing and logs: a station split must never block
+    /// a round.
+    @MainActor
+    private func remixStations(exercisePosition: Int) async {
+        let lifters = presentRotation.map(\.participant.userID)
+        guard lifters.count > 3 else { return }
+
+        let medians = RestMeasure.medians(
+            from: allSessionSets,
+            since: liveSession.startedAt ?? .distantPast)
+        let split = StationSplit.assign(
+            lifters: lifters,
+            // `nil`: no session -> venue link and no rack COUNT exist, so the
+            // cap is a parameter B1 never fills (the plan's data decision 3).
+            count: StationSplit.count(crew: lifters.count, equipmentCap: nil),
+            restMedians: medians,
+            previous: liveSession.stations)
+
+        do {
+            // `StationSplit.rows` is the ONE place `lifterIDs` and `turnOrder`
+            // are paired: `set_session_stations` validates the shape and the
+            // roster but not `turn_order`'s contents (D4), so that invariant
+            // is the client's to keep and it is kept in one function.
+            liveSession.stations = try await SessionRepository.setStations(
+                sessionID: liveSession.id,
+                exercisePosition: exercisePosition,
+                stations: StationSplit.rows(from: split))
+        } catch {
+            AppLogger.sessions.error(
+                "station re-mix failed at exercise \(exercisePosition, privacy: .public): \(error.localizedDescription, privacy: .public)")
         }
     }
 

@@ -68,6 +68,151 @@ enum StationSplit {
         guard let cap = equipmentCap else { return max(1, byDepth) }
         return max(1, min(byDepth, cap))
     }
+
+    // MARK: - The split, and the re-mix (spec §3.3, owner decisions 2 and 6)
+
+    /// Deal the crew into stations, in turn order.
+    ///
+    /// Each returned array is one station's lifters IN THE ORDER THEY GO. Turn
+    /// order is fixed within an exercise (owner decision 6): the caller writes
+    /// this once per exercise position and never again, and
+    /// `set_session_stations`' idempotency on that position is what enforces
+    /// it server-side when two clients re-mix at the same moment.
+    ///
+    /// THE RE-MIX LAW, whole. Take the spread of the crew's measured rests —
+    /// `max(median) − min(median)` over the lifters who have one:
+    ///
+    ///   * `spread <= RoundHold.remixSpreadSeconds` — ROTATE. Shift the order
+    ///     the crew last stood in by one, so different people rest together at
+    ///     every exercise change. This is the case the feature exists for.
+    ///   * `spread > RoundHold.remixSpreadSeconds` — PAIR BY REST. Sort by
+    ///     measured rest and deal in blocks, so the long resters wait together
+    ///     and the short resters are not held up behind them.
+    ///
+    /// Deterministic in both branches: the caller's own order is the tie-break,
+    /// so two clients computing the same re-mix compute the same answer.
+    static func assign(
+        lifters: [UUID],
+        count: Int,
+        restMedians: [UUID: TimeInterval],
+        previous: SessionStations?
+    ) -> [[UUID]] {
+        guard !lifters.isEmpty else { return [] }
+
+        // THE DEPTH LAW WINS OVER THE COUNT. `set_session_stations` rejects a
+        // station deeper than three outright, so a count that would force a
+        // fourth lifter onto one rack — an equipment cap, or a caller's
+        // mistake — is raised instead of obeyed. Losing a rack costs the crew
+        // one station; breaking the law costs them the whole write.
+        let stations = max(1, max(count, (lifters.count + 2) / 3))
+
+        return deal(orderedForSplit(lifters: lifters,
+                                    restMedians: restMedians,
+                                    previous: previous),
+                    into: stations)
+    }
+
+    /// RACK A, RACK B, RACK C — the crew's own word for a station, and the
+    /// kicker `StationCard` prints (plan task S6).
+    static func name(_ index: Int) -> String {
+        let letters = Array("ABCDEFGH")
+        return index < letters.count ? "RACK \(letters[index])" : "RACK \(index + 1)"
+    }
+
+    /// Turn a split into the rows `set_session_stations` stores.
+    ///
+    /// THE ONE PLACE `lifterIDs` AND `turnOrder` ARE PAIRED. D4 established
+    /// that `set_session_stations` validates the jsonb shape and the roster —
+    /// every present lifter in exactly one station, depth <= 3 — but NOT
+    /// `turn_order`'s contents. So "each station's turn order is a permutation
+    /// of its lifters" is a CLIENT-SIDE invariant with nothing server-side to
+    /// catch a violation, and a call site that built the two arrays separately
+    /// could drift them apart silently. Here they are the same array, and
+    /// `SessionStationsTests` asserts it for every crew from one to twelve.
+    static func rows(from split: [[UUID]]) -> [SessionStations.Station] {
+        var built: [SessionStations.Station] = []
+        for (index, members) in split.enumerated() {
+            built.append(SessionStations.Station(name: name(index),
+                                                 lifterIDs: members,
+                                                 turnOrder: members))
+        }
+        return built
+    }
+
+    /// The order the crew is dealt in — the re-mix law's two branches.
+    private static func orderedForSplit(lifters: [UUID],
+                                        restMedians: [UUID: TimeInterval],
+                                        previous: SessionStations?) -> [UUID] {
+        let measured = lifters.compactMap { restMedians[$0] }
+        // Fewer than two measured rests is not a spread, it is an absence.
+        // Nothing to pair by, so the crew rotates.
+        guard measured.count >= 2, let low = measured.min(), let high = measured.max(),
+              high - low > RoundHold.remixSpreadSeconds else {
+            return rotated(lifters: lifters, previous: previous)
+        }
+        return pairedByRest(lifters: lifters, restMedians: restMedians)
+    }
+
+    /// Close rests: shift the previous order by one. With no previous
+    /// assignment there is no order to shift, and the crew is dealt as the
+    /// caller handed it over — the rotation's own turn order.
+    private static func rotated(lifters: [UUID], previous: SessionStations?) -> [UUID] {
+        guard let previous else { return lifters }
+
+        let live = Set(lifters)
+        var order: [UUID] = []
+        var seen = Set<UUID>()
+        // Whoever is still here, in the order they last stood in.
+        for id in previous.stations.flatMap(\.turnOrder) where live.contains(id) && !seen.contains(id) {
+            order.append(id)
+            seen.insert(id)
+        }
+        // Whoever arrived since, in the order the caller gave them.
+        for id in lifters where !seen.contains(id) {
+            order.append(id)
+            seen.insert(id)
+        }
+
+        guard order.count > 1 else { return order }
+        return Array(order.dropFirst()) + [order[0]]
+    }
+
+    /// Wide spread: sort by measured rest and let `deal` cut it into blocks.
+    ///
+    /// A lifter with no measured rest yet sorts to the MIDDLE of the range —
+    /// an unknown is not a claim of being fast, and it is not a claim of being
+    /// slow either.
+    private static func pairedByRest(lifters: [UUID],
+                                     restMedians: [UUID: TimeInterval]) -> [UUID] {
+        let measured = lifters.compactMap { restMedians[$0] }
+        let middle = ((measured.max() ?? 0) + (measured.min() ?? 0)) / 2
+        return lifters.enumerated()
+            .sorted { lhs, rhs in
+                let l = restMedians[lhs.element] ?? middle
+                let r = restMedians[rhs.element] ?? middle
+                if l != r { return l < r }
+                return lhs.offset < rhs.offset   // the caller's order breaks ties
+            }
+            .map(\.element)
+    }
+
+    /// Balanced blocks: the first `n % stations` stations take one extra, so
+    /// no station is ever two deeper than another. A station nobody lands on
+    /// is not returned — a rack with no lifter is not a station.
+    private static func deal(_ ordered: [UUID], into stations: Int) -> [[UUID]] {
+        guard stations > 0, !ordered.isEmpty else { return [] }
+        let base = ordered.count / stations
+        let extra = ordered.count % stations
+        var result: [[UUID]] = []
+        var index = 0
+        for station in 0..<stations {
+            let size = base + (station < extra ? 1 : 0)
+            guard size > 0 else { continue }
+            result.append(Array(ordered[index..<(index + size)]))
+            index += size
+        }
+        return result
+    }
 }
 
 // MARK: - RestMeasure
