@@ -494,9 +494,48 @@ struct LiveBlockGoalRepository: BlockGoalRepository {
     /// overridden.
     func reLadder(goalID: UUID) async -> Ladder? {
         guard let computed = await computeReLadder(goalID: goalID) else { return nil }
-        await upsertRungs(computed.changed, goalID: goalID,
-                          derivedAt: computed.derivedAt)
+        // COMPUTE, THEN APPLY THROUGH THE SAME METHOD the consent card uses
+        // (controller ruling R-F11, review finding F3). The lever's own
+        // proposal carries the WHOLE-rung diff — `LET COACH RE-LADDER` has
+        // always persisted re-stamped statuses as well as moved targets, and
+        // `page(goalID:)` reads those statuses back rather than re-deriving
+        // them, so narrowing this write to targets would be a silent
+        // regression. What differs between the lever and the card is WHAT IS
+        // IN THE PROPOSAL, never how it is applied.
+        let lever = LadderProposal(goalID: goalID,
+                                   current: computed.existing,
+                                   proposed: computed.fresh,
+                                   changed: computed.changed,
+                                   derivedAt: computed.derivedAt)
+        _ = await applyLadderProposal(lever)
         return computed.fresh
+    }
+
+    /// Apply a proposal the athlete accepted — **exactly the rungs it carries,
+    /// at the moment they were computed** (controller ruling R-F11).
+    ///
+    /// THE POINT IS THAT IT DOES NOT RECOMPUTE. Accept used to call
+    /// `reLadder(goalID:)`, which re-derives from actuals at accept time: the
+    /// athlete could read "Week 4 becomes 3 × 5 at 215 lbs", tap Accept, and
+    /// have a different ladder written because a set had landed in between.
+    /// Spec §4 says a change is a suggestion the athlete ACCEPTS; accepting a
+    /// suggestion has to apply that suggestion.
+    ///
+    /// `derivedAt` is the proposal's own, not `Date()`, so `block_goal_rungs`
+    /// records when the ladder was DERIVED rather than when it was agreed to.
+    ///
+    /// Then it materialises this week's rung — `weekly_goals` holds a COPY of
+    /// the current one (spec §4), and moving the ladder without moving the
+    /// copy leaves Home quoting the number the athlete just replaced — and
+    /// re-reads, because `LadderMath.page` is the one place the ladder's words
+    /// are chosen.
+    @discardableResult
+    func applyLadderProposal(_ proposal: LadderProposal) async -> LadderPageModel? {
+        await upsertRungs(proposal.changed, goalID: proposal.goalID,
+                          derivedAt: proposal.derivedAt)
+        await materialiseRung(goalID: proposal.goalID,
+                              weekStart: WeekMath.weekStartString())
+        return await page(goalID: proposal.goalID)
     }
 
     /// The re-ladder Coach WOULD apply, as a proposal — the same computation

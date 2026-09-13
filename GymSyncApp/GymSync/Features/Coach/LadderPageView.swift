@@ -48,6 +48,11 @@ struct LadderPageView: View {
     /// proposal rather than two derivations a minute apart. Nil is no card,
     /// which is what every other opener of this page gets.
     var proposal: LadderProposal? = nil
+    /// Told when the athlete answers the card — accept, decline, or the
+    /// lever, all three of which make Home's own copy stale (review finding
+    /// F4). Home clears `pendingLadderProposal`; every other opener passes
+    /// nothing and nothing happens.
+    var onAnswered: (() -> Void)?
 
     @Environment(\.gsTheme) private var theme
 
@@ -164,6 +169,10 @@ struct LadderPageView: View {
         .navigationTitle("The ladder")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
+        // A SURVIVING PAGE INSTANCE MUST REOPEN FOR A NEW PROPOSAL (review
+        // finding F4). `proposalAnswered` is about the proposal that was on
+        // screen; a different one arriving is a different question.
+        .onChange(of: proposal) { _, _ in proposalAnswered = false }
         .navigationDestination(item: $coachThread) { opener in
             CoachThreadLauncher(title: opener.title, opener: opener.opener)
                 .background(theme.bg)
@@ -270,30 +279,34 @@ struct LadderPageView: View {
                 declineTitle: GSConsentCopy.decline,
                 onAccept: {
                     proposalAnswered = true
-                    Task { await acceptProposal() }
+                    Task { await acceptProposal(proposal) }
                 },
                 onDecline: {
                     // The card only. The next Home load recomputes it, which
                     // is correct: the proposal is a fact about the ladder, not
-                    // a dismissible notice.
+                    // a dismissible notice. Home is told so it does not keep
+                    // showing its own copy of a card this page just answered
+                    // (review finding F4).
                     proposalAnswered = true
+                    onAnswered?()
                 })
         }
     }
 
-    /// Accept applies the proposal through **the exact pair `reLadder()`
-    /// already calls**, in the same order, so the consent card and
-    /// `LET COACH RE-LADDER` are one code path and cannot drift — then
-    /// re-reads the page, because `LadderMath.page` is the one place the
-    /// ladder's words are chosen.
-    private func acceptProposal() async {
+    /// Accept applies **the proposal the athlete just read**, through
+    /// `applyLadderProposal` — the one method `LET COACH RE-LADDER` ends in
+    /// too (controller ruling R-F11).
+    ///
+    /// It does NOT recompute. The old shape called `reLadder(goalID:)`, which
+    /// re-derives from actuals at accept time, so a set logged between the
+    /// card rendering and the tap could write a different ladder than the one
+    /// on screen. Accepting a suggestion has to apply that suggestion.
+    private func acceptProposal(_ proposal: LadderProposal) async {
         guard world == nil else { return }
         reLaddering = true
         defer { reLaddering = false }
-        _ = await repository.reLadder(goalID: goalID)
-        await repository.materialiseRung(goalID: goalID,
-                                         weekStart: WeekMath.weekStartString())
-        fetched = await repository.page(goalID: goalID)
+        fetched = await repository.applyLadderProposal(proposal) ?? fetched
+        onAnswered?()
     }
 
     // MARK: - 4: the ladder
@@ -715,10 +728,16 @@ struct LadderPageView: View {
         guard world == nil else { return }
         reLaddering = true
         defer { reLaddering = false }
+        // `reLadder(goalID:)` now computes and then applies through
+        // `applyLadderProposal` itself — the materialise and the re-read moved
+        // INSIDE it (controller ruling R-F11), so the three verbatim copies of
+        // this block are one method. The page read below is this view's own,
+        // because the repository call hands back a `Ladder` and this screen
+        // renders a `LadderPageModel`.
         _ = await repository.reLadder(goalID: goalID)
-        await repository.materialiseRung(goalID: goalID,
-                                         weekStart: WeekMath.weekStartString())
         fetched = await repository.page(goalID: goalID)
+        // The lever re-ladders too, so whatever Home was offering is stale.
+        onAnswered?()
     }
 
     /// The other write on this page, and it is world-safe **structurally**

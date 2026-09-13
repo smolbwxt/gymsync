@@ -875,16 +875,17 @@ struct HomeView: View {
         }
     }
 
-    /// Accept, through **the same two calls** `LET COACH RE-LADDER` makes on
-    /// the ladder page (`LadderPageView.reLadder()`), in the same order.
+    /// Accept applies **the proposal the athlete just read**, through
+    /// `applyLadderProposal` — the one method the ladder page's Accept and
+    /// `LET COACH RE-LADDER` both end in (controller ruling R-F11).
     ///
-    /// One code path for the explicit lever and the consent card is the whole
-    /// point: a card that applied a proposal some other way would be a second
-    /// re-ladder, and the two would drift.
+    /// It does NOT recompute. Calling `reLadder(goalID:)` here would
+    /// re-derive from actuals at accept time, so a set logged between the card
+    /// rendering and the tap could write a ladder the athlete never saw.
+    ///
+    /// Then Home refreshes, which is what puts the new rung in the strip.
     private func acceptLadderProposal(_ proposal: LadderProposal) async {
-        _ = await blockGoalRepository.reLadder(goalID: proposal.goalID)
-        await blockGoalRepository.materialiseRung(goalID: proposal.goalID,
-                                                  weekStart: WeekMath.weekStartString())
+        await blockGoalRepository.applyLadderProposal(proposal)
         await refresh()
     }
 
@@ -942,11 +943,18 @@ struct HomeView: View {
     /// proposal rather than reading a second one that could have been derived
     /// a minute later against a different clock. A page opened from anywhere
     /// else gets `nil`, which is no card.
+    ///
+    /// AND IT LEARNS THE ANSWER BACK (review finding F4). Home refreshes only
+    /// on `.task`, pull-to-refresh, a scene-phase change or a tab switch — so
+    /// without this closure, answering the card on the ladder page and popping
+    /// back left Home still showing its own copy, and tapping Accept there
+    /// wrote the same proposal a second time.
     func ladderPage(for goalID: UUID) -> LadderPageView {
         LadderPageView(goalID: goalID, repository: blockGoalRepository,
                        weeklyGoalRepository: goalRepository,
                        proposal: pendingLadderProposal?.goalID == goalID
-                           ? pendingLadderProposal : nil)
+                           ? pendingLadderProposal : nil,
+                       onAnswered: { pendingLadderProposal = nil })
     }
 
     /// The strip's own chrome — `surface` fill, 14 pt radius, 12 pt padding
@@ -1890,8 +1898,16 @@ struct HomeView: View {
         // belongs to.
         var ladderProposal: LadderProposal?
         if let block {
-            ladder = await blockGoalRepository.page(goalID: block)
-            ladderProposal = await blockGoalRepository.reLadderProposal(goalID: block)
+            // BOTH AT ONCE. This runs inside the launch fetch
+            // (`beginLaunchFetch`/`endLaunchFetch`), and `reLadderProposal`
+            // repeats the goal, ladder and enrollment reads that `page` makes
+            // plus `measuredByWeek` and `overriddenWeeks` — sequentially that
+            // is the slowest thing on Home's critical path (review finding
+            // F2).
+            async let pageRead = blockGoalRepository.page(goalID: block)
+            async let proposalRead = blockGoalRepository.reLadderProposal(goalID: block)
+            ladder = await pageRead
+            ladderProposal = await proposalRead
         }
         guard goal.source == .user,
               let coach = await goalRepository.propose(weekStart: week) else {

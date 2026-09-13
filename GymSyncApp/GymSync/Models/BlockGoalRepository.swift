@@ -55,6 +55,16 @@ protocol BlockGoalRepository: Sendable {
     /// (plan task S1). Nil when there is nothing to propose — no goal, no
     /// ladder, or a re-ladder that moves no target.
     func reLadderProposal(goalID: UUID) async -> LadderProposal?
+    /// Apply a proposal the athlete accepted — the rungs it carries, exactly
+    /// as computed at display time — then materialise this week's rung and
+    /// re-read the page (controller ruling R-F11).
+    ///
+    /// ONE PATH FOR BOTH SURFACES. Home's card, the ladder page's card and
+    /// `LET COACH RE-LADDER` all end here, which is what makes "the same code
+    /// path" a fact rather than a claim in three doc comments. Returns the
+    /// re-read page, so a caller that renders one needs no second read.
+    @discardableResult
+    func applyLadderProposal(_ proposal: LadderProposal) async -> LadderPageModel?
     /// Write this week's rung into `weekly_goals` as the current weekly goal
     /// (spec §4). Returns the row now in effect — which may be the athlete's
     /// own, because this consults `WeeklyGoalWriteRule` exactly as every
@@ -103,6 +113,12 @@ extension BlockGoalRepository {
     /// re-ladder cannot propose one either, and saying so by returning nil
     /// costs a conformer nothing.
     func reLadderProposal(goalID: UUID) async -> LadderProposal? { nil }
+
+    /// NOTHING APPLIED, and nothing pretended. A repository that cannot
+    /// re-ladder cannot apply one either; returning nil leaves the caller's
+    /// page as it was rather than blanking it.
+    @discardableResult
+    func applyLadderProposal(_ proposal: LadderProposal) async -> LadderPageModel? { nil }
 
     /// NO LADDER, and that is a legible state rather than a crash: the stub
     /// stores nothing, and a block whose ladder could not be derived is exactly
@@ -335,6 +351,12 @@ struct StubBlockGoalRepository: BlockGoalRepository {
     /// Still `fixtureLadder`, and still writes nothing.
     func reLadder(goalID: UUID) async -> Ladder? { Self.fixtureLadder }
     func reLadderProposal(goalID: UUID) async -> LadderProposal? { Self.fixtureProposal }
+    /// The stub stores nothing, so "applying" hands back the same page — the
+    /// catalog's ladder frame is a value on both sides of a tap.
+    @discardableResult
+    func applyLadderProposal(_ proposal: LadderProposal) async -> LadderPageModel? {
+        Self.fixturePage
+    }
     @discardableResult
     func materialiseRung(goalID: UUID, weekStart: String) async -> WeeklyGoal? { nil }
 }
