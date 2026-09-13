@@ -92,6 +92,12 @@ struct SessionPlanRow: Identifiable, Equatable {
     let prescription: String
     /// The exercise the session is on right now. At most one row sets it.
     var isCurrent: Bool = false
+    /// MID-SESSION ONLY (plan task S6): how far into this exercise the crew
+    /// is. Read by `SessionPlanCard` when its `showsProgress` is on, and by
+    /// nothing else — both are additive and defaulted, so the lobby's and the
+    /// warm-up screen's approved frames render exactly as they did.
+    var setsDone: Int = 0
+    var sets: Int = 0
 }
 
 extension SessionPlanRow {
@@ -316,6 +322,14 @@ struct SessionPlanCard: View {
     /// that is Phase B's.
     var onChangeRoutine: (() -> Void)?
 
+    /// MID-SESSION (plan task S6): each row gains a `setsDone/sets` column.
+    /// Defaulted off, so the lobby's and the warm-up screen's frames are
+    /// untouched — the round wait is the only screen that turns it on, and
+    /// the reason it is a flag on this card rather than a second card is
+    /// spec §3.6's own reasoning about the Coach door: two drawings of one
+    /// object is how two screens stop lining up.
+    var showsProgress: Bool = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
             HStack {
@@ -333,7 +347,7 @@ struct SessionPlanCard: View {
             }
             GSDivider()
             ForEach(rows) { row in
-                SessionPlanRowView(row: row)
+                SessionPlanRowView(row: row, showsProgress: showsProgress)
             }
         }
         .padding(14)
@@ -370,6 +384,9 @@ private struct SessionPlanRowView: View {
     @Environment(\.gsTheme) private var theme
 
     let row: SessionPlanRow
+    /// Plan task S6. Defaulted off — `SessionPlanCardWithSuggestion` and the
+    /// lobby's card both draw the row exactly as they did.
+    var showsProgress: Bool = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -390,6 +407,16 @@ private struct SessionPlanRowView: View {
                 .font(GSFont.body(12, relativeTo: .caption).monospacedDigit())
                 .foregroundStyle(theme.neutral500)
                 .fixedSize()
+
+            // A FIXED 32 pt column, so four rows keep one right edge whether
+            // or not a row's count is two digits (plan task S6).
+            if showsProgress {
+                Text("\(row.setsDone)/\(row.sets)")
+                    .font(GSFont.bold(12, relativeTo: .caption))
+                    .monospacedDigit()
+                    .foregroundStyle(row.isCurrent ? theme.text : theme.neutral500)
+                    .frame(width: 32, alignment: .trailing)
+            }
         }
         .frame(height: 28)
     }
@@ -576,12 +603,38 @@ struct EnergyMeter: View {
 struct CoachDoorRow: View {
     @Environment(\.gsTheme) private var theme
 
+    /// The door's three strings as ONE value (plan task S6).
+    ///
+    /// Spec §3.6 wants the Coach door "reachable from the lobby, the round
+    /// wait and spotter mode" as one object in three places. The lobby passes
+    /// its strings individually because it has always done so; the two live
+    /// screens are value-in views (constraint 11) that carry their whole
+    /// world as models, and this is the door's. Additive — no existing call
+    /// site changes and nothing renders differently.
+    struct Model: Equatable {
+        let title: String
+        let detail: String
+        var note: String? = nil
+    }
+
     let title: String
     let detail: String
     /// The line that says why this is not available — the crew's Coach thread
     /// is Pro, and this names whose it is waiting on.
     var note: String?
     var onTap: () -> Void = {}
+
+    init(title: String, detail: String, note: String? = nil, onTap: @escaping () -> Void = {}) {
+        self.title = title
+        self.detail = detail
+        self.note = note
+        self.onTap = onTap
+    }
+
+    init(_ model: Model, onTap: @escaping () -> Void = {}) {
+        self.init(title: model.title, detail: model.detail,
+                  note: model.note, onTap: onTap)
+    }
 
     var body: some View {
         Button(action: onTap) {

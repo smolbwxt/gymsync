@@ -191,6 +191,11 @@ struct SessionLiveView: View {
     /// two different meanings. Cleared optimistically at the start of every
     /// `logSetAndAdvance` call, same convention as `logSetErrorText`.
     @State private var didQueueSetOffline = false
+    /// COACH'S DOOR (plan task S6, spec §3.6). The lobby's pair, mirrored —
+    /// see `openCoachThread()` below for why the thread is resolved on tap
+    /// and never on load.
+    @State private var openedCoachThread: OpenedCoachThread?
+    @State private var showCoachPaywall = false
     @State private var recapData: RecapData?          // non-nil → sheet
     // Coach debrief for MY sets (AI after-action, group mirror
     // 2026-08-22): assembled once at completion, same builder and same
@@ -1760,20 +1765,26 @@ struct SessionLiveView: View {
     ///
     /// `voicePersistsOnPop`'s doc comment is the reason this cannot be left to
     /// `LobbyView`'s copy: the lobby is not always the route in.
-    @ViewBuilder
+    /// ONE SPELLING FOR TWO FEET (plan task S6): the pinned `turnChrome` here
+    /// and the round wait's own pinned foot both render `VoiceNotices` from
+    /// this same value, so the mark cannot teach the dock on one page and not
+    /// the other.
+    private var voiceFoot: VoiceFoot {
+        VoiceFoot(isUnavailable: isVoiceEligible && isVoiceUnavailable,
+                  showsCoachMark: showVoiceCoachMark,
+                  onRetry: { Task { await VoiceRoomService.shared.retry() } },
+                  onDismissCoachMark: { showVoiceCoachMark = false })
+    }
+
+    /// Mirrors `isVoiceConnected` above — `VoiceRoomState` is not `Equatable`,
+    /// so the case test is spelled out.
+    private var isVoiceUnavailable: Bool {
+        if case .unavailable = VoiceRoomService.shared.state { return true }
+        return false
+    }
+
     private var voiceNotices: some View {
-        if isVoiceEligible, case .unavailable = VoiceRoomService.shared.state {
-            GSVoiceUnavailableBanner(retry: {
-                Task { await VoiceRoomService.shared.retry() }
-            })
-            .padding(.horizontal, 16)
-            .padding(.bottom, 8)
-        }
-        if showVoiceCoachMark {
-            GSVoiceCoachMark(onDismiss: { showVoiceCoachMark = false })
-                .padding(.horizontal, 16)
-                .padding(.bottom, 6)
-        }
+        VoiceNotices(foot: voiceFoot)
     }
 
     /// The mic rail: what is left of the plate dock (plan task S4) once the
@@ -2155,11 +2166,17 @@ struct SessionLiveView: View {
     /// Layer 1: the page + the pinned chrome.
     private var arenaBase: some View {
         ZStack(alignment: .bottom) {
-            // ONE PAGE (plan task S4). The spectate sister page and the
-            // roster-failure scroll layout are gone; the round wait and
-            // spotter mode (plan tasks S6, S8) are what replace them, mounted
-            // by style. Until they land, the my-turn page is what renders.
-            myTurnFixedPage
+            // TWO PAGES, CHOSEN BY WHOSE TURN IT IS (plan tasks S4 and S6).
+            // The spectate sister page and the roster-failure scroll layout
+            // are gone; in Rounds, a crewmate who is not lifting gets the
+            // ROUND WAIT in their place, and everyone else — every lifter on
+            // their turn, and every lifter in Freestyle and Together, which
+            // have no turn at all — gets the my-turn page.
+            if showsRoundWait {
+                roundWaitPage
+            } else {
+                myTurnFixedPage
+            }
             prOverlayLayer
             reactionOverlayLayer
         }
@@ -2228,15 +2245,40 @@ struct SessionLiveView: View {
                 guard let position = currentRoutineExercise?.position else { return }
                 await remixStations(exercisePosition: position)
             }
+            // COACH'S ROOM (plan task S6). On THIS layer rather than on
+            // `body`: the split above exists because `body`'s ~25-modifier
+            // chain twice blew the type-checker's budget (two CI timeouts),
+            // and a `navigationDestination` plus a `sheet` are two more links
+            // in whichever chain they join.
+            .navigationDestination(item: $openedCoachThread) { opened in
+                CoachThreadView(thread: CoachChatThread(
+                    id: opened.thread.threadID,
+                    title: SessionCopy.talkToCoach,
+                    summary: "",
+                    summarizedThrough: nil,
+                    updatedAt: liveSession.scheduledFor ?? liveSession.createdAt))
+                    .background(theme.bg)
+                    .navigationTitle(SessionCopy.talkToCoach)
+                    .navigationBarTitleDisplayMode(.inline)
+            }
+            // The door's paywall, for the branch `open()` takes when the crew
+            // cannot reach the room. No `highlight`: none of
+            // `Monetization.Feature`'s cases names a session Coach room, and
+            // inventing one is a product decision this task is not making.
+            .sheet(isPresented: $showCoachPaywall) {
+                PaywallView()
+            }
     }
 
     /// The pinned bottom chrome (extracted from the safeAreaInset closure).
-    /// ONE PAGE, ONE CHROME (plan task S4): the spectate arm and the
-    /// roster-failure arm left with the pages they served, so the my-turn
-    /// chrome is the only chrome. The round wait's own foot (plan task S6)
-    /// is what hangs here next.
+    ///
+    /// EMPTY WHILE THE ROUND WAIT IS UP (plan task S6): `RoundPage` pins its
+    /// own foot inside the page, so a chrome here would put a second dock
+    /// under the first one. The my-turn page has no foot of its own, which is
+    /// why it still needs this.
+    @ViewBuilder
     private var bottomChrome: some View {
-        turnChrome
+        if !showsRoundWait { turnChrome }
     }
 
     /// Squad-swap vote banner: visible to everyone while a proposal is
@@ -2342,35 +2384,12 @@ struct SessionLiveView: View {
     }
 
     // MARK: - Reaction strip
-
-    /// The four pills, verbatim from the soundboard dock that used to carry
-    /// them. The dock left with the soundboard (owner decision 8) and the
-    /// roster-failure chrome that mounted it left with the page it served, so
-    /// this strip HAS NO CALL SITE YET — deliberately: the my-turn page's
-    /// 152 pt chrome is an approved composition, and adding a strip to it is
-    /// not a deletion. The round wait (plan task S6) and spotter mode (S8)
-    /// are where the crew reaches these again.
-    private var reactionStrip: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 5) {
-                ForEach(reactionEmojis, id: \.self) { emoji in
-                    Button {
-                        Task { await tapReaction(emoji: emoji) }
-                    } label: {
-                        Text(emoji)
-                            .font(.system(size: 13))
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 6)
-                            .background(theme.surface)
-                            .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                    .fixedSize()
-                }
-            }
-            .padding(.horizontal, 12)
-        }
-    }
+    //
+    // MOVED TO `Live/RoundPieces.swift` as the value-in `ReactionStrip` (plan
+    // task S6, fix round 1 / F3). It sat here with no call site from S4 until
+    // now, which meant the crew could not react from the live view at all;
+    // the round wait's foot is its caller, and `reactionEmojis` above is
+    // still the one list. Nothing about the pills' drawing changed.
 
     // MARK: - Header bar
     // Canvas: LIVE pulse + session name (routine) + elapsed since startedAt + X button
@@ -3875,6 +3894,257 @@ struct SessionLiveView: View {
     private func reloadParticipants() async {
         if let fetched = try? await SessionRepository.participants(sessionID: session.id) {
             participants = fetched
+        }
+    }
+
+    // MARK: - The round wait (spec §2 and §3.3, plan task S6)
+    //
+    // What a crewmate who is not lifting sees. It replaces the spectate sister
+    // page plan task S4 deleted, and the difference is spec §5's whole point:
+    // that page was a scoreboard, this one is the crew.
+    //
+    // Every model below is built from state this view ALREADY HOLDS --
+    // `participants`, `allSessionSets`, `liveSession`, `recoveryBuffer`,
+    // `effectiveRoutineExercises`. No fetch is added, and no store: spec §6's
+    // "no new store" is what makes the recovery curve `RecoveryBuffer`'s
+    // sparkline rather than a second history.
+
+    /// ROUNDS ONLY, and only when somebody else holds the turn.
+    ///
+    /// `currentTurnUserID != nil` and a non-empty roster are both required
+    /// because `isMyTurn` is an equality on two optionals: with no signed-in
+    /// profile and no current turn it answers `true`, and with a roster that
+    /// failed to load it would answer `false` and strand the reader on a page
+    /// with no stations. Either way the my-turn page -- which is what renders
+    /// today -- is the honest fallback.
+    private var showsRoundWait: Bool {
+        style == .rounds
+            && liveSession.currentTurnUserID != nil
+            && !isMyTurn
+            && !participants.isEmpty
+    }
+
+    /// The page, on a one-second tick.
+    ///
+    /// `TimelineView(.periodic(by: 1))` rather than a `Timer`, and rather than
+    /// a `@State` date the 10 s turn poll refreshes: the elapsed rest is the
+    /// biggest numeral on the screen and a clock that jumped ten seconds at a
+    /// time would read as broken. The house already drives three surfaces this
+    /// way (`WarmUpPhaseView`, `WorkoutSessionView`, `HomeView`). The VIEW
+    /// still owns no clock -- `RoundWaitView` takes an already-formatted
+    /// string -- so the catalog's frame stays deterministic (constraint 11).
+    private var roundWaitPage: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            RoundWaitView(
+                kicker: RoundCopy.kicker(crew: ledgerGroup?.name ?? "",
+                                         round: liveSession.round),
+                title: "The round",
+                stations: roundStationModels,
+                rest: restModel(now: context.date),
+                planKicker: "THE SESSION · WHERE WE ARE",
+                rungLine: routineName ?? "",
+                plan: roundPlanRows,
+                coach: CoachDoorRow.Model(title: SessionCopy.talkToCoach,
+                                          detail: SessionCopy.talkToCoachDetail),
+                waitingOn: waitingOnNames,
+                dockNames: otherParticipantNames,
+                reactionEmojis: reactionEmojis,
+                voice: voiceFoot,
+                onCoachTap: { Task { await openCoachThread() } },
+                onReaction: { emoji in Task { await tapReaction(emoji: emoji) } })
+        }
+    }
+
+    /// THE ROUND'S OWN PREDICATE, mirroring `public.advance_round` (plan task
+    /// D3): a non-penalty `set_logs` row at or after `round_started_at`.
+    ///
+    /// Spelled the same way here as there so the tick on a station card and
+    /// the server's decision to close the round cannot disagree. Before the
+    /// first round closes `round_started_at` is NULL, and the honest stand-in
+    /// is "has logged this exercise at all" -- the same question, over the
+    /// only window that exists yet.
+    private func hasLoggedThisRound(_ userID: UUID) -> Bool {
+        guard let since = liveSession.roundStartedAt else {
+            return hasLoggedCurrentExercise(userID)
+        }
+        return allSessionSets.contains {
+            $0.userID == userID && !$0.isPenalty && $0.loggedAt >= since
+        }
+    }
+
+    /// One card per rack, from `sessions.stations` -- plan task S3's own
+    /// write, read back.
+    ///
+    /// A crew of three or fewer never has a stored assignment (`remixStations`
+    /// leaves the column alone: there is nothing to split), so the whole
+    /// present rotation becomes one rack. `StationSplit.name(0)` gives it the
+    /// same word a written assignment would.
+    private var roundStationModels: [StationCard.Model] {
+        let racks: [(name: String, ids: [UUID])]
+        if let stored = liveSession.stations, !stored.stations.isEmpty {
+            racks = stored.stations.map { ($0.name, $0.turnOrder) }
+        } else {
+            racks = [(StationSplit.name(0), presentRotation.map(\.participant.userID))]
+        }
+        return racks.map { rack in
+            StationCard.Model(
+                name: rack.name,
+                lifters: rack.ids.compactMap { stationLifter($0) },
+                liftingID: rack.ids.first(where: { $0 == liveSession.currentTurnUserID }))
+        }
+    }
+
+    /// A lifter nobody in the roster can name is left OUT of the rack rather
+    /// than drawn as a blank column: a station is people, and a column with no
+    /// name is not one of them.
+    private func stationLifter(_ userID: UUID) -> StationCard.Lifter? {
+        guard let profile = participants.first(where: { $0.participant.userID == userID })?.profile
+        else { return nil }
+        return StationCard.Lifter(
+            id: userID,
+            name: profile.username,
+            isYou: userID == selfID,
+            hasLogged: hasLoggedThisRound(userID),
+            // Spec §3.4 mode 2 -- quiet, and only where the crew already looks.
+            scaleDown: currentExerciseForSheet.flatMap { selfScales[userID]?[$0.id]?.name })
+    }
+
+    /// Who the round is still waiting on, first names, me excluded -- if I had
+    /// not logged, it would be my turn and this page would not be up.
+    private var waitingOnNames: [String] {
+        presentRotation
+            .filter { $0.participant.userID != selfID && !hasLoggedThisRound($0.participant.userID) }
+            .map { SessionCopy.firstName($0.profile.username) }
+    }
+
+    /// THE SESSION · WHERE WE ARE -- the whole routine with MY progress on it.
+    ///
+    /// Mine and not the crew's, because `mySetCount(for:)` is what the rest of
+    /// this view counts with and a row that mixed the two would answer a
+    /// question nobody asked. Spec §2's "is the plan still achievable" is
+    /// about the exercises that are LEFT, which is what these rows show.
+    private var roundPlanRows: [SessionPlanRow] {
+        effectiveRoutineExercises.map { re in
+            SessionPlanRow(
+                id: re.id,
+                name: allExercises.first(where: { $0.id == re.exerciseID })?.name
+                    ?? exerciseNames[re.exerciseID] ?? "Exercise",
+                prescription: SessionPlanRow.prescription(for: re),
+                isCurrent: re.exerciseID == currentExerciseForSheet?.id,
+                setsDone: mySetCount(for: re.exerciseID),
+                sets: re.targetSets ?? 0)
+        }
+    }
+
+    /// The rest card's world. `now` comes from the page's `TimelineView`, so
+    /// this function reads no clock of its own.
+    private func restModel(now: Date) -> RestModel {
+        let mine = selfHeartRate
+        return RestModel(
+            elapsed: RoundCopy.elapsed(since: myLastLoggedAt, now: now),
+            // NO NEW STORE (spec §6): the same buffer the my-turn page's
+            // `.onChange(of: selfHeartRate?.bpm)` already fills.
+            curve: recoveryBuffer.sparkline(barCount: 10),
+            // A stale reading is NO reading -- `heartRateFor(_:)`'s 15 s gate
+            // returns nil and the card prints an em dash, never a last-known
+            // number.
+            bpm: mine?.bpm,
+            zone: mine?.zone,
+            nextPrescription: RoundCopy.nextPrescription(
+                setNumber: myTurnSets.count + 1,
+                targetSets: currentRoutineExercise?.targetSets,
+                exercise: currentExerciseForSheet?.name,
+                prescription: currentTargetLine),
+            achievability: RoundCopy.achievability(
+                lastMoved: lastMovedText,
+                target: targetWeightLine,
+                isUnderTarget: isLastSetUnderTarget))
+    }
+
+    /// When my rest started: my own last non-penalty log, anywhere in this
+    /// session. Nil before I have logged at all, which reads `0:00`.
+    private var myLastLoggedAt: Date? {
+        guard let selfID else { return nil }
+        return lastSetAnyExercise(selfID)?.loggedAt
+    }
+
+    /// `225 × 5` -- the routine's own prescription for the current exercise,
+    /// in my unit. Nil when the routine prescribes neither.
+    private var currentTargetLine: String? {
+        guard let re = currentRoutineExercise else { return nil }
+        let weight = targetPounds.map { weightText($0) }
+        switch (weight, re.targetReps) {
+        case let (weight?, reps?): return "\(weight) × \(reps)"
+        case let (weight?, nil):   return weight
+        case let (nil, reps?):     return "× \(reps)"
+        default:                   return nil
+        }
+    }
+
+    private var targetPounds: Decimal? {
+        currentRoutineExercise?.targetWeight.flatMap { Decimal(string: $0) }
+    }
+
+    private var targetWeightLine: String? {
+        targetPounds.map { weightText($0) }
+    }
+
+    /// What I last actually moved on this exercise -- failed sets excluded,
+    /// because a miss is not a load the plan can be judged against.
+    private var lastMovedPounds: Decimal? {
+        myTurnSets.last(where: { !$0.isFailed && $0.weight != nil })?.weight
+    }
+
+    private var lastMovedText: String? {
+        lastMovedPounds.map { weightText($0) }
+    }
+
+    private var isLastSetUnderTarget: Bool {
+        guard let last = lastMovedPounds, let target = targetPounds else { return false }
+        return last < target
+    }
+
+    // MARK: - Coach's door (spec §3.6, plan task S6)
+
+    /// `navigationDestination(item:)` needs an `Identifiable`;
+    /// `SessionCoachThread` is a plain value. `LobbyView`'s identical wrapper.
+    private struct OpenedCoachThread: Identifiable, Hashable {
+        let thread: SessionCoachThread
+        var id: UUID { thread.threadID }
+
+        static func == (lhs: OpenedCoachThread, rhs: OpenedCoachThread) -> Bool {
+            lhs.thread == rhs.thread
+        }
+        func hash(into hasher: inout Hasher) { hasher.combine(thread.threadID) }
+    }
+
+    /// Find-or-create this session's Coach room, then open it.
+    ///
+    /// `LobbyView.openCoachThread()`, mirrored rather than shared: the two
+    /// views hold different session values and neither has a common home for
+    /// session-side helpers, which is the same reasoning `voiceEligibleStates`
+    /// and `otherParticipantNames` above already carry.
+    ///
+    /// ON TAP, NEVER ON LOAD. A screen that opened a Coach room every time it
+    /// appeared would create a thread for a session nobody asked Coach about
+    /// -- and the round wait appears on every turn that is not yours.
+    @MainActor
+    private func openCoachThread() async {
+        do {
+            let thread = try await SessionCoachThreadRepository.open(sessionID: liveSession.id)
+            // Branch on reachability rather than navigating unconditionally.
+            // Inert today (`Monetization.paywallEnabled` is false, so
+            // `isReachable` is always true) -- this is what makes the branch
+            // correct once it flips live.
+            if SessionCoachThreadRepository.isReachable(thread) {
+                openedCoachThread = OpenedCoachThread(thread: thread)
+            } else {
+                showCoachPaywall = true
+            }
+        } catch let error as GymSyncError {
+            errorText = error.errorDescription
+        } catch {
+            errorText = error.localizedDescription
         }
     }
 
