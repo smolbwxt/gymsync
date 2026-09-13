@@ -52,13 +52,42 @@ const headers = {
   apikey: SUPABASE_SECRET_KEY, Authorization: `Bearer ${SUPABASE_SECRET_KEY}`,
   'Content-Type': 'application/json',
 };
+// Transient failures: on 2026-09-13 two seeds died on PostgREST 504 Gateway Timeouts
+// (a group_members lookup, then a body_weight_logs lookup) with nothing stuck on the
+// database, and each one cost a whole screenshot walk. Idempotent calls (anything but a
+// plain POST; upsert POSTs with Prefer: resolution=... count as idempotent) are retried
+// three times with backoff on a 5xx or a network error. A plain POST is never replayed:
+// a 504 can arrive after the row was committed, and the replay would be a 409.
+const RETRY_ATTEMPTS = 3;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function rest(pathAndQuery, opts = {}) {
-  const res = await fetch(`${SUPABASE_URL}/rest/v1/${pathAndQuery}`, {
-    ...opts, headers: { ...headers, ...(opts.headers || {}) },
-  });
-  if (!res.ok) throw new Error(`${pathAndQuery}: ${res.status} ${await res.text()}`);
-  const text = await res.text();
-  return text ? JSON.parse(text) : null;
+  const method = (opts.method || 'GET').toUpperCase();
+  const prefer = (opts.headers && opts.headers.Prefer) || '';
+  const retryable = method !== 'POST' || /resolution=/.test(prefer);
+  for (let attempt = 1; ; attempt++) {
+    let res;
+    try {
+      res = await fetch(`${SUPABASE_URL}/rest/v1/${pathAndQuery}`, {
+        ...opts, headers: { ...headers, ...(opts.headers || {}) },
+      });
+    } catch (e) {
+      if (retryable && attempt < RETRY_ATTEMPTS) {
+        console.warn(`retry ${attempt}/${RETRY_ATTEMPTS} after network error on ${pathAndQuery}: ${e.message}`);
+        await sleep(attempt * 3000);
+        continue;
+      }
+      throw e;
+    }
+    if (res.status >= 500 && retryable && attempt < RETRY_ATTEMPTS) {
+      const body = await res.text();
+      console.warn(`retry ${attempt}/${RETRY_ATTEMPTS} after ${res.status} on ${pathAndQuery}: ${body.slice(0, 120)}`);
+      await sleep(attempt * 3000);
+      continue;
+    }
+    if (!res.ok) throw new Error(`${pathAndQuery}: ${res.status} ${await res.text()}`);
+    const text = await res.text();
+    return text ? JSON.parse(text) : null;
+  }
 }
 const rep = { Prefer: 'return=representation' };
 const MARK = '[QA]'; // stable marker: name-prefix for fixture rows we own
