@@ -1214,7 +1214,7 @@ public struct GSInlineErrorBanner: View {
 // icon + bold-lead-in + continuation-copy shape, but for a NON-failure,
 // non-retryable notice: something already succeeded (locally) and there's
 // nothing actionable left for the lifter to retry. Added in Phase O Task 3
-// fix wave 1 (reviewer Finding 1 — see GroupSessionLiveView.logSetAndAdvance
+// fix wave 1 (reviewer Finding 1 — see SessionLiveView.logSetAndAdvance
 // and docs/design/accepted-deviations.json's "offline-syncing-indicator"
 // entry): the offline group-set-logging path needed an inline state that's
 // honest about a non-retry outcome ("saved locally, turn won't advance")
@@ -1233,7 +1233,7 @@ public struct GSInlineNoticeBanner: View {
 
     /// `icon` defaults to the checkmark this component was originally built
     /// around (see the MARK header above) — the ORIGINAL call site
-    /// (`GroupSessionLiveView`'s offline-queue "Saved on this phone" notice)
+    /// (`SessionLiveView`'s offline-queue "Saved on this phone" notice)
     /// keeps rendering byte-identically since it never passes this param.
     /// Debt-zero sprint item 2 (HomeView's replay-failure notice) passes
     /// `"exclamationmark.circle"` — the SAME glyph `GSInlineErrorBanner`
@@ -1451,7 +1451,7 @@ struct GSExpandingRing: View {
 // MARK: - PTTDockRow
 //
 // Shared live-voice push-to-talk dock control for LobbyView +
-// GroupSessionLiveView. Fully self-contained — reads/drives
+// SessionLiveView. Fully self-contained — reads/drives
 // `VoiceRoomService.shared` directly, no parameters needed (mirrors
 // `GSTabBar`'s note above: `VoiceRoomState`/`TransmitState` are internal
 // types, so this type and its properties are deliberately NOT `public`, same
@@ -1515,7 +1515,7 @@ struct PTTDockRow: View {
     /// `VoiceRoomService` only knows LiveKit identity strings (UUIDs),
     /// never usernames, so this must be threaded in from whichever view
     /// already has real `Profile` data (`LobbyView.participants` /
-    /// `GroupSessionLiveView`'s own roster). Defaults empty so every
+    /// `SessionLiveView`'s own roster). Defaults empty so every
     /// existing call site (`CatalogHostView`'s bare `PTTDockRow()`) keeps
     /// compiling unchanged — an empty list just omits the hero's
     /// listening-names line, it never blocks the hero itself from showing.
@@ -2369,7 +2369,7 @@ struct GSVoiceMixerSheet: View {
 // showing a single populated example, not a restriction (nothing in the
 // design implies HR only broadcasts for whoever currently holds the turn;
 // any participant with `share_heart_rate` on broadcasts continuously).
-// `GroupSessionLiveView.rosterCard` renders this pill for ANY roster card
+// `SessionLiveView.rosterCard` renders this pill for ANY roster card
 // with live data, in the same bottom slot the frame shows — recorded in
 // docs/design/accepted-deviations.json.
 

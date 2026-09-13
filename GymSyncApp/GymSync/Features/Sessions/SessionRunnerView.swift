@@ -1,13 +1,13 @@
 import SwiftUI
 
 /// While `WarmUpGate.isWarmingUp`, the warm-up screen; then the live view.
-/// The whole reason `GroupSessionLiveView` no longer needs a warm-up branch
+/// The whole reason `SessionLiveView` no longer needs a warm-up branch
 /// in its page switch (plan task S9) — that switch is three ways again.
 ///
 /// A thin router beside `SessionInProgressView`, which is the precedent: it
 /// owns no session logic, only the question of which screen the session is on.
 ///
-/// IT OWNS THE POLL THE WARM-UP PHASE USED TO RIDE ON. `GroupSessionLiveView`
+/// IT OWNS THE POLL THE WARM-UP PHASE USED TO RIDE ON. `SessionLiveView`
 /// polled the session row every ten seconds and carried the warm-up columns on
 /// the same cadence; that poll leaves with the phase, so this one takes its
 /// place — five seconds while warming up, the lobby's own pre-live idiom
@@ -313,7 +313,7 @@ struct SessionRunnerView: View {
     /// `startLifting` (`start_lifting`, the AFK escape hatch,
     /// `SessionRepository.swift:798-813`) and ends the warm-up for
     /// everyone regardless of unanimity — restoring the capability
-    /// `GroupSessionLiveView.forceStartLifting()` used to give the leader,
+    /// `SessionLiveView.forceStartLifting()` used to give the leader,
     /// which S9 removed with the rest of that view's warm-up branch and
     /// nothing replaced (review push-4/5 finding 3, R-15). A CREWMATE's tap
     /// still calls `markWarmupReady`: the readiness row and

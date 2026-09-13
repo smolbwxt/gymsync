@@ -24,7 +24,7 @@ struct LogSetView: View {
     @State private var weightLbs: Double = 45
     @State private var isSending = false
     /// Transient reply feedback — cleared after 2s, same "brief transient
-    /// overlay" idiom `GroupSessionLiveView.showSoundOverlay`/
+    /// overlay" idiom `SessionLiveView.showSoundOverlay`/
     /// `.showReactionOverlay` use phone-side (2-2.5s clear), applied here
     /// independently since watch-side code shares no target with that file.
     @State private var lastReply: WatchActionReply?
@@ -125,8 +125,8 @@ struct LogSetView: View {
             // `CHECK (reps IS NULL OR reps >= 0)`) both treat `0` as a
             // valid, meaningful value, not a stand-in for "none" — and the
             // phone's own inline log card sends exactly what it parses
-            // (`Int(logReps)`, `GroupSessionLiveView.commitInlineLog`,
-            // `GroupSessionLiveView.swift:~1734`) with no nil-on-zero rule of
+            // (`Int(logReps)`, `SessionLiveView.commitInlineLog`,
+            // `SessionLiveView.swift:~1734`) with no nil-on-zero rule of
             // its own. `reps` here can never actually be nil on this
             // surface (the `Stepper` above always holds a concrete `Int` in
             // its `0...50` range) — this is the honest "send what the UI
@@ -150,7 +150,7 @@ struct LogSetView: View {
         lastReply = reply
         try? await Task.sleep(nanoseconds: 2_000_000_000)
         // Same "still the same value I set, clear it" guard
-        // `GroupSessionLiveView.showSoundOverlay` already uses phone-side
+        // `SessionLiveView.showSoundOverlay` already uses phone-side
         // (`if soundOverlayText == text { soundOverlayText = nil }`) — a
         // second submit landing during this sleep would have overwritten
         // `lastReply` with a NEWER value this check must not clobber.

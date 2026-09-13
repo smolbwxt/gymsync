@@ -322,7 +322,7 @@ struct LobbyView: View {
     // Split into three layered expressions (CI 2026-08-12, twice: the
     // RELEASE-config type-check timeout at `body` survived closure
     // extraction — the ~25-modifier chain itself was the over-budget
-    // expression. Same failure mode and fix as GroupSessionLiveView's
+    // expression. Same failure mode and fix as SessionLiveView's
     // arenaBase → arenaWithThrow → body layering). Each layer is a
     // separately-checked expression; behavior unchanged.
 
@@ -482,10 +482,10 @@ struct LobbyView: View {
                 // resolved there): whether the PTT dock replaces, stacks
                 // above, or sits below the existing `actionBar`. ASSUMPTION
                 // (judgment call, no design ruling to follow): stacks above,
-                // matching GroupSessionLiveView's own `PTTDockRow`, which
+                // matching SessionLiveView's own `PTTDockRow`, which
                 // sits between its content and its bottom action bar the
-                // same way (GroupSessionLiveView.swift:2885-2894). Fix round
-                // 3 R-11: previously cited as "GroupSessionLiveView's
+                // same way (SessionLiveView.swift:2885-2894). Fix round
+                // 3 R-11: previously cited as "SessionLiveView's
                 // soundboard dock" — a literal grep for that word finds
                 // nothing, so the precedent is named directly instead.
                 if isVoiceEligible {

@@ -1,6 +1,6 @@
 import SwiftUI
 
-// Moved out of GroupSessionLiveView (2026-07-30, solo port): the solo
+// Moved out of SessionLiveView (2026-07-30, solo port): the solo
 // workout's entry card uses the identical accelerating stepper, and a
 // fileprivate struct can't cross files. Behaviour unchanged.
 // MARK: - TurnAutoRepeatButton (2026-07-30)

@@ -25,7 +25,7 @@ import Supabase
 // network. T5 fills in the actual Realtime subscribe/publish bodies below,
 // fed by the Watch-side `HKAnchoredObjectQuery` sampler
 // (`GymSyncWatch/HeartRateSampler.swift`) via `WatchConnectivityBridge
-// .handleHRSample` (the real producer) and rendered by `GroupSessionLiveView`
+// .handleHRSample` (the real producer) and rendered by `SessionLiveView`
 // (the real roster-pill consumer — `GSHeartRatePill`,
 // `DesignSystem/GSComponents.swift`). `subscribe`/`publish`/`unsubscribe`
 // below follow the EXACT SAME call shape `SessionBroadcastService.subscribe`/
@@ -167,18 +167,18 @@ final class HeartRateBroadcastService {
 
     // MARK: - Subscribe
 
-    /// Subscribe to `heart_rate` broadcast events for a session — GroupSessionLiveView's
+    /// Subscribe to `heart_rate` broadcast events for a session — SessionLiveView's
     /// receive side, called from `subscribeBroadcast()` alongside
     /// `SessionBroadcastService.subscribe`'s soundboard/reaction subscribe
-    /// (`Features/Sessions/GroupSessionLiveView.swift`, `subscribeBroadcast()`).
+    /// (`Features/Sessions/SessionLiveView.swift`, `subscribeBroadcast()`).
     /// Same shape as that method (`Services/SessionBroadcastService.swift:53-107`):
     /// register the broadcast stream BEFORE `await ch.subscribe()` (same
     /// ordering rule), one `Task` iterating the stream on the main actor.
     ///
     /// Self-echo: this channel receives the CURRENT phone's own published
     /// samples too (Realtime broadcast's default behavior). Confirmed by
-    /// `GroupSessionLiveView`'s own `onSoundboard` CALLBACK closure
-    /// (`Features/Sessions/GroupSessionLiveView.swift:~2090-2092`, its call
+    /// `SessionLiveView`'s own `onSoundboard` CALLBACK closure
+    /// (`Features/Sessions/SessionLiveView.swift:~2090-2092`, its call
     /// site of `SessionBroadcastService.subscribe`), which explicitly
     /// guards `userID != selfID` to skip its own echo — that guard lives in
     /// the CALLER's closure, not inside `SessionBroadcastService.subscribe`'s
@@ -189,7 +189,7 @@ final class HeartRateBroadcastService {
     /// its own). The guard's mere EXISTENCE at that call site is still the
     /// right evidence: it wouldn't be needed at all if this codebase's
     /// Realtime SDK/config didn't already deliver self-sent broadcasts back
-    /// to the sender. `GroupSessionLiveView`'s own `onHeartRate` callback
+    /// to the sender. `SessionLiveView`'s own `onHeartRate` callback
     /// relies on the same self-echo: it's the SAME path that feeds both the
     /// Spotlight hero's own-HR pill (frame 2A) and every OTHER
     /// participant's roster pill (frame 2B) — one subscription, no special
@@ -260,7 +260,7 @@ final class HeartRateBroadcastService {
     /// CHANNEL-COLLISION GUARD (debt-zero sprint, gate finding I-1): before
     /// creating a disposable channel, checks the client's own topic
     /// registry so this send-only instance never tears down
-    /// `GroupSessionLiveView`'s receive-side subscription on the same
+    /// `SessionLiveView`'s receive-side subscription on the same
     /// `session:{id}:hr` topic — see `BroadcastChannelDecision`'s doc
     /// comment (`Services/BroadcastChannelDecision.swift`) for the full
     /// SDK-quote writeup (hazard, fix, and residual-risk note); this

@@ -8,7 +8,7 @@ import SwiftUI
 // Entry points (per task-3-brief.md, "likely GroupView tab/row and/or the
 // live session penalty banner"):
 //   1. PRIMARY — GroupView's Sessions sub-tab, a row above Upcoming/Past.
-//   2. SECONDARY — GroupSessionLiveView's existing per-session penalty
+//   2. SECONDARY — SessionLiveView's existing per-session penalty
 //      banner, a "Crew ledger" link (only for group sessions, since ad-hoc
 //      solo/friend sessions have no `groupID`).
 //
@@ -34,13 +34,13 @@ import SwiftUI
 struct BurpeeLedgerView: View {
     let group: GymGroup
 
-    /// Set only by `GroupSessionLiveView`'s "Crew ledger" NavigationLink
-    /// (`GroupSessionLiveView.swift:1469` — the ONE other construction site
+    /// Set only by `SessionLiveView`'s "Crew ledger" NavigationLink
+    /// (`SessionLiveView.swift:1469` — the ONE other construction site
     /// is `GroupView.swift:344`'s primary Sessions-tab entry, which leaves
     /// this `nil` since there's no live session anywhere below it on the
     /// nav stack). Fix wave 1 (reviewer Finding F4): before this fix, the
     /// "Log burpees now" CTA below unconditionally pushed a SECOND
-    /// `GroupSessionLiveView` — if `liveSessionForCTA` happened to be the
+    /// `SessionLiveView` — if `liveSessionForCTA` happened to be the
     /// SAME session as the one this view was pushed from (reachable: the
     /// penalty banner that hosts the "Crew ledger" link only renders for a
     /// session you currently owe burpees in, which is exactly the session
@@ -48,8 +48,8 @@ struct BurpeeLedgerView: View {
     /// is still live), popping that duplicate back out fired ITS
     /// `onDisappear` with the default `voicePersistsOnPop: false` —
     /// unconditionally tearing down voice out from under the ORIGINAL,
-    /// still-live `GroupSessionLiveView` instance sitting right below it.
-    /// Read `GroupSessionLiveView.swift`'s nav structure (init at line 397,
+    /// still-live `SessionLiveView` instance sitting right below it.
+    /// Read `SessionLiveView.swift`'s nav structure (init at line 397,
     /// `onDisappear`'s `voicePersistsOnPop` guard at ~708-750) before
     /// choosing a fix: threading `voicePersistsOnPop: true` through was one
     /// option, but it only patches the SYMPTOM (the duplicate instance would
@@ -201,7 +201,10 @@ struct BurpeeLedgerView: View {
                     .buttonStyle(.gs3D(face: theme.raised3DFace, lip: theme.raised3DLip, cornerRadius: 12))
                 } else {
                     NavigationLink {
-                        GroupSessionLiveView(session: live)
+                        // The row's own style (plan task S5). `live` is a
+                        // decoded `sessions` row, so this is the same column
+                        // `SessionInProgressView` routes on — never a guess.
+                        SessionLiveView(session: live, style: live.style)
                     } label: {
                         logBurpeesNowLabel
                     }

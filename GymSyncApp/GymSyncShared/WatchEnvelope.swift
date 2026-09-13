@@ -188,7 +188,7 @@ enum WatchWire {
 /// wins — no queueing, no history; a watch that reconnects after missing
 /// several pushes only ever sees the MOST RECENT one, which is exactly
 /// what a "current session state" concept wants). Built by
-/// `GroupSessionLiveView` from its own already-fetched models (`WorkoutSession`,
+/// `SessionLiveView` from its own already-fetched models (`WorkoutSession`,
 /// `SessionParticipant`/`Profile` — see that view's `pushWatchSessionState()`
 /// for the exact derivation and citations), not re-derived inside the
 /// bridge — this app has no OTHER service that independently computes
@@ -208,8 +208,8 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
     let currentExerciseName: String?
     /// Task 3 addition (watch-hr design §2, Component "Tap-to-log-set") —
     /// the SAME `Exercise`'s id whose `.name` fills `currentExerciseName`
-    /// above (`GroupSessionLiveView.currentExerciseForSheet`,
-    /// `GroupSessionLiveView.swift:1675`) — needed to fill
+    /// above (`SessionLiveView.currentExerciseForSheet`,
+    /// `SessionLiveView.swift:1675`) — needed to fill
     /// `WatchLogSetPayload.exerciseID` when the watch submits a set. `nil`
     /// under the identical conditions `currentExerciseName` is nil.
     let currentExerciseID: UUID?
@@ -219,7 +219,7 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
     let currentLifterName: String?
     let isMyTurn: Bool
     /// NOTE (pre-existing, Task 2): despite the name, this carries
-    /// `GroupSessionLiveView.burpeesRemaining` (owed minus already-paid-
+    /// `SessionLiveView.burpeesRemaining` (owed minus already-paid-
     /// this-session), not the raw `myParticipant.burpeesOwed` total — see
     /// `pushWatchSessionState()`'s call site. Kept byte-identical here; an
     /// additive Task 3 extension is not the place to rename a shipped
@@ -227,18 +227,18 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
     let burpeesOwed: Int
     /// Task 3 addition (watch-hr design §2, "Ledger glance") — burpee reps
     /// already logged as a penalty THIS SESSION by the current user,
-    /// mirrors `GroupSessionLiveView.penaltyLogged`
-    /// (`GroupSessionLiveView.swift:130`) — the same counter `burpeesOwed`
+    /// mirrors `SessionLiveView.penaltyLogged`
+    /// (`SessionLiveView.swift:130`) — the same counter `burpeesOwed`
     /// above is already net of (see that field's note). Together the two
     /// give the ledger glance its "owed / paid" pair without re-deriving
     /// anything phone-side.
     let burpeesPaid: Int
     /// Task 3 addition (watch-hr design §2, "Soundboard buttons") — up to 4
-    /// favorite slugs, straight from `GroupSessionLiveView.soundFavorites`
-    /// (`GroupSessionLiveView.swift:69`), itself sourced from
+    /// favorite slugs, straight from `SessionLiveView.soundFavorites`
+    /// (`SessionLiveView.swift:69`), itself sourced from
     /// `SoundboardFavoritesRepository.get()` (`Models/Soundboard.swift:60`)
     /// — the SAME favorites list the phone's own soundboard dock ribbon
-    /// renders (`dockSounds`, `GroupSessionLiveView.swift:164-168`). Empty
+    /// renders (`dockSounds`, `SessionLiveView.swift:164-168`). Empty
     /// until favorites finish loading or none are chosen.
     let soundboardFavorites: [String]
     /// Task 3 fix wave 1 (reviewer finding, IMPORTANT 2) — additive alongside
@@ -262,7 +262,7 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
     /// Task 3 addition — the CARRIED-IN REQUIREMENT from T2's review: "no
     /// session-ended signal exists; a Watch shows stale 'live' state for up
     /// to 90s after a session ends while the phone stays reachable."
-    /// `false` exactly once, pushed from `GroupSessionLiveView.endSession()`
+    /// `false` exactly once, pushed from `SessionLiveView.endSession()`
     /// right after `SessionRepository.complete(sessionID:)` succeeds — see
     /// that function's own comment for why THAT moment (not `.onDisappear`)
     /// is the honest hook. Defaults `true` so every pre-Task-3 call site

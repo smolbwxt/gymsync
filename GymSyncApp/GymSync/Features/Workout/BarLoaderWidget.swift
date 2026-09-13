@@ -248,5 +248,5 @@ struct BarLoaderWidget: View {
 
 // (A `BarLoaderSheet` wrapper lived here until 2026-07-28, when the group
 // session's header button was replaced by the same inline card the solo
-// session uses — `GroupSessionLiveView.barLoaderCard`. Nothing presented the
+// session uses — `SessionLiveView.barLoaderCard`. Nothing presented the
 // sheet after that, so it was removed rather than left as dead code.)

@@ -1,17 +1,25 @@
 import SwiftUI
 import UIKit
 
-// MARK: - GroupSessionLiveView
+// MARK: - SessionLiveView
 //
-// Proof-matched design (p06 Live Spotlight / p07 Live Roster / p29 PR Celebration):
+// THE ONE SESSION BODY (plan task S5). Was `GroupSessionLiveView`, in
+// `Features/Sessions/`; the spectate sister page, the roster-failure layout,
+// the soundboard dock, the throw and the BOARD left in plan task S4, and what
+// remains is moved here under the name it earned — one body, three styles.
+//
+// `style` is handed in by `SessionInProgressView`, the style router, and it
+// has NO DEFAULT: an explicit argument at the one call site is what makes the
+// router readable. Rounds is a rotation, so the log control belongs to
+// whoever holds the turn (`logControlIsMine` below); Freestyle and Together
+// have no turn at all, so it is everyone's at once (spec §3.3).
+//
+// Proof-matched design (p06 Live Spotlight / p29 PR Celebration):
 //   • Top bar: LIVE pulse + session name + elapsed timer + X (→ End Session confirmation)
 //   • My-turn state ("Spotlight"): exercise-headline turn card (accent fill) + SET TIMER /
 //     REST AFTER stat tiles + inline "LOG THIS SET" card (reps/weight steppers + RPE bar,
 //     no sheet) + ROTATION strip (NOW/NEXT/3RD/4TH) — primary "Log Set & Pass" pinned to
 //     the bottom action bar, NOT inside the card.
-//   • Spectating state ("Roster"): "CURRENT LIFT" headline + round/set progress bar +
-//     2-col roster grid (LIFTING NOW / UP NEXT / DONE / WAITING per participant) — bottom
-//     bar shows a dashed "you're up next" style hint instead of a CTA.
 //   • Chess clock: Text(_, style: .timer), state-driven from currentTurnStartedAt — never
 //     a Swift Timer. Advance-turn flow (priorMax-before-logSet ordering, fire-and-forget
 //     PR record, advanceTurn call) is UNCHANGED — only the caller moved from a sheet's
@@ -25,8 +33,19 @@ import UIKit
 //     auto-dismissing toast. Share (ShareLink) + "Keep Lifting" dismiss.
 //   • End Session: confirmation (via header X) → complete → HealthKit → SessionRecapView sheet
 
-struct GroupSessionLiveView: View {
+struct SessionLiveView: View {
     let session: WorkoutSession
+
+    /// How this crew moves (plan task S5). NO DEFAULT — `SessionInProgressView`
+    /// names it at the one call site, and the three styles mount different
+    /// bodies underneath (the round wait and spotter mode for `.rounds`, plan
+    /// tasks S6 and S8; Together's clock, S9; Freestyle's rail, S10).
+    ///
+    /// Read from `sessions.style` rather than `liveSession.style` so the whole
+    /// body agrees with the router that pushed it: the column is frozen the
+    /// moment `lifting_started_at` is stamped (`private.session_round_guard`,
+    /// plan task D3), so a live session's style cannot change under this view.
+    let style: SessionStyle
 
     /// True only when this view was reached via LobbyView ->
     /// `SessionInProgressView` (the Lobby<->Live push/pop pair for the SAME
@@ -91,7 +110,7 @@ struct GroupSessionLiveView: View {
     /// shareHeartRate = false`, populated once from `UserSettingsRepository
     /// .get()` in `openAndSubscribe()`). That one-shot cache was the exact
     /// bug T4's review carried in: a mid-session toggle flip in `YouTabView`
-    /// never reached an already-open `GroupSessionLiveView` (this app's
+    /// never reached an already-open `SessionLiveView` (this app's
     /// `TabView` keeps a pushed session view alive across tab switches — it
     /// isn't torn down and re-`.task`-ed just by navigating to the You tab
     /// and back). Fixed by DERIVING the value live from `ThemeStore.shared
@@ -127,10 +146,12 @@ struct GroupSessionLiveView: View {
     /// sheet — see docs/design/accepted-deviations.json's "session-chat"
     /// entry.
     @State private var showChatSheet        = false
-    /// "Load the bar" expand/collapse for the inline `barLoaderCard` (user
-    /// direction 2026-07-28: a widget like the solo session's, not a header
-    /// button). The card renders in BOTH the my-turn and spectating branches
-    /// — your next weight is yours to plan while someone else lifts.
+    /// "Load the bar" expand/collapse for the my-turn page's `turnBarCard` /
+    /// `turnLoaderExpanded` pair (user direction 2026-07-28: a widget like the
+    /// solo session's, not a header button). It used to drive `barLoaderCard`
+    /// on the spectate page too — "plan your bar while someone else lifts" —
+    /// but that page left in plan task S4 and `barLoaderCard` went callerless
+    /// with it (see its own MARK).
     @State private var showBarLoader        = false
     /// Success-haptic trigger for `.sensoryFeedback` — a count (not a Bool)
     /// so every logged set fires, including two in a row.
@@ -261,6 +282,18 @@ struct GroupSessionLiveView: View {
     private var selfID: UUID? { appState.currentProfile?.id }
     private var isMyTurn: Bool { liveSession.currentTurnUserID == selfID }
     private var isOrganizer: Bool { liveSession.organizerID == selfID }
+
+    /// WHOSE ACT THE LOG CONTROL IS — plan task S5's one behavioural change.
+    ///
+    /// Rounds is a rotation: the inline LOG THIS SET card belongs to whoever
+    /// holds the turn, which is the gate the spectate sister page used to
+    /// enforce by simply not drawing the card (plan task S4 deleted that page;
+    /// the round wait and spotter mode replace it in S6 and S8). Freestyle and
+    /// Together have NO TURN — spec §3.3 — so the control is everyone's at
+    /// once and `currentTurnUserID` is not consulted at all.
+    private var logControlIsMine: Bool {
+        style == .rounds ? isMyTurn : true
+    }
 
     // MARK: - Voice (Task 4 — PTT dock, Dossier §A.1's locked session-state scope)
 
@@ -412,9 +445,10 @@ struct GroupSessionLiveView: View {
         }
     }
 
-    /// The CURRENT lifter's quiet scale for the shared current exercise,
-    /// if any - what the spectate card shows "during their set" (never
-    /// announced anywhere else).
+    /// The CURRENT lifter's quiet scale for the shared current exercise, if
+    /// any (spec §3.4 mode 2 — never announced anywhere else). The spectate
+    /// card that read it left in plan task S4; the round wait's station column
+    /// is where a crewmate's scale-down is shown now (plan task S6).
     private var currentLifterScale: SwapTarget? {
         guard let turnID = liveSession.currentTurnUserID, turnID != selfID,
               let ex = currentExerciseForSheet else { return nil }
@@ -490,7 +524,10 @@ struct GroupSessionLiveView: View {
             .max(by: { $0.loggedAt < $1.loggedAt })
     }
 
-    /// Bottom-bar hint for spectators — "you're up next" or how many lifters are ahead.
+    /// Bottom-bar hint for whoever is not lifting — "you're up next" or how many
+    /// lifters are ahead. CALLERLESS SINCE PLAN TASK S4 with `bottomActionBar`,
+    /// its only reader; the round wait says the same thing as `WAITING ON …`
+    /// (plan task S6). Left for I1's sweep.
     /// Deliberately does NOT fabricate an ETA (the proof's "~2 min" isn't backed by any
     /// duration data we track) — see visual-sweep-B p06/p07 findings.
     private var upcomingTurnHint: String? {
@@ -533,8 +570,9 @@ struct GroupSessionLiveView: View {
 
     // MARK: - Init
 
-    init(session: WorkoutSession, voicePersistsOnPop: Bool = false) {
+    init(session: WorkoutSession, style: SessionStyle, voicePersistsOnPop: Bool = false) {
         self.session = session
+        self.style = style
         self.voicePersistsOnPop = voicePersistsOnPop
         _liveSession = State(initialValue: session)
     }
@@ -544,9 +582,11 @@ struct GroupSessionLiveView: View {
     // The my-turn state is a FIXED, non-scrolling page: fixed control heights,
     // ONE flexible child (the exercise card) absorbing device slack. Four
     // widgets — heart rate, load-the-bar, exercise (SETS|ROUTINE pager),
-    // entry — over a compact pinned chrome (56pt sound rail with the compact
-    // PTT mic + 64pt CTA). The spectating state keeps the old scroll layout
-    // and old dock untouched (sister-page round).
+    // entry — over a compact pinned chrome (the mic rail with the compact PTT
+    // mic + 57pt CTA; the rail was 56pt of soundboard plates until plan task
+    // S4 took them). This is now the ONLY page this body has: the spectate
+    // sister page and the roster-failure scroll layout left with S4, and the
+    // round wait (S6) and spotter mode (S8) are what render in their place.
     //
     // Recorded v1 deviations from final-proof (each deliberate, none silent):
     //   - CTA read-back omits "→ <next lifter>" (no verified next-name source
@@ -570,9 +610,13 @@ struct GroupSessionLiveView: View {
 
     /// Solo-in-a-group-session rest (user round 3): when a log-and-pass
     /// hands the turn straight back to you (nobody else checked in), the
-    /// my-turn screen "did nothing". Now it enters a REST interlude — the
-    /// spectate layout with a START SET CTA — until the rest window ends
-    /// or you cut it short. Nil = not resting.
+    /// my-turn screen "did nothing". It entered a REST interlude — the
+    /// spectate layout with a START SET CTA — until the window ended or you
+    /// cut it short. THE INTERLUDE'S LAYOUT LEFT WITH THE SPECTATE PAGE (plan
+    /// task S4): the window, its notifier, its store and its recovery pill all
+    /// still run, and `selfRotationRecoveryPill` still has no page to sit on.
+    /// Nil = not resting. Recorded for I1's callerless sweep rather than
+    /// deleted on a hunch.
     @State private var selfRotationRestUntil: Date?
 
     private var isInSelfRotationRest: Bool {
@@ -591,7 +635,8 @@ struct GroupSessionLiveView: View {
     /// Recovery-adaptive rest, group mirror of the solo wiring (owner
     /// 2026-08-12): window-open stamp + this session's end-of-rest HR
     /// drops. Applies to the SELF-ROTATION interlude only — crew-rotation
-    /// "rest" is spectating others' turns, not a timed window.
+    /// "rest" is the round wait (plan task S6), which measures its own
+    /// elapsed clock from the crew's logs and opens no window.
     @State private var selfRotationRestStartedAt: Date?
     @State private var selfRotationRestDrops: [Int] = []
     /// Owner item 7: latest logged body weight (canonical lbs), stamped
@@ -1091,8 +1136,9 @@ struct GroupSessionLiveView: View {
         return parts.joined(separator: " · ")
     }
 
-    /// Bar/plate config shared by the strip and the expanded widget —
-    /// identical derivation to the (spectating-only) `barLoaderCard`.
+    /// Bar/plate config shared by `turnBarCard` and `turnLoaderExpanded`. It
+    /// was written as the twin of `barLoaderCard`'s derivation, which is now
+    /// the callerless one (plan task S4 deleted its only mount).
     private var turnBarConfig: (unit: WeightUnit, plates: [Decimal], barInUnit: Decimal, prefill: Decimal?, targetInUnit: Decimal) {
         let unit = turnUnit
         let plates: [Decimal] = {
@@ -1676,7 +1722,12 @@ struct GroupSessionLiveView: View {
             .buttonStyle(.gs3D(face: logIsFailed ? theme.raised3DFace : theme.accent,
                                lip: logIsFailed ? theme.raised3DLip : nil,
                                cornerRadius: 16))
-            .disabled(isLoggingSet || (leadingInt(logReps) == nil && !logIsFailed))
+            // `logControlIsMine` (plan task S5): in Rounds the CTA is the
+            // turn-holder's; in Freestyle and Together there is no turn to
+            // hold. The readback says which, so a dead button is never a
+            // silent one.
+            .disabled(isLoggingSet || !logControlIsMine
+                      || (leadingInt(logReps) == nil && !logIsFailed))
             .padding(.horizontal, 16)
             Color.clear.frame(height: 10)
         }
@@ -1684,6 +1735,7 @@ struct GroupSessionLiveView: View {
     }
 
     private var turnCTAReadback: String {
+        if !logControlIsMine { return "WAITING FOR YOUR TURN" }
         if leadingInt(logReps) == nil && !logIsFailed { return "ENTER REPS TO LOG" }
         let weight = logWeight.isEmpty ? "—" : logWeight
         let reps = leadingInt(logReps).map { "\($0)" } ?? "—"
@@ -1752,9 +1804,10 @@ struct GroupSessionLiveView: View {
     // arenaWithLifecycle (prefill + turn poll) → body (sheets, dialogs,
     // lifecycle). Each layer is a separately-checked expression.
     /// Exercise whose detail page (video demo + history) is open as a sheet —
-    /// set by tapping the exercise name on the spotlight/spectate header
-    /// (user 2026-08-11). A sheet, not a push, so dismissing it lands
-    /// straight back in the session.
+    /// set by tapping the exercise name on `turnExerciseCard` (user
+    /// 2026-08-11; the spotlight/spectate headers that also raised it left in
+    /// plan task S4, `spotlightHeaderCard` with its own mount). A sheet, not a
+    /// push, so dismissing it lands straight back in the session.
     @State private var exerciseDetailSheet: Exercise?
 
     var body: some View {
@@ -1983,7 +2036,7 @@ struct GroupSessionLiveView: View {
         }
         .onDisappear {
             // Only clear the suppression flag if it's still pointing at THIS
-            // session — a second GroupSessionLiveView push (or a fast
+            // session — a second SessionLiveView push (or a fast
             // navigate-away-and-back) could have already overwritten it with
             // a different session's id by the time this onDisappear fires,
             // and clearing unconditionally would un-suppress banners for
@@ -2014,7 +2067,7 @@ struct GroupSessionLiveView: View {
             // Fix wave 1 (reviewer finding, CRITICAL) — clears the trigger
             // set in `.onAppear` above. Unconditional (no "still points at
             // THIS session" guard the way `appState.activeSessionID`'s
-            // clear above needs): only one `GroupSessionLiveView` is ever
+            // clear above needs): only one `SessionLiveView` is ever
             // genuinely live-on-screen at a time in this app's navigation
             // model, so there's no sibling instance whose hook this could
             // wrongly clear — leaving it set would let a departed view's
@@ -2504,13 +2557,17 @@ struct GroupSessionLiveView: View {
 
     // MARK: - Load the bar (inline widget — parity with the solo session)
     //
+    // CALLERLESS SINCE PLAN TASK S4. Its only mount was the spectate page's
+    // widget row; the my-turn page draws `turnBarCard` / `turnLoaderExpanded`
+    // instead, off the same `showBarLoader` flag and the same `turnBarConfig`.
+    // Left standing rather than deleted on a hunch — I1 owns the callerless
+    // sweep — and recorded here so the next reader is not misled.
+    //
     // User direction 2026-07-28: "Group session load the bar should be the
     // same as the solo workout. Not a small button, but a widget." This is
     // `WorkoutSessionView.barLoaderCard`'s design verbatim — collapsed card
     // with a `GSBarLoaderMini` preview, expanding to the full
-    // `BarLoaderWidget` — and it renders in BOTH the my-turn and spectating
-    // branches, preserving the original "reachable whether or not it's your
-    // turn" property (plan your bar while someone else lifts).
+    // `BarLoaderWidget`.
     //
     // Bar/plate settings come from `ThemeStore`'s already-cached
     // `user_settings` row rather than a fetch of this view's own, matching
@@ -2733,6 +2790,11 @@ struct GroupSessionLiveView: View {
     }
 
     // MARK: - Bottom action bar
+    // CALLERLESS SINCE PLAN TASK S4, with `upcomingTurnHint` below it: the
+    // pinned chrome is `turnChrome` now, and the spectating arm this bar's
+    // second branch served left with the page it belonged to. Left standing
+    // for I1's sweep, not deleted on a hunch.
+    //
     // My turn → pinned primary CTA (commits the inline card's state via logSetAndAdvance,
     // UNCHANGED order of operations). Spectating → dashed rotation hint, no CTA (matches
     // p07's "You're up next — ~2 min" treatment, minus the fabricated ETA — see
@@ -3183,7 +3245,7 @@ struct GroupSessionLiveView: View {
             // logging over the open loader looked like nothing happened) —
             // close the loader and keyboard so the my-turn page is reset when
             // the rotation returns, and let the turn advance flip the body to
-            // the spectate layout. Failure keeps everything up for a retry —
+            // the round wait (plan task S6). Failure keeps everything up for a retry —
             // it also must NOT enter the rest interlude below.
             withAnimation(.easeInOut(duration: 0.18)) { showBarLoader = false }
             UIApplication.shared.sendAction(
@@ -3390,7 +3452,7 @@ struct GroupSessionLiveView: View {
                 ledgerGroup = try await GroupRepository.fetch(id: groupID)
             } catch {
                 AppLogger.sessions.warning(
-                    "GroupSessionLiveView openAndSubscribe: GroupRepository.fetch failed for group \(groupID, privacy: .public) on a real group session — completion will downgrade to SessionRecapView instead of frame-8 GroupRecapView: \(error, privacy: .public)")
+                    "SessionLiveView openAndSubscribe: GroupRepository.fetch failed for group \(groupID, privacy: .public) on a real group session — completion will downgrade to SessionRecapView instead of frame-8 GroupRecapView: \(error, privacy: .public)")
             }
         }
         await liveService.subscribe(
@@ -3750,7 +3812,7 @@ struct GroupSessionLiveView: View {
                 exerciseNames[id] = name
             }
         } catch {
-            AppLogger.sessions.error("GroupSessionLiveView reload: \(error, privacy: .public)")
+            AppLogger.sessions.error("SessionLiveView reload: \(error, privacy: .public)")
             rosterLoadFailed = true
         }
 

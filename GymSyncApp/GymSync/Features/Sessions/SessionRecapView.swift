@@ -35,13 +35,13 @@ struct SessionRecapView: View {
     /// 20260720000002_session_pr_counts_and_kudos_guard.sql) instead of
     /// `sessionPRs` above: `sessionPRs` is `bySession`-backed and thus
     /// self-only, so counting from it undercounted every teammate to zero
-    /// (Fast-follow wave, Fix 1 — same bug `GroupSessionLiveView
+    /// (Fast-follow wave, Fix 1 — same bug `SessionLiveView
     /// .buildGroupRecapPayload` had before its Fix round 1; this view's
     /// history-path counterpart was tracked as ledger DEBT, "flagged not
     /// fixed", since F-Task 4 COMPLETE). This view is normally reached only
     /// for solo/ad-hoc completions (a real group session routes to
     /// `GroupRecapView` instead) but can still surface a real group
-    /// session's participants via the `GroupSessionLiveView` fetch-failure
+    /// session's participants via the `SessionLiveView` fetch-failure
     /// downgrade path (Fix 3) — so the count here must be crew-wide-correct
     /// too, not just cosmetically present.
     @State private var prCountByUser: [UUID: Int] = [:]

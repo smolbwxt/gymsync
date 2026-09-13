@@ -135,7 +135,7 @@ enum GroupRepository {
     }
 
     /// Single group lookup by ID — backs the Burpee Ledger's secondary entry
-    /// point from `GroupSessionLiveView`, which only carries the session's
+    /// point from `SessionLiveView`, which only carries the session's
     /// `groupID` (not a full `GymGroup`). Mirrors `SessionRepository.session(id:)`'s
     /// not-found handling (PGRST116 → nil, not an error).
     static func fetch(id: UUID) async throws -> GymGroup? {

@@ -129,7 +129,7 @@ struct StatTilesRow: View {
     // e.g. GSComponents.swift:1345 "Tap to talk · hold to talk live"); a
     // field that's never been cached renders as the frame's em-dash "—"
     // (U+2014 — same character ExerciseDetailView.swift:85 and
-    // GroupSessionLiveView.swift already use for "no value" tiles). Caption
+    // SessionLiveView.swift already use for "no value" tiles). Caption
     // copy is verbatim from frame 41.
 
     private func offlineStaleColumn(_ snapshot: StatTilesSnapshot) -> some View {

@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: - SoundLibrarySheet
 //
 // Content Curation Task 3, frame 2 ("Sound library"): opened from
-// GroupSessionLiveView's dock via either "Edit" or the dashed "All" tile.
+// SessionLiveView's dock via either "Edit" or the dashed "All" tile.
 //   • Grab handle + "Sounds" header + "Tap to send · star to favorite" caption.
 //   • "Your N favorites · drag to reorder" — reorderable List section (star
 //     tap removes from favorites).
@@ -15,7 +15,7 @@ import SwiftUI
 // State ownership: favorites here are a local, optimistic copy seeded from the
 // `favorites` init parameter. Every mutation (reorder/star) updates the local
 // copy immediately (so the UI never waits on a round-trip) AND calls
-// `onFavoritesChanged` with the full new array — the caller (GroupSessionLiveView)
+// `onFavoritesChanged` with the full new array — the caller (SessionLiveView)
 // is the actual source of truth and owns persistence via
 // `SoundboardFavoritesRepository.set(_:)`; this view never talks to Supabase.
 struct SoundLibrarySheet: View {

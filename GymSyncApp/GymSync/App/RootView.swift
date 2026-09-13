@@ -16,7 +16,7 @@ struct RootView: View {
     // sweep (`EventKitBridge.reconcile()`) — see the `.onChange` below for
     // why this lives HERE rather than following the per-screen `scenePhase`
     // idiom every other consumer uses (HomeView/YouTabView/LobbyView/
-    // GroupSessionLiveView/ChatView/SocialTabView/PushPrimingView/
+    // SessionLiveView/ChatView/SocialTabView/PushPrimingView/
     // NotificationPreferencesView all read `@Environment(\.scenePhase)`
     // themselves).
     @Environment(\.scenePhase) private var scenePhase
@@ -210,7 +210,7 @@ struct RootView: View {
         // ALSO re-called on every transition through this same hook — not
         // just from `configure()`'s one-time call in the `.task` above.
         // `pendingSetLogIDs` drives the "syncing" UI badges
-        // (`WorkoutSessionView.loggedSetsTable`, `GroupSessionLiveView.
+        // (`WorkoutSessionView.loggedSetsTable`, `SessionLiveView.
         // feedRow`) and, like `replay()`, is now scoped to the CURRENT
         // signed-in user (`OfflineSetLogQueue.swift`'s class doc comment).
         // Without re-syncing here, a second user signing into a shared
@@ -269,7 +269,7 @@ struct RootView: View {
         // one closure). `SentryContext.refreshAppWide()` is a no-op whenever
         // Sentry isn't started (`CrashReporting.shared.isEnabled == false`,
         // today's DSN-absent default), so this costs nothing in the common
-        // case. See `GroupSessionLiveView`'s own scenePhase hook for the
+        // case. See `SessionLiveView`'s own scenePhase hook for the
         // equivalent in-live-session refresh (has real session/roster data
         // this app-wide one can't see).
         .onChange(of: scenePhase) {
@@ -279,7 +279,7 @@ struct RootView: View {
         // Replay trigger 4/4 — post-submit "cheap drain": NOT a RootView
         // hook. Fired inline, fire-and-forget, right after every successful
         // ONLINE set-log submit (WorkoutSessionView.swift ~726-731,
-        // GroupSessionLiveView.swift's logSetAndAdvance/logSet cheap-drain
+        // SessionLiveView.swift's logSetAndAdvance/logSet cheap-drain
         // call sites) — opportunistically flushes anything still queued
         // from an earlier offline stretch now that a submit just proved
         // we're back online. Listed here only so this file's trigger

@@ -7,7 +7,7 @@ import Supabase
 /// and manage the 4-slot dock you carry into every session.
 ///
 /// Favorites semantics mirror the live session's Rack Room
-/// (`SoundLibrarySheet` + `GroupSessionLiveView`) exactly: a local
+/// (`SoundLibrarySheet` + `SessionLiveView`) exactly: a local
 /// optimistic copy of the ordered slug array (stale slugs filtered against
 /// the catalog), adds APPEND to the end (front = longest-held), removes
 /// filter by slug, and every mutation fire-and-forgets the FULL array via
@@ -449,7 +449,7 @@ struct MyRackView: View {
 
     // MARK: - Favorites mutation
     // Optimistic local copy; every change persists the FULL array — the same
-    // write path GroupSessionLiveView uses for SoundLibrarySheet's changes.
+    // write path SessionLiveView uses for SoundLibrarySheet's changes.
 
     private func addFavorite(_ slug: String) {
         guard favorites.count < 4, !favorites.contains(slug) else { return }

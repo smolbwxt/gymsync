@@ -27,7 +27,7 @@ import WatchConnectivity
 //
 // ACTIVATION LIFECYCLE (task brief: "activates WCSession when a session
 // goes live (NOT at launch)"): `activateIfNeeded()` is called from
-// `GroupSessionLiveView.onAppear` (GroupSessionLiveView.swift, right next
+// `SessionLiveView.onAppear` (SessionLiveView.swift, right next
 // to `appState.activeSessionID = liveSession.id` — the exact app-wide
 // "session went live" signal already used to suppress push banners for a
 // session the user is actively looking at, `App/AppState.swift:51`'s doc
@@ -55,8 +55,8 @@ import WatchConnectivity
 // not the view"): `updateSessionState(_:)` below accepts an ALREADY-BUILT
 // `WatchSessionStatePayload` rather than re-deriving "current exercise +
 // current lifter" itself. This app has no service that independently
-// computes that concept — `GroupSessionLiveView`'s own `currentExerciseForSheet`/
-// `rotationOrder` computed properties (GroupSessionLiveView.swift:1675,
+// computes that concept — `SessionLiveView`'s own `currentExerciseForSheet`/
+// `rotationOrder` computed properties (SessionLiveView.swift:1675,
 // :257) are themselves derived straight from the underlying models
 // (`WorkoutSession`, `SessionParticipant`, `Profile`, `Exercise` —
 // `Models/Session.swift`, `Models/Exercise.swift`) — the view holds no
@@ -65,7 +65,7 @@ import WatchConnectivity
 // that same logic (exactly what this codebase's existing "not a
 // reimplementation" comments elsewhere warn against — e.g.
 // `SupabaseSetLogSubmitter`'s doc comment, `Services/OfflineSetLogQueue.swift:17-20`).
-// So `GroupSessionLiveView.pushWatchSessionState()` builds the payload from
+// So `SessionLiveView.pushWatchSessionState()` builds the payload from
 // its own model-derived properties and hands it to this bridge, which
 // itself holds no View reference and knows nothing about SwiftUI.
 @MainActor
@@ -85,7 +85,7 @@ final class WatchConnectivityBridge {
     /// `HeartRateBroadcastService` instance for `handleHRSample` below. Same
     /// "separate instance per direction" shape `soundboard` above already
     /// establishes via `LiveSoundboardBroadcasting`'s own
-    /// `SessionBroadcastService()` — `GroupSessionLiveView` owns a SECOND,
+    /// `SessionBroadcastService()` — `SessionLiveView` owns a SECOND,
     /// separate `HeartRateBroadcastService` instance for SUBSCRIBING/
     /// rendering pills; this one only ever calls `publish`.
     private let heartRateBroadcast: HeartRateBroadcasting
@@ -184,7 +184,7 @@ final class WatchConnectivityBridge {
     /// flow" convention (`HealthKitBridge.replaceWorkout`'s doc comment,
     /// `Services/HealthKitBridge.swift:88-90`, is the clearest statement of
     /// this norm elsewhere in the codebase) — a Watch-push failure must
-    /// never block or error `GroupSessionLiveView`'s own session flow.
+    /// never block or error `SessionLiveView`'s own session flow.
     func updateSessionState(_ payload: WatchSessionStatePayload) {
         lastPushedState = payload
         do {
@@ -263,8 +263,8 @@ final class WatchConnectivityBridge {
     }
 
     /// `logSet` action — routes into the EXISTING submit path, INCLUDING
-    /// the offline queue, exactly mirroring `GroupSessionLiveView.logSetAndAdvance`'s
-    /// own try/catch shape (GroupSessionLiveView.swift:2027-2074): the
+    /// the offline queue, exactly mirroring `SessionLiveView.logSetAndAdvance`'s
+    /// own try/catch shape (SessionLiveView.swift:2027-2074): the
     /// SAME `SetLogSubmitting` seam `OfflineSetLogQueue` defines
     /// (`Services/OfflineSetLogQueue.swift:13-25`) — production `submitter`
     /// default is `SupabaseSetLogSubmitter`, which itself delegates to
@@ -286,8 +286,8 @@ final class WatchConnectivityBridge {
     /// `attemptTurnAdvance` below, mirroring `logSetAndAdvance`'s own
     /// online-only call: `guard !didQueueSetOffline else { return };
     /// try await SessionRepository.advanceTurn(sessionID: session.id)`
-    /// (GroupSessionLiveView.swift:2415-2416). That method's own comment
-    /// block immediately above it (GroupSessionLiveView.swift:2350-2378)
+    /// (SessionLiveView.swift:2415-2416). That method's own comment
+    /// block immediately above it (SessionLiveView.swift:2350-2378)
     /// documents why a queued-OFFLINE set does NOT auto-advance, even once
     /// the queued row replays — `OfflineSetLogQueue.replay()` only ever
     /// resubmits the INSERT, advanceTurn was never part of replay. This
@@ -338,11 +338,11 @@ final class WatchConnectivityBridge {
     /// `submitter.submit(log)` — as opposed to a genuine RPC rejection —
     /// gets the identical "documented, not retried" posture
     /// `logSetAndAdvance`'s own catch block already accepts on the phone
-    /// (GroupSessionLiveView.swift:2417-2425: any `GymSyncError` here
+    /// (SessionLiveView.swift:2417-2425: any `GymSyncError` here
     /// surfaces as `logSetErrorText`, no automatic retry of JUST the
     /// advance): this bridge has no separate advance-retry queue either,
     /// for the same reason cited on the phone's own comment
-    /// (GroupSessionLiveView.swift:2372-2378) — the closest existing
+    /// (SessionLiveView.swift:2372-2378) — the closest existing
     /// unstick mechanism is unchanged on both surfaces.
     ///
     /// The reply shape to the watch is UNCHANGED by any of this — still
@@ -358,27 +358,27 @@ final class WatchConnectivityBridge {
     /// DELIBERATELY NOT WIRED, unchanged from before — that is
     /// `logSetAndAdvance`'s own additional concern tied to its live
     /// celebratory-overlay UI state (`isPR`/`priorBest`,
-    /// GroupSessionLiveView.swift:2315-2404), which has no watch-side
+    /// SessionLiveView.swift:2315-2404), which has no watch-side
     /// equivalent surface to render into. Only the turn-advance half of
     /// the original "DELIBERATELY NOT WIRED" note is resolved by I-2; PR
     /// detection was never in that finding's scope.
     ///
     /// `setIndex: 1` — same "not turn-tracked" value
-    /// `GroupSessionLiveView.logSet`'s OWN penalty-log path already uses
-    /// unconditionally (GroupSessionLiveView.swift:2464 — debt-zero sprint
+    /// `SessionLiveView.logSet`'s OWN penalty-log path already uses
+    /// unconditionally (SessionLiveView.swift:2464 — debt-zero sprint
     /// citation fix; the SAME `SetLog(... setIndex: 1 ...)` literal sat at
     /// line 2158 when this comment was originally written (commit a3c3acc,
-    /// confirmed via `git show a3c3acc:...GroupSessionLiveView.swift`),
+    /// confirmed via `git show a3c3acc:...SessionLiveView.swift`),
     /// but later commits inserted ~300 lines earlier in the file and this
     /// citation was never updated to follow), not a new invented shortcut.
     /// `set_index` has no uniqueness constraint
     /// (`supabase/migrations/20260709000007_create_set_logs.sql:6`,
     /// `CHECK (set_index >= 1)` only) and — grepped across this entire
     /// target — is written in 6 places but never READ back by any query or
-    /// UI logic (`GroupSessionLiveView`'s own set-count/rotation math all
+    /// UI logic (`SessionLiveView`'s own set-count/rotation math all
     /// derives from filtering `allSessionSets`/`SetLog.userID`+`.exerciseID`,
     /// never `.setIndex`). A correct per-lifter running count (mirroring
-    /// `mySetCount(for:)`, GroupSessionLiveView.swift) would need either a
+    /// `mySetCount(for:)`, SessionLiveView.swift) would need either a
     /// live re-fetch per watch tap or a second cache this bridge doesn't
     /// otherwise need to hold — not worth the added round trip / state for
     /// a field with no read-side consumer.
@@ -455,11 +455,11 @@ final class WatchConnectivityBridge {
     }
 
     /// `soundboardTap` action — routes into the EXISTING play/broadcast
-    /// flow, mirroring `GroupSessionLiveView.tapSound(slug:)` verbatim
-    /// (GroupSessionLiveView.swift:1957-1969): local play
+    /// flow, mirroring `SessionLiveView.tapSound(slug:)` verbatim
+    /// (SessionLiveView.swift:1957-1969): local play
     /// (`SoundboardPlayer.shared.play(slug:)`) + broadcast send
     /// (`SessionBroadcastService.sendSound(sessionID:groupID:slug:)`,
-    /// GroupSessionLiveView.swift:1962-1967) as concurrent `async let`s,
+    /// SessionLiveView.swift:1962-1967) as concurrent `async let`s,
     /// both awaited together. Routed through the
     /// `SoundboardBroadcasting` seam (below) rather than calling
     /// `SoundboardPlayer.shared`/a `SessionBroadcastService` instance
@@ -471,9 +471,9 @@ final class WatchConnectivityBridge {
     /// (`rateAllowed()`, Services/SessionBroadcastService.swift:170-175) —
     /// duplicating that gate here would just silently drop a legitimate tap
     /// at the wrong layer with no way for the caller (this bridge) to tell
-    /// "rate-limited" apart from "sent." `GroupSessionLiveView.tapSound`
+    /// "rate-limited" apart from "sent." `SessionLiveView.tapSound`
     /// layers its OWN separate 1s LOCAL gate on top
-    /// (`lastSoundTapAt`, GroupSessionLiveView.swift:1958-1960) purely to
+    /// (`lastSoundTapAt`, SessionLiveView.swift:1958-1960) purely to
     /// prevent a double-tap from firing the local `SoundboardPlayer` twice
     /// before the network round trip even starts — that's a UI-debounce
     /// concern belonging to whichever surface owns the tap gesture (the
@@ -729,8 +729,8 @@ final class WCSessionProvider: NSObject, WatchSessionProviding, WCSessionDelegat
 // MARK: - SoundboardBroadcasting (soundboard-tap routing seam)
 
 /// Abstracts the two side effects `handleSoundboardTap` triggers — local
-/// playback + broadcast send — mirroring `GroupSessionLiveView.tapSound`'s
-/// own pair of calls (GroupSessionLiveView.swift:1962-1967) behind one
+/// playback + broadcast send — mirroring `SessionLiveView.tapSound`'s
+/// own pair of calls (SessionLiveView.swift:1962-1967) behind one
 /// small protocol, so `WatchConnectivityBridge`'s routing is hermetically
 /// testable without linking AVFoundation (`SoundboardPlayer`) or Supabase
 /// (`SessionBroadcastService`).
@@ -741,7 +741,7 @@ protocol SoundboardBroadcasting {
 }
 
 /// Production conformer — delegates to the SAME two call sites
-/// `GroupSessionLiveView.tapSound` already uses, so a watch-originated tap
+/// `SessionLiveView.tapSound` already uses, so a watch-originated tap
 /// is byte-identical, side-effect-wise, to a phone-originated one.
 struct LiveSoundboardBroadcasting: SoundboardBroadcasting {
     let broadcastService: SessionBroadcastService
@@ -773,8 +773,8 @@ protocol TurnAdvancing {
 }
 
 /// Production conformer — delegates to the SAME repository call
-/// `GroupSessionLiveView.logSetAndAdvance`'s own online path already uses
-/// (GroupSessionLiveView.swift:2416, `SessionRepository.advanceTurn(sessionID:)`),
+/// `SessionLiveView.logSetAndAdvance`'s own online path already uses
+/// (SessionLiveView.swift:2416, `SessionRepository.advanceTurn(sessionID:)`),
 /// so a watch-triggered advance is byte-identical, RPC-wise, to a
 /// phone-triggered one — same `advance_turn` RPC, same server-side
 /// authorization/liveness validation

@@ -351,7 +351,7 @@ struct CatalogHostView: View {
             Spacer()
             // `onRetry:` is non-nil so `voice-unavailable` captures the pill
             // the way BOTH live call sites render it (LobbyView and
-            // GroupSessionLiveView each pass a real retry closure). A bare
+            // SessionLiveView each pass a real retry closure). A bare
             // `PTTDockRow()` captured the nil branch — a state no user ever
             // sees, with the RETRY button suppressed. A no-op is the right
             // fixture body here: the catalog forces states through
@@ -968,7 +968,7 @@ struct CatalogHostView: View {
     // MARK: - Heart rate pill (Phase W Task 5 — no canvas gallery, component-alone capture)
     //
     // `GSHeartRatePill` (`DesignSystem/GSComponents.swift`) is embedded deep
-    // inside `GroupSessionLiveView`'s roster/spotlight rendering, which has
+    // inside `SessionLiveView`'s roster/spotlight rendering, which has
     // no catalog-fixture seam (unlike `ChatView`/`LogSetSheet` above) — that
     // view's participants/sets/routine state all come from LIVE
     // `SessionRepository`/`RoutineRepository` fetches with no `#if DEBUG`
@@ -1649,7 +1649,7 @@ struct CatalogHostView: View {
     /// (:61, tapped at HeartRateMonitorView.swift:187) and `connect(id:)`
     /// (:74, tapped at :160). The third is `connectRememberedIfAny()`
     /// (:88-92), the auto-reconnect — its only callers outside the service
-    /// are the two live-session views (GroupSessionLiveView.swift:4749,
+    /// are the two live-session views (SessionLiveView.swift:4749,
     /// WorkoutSessionView.swift:3675), and catalog mode hosts one screen
     /// with no session, so neither is ever on screen. (The service's own
     /// re-entries at :152 and :191 are `CBCentralManagerDelegate` callbacks;

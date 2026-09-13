@@ -7,7 +7,7 @@ import SwiftUI
 // entirely from `WatchSessionStatePayload.burpeesOwed` (pre-existing, Task
 // 2) and `.burpeesPaid` (Task 3 addition) — see that struct's doc comments
 // (`GymSyncShared/WatchEnvelope.swift`) for the exact phone-side derivation
-// (`GroupSessionLiveView.burpeesRemaining`/`.penaltyLogged`, the SAME two
+// (`SessionLiveView.burpeesRemaining`/`.penaltyLogged`, the SAME two
 // numbers that view's own penalty banner renders as "YOU OWE N burpees").
 // No write path here at all — the brief is explicit this is read-only; the
 // phone's `LogSetView`-equivalent (its own penalty `LogSetSheet`) remains

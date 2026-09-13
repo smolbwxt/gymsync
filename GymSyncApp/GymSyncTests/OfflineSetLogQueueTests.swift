@@ -552,7 +552,7 @@ final class OfflineSetLogQueueTests: XCTestCase {
     }
 
     /// `refreshPendingIDs()` — the UI-badge cache backing the "syncing"
-    /// chips (`WorkoutSessionView.loggedSetsTable`, `GroupSessionLiveView.
+    /// chips (`WorkoutSessionView.loggedSetsTable`, `SessionLiveView.
     /// feedRow`) — must exclude a foreign user's rows: a second user on a
     /// shared device must never see a syncing indicator for content that
     /// isn't theirs. Exercised both via `configure()`'s internal call and a

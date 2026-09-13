@@ -423,10 +423,10 @@ struct HomeView: View {
     // honest surfacing mechanism." HomeView is the render site: the one
     // always-visible surface regardless of which screen the set was
     // originally logged from (a background replay pass can drop an item
-    // long after `WorkoutSessionView`/`GroupSessionLiveView` — the screens
+    // long after `WorkoutSessionView`/`SessionLiveView` — the screens
     // that queued it — have been backgrounded or dismissed). Reuses
     // `GSInlineNoticeBanner` (DesignSystem/GSComponents.swift) — the same
-    // component `GroupSessionLiveView`'s offline-queue notice already
+    // component `SessionLiveView`'s offline-queue notice already
     // uses — via this task's additive `icon`/`onDismiss` parameters,
     // rather than inventing a new banner type. Read directly off the
     // `@Observable` singleton like every other direct-read precedent in
@@ -1759,13 +1759,13 @@ struct HomeView: View {
     /// free.
     ///
     /// Guarded on `appState.activeSessionID == nil`
-    /// (`App/AppState.swift:51`) — the SAME flag `GroupSessionLiveView`
+    /// (`App/AppState.swift:51`) — the SAME flag `SessionLiveView`
     /// sets on `.onAppear` and clears on `.onDisappear` for an actually-live
     /// session. This guard is LOAD-BEARING, not decorative:
     /// `WCSession.updateApplicationContext` replaces the Watch's ENTIRE
     /// current context on every call (`WatchIdleStatePayload`'s own doc
     /// comment) — without this guard, a `HomeView` refresh racing behind an
-    /// open `GroupSessionLiveView` (e.g. a background tab reload) could
+    /// open `SessionLiveView` (e.g. a background tab reload) could
     /// stomp the Watch's real, live `sessionState` context with stale idle
     /// info.
     ///

@@ -252,7 +252,7 @@ final class SessionBroadcastService {
     /// `LiveSoundboardBroadcasting(broadcastService: SessionBroadcastService())`)
     /// whose `channel` stays `nil` forever — every one of ITS sends used
     /// to take the `else` branch below unconditionally, on the SAME
-    /// `session:{id}` topic `GroupSessionLiveView`'s own subscribed
+    /// `session:{id}` topic `SessionLiveView`'s own subscribed
     /// instance already holds for the whole session. See
     /// `BroadcastChannelDecision`'s doc comment
     /// (`Services/BroadcastChannelDecision.swift`) for the full SDK-quote

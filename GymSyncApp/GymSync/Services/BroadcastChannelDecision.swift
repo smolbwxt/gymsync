@@ -30,7 +30,7 @@ import Foundation
 // Both `HeartRateBroadcastService` and `SessionBroadcastService` are
 // constructed TWICE for the same session — once as a receive-side
 // instance that calls `subscribe()` and holds the resulting channel for
-// the session's lifetime (`GroupSessionLiveView`), and once as a
+// the session's lifetime (`SessionLiveView`), and once as a
 // SEND-ONLY instance whose `channel` field stays `nil` forever
 // (`WatchConnectivityBridge.soundboard` / `.heartRateBroadcast`,
 // `Services/WatchConnectivityBridge.swift:91,129`). Before this fix,

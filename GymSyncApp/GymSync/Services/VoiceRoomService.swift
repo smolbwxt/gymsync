@@ -193,7 +193,7 @@ protocol VoiceRoomConnecting: AnyObject {
 /// connection exists at a time for the signed-in user, matching the spec's
 /// 1:1 session<->room mapping and "no persistent group channels" (Dossier
 /// §A.1). `join(sessionID:)`/`leave()` are call-and-response, not tied to
-/// any one view's lifetime, so LobbyView and GroupSessionLiveView can both
+/// any one view's lifetime, so LobbyView and SessionLiveView can both
 /// drive the same instance across a session's lobby->live transition without
 /// re-creating state (Task 4 wires the actual `.onAppear`/`.onDisappear`
 /// hooks on top of this service). The initializer is deliberately NOT
@@ -335,7 +335,7 @@ final class VoiceRoomService {
         // currentSessionID deliberately NOT cleared — retry() requires it.
     }
 
-    /// Auto-join entry point (LobbyView/GroupSessionLiveView `.onAppear` —
+    /// Auto-join entry point (LobbyView/SessionLiveView `.onAppear` —
     /// Task 4's wiring). No-op while already `.connecting`/`.connected` for a
     /// session (idempotent re-entry guard); safe to call again from `.idle`,
     /// `.unavailable`, or `.micDenied` (e.g. the user granted mic access in
@@ -370,7 +370,7 @@ final class VoiceRoomService {
         // for session B arriving while `.connected` to session A silently
         // no-op'd, stranding the caller on the wrong room with no signal
         // that anything went wrong. The one legitimate same-session case
-        // (LobbyView -> GroupSessionLiveView deliberately re-calling join()
+        // (LobbyView -> SessionLiveView deliberately re-calling join()
         // for the SAME session to let the room persist across that push)
         // only needs the no-op when the session ID actually matches — so
         // `.connected` now gets the identical "different session ->

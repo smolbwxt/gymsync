@@ -7,7 +7,7 @@ import SwiftUI
 // `WatchSessionStatePayload.soundboardFavorites` (Task 3's own additive
 // field — see `GymSyncShared/WatchEnvelope.swift`'s doc comment on that
 // field for its phone-side source: `SoundboardFavoritesRepository`, the
-// SAME source `GroupSessionLiveView`'s own dock ribbon reads). Tap ->
+// SAME source `SessionLiveView`'s own dock ribbon reads). Tap ->
 // `WatchSessionStore.tapSoundboard(slug:)` -> `WatchConnectivityBridge.
 // handleSoundboardTap` on the phone (local play + broadcast, unchanged
 // existing flow) — the tap payload always carries the SLUG, never the
@@ -19,7 +19,7 @@ import SwiftUI
 // already a readable label" reasoning. `WatchSessionStatePayload` gained a
 // second, ADDITIVE `soundboardFavoriteLabels: [String]` field (parallel to
 // `soundboardFavorites`, same order, same phone-side source
-// (`GroupSessionLiveView.dockSounds`) — see that field's own doc comment in
+// (`SessionLiveView.dockSounds`) — see that field's own doc comment in
 // `WatchEnvelope.swift`) once a reviewer flagged that a raw slug like
 // "crowd-cheer" reads worse at watch scale than the phone's own
 // `SoundboardSound.label` (`displayName ?? slug`,
@@ -45,7 +45,7 @@ struct SoundboardView: View {
     /// Fix wave 1 addition — parallel to `favorites` above, same order
     /// (both come from the SAME phone-side `dockSounds.map(\.slug)` /
     /// `dockSounds.map(\.label)` pair, built in the same call —
-    /// `GroupSessionLiveView.pushWatchSessionState()`). `label(forSlugAt:)`
+    /// `SessionLiveView.pushWatchSessionState()`). `label(forSlugAt:)`
     /// below still falls back to the slug itself if this array is ever
     /// shorter than `favorites` (an old-shaped phone push, or any other
     /// skew) — never crashes on an out-of-bounds index.

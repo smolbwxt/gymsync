@@ -35,7 +35,7 @@ enum WatchDisplayFormatting {
 
     /// The watch's "session is live" predicate, extracted here (T3 fix
     /// wave 2) so it's hermetically testable. ENDED-DETECTION, not
-    /// in_progress-equality: the entry path seeds GroupSessionLiveView
+    /// in_progress-equality: the entry path seeds SessionLiveView
     /// with a stale lobby-era session struct (LobbyView passes its
     /// immutable `let session`), so `state == "in_progress"` inverted the
     /// signal at session START — the watch showed "Session ended" until

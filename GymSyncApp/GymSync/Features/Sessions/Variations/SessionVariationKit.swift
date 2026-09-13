@@ -11,7 +11,7 @@ import SwiftUI
 // CATALOG-ONLY, exactly like the Home v3 round this copies. Nothing in this
 // folder is reachable from the running app: every view here is rendered only
 // through `CatalogHostView`, from the pinned fixtures below, and the whole
-// folder is `#if DEBUG`. `LobbyView`, `GroupSessionLiveView` and
+// folder is `#if DEBUG`. `LobbyView`, `SessionLiveView` and
 // `WarmUpPhaseView` are untouched — spec §8 puts their rework in Phases A
 // and B, AFTER the owner picks a composition here.
 //

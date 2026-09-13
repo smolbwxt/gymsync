@@ -145,7 +145,7 @@ final class WatchConnectivityBridgeTests: XCTestCase {
         return Harness(bridge: bridge, session: session, submitter: submitter, soundboard: soundboard, heartRateBroadcast: heartRateBroadcast, turnAdvancer: turnAdvancer)
     }
 
-    /// Seeds `bridge.lastPushedState` the same way `GroupSessionLiveView.
+    /// Seeds `bridge.lastPushedState` the same way `SessionLiveView.
     /// pushWatchSessionState()` does in production — through the real
     /// `updateSessionState(_:)` call, not by poking a private field.
     /// `isActive`/`shareHeartRate` (Phase W Task 5) default to the SAME
@@ -297,8 +297,8 @@ final class WatchConnectivityBridgeTests: XCTestCase {
         XCTAssertFalse(log.isFailed)
         XCTAssertFalse(log.isPenalty, "watch taps are always a normal set, never a penalty log")
         XCTAssertEqual(log.note, "watch tap")
-        // setIndex: 1 — same "not turn-tracked" precedent GroupSessionLiveView.logSet's
-        // penalty path already establishes (GroupSessionLiveView.swift:2108);
+        // setIndex: 1 — same "not turn-tracked" precedent SessionLiveView.logSet's
+        // penalty path already establishes (SessionLiveView.swift:2108);
         // see WatchConnectivityBridge.handleLogSet's doc comment for the full citation.
         XCTAssertEqual(log.setIndex, 1)
 
@@ -389,7 +389,7 @@ final class WatchConnectivityBridgeTests: XCTestCase {
     // MARK: - logSet turn-advance parity (Phase W gate finding I-2)
     //
     // A watch-logged set now advances the turn on parity with the phone's
-    // own `logSetAndAdvance` online path (GroupSessionLiveView.swift:2416)
+    // own `logSetAndAdvance` online path (SessionLiveView.swift:2416)
     // — see `WatchConnectivityBridge.handleLogSet`'s TURN-ADVANCE PARITY
     // doc comment for the full ruling. These 4 cases are the ones that
     // doc comment's own contract promises: online success advances once
@@ -421,7 +421,7 @@ final class WatchConnectivityBridgeTests: XCTestCase {
         var captured: [String: Any] = [:]
         await h.bridge.handleLogSet(envelope, replyHandler: { captured = $0 })
 
-        XCTAssertTrue(h.turnAdvancer.advancedSessionIDs.isEmpty, "a queued-offline set must not attempt to advance the turn — matches logSetAndAdvance's own online-only advance (GroupSessionLiveView.swift:2415-2416)")
+        XCTAssertTrue(h.turnAdvancer.advancedSessionIDs.isEmpty, "a queued-offline set must not attempt to advance the turn — matches logSetAndAdvance's own online-only advance (SessionLiveView.swift:2415-2416)")
         let outcome = try reply(from: captured)
         XCTAssertEqual(outcome.outcome, .queued)
     }

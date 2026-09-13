@@ -147,7 +147,7 @@ struct ChatView: View {
     /// ad-hoc session) — the sub-thread INSERT RLS binds it via `IS NOT
     /// DISTINCT FROM` against `sessions.group_id`
     /// (20260719000011_chat_subthread_lock_hardening.sql #5). Callers
-    /// (LobbyView, GroupSessionLiveView) pass `session.groupID` straight
+    /// (LobbyView, SessionLiveView) pass `session.groupID` straight
     /// from the `WorkoutSession` already in scope — see those files' chat
     /// sheet definitions.
     init(sessionID: UUID, groupID: UUID?) {
@@ -312,7 +312,7 @@ struct ChatView: View {
         }
         .onDisappear {
             // Only clear the suppression flag if it's still pointing at THIS
-            // chat's group — see GroupSessionLiveView's identical guard on
+            // chat's group — see SessionLiveView's identical guard on
             // activeSessionID for why an unconditional nil is unsafe.
             if let groupID = scope.groupIDForPushSuppression, appState.activeChatGroupID == groupID {
                 appState.activeChatGroupID = nil

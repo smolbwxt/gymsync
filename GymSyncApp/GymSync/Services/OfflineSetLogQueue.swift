@@ -132,7 +132,7 @@ final class OfflineSetLogQueue {
     /// on rows that are actually the FIRST user's still-queued sets). Views
     /// check membership to render the "syncing" indicator — e.g.
     /// `WorkoutSessionView.loggedSetsTable`'s row icon,
-    /// `GroupSessionLiveView.feedRow`'s tag row (both wired in Phase O
+    /// `SessionLiveView.feedRow`'s tag row (both wired in Phase O
     /// Task 3). Read directly like `ConnectivityMonitor.shared.isOnline` —
     /// no environment plumbing needed, `@Observable` tracks the read.
     private(set) var pendingSetLogIDs: Set<UUID> = []
