@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(15);
+SELECT plan(17);
 
 -- Migration under test: 20260912000102_session_coach_thread.sql
 -- (coach_chat_threads.session_id, private.session_has_pro,
@@ -190,26 +190,54 @@ SELECT is(
      WHERE thread_id = (SELECT thread_id FROM a_opens_e10))::int,
   0, 'D sees 0 messages on a thread it is not part of');
 
--- 15. NOT WHAT THE POLICY NAME PROMISES. "session thread messages postable
--- by participants" (20260912000102:93-100) WITH CHECK correctly evaluates
--- false for D -- but "own chat" (20260824000002:27-29) is still FOR ALL on
--- this table and scoped only to user_id = auth.uid(), never to thread_id.
--- Postgres ORs every applicable permissive policy for the same command, so
--- D's row clears the INSERT the instant it is tagged with D's own user_id;
--- the new policy's rejection never gets a veto (verified against the live
--- project's pg_policy and pg_trigger rows -- no other gate exists). This is
--- a real gap -- an outsider can write into a thread it cannot even read --
--- not a test bug. throws_ok '42501' is the right assertion once "own chat"
--- is scoped to thread_id IS NULL; today it would fail for real, and
--- scripts/run_pgtap.js fails the build on any literal "not ok" line with no
--- TODO handling. This documents current behavior and flags the gap rather
--- than asserting a fix this task's migrations are out of scope to make.
-SELECT lives_ok(
+-- 15. FIXED BY D5 (20260912000103_coach_chat_messages_scope_own_chat.sql).
+-- "session thread messages postable by participants" (20260912000102:93-100)
+-- WITH CHECK still correctly evaluates false for D. "own chat"
+-- (20260824000002:27-29, tightened by 20260912000103) is no longer a blank
+-- check on this table -- its WITH CHECK now also requires
+-- private.coach_thread_owner(thread_id) = auth.uid(), and e10's thread is
+-- owned by A, not D. Both permissive policies now reject the row, and a
+-- single-row INSERT ... VALUES with no policy left to satisfy raises 42501
+-- rather than silently inserting nothing -- there is no pre-existing row
+-- for a USING clause to filter here, unlike the UPDATE case in
+-- session_participant_energy_test.sql assertion 7.
+SELECT throws_ok(
   $$INSERT INTO public.coach_chat_messages (user_id, thread_id, role, body)
     VALUES ('00000000-0000-4000-f000-000000000e04',
             (SELECT thread_id FROM a_opens_e10),
             'athlete', 'd is not in this crew')$$,
-  'GAP: D''s insert succeeds anyway -- "own chat" (FOR ALL, unscoped to thread_id) ORs past the new participant check');
+  '42501', NULL,
+  'D''s insert now fails -- "own chat" is scoped to the thread''s owner, and D is not one');
+
+SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-f000-000000000e02';
+
+-- 16. The same fix closes the door on A's personal thread too, not just
+-- session threads. B is a fellow e10 participant but owns none of A's
+-- personal thread (a_personal_thread, assertion 11), and that thread has
+-- no session_id for the participant policy to key off of either --
+-- coach_thread_owner(a_personal_thread) = A, not B, so "own chat" rejects
+-- it exactly like assertion 15 rejects D.
+SELECT throws_ok(
+  $$INSERT INTO public.coach_chat_messages (user_id, thread_id, role, body)
+    VALUES ('00000000-0000-4000-f000-000000000e02',
+            (SELECT id FROM a_personal_thread),
+            'athlete', 'peeking into a thread that is not mine')$$,
+  '42501', NULL,
+  'B cannot insert into A''s personal thread');
+
+SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-f000-000000000e01';
+
+-- 17. ADDITIVE, NOT SUBTRACTIVE, take two: A can still post to A's own
+-- personal thread -- coach_thread_owner(a_personal_thread) = A = auth.uid(),
+-- the same shape every athlete message and on-device Coach reply takes
+-- (CoachChatRepository.append, CoachChat.swift:112-129) and D5 leaves
+-- untouched.
+SELECT lives_ok(
+  $$INSERT INTO public.coach_chat_messages (user_id, thread_id, role, body)
+    VALUES ('00000000-0000-4000-f000-000000000e01',
+            (SELECT id FROM a_personal_thread),
+            'coach', 'noted -- how did the lift feel')$$,
+  'A can still post to their own personal thread');
 
 SELECT * FROM finish();
 ROLLBACK;
