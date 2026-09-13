@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(16);
+SELECT plan(17);
 
 -- Migration under test: 20260913000102_session_round_engine.sql
 -- (private.session_round_guard, public.advance_round,
@@ -20,6 +20,9 @@ SELECT plan(16);
 --   S3 = ...1030 in_progress, lifting_started_at set two minutes ago,
 --                round_started_at still NULL (round 1 never closed) --
 --                fix round 1, assertion 14
+--   S4 = ...1040 in_progress, lifting_started_at still NULL (mid-warm-up),
+--                A HAS logged a set -- fix-forward 20260913000106,
+--                assertion 17
 --
 -- FIX ROUND 1 (2026-09-13), THREE ASSERTIONS ADDED, plan(13) -> plan(16).
 -- review-data.md findings 2-4, addressed after fix-forward migration
@@ -42,6 +45,24 @@ SELECT plan(16);
 --    idempotency short-circuit does not skip validation) with all three
 --    present lifters (A, B, C) in one station, exactly at the depth
 --    ceiling.
+--
+-- S3's fixture was originally placed just before assertion 14, AFTER
+-- assertion 13's SET LOCAL had left the role as C -- backend run
+-- 34782471024 caught the resulting RLS violation ("new row violates row-
+-- level security policy for table sessions") on the sessions INSERT for
+-- organizer A. Moved into the TOP fixture block, with S1/S2, so it (and
+-- now S4) run before any role switch, under the connection's original
+-- role -- exactly where S1/S2 already were.
+--
+-- FIX-FORWARD 20260913000106, ONE ASSERTION ADDED, plan(16) -> plan(17).
+--
+-- 17: a close attempted DURING warm-up (lifting_started_at still NULL)
+--    must be a no-op even when the close predicate would otherwise be
+--    satisfied. S4's A has logged a set, is the only present participant,
+--    and the round is not closed by that: advance_round returns 1, not 2.
+--    This is the regression test for the early-return guard 000106 added;
+--    the concern that produced it was that BEFORE 000106, COALESCE(NULL,
+--    NULL, '-infinity') would have let A's set count and returned 2.
 --
 -- TWO DEVIATIONS FROM THE BRIEF, BOTH RECORDED.
 --
@@ -127,6 +148,22 @@ INSERT INTO set_logs (id, user_id, session_id, exercise_id, set_index, reps, log
    '00000000-0000-4000-f000-000000001030',
    (SELECT id FROM exercises WHERE slug = 'bench-press' LIMIT 1), 1, 10,
    now() - interval '5 minutes');
+
+-- S4: in_progress, lifting_started_at still NULL (mid-warm-up) -- for
+-- assertion 17 (fix-forward 20260913000106). A is again organizer and the
+-- only present participant, and A HAS logged a set: the close predicate
+-- would be satisfied if it were ever evaluated, which is exactly the
+-- point -- the early return must fire before the predicate runs at all.
+-- In the TOP fixture block with S1-S3, for the same reason as S3.
+INSERT INTO sessions (id, organizer_id, state) VALUES
+  ('00000000-0000-4000-f000-000000001040',
+   '00000000-0000-4000-f000-000000001001', 'in_progress');
+INSERT INTO session_participants (session_id, user_id, check_in_state) VALUES
+  ('00000000-0000-4000-f000-000000001040', '00000000-0000-4000-f000-000000001001', 'ready');
+INSERT INTO set_logs (id, user_id, session_id, exercise_id, set_index, reps, logged_at) VALUES
+  ('00000000-0000-4000-f000-000000001106', '00000000-0000-4000-f000-000000001001',
+   '00000000-0000-4000-f000-000000001040',
+   (SELECT id FROM exercises WHERE slug = 'bench-press' LIMIT 1), 1, 10, now());
 
 INSERT INTO session_participants (session_id, user_id, turn_order, check_in_state) VALUES
   ('00000000-0000-4000-f000-000000001010', '00000000-0000-4000-f000-000000001001', 1, 'ready'),
@@ -408,6 +445,20 @@ SELECT results_eq(
                                           "00000000-0000-4000-f000-000000001002",
                                           "00000000-0000-4000-f000-000000001003"]}]}'::jsonb)$$,
   'a single station holding the whole three-lifter present roster is accepted');
+
+-- ── FIX-FORWARD 20260913000106 ADDITION ───────────────────────────────────
+
+-- 17. The early-return guard 000106 added: a close attempted while
+--     lifting_started_at is still NULL is a no-op, even though S4's only
+--     present lifter (A) has logged a set and the close predicate would
+--     otherwise be satisfied. Before 000106 this returned 2 -- the
+--     concern queued in fix round 1's report. S4's fixture is in the top
+--     block (see that block's own comment), so no role has leaked into it.
+SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-f000-000000001001';
+SELECT results_eq(
+  $$SELECT public.advance_round('00000000-0000-4000-f000-000000001040')$$,
+  $$VALUES (1)$$,
+  'a close attempted before lifting_started_at is set is a no-op, even when every present lifter has logged');
 
 SELECT * FROM finish();
 ROLLBACK;
