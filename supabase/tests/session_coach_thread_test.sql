@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(11);
+SELECT plan(15);
 
 -- Migration under test: 20260912000102_session_coach_thread.sql
 -- (coach_chat_threads.session_id, private.session_has_pro,
@@ -154,6 +154,62 @@ SELECT results_eq(
     FROM b_personal_count b$$,
   $$VALUES (0, 1)$$,
   'personal thread stays private -- B (a fellow e10 participant) sees 0, A still sees 1');
+
+SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-f000-000000000e02';
+
+-- 12. B posts to the crew's shared thread. Only the columns that are NOT
+-- NULL with no default (20260824000002_coach_chat.sql:7-13: user_id, role,
+-- body) plus thread_id (20260824000005:26, added later, nullable) are
+-- supplied -- id and created_at keep their defaults.
+SELECT lives_ok(
+  $$INSERT INTO public.coach_chat_messages (user_id, thread_id, role, body)
+    VALUES ('00000000-0000-4000-f000-000000000e02',
+            (SELECT thread_id FROM a_opens_e10),
+            'athlete', 'is anyone else sore today')$$,
+  'B posts a message on e10''s session thread');
+
+SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-f000-000000000e01';
+
+-- 13. A, who did not write it, reads B's message anyway. "own chat"
+-- (20260824000002:27-29) would not apply -- A does not own this row -- so
+-- this is "session thread messages readable by participants"
+-- (20260912000102:85-91) at work, same as assertion 9 for the thread
+-- itself.
+SELECT is(
+  (SELECT count(*) FROM coach_chat_messages
+     WHERE thread_id = (SELECT thread_id FROM a_opens_e10))::int,
+  1, 'A (a fellow participant) reads B''s message');
+
+SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-f000-000000000e04';
+
+-- 14. D, an outsider to e10, sees nothing on the thread -- neither "own
+-- chat" (the row is not D's) nor the participant policy (D is not a
+-- participant) applies.
+SELECT is(
+  (SELECT count(*) FROM coach_chat_messages
+     WHERE thread_id = (SELECT thread_id FROM a_opens_e10))::int,
+  0, 'D sees 0 messages on a thread it is not part of');
+
+-- 15. NOT WHAT THE POLICY NAME PROMISES. "session thread messages postable
+-- by participants" (20260912000102:93-100) WITH CHECK correctly evaluates
+-- false for D -- but "own chat" (20260824000002:27-29) is still FOR ALL on
+-- this table and scoped only to user_id = auth.uid(), never to thread_id.
+-- Postgres ORs every applicable permissive policy for the same command, so
+-- D's row clears the INSERT the instant it is tagged with D's own user_id;
+-- the new policy's rejection never gets a veto (verified against the live
+-- project's pg_policy and pg_trigger rows -- no other gate exists). This is
+-- a real gap -- an outsider can write into a thread it cannot even read --
+-- not a test bug. throws_ok '42501' is the right assertion once "own chat"
+-- is scoped to thread_id IS NULL; today it would fail for real, and
+-- scripts/run_pgtap.js fails the build on any literal "not ok" line with no
+-- TODO handling. This documents current behavior and flags the gap rather
+-- than asserting a fix this task's migrations are out of scope to make.
+SELECT lives_ok(
+  $$INSERT INTO public.coach_chat_messages (user_id, thread_id, role, body)
+    VALUES ('00000000-0000-4000-f000-000000000e04',
+            (SELECT thread_id FROM a_opens_e10),
+            'athlete', 'd is not in this crew')$$,
+  'GAP: D''s insert succeeds anyway -- "own chat" (FOR ALL, unscoped to thread_id) ORs past the new participant check');
 
 SELECT * FROM finish();
 ROLLBACK;
