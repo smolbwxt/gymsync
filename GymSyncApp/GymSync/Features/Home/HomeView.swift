@@ -362,7 +362,7 @@ struct HomeView: View {
                     // session re-resolved kept its @State — including
                     // navigateToInProgress and the live view's session —
                     // and wrote sets into the NEXT SCHEDULED occurrence).
-                    LobbyView(session: session)
+                    SessionEntryView(session: session)
                         .id(session.id)
                 }
             }
@@ -378,10 +378,12 @@ struct HomeView: View {
 
     // MARK: - Push deep-link routing (Phase 3d Task 5)
 
-    /// Consumes `.lobby`/`.session` — both resolve to `LobbyView(session:)`,
-    /// the app's single entry point for a session regardless of its current
-    /// state (see `upcomingSection`'s existing NavigationLink, which routes
-    /// every session there whether scheduled or in_progress). Clears
+    /// Consumes `.lobby`/`.session` — both resolve to
+    /// `SessionEntryView(session:)`, the app's single entry point for a
+    /// session regardless of its current state (plan task S10 — it decides
+    /// lobby vs. warm-up vs. live; see `upcomingSection`'s existing
+    /// NavigationLink, which routes every session there whether scheduled or
+    /// in_progress). Clears
     /// `pendingRoute` immediately so a later `.onChange` firing (or this
     /// `.task` re-running) doesn't re-navigate.
     private func consumePendingRouteIfNeeded() async {
