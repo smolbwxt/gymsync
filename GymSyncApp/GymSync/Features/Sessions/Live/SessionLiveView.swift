@@ -4352,9 +4352,9 @@ struct SessionLiveView: View {
         let since = liveSession.roundStartedAt
         let times = presentRotation.compactMap { row -> Date? in
             allSessionSets
-                .filter {
-                    $0.userID == row.participant.userID && !$0.isPenalty
-                        && (since.map { start in $0.loggedAt >= start } ?? true)
+                .filter { log in
+                    log.userID == row.participant.userID && !log.isPenalty
+                        && (since.map { start in log.loggedAt >= start } ?? true)
                 }
                 .map(\.loggedAt)
                 .max()
