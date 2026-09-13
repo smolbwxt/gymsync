@@ -34,6 +34,16 @@ struct SessionRunnerView: View {
     /// so the plan card reads the same on both screens.
     @State private var planRows: [SessionPlanRow] = []
     @State private var routineName = ""
+    /// This runner's own copy of the catalog `loadPlan()` resolves names
+    /// against — a per-instance cache (review push-5 N3), not the
+    /// process-wide `ExerciseRepository.fetchAll()` static R-18 added and
+    /// this fix round removed: that static was an unsynchronised global
+    /// written from `nonisolated async` contexts with other concurrent
+    /// first callers, and never invalidated. `loadPlan()`'s own
+    /// `planRows.isEmpty` guard already keeps this view from fetching twice
+    /// in the ordinary case; this exists so the shared repository carries
+    /// none of that risk for a perf nit that is this one view's to own.
+    @State private var exerciseCatalog: [Exercise]?
     // The athlete's own block, solo only — `BlockLadderStrip` never renders
     // in the crew frame. Review push-5 R-17: HONEST FRAMES applies to
     // production too, not just fixtures — the strip is absent (blockWeeks
@@ -216,7 +226,10 @@ struct SessionRunnerView: View {
               let routineID = effective.routineID,
               let (routine, exercises) = try? await RoutineRepository.fetch(id: routineID)
         else { return }
-        let catalog = (try? await ExerciseRepository.fetchAll()) ?? []
+        if exerciseCatalog == nil {
+            exerciseCatalog = (try? await ExerciseRepository.fetchAll()) ?? []
+        }
+        let catalog = exerciseCatalog ?? []
         let byID = Dictionary(catalog.map { ($0.id, $0.name) },
                               uniquingKeysWith: { first, _ in first })
         routineName = routine.name
