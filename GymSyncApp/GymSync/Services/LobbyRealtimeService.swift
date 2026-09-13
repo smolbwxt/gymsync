@@ -59,7 +59,12 @@ final class LobbyRealtimeService {
     ///                 is absent from the map's VALUES, never from its keys:
     ///                 presence still means "this device has the lobby open".
     ///   - onChange:  Called on MainActor on ANY postgres_changes event.
-    ///                Caller is expected to refetch sessions, participants, and proposals.
+    ///                Caller is expected to refetch sessions and participants.
+    ///
+    /// THREE SUBSCRIPTIONS, exactly as spec §3.1 counts them: `sessions` and
+    /// `session_participants` (insert, update, delete). The two
+    /// `routine_proposals` streams and the `routine_proposal_votes` stream
+    /// left with the proposal-and-vote flow (plan task S8).
     func subscribe(
         sessionID: UUID,
         selfID: UUID,
@@ -159,27 +164,6 @@ final class LobbyRealtimeService {
             filter: "session_id=eq.\(sessionID.uuidString)"
         )
 
-        // routine_proposals — Insert + Update scoped to this session
-        let proposalInserts = dChannel.postgresChange(
-            InsertAction.self,
-            schema: "public",
-            table: "routine_proposals",
-            filter: "session_id=eq.\(sessionID.uuidString)"
-        )
-        let proposalUpdates = dChannel.postgresChange(
-            UpdateAction.self,
-            schema: "public",
-            table: "routine_proposals",
-            filter: "session_id=eq.\(sessionID.uuidString)"
-        )
-
-        // routine_proposal_votes — Insert UNFILTERED (no session_id column; RLS/WALRUS scopes)
-        let voteInserts = dChannel.postgresChange(
-            InsertAction.self,
-            schema: "public",
-            table: "routine_proposal_votes"
-        )
-
         dbChannel = dChannel
         await dChannel.subscribe()
 
@@ -196,15 +180,6 @@ final class LobbyRealtimeService {
                 }
                 group.addTask { @MainActor in
                     for await _ in participantDeletes { onChange() }
-                }
-                group.addTask { @MainActor in
-                    for await _ in proposalInserts   { onChange() }
-                }
-                group.addTask { @MainActor in
-                    for await _ in proposalUpdates   { onChange() }
-                }
-                group.addTask { @MainActor in
-                    for await _ in voteInserts       { onChange() }
                 }
             }
         }

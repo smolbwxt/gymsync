@@ -1756,9 +1756,12 @@ struct CatalogHostView: View {
     //      and the signed-in walks in this very suite put one there — so a
     //      catalog launch can be authenticated, and an unseeded capture
     //      would INSERT a real `in_progress` session row on ci_test_user_2
-    //      once per CI run. That is the same leak class this plan's Task 4
-    //      just closed in ProposalRepositoryTests; a capture must not
-    //      reopen it.
+    //      once per CI run. That is the same leak class the screenshot-
+    //      pipeline plan's Task 4 closed in the lobby's proposal tests —
+    //      those tests left with the proposal-and-vote flow
+    //      (docs/superpowers/plans/2026-09-12-group-session-phase-a-plan.md,
+    //      task S8), and `TestSession.swift`'s teardown factory is where the
+    //      rule lives now. A capture must not reopen it.
     //    - Whichever branch runs, a non-nil session re-arms the warm-up
     //      window: `soloWarmupMinutes` is `SoloWarmupStore.minutes`, whose
     //      NEVER-CONFIGURED default is 5, not the 0 that :189 still claims

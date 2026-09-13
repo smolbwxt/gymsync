@@ -58,8 +58,10 @@ enum SessionKudosRepository {
     /// row per recipient for a single emoji tap. Sequential inserts, not a
     /// bulk array insert — no precedent for a multi-row `.insert()` call
     /// exists anywhere in this codebase (every repository inserts one
-    /// dictionary/Encodable row at a time: `RoutineProposal.vote`,
-    /// `GroupRepository.create`, `PersonalRecordRepository.record`, …), so
+    /// dictionary/Encodable row at a time: `GroupRepository.create`,
+    /// `PersonalRecordRepository.record`, `SessionRepository.setEnergy`, …;
+    /// the routine-proposal vote insert was the original example and left with the
+    /// proposal-and-vote flow, docs/superpowers/plans/2026-09-12-group-session-phase-a-plan.md task S8), so
     /// this mirrors that rather than risking an unverified SDK code path.
     ///
     /// Best-effort per recipient (fire-and-forget, matches `tapReaction`/

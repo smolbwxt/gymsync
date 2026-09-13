@@ -39,9 +39,6 @@ struct LobbyView: View {
     // MARK: - State
 
     @State private var participants: [(participant: SessionParticipant, profile: Profile)] = []
-    @State private var proposals: [RoutineProposal] = []
-    @State private var proposalVotes: [UUID: [ProposalVote]] = [:]
-    @State private var proposerUsernames: [UUID: String] = [:]
     @State private var routineInfo: (name: String, exercises: [RoutineExercise])? = nil
     /// Task 7 item 1 (pre-GA ledger): the full `Routine` row (not just
     /// `routineInfo`'s name/exercises projection) for this session's
@@ -72,7 +69,6 @@ struct LobbyView: View {
     /// (leave voice) apart from browsing away while the session is still
     /// live (keep voice — the SESSION LIVE pill re-enters).
     @State private var exitingSession = false
-    @State private var showProposalComposer = false
     /// "Choose routine" picker (user report 2026-07-29 — the lobby had no
     /// path to a routine you'd already built).
     @State private var showRoutinePicker = false
@@ -625,10 +621,6 @@ struct LobbyView: View {
     /// the rejoin bar.
     var body: some View {
         lobbyWithLifecycle
-        // Proposal composer sheet
-        .sheet(isPresented: $showProposalComposer) {
-            proposalComposerSheet
-        }
         // Routine picker (user report 2026-07-29)
         .sheet(isPresented: $showRoutinePicker) {
             LobbyRoutinePickerSheet(
@@ -989,28 +981,6 @@ struct LobbyView: View {
         }
     }
 
-    // MARK: - Proposals Section
-    // Canvas: "Proposal · from Jordan" kicker card, progress bar, Veto/Approve buttons
-
-    @ViewBuilder
-    private var proposalsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            GSSectionHeader("Routine Proposals")
-                .padding(.horizontal, 16)
-
-            ForEach(proposals) { proposal in
-                ProposalCardView(
-                    proposal: proposal,
-                    votes: proposalVotes[proposal.id] ?? [],
-                    usernames: proposerUsernames,
-                    myID: selfID,
-                    onApprove: { await castVote(proposalID: proposal.id, approve: true) },
-                    onVeto:    { await castVote(proposalID: proposal.id, approve: false) }
-                )
-            }
-        }
-    }
-
     private func exerciseName(for ex: RoutineExercise) -> String {
         allExercises.first(where: { $0.id == ex.exerciseID })?.name ?? "Exercise"
     }
@@ -1336,16 +1306,6 @@ struct LobbyView: View {
         }
     }
 
-    // MARK: - Proposal Composer Sheet
-
-    private var proposalComposerSheet: some View {
-        ProposalComposerView(
-            session: session,
-            allExercises: allExercises,
-            onProposed: { _ in Task { await reload() } }
-        )
-    }
-
     // MARK: - Data Loading
 
     @MainActor
@@ -1384,25 +1344,6 @@ struct LobbyView: View {
         do {
             currentSession = try? await SessionRepository.session(id: session.id)
 
-            async let pFetch    = SessionRepository.participants(sessionID: session.id)
-            async let propFetch = ProposalRepository.open(sessionID: session.id)
-            let (fetchedParticipants, fetchedProposals) = try await (pFetch, propFetch)
-            participants = fetchedParticipants
-            proposals    = fetchedProposals
-
-            if !fetchedProposals.isEmpty {
-                let votes = try await ProposalRepository.votes(
-                    proposalIDs: fetchedProposals.map(\.id))
-                proposalVotes = Dictionary(grouping: votes, by: \.proposalID)
-
-                let unknownIDs = Set(fetchedProposals.map(\.proposerID))
-                    .subtracting(proposerUsernames.keys)
-                if !unknownIDs.isEmpty {
-                    let profiles = (try? await ProfileRepository.fetchMany(
-                        ids: Array(unknownIDs))) ?? []
-                    for p in profiles { proposerUsernames[p.id] = p.username }
-                }
-            }
 
             let effectiveRoutineID = (currentSession ?? session).routineID
             if let routineID = effectiveRoutineID {
@@ -1641,20 +1582,6 @@ struct LobbyView: View {
         }
     }
 
-    // MARK: - Proposals
-
-    @MainActor
-    private func castVote(proposalID: UUID, approve: Bool) async {
-        do {
-            try await ProposalRepository.vote(proposalID: proposalID, approve: approve)
-            await reload()
-        } catch let error as GymSyncError {
-            errorText = error.errorDescription
-        } catch {
-            errorText = error.localizedDescription
-        }
-    }
-
     // MARK: - Manage actions
 
     @MainActor
@@ -1759,9 +1686,6 @@ struct LobbyView: View {
     }
 }
 
-// MARK: - ProposalComposerView
-
-/// Inline sheet for proposing a new exercise to the session's routine.
 // MARK: - Lobby routine picker (user report 2026-07-29)
 //
 // "You can't select one of the routines you have built." This is that
@@ -1872,209 +1796,6 @@ private struct LobbyRoutinePickerSheet: View {
         do {
             routines = try await RoutineRepository.fetchAll(ownerID: userID)
             errorText = nil
-        } catch let error as GymSyncError {
-            errorText = error.errorDescription
-        } catch {
-            errorText = error.localizedDescription
-        }
-    }
-}
-
-private struct ProposalComposerView: View {
-    let session: WorkoutSession
-    let allExercises: [Exercise]
-    let onProposed: (RoutineProposal) -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.gsTheme) private var theme
-
-    @State private var selectedExercise: Exercise?
-    @State private var targetSets: String = "3"
-    @State private var targetReps: String = "8-12"
-    @State private var targetWeight: String = ""
-    @State private var showExercisePicker = false
-    @State private var pickerSearchText = ""
-    @State private var isProposing = false
-    @State private var errorText: String?
-
-    var body: some View {
-        NavigationStack {
-            List {
-                // Exercise section
-                Section {
-                    if let ex = selectedExercise {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(ex.name)
-                                .font(GSFont.bold(14, relativeTo: .headline))
-                                .foregroundStyle(theme.text)
-                            Text(ex.primaryMuscle.capitalized)
-                                .font(GSFont.body(12, relativeTo: .caption))
-                                .foregroundStyle(theme.neutral500)
-                        }
-                        .listRowBackground(theme.surface)
-                    }
-                    Button {
-                        pickerSearchText = ""
-                        showExercisePicker = true
-                    } label: {
-                        Label(
-                            selectedExercise == nil ? "Pick an exercise" : "Change exercise",
-                            systemImage: "magnifyingglass"
-                        )
-                        .font(GSFont.bodyMedium(14, relativeTo: .body))
-                        .foregroundStyle(theme.accent)
-                    }
-                    .listRowBackground(theme.surface)
-                } header: {
-                    GSSectionHeader("Exercise")
-                }
-                .listRowSeparatorTint(theme.divider)
-
-                // Targets section
-                Section {
-                    targetRow(label: "Sets", placeholder: "3", text: $targetSets,
-                              keyboard: .numberPad)
-                    targetRow(label: "Reps", placeholder: "8-12", text: $targetReps,
-                              keyboard: .default)
-                    targetRow(label: "Weight (optional)", placeholder: "e.g. BW",
-                              text: $targetWeight, keyboard: .default)
-                } header: {
-                    GSSectionHeader("Targets")
-                }
-                .listRowBackground(theme.surface)
-                .listRowSeparatorTint(theme.divider)
-
-                if let errorText {
-                    Section {
-                        Text(errorText)
-                            .font(GSFont.body(12, relativeTo: .footnote))
-                            .foregroundStyle(.red)
-                            .listRowBackground(theme.bg)
-                    }
-                }
-            }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .background(theme.bg)
-            .navigationTitle("Propose Exercise")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                        .foregroundStyle(theme.neutral700)
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Propose") { Task { await propose() } }
-                        .font(GSFont.bold(14, relativeTo: .body))
-                        .foregroundStyle(selectedExercise == nil || isProposing
-                                         ? theme.neutral500 : theme.accent700)
-                        .disabled(selectedExercise == nil || isProposing)
-                }
-            }
-            .sheet(isPresented: $showExercisePicker) {
-                exercisePickerSheet
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func targetRow(label: String, placeholder: String, text: Binding<String>,
-                            keyboard: UIKeyboardType) -> some View {
-        HStack {
-            Text(label)
-                .font(GSFont.body(14, relativeTo: .body))
-                .foregroundStyle(theme.text)
-            Spacer()
-            TextField(placeholder, text: text)
-                .keyboardType(keyboard)
-                .multilineTextAlignment(.trailing)
-                .font(GSFont.bodyMedium(14, relativeTo: .body))
-                .foregroundStyle(theme.text)
-                .tint(theme.accent)
-                .frame(width: 100)
-        }
-    }
-
-    private var filteredPickerExercises: [Exercise] {
-        pickerSearchText.isEmpty ? allExercises
-            : allExercises.filter { $0.name.localizedCaseInsensitiveContains(pickerSearchText) }
-    }
-
-    private var exercisePickerSheet: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                // Shared in-content search field shape (ExercisesListView /
-                // ExercisePickSheet idiom).
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(theme.neutral500)
-                    TextField("Search exercises", text: $pickerSearchText)
-                        .font(GSFont.body(14, relativeTo: .body))
-                        .foregroundStyle(theme.text)
-                        .autocorrectionDisabled()
-                }
-                .padding(.horizontal, 13)
-                .padding(.vertical, 10)
-                .background(theme.surface)
-                .cornerRadius(GSMetrics.radiusSm)
-                .padding(16)
-
-                List(filteredPickerExercises, id: \.id) { ex in
-                    Button {
-                        selectedExercise = ex
-                        showExercisePicker = false
-                    } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(ex.name)
-                                .font(GSFont.bodyMedium(14, relativeTo: .body))
-                                .foregroundStyle(theme.text)
-                            Text(ex.primaryMuscle.capitalized)
-                                .font(GSFont.body(12, relativeTo: .caption))
-                                .foregroundStyle(theme.neutral500)
-                        }
-                    }
-                    .listRowBackground(theme.surface)
-                    .listRowSeparatorTint(theme.divider)
-                }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
-            }
-            .background(theme.bg)
-            .navigationTitle("Add exercise")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { showExercisePicker = false }
-                        .foregroundStyle(theme.neutral700)
-                }
-            }
-        }
-    }
-
-    @MainActor
-    private func propose() async {
-        guard let exercise = selectedExercise else { return }
-        isProposing = true
-        defer { isProposing = false }
-        errorText = nil
-
-        let payload = RoutineProposal.addExercisePayload(
-            exerciseID: exercise.id,
-            targetSets: Int(targetSets),
-            targetReps: targetReps.isEmpty ? nil : targetReps,
-            targetWeight: targetWeight.isEmpty ? nil : targetWeight
-        )
-
-        do {
-            let proposal = try await ProposalRepository.propose(
-                sessionID: session.id,
-                type: .addExercise,
-                payload: payload,
-                affectsExerciseID: exercise.id
-            )
-            onProposed(proposal)
-            dismiss()
         } catch let error as GymSyncError {
             errorText = error.errorDescription
         } catch {

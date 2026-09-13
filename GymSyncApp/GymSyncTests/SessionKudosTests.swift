@@ -12,11 +12,15 @@ import XCTest
 /// the seeded counterpart account (ProfileRepositoryTests.swift's
 /// documented convention — "Swift tests never sign in as this user; they
 /// only target its username/id", scripts/create_second_test_user.js) and
-/// no test anywhere in this suite signs in as a third account either
-/// (ProposalRepositoryTests.testDuplicateAffectsExerciseThrowsValidation
-/// hits the same "only one authenticated account available" wall for its
-/// two-participant scenario and falls back to `XCTSkip` for the same
-/// reason).
+/// no test anywhere in this suite signs in as a third account either. The
+/// worked example used to be the lobby's proposal-repository suite — its
+/// duplicate-exercise validation test hit the same
+/// "only one authenticated account available" wall for its
+/// two-participant scenario and fell back to `XCTSkip` for the same reason;
+/// that file left with the proposal-and-vote flow
+/// (docs/superpowers/plans/2026-09-12-group-session-phase-a-plan.md, task S8).
+/// The WALL is unchanged — it is a property of the CI account set, not of any
+/// one test.
 ///
 /// What IS testable with the one authenticated CI account (`ci_test_user`)
 /// plus the seeded, never-signed-in-as counterpart profile
