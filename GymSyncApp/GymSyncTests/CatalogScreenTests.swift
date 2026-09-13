@@ -144,6 +144,9 @@ final class CatalogScreenTests: XCTestCase {
             "session-warmup-solo",
             "session-warmup-crew",
             "ladder-reladder-proposal",
+            // Fix round 6, item 4: the lobby's own second screen (below the
+            // fold on 129/130), so the owner can judge THE CREW'S WEEK trial.
+            "session-lobby-week",
         ]
         for id in ids {
             XCTAssertNotNil(CatalogScreen(rawValue: id), "missing catalog case: \(id)")

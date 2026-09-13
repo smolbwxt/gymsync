@@ -171,6 +171,9 @@ enum CatalogScreen: String, CaseIterable {
     case sessionWarmupSolo = "session-warmup-solo"
     case sessionWarmupCrew = "session-warmup-crew"
     case ladderReladderProposal = "ladder-reladder-proposal"
+    // Fix round 6, item 4: the lobby's own second screen, below the fold on
+    // 129/130 (see content_sessionLobbyWeek).
+    case sessionLobbyWeek = "session-lobby-week"
 }
 
 struct CatalogHostView: View {
@@ -291,6 +294,7 @@ struct CatalogHostView: View {
             case .sessionWarmupSolo:          content_sessionWarmupSolo
             case .sessionWarmupCrew:          content_sessionWarmupCrew
             case .ladderReladderProposal:     content_ladderReladderProposal
+            case .sessionLobbyWeek:           content_sessionLobbyWeek
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -2685,6 +2689,37 @@ struct CatalogHostView: View {
             LadderPageView(goalID: StubBlockGoalRepository.fixtureGoalID,
                            world: StubBlockGoalRepository.fixturePage,
                            proposal: StubBlockGoalRepository.fixtureProposal)
+        }
+    }
+
+    /// `session-lobby-week`: the lobby's SECOND screen, honestly (coordinator
+    /// fix round 6, item 4). `session-lobby-waiting`/`-ready` (129/130)
+    /// capture only the first screen (the track, Coach's door, the plan, the
+    /// dock, Start), so THE CREW'S WEEK strip - on trial per the owner's
+    /// 2026-09-12 addition - sits below the fold on both and can't be judged
+    /// from either. Same `LobbyFixtures.waiting` crew, the energy card then
+    /// the strip, stacked exactly as `LobbyView.lobbyScroll` stacks them,
+    /// nothing above and no dock/Start below. `askTitle: nil` matches
+    /// production here: the viewer (Alex) already reported energy, so
+    /// `LobbyView`'s own `myArrivalRow?.energy == nil` ternary would already
+    /// resolve to nil.
+    private var content_sessionLobbyWeek: some View {
+        let world = LobbyFixtures.waiting
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                CrewEnergyCard(rows: world.rows,
+                               reported: LobbyCopy.energyReported(
+                                   reported: world.rows.filter { $0.energy != nil }.count,
+                                   total: world.rows.count),
+                               askTitle: nil)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
+                if let crewWeek = world.crewWeek {
+                    CrewWeekStrip(week: crewWeek)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 10)
+                }
+            }
         }
     }
 }

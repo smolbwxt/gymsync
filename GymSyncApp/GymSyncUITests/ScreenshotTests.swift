@@ -803,6 +803,7 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogSessionWarmupSolo()      { captureCatalog("session-warmup-solo") }
     func testCatalogSessionWarmupCrew()      { captureCatalog("session-warmup-crew") }
     func testCatalogLadderReladderProposal() { captureCatalog("ladder-reladder-proposal") }
+    func testCatalogSessionLobbyWeek()       { captureCatalog("session-lobby-week") }
 
     // MARK: - Seeded deep-screen captures
     //

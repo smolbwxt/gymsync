@@ -366,5 +366,9 @@
   "ladder-reladder-proposal": {
     "frame": 134,
     "title": "Ladder page - Coach proposes a new ladder"
+  },
+  "session-lobby-week": {
+    "frame": 135,
+    "title": "the lobby's second screen — how the crew feels and THE CREW'S WEEK (on trial; hidden in production until its per-member weekly read exists)"
   }
 }
