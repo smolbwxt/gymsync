@@ -40,3 +40,14 @@ re-reads a 300k-token context) and by agents reading whole screenshot artifacts 
   with the status bar masked.
 - After a rate-limit reset, check `git log` and `gh run list` per worktree before resuming anything — most of the
   time the work landed before the kill.
+
+### Addendum 2026-09-13 — token economy, second pass (mirrors the Midas CLAUDE.md)
+- **Monitors emit ONE event per run:** a failed/cancelled job immediately, otherwise a single completion line listing every job's conclusion. Never per-job success lines.
+- **Implementers write their own report file** (`<workspace>/<stream>-pushN.md`) and return ≤ 25 lines. The controller never re-types a report.
+- **Warm resume vs cold dispatch:** resume an agent only while its context is warm (same hour). After a limit reset or a longer gap, dispatch fresh with the persisted report/review files — except an agent holding uncommitted work: resume it once to land a checkpoint, then retire it.
+- **Retire implementers at push points** once a stream has run ≥ 4 tasks; the handoff is its report (interfaces the next tasks need, symbols still without callers).
+- **Mechanical tail tasks go down a tier:** catalog contracts, routers, fix application from file:line findings → Sonnet 5.
+- **Tiny fix diffs** (≤ ~40 lines, comment/test/copy only): the controller reads the diff and rules ("controller re-review"). Logic-bearing fixes → Sonnet scoped re-review.
+- **Batch instructions to a running agent** into one message; a drip costs a turn each.
+- **Review packages:** `-U10` for task reviews, `-U3` for scoped re-reviews; deleted files as stat lines only.
+- **Push gate on the shared live account:** a branch still on the old one-slot concurrency group pushes only into a quiet window (`gh run list --workflow ios.yml --status in_progress` empty); merges are paced the same way until every open branch carries the screenshots wait step (PR #66).
