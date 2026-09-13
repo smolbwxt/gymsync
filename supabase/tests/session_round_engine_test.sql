@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(13);
+SELECT plan(16);
 
 -- Migration under test: 20260913000102_session_round_engine.sql
 -- (private.session_round_guard, public.advance_round,
@@ -17,6 +17,31 @@ SELECT plan(13);
 --   S1 = ...1010 in_progress, lifting_started_at set, round 1 opened 10
 --                minutes ago
 --   S2 = ...1020 lobby_open, lifting_started_at NULL
+--   S3 = ...1030 in_progress, lifting_started_at set two minutes ago,
+--                round_started_at still NULL (round 1 never closed) --
+--                fix round 1, assertion 14
+--
+-- FIX ROUND 1 (2026-09-13), THREE ASSERTIONS ADDED, plan(13) -> plan(16).
+-- review-data.md findings 2-4, addressed after fix-forward migration
+-- 20260913000105_advance_round_first_round_opens_at_lifting_start.sql:
+--
+-- 14 (finding 2): a set logged before lifting_started_at (the warm-up
+--    phase) must not count toward round 1's close. New session S3 --
+--    round_started_at NULL, so before this fix-forward the predicate fell
+--    back to '-infinity' and counted everything; A's only set in S3
+--    predates lifting_started_at by three minutes, so advance_round must
+--    still return 1, not close.
+-- 15 (finding 3): D4 never repeated a direct guarded-column write AFTER an
+--    RPC call, so a regression that broke set_config('gymsync.engine',
+--    '',true)'s reset would not have been caught. Reuses S1 post-close
+--    (assertion 9): a direct UPDATE of round must still throw P0001.
+-- 16 (finding 4): the roster/depth predicate had a two-station success
+--    (12) and a one-station depth FAILURE (11), but never a one-station
+--    SUCCESS covering the whole present roster -- the common small-crew
+--    case. Uses S1's exercise_position 2 (not 1, so assertion 13's
+--    idempotency short-circuit does not skip validation) with all three
+--    present lifters (A, B, C) in one station, exactly at the depth
+--    ceiling.
 --
 -- TWO DEVIATIONS FROM THE BRIEF, BOTH RECORDED.
 --
@@ -303,6 +328,80 @@ SELECT results_eq(
                             "lifter_ids":["00000000-0000-4000-f000-000000001003"],
                             "turn_order":["00000000-0000-4000-f000-000000001003"]}]}'::jsonb)$$,
   'a second re-mix at the same exercise position returns the stored assignment unchanged');
+
+-- ── FIX ROUND 1 ADDITIONS (2026-09-13) ────────────────────────────────────
+
+-- S3: a fresh in_progress session for assertion 14 -- round_started_at is
+-- still NULL (round 1 has never closed), lifting_started_at is set two
+-- minutes ago. A is both organizer and the only present participant.
+INSERT INTO sessions (id, organizer_id, state, lifting_started_at) VALUES
+  ('00000000-0000-4000-f000-000000001030',
+   '00000000-0000-4000-f000-000000001001',
+   'in_progress', now() - interval '2 minutes');
+
+INSERT INTO session_participants (session_id, user_id, check_in_state) VALUES
+  ('00000000-0000-4000-f000-000000001030', '00000000-0000-4000-f000-000000001001', 'ready');
+
+-- A's only set in S3 was logged BEFORE lifting_started_at -- three minutes
+-- before it, i.e. during the warm-up phase set_logs_reject_prelive_session
+-- does not gate on (finding 2).
+INSERT INTO set_logs (id, user_id, session_id, exercise_id, set_index, reps, logged_at) VALUES
+  ('00000000-0000-4000-f000-000000001105', '00000000-0000-4000-f000-000000001001',
+   '00000000-0000-4000-f000-000000001030',
+   (SELECT id FROM exercises WHERE slug = 'bench-press' LIMIT 1), 1, 10,
+   now() - interval '5 minutes');
+
+SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-f000-000000001001';
+
+-- 14. Fix-forward 20260913000105: before it, COALESCE(v_round_started_at,
+--     '-infinity') meant a NULL round_started_at let EVERY set count, so
+--     this would have returned 2. After it, COALESCE falls through to
+--     v_lifting_started_at first -- A's set predates that, so it still
+--     does not count, and the round does not close.
+SELECT results_eq(
+  $$SELECT public.advance_round('00000000-0000-4000-f000-000000001030')$$,
+  $$VALUES (1)$$,
+  'a set logged before lifting_started_at does not count toward round 1''s close');
+
+-- 15. Regression guard for finding 3: after a SUCCESSFUL advance_round
+--     (assertion 9) reset the GUC via set_config('gymsync.engine','',true)
+--     inside the same transaction, a direct client UPDATE of round must
+--     still be rejected -- proving the reset held rather than leaving the
+--     bypass on for the remainder of this transaction. As A, S1's
+--     organizer, exactly as assertion 1 was.
+SELECT throws_ok(
+  $$UPDATE sessions SET round = 99
+     WHERE id = '00000000-0000-4000-f000-000000001010'$$,
+  'P0001', 'round, round_started_at and stations are engine-owned',
+  'the guard still rejects a direct write after a successful advance_round closed the round');
+
+-- 16. Finding 4: the roster/depth predicate had a two-station success (12)
+--     and a one-station depth FAILURE (11), but never a one-station
+--     SUCCESS covering the whole present roster -- the common small-crew
+--     case (StationSplit.count yields 1 station for any crew <= 3).
+--     exercise_position 2, not 1, so assertion 13's idempotency
+--     short-circuit does not skip validation of this new payload. As C,
+--     matching "any participant may re-mix" above.
+SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-f000-000000001003';
+SELECT results_eq(
+  $$SELECT public.set_session_stations(
+      '00000000-0000-4000-f000-000000001010', 2,
+      '[{"name":"Rack 1",
+         "lifter_ids":["00000000-0000-4000-f000-000000001001",
+                       "00000000-0000-4000-f000-000000001002",
+                       "00000000-0000-4000-f000-000000001003"],
+         "turn_order":["00000000-0000-4000-f000-000000001001",
+                       "00000000-0000-4000-f000-000000001002",
+                       "00000000-0000-4000-f000-000000001003"]}]'::jsonb)$$,
+  $$VALUES ('{"exercise_position": 2,
+              "stations": [{"name":"Rack 1",
+                            "lifter_ids":["00000000-0000-4000-f000-000000001001",
+                                          "00000000-0000-4000-f000-000000001002",
+                                          "00000000-0000-4000-f000-000000001003"],
+                            "turn_order":["00000000-0000-4000-f000-000000001001",
+                                          "00000000-0000-4000-f000-000000001002",
+                                          "00000000-0000-4000-f000-000000001003"]}]}'::jsonb)$$,
+  'a single station holding the whole three-lifter present roster is accepted');
 
 SELECT * FROM finish();
 ROLLBACK;
