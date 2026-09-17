@@ -191,6 +191,54 @@ enum RoundCopy {
     /// pills `ReactionStrip` offers, so no tap can send it by accident.
     static let minuteMarker = "⏳"
 
+    // MARK: - Freestyle (spec §3.3, owner decision 4, plan task S10)
+
+    /// The page's own headline. "Freestyle" is the style's proper noun (the
+    /// lobby card's word, `SessionStyleCopy.of(.freestyle).title`); this page
+    /// says what living it actually feels like.
+    static let freestyleTitle = "Own pace"
+
+    static let freestyleRailKicker = "THE CREW · SETS DONE"
+
+    /// `OF 18` — the rail's trailing count against the routine's own total.
+    static func freestyleOfTotal(_ total: Int) -> String { "OF \(total)" }
+
+    static let freestyleYourRest = "YOUR REST"
+
+    /// The stretched-rest suggestion's kicker.
+    static let freestyleStretchKicker = "COACH IS STRETCHING YOUR REST"
+
+    /// `You're two sets up — Coach is stretching your rest to keep the crew
+    /// together.` The exact sentence the plan quotes, for the exact count the
+    /// fixture carries (2) — `spelled(_:)` keeps small counts in words the
+    /// way the sentence reads, and falls back to a digit past ten rather than
+    /// inventing an English word for it.
+    static func freestyleStretchSentence(setsAhead: Int) -> String {
+        "You're \(spelled(setsAhead)) sets up — Coach is stretching your rest to keep the crew together."
+    }
+
+    private static func spelled(_ n: Int) -> String {
+        let words = ["zero", "one", "two", "three", "four", "five",
+                     "six", "seven", "eight", "nine", "ten"]
+        return words.indices.contains(n) ? words[n] : "\(n)"
+    }
+
+    static let freestyleAccessoryKicker = "COACH SUGGESTS"
+
+    /// `While they catch up — Face pulls, 3 × 12?` THE PLAN'S OWN ROW, never
+    /// an invented one — `FreestylePace.accessorySuggestion` only ever
+    /// answers with an isolation row that is actually on the routine, and
+    /// this is the whole of what it says about it: a name and the
+    /// prescription already printed, nothing this app does not know.
+    static func freestyleAccessorySentence(name: String, prescription: String) -> String {
+        "While they catch up — \(name), \(prescription)?"
+    }
+
+    /// A lifter behind sees the wait stated, with nothing to accept — the
+    /// suggestion is for whoever is ahead, and a lifter behind has nothing to
+    /// answer for.
+    static let freestyleBehindLine = "The crew is still resting. Take the time you need."
+
     // MARK: - The round wait's own lines
 
     /// `WAITING ON SAM AND LEE` — the foot's gated control.

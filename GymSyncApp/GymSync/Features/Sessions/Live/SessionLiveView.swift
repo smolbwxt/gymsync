@@ -208,6 +208,15 @@ struct SessionLiveView: View {
     /// refuses to stack), which is exactly why a double-counted self-echo is
     /// harmless -- and why this needs no de-duplication.
     @State private var minuteExtensionsThisRound = 0
+    /// Freestyle's two suggestions, once acknowledged either way (plan task
+    /// S10, owner decision 4). NEITHER APPLIES A CHANGE — there is no rest
+    /// enforcement and no accessory-adding mechanism in this schema — so
+    /// "acknowledged" is the whole of what Accept and Not today do: the card
+    /// stops showing. The stretch is one suggestion for the whole session;
+    /// the accessory is keyed by exercise, because a lifter who accepts (or
+    /// declines) today's accessory should still see tomorrow's.
+    @State private var freestyleStretchAcknowledged = false
+    @State private var freestyleAcknowledgedAccessoryIDs: Set<UUID> = []
     /// COACH'S DOOR (plan task S6, spec §3.6). The lobby's pair, mirrored —
     /// see `openCoachThread()` below for why the thread is resolved on tap
     /// and never on load.
@@ -2191,14 +2200,19 @@ struct SessionLiveView: View {
     /// Layer 1: the page + the pinned chrome.
     private var arenaBase: some View {
         ZStack(alignment: .bottom) {
-            // TWO PAGES, CHOSEN BY WHOSE TURN IT IS (plan tasks S4 and S6).
-            // The spectate sister page and the roster-failure scroll layout
-            // are gone; in Rounds, a crewmate who is not lifting gets the
-            // ROUND WAIT in their place, and everyone else — every lifter on
-            // their turn, and every lifter in Freestyle and Together, which
-            // have no turn at all — gets the my-turn page.
+            // THE PAGE, CHOSEN BY STYLE AND WHOSE TURN IT IS (plan tasks S4,
+            // S6, S10). The spectate sister page and the roster-failure
+            // scroll layout are gone; in Rounds, a crewmate who is not
+            // lifting gets the ROUND WAIT in their place, and everyone else —
+            // every lifter on their turn — gets the my-turn page. Freestyle
+            // and Together have no turn at all (S5), so every lifter in
+            // either gets that style's own page instead; Freestyle's still
+            // composes above `bottomChrome`'s pinned `turnChrome` for the
+            // actual log control (`freestylePage`'s own doc comment).
             if style == .together {
                 togetherPage
+            } else if style == .freestyle {
+                freestylePage
             } else if showsSpotter {
                 spotterPage
             } else if showsRoundWait {
@@ -4323,6 +4337,129 @@ struct SessionLiveView: View {
                 trace: togetherTrace.trace(for: row.participant.userID,
                                            count: max(intervalCount, 1)))
         }
+    }
+
+    // MARK: - Freestyle (spec §3.3, owner decision 4, plan task S10)
+
+    /// The routine's own total prescribed sets — own pace has no round to
+    /// count within, so the rail's denominator is the whole plan.
+    private var freestyleTotalSets: Int {
+        effectiveRoutineExercises.reduce(0) { $0 + ($1.targetSets ?? 0) }
+    }
+
+    /// Every non-penalty set this lifter has logged, across the whole
+    /// routine — `setCount(userID:exerciseID:)`'s own count, summed.
+    private func freestyleSetsDone(_ userID: UUID) -> Int {
+        effectiveRoutineExercises.reduce(0) { $0 + setCount(userID: userID, exerciseID: $1.exerciseID) }
+    }
+
+    private var freestyleRailModel: FreestyleRailModel {
+        FreestyleRailModel(
+            lifters: presentRotation.map { row in
+                FreestyleRailModel.Lifter(
+                    id: row.participant.userID,
+                    name: SessionCopy.firstName(row.profile.username),
+                    isYou: row.participant.userID == selfID,
+                    setsDone: freestyleSetsDone(row.participant.userID))
+            },
+            totalSets: freestyleTotalSets)
+    }
+
+    /// `nil` with no signed-in profile answers `.level` (`FreestylePace`'s own
+    /// default) — the honest fallback, the same one `isMyTurn` takes.
+    private var freestyleStanding: FreestylePace.Standing {
+        guard let selfID else { return .level }
+        let sets = presentRotation.map {
+            FreestylePace.Lifter(userID: $0.participant.userID,
+                                 setsDone: freestyleSetsDone($0.participant.userID))
+        }
+        return FreestylePace.standing(sets: sets, for: selfID)
+    }
+
+    /// THE PLAN'S OWN ISOLATION ROWS, never an invented recommendation —
+    /// `exercises.category` (`20260709000002:5`) is the only "what kind of
+    /// exercise is this" signal the schema carries.
+    private var freestyleAccessoryCandidates: [FreestylePace.AccessoryCandidate] {
+        effectiveRoutineExercises.compactMap { re in
+            guard let exercise = allExercises.first(where: { $0.id == re.exerciseID }) else { return nil }
+            return FreestylePace.AccessoryCandidate(
+                id: re.id, name: exercise.name, category: exercise.category,
+                prescription: SessionPlanRow.prescription(for: re))
+        }
+    }
+
+    private var freestyleStartedExerciseIDs: Set<UUID> {
+        guard let selfID else { return [] }
+        return Set(effectiveRoutineExercises
+            .filter { setCount(userID: selfID, exerciseID: $0.exerciseID) > 0 }
+            .map(\.id))
+    }
+
+    private var freestyleAccessorySuggestion: FreestylePace.AccessoryCandidate? {
+        FreestylePace.accessorySuggestion(from: freestyleAccessoryCandidates,
+                                          startedIDs: freestyleStartedExerciseIDs)
+    }
+
+    /// `PUSH CREW · FREESTYLE` — `togetherKicker`'s own pattern.
+    private var freestyleKicker: String {
+        let crew = (ledgerGroup?.name ?? "").uppercased()
+        return crew.isEmpty ? "FREESTYLE" : "\(crew) · FREESTYLE"
+    }
+
+    /// The page, on a one-second tick — the rest clock is the biggest numeral
+    /// on it, `roundWaitPage`'s own reasoning.
+    private var freestylePage: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            freestyleScreen(now: context.date)
+        }
+    }
+
+    /// Exactly one of three things follows the rest card: nothing (level),
+    /// two suggestions (ahead), or a stated wait with nothing to accept
+    /// (behind) — never more than one shape at once.
+    private func freestyleScreen(now: Date) -> FreestyleRailView {
+        let standing = freestyleStanding
+        var stretch: FreestyleSuggestion?
+        var accessory: FreestyleSuggestion?
+        var behind: String?
+
+        if case .ahead(let by) = standing {
+            if !freestyleStretchAcknowledged {
+                stretch = FreestyleSuggestion(
+                    kicker: RoundCopy.freestyleStretchKicker,
+                    sentence: RoundCopy.freestyleStretchSentence(setsAhead: by))
+            }
+            if let candidate = freestyleAccessorySuggestion,
+               !freestyleAcknowledgedAccessoryIDs.contains(candidate.id) {
+                accessory = FreestyleSuggestion(
+                    kicker: RoundCopy.freestyleAccessoryKicker,
+                    sentence: RoundCopy.freestyleAccessorySentence(
+                        name: candidate.name, prescription: candidate.prescription))
+            }
+        } else if case .behind = standing {
+            behind = RoundCopy.freestyleBehindLine
+        }
+
+        return FreestyleRailView(
+            kicker: freestyleKicker,
+            title: RoundCopy.freestyleTitle,
+            rail: freestyleRailModel,
+            restElapsed: RoundCopy.elapsed(since: myLastLoggedAt, now: now),
+            standing: standing,
+            stretchSuggestion: stretch,
+            accessorySuggestion: accessory,
+            behindLine: behind,
+            // NEITHER APPLIES A CHANGE (owner decision 4) — acknowledging
+            // either way just stops the card from showing again.
+            onAcceptStretch: { freestyleStretchAcknowledged = true },
+            onDeclineStretch: { freestyleStretchAcknowledged = true },
+            onAcceptAccessory: { freestyleAcknowledgeAccessory() },
+            onDeclineAccessory: { freestyleAcknowledgeAccessory() })
+    }
+
+    private func freestyleAcknowledgeAccessory() {
+        guard let id = freestyleAccessorySuggestion?.id else { return }
+        freestyleAcknowledgedAccessoryIDs.insert(id)
     }
 
     // MARK: - The hold, the skip and the minute (spec §9a, plan task S7)

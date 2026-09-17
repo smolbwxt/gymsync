@@ -327,4 +327,35 @@ final class RoundWaitCopyTests: XCTestCase {
         XCTAssertEqual(RoundCopy.skipOffer(name: skip.name),
                        "Sam's still resting — go ahead without them?")
     }
+
+    // MARK: - Freestyle's copy (plan task S10)
+
+    /// The plan's own quoted sentence, verbatim, at the exact count it
+    /// quotes — two.
+    func testTheStretchSentenceMatchesThePlansOwnQuote() {
+        XCTAssertEqual(RoundCopy.freestyleStretchSentence(setsAhead: 2),
+                       "You're two sets up — Coach is stretching your rest to keep the crew together.")
+    }
+
+    /// Small counts stay in words; the sentence still reads past ten rather
+    /// than crashing on a table with no entry for it.
+    func testTheStretchSentenceScalesPastTheWordTable() {
+        XCTAssertEqual(RoundCopy.freestyleStretchSentence(setsAhead: 5),
+                       "You're five sets up — Coach is stretching your rest to keep the crew together.")
+        XCTAssertEqual(RoundCopy.freestyleStretchSentence(setsAhead: 12),
+                       "You're 12 sets up — Coach is stretching your rest to keep the crew together.")
+    }
+
+    func testTheAccessorySentenceNamesTheRowAndItsPrescription() {
+        XCTAssertEqual(RoundCopy.freestyleAccessorySentence(name: "Face pulls", prescription: "3 × 12"),
+                       "While they catch up — Face pulls, 3 × 12?")
+    }
+
+    func testFreestylesOwnStrings() {
+        XCTAssertEqual(RoundCopy.freestyleTitle, "Own pace")
+        XCTAssertEqual(RoundCopy.freestyleRailKicker, "THE CREW · SETS DONE")
+        XCTAssertEqual(RoundCopy.freestyleOfTotal(18), "OF 18")
+        XCTAssertEqual(RoundCopy.freestyleYourRest, "YOUR REST")
+        XCTAssertFalse(RoundCopy.freestyleBehindLine.isEmpty)
+    }
 }

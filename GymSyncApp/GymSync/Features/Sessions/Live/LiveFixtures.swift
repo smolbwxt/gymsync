@@ -58,6 +58,18 @@ struct TogetherWorld {
     let dockNames: [String]
 }
 
+/// One catalog world for `FreestyleRailView` (plan task S10).
+struct FreestyleWorld {
+    let kicker: String
+    let title: String
+    let rail: FreestyleRailModel
+    let restElapsed: String
+    let standing: FreestylePace.Standing
+    var stretchSuggestion: FreestyleSuggestion? = nil
+    var accessorySuggestion: FreestyleSuggestion? = nil
+    var behindLine: String? = nil
+}
+
 /// One catalog world for `SpotterView` (plan task S8).
 struct SpotterWorld {
     let kicker: String
@@ -325,4 +337,36 @@ enum LiveFixtures {
         dockNames: dockNames,
         reactionEmojis: reactionEmojis,
         skip: skipOffer)
+
+    // MARK: - Freestyle (frame 141)
+
+    /// You (Alex), Dana, Lee and Sam — the design round's own four
+    /// (`SessionVariationKit.freestyleRail`), out of 18 sets on the plan.
+    /// You are 3 ahead of the crew's slowest (Sam, 11), which is what puts
+    /// both suggestions on the frame.
+    static let freestyleRail = FreestyleRailModel(
+        lifters: [
+            FreestyleRailModel.Lifter(id: alexID, name: "You", isYou: true, setsDone: 14),
+            FreestyleRailModel.Lifter(id: danaID, name: "Dana", isYou: false, setsDone: 12),
+            FreestyleRailModel.Lifter(id: leeID, name: "Lee", isYou: false, setsDone: 12),
+            FreestyleRailModel.Lifter(id: samID, name: "Sam", isYou: false, setsDone: 11),
+        ],
+        totalSets: 18)
+
+    /// `session-freestyle-rail` (frame 141): the rail, the stretched rest,
+    /// and Coach's accessory — both suggestions, because the frame is built
+    /// to show the crew's ahead branch (`round-wait-v2`'s sister frame 116
+    /// was the same choice).
+    static let freestyle = FreestyleWorld(
+        kicker: "\(crewName.uppercased()) · FREESTYLE",
+        title: RoundCopy.freestyleTitle,
+        rail: freestyleRail,
+        restElapsed: "2:30",
+        standing: .ahead(by: 3),
+        stretchSuggestion: FreestyleSuggestion(
+            kicker: RoundCopy.freestyleStretchKicker,
+            sentence: RoundCopy.freestyleStretchSentence(setsAhead: 3)),
+        accessorySuggestion: FreestyleSuggestion(
+            kicker: RoundCopy.freestyleAccessoryKicker,
+            sentence: RoundCopy.freestyleAccessorySentence(name: "Face pulls", prescription: "3 × 12")))
 }
