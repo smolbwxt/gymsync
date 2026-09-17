@@ -114,7 +114,13 @@ struct SVFreestyleRail: View {
 ///
 /// ACCENT: START SET 15. The rail markers are `text` (you) and `neutral500`
 /// (the crew), Coach's answers are raised faces.
-struct FreestyleRailView: View {
+///
+/// RENAMED `FreestyleRailV1View` by plan task S10. The production twin takes
+/// the name `FreestyleRailView`, and two types cannot share one inside a
+/// module — `#if DEBUG` still compiles into every Debug build, CI's included.
+/// Frame 116 renders byte-for-byte what it rendered before: only the type's
+/// spelling and its one catalog arm moved, and S13 deletes this file.
+struct FreestyleRailV1View: View {
     @Environment(\.gsTheme) private var theme
 
     var body: some View {

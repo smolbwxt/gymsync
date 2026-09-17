@@ -2517,8 +2517,10 @@ struct CatalogHostView: View {
         RoundSpotterView()
     }
 
+    /// `FreestyleRailV1View`, renamed by plan task S10 — the production screen
+    /// takes the name `FreestyleRailView`. Frame 116 is unchanged.
     private var content_freestyleRail: some View {
-        FreestyleRailView()
+        FreestyleRailV1View()
     }
 
     /// `TogetherClockV1View`, renamed by plan task S9 — the production screen
