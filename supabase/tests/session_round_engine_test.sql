@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(17);
+SELECT plan(19);
 
 -- Migration under test: 20260913000102_session_round_engine.sql
 -- (private.session_round_guard, public.advance_round,
@@ -23,6 +23,11 @@ SELECT plan(17);
 --   S4 = ...1040 in_progress, lifting_started_at still NULL (mid-warm-up),
 --                A HAS logged a set -- fix-forward 20260913000106,
 --                assertion 17
+--   S5 = ...1050 in_progress, round_started_at 2 min old (>= the 90 s
+--                floor), A and B present, NEITHER has logged -- fix-forward
+--                20260913000107, assertion 18
+--   S6 = ...1060 same shape, round_started_at 30 s old (< the floor) --
+--                fix-forward 20260913000107, assertion 19
 --
 -- FIX ROUND 1 (2026-09-13), THREE ASSERTIONS ADDED, plan(13) -> plan(16).
 -- review-data.md findings 2-4, addressed after fix-forward migration
@@ -164,6 +169,32 @@ INSERT INTO set_logs (id, user_id, session_id, exercise_id, set_index, reps, log
   ('00000000-0000-4000-f000-000000001106', '00000000-0000-4000-f000-000000001001',
    '00000000-0000-4000-f000-000000001040',
    (SELECT id FROM exercises WHERE slug = 'bench-press' LIMIT 1), 1, 10, now());
+
+-- S5: in_progress, lifting_started_at set five minutes ago, round_started_at
+-- set two minutes ago -- >= the 90 s floor. A and B are both present and
+-- NEITHER has logged anything this round: a normal (unforced) close would
+-- not fire. For assertion 18 (fix-forward 20260913000107): proves p_force
+-- bypasses the per-lifter predicate entirely, not merely that it tolerates
+-- one straggler. In the TOP fixture block, for the same reason as S3/S4.
+INSERT INTO sessions (id, organizer_id, state, lifting_started_at, round_started_at) VALUES
+  ('00000000-0000-4000-f000-000000001050',
+   '00000000-0000-4000-f000-000000001001',
+   'in_progress', now() - interval '5 minutes', now() - interval '2 minutes');
+INSERT INTO session_participants (session_id, user_id, check_in_state) VALUES
+  ('00000000-0000-4000-f000-000000001050', '00000000-0000-4000-f000-000000001001', 'ready'),
+  ('00000000-0000-4000-f000-000000001050', '00000000-0000-4000-f000-000000001002', 'ready');
+
+-- S6: same shape as S5, except round_started_at is only thirty seconds
+-- old -- under the 90 s floor. For assertion 19: a forced close this young
+-- is still a no-op. One present participant is enough; the floor check
+-- runs before the (now permanently skipped) per-lifter predicate either
+-- way, so nobody needs to have logged or not logged anything here.
+INSERT INTO sessions (id, organizer_id, state, lifting_started_at, round_started_at) VALUES
+  ('00000000-0000-4000-f000-000000001060',
+   '00000000-0000-4000-f000-000000001001',
+   'in_progress', now() - interval '5 minutes', now() - interval '30 seconds');
+INSERT INTO session_participants (session_id, user_id, check_in_state) VALUES
+  ('00000000-0000-4000-f000-000000001060', '00000000-0000-4000-f000-000000001001', 'ready');
 
 INSERT INTO session_participants (session_id, user_id, turn_order, check_in_state) VALUES
   ('00000000-0000-4000-f000-000000001010', '00000000-0000-4000-f000-000000001001', 1, 'ready'),
@@ -459,6 +490,30 @@ SELECT results_eq(
   $$SELECT public.advance_round('00000000-0000-4000-f000-000000001040')$$,
   $$VALUES (1)$$,
   'a close attempted before lifting_started_at is set is a no-op, even when every present lifter has logged');
+
+-- ── FIX-FORWARD 20260913000107 ADDITIONS ──────────────────────────────────
+-- The crew's skip (spec 9a, ruling R-B13): p_force lets any participant
+-- force a round closed once it has been open >= the 90 s floor, without
+-- every present lifter having logged.
+
+-- 18. S5's round has been open two minutes (>= the floor) and NEITHER A
+--     nor B has logged, so an unforced close would not fire -- but a
+--     forced one bypasses the per-lifter predicate entirely and closes it
+--     regardless. As A, S5's organizer and a present participant.
+SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-f000-000000001001';
+SELECT results_eq(
+  $$SELECT public.advance_round('00000000-0000-4000-f000-000000001050', NULL, true)$$,
+  $$VALUES (2)$$,
+  'a forced close on a round open >= 90 s closes it even with present lifters unlogged');
+
+-- 19. The floor still gates a forced close: S6's round is only thirty
+--     seconds old, under the 90 s floor, so p_force := true is still a
+--     no-op. A is S6's only participant.
+SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-f000-000000001001';
+SELECT results_eq(
+  $$SELECT public.advance_round('00000000-0000-4000-f000-000000001060', NULL, true)$$,
+  $$VALUES (1)$$,
+  'a forced close younger than the 90 s floor is still a no-op');
 
 SELECT * FROM finish();
 ROLLBACK;
