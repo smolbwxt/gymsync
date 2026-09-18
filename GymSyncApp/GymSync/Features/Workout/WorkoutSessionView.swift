@@ -3815,6 +3815,10 @@ struct WorkoutSessionView: View {
             // SessionLiveView.logSetAndAdvance's identical ordering.
             var isPR = false
             var priorBest: Decimal = 0
+            // Docket row 7's rule (a): nothing to beat is not a record to
+            // celebrate. Stays `true` on the offline path below, where the PR
+            // check is skipped entirely and `isPR` stays false anyway.
+            var prBasisIsEmpty = true
             // Failure doctrine (owner 2026-08-13): failed sets are judged on
             // their COMPLETED reps ("7 + FAIL" = 6 completed at true RIR 0 —
             // a real achievement AND a calibration point). Only the failed
@@ -3836,6 +3840,8 @@ struct WorkoutSessionView: View {
                     let basis = try await prBasis(exerciseID: re.exerciseID, userID: userID)
                     priorBest = PersonalRecordMath.bestWeight(atLeastReps: completedReps, in: basis)
                     isPR = PersonalRecordMath.isPR(weight: weight, reps: completedReps, basis: basis)
+                    prBasisIsEmpty = PersonalRecordMath.qualifyingBasisIsEmpty(
+                        atLeastReps: completedReps, in: basis)
                 } catch let error as GymSyncError {
                     guard case .network = error else { throw error }
                     // Offline — PR check skipped (best-effort, never blocks logging;
@@ -3851,12 +3857,17 @@ struct WorkoutSessionView: View {
             // the prior REP count.
             var isRepPR = false
             var priorBestReps = 0
+            // The rep-PR twin of `prBasisIsEmpty` — a first bodyweight set
+            // beats `max() ?? 0` and was a rep PR for exactly the same reason.
+            var repBasisIsEmpty = true
             if (weight ?? 0) == 0,
                currentExercise?.equipment == "bodyweight",
                let completedReps {
-                priorBestReps = (soloPriorSets + soloCurrentExerciseSets)
+                let priorReps = (soloPriorSets + soloCurrentExerciseSets)
                     .filter { $0.exerciseID == re.exerciseID && !$0.isPenalty && ($0.weight ?? 0) == 0 }
-                    .compactMap(\.completedReps).max() ?? 0
+                    .compactMap(\.completedReps)
+                repBasisIsEmpty = priorReps.isEmpty
+                priorBestReps = priorReps.max() ?? 0
                 isRepPR = completedReps > priorBestReps
             }
 
@@ -3914,13 +3925,36 @@ struct WorkoutSessionView: View {
                 prBasisByExercise[re.exerciseID, default: []].append((weight, completedReps))
             }
 
+            // Docket row 7, the solo mirror of `SessionLiveView`'s block
+            // (`PRFiring`): the first log of a lift is a baseline, and the
+            // record waits for the last set. THE RECORD ITSELF IS NOT GATED —
+            // both `PersonalRecordRepository.record` calls below, and both
+            // `sessionPRs` appends that feed the recap, run exactly as they
+            // did; only `showPROverlay` waits.
+            //
+            // `re` is the CURRENT routine row the session is running
+            // (`activeExercises` — mid-session edits and swaps applied), the
+            // solo equivalent of the group body's `effectiveRoutineExercises`;
+            // `log.setIndex` is `currentSetIndex`, the set just written.
+            let firingContext = PRFiring.Context(basisIsEmpty: prBasisIsEmpty,
+                                                 setsLogged: log.setIndex,
+                                                 targetSets: re.targetSets)
+            let celebratesPR = PRFiring.shouldCelebrate(isRecord: isPR, context: firingContext)
+            let celebratesRepPR = PRFiring.shouldCelebrate(
+                isRecord: isRepPR,
+                context: PRFiring.Context(basisIsEmpty: repBasisIsEmpty,
+                                          setsLogged: log.setIndex,
+                                          targetSets: re.targetSets))
+
             if isRepPR, let completedReps {
                 // Bodyweight rep record (owner item 6): weight 0 signals the
                 // rep-PR form to the overlay and every display site;
                 // previousBest carries the prior REP count (completed reps —
                 // a failed 12th attempt celebrates the 11 that happened).
-                showPROverlay(exerciseName: exerciseName(for: re.exerciseID), weight: 0,
-                              reps: completedReps, priorBest: Decimal(priorBestReps))
+                if celebratesRepPR {
+                    showPROverlay(exerciseName: exerciseName(for: re.exerciseID), weight: 0,
+                                  reps: completedReps, priorBest: Decimal(priorBestReps))
+                }
                 if let record = try? await PersonalRecordRepository.record(
                     exerciseID: re.exerciseID,
                     weight: 0,
@@ -3943,8 +3977,10 @@ struct WorkoutSessionView: View {
                 // Full-screen, user-dismissed celebration (p29) — content comes from data
                 // already known at this point (no need to wait on the record insert below),
                 // same as SessionLiveView.showPROverlay.
-                showPROverlay(exerciseName: exerciseName(for: re.exerciseID), weight: weight,
-                              reps: repsForOverlay, priorBest: priorBest)
+                if celebratesPR {
+                    showPROverlay(exerciseName: exerciseName(for: re.exerciseID), weight: weight,
+                                  reps: repsForOverlay, priorBest: priorBest)
+                }
                 // Best-effort PR record — a failed insert must never block or delay
                 // set logging (which already happened above). Fall back to a local
                 // record so the recap (Task 9) still has the PR if the write failed.

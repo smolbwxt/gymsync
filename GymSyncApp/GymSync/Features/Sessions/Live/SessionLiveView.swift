@@ -4515,6 +4515,10 @@ struct SessionLiveView: View {
             // prior max MUST be captured before the insert (self-comparison bug)
             var isPR = false
             var priorBest: Decimal = 0
+            // Docket row 7's rule (a): nothing to beat is not a record to
+            // celebrate. Stays `true` on the offline path below, where the PR
+            // check is skipped entirely and `isPR` stays false anyway.
+            var prBasisIsEmpty = true
             // Failure doctrine (owner 2026-08-13): failed sets are judged on
             // COMPLETED reps ("7 + FAIL" = 6 at true RIR 0); only the failed
             // single carries nothing. Mirrors solo WorkoutSessionView.log.
@@ -4532,8 +4536,9 @@ struct SessionLiveView: View {
                     let prior = try await priorMax(exerciseID: exerciseID,
                                                    reps: completedReps, userID: userID)
                     stamp("priorMax", tPrior)
-                    priorBest = prior
-                    isPR = weight > prior
+                    priorBest = prior.best
+                    prBasisIsEmpty = prior.basisIsEmpty
+                    isPR = weight > prior.best
                 } catch let error as GymSyncError {
                     guard case .network = error else { throw error }
                     // Offline — PR check skipped (best-effort, never blocks logging).
@@ -4545,13 +4550,18 @@ struct SessionLiveView: View {
             // weight 0 with previousBest carrying prior REPS.
             var isRepPR = false
             var priorBestReps = 0
+            // The rep-PR twin of `prBasisIsEmpty` — a first bodyweight set
+            // beats `max() ?? 0` and was a rep PR for exactly the same reason.
+            var repBasisIsEmpty = true
             if (weight ?? 0) == 0,
                currentExerciseForSheet?.id == exerciseID,
                currentExerciseForSheet?.equipment == "bodyweight",
                let completedReps {
-                priorBestReps = turnExerciseHistory
+                let priorReps = turnExerciseHistory
                     .filter { !$0.isPenalty && ($0.weight ?? 0) == 0 }
-                    .compactMap(\.completedReps).max() ?? 0
+                    .compactMap(\.completedReps)
+                repBasisIsEmpty = priorReps.isEmpty
+                priorBestReps = priorReps.max() ?? 0
                 isRepPR = completedReps > priorBestReps
             }
 
@@ -4624,13 +4634,41 @@ struct SessionLiveView: View {
             // queue) — this is the moment the success haptic fires.
             logHapticTick += 1
 
+            // Docket row 7, in one place for both bodies (`PRFiring`): the
+            // first log of a lift is a baseline, and the record waits for the
+            // last set. THE RECORD ITSELF IS NOT GATED — both
+            // `PersonalRecordRepository.record` inserts below run exactly as
+            // they did; only `showPROverlay` waits.
+            //
+            // `targetSets` from the EFFECTIVE routine, never `routineExercises`:
+            // an accepted scale-down of 4 × 5 → 3 × 5 makes the third set the
+            // last one, and the celebration must agree with the number the
+            // screen printed. `nil` = unprescribed, which celebrates on the
+            // record itself.
+            let firingTargetSets = effectiveRoutineExercises
+                .first(where: { $0.exerciseID == exerciseID })?.targetSets
+            // `log.setIndex` is `mySetCount(for:) + 1` — sets logged INCLUDING
+            // the one just written, which is what the rule counts.
+            let celebratesRepPR = PRFiring.shouldCelebrate(
+                isRecord: isRepPR,
+                context: PRFiring.Context(basisIsEmpty: repBasisIsEmpty,
+                                          setsLogged: log.setIndex,
+                                          targetSets: firingTargetSets))
+            let celebratesPR = PRFiring.shouldCelebrate(
+                isRecord: isPR,
+                context: PRFiring.Context(basisIsEmpty: prBasisIsEmpty,
+                                          setsLogged: log.setIndex,
+                                          targetSets: firingTargetSets))
+
             if isRepPR, let completedReps {
-                let tName = Date()
-                let name = await ExerciseNameCache.name(for: exerciseID)
-                stamp("nameCache repPR", tName)
-                Task { @MainActor in
-                    await showPROverlay(exerciseName: name, weight: 0,
-                                         reps: completedReps, priorBest: Decimal(priorBestReps))
+                if celebratesRepPR {
+                    let tName = Date()
+                    let name = await ExerciseNameCache.name(for: exerciseID)
+                    stamp("nameCache repPR", tName)
+                    Task { @MainActor in
+                        await showPROverlay(exerciseName: name, weight: 0,
+                                             reps: completedReps, priorBest: Decimal(priorBestReps))
+                    }
                 }
                 Task { @MainActor in
                     _ = try? await PersonalRecordRepository.record(
@@ -4644,13 +4682,15 @@ struct SessionLiveView: View {
             }
 
             if isPR, let weight {
-                let tName = Date()
-                let name = await ExerciseNameCache.name(for: exerciseID)
-                stamp("nameCache PR", tName)
                 let repsForOverlay = completedReps ?? 0
-                Task { @MainActor in
-                    await showPROverlay(exerciseName: name, weight: weight,
-                                         reps: repsForOverlay, priorBest: priorBest)
+                if celebratesPR {
+                    let tName = Date()
+                    let name = await ExerciseNameCache.name(for: exerciseID)
+                    stamp("nameCache PR", tName)
+                    Task { @MainActor in
+                        await showPROverlay(exerciseName: name, weight: weight,
+                                             reps: repsForOverlay, priorBest: priorBest)
+                    }
                 }
                 // Ordered PR pipeline: record insert → monthly count → badge update, as ONE
                 // detached task so `countSince` can never race the insert it depends on
@@ -4893,7 +4933,15 @@ struct SessionLiveView: View {
     /// Two light columns rather than the 200 full rows this used to download
     /// in front of every write (2026-08-02 latency fix) — this call sits on the
     /// critical path of the turn CTA, and the whole rotation waits on it.
-    private func priorMax(exerciseID: UUID, reps: Int?, userID: UUID) async throws -> Decimal {
+    ///
+    /// Returns the emptiness of the basis alongside the number, because the
+    /// number alone cannot express it: `bestWeight` answers `0` both for "you
+    /// have never logged this" and for a basis it cannot beat. Docket row 7
+    /// needs the first of those two told apart from the second, and this is
+    /// the only place that still has the rows to tell it with (one fetch, not
+    /// two — this call is on the turn CTA's critical path).
+    private func priorMax(exerciseID: UUID, reps: Int?, userID: UUID) async throws
+        -> (best: Decimal, basisIsEmpty: Bool) {
         let rows = try await SessionRepository.prBasis(userID: userID, exerciseID: exerciseID)
         // Failed rows enter at their COMPLETED reps (doctrine 2026-08-13:
         // n logged − 1; failed singles drop out) — mirrors solo's pairs().
@@ -4901,7 +4949,8 @@ struct SessionLiveView: View {
             guard let w = row.weight, w > 0, let r = row.completedReps else { return nil }
             return (w, r)
         }
-        return PersonalRecordMath.bestWeight(atLeastReps: reps ?? 0, in: basis)
+        return (PersonalRecordMath.bestWeight(atLeastReps: reps ?? 0, in: basis),
+                PersonalRecordMath.qualifyingBasisIsEmpty(atLeastReps: reps ?? 0, in: basis))
     }
 
     /// Show the full-screen, USER-DISMISSED PR celebration (p29) — no auto-timeout.
