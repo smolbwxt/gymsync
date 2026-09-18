@@ -1,19 +1,25 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(9);
+SELECT plan(16);
 
 -- Migration under test: 20260918000202_session_venue_and_todays_scale.sql
 -- (sessions.venue_id, session_participants.todays_scale,
--- public.claim_session_venue). Fixture block: 16xx UUIDs (constraint 17 --
--- this plan claims 15xx for D2 and 16xx for D4; 01xx-14xx are taken, 13xx/
--- 14xx by the held B2 data branch, not this plan's to touch).
+-- public.claim_session_venue) AND 20260918000203_session_venue_guard.sql
+-- (review-data.md F1's fix: private.session_round_guard now refuses a
+-- client write of a non-NULL venue_id; claim_session_venue returns the
+-- session's existing venue, not always NULL, for a caller with no recent
+-- check-in). Fixture block: 16xx UUIDs (constraint 17 -- this plan claims
+-- 15xx for D2 and 16xx for D4; 01xx-14xx are taken, 13xx/14xx by the held
+-- B2 data branch, not this plan's to touch).
 --   A = ...1601 organizer + participant, checked into V ~1 hour ago,
 --       check_in_state 'ready'
 --   B = ...1602 participant, NO venue check-in, check_in_state 'ready'
 --   C = ...1603 NOT a participant of S
---   V = ...1610 the venue A is present at
---   W = ...1611 a second venue, used only to prove a direct UPDATE of
---       sessions.venue_id passes private.session_round_guard (assertion 9)
+--   V = ...1610 the venue A is present at -- deleted in assertion 14 to
+--       prove the ON DELETE SET NULL path through the guard, so nothing
+--       after that assertion depends on V or on A's check-in surviving
+--   W = ...1611 a second venue, never claimed -- the target every direct
+--       venue_id write in assertions 9 and 12 is rejected against
 --   S = ...1620 session, organizer A, scheduled_for 1 hour in the past --
 --       satisfies decision 3's checkin_window_guard pass condition
 --       (now() >= scheduled_for - 20 minutes) from the start, since both
@@ -80,14 +86,16 @@ SELECT results_eq(
   $$VALUES ('00000000-0000-4000-e000-000000001610'::uuid)$$,
   'A claims the session''s venue from her own 1-hour-old check-in');
 
--- 4. As B: no venue check-in of her own -- claim returns NULL (the early
---    return before the UPDATE even runs), and A's claim is not overwritten.
-SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-e000-000000001602';
+-- 4. As B: no venue check-in of her own -- review-data.md F1's fix means
+--    claim_session_venue no longer short-circuits to NULL here. It reads
+--    the session's CURRENT venue_id after the (skipped) claim attempt, so
+--    B gets A's venue back, not NULL -- first write still wins, and the
+--    caller learns what the session's venue actually is either way.
 SELECT results_eq(
   $$SELECT public.claim_session_venue('00000000-0000-4000-e000-000000001620'),
            (SELECT venue_id FROM sessions WHERE id = '00000000-0000-4000-e000-000000001620')$$,
-  $$VALUES (NULL::uuid, '00000000-0000-4000-e000-000000001610'::uuid)$$,
-  'B has no recent check-in of her own: claim returns NULL, first write still wins');
+  $$VALUES ('00000000-0000-4000-e000-000000001610'::uuid, '00000000-0000-4000-e000-000000001610'::uuid)$$,
+  'B has no recent check-in of her own: claim on an already-claimed session returns its venue, not NULL');
 
 -- 5. As C: not a participant of S at all.
 SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-e000-000000001603';
@@ -133,16 +141,86 @@ SELECT results_eq(
   'B accepts a smaller reduction later -- checkin_window_guard does not fire on an already-ready row past its own scheduled_for');
 
 -- 9. As A: a direct UPDATE of sessions.venue_id (not through
---    claim_session_venue) passes private.session_round_guard --
---    venue_id is not one of the three engine-owned columns it guards
---    (round, round_started_at, stations), nor the style column.
+--    claim_session_venue) on the already-claimed session now throws --
+--    review-data.md F1's fix, 20260918000203_session_venue_guard.sql.
+--    S is still claimed to V from assertion 3.
 SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-e000-000000001601';
-SELECT results_eq(
+SELECT throws_ok(
   $$UPDATE sessions SET venue_id = '00000000-0000-4000-e000-000000001611'
+     WHERE id = '00000000-0000-4000-e000-000000001620'$$,
+  'P0001', 'venue_id is claimed through claim_session_venue',
+  'a direct overwrite of an already-claimed venue_id is refused');
+
+-- 10. As A: clearing venue_id to NULL directly stays legal on purpose --
+--     the ON DELETE SET NULL path (assertion 14) and a manual "forget this
+--     venue" both arrive as this same NULL write.
+SELECT results_eq(
+  $$UPDATE sessions SET venue_id = NULL
      WHERE id = '00000000-0000-4000-e000-000000001620'
     RETURNING venue_id$$,
-  $$VALUES ('00000000-0000-4000-e000-000000001611'::uuid)$$,
-  'a direct venue_id write passes private.session_round_guard untouched');
+  $$VALUES (NULL::uuid)$$,
+  'a direct clear of venue_id to NULL is legal');
+
+-- 11. As B: no check-in of her own, and S is unclaimed (assertion 10) --
+--     claim_session_venue's final read of the session's current venue_id
+--     is NULL this time, not another participant's venue.
+SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-e000-000000001602';
+SELECT results_eq(
+  $$SELECT public.claim_session_venue('00000000-0000-4000-e000-000000001620')$$,
+  $$VALUES (NULL::uuid)$$,
+  'B has no recent check-in of her own: claim on an unclaimed session returns NULL');
+
+-- 12. As A: the same direct-write guard fires on the NULL -> venue edge
+--     too, not only on overwriting an existing value.
+SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-e000-000000001601';
+SELECT throws_ok(
+  $$UPDATE sessions SET venue_id = '00000000-0000-4000-e000-000000001611'
+     WHERE id = '00000000-0000-4000-e000-000000001620'$$,
+  'P0001', 'venue_id is claimed through claim_session_venue',
+  'a direct write of venue_id on an unclaimed session is refused too');
+
+-- 13. As A: after the clear, her 1-hour-old check-in at V is still inside
+--     the 12-hour window, so claim_session_venue claims again.
+SELECT results_eq(
+  $$SELECT public.claim_session_venue('00000000-0000-4000-e000-000000001620')$$,
+  $$VALUES ('00000000-0000-4000-e000-000000001610'::uuid)$$,
+  'after a clear, a checked-in participant claims the venue again');
+
+-- 14. Deleting V (as postgres -- ordinary participants hold no DELETE on
+--     venues, and that is not what this assertion is about) cascades to
+--     sessions.venue_id = NULL through ON DELETE SET NULL, which arrives
+--     at the trigger as an UPDATE with NEW.venue_id NULL -- the guard's
+--     own NEW.venue_id IS NOT NULL check lets it through without raising.
+--     One query does the delete and reads the result, so a raise here
+--     (which would abort the assertion, not just fail it) is itself part
+--     of what a green run demonstrates. This also drops A's check-in
+--     (venue_checkins.venue_id ON DELETE CASCADE), which is fine: nothing
+--     after this assertion depends on it.
+SET LOCAL role postgres;
+SELECT results_eq(
+  $$WITH del AS (
+      DELETE FROM public.venues WHERE id = '00000000-0000-4000-e000-000000001610'
+      RETURNING id
+    )
+    SELECT s.venue_id FROM public.sessions s, del
+     WHERE s.id = '00000000-0000-4000-e000-000000001620'$$,
+  $$VALUES (NULL::uuid)$$,
+  'deleting the claimed venue cascades to venue_id = NULL without the guard raising');
+
+-- 15. As A: an update to a column the guard does not own (scheduled_for)
+--     still passes private.session_round_guard untouched -- the guard is
+--     narrow, not a blanket lock on every session write.
+SET LOCAL role authenticated;
+SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-e000-000000001601';
+SELECT lives_ok(
+  $$UPDATE sessions SET scheduled_for = scheduled_for - interval '5 minutes'
+     WHERE id = '00000000-0000-4000-e000-000000001620'$$,
+  'a column the guard does not own updates normally');
+
+-- 16. anon holds no EXECUTE (review-data.md F4).
+SELECT ok(
+  NOT has_function_privilege('anon', 'public.claim_session_venue(uuid)', 'EXECUTE'),
+  'anon cannot execute claim_session_venue');
 
 SELECT * FROM finish();
 ROLLBACK;

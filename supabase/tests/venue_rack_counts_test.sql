@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(9);
+SELECT plan(11);
 
 -- Migration under test: 20260918000201_venue_rack_counts.sql
 -- (venues.rack_counts / _updated_by / _updated_at, public.set_venue_rack_count).
@@ -19,6 +19,14 @@ SELECT plan(9);
 -- do. Nothing here does a broad current-date scan of venue_checkins (the
 -- RPC filters by venue_id AND user_id = auth.uid()), so there is no real
 -- row this fixture could collide with.
+--
+-- 10-11 are review-data.md's F4/F5 negatives, added here because this is
+-- the suite that owns set_venue_rack_count: anon holds no EXECUTE (the
+-- established has_function_privilege idiom, friends_live_test.sql:235),
+-- and the `auth.uid() IS NULL -> 'sign-in required'` gate, previously
+-- untested anywhere in the repo (F5's dead path) -- exercised by clearing
+-- request.jwt.claim.sub rather than switching to anon, since anon is
+-- revoked before the function body's own gate would ever run.
 
 INSERT INTO auth.users (id, email) VALUES
   ('00000000-0000-4000-e000-000000001501', 'rack-a@test.local'),
@@ -139,6 +147,21 @@ SELECT throws_ok(
       '00000000-0000-4000-e000-000000001500', 'dumbbell', 5)$$,
   'P0001', 'you need to be at this gym to set its rack count',
   'a stranger who never checked in cannot set a count either');
+
+-- 10. anon holds no EXECUTE (review-data.md F4).
+SELECT ok(
+  NOT has_function_privilege('anon', 'public.set_venue_rack_count(uuid,text,integer)', 'EXECUTE'),
+  'anon cannot execute set_venue_rack_count');
+
+-- 11. Signed in as `authenticated` but with no JWT sub claim: auth.uid()
+--     is NULL, so the function's own first gate raises before the
+--     presence check ever runs (review-data.md F5's dead path).
+SET LOCAL request.jwt.claim.sub = '';
+SELECT throws_ok(
+  $$SELECT public.set_venue_rack_count(
+      '00000000-0000-4000-e000-000000001500', 'barbell', 3)$$,
+  'P0001', 'sign-in required',
+  'a caller with no JWT sub cannot set a rack count');
 
 SELECT * FROM finish();
 ROLLBACK;
