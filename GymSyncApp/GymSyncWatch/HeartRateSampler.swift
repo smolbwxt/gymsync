@@ -294,9 +294,9 @@ final class HeartRateSampler: NSObject {
     /// own doc comment declares, `GymSyncShared/WatchEnvelope.swift`).
     /// No reply handling here: `WatchConnectivityBridge.handleHRSample`
     /// (phone side) does reply `.success`/`.failure`, but this sampler has
-    /// no user-facing state to update from that reply the way `LogSetView`/
-    /// `SoundboardView` do via `WatchSessionStore.logSet`/`tapSoundboard` —
-    /// a dropped HR sample is simply the next one arriving in ~5s, honest
+    /// no user-facing state to update from that reply the way `LogSetView`
+    /// does via `WatchSessionStore.logSet` — a dropped HR sample is simply
+    /// the next one arriving in ~5s, honest
     /// fire-and-forget for a high-frequency ephemeral stream (same
     /// "ephemeral broadcast, missed events lost by design" philosophy
     /// `SessionBroadcastService`'s own header comment states for the

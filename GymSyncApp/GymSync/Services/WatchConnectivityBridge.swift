@@ -80,14 +80,15 @@ final class WatchConnectivityBridge {
     private let session: WatchSessionProviding
     private let submitter: SetLogSubmitting
     private let userIDProvider: CurrentUserIDProviding
-    private let soundboard: SoundboardBroadcasting
     /// Phase W Task 5 (watch-hr design §4) — the send-only
-    /// `HeartRateBroadcastService` instance for `handleHRSample` below. Same
-    /// "separate instance per direction" shape `soundboard` above already
-    /// establishes via `LiveSoundboardBroadcasting`'s own
-    /// `SessionBroadcastService()` — `SessionLiveView` owns a SECOND,
-    /// separate `HeartRateBroadcastService` instance for SUBSCRIBING/
-    /// rendering pills; this one only ever calls `publish`.
+    /// `HeartRateBroadcastService` instance for `handleHRSample` below.
+    /// `SessionLiveView` owns a SECOND, separate `HeartRateBroadcastService`
+    /// instance for SUBSCRIBING/rendering pills; this one only ever calls
+    /// `publish`. (Before plan task S11, this mirrored a `soundboard`
+    /// property here with the identical "separate instance per direction"
+    /// shape, via `LiveSoundboardBroadcasting`'s own
+    /// `SessionBroadcastService()` — that property left with the
+    /// soundboard.)
     private let heartRateBroadcast: HeartRateBroadcasting
     /// Phase W gate finding I-2 (adjudicated) — best-effort turn-advance
     /// seam for `handleLogSet`'s post-submit `attemptTurnAdvance` below.
@@ -103,10 +104,10 @@ final class WatchConnectivityBridge {
 
     /// The most recent state this bridge pushed to the watch — doubles as
     /// this bridge's only notion of "what session/group is currently live,"
-    /// consumed by `handleLogSet`/`handleSoundboardTap` below to fill in
-    /// `sessionID`/`groupID` for an inbound watch action (the watch payload
-    /// itself carries only what's specific to the action — exerciseID,
-    /// reps, slug — not session identity, since the phone already told the
+    /// consumed by `handleLogSet` below to fill in `sessionID`/`groupID`
+    /// for an inbound watch action (the watch payload itself carries only
+    /// what's specific to the action — exerciseID, reps — not session
+    /// identity, since the phone already told the
     /// watch which session is live via this exact same push). `nil` until
     /// the first push of a given process lifetime; an action received
     /// before any push (should be unreachable — the watch can't know about
@@ -124,25 +125,22 @@ final class WatchConnectivityBridge {
         session: WatchSessionProviding? = nil,
         submitter: SetLogSubmitting = SupabaseSetLogSubmitter(),
         userIDProvider: CurrentUserIDProviding = AuthServiceCurrentUserIDProvider(),
-        soundboard: SoundboardBroadcasting? = nil,
         heartRateBroadcast: HeartRateBroadcasting? = nil,
         turnAdvancer: TurnAdvancing = SupabaseTurnAdvancer()
     ) {
-        // `WCSessionProvider()`/`LiveSoundboardBroadcasting(...)`/
-        // `HeartRateBroadcastService()` are constructed HERE, in the init
-        // BODY, not as the parameters' default-value expressions — same
-        // trap `LiveKitRoomConnection`'s own doc comment documents
+        // `WCSessionProvider()`/`HeartRateBroadcastService()` are
+        // constructed HERE, in the init BODY, not as the parameters'
+        // default-value expressions — same trap `LiveKitRoomConnection`'s
+        // own doc comment documents
         // (`Services/LiveKitRoomConnection.swift:260-269`): default-argument
         // expressions evaluate in a synchronous nonisolated context even
-        // inside a `@MainActor` initializer, and all three of these
-        // production conformers touch `@MainActor`-isolated state at
-        // construction time (`WCSessionProvider` sets itself as
-        // `WCSession.default.delegate`; `SessionBroadcastService`/
-        // `HeartRateBroadcastService` are themselves `@MainActor`).
+        // inside a `@MainActor` initializer, and both of these production
+        // conformers touch `@MainActor`-isolated state at construction time
+        // (`WCSessionProvider` sets itself as `WCSession.default.delegate`;
+        // `HeartRateBroadcastService` is itself `@MainActor`).
         self.session = session ?? WCSessionProvider()
         self.submitter = submitter
         self.userIDProvider = userIDProvider
-        self.soundboard = soundboard ?? LiveSoundboardBroadcasting(broadcastService: SessionBroadcastService())
         self.heartRateBroadcast = heartRateBroadcast ?? HeartRateBroadcastService()
         self.turnAdvancer = turnAdvancer
         self.session.onMessageReceived = { [weak self] message, replyHandler in
@@ -202,11 +200,11 @@ final class WatchConnectivityBridge {
     /// (`HealthKitBridge.replaceWorkout`'s established convention, cited on
     /// `updateSessionState`'s own doc comment). Deliberately does NOT touch
     /// `lastPushedState` — that field only exists to resolve
-    /// `sessionID`/`groupID` for an INBOUND watch action
-    /// (`handleLogSet`/`handleSoundboardTap`), and there is no such action
-    /// tied to idle state (no live session means nothing to log or tap
-    /// sound into). Callers (`HomeView`) are expected to only call this when
-    /// no session is genuinely live — see that call site's own guard.
+    /// `sessionID`/`groupID` for an INBOUND watch action (`handleLogSet`),
+    /// and there is no such action tied to idle state (no live session
+    /// means nothing to log). Callers (`HomeView`) are expected to only
+    /// call this when no session is genuinely live — see that call site's
+    /// own guard.
     func updateIdleState(_ payload: WatchIdleStatePayload) {
         do {
             let envelope = try WatchEnvelope.encode(kind: .idleState, payload: payload)
@@ -245,8 +243,6 @@ final class WatchConnectivityBridge {
         switch kind {
         case .logSet:
             Task { await self.handleLogSet(envelope, replyHandler: replyHandler) }
-        case .soundboardTap:
-            Task { await self.handleSoundboardTap(envelope, replyHandler: replyHandler) }
         case .sessionState:
             // Phone→watch only; the phone should never RECEIVE this kind.
             AppLogger.watch.error("received unexpected sessionState message (phone→watch only)")
@@ -454,60 +450,12 @@ final class WatchConnectivityBridge {
         }
     }
 
-    /// `soundboardTap` action — routes into the EXISTING play/broadcast
-    /// flow, mirroring `SessionLiveView.tapSound(slug:)` verbatim
-    /// (SessionLiveView.swift:1957-1969): local play
-    /// (`SoundboardPlayer.shared.play(slug:)`) + broadcast send
-    /// (`SessionBroadcastService.sendSound(sessionID:groupID:slug:)`,
-    /// SessionLiveView.swift:1962-1967) as concurrent `async let`s,
-    /// both awaited together. Routed through the
-    /// `SoundboardBroadcasting` seam (below) rather than calling
-    /// `SoundboardPlayer.shared`/a `SessionBroadcastService` instance
-    /// directly, so this routing is hermetically testable without linking
-    /// AVFoundation or Supabase.
-    ///
-    /// NOT rate-limited a second time here: `SessionBroadcastService.sendSound`
-    /// already enforces the spec's shared 1/s send limit internally
-    /// (`rateAllowed()`, Services/SessionBroadcastService.swift:170-175) —
-    /// duplicating that gate here would just silently drop a legitimate tap
-    /// at the wrong layer with no way for the caller (this bridge) to tell
-    /// "rate-limited" apart from "sent." `SessionLiveView.tapSound`
-    /// layers its OWN separate 1s LOCAL gate on top
-    /// (`lastSoundTapAt`, SessionLiveView.swift:1958-1960) purely to
-    /// prevent a double-tap from firing the local `SoundboardPlayer` twice
-    /// before the network round trip even starts — that's a UI-debounce
-    /// concern belonging to whichever surface owns the tap gesture (the
-    /// phone's own soundboard dock today; the Watch's future soundboard
-    /// buttons, T2+ scope per design §2, would own the equivalent debounce
-    /// on ITS side once built), not this bridge's routing layer.
-    func handleSoundboardTap(_ envelope: WatchEnvelope, replyHandler: @escaping ([String: Any]) -> Void) async {
-        guard let payload = try? envelope.decodePayload(as: WatchSoundboardTapPayload.self) else {
-            reply(.failure, message: "Malformed soundboard tap", to: replyHandler)
-            return
-        }
-        guard let sessionID = lastPushedState?.sessionID else {
-            reply(.failure, message: "No active session", to: replyHandler)
-            return
-        }
-        let groupID = lastPushedState?.groupID
-        async let playTask: Void = soundboard.play(slug: payload.slug)
-        async let sendTask: Void = soundboard.sendSound(sessionID: sessionID, groupID: groupID, slug: payload.slug)
-        _ = await (playTask, sendTask)
-        // Both legs are already best-effort/non-throwing at their own
-        // layer (`SoundboardPlayer.play`'s doc comment: "Never throws:
-        // errors are logged + swallowed"; `SessionBroadcastService.sendSound`
-        // likewise never throws out of `broadcastRaw`'s catch) — there is
-        // no failure signal to distinguish here, so `.success` is honest:
-        // "the tap was routed," not "the sound definitely played and
-        // definitely broadcast," matching what the phone's OWN soundboard
-        // dock already tells the user (no error UI exists for a failed
-        // `tapSound` either — same fire-and-forget contract, unchanged).
-        reply(.success, message: nil, to: replyHandler)
-    }
-
     /// `hrSample` action (Phase W Task 5, watch-hr design §4) — watch→phone
-    /// relay, `sendMessage` with a reply expected, same shape as
-    /// `handleSoundboardTap` above. Computes `zone` from the sample's raw
+    /// relay, `sendMessage` with a reply expected, the same shape
+    /// `handleLogSet` above already establishes (decode → guard active
+    /// session → route → reply). `soundboardTap` used to share that shape
+    /// too, before it left with the soundboard (plan task S11). Computes
+    /// `zone` from the sample's raw
     /// `bpm` (`HeartRateZone.zone(bpm:)`, `Services/HeartRateZone.swift`)
     /// BEFORE handing off to `heartRateBroadcast.publish` — zone is baked
     /// into the wire payload once, phone-side, per that type's own doc
@@ -707,10 +655,9 @@ final class WCSessionProvider: NSObject, WatchSessionProviding, WCSessionDelegat
     /// fire-and-forget for a high-frequency ephemeral stream, per its own
     /// doc comment), so before this method existed, every production HR
     /// sample died right here: delivered to an unimplemented delegate
-    /// method, never reaching `handleHRSample` at all. (`logSet`/
-    /// `soundboardTap` are unaffected — the watch sends both WITH a reply
-    /// handler, `WatchSessionStore.logSet`/`tapSoundboard`, so they arrive
-    /// via the variant above.)
+    /// method, never reaching `handleHRSample` at all. (`logSet` is
+    /// unaffected — the watch sends it WITH a reply handler,
+    /// `WatchSessionStore.logSet`, so it arrives via the variant above.)
     ///
     /// Routes into the SAME `onMessageReceived` seam with a no-op reply
     /// closure: `handle`'s "every code path calls `replyHandler` EXACTLY
@@ -726,44 +673,16 @@ final class WCSessionProvider: NSObject, WatchSessionProviding, WCSessionDelegat
     }
 }
 
-// MARK: - SoundboardBroadcasting (soundboard-tap routing seam)
-
-/// Abstracts the two side effects `handleSoundboardTap` triggers — local
-/// playback + broadcast send — mirroring `SessionLiveView.tapSound`'s
-/// own pair of calls (SessionLiveView.swift:1962-1967) behind one
-/// small protocol, so `WatchConnectivityBridge`'s routing is hermetically
-/// testable without linking AVFoundation (`SoundboardPlayer`) or Supabase
-/// (`SessionBroadcastService`).
-@MainActor
-protocol SoundboardBroadcasting {
-    func play(slug: String) async
-    func sendSound(sessionID: UUID, groupID: UUID?, slug: String) async
-}
-
-/// Production conformer — delegates to the SAME two call sites
-/// `SessionLiveView.tapSound` already uses, so a watch-originated tap
-/// is byte-identical, side-effect-wise, to a phone-originated one.
-struct LiveSoundboardBroadcasting: SoundboardBroadcasting {
-    let broadcastService: SessionBroadcastService
-
-    func play(slug: String) async {
-        await SoundboardPlayer.shared.play(slug: slug)
-    }
-
-    func sendSound(sessionID: UUID, groupID: UUID?, slug: String) async {
-        await broadcastService.sendSound(sessionID: sessionID, groupID: groupID, slug: slug)
-    }
-}
-
 // MARK: - TurnAdvancing (best-effort turn-advance seam, Phase W gate finding I-2)
 
 /// Abstracts `SessionRepository.advanceTurn(sessionID:)` for `handleLogSet`'s
 /// `attemptTurnAdvance` — same "protocol seam, production conformer
 /// delegates 1:1 to the real repository call, test fake substitutes" idiom
 /// as `SetLogSubmitting` (`submitter` above, `Services/
-/// OfflineSetLogQueue.swift:13-25`). NOT `@MainActor`: unlike
-/// `SoundboardBroadcasting` immediately above (whose production conformer
-/// touches the `@MainActor` `SoundboardPlayer.shared`/`SessionBroadcastService`),
+/// OfflineSetLogQueue.swift:13-25`). NOT `@MainActor` (unlike the
+/// `SoundboardBroadcasting` seam that used to sit here, before plan task
+/// S11, whose production conformer touched the `@MainActor`-isolated
+/// `SoundboardPlayer.shared`/`SessionBroadcastService`):
 /// `SessionRepository.advanceTurn` is a plain nonisolated `static func`
 /// (`enum SessionRepository`, `Models/SessionRepository.swift:4,388`), so
 /// this protocol stays nonisolated too — same shape `SetLogSubmitting`

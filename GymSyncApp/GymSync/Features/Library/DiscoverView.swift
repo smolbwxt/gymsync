@@ -11,10 +11,10 @@ import SwiftUI
 //
 // Card shape borrows `LibraryTabView`'s Featured-shelf `packCard` idiom
 // (150pt-wide bordered card, image placeholder, name, meta caption —
-// `LibraryTabView.swift:203-240`), widened into a 2-column grid (grid idiom:
-// `SoundLibrarySheet.catalogGrid`, `Features/Sessions/SoundLibrarySheet.
-// swift:180`) since Discover is its own full-screen destination rather than
-// a horizontal shelf.
+// `LibraryTabView.swift:203-240`), widened into a 2-column grid (the grid
+// idiom `SoundLibrarySheet.catalogGrid` used before it left with the
+// soundboard, plan task S11) since Discover is its own full-screen
+// destination rather than a horizontal shelf.
 //
 // No canvas frame exists for this screen — grepped `docs/design/frame-
 // map.json` + `docs/design/*.dc.html` for "Discover": zero hits. The Phase L

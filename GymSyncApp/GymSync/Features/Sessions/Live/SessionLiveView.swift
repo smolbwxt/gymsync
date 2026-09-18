@@ -80,8 +80,8 @@ struct SessionLiveView: View {
     /// type's own doc comment on `heartRateBroadcast`); THIS instance is for
     /// SUBSCRIBING/rendering, mirroring how `broadcastService` above is this
     /// view's own subscribe-side `SessionBroadcastService` instance while
-    /// `WatchConnectivityBridge` holds a separate send-only one via
-    /// `LiveSoundboardBroadcasting`.
+    /// `WatchConnectivityBridge` holds a separate send-only
+    /// `HeartRateBroadcastService` of its own.
     @State private var heartRateService = HeartRateBroadcastService()
     /// Live HR readings keyed by participant userID — includes the CURRENT
     /// (self) user, since `heartRateService.subscribe`'s self-echo delivers
@@ -3578,11 +3578,9 @@ struct SessionLiveView: View {
     private func subscribeBroadcast() async {
         await broadcastService.subscribe(
             sessionID: liveSession.id,
-            // The soundboard left the app (owner decision 8, plan task S4):
-            // every incoming sound is ignored. The PARAMETER leaves with the
-            // service's soundboard half in plan task S11; the reaction stream
-            // beside it stays (plan constraint 21).
-            onSoundboard: { _, _ in },
+            // The soundboard PARAMETER left with the service's soundboard
+            // half in plan task S11; the reaction stream beside it stays
+            // (plan constraint 21).
             onReaction: { _, emoji in
                 Task { @MainActor in
                     // "I need a minute" rides this channel (plan task S7):
@@ -3601,15 +3599,15 @@ struct SessionLiveView: View {
             }
         )
         // Phase W Task 5 (watch-hr design §4) — subscribes alongside the
-        // soundboard/reaction broadcast subscribe immediately above, per
-        // the task brief's explicit instruction to add this "alongside its
-        // existing broadcast subscriptions." `onHeartRate` is already
+        // reaction broadcast subscribe immediately above, per the task
+        // brief's explicit instruction to add this "alongside its existing
+        // broadcast subscriptions." `onHeartRate` is already
         // `@MainActor`-typed (`HeartRateBroadcastService.subscribe`'s own
-        // signature), so `receiveHeartRate` is called directly here, same
-        // as `onSoundboard`'s guard-then-mutate shape — no extra `Task {
-        // @MainActor in ... }` wrapper needed the way `onReaction` above
-        // uses one (that wrapper exists only because `showReactionOverlay`
-        // is itself `async`; `receiveHeartRate` is synchronous).
+        // signature), so `receiveHeartRate` is called directly here — no
+        // extra `Task { @MainActor in ... }` wrapper needed the way
+        // `onReaction` above uses one (that wrapper exists only because
+        // `showReactionOverlay` is itself `async`; `receiveHeartRate` is
+        // synchronous).
         await heartRateService.subscribe(
             sessionID: liveSession.id,
             onHeartRate: { userID, bpm, zone in
@@ -5071,9 +5069,10 @@ struct SessionLiveView: View {
         prOverlayPriorBest = priorBest
         prOverlayMonthlyCount = nil
         withAnimation(.easeOut(duration: 0.25)) { isPROverlay = true }
-        // Ronnie for the PR moment (user 2026-08-01) — catalog slug
-        // lightweight-baby, imported through the 5s-cap pipeline.
-        Task { await SoundboardPlayer.shared.play(slug: "lightweight-baby") }
+        // Ronnie for the PR moment (user 2026-08-01) left with the
+        // soundboard (ruling R-B8, plan task S11) — the celebration keeps
+        // its haptic (`logHapticTick`, fired on every logged set) but no
+        // longer plays a sound.
     }
 
     @MainActor

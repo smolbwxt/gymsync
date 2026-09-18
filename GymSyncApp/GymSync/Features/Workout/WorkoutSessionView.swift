@@ -4149,9 +4149,9 @@ struct WorkoutSessionView: View {
         prOverlayPriorBest = priorBest
         prOverlayMonthlyCount = nil
         withAnimation(.easeOut(duration: 0.25)) { isPROverlay = true }
-        // Ronnie for the PR moment (user 2026-08-01) — the solo path had
-        // no celebration sound at all.
-        Task { await SoundboardPlayer.shared.play(slug: "lightweight-baby") }
+        // Ronnie for the PR moment (user 2026-08-01) left with the
+        // soundboard (ruling R-B8, plan task S11) — same change as
+        // SessionLiveView.showPROverlay.
     }
 
     /// The PR basis for `exerciseID`, served from the prefetch when it landed.

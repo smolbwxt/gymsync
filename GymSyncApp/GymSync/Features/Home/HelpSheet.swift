@@ -6,12 +6,17 @@ import SwiftUI
 // moment of confusion instead of a front-loaded data dump). Curated from
 // the questions lifters actually ask (Hevy's help-center taxonomy was the
 // reference) plus the GymSync-only features no competitor FAQ covers:
-// crews, turns, the soundboard, hubs, and the failure doctrine.
+// crews, turns, hubs, and the failure doctrine.
 //
 // Static content on purpose for v1 — shipping copy beats a CMS. The
 // interactive spotlight TOURS (guided walk-throughs continuing past the
 // solo-workout widget) are the follow-up round; entries here describe
 // steps in words.
+//
+// The soundboard entry left with the soundboard (plan task S11); the
+// "throw sounds" mention in the turns FAQ went with it (spec §5, §9.1:
+// the crew's reaction vocabulary is emoji, and reacting is what a
+// crewmate not lifting does now).
 struct HelpSheet: View {
     @Environment(\.gsTheme) private var theme
     @Environment(\.dismiss) private var dismiss
@@ -193,10 +198,7 @@ struct HelpSheet: View {
                 answer: "Friends see your pump checks and feed activity. A crew is who you actually train with — shared live sessions, chat, a schedule, and the week streak you defend together."),
             HelpEntry(
                 question: "How do turns work in a live session?",
-                answer: "The rotation moves around the crew: on your turn you lift and log your set, then the next lifter is up. Between exercises there's a TRANSIT window to strip the bar and move stations. Spectating? You can watch the current lifter, throw sounds, and see live heart rates."),
-            HelpEntry(
-                question: "What's the soundboard?",
-                answer: "Your hype arsenal. During a crew session, throw sounds from your Rack at the lifter on the bar. Sounds play through the silent switch (like your music does) and layer over whatever's playing. Manage your Rack from the You tab — it rotates weekly."),
+                answer: "The rotation moves around the crew: on your turn you lift and log your set, then the next lifter is up. Between exercises there's a TRANSIT window to strip the bar and move stations. Not lifting yet? You can watch the current lifter, react, and see live heart rates."),
             HelpEntry(
                 question: "Can other people see my heart rate?",
                 answer: "Only your crew, only during a live session you're both in, and only when you've connected a monitor and turned sharing on. It's never shown anywhere else."),
@@ -216,7 +218,7 @@ struct HelpSheet: View {
                 answer: "Everything lives in your account, not the device. Sign in with Apple on the new phone and your history, routines, records, and crews are all there."),
             HelpEntry(
                 question: "How do I switch pounds and kilos, or change the look?",
-                answer: "You tab → Settings: Units switches lbs/kg everywhere, and Appearance changes the theme and accent color the whole app (soundboard included) wears."),
+                answer: "You tab → Settings: Units switches lbs/kg everywhere, and Appearance changes the theme and accent color the whole app wears."),
         ]),
     ]
 }

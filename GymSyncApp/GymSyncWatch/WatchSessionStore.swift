@@ -98,8 +98,6 @@ final class WatchSessionStore: NSObject {
             isMyTurn: true,
             burpeesOwed: 6,
             burpeesPaid: 4,
-            soundboardFavorites: ["airhorn", "crowd-cheer", "lets-go", "bell"],
-            soundboardFavoriteLabels: ["Airhorn", "Crowd Cheer", "Let's Go", "Bell"],
             sampleHeartRate: true)
         isStale = false
     }
@@ -211,9 +209,9 @@ extension WatchSessionStore: WCSessionDelegate {
                 // `sessionState` to read `isActive`/`shareHeartRate` off of.
                 HeartRateSampler.shared.stop()
             }
-        case .logSet, .soundboardTap, .hrSample, nil:
-            // Not applicable via applicationContext (the first two are
-            // watch→phone sendMessage actions; hrSample is watch→phone
+        case .logSet, .hrSample, nil:
+            // Not applicable via applicationContext (logSet is a
+            // watch→phone sendMessage action; hrSample is watch→phone
             // sendMessage too, Phase W Task 5) / unrecognized kind — silent
             // drop, same tolerance as this method's pre-Task-3 behavior.
             return
@@ -250,12 +248,12 @@ extension WatchSessionStore {
 
 // MARK: - Outbound actions (Phase W Task 3, watch-hr design §2)
 //
-// `logSet`/`tapSoundboard` — the Watch's half of `WatchConnectivityBridge.
-// handleLogSet`/`.handleSoundboardTap` (`GymSync/Services/
-// WatchConnectivityBridge.swift`). NO protocol seam here, same reasoning as
-// this file's top-of-file doc comment (no watch-side test target exists) —
-// talks to `WCSession.default` directly, same as every other member of this
-// class.
+// `logSet` — the Watch's half of `WatchConnectivityBridge.handleLogSet`
+// (`GymSync/Services/WatchConnectivityBridge.swift`). Its sibling
+// `tapSoundboard` left with the soundboard (plan task S11). NO protocol
+// seam here, same reasoning as this file's top-of-file doc comment (no
+// watch-side test target exists) — talks to `WCSession.default` directly,
+// same as every other member of this class.
 extension WatchSessionStore {
 
     /// Sends a `logSet` action, awaiting the phone's reply. Reply semantics
@@ -269,18 +267,7 @@ extension WatchSessionStore {
         return await sendAction(kind: .logSet, payload: payload)
     }
 
-    /// Sends a `soundboardTap` action. Per `handleSoundboardTap`'s own doc
-    /// comment this always replies `.success` once routed (both the local-
-    /// play and broadcast-send legs are already best-effort at their own
-    /// layer) — `.queued` is not a real outcome here, but `SoundboardView`
-    /// still switches on the full `WatchActionReply.Outcome` rather than
-    /// assuming, since the reply shape is shared with `logSet`.
-    func tapSoundboard(slug: String) async -> WatchActionReply {
-        let payload = WatchSoundboardTapPayload(slug: slug)
-        return await sendAction(kind: .soundboardTap, payload: payload)
-    }
-
-    /// Shared `sendMessage` + reply-decode plumbing for both actions above.
+    /// Shared `sendMessage` + reply-decode plumbing for the action above.
     /// `WCSession.sendMessage`'s `errorHandler` fires for exactly the
     /// failure modes `WatchActionReply.Outcome.failure` already exists to
     /// describe (unreachable phone, timeout, delivery error) — mapped here

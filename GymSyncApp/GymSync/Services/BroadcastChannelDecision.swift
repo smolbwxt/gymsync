@@ -32,17 +32,19 @@ import Foundation
 // instance that calls `subscribe()` and holds the resulting channel for
 // the session's lifetime (`SessionLiveView`), and once as a
 // SEND-ONLY instance whose `channel` field stays `nil` forever
-// (`WatchConnectivityBridge.soundboard` / `.heartRateBroadcast`,
-// `Services/WatchConnectivityBridge.swift:91,129`). Before this fix,
-// every send from the send-only instance unconditionally created a
+// (`WatchConnectivityBridge.heartRateBroadcast`,
+// `Services/WatchConnectivityBridge.swift:80`; before plan task S11 a
+// sibling send-only `SessionBroadcastService` instance sat here too, for
+// the soundboard-tap relay, and hit the identical hazard). Before this
+// fix, every send from a send-only instance unconditionally created a
 // "disposable" channel via `client.channel(topic)` — but on the SAME
 // topic string the receive-side instance already holds, the SDK quote
 // above means that call silently returned the RECEIVE side's own live
 // channel object, not a fresh one — and the send-only instance's
 // subsequent `removeChannel` then tore that subscription down. Gate
 // finding I-1: the sharing phone's roster pills freeze after the first
-// watch-relayed HR sample; the sibling soundboard path goes silent the
-// same way after a watch-relayed tap.
+// watch-relayed HR sample; the (now-removed) sibling soundboard path went
+// silent the same way after a watch-relayed tap.
 //
 // THE FIX: before creating a disposable channel, check the client's own
 // topic registry — `RealtimeClientV2.channels: [String: RealtimeChannelV2]`

@@ -315,8 +315,10 @@ final class HeartRateBroadcastService {
 // Abstracts `publish` so `WatchConnectivityBridge.handleHRSample`'s relay
 // gating (opt-in check, active-session check, decoded-payload check) is
 // hermetically testable without linking Supabase/Realtime — same
-// "protocol abstracts the production type, tests supply a fake" shape as
-// `SoundboardBroadcasting` (`Services/WatchConnectivityBridge.swift`).
+// "protocol abstracts the production type, tests supply a fake" shape
+// `TurnAdvancing` (`Services/WatchConnectivityBridge.swift`) uses too (and
+// `SoundboardBroadcasting` used before it left with the soundboard, plan
+// task S11).
 @MainActor
 protocol HeartRateBroadcasting {
     func publish(sessionID: UUID, userID: UUID, bpm: Int, zone: String?) async
