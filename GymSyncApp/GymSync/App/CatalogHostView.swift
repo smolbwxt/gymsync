@@ -134,34 +134,26 @@ enum CatalogScreen: String, CaseIterable {
     case crewsTab = "crews-tab"
     case blockCalendar = "block-calendar"
     // The focused session design round (group-session-and-lobby spec §8
-    // step 1) — the three styles. Rounds' rest screen in two compositions
-    // plus its two other states, then Freestyle's rail and Together's
-    // clock. Frames 112-117. The round's lobby and warm-up ids (106-111)
-    // retired to production in the group-session Phase A plan (task S11) —
-    // see `content_sessionLobbyWaiting` below for what replaced them.
-    case roundWaitA = "round-wait-a"
-    case roundWaitB = "round-wait-b"
-    case roundSkipOffer = "round-skip-offer"
-    case roundSpotter = "round-spotter"
-    case freestyleRail = "freestyle-rail"
-    case togetherClock = "together-clock"
-    // The round's last two: not screens but objects that sit on them — the
-    // crew's consensus swap as a consent card, and the pump-check post
-    // re-composed on the design language. Frames 118-119.
+    // step 1) — the three styles' round-1 rest screen, Freestyle's rail and
+    // Together's clock (frames 112-117), retired to production in plan task
+    // S13 (group-session Phase B1) — see `content_sessionRoundWait` and
+    // its siblings below (frames 137-141) for what replaced them. The
+    // round's lobby and warm-up ids (106-111) retired earlier, to
+    // production in the group-session Phase A plan (task S11) — see
+    // `content_sessionLobbyWaiting` below for what replaced THOSE.
+    //
+    // The round's last two survive: not screens but objects that sit on
+    // them — the crew's consensus swap as a consent card, and the
+    // pump-check post re-composed on the design language. Frames 118-119.
     case swapConsensusCard = "swap-consensus-card"
     case pumpCheckCardV2 = "pump-check-card-v2"
     // The session round's SECOND PASS (the owner reviewed all fourteen and
-    // picked; these sit BESIDE the v1 ids, which are frozen). Frames
-    // 123-126 survive — the pass's lobby and warm-up ids (120-122) retired
-    // alongside their v1 counterparts (task S11).
-    case roundWaitV2 = "round-wait-v2"
-    case roundSpotterV2 = "round-spotter-v2"
+    // picked). Of the four that survived the first retirement (frames
+    // 123-126), only the consensus swap card (125) survives task S13 —
+    // its production twin has no catalog id of its own, so the pair is
+    // still worth comparing. The round wait, spotter and Together v2 ids
+    // (123, 124, 126) retired alongside their v1 counterparts.
     case swapConsensusCardV2 = "swap-consensus-card-v2"
-    case togetherClockV2 = "together-clock-v2"
-    // The THIRD and last pass: the owner approved the v2 additions with one
-    // reversal (heart-rate zone colours stay). Frame 128 survives; frame 127
-    // (`lobby-crew-ready-v3`) retired with the rest of the round's lobby ids.
-    case roundSpotterV3 = "round-spotter-v3"
     // The production session screens (group-session Phase A plan, task
     // S11), frames 129-134 — what the ten retired ids above became once the
     // owner picked. See `content_sessionLobbyWaiting` for the whole story.
@@ -174,6 +166,17 @@ enum CatalogScreen: String, CaseIterable {
     // Fix round 6, item 4: the lobby's own second screen, below the fold on
     // 129/130 (see content_sessionLobbyWeek).
     case sessionLobbyWeek = "session-lobby-week"
+    // The session round's production screens (group-session Phase B1 plan,
+    // task S13), frames 136-141 — what the focused design round (frames
+    // 112-117, 123, 124, 126, 128) became once the owner picked. The style
+    // card leads (the crew's own choice of how the session moves), then
+    // the four styles' live screens.
+    case sessionStyleChoice = "session-style-choice"
+    case sessionRoundWait = "session-round-wait"
+    case sessionRoundSkip = "session-round-skip"
+    case sessionRoundSpotter = "session-round-spotter"
+    case sessionTogetherClock = "session-together-clock"
+    case sessionFreestyleRail = "session-freestyle-rail"
 }
 
 struct CatalogHostView: View {
@@ -275,19 +278,9 @@ struct CatalogHostView: View {
             case .homeGoalStripBlock:         content_homeGoalStripBlock
             case .crewsTab:                   content_crewsTab
             case .blockCalendar:              content_blockCalendar
-            case .roundWaitA:                 content_roundWaitA
-            case .roundWaitB:                 content_roundWaitB
-            case .roundSkipOffer:             content_roundSkipOffer
-            case .roundSpotter:               content_roundSpotter
-            case .freestyleRail:              content_freestyleRail
-            case .togetherClock:              content_togetherClock
             case .swapConsensusCard:          content_swapConsensusCard
             case .pumpCheckCardV2:            content_pumpCheckCardV2
-            case .roundWaitV2:                content_roundWaitV2
-            case .roundSpotterV2:             content_roundSpotterV2
             case .swapConsensusCardV2:        content_swapConsensusCardV2
-            case .togetherClockV2:            content_togetherClockV2
-            case .roundSpotterV3:             content_roundSpotterV3
             case .sessionLobbyWaiting:        content_sessionLobbyWaiting
             case .sessionLobbyReady:          content_sessionLobbyReady
             case .sessionLobbyLate:           content_sessionLobbyLate
@@ -295,6 +288,12 @@ struct CatalogHostView: View {
             case .sessionWarmupCrew:          content_sessionWarmupCrew
             case .ladderReladderProposal:     content_ladderReladderProposal
             case .sessionLobbyWeek:           content_sessionLobbyWeek
+            case .sessionStyleChoice:         content_sessionStyleChoice
+            case .sessionRoundWait:           content_sessionRoundWait
+            case .sessionRoundSkip:           content_sessionRoundSkip
+            case .sessionRoundSpotter:        content_sessionRoundSpotter
+            case .sessionTogetherClock:       content_sessionTogetherClock
+            case .sessionFreestyleRail:       content_sessionFreestyleRail
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -2500,34 +2499,6 @@ struct CatalogHostView: View {
     // `GSHeartRatePill`'s beat on `together-clock` (already captured by
     // `heart-rate-pill`). Nothing else here moves, and no view reads a clock.
 
-    private var content_roundWaitA: some View {
-        RoundWaitAView()
-    }
-
-    private var content_roundWaitB: some View {
-        RoundWaitBView()
-    }
-
-    private var content_roundSkipOffer: some View {
-        RoundSkipOfferView()
-    }
-
-    private var content_roundSpotter: some View {
-        RoundSpotterView()
-    }
-
-    /// `FreestyleRailV1View`, renamed by plan task S10 — the production screen
-    /// takes the name `FreestyleRailView`. Frame 116 is unchanged.
-    private var content_freestyleRail: some View {
-        FreestyleRailV1View()
-    }
-
-    /// `TogetherClockV1View`, renamed by plan task S9 — the production screen
-    /// took the name `TogetherClockView`. Frame 117 is unchanged.
-    private var content_togetherClock: some View {
-        TogetherClockV1View()
-    }
-
     private var content_swapConsensusCard: some View {
         SwapConsensusCardView()
     }
@@ -2566,44 +2537,10 @@ struct CatalogHostView: View {
     // gold); and checked in IS ready, one signal, which also settles the
     // round-1 lobby fixture's own inconsistency.
 
-    private var content_roundWaitV2: some View {
-        RoundWaitV2View()
-    }
-
-    private var content_roundSpotterV2: some View {
-        RoundSpotterV2View()
-    }
-
     /// The consensus swap with both exercises tappable. `swap-consensus-card`
     /// is untouched beside it — the pair is the frame the owner compares.
     private var content_swapConsensusCardV2: some View {
         SwapConsensusCardV2View()
-    }
-
-    private var content_togetherClockV2: some View {
-        TogetherClockV2View()
-    }
-
-    // MARK: - The session round, third and last pass
-    //
-    // The owner approved every second-pass addition with ONE REVERSAL:
-    // heart-rate zone colours STAY, as an explicit exception to the colour
-    // rules — which is what design language rule 2's own heart-rate clause
-    // already said ("like plate colours, this is data colour, not accent, and
-    // is exempt"). So `together-clock` (v1, frame 117) stands and
-    // `together-clock-v2` (126) is dropped conceptually: its id and its
-    // capture stay so the pair can still be looked at, and the plan cites v1.
-    //
-    // Two ids originally, frames 127-128 — frame 128 survives below (its
-    // seam, `SVLiveHRRow.zoneTinted` / `SVCrewHeartRatesCard.zoneTinted`, is
-    // additive and defaulted off, so no approved frame moves). Frame 127
-    // (`lobby-crew-ready-v3`) retired with the rest of the round's lobby ids
-    // (group-session Phase A plan, task S11); its own seam,
-    // `SVEnergyMeter.onAccent`, retired with it — `SVEnergyMeter` had no
-    // other caller.
-
-    private var content_roundSpotterV3: some View {
-        RoundSpotterV3View()
     }
 
     // MARK: - The production session screens (group-session Phase A plan,
@@ -2724,6 +2661,103 @@ struct CatalogHostView: View {
                 }
             }
         }
+    }
+
+    // MARK: - The session round, production (group-session Phase B1 plan,
+    // task S13), frames 136-141
+    //
+    // What the focused design round (frames 112-117, 123, 124, 126, 128)
+    // became once the owner picked. Every world lives in
+    // `Features/Sessions/Live/LiveFixtures.swift` beside the views that
+    // render it, `WarmUpFixtures`' own precedent — a plain struct whose
+    // fields are the view's own parameters, in order, so a screen and the
+    // world it draws are read together. The three round-and-Together
+    // screens set no `.navigationTitle` and carry no toolbar, so they do
+    // NOT need a `NavigationStack` wrapper (contrast `session-style-choice`
+    // below, a `LobbyView`).
+
+    /// `session-style-choice` (frame 136): the crew's lobby with THE STYLE
+    /// CARD on it — three tappable rows, Rounds pre-selected. Not a new
+    /// composition: `LobbyView`'s `styleCard` renders unconditionally
+    /// before Start (`effectiveSession.liftingStartedAt == nil`), which is
+    /// already true of `LobbyFixtures.waiting` — the SAME world
+    /// `session-lobby-waiting` (frame 129) captures. This id exists
+    /// because the design round gave the style card its own numbered
+    /// frame; production gives it no separate screen, so the honest
+    /// capture is the same lobby, named for the feature this task retires.
+    private var content_sessionStyleChoice: some View {
+        NavigationStack { LobbyView(catalog: LobbyFixtures.waiting) }
+    }
+
+    /// `session-round-wait` (frame 137): the production `RoundWaitView`
+    /// over `LiveFixtures.roundWait` — two stations, the rest card and
+    /// recovery curve, the plan, the Coach thread row, the gated foot.
+    /// Retires `round-wait-a`/`round-wait-b` (112, 113) and `round-wait-v2`
+    /// (123).
+    private var content_sessionRoundWait: some View {
+        let world = LiveFixtures.roundWait
+        return RoundWaitView(kicker: world.kicker, title: world.title,
+                             stations: world.stations, rest: world.rest,
+                             planKicker: world.planKicker, rungLine: world.rungLine,
+                             plan: world.plan, coach: world.coach,
+                             waitingOn: world.waitingOn, dockNames: world.dockNames,
+                             reactionEmojis: world.reactionEmojis, skip: world.skip)
+    }
+
+    /// `session-round-skip` (frame 138): the same screen with the quiet
+    /// skip line present — `LiveFixtures.roundHold`, the one lifter (Sam)
+    /// past the hold threshold. Retires `round-skip-offer` (114).
+    private var content_sessionRoundSkip: some View {
+        let world = LiveFixtures.roundHold
+        return RoundWaitView(kicker: world.kicker, title: world.title,
+                             stations: world.stations, rest: world.rest,
+                             planKicker: world.planKicker, rungLine: world.rungLine,
+                             plan: world.plan, coach: world.coach,
+                             waitingOn: world.waitingOn, dockNames: world.dockNames,
+                             reactionEmojis: world.reactionEmojis, skip: world.skip)
+    }
+
+    /// `session-round-spotter` (frame 139): the production `SpotterView`
+    /// over `LiveFixtures.spotter` — who's to go, the crew's live HR rows
+    /// (colour and the zone word), the Coach row, CHEER the one accent.
+    /// Retires `round-spotter`/`round-spotter-v2`/`round-spotter-v3`
+    /// (115, 124, 128).
+    private var content_sessionRoundSpotter: some View {
+        let world = LiveFixtures.spotter
+        return SpotterView(kicker: world.kicker, title: world.title,
+                           turn: world.turn, stillToGo: world.stillToGo,
+                           crew: world.crew, coach: world.coach,
+                           dockNames: world.dockNames, reactionEmojis: world.reactionEmojis)
+    }
+
+    /// `session-together-clock` (frame 140): the production
+    /// `TogetherClockView` over `LiveFixtures.together` — one interval
+    /// clock, four hearts on one axis. Retires `together-clock`/
+    /// `together-clock-v2` (117, 126) — `together-clock` (v1) was the
+    /// render the owner's colour reversal restored, and this frame is its
+    /// production twin.
+    private var content_sessionTogetherClock: some View {
+        let world = LiveFixtures.together
+        return TogetherClockView(kicker: world.kicker, title: world.title,
+                                 intervalKicker: world.intervalKicker, phase: world.phase,
+                                 phaseDetail: world.phaseDetail, readout: world.readout,
+                                 progress: world.progress, nextLine: world.nextLine,
+                                 lanes: world.lanes, axisStart: world.axisStart,
+                                 axisEnd: world.axisEnd, dockNames: world.dockNames)
+    }
+
+    /// `session-freestyle-rail` (frame 141): the production
+    /// `FreestyleRailView` over `LiveFixtures.freestyle` — the shared rail,
+    /// the stretched rest, Coach's accessory suggestion. Retires
+    /// `freestyle-rail` (116).
+    private var content_sessionFreestyleRail: some View {
+        let world = LiveFixtures.freestyle
+        return FreestyleRailView(kicker: world.kicker, title: world.title,
+                                 rail: world.rail, restElapsed: world.restElapsed,
+                                 standing: world.standing,
+                                 stretchSuggestion: world.stretchSuggestion,
+                                 accessorySuggestion: world.accessorySuggestion,
+                                 behindLine: world.behindLine)
     }
 }
 
