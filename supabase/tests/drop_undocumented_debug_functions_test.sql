@@ -5,14 +5,26 @@
 -- pg_depend, pg_policies, information_schema.views/triggers, and repo
 -- grep — see the migration header and task-3-report.md) — there is no
 -- "positive" behavior to preserve, so this test is entirely a
--- public-gone proof, plus a regression guard confirming the real
--- resolve_proposal() trigger (which these were instrumented forks of)
--- is untouched. (Phase B2 D3: the second regression guard, which checked
--- this trigger's wiring on its (now-retired) host table, retired along
--- with that table's other pgTAP references — see D4 for the drop itself.)
+-- public-gone proof. (Phase B2 D3: a second regression guard, which
+-- checked the real resolve_proposal() trigger's wiring on its
+-- (now-retired) host table, retired along with that table's other pgTAP
+-- references — see D4 for the drop itself.)
+--
+-- PHASE B2 D4 UPDATE, plan(7) -> plan(6): this file's own assertion 7 —
+-- "the real resolve_proposal() trigger function ... is untouched" — was
+-- true when written (it guarded against THIS migration's debug-function
+-- cleanup accidentally taking the real one with it) but is false now
+-- that D4 (20260918000102_routine_proposals_drop.sql) has deliberately
+-- dropped public.resolve_proposal() itself: its only trigger lived on
+-- routine_proposal_votes, which that migration also drops, and a
+-- trigger's function does not go with it automatically (the same
+-- reasoning R-B19 applied to the soundboard's touch trigger function).
+-- Retired rather than flipped to assert absence — routine_proposals_
+-- absent_test.sql (D5) already proves that, and this file's remaining
+-- job is the three debug forks, not the function they forked from.
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(7);
+SELECT plan(6);
 
 -- ============================================================
 -- 1-2. resolve_proposal_debug: gone from pg_proc, calling by name fails.
@@ -63,19 +75,6 @@ SELECT throws_ok(
   $$SELECT public.resolve_proposal_debug3()$$,
   '42883', NULL,
   'calling public.resolve_proposal_debug3() by name now fails: function does not exist'
-);
-
--- ============================================================
--- 7. Regression guard: the REAL resolve_proposal() trigger function
--- (which the 3 dropped functions were instrumented forks of) is
--- untouched by this migration.
--- ============================================================
-SELECT results_eq(
-  $$SELECT count(*)::int FROM pg_proc p
-    JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public' AND p.proname = 'resolve_proposal'$$,
-  ARRAY[1],
-  'public.resolve_proposal (the real trigger function) still exists, untouched'
 );
 
 SELECT * FROM finish();

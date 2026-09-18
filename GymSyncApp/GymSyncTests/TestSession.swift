@@ -19,8 +19,8 @@ import XCTest
 /// `sessions` is either ON DELETE CASCADE (`session_participants`,
 /// 20260709000006_create_sessions.sql:19; also `session_kudos`,
 /// `session_duration_edits` — `routine_proposals` carried the same clause
-/// and is on its own way out, plan task D4's drop migration once it is
-/// written and applied) or ON DELETE SET NULL
+/// and is gone now, dropped by plan task D4's migration, applied
+/// 2026-09-18 19:05:29 UTC) or ON DELETE SET NULL
 /// (`chat_messages`, `personal_records`) — nothing blocks the delete and no
 /// participant row survives it.
 ///
