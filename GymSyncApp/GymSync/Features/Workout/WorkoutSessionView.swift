@@ -4209,9 +4209,6 @@ struct WorkoutSessionView: View {
         pickerCatalog = (try? await ExerciseRepository.fetchAll()) ?? []
     }
 
-    /// Show the full-screen, USER-DISMISSED PR celebration (p29) — no auto-timeout.
-    /// Mirrors `SessionLiveView.showPROverlay`'s field-setting shape; `monthlyCount`
-    /// stays `nil` here (see `prOverlayMonthlyCount`'s declaration for why).
     /// LEAVING THE EXERCISE FLUSHES (ruling R-OD-2) — the solo twin of
     /// `SessionLiveView.flushPendingPRs(except:)`. A record held for an
     /// exercise the lifter has moved off (the prescription finished early, a
@@ -4238,6 +4235,9 @@ struct WorkoutSessionView: View {
         }
     }
 
+    /// Show the full-screen, USER-DISMISSED PR celebration (p29) — no auto-timeout.
+    /// Mirrors `SessionLiveView.showPROverlay`'s field-setting shape; `monthlyCount`
+    /// stays `nil` here (see `prOverlayMonthlyCount`'s declaration for why).
     @MainActor
     private func showPROverlay(exerciseName: String, weight: Decimal, reps: Int, priorBest: Decimal) {
         prOverlayExerciseName = exerciseName

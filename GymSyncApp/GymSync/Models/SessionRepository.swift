@@ -673,7 +673,13 @@ enum SessionRepository {
     ///
     /// Every caller treats this as best-effort: a failed write leaves the
     /// in-memory scale standing, which is exactly B2's shipped behaviour.
-    static func setTodaysScale(sessionID: UUID, scale: TodaysScale?) async throws {
+    ///
+    /// `scale` is NOT optional: nothing clears this column today, and
+    /// `TodaysScaleUpdate`'s synthesized `Encodable` uses `encodeIfPresent`,
+    /// so a `nil` here would silently PATCH `{}` instead of writing
+    /// `todays_scale: null` (F12) — a signature that invites the bug it
+    /// would take to reach it.
+    static func setTodaysScale(sessionID: UUID, scale: TodaysScale) async throws {
         guard let userID = await SupabaseService.shared.currentUserID() else {
             throw GymSyncError.unauthorized
         }

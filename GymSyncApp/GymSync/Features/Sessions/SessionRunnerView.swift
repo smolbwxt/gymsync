@@ -381,15 +381,19 @@ struct SessionRunnerView: View {
         }
     }
 
-    /// Accept (plan decision 5). The ONE thing it does: today's set count for
-    /// that exercise drops by one, in memory, for this session. Nothing is
-    /// written to the database, and the plan card and the live body's THE
-    /// SESSION · WHERE WE ARE both re-render from the same array.
+    /// Accept (plan decision 5). Applies today's set count for that exercise
+    /// IN MEMORY, SYNCHRONOUSLY: the plan card and the live body's THE
+    /// SESSION · WHERE WE ARE both re-render from the same array, on this
+    /// turn.
     ///
-    /// SYNCHRONOUS and un-isolated, because it awaits nothing and writes
-    /// nothing: it is the `onChangeRoutine: { showRoutinePicker = true }` shape
-    /// the lobby's own card control uses, not the `Task { await … }` shape the
-    /// two round trips beside it need.
+    /// Also persists the accepted scale to the lifter's own participant row
+    /// (decision 3), but in a DETACHED `Task`, best-effort — this function
+    /// itself still awaits nothing and stays the synchronous
+    /// `onChangeRoutine: { showRoutinePicker = true }` shape the lobby's own
+    /// card control uses, not the `Task { await … }` shape the two round
+    /// trips beside it need. A failed write costs only relaunch survival:
+    /// the in-memory value set below is what every screen reads for the
+    /// rest of this session regardless.
     private func acceptSuggestion() {
         guard let suggestion = coachSuggestion else { return }
         let scale = TodaysScale(exerciseID: suggestion.exerciseID,

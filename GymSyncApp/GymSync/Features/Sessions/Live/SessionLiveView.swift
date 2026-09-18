@@ -2476,17 +2476,24 @@ struct SessionLiveView: View {
             // THE STATION SPLIT (plan task S3). `.task(id:)` rather than
             // `.onChange` so the crew's FIRST exercise is assigned too, and
             // `set_session_stations`' idempotency on the exercise position is
-            // what makes every repeat free.
-            .task(id: currentRoutineExercise?.position) {
+            // what makes every repeat free. The identity carries the
+            // exercise id ALONGSIDE the position (F9): a squad swap keeps
+            // `position` (`RoutineLayering.swapped` — `Models/RoutineLayering.swift`
+            // — preserves it) but changes `exerciseID`, and R-OD-2's "the
+            // exercise swapped" must still flush. Composite id built as a
+            // string, the same idiom `WorkoutSessionView.swift`'s per-set
+            // `.task(id:)` already uses.
+            .task(id: "\(currentRoutineExercise?.position ?? -1)-\(currentRoutineExercise?.exerciseID.uuidString ?? "")") {
                 // LOAD PATH 8 of 9 (plan task S4): `remixStations` calls
                 // `set_session_stations`, a WRITE — the one load path that
                 // would change a real row.
                 guard !catalogSkipLoad else { return }
-                // THE EXERCISE CHANGED, so anything still held for the one we
-                // just left celebrates now (ruling R-OD-2). This `.task(id:)`
-                // rather than a new `.onChange`: the exercise's position is
-                // already this chain's identity, and `body`'s modifier chain
-                // has blown the type-checker's budget twice.
+                // THE EXERCISE CHANGED (position OR a squad swap), so
+                // anything still held for the one we just left celebrates
+                // now (ruling R-OD-2). This `.task(id:)` rather than a new
+                // `.onChange`: the exercise's identity is already this
+                // chain's identity, and `body`'s modifier chain has blown
+                // the type-checker's budget twice.
                 await flushPendingPRs(except: currentExerciseForSheet?.id)
                 // The celebration's sound, built and decoded ahead of the
                 // moment rather than inside the overlay's animation turn
