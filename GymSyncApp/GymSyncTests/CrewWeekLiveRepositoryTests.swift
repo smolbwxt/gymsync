@@ -19,24 +19,7 @@ import XCTest
 /// proof is the `app-lobby` capture, which runs after the seed.
 final class CrewWeekLiveRepositoryTests: XCTestCase {
 
-    /// **SKIPPED UNTIL D1 IS APPLIED.** The migration that creates `crew_week`
-    /// was written and HELD at its gate under R-B2-8 (the Supabase connector
-    /// was unauthorized when this leg ran), and global constraint 8 is explicit
-    /// that a test for an object the live project does not have WILL FAIL. The
-    /// controller lifts this skip in a fix commit once the apply lands; the
-    /// body below is what runs then, unchanged.
-    /// Flip to `false` in the fix commit that follows the apply — one line, and
-    /// the body below runs unchanged. `XCTSkipIf` rather than a bare
-    /// `throw XCTSkip`, so the rest of the test stays reachable code the
-    /// compiler keeps checking while the gate is shut.
-    private static let d1IsHeldAtItsGate = true
-
     func testTheCrewWeekRPCDecodes() async throws {
-        try XCTSkipIf(Self.d1IsHeldAtItsGate,
-                      "D1 (crew_week) is not applied to the live project yet — "
-                      + "constraint 8: a live test for an unapplied object "
-                      + "fails. Lift this skip with the apply.")
-
         try await TestAuth.signInIfConfigured()
         let groups = try await GroupRepository.myGroups()
         let crew = groups.first { $0.name.hasPrefix("[QA] ") }

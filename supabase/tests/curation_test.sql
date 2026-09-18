@@ -1,6 +1,25 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(22);
+SELECT plan(15);
+
+-- plan(22) -> plan(15), 2026-09-18: assertions 1, 2, 3, 3b, 4, 5 and 5b read
+-- soundboard_sounds / soundboard_favorites, which
+-- 20260913000104_soundboard_drop.sql drops (plan task D5, decision 5 — the
+-- throwables are tabled indefinitely; the implementation is archived at the
+-- tag archive/soundboard-throwables-2026-09 and the rows at
+-- .superpowers/sdd/2026-09-13-group-session-phase-b-plan/soundboard-rows-2026-09-13.json).
+-- scripts/run_pgtap.js runs every file in this directory against the LIVE
+-- database, so a suite that reads a dropped table does not fail one
+-- assertion — its first dead statement aborts the transaction and takes the
+-- whole file with it. The seven soundboard assertions are retired here; the
+-- fifteen that survive are the curator/publishing/stars half of this suite
+-- and are unchanged.
+--
+-- The surviving assertions KEEP their historical numbers (6 onward) rather
+-- than being renumbered 1-15: user_settings_test.sql's own updated_at proof
+-- cites this file by assertion number, and shifting them would silently
+-- re-point that citation at a different assertion. The plan() count is the
+-- number pgTAP checks; the comment labels are history.
 
 -- Fixture users (pattern from user_settings_test.sql: insert auth.users +
 -- profiles rows inside the rolled-back txn). User 103 gets NO profiles row —
@@ -15,61 +34,22 @@ INSERT INTO profiles (id, username) VALUES
 UPDATE profiles SET is_curator = true
   WHERE id = '00000000-0000-4000-a000-000000000102';
 
--- 1-2. Catalog columns exist
-SELECT has_column('public','soundboard_sounds','icon','icon column exists');
-SELECT has_column('public','soundboard_sounds','category','category column exists');
+-- 1-5b RETIRED (20260913000104_soundboard_drop.sql): the catalog-column,
+-- icon-backfill, favorites-RLS and favorites-updated_at assertions all read
+-- soundboard_sounds / soundboard_favorites. What they proved is not being
+-- given up quietly, so it is written down here: icon/category existed and
+-- all four seed slugs carried both; a user could write and read only their
+-- own favorites row; and 20260726000005's BEFORE UPDATE trigger bumped
+-- updated_at on a slugs-only upsert. The trigger's function goes with the
+-- table in the same migration. The same updated_at idiom is still proved
+-- against a live table by user_settings_test.sql (20260726000006) and
+-- weekly_goals_test.sql (20260906000001), so the clock_timestamp() lesson
+-- keeps a home in this suite directory.
 
--- 3. Backfill applied (fixture-scoped to the known seed slug)
-SELECT is(
-  (SELECT icon FROM soundboard_sounds WHERE slug = 'airhorn'),
-  '📯', 'airhorn backfilled with emoji icon');
-
--- 3b. All four seed slugs backfilled (a renamed/missing slug would have
--- silently no-oped the plain UPDATEs)
-SELECT is(
-  (SELECT count(*) FROM soundboard_sounds
-   WHERE slug IN ('airhorn','lets-go','ding','boo')
-     AND icon IS NOT NULL AND category IS NOT NULL)::int,
-  4, 'all four seed sounds carry icon + category');
-
--- 4-5. Favorites RLS: owner can write, non-owner blocked
+-- The role switch below outlives the retired assertions: assertion 6 onward
+-- runs as user 101, which is what the removed favorites block used to set up.
 SET LOCAL role authenticated;
 SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-a000-000000000101';
-INSERT INTO soundboard_favorites (user_id, slugs)
-  VALUES ('00000000-0000-4000-a000-000000000101', ARRAY['ding','boo']);
-SELECT is(
-  (SELECT slugs FROM soundboard_favorites
-   WHERE user_id = '00000000-0000-4000-a000-000000000101'),
-  ARRAY['ding','boo'], 'owner writes+reads own favorites');
-SELECT throws_ok(
-  $$INSERT INTO soundboard_favorites (user_id, slugs)
-    VALUES ('00000000-0000-4000-a000-000000000102', ARRAY['ding'])$$,
-  '42501', NULL, 'cannot insert favorites for another user');
-
--- 5b. Task 6 item 8: UPDATE bumps updated_at (BEFORE UPDATE trigger,
--- 20260726000005) — the client's upsert() only ever sends {user_id,
--- slugs}, so without the trigger this column would stay frozen at
--- row-creation time forever. Trigger uses clock_timestamp() (real
--- wall-clock time), not now()/transaction_timestamp() (frozen at this
--- whole test's transaction start) — the latter would make this row's
--- INSERT-time updated_at and the UPDATE below's stamp compare EQUAL, not
--- greater, since pgTAP runs the entire file in one transaction.
--- The writable CTE (UPDATE ... RETURNING) must be top-level, not nested
--- inside ok()'s argument list (Postgres: "WITH clause containing a
--- data-modifying statement must be at the top level") — so this whole
--- statement IS the WITH, with `SELECT ok(...)` as its final query.
-WITH before_val AS (
-  SELECT updated_at FROM soundboard_favorites
-  WHERE user_id = '00000000-0000-4000-a000-000000000101'
-), after_update AS (
-  UPDATE soundboard_favorites SET slugs = ARRAY['airhorn']
-  WHERE user_id = '00000000-0000-4000-a000-000000000101'
-  RETURNING updated_at
-)
-SELECT ok(
-  after_update.updated_at > before_val.updated_at,
-  'UPDATE bumps updated_at past its pre-update value')
-FROM before_val, after_update;
 
 -- 6. is_curator not client-writable via UPDATE (guard trigger)
 SELECT throws_ok(
