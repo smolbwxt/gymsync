@@ -218,5 +218,17 @@
   {
     "screenId": "session-lobby-week",
     "reason": "Group session Phase A, integration task I1 follow-up (fix round 6, item 4). Frame 135 has no numbered canvas frame and no round-frame lineage - it is the lobby's own second screen, not a design-round frame: `session-lobby-waiting`/`session-lobby-ready` (129/130) capture only the first screen (the arrival track, Coach's door, the plan, the dock, Start), so THE CREW'S WEEK strip - on trial per the owner's 2026-09-12 addition - sits below the fold on both and cannot be judged from either. This id scrolls past that fold: the same `LobbyFixtures.waiting` crew, `CrewEnergyCard` then `CrewWeekStrip` stacked exactly as `LobbyView.lobbyScroll` stacks them, nothing above them and no dock/Start below. No accent - nothing on this frame is primary. `LobbyView.crewWeek` still returns nil outside `#if DEBUG`, so the strip this frame exists to let the owner judge stays invisible in production until its per-member weekly-count RPC lands (s-push4.md's 'Symbols still without a production caller', Phase B)."
+  },
+  {
+    "screenId": "pump-feed-post",
+    "reason": "Owner-decisions round 2026-09-18 (plan task S8, S8b, closed by integration task I1). Docket leftover, `PumpFeedView.swift:453`'s 88 x 88 photo thumb hardcoded `RoundedRectangle(cornerRadius: 14)` - design rule 1 allows exactly two radii in code, `GSMetrics.radiusMd` (24, cards) and `GSMetrics.radiusSm` (16, tiles); the language's 'strips 14' names a strip, and an 88 pt square thumbnail is a tile, so the literal becomes `GSMetrics.radiusSm`. This changes `app-pump-feed-post` by two pixels of corner radius on the thumb and nothing else on that card - a live content change to a B2 frame (146), declared here per the task's own instruction, for I2 to confirm no other pixel on that frame moved."
+  },
+  {
+    "screenId": "pr-celebration-a",
+    "reason": "Owner-decisions round 2026-09-18, integration task I1 (contingency path, constraint 7): the owner's pick between pr-celebration-a and pr-celebration-b had not arrived at integration, so S4 (the production rebuild + the retirement of both ids) did not run in this PR. `pr-celebration-a` (frame 151) therefore ships live rather than retiring - it is a live design round awaiting the owner's pick, not a shipped production composition. The moment the pick is recorded, S4 runs as a follow-up PR, this id retires, and this entry retires with it."
+  },
+  {
+    "screenId": "pr-celebration-b",
+    "reason": "Owner-decisions round 2026-09-18, integration task I1 (contingency path, constraint 7): the owner's pick between pr-celebration-a and pr-celebration-b had not arrived at integration, so S4 (the production rebuild + the retirement of both ids) did not run in this PR. `pr-celebration-b` (frame 152) therefore ships live rather than retiring - it is a live design round awaiting the owner's pick, not a shipped production composition. The moment the pick is recorded, S4 runs as a follow-up PR, this id retires, and this entry retires with it."
   }
 ]

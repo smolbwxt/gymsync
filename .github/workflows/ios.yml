@@ -450,7 +450,16 @@ jobs:
           # swap-consensus-card 118, pump-check-card-v2 119, swap-consensus-card-v2 125 out (the Variations
           # folder with them); pump-feed-post keeps its capture and gains frame 146; 41/69/70 renumbered
           # 147-150 (no capture change): 130 -> 131.
-          FLOOR=131
+          # Owner-decisions round (2026-09-18, 2026-09-18-owner-decisions-round I1), CONTINGENCY PATH
+          # (constraint 7 — the owner's pick had not arrived at integration, so S4 did not run): 131 -> 135.
+          # +2 = session-lobby-rack-ask 153 and session-round-rack-chip 154, the rack count's two proof
+          # frames (permanent — S9, ships regardless of the pick). +2 = pr-celebration-a 151 and
+          # pr-celebration-b 152, the PR-celebration design round (S3), LIVE until the owner's pick retires
+          # them (then -2 in the follow-up S4 PR, same discipline as every prior round's out-column above).
+          # THE DELTA IS THE INVARIANT, NOT THE LITERAL: this plan's own N was specified as 0 on the picked
+          # path (two variations in at S3, the same two out at S4) — the +2 here is the stated contingency,
+          # not a drift from plan.
+          FLOOR=135
           # `|| true` + the `:-0` default for the same `set -eo pipefail`
           # reason as the simulator picker above: a missing $SCREENS makes
           # `find` exit 1, which would kill the step before it printed the
