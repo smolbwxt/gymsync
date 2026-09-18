@@ -183,19 +183,21 @@ struct TogetherLane: Identifiable, Equatable {
 /// in a row. Heart rate is shared by default (owner decision 13), which the
 /// timeline says out loud rather than leaving the lifter to discover.
 ///
-/// ACCENT: the interval ring — the current item (rule 2). Everything else in
-/// the readouts is heart-rate data colour, which §4a exempts, and every one of
+/// ACCENT: the LOG card — the screen's one action (rule 2, ruling R-B18,
+/// fix round 4). The interval ring goes INK (`theme.text`, progress track
+/// `theme.neutral700`): it is information, not an act, and Together's own
+/// action is logging a set, not watching a clock. Everything else in the
+/// readouts is heart-rate data colour, which §4a exempts, and every one of
 /// them carries its zone word.
 ///
-/// **KNOWN RULE-2 TENSION (fix round 3 / F6, ruling R-B17):** the log
-/// control (`LogControlButton`, mounted below) also paints `theme.accent` —
-/// it is `turnChrome`'s own button, unchanged, and the fix's whole point
-/// was that Together needed the SAME control Rounds and Freestyle already
-/// have, not a redrawn one. Before this fix Together had no way to log a
-/// set at all, which rule 2 does not have an opinion on; a second accent
-/// face is the smaller problem. Flagged for the controller, the same way
-/// the round wait's ring/`SkipOfferLine` tension was (review finding 7) —
-/// not resolved here.
+/// **THE RULE-2 TENSION FIX ROUND 3 FLAGGED (F6, ruling R-B17) IS RESOLVED.**
+/// Before fix round 3, Together had no log control at all; F6 mounted the
+/// SAME `LogControlButton` `turnChrome` draws, which meant the screen briefly
+/// carried two accent faces — the ring and the button — the same tension the
+/// round wait's ring/`SkipOfferLine` pair raised (review finding 7). Ruling
+/// R-B18 settles it the way that one was settled: one accent, not two. The
+/// ring's colour is the only thing that moved; its geometry, its progress
+/// math and the button beneath it are unchanged.
 struct TogetherClockView: View {
     @Environment(\.gsTheme) private var theme
 
@@ -262,9 +264,9 @@ struct TogetherClockView: View {
             PTTDockRow(otherParticipantNames: dockNames, compact: false)
             // The SHIPPED End control — the same confirmation the header's X
             // raises, reached from the foot because Together's page has no
-            // pinned chrome of its own. Neutral, never accent: the ring is
-            // this screen's one accent act, and ending is not what the crew
-            // came to do.
+            // pinned chrome of its own. Neutral, never accent: the LOG card
+            // above is this screen's one accent act (ruling R-B18), and
+            // ending is not what the crew came to do.
             RoundDoor(glyph: "xmark", title: RoundCopy.endSession, onTap: onEnd)
         }
     }
@@ -305,13 +307,19 @@ struct TogetherClockView: View {
     /// `boldFixed` for the numeral, which is what that helper exists for: a
     /// big number inside a hard-framed circle clips at large Dynamic Type,
     /// and the meaning is carried redundantly by the scaling labels beside it.
+    ///
+    /// INK, NOT ACCENT (ruling R-B18, fix round 4) — the LOG card below is
+    /// this screen's one action; the ring is information the lifter reads,
+    /// not a control they press. Track is `neutral700`, progress is
+    /// `theme.text`: same geometry, same trim math, only the two colours
+    /// moved.
     private var ring: some View {
         ZStack {
             Circle()
-                .strokeBorder(theme.neutral300, lineWidth: 9)
+                .strokeBorder(theme.neutral700, lineWidth: 9)
             Circle()
                 .trim(from: 0, to: min(max(progress, 0), 1))
-                .stroke(theme.accent, style: StrokeStyle(lineWidth: 9, lineCap: .round))
+                .stroke(theme.text, style: StrokeStyle(lineWidth: 9, lineCap: .round))
                 .rotationEffect(.degrees(-90))
             Text(readout)
                 .font(GSFont.boldFixed(30))
