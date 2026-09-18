@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(17);
+SELECT plan(18);
 
 -- Migration under test: 20260918000202_session_venue_and_todays_scale.sql
 -- (sessions.venue_id, session_participants.todays_scale,
@@ -178,6 +178,19 @@ SELECT throws_ok(
      WHERE id = '00000000-0000-4000-e000-000000001620'$$,
   'P0001', 'venue_id is claimed through claim_session_venue',
   'a direct write of venue_id on an unclaimed session is refused too');
+
+-- 12b. As A (organizer of her own new session): the INSERT door is shut
+--      too (review-data.md F9, migration 000204) -- a session cannot be born
+--      with a venue. The fixture INSERT at the top of this file, which
+--      leaves venue_id NULL, is the proof that ordinary inserts still pass
+--      the same trigger.
+SELECT throws_ok(
+  $$INSERT INTO sessions (id, organizer_id, state, scheduled_for, venue_id) VALUES
+      ('00000000-0000-4000-e000-000000001621',
+       '00000000-0000-4000-e000-000000001601', 'scheduled',
+       now() + interval '1 day', '00000000-0000-4000-e000-000000001611')$$,
+  'P0001', 'venue_id is claimed through claim_session_venue',
+  'a session cannot be inserted with venue_id already set');
 
 -- 13. As A: after the clear, her 1-hour-old check-in at V is still inside
 --     the 12-hour window, so claim_session_venue claims again.
