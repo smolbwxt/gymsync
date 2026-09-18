@@ -49,6 +49,23 @@ final class CelebrationSoundTests: XCTestCase {
     }
 
     @MainActor
+    func testPrepareIsIdempotentAndWritesNoAudioSessionCategory() throws {
+        // Ruling R-OD-4: the player is built and decoded AHEAD of the moment,
+        // by the session bodies, on every exercise change — so preparing must
+        // be free to call repeatedly and must touch the session no more than
+        // playing does. It plays nothing, which is why this test can assert
+        // the category is still the baseline afterwards.
+        try AudioSessionManager.shared.configure()
+        let session = AVAudioSession.sharedInstance()
+
+        CelebrationSound.prepare()
+        CelebrationSound.prepare()
+
+        XCTAssertEqual(session.category, .playback)
+        XCTAssertTrue(session.categoryOptions.contains(.mixWithOthers))
+    }
+
+    @MainActor
     func testPlayPRNeverTouchesTheAudioSessionCategory() throws {
         // THE AUDIO SACRED RULE (ChatView.swift:9, VoiceBubblePlayer): a
         // player never sets the category. playPR() may only call

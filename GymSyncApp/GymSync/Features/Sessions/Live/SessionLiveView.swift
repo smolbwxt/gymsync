@@ -392,6 +392,14 @@ struct SessionLiveView: View {
     @State private var prOverlayReps: Int = 0
     @State private var prOverlayPriorBest: Decimal = 0
     @State private var prOverlayMonthlyCount: Int? = nil
+    /// Records HELD until their exercise finishes (ruling R-OD-1), keyed by
+    /// exercise. A record on set 1 of 4 does not take the screen over and is
+    /// not thrown away either: `PRFiring.step` parks it here and hands it
+    /// back at completion, or `flushPendingPRs(except:)` fires it when the
+    /// lifter moves on. SESSION-LOCAL BY DESIGN — a party resurrected three
+    /// days later is worse than a quiet one, and the recap's `PR` tag is the
+    /// record of anything this dictionary loses.
+    @State private var pendingPRs: [UUID: PRFiring.Pending] = [:]
 
     /// Reaction emojis per canvas reaction strip.
     private let reactionEmojis = ["🔥", "💪", "😂", "👏"]
@@ -2475,6 +2483,17 @@ struct SessionLiveView: View {
                 // `set_session_stations`, a WRITE — the one load path that
                 // would change a real row.
                 guard !catalogSkipLoad else { return }
+                // THE EXERCISE CHANGED, so anything still held for the one we
+                // just left celebrates now (ruling R-OD-2). This `.task(id:)`
+                // rather than a new `.onChange`: the exercise's position is
+                // already this chain's identity, and `body`'s modifier chain
+                // has blown the type-checker's budget twice.
+                await flushPendingPRs(except: currentExerciseForSheet?.id)
+                // The celebration's sound, built and decoded ahead of the
+                // moment rather than inside the overlay's animation turn
+                // (ruling R-OD-4). Idempotent — the second call onwards is a
+                // no-op — and silent when the resource is missing.
+                await MainActor.run { CelebrationSound.prepare() }
                 guard let position = currentRoutineExercise?.position else { return }
                 await remixStations(exercisePosition: position)
             }
@@ -4635,10 +4654,10 @@ struct SessionLiveView: View {
             logHapticTick += 1
 
             // Docket row 7, in one place for both bodies (`PRFiring`): the
-            // first log of a lift is a baseline, and the record waits for the
-            // last set. THE RECORD ITSELF IS NOT GATED — both
-            // `PersonalRecordRepository.record` inserts below run exactly as
-            // they did; only `showPROverlay` waits.
+            // first log of a lift is a baseline, and the record DEFERS to the
+            // last set — it is never lost (ruling R-OD-1). THE RECORD ITSELF
+            // IS NOT GATED — both `PersonalRecordRepository.record` inserts
+            // below run exactly as they did; only the celebration waits.
             //
             // `targetSets` from the EFFECTIVE routine, never `routineExercises`:
             // an accepted scale-down of 4 × 5 → 3 × 5 makes the third set the
@@ -4647,29 +4666,51 @@ struct SessionLiveView: View {
             // record itself.
             let firingTargetSets = effectiveRoutineExercises
                 .first(where: { $0.exerciseID == exerciseID })?.targetSets
-            // `log.setIndex` is `mySetCount(for:) + 1` — sets logged INCLUDING
-            // the one just written, which is what the rule counts.
-            let celebratesRepPR = PRFiring.shouldCelebrate(
-                isRecord: isRepPR,
-                context: PRFiring.Context(basisIsEmpty: repBasisIsEmpty,
+            // THE RECORD PAYLOAD, built whenever the set IS one — held or
+            // fired, `PRFiring.step` decides which. The two forms are
+            // mutually exclusive by construction (`isRepPR` needs
+            // `weight == 0`, `isPR` needs `weight > 0`), so one context and
+            // one payload cover both; the rep form is `weight: 0` with
+            // `priorBest` carrying the prior REP count.
+            var firingRecord: PRFiring.Pending?
+            if isRepPR, let completedReps {
+                let tName = Date()
+                let name = await ExerciseNameCache.name(for: exerciseID)
+                stamp("nameCache repPR", tName)
+                firingRecord = PRFiring.Pending(exerciseName: name, weight: 0,
+                                                reps: completedReps,
+                                                priorBest: Decimal(priorBestReps))
+            } else if isPR, let weight {
+                let tName = Date()
+                let name = await ExerciseNameCache.name(for: exerciseID)
+                stamp("nameCache PR", tName)
+                firingRecord = PRFiring.Pending(exerciseName: name, weight: weight,
+                                                reps: completedReps ?? 0,
+                                                priorBest: priorBest)
+            }
+            // `log.setIndex` is `mySetCount(for:) + 1` — sets of this exercise
+            // logged by me in this session, counting the one just written,
+            // which is the one meaning `setsLogged` has (ruling R-OD-3).
+            let firingStep = PRFiring.step(
+                record: firingRecord,
+                context: PRFiring.Context(basisIsEmpty: isRepPR ? repBasisIsEmpty : prBasisIsEmpty,
                                           setsLogged: log.setIndex,
-                                          targetSets: firingTargetSets))
-            let celebratesPR = PRFiring.shouldCelebrate(
-                isRecord: isPR,
-                context: PRFiring.Context(basisIsEmpty: prBasisIsEmpty,
-                                          setsLogged: log.setIndex,
-                                          targetSets: firingTargetSets))
+                                          targetSets: firingTargetSets),
+                held: pendingPRs[exerciseID])
+            pendingPRs[exerciseID] = firingStep.held
+            if let celebration = firingStep.celebrate {
+                // The monthly badge is re-read only when THIS set wrote no
+                // record — the ordered pipeline below already re-reads it
+                // after its own insert, and a second read racing that insert
+                // is the undercount its comment warns about.
+                let needsCount = firingRecord == nil
+                Task { @MainActor in
+                    await firePendingPR(celebration, userID: userID,
+                                        refreshMonthlyCount: needsCount)
+                }
+            }
 
             if isRepPR, let completedReps {
-                if celebratesRepPR {
-                    let tName = Date()
-                    let name = await ExerciseNameCache.name(for: exerciseID)
-                    stamp("nameCache repPR", tName)
-                    Task { @MainActor in
-                        await showPROverlay(exerciseName: name, weight: 0,
-                                             reps: completedReps, priorBest: Decimal(priorBestReps))
-                    }
-                }
                 Task { @MainActor in
                     _ = try? await PersonalRecordRepository.record(
                         exerciseID: exerciseID,
@@ -4683,15 +4724,6 @@ struct SessionLiveView: View {
 
             if isPR, let weight {
                 let repsForOverlay = completedReps ?? 0
-                if celebratesPR {
-                    let tName = Date()
-                    let name = await ExerciseNameCache.name(for: exerciseID)
-                    stamp("nameCache PR", tName)
-                    Task { @MainActor in
-                        await showPROverlay(exerciseName: name, weight: weight,
-                                             reps: repsForOverlay, priorBest: priorBest)
-                    }
-                }
                 // Ordered PR pipeline: record insert → monthly count → badge update, as ONE
                 // detached task so `countSince` can never race the insert it depends on
                 // (previously two unordered tasks — the badge could undercount by 1). Still
@@ -4972,6 +5004,53 @@ struct SessionLiveView: View {
         // every failure, so the celebration appears whether or not a sound
         // does. The haptic (`logHapticTick`) is unchanged.
         CelebrationSound.playPR()
+    }
+
+    /// Celebrate one payload `PRFiring` handed back — the set that completed
+    /// the exercise, or the flush when the lifter moved on (rulings R-OD-1,
+    /// R-OD-2). Exactly one moment per call.
+    ///
+    /// `refreshMonthlyCount` re-reads the badge for a DEFERRED celebration,
+    /// whose own record was inserted sets ago: `showPROverlay` clears
+    /// `prOverlayMonthlyCount` to `nil` for freshness, and without this the
+    /// deferred overlay would show no count at all. Never passed `true` on a
+    /// set that wrote a record — the ordered pipeline in `logSetAndAdvance`
+    /// re-reads it after its own insert, and a second read racing that insert
+    /// is the undercount its comment warns about.
+    @MainActor
+    private func firePendingPR(_ pending: PRFiring.Pending, userID: UUID,
+                               refreshMonthlyCount: Bool) async {
+        await showPROverlay(exerciseName: pending.exerciseName,
+                            weight: pending.weight,
+                            reps: pending.reps,
+                            priorBest: pending.priorBest)
+        guard refreshMonthlyCount else { return }
+        let startOfMonth = Calendar.current.dateInterval(of: .month, for: Date())?.start ?? Date()
+        prOverlayMonthlyCount = try? await PersonalRecordRepository.countSince(
+            userID: userID, date: startOfMonth)
+    }
+
+    /// LEAVING THE EXERCISE FLUSHES (ruling R-OD-2). Sets skipped, the
+    /// exercise swapped, the round moving the crew on: a record held for an
+    /// exercise that is no longer the one in front of the lifter celebrates
+    /// at that moment, once, and the store clears.
+    ///
+    /// A hold only ever arises for the PRESCRIBED row currently being logged
+    /// (an unprescribed lift celebrates on the record itself), and every
+    /// exercise change drains this store, so at most one payload is ever
+    /// here. The loop is ordered anyway so the behaviour stays defined if
+    /// that ever stops being true.
+    @MainActor
+    private func flushPendingPRs(except current: UUID?) async {
+        guard !pendingPRs.isEmpty, let userID = selfID else { return }
+        let leaving = pendingPRs
+            .filter { $0.key != current }
+            .sorted { $0.key.uuidString < $1.key.uuidString }
+        guard !leaving.isEmpty else { return }
+        for (exerciseID, _) in leaving { pendingPRs[exerciseID] = nil }
+        for (_, pending) in leaving {
+            await firePendingPR(pending, userID: userID, refreshMonthlyCount: true)
+        }
     }
 
     @MainActor

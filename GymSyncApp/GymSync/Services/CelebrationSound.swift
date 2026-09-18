@@ -33,18 +33,59 @@ import Foundation
 @MainActor
 enum CelebrationSound {
 
-    /// The one player, held so a second PR inside the clip RESTARTS the sound
-    /// rather than layering a second copy over the first.
+    /// The one player, built ONCE and held — so a second PR inside the clip
+    /// RESTARTS the sound rather than layering a second copy over the first,
+    /// and so the file is never decoded on the celebration's critical path.
     private static var player: AVAudioPlayer?
 
-    /// The PR moment's sound. NEVER sets the AVAudioSession category (the
-    /// AUDIO SACRED RULE — see VoiceBubblePlayer). Silent, not interrupting,
-    /// while a voice room holds the session.
+    /// Whether `prepare()` has already run. A missing or unreadable resource
+    /// is a permanent condition, not a transient one: without this the
+    /// warm-up call on every exercise change would re-log the same failure
+    /// for the length of the session.
+    private static var didPrepare = false
+
+    /// Build and decode the player AHEAD OF THE MOMENT (ruling R-OD-4).
+    ///
+    /// `AVAudioPlayer(contentsOf:)` does synchronous file I/O and a header
+    /// decode; doing that inside `showPROverlay`'s `withAnimation` turn put a
+    /// hitch on the one frame the whole feature exists for. Both session
+    /// bodies call this when the exercise changes — long before any set of it
+    /// can be a record.
+    ///
+    /// Idempotent, silent, and non-throwing: a missing resource leaves
+    /// `player` nil and the celebration still appears, soundlessly. It writes
+    /// NO audio-session category (the AUDIO SACRED RULE) and does not play.
+    static func prepare() {
+        guard !didPrepare else { return }
+        didPrepare = true
+        guard let url = Bundle.main.url(forResource: "lightweight-baby", withExtension: "mp3") else {
+            // THE CELEBRATION MUST NEVER FAIL TO APPEAR BECAUSE A SOUND DID
+            // NOT LOAD. Log and leave; the caller has already set its overlay
+            // flag, and the haptic fired on the logged set regardless.
+            AppLogger.audio.error("CelebrationSound: lightweight-baby.mp3 missing from the bundle")
+            return
+        }
+        do {
+            let p = try AVAudioPlayer(contentsOf: url)
+            // Buffers the clip so `play()` starts on the next frame rather
+            // than after a decode. AUDIO SACRED RULE: no category is set
+            // here, and preparing a player activates nothing.
+            _ = p.prepareToPlay()
+            player = p
+        } catch {
+            AppLogger.audio.error("CelebrationSound: \(error, privacy: .public)")
+        }
+    }
+
+    /// The PR moment's sound — PLAYING and nothing else (ruling R-OD-4).
+    /// NEVER sets the AVAudioSession category (the AUDIO SACRED RULE — see
+    /// VoiceBubblePlayer). Silent, not interrupting, while a voice room holds
+    /// the session.
     static func playPR() {
         // A crewmate mid-sentence is not interrupted by someone else's PR
         // (owner decision 4). `ensureMixablePlayback()` would refuse to touch
         // the session here anyway; this returns before the player is even
-        // built, so push-to-talk hears nothing at all.
+        // reached, so push-to-talk hears nothing at all.
         guard !AudioSessionManager.shared.isInVoiceMode else { return }
 
         // Field report #39 ("the PR sound pauses Spotify"): iOS's default
@@ -55,22 +96,16 @@ enum CelebrationSound {
         // written for exactly this and kept callerless on purpose.
         AudioSessionManager.shared.ensureMixablePlayback()
 
-        guard let url = Bundle.main.url(forResource: "lightweight-baby", withExtension: "mp3") else {
-            // THE CELEBRATION MUST NEVER FAIL TO APPEAR BECAUSE A SOUND DID
-            // NOT LOAD. Log and leave; the caller has already set its overlay
-            // flag, and the haptic fired on the logged set regardless.
-            AppLogger.audio.error("CelebrationSound: lightweight-baby.mp3 missing from the bundle")
-            return
-        }
+        // The cold path, for a celebration that arrives before any exercise
+        // change warmed it (an ad-hoc lift, a relaunch mid-set). A no-op once
+        // prepared, which is the ordinary case.
+        prepare()
 
-        do {
-            let p = try AVAudioPlayer(contentsOf: url)
-            // AUDIO SACRED RULE: do NOT set audio session category here.
-            player?.stop()
-            player = p
-            p.play()
-        } catch {
-            AppLogger.audio.error("CelebrationSound: \(error, privacy: .public)")
-        }
+        guard let player else { return }
+        // A second PR inside the clip restarts it: `play()` alone would
+        // resume a finished player at its end and sound like nothing at all.
+        if player.isPlaying { player.stop() }
+        player.currentTime = 0
+        player.play()
     }
 }

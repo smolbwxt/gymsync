@@ -43,8 +43,8 @@ enum PersonalRecordMath {
     /// comparison, wrong as a moment: the first log of a lift is a BASELINE,
     /// not a record.
     ///
-    /// This is the guard; it does not act. `PRFiring.shouldCelebrate` is the
-    /// one place that acts on it, and it gates the CELEBRATION only — the set
+    /// This is the guard; it does not act. `PRFiring.step` is the one place
+    /// that acts on it, and it gates the CELEBRATION only — the set
     /// is still stored, the record is still written, and the recap still
     /// shows its `PR` tag, because the docket asks for no celebration and not
     /// for the fact to be erased.
