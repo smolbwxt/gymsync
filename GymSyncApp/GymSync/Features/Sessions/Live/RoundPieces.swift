@@ -593,6 +593,103 @@ extension View {
 
 // MARK: - The station card
 
+// MARK: - RackCountAsk (pure — the rack question, wherever it is asked)
+
+/// `How many racks here?  −  2  +` — decision 1's one question, asked of
+/// whoever is standing in the room.
+///
+/// ONE VIEW, TWO PLACES (the lobby's style card before Start, and a station
+/// card's header during the session), so the question cannot be worded two
+/// ways or bounded two ways. Pure and value-in: it owns only the DRAFT number
+/// and hands the answer back; the caller owns the write, the failure and
+/// whether the question is asked at all.
+///
+/// DESIGN. Flat by construction — both hosts are already raised surfaces, and
+/// furniture inside a raised box stays flat (rule 1). It spends NO accent
+/// (rule 2: the lobby's accent is Start, the round wait's is the lifting
+/// ring). Glyphs are SF Symbols, never text arrows (rule 9). 1...99 matches
+/// `set_venue_rack_count`'s own clamp, so the stepper cannot offer a number
+/// the server will refuse — and never 0, because "none here" is the class
+/// missing from the venue's equipment, not a count of nothing.
+struct RackCountAsk: View {
+    @Environment(\.gsTheme) private var theme
+
+    let question: String
+    var showsSkip: Bool = true
+    /// What the server said, shown where it was asked. The stepper keeps its
+    /// value: a refused write is not a reason to lose the lifter's answer.
+    var errorText: String?
+    let onSave: (Int) -> Void
+    var onSkip: () -> Void = {}
+
+    @State private var draft: Int
+
+    init(question: String, initial: Int = 2, showsSkip: Bool = true,
+         errorText: String? = nil,
+         onSave: @escaping (Int) -> Void,
+         onSkip: @escaping () -> Void = {}) {
+        self.question = question
+        self.showsSkip = showsSkip
+        self.errorText = errorText
+        self.onSave = onSave
+        self.onSkip = onSkip
+        _draft = State(initialValue: min(max(initial, 1), 99))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Text(question)
+                    .font(GSFont.bodyMedium(13, relativeTo: .footnote))
+                    .foregroundStyle(theme.text)
+                Spacer(minLength: 8)
+                if showsSkip {
+                    Button("SKIP") { onSkip() }
+                        .font(GSFont.bodyMedium(11, relativeTo: .caption2))
+                        .tracking(1.2)
+                        .foregroundStyle(theme.neutral500)
+                        .buttonStyle(.plain)
+                }
+            }
+            HStack(spacing: 12) {
+                stepButton("minus", enabled: draft > 1) { draft = max(1, draft - 1) }
+                Text("\(draft)")
+                    .font(GSFont.bold(17, relativeTo: .headline))
+                    .monospacedDigit()
+                    .foregroundStyle(theme.text)
+                    .frame(minWidth: 28)
+                stepButton("plus", enabled: draft < 99) { draft = min(99, draft + 1) }
+                Spacer(minLength: 8)
+                Button("SAVE") { onSave(draft) }
+                    .font(GSFont.bodyMedium(11, relativeTo: .caption2))
+                    .tracking(1.2)
+                    .foregroundStyle(theme.text)
+                    .buttonStyle(.plain)
+            }
+            if let errorText {
+                Text(errorText)
+                    .font(GSFont.body(11, relativeTo: .caption2))
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func stepButton(_ symbol: String, enabled: Bool,
+                            action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(enabled ? theme.neutral700 : theme.neutral500)
+                .frame(width: 32, height: 32)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+    }
+}
+
 /// One station — RACK A, RACK B — built from FIXED SLOTS so that two of them
 /// side by side agree on every edge the eye checks (plan task S6, reference
 /// `round-wait-v2`'s own station card, design round, now retired).
@@ -639,6 +736,23 @@ struct StationCard: View {
 
     let model: Model
 
+    /// THE VENUE'S RACK COUNT for the current exercise's class (decision 1),
+    /// and the correction affordance for it. `onSetRackCount` being non-nil
+    /// IS the gate: the caller passes it only when the session knows its
+    /// venue AND the exercise's equipment maps to a venue class, so a card
+    /// with neither — every fixture, every catalog world — draws exactly what
+    /// it drew before (constraint 14, frames 137/139/143).
+    ///
+    /// `rackCount` nil with the closure present means the building has no
+    /// count yet, and the chip says so rather than printing a guess.
+    var rackCount: Int?
+    /// What `set_venue_rack_count` said, shown inside the popover where the
+    /// correction was made.
+    var rackErrorText: String?
+    var onSetRackCount: ((Int) -> Void)?
+
+    @State private var showRackAsk = false
+
     /// The three constants two cards must share to line up.
     private static let titleHeight: CGFloat = 14
     private static let columnHeight: CGFloat = 70
@@ -655,6 +769,9 @@ struct StationCard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
                 GSSectionHeader(model.name)
+                if onSetRackCount != nil {
+                    rackChip
+                }
                 Spacer(minLength: 0)
                 Text(loggedLine)
                     .font(GSFont.bold(11, relativeTo: .caption2))
@@ -676,6 +793,40 @@ struct StationCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: Self.contentHeight + 24, alignment: .top)
         .gs3DCard(cornerRadius: GSMetrics.radiusSm, lipHeight: 5)
+    }
+
+    /// THE CORRECTION, LATER (decision 1): the count the lobby asked for, put
+    /// right by whoever is standing in the room and can see that there are
+    /// three racks and not two. Flat furniture inside the raised card (rule
+    /// 1), no accent (rule 2 — the round wait's accent is the lifting ring),
+    /// and it opens the SAME `RackCountAsk` the lobby draws, in a popover: no
+    /// new screen and no second wording.
+    private var rackChip: some View {
+        Button {
+            showRackAsk = true
+        } label: {
+            Text(rackCount.map { "\($0) RACKS" } ?? "SET RACKS")
+                .font(GSFont.bodyMedium(10, relativeTo: .caption2))
+                .tracking(1)
+                .monospacedDigit()
+                .foregroundStyle(theme.neutral500)
+                .fixedSize()
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $showRackAsk) {
+            RackCountAsk(question: "How many racks here?",
+                         initial: rackCount ?? 2,
+                         showsSkip: false,
+                         errorText: rackErrorText,
+                         onSave: { count in
+                             showRackAsk = false
+                             onSetRackCount?(count)
+                         })
+                .padding(16)
+                .frame(minWidth: 240)
+                .presentationCompactAdaptation(.popover)
+        }
     }
 
     /// Avatar, name, and a RESERVED line for the personal scale-down whether

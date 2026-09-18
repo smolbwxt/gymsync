@@ -156,6 +156,18 @@ enum WarmUpFixtures {
 
 extension WarmUpFixtures {
 
+    /// `LobbyFixtures.planRows[0].id` — that row's own identity
+    /// (`SessionPlanRow.id`, what production would call a
+    /// `RoutineExercise.id`), not a `RoutineExercise.exerciseID` (the
+    /// catalog exercise id `RoutineLayering.apply` actually matches a
+    /// `TodaysScale.exerciseID` against). This catalog fixture has no
+    /// separate `RoutineExercise` to carry that second id, so
+    /// `suggestionForCrew` below deliberately stands in with the plan row's
+    /// own id — referenced here, not re-typed, so the two cannot drift
+    /// apart again the way the docket found them (docket: the fixture's raw
+    /// UUID literal duplicated `f021` and only matched by coincidence).
+    private static let backSquatPlanRowID = LobbyFixtures.planRows[0].id
+
     /// THE THIRD WARM-UP WORLD (plan task S8), for the id S10 mints.
     ///
     /// Its own frame rather than a switch inside frame 133: constraint 14
@@ -173,7 +185,7 @@ extension WarmUpFixtures {
     /// repository (constraint 11); `WarmUpReadinessTests` is what proves the
     /// rule produces exactly this shape.
     static let suggestionForCrew = WarmUpReadiness.Suggestion(
-        exerciseID: UUID(uuidString: "00000000-0000-0000-0000-00000000f021") ?? UUID(),
+        exerciseID: backSquatPlanRowID,
         setsInstead: 3,
         read: "Your last session averaged RPE 9 yesterday, and you haven't marked quads recovered yet.",
         proposal: "Today is 4 × 5 on Back squat — want 3 × 5?")

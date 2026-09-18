@@ -118,6 +118,18 @@ struct LobbyView: View {
     @State private var allExercises: [Exercise] = []
     @State private var currentSession: WorkoutSession?
     @State private var groupName: String?
+    /// THE VENUE'S RACK COUNTS, class → count (decision 1). Empty is the
+    /// ordinary answer: no venue, or a venue nobody has counted yet. A class
+    /// that is ABSENT is unknown, never zero.
+    @State private var rackCounts: [String: Int] = [:]
+    /// The question is asked ONCE. Skipping silences it for this lobby, the
+    /// same one-shot `@State` idiom `hasAppliedStyleDefault` uses and for the
+    /// same reason: `reload()` runs on every realtime echo and every 5 s poll.
+    @State private var rackAskSkipped = false
+    /// What `set_venue_rack_count` said, shown on the question's own line.
+    /// Never `errorText`: a refused rack count is not a lobby error and must
+    /// not sit where a failed Start would.
+    @State private var rackErrorText: String?
 
     // MARK: - Manage menu state
 
@@ -1210,6 +1222,92 @@ struct LobbyView: View {
     /// copy without building a view.
     static let styleKicker = "HOW THIS SESSION MOVES"
 
+    /// The rack question's words, `static` for the same reason as the kicker
+    /// above: the copy is testable without building a view.
+    static let rackQuestion = "How many racks here?"
+
+    /// The equipment class the rack question is about, or `nil` when it must
+    /// not be asked at all (decision 1). ALL FOUR conditions:
+    ///
+    ///   1. the crew is running ROUNDS — stations exist only there, so a rack
+    ///      count buys a Freestyle or Together session nothing;
+    ///   2. the session KNOWS ITS VENUE (`claim_session_venue`, plan task
+    ///      S5) — there is no building to record a count against otherwise;
+    ///   3. the first exercise's equipment MAPS to a venue class — `nil`
+    ///      means unknown, and the app does not ask about something it could
+    ///      not spend;
+    ///   4. that class has NO COUNT yet — the number belongs to the building
+    ///      and is asked once, not re-asked of every crew that trains there.
+    ///
+    /// Plus the lifter's own SKIP, which silences it for this lobby.
+    ///
+    /// GLOBAL CONSTRAINT 11: a catalog world never reaches a repository, and
+    /// `LobbyWorld` sets no venue — so frame 129 and frame 136 render exactly
+    /// what they render today (constraint 14). The guard below is belt to
+    /// that braces, the same shape `applyStyleDefaultIfNeeded()` carries.
+    private var rackAskClass: String? {
+        #if DEBUG
+        if catalog != nil { return nil }
+        #endif
+        guard !rackAskSkipped,
+              effectiveSession.style == .rounds,
+              effectiveSession.venueID != nil,
+              let first = routineInfo?.exercises.first,
+              let equipment = allExercises.first(where: { $0.id == first.exerciseID })?.equipment,
+              let equipmentClass = Venue.equipmentClass(for: equipment),
+              rackCounts[equipmentClass] == nil
+        else { return nil }
+        return equipmentClass
+    }
+
+    /// The venue's rack counts, read once the session knows its venue.
+    ///
+    /// Best-effort, like every other read this screen makes: a failure leaves
+    /// the dictionary empty, which leaves the cap unknown and the split at
+    /// today's `ceil(crew / 3)`. Behind the `catalog != nil` guard every read
+    /// in this file carries (global constraint 11).
+    @MainActor
+    private func loadRackCounts() async {
+        #if DEBUG
+        if catalog != nil { return }
+        #endif
+        guard rackCounts.isEmpty, let venueID = effectiveSession.venueID else { return }
+        do {
+            rackCounts = try await VenueRackRepository.counts(venueID: venueID)
+        } catch {
+            AppLogger.db.error(
+                "rack counts failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Record the answer the crew gave.
+    ///
+    /// ON A REFUSAL — `P0001`, which is the RPC saying this caller has no
+    /// `venue_checkins` row at this venue inside 12 hours — the message lands
+    /// on the question's own line, the stepper keeps its value, the count
+    /// stays unknown and the cap stays `nil`. START IS NEVER BLOCKED by any
+    /// of it: this write is not on the path of anything the lifter is waiting
+    /// for.
+    @MainActor
+    private func saveRackCount(_ equipmentClass: String, count: Int) async {
+        #if DEBUG
+        if catalog != nil { return }
+        #endif
+        guard let venueID = effectiveSession.venueID else { return }
+        rackErrorText = nil
+        do {
+            try await VenueRackRepository.set(venueID: venueID,
+                                              equipmentClass: equipmentClass,
+                                              count: count)
+            // Locally, so the question disappears without waiting for a read.
+            rackCounts[equipmentClass] = count
+        } catch let error as GymSyncError {
+            rackErrorText = error.errorDescription
+        } catch {
+            rackErrorText = error.localizedDescription
+        }
+    }
+
     /// The crew's style choice, above THE CREW'S WEEK.
     ///
     /// **NOT RENDERED AFTER START.** `private.session_round_guard` (plan task
@@ -1237,6 +1335,22 @@ struct LobbyView: View {
                     styleRow(.freestyle)
                     GSDivider()
                     styleRow(.together)
+                }
+                // THE RACK QUESTION (decision 1), asked once and quietly, of
+                // the only people who can answer it: the crew standing in the
+                // building. Flat inside this raised card (rule 1), no accent
+                // (rule 2 — the lobby's accent is Start), and it NEVER blocks
+                // Start: it is a line under the style rows, not a gate in
+                // front of anything.
+                if let rackClass = rackAskClass {
+                    GSDivider()
+                    RackCountAsk(question: Self.rackQuestion,
+                                 errorText: rackErrorText,
+                                 onSave: { count in
+                                     Task { await saveRackCount(rackClass, count: count) }
+                                 },
+                                 onSkip: { rackAskSkipped = true })
+                        .padding(.top, 10)
                 }
             }
             .padding(14)
@@ -1831,6 +1945,13 @@ struct LobbyView: View {
         // when the lobby first opened, and there is nothing to derive from
         // until they have. Its own one-shot flag makes the repeat calls free.
         await applyStyleDefaultIfNeeded()
+
+        // THE VENUE'S RACK COUNTS (plan task S6, decision 1). Here for the
+        // same reason as the line above: `currentSession` — and therefore
+        // `venueID`, which the check-in's `claim_session_venue` may only just
+        // have written — lands in this function. Its own `rackCounts.isEmpty`
+        // guard makes the repeat calls free.
+        await loadRackCounts()
     }
 
     // MARK: - Check-In

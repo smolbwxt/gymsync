@@ -34,11 +34,35 @@ enum PersonalRecordMath {
             .max() ?? 0
     }
 
+    /// Is there any prior work at all to judge a `reps`-rep set against?
+    ///
+    /// THE EMPTY-BASIS GUARD (docket row 7, 2026-09-03). `bestWeight` answers
+    /// `0` for an empty basis — which is correct arithmetic and which every
+    /// other caller depends on — so `isPR` answers `true` for any positive
+    /// weight when a lifter has never logged this exercise before. True as a
+    /// comparison, wrong as a moment: the first log of a lift is a BASELINE,
+    /// not a record.
+    ///
+    /// This is the guard; it does not act. `PRFiring.step` is the one place
+    /// that acts on it, and it gates the CELEBRATION only — the set
+    /// is still stored, the record is still written, and the recap still
+    /// shows its `PR` tag, because the docket asks for no celebration and not
+    /// for the fact to be erased.
+    static func qualifyingBasisIsEmpty(atLeastReps reps: Int,
+                                       in basis: [(weight: Decimal, reps: Int)]) -> Bool {
+        !basis.contains { $0.reps >= reps }
+    }
+
     /// Is this set a personal record?
     ///
     /// Requires a rep count: without one there is nothing to judge the weight
     /// against, and inventing a comparison is how the old rule went wrong.
     /// Strictly greater — matching your best is not beating it.
+    ///
+    /// An EMPTY basis still answers `true` here, deliberately and unchanged:
+    /// this function says what the set IS, and a first log genuinely beats
+    /// everything that came before it. Whether the app throws a party about
+    /// it is `PRFiring`'s question — see `qualifyingBasisIsEmpty` above.
     static func isPR(weight: Decimal, reps: Int?, basis: [(weight: Decimal, reps: Int)]) -> Bool {
         guard let reps, reps > 0, weight > 0 else { return false }
         return weight > bestWeight(atLeastReps: reps, in: basis)

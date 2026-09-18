@@ -74,6 +74,17 @@ struct RoundWaitView: View {
     /// rather than between two cards that would jump apart to admit it.
     var skip: SkipOffer?
 
+    /// THE VENUE'S RACK COUNT for the current exercise's class (plan task S6,
+    /// decision 1), carried to the FIRST station card's header only — the
+    /// number belongs to the building, so it is stated once and not once per
+    /// rack. `onSetRackCount` nil (every catalog world, every fixture) draws
+    /// the cards exactly as they are drawn today.
+    var rackCount: Int?
+    var rackErrorText: String?
+    var onSetRackCount: ((Int) -> Void)?
+
+    private var firstStationID: String? { stations.first?.id }
+
     var onCoachTap: () -> Void = {}
     var onReaction: (String) -> Void = { _ in }
     var onSkip: () -> Void = {}
@@ -86,7 +97,10 @@ struct RoundWaitView: View {
 
             HStack(alignment: .top, spacing: 10) {
                 ForEach(stations) { station in
-                    StationCard(model: station)
+                    StationCard(model: station,
+                                rackCount: station.id == firstStationID ? rackCount : nil,
+                                rackErrorText: station.id == firstStationID ? rackErrorText : nil,
+                                onSetRackCount: station.id == firstStationID ? onSetRackCount : nil)
                 }
             }
 

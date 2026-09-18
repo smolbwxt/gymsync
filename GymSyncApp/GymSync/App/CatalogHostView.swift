@@ -15,6 +15,11 @@ import UserNotifications
 /// drives by string — do not rename them; see `CatalogScreenTests.swift`.
 enum CatalogScreen: String, CaseIterable {
     case prCelebration = "pr-celebration"
+    // The 2026-09-18 design round on the PR celebration. Both ids RETIRE at
+    // the owner's pick, together with the file that draws them; frames 151
+    // and 152 are retired numbers afterwards and are never reused.
+    case prCelebrationA = "pr-celebration-a"
+    case prCelebrationB = "pr-celebration-b"
     case voiceIdle = "voice-idle"
     case voiceConnecting = "voice-connecting"
     case voiceTransmitting = "voice-transmitting"
@@ -192,6 +197,8 @@ struct CatalogHostView: View {
         Group {
             switch screen {
             case .prCelebration:              content_prCelebration
+            case .prCelebrationA:             content_prCelebrationA
+            case .prCelebrationB:             content_prCelebrationB
             case .voiceIdle:                  content_voice(.idle)
             case .voiceConnecting:             content_voice(.connecting)
             case .voiceTransmitting:          content_voice(.transmitting)
@@ -329,6 +336,23 @@ struct CatalogHostView: View {
             monthlyCount: 3,
             onDismiss: {}
         )
+    }
+
+    // MARK: - PR celebration · the 2026-09-18 design round
+    //
+    // Two compositions of the SAME record, drawn from the one literal fixture
+    // in PRCelebrationVariations.swift — deliberately identical to
+    // `content_prCelebration`'s values above, so the three captures let the
+    // owner compare COMPOSITIONS rather than numbers. Value-in, no `Date()`,
+    // no repository, no `.shared` (constraint 11). Both arms, both ids and
+    // the file behind them retire at the pick.
+
+    private var content_prCelebrationA: some View {
+        PRCelebrationVariationA(fixture: .bench, onDismiss: {})
+    }
+
+    private var content_prCelebrationB: some View {
+        PRCelebrationVariationB(fixture: .bench, onDismiss: {})
     }
 
     // MARK: - Voice dock

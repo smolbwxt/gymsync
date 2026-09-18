@@ -372,5 +372,15 @@
     "frame": 146,
     "title": "The production pump-check post, re-composed",
     "note": "Group-session Phase B2 (plan task S10). Frame-map entry only - the id and its capture already existed (ScreenshotTests.testCatalogPumpFeedPost, CatalogHostView's content_pumpFeedPost) and had never carried a frame number. pump-check-card-v2 (119) retires without a numbered production twin of its own; PumpPostCard re-composed by plan task S5 IS that twin, so this row is what keeps the owner's deck from losing the pump card. No new capture - the FLOOR does not move for this row."
+  },
+  "pr-celebration-a": {
+    "frame": 151,
+    "title": "PR celebration, A - the number leads",
+    "note": "Owner-decisions round 2026-09-18 (plan task S3). A DESIGN ROUND on the PR celebration, not a production screen: the record itself is the hero - the tabular number at maximum size with one small unit beside it (rule 3), 'New personal record.' demoted to a kicker above it, the lift and the delta folded into one sentence on a 14 pt surface strip, and the monthly count as a gsSuccess tick on that strip rather than a bordered theme.surface chip at a third radius. Accent is spent once, on KEEP LIFTING; Share is a quiet raised face beneath it. Drawn over the same literal fixture as frame 29 (Bench Press, 205 x 5, prior 200, 3rd this month), so the owner compares compositions and not numbers. RETIRES at the owner's pick, together with pr-celebration-b and PRCelebrationVariations.swift; 151 is then a retired number and is never reused."
+  },
+  "pr-celebration-b": {
+    "frame": 152,
+    "title": "PR celebration, B - the lift's place on your ladder leads",
+    "note": "Owner-decisions round 2026-09-18 (plan task S3). A DESIGN ROUND on the PR celebration, not a production screen: the record read as progress rather than as a number - one raised island (radiusMd, 6 pt lip) carrying the lift, the old number and the new one as a before/after pair, and, where frame 29 draws two accent rings, the rung the athlete now stands on, worded only from the six values the caller already holds. 'nth PR this month' is the island's kicker and Share a flat glyph chip in its header, so the page's foot is one button. Accent is spent once, on the new number, which leaves KEEP LIFTING on the raised face. Same fixture as frames 29 and 151. RETIRES at the owner's pick, together with pr-celebration-a and PRCelebrationVariations.swift; 152 is then a retired number and is never reused."
   }
 }

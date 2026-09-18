@@ -94,6 +94,15 @@ targets:
       - GymSyncShared
     resources:
       - GymSync/DesignSystem/Fonts
+      # The PR celebration's sound, bundled (owner 2026-09-18: "keep the sound
+      # effect"). A FOLDER, following the Fonts precedent above: a future
+      # bundled sound lands here with no further project.yml edit.
+      #
+      # It MUST be listed here: `sources:` is a directory glob (`- GymSync`),
+      # so without this entry xcodegen would hand GymSync/Resources/Sounds to
+      # the compile phase instead of copying it into the bundle, and
+      # Bundle.main.url(forResource:withExtension:) would find nothing.
+      - GymSync/Resources/Sounds
     dependencies:
       - package: Supabase
         product: Supabase
