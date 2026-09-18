@@ -257,9 +257,8 @@ struct SessionRunnerView: View {
     /// the live body, not here — so it names only the layer it has, and the
     /// row it hands to `SessionPlanRow` is built by the same function the
     /// live body builds its rows with.
-    /// The warm-up applies no swaps — the crew votes in the live body, not
-    /// here — so `exerciseID` is untouched by the layering and the name
-    /// lookup still reads the row's own id.
+    /// With no swap layer, `exerciseID` is untouched by the layering and the
+    /// name lookup still reads the row's own id.
     private var planRows: [SessionPlanRow] {
         RoutineLayering.apply(planExercises, todaysScale: todaysScale).map { row in
             SessionPlanRow(exercise: row,
