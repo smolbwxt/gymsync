@@ -1400,15 +1400,26 @@ struct CatalogHostView: View {
     /// placeholder), and the viewer's own late, summary-only post. Exercises
     /// cover the barbell mini-bar and a bodyweight entry.
     ///
-    /// THE CLOCK ANCHOR IS INHERITED, NOT INTRODUCED (global constraint 7):
-    /// `createdAt` has been `Date().addingTimeInterval(…)` since 2026-07 so
-    /// the author row reads a stable `1 hour ago` rather than drifting into
-    /// `3 years ago`. Every NEW fact is anchored RELATIVE to it —
-    /// `completedAt` is 47 minutes before its own post — so `posted 47 min
-    /// after` is the same string on every run.
+    /// THE CLOCK ANCHOR IS A FIXTURE NOW (global constraint 11). `createdAt`
+    /// was `Date().addingTimeInterval(…)` from 2026-07 until this round — the
+    /// last `Date.now` reachable from a catalog builder on this screen, and
+    /// the reason the frame's "1 hour ago" was a read of the runner's wall
+    /// clock rather than a value the frame owns. Both posts are built from
+    /// components now, an hour apart, and every derived fact stays anchored
+    /// RELATIVE to its own post — `completedAt` is 47 minutes before the
+    /// friend's, 50 hours before mine — so `posted 47 min after` and the
+    /// day-scale tag beside it are the same strings on every run.
+    ///
+    /// DECLARED CONSEQUENCE: the author row prints
+    /// `createdAt.formatted(.relative:)`, which measures against the READER's
+    /// own now. Pinned to an instant, that line reads as a distance from
+    /// 17 Sep 2026 and grows with the calendar instead of sitting at "1 hour
+    /// ago". That is the trade the constraint asks for — the frame's INPUTS
+    /// are fixtures, and the one string that is not is the one the card
+    /// derives from the reader's clock by design.
     private var content_pumpFeedPost: some View {
-        let friendPostedAt = Date().addingTimeInterval(-3600)
-        let myPostedAt = Date().addingTimeInterval(-7200)
+        let friendPostedAt = Self.pumpFixturePostedAt(hour: 18)
+        let myPostedAt = Self.pumpFixturePostedAt(hour: 17)
         return ScrollView {
             VStack(spacing: 14) {
                 PumpPostCard(
@@ -1457,6 +1468,13 @@ struct CatalogHostView: View {
             }
             .padding(16)
         }
+    }
+
+    /// Local 17 Sep 2026 at `hour`:40 — the same `Calendar.current.date(from:)`
+    /// idiom `blockFixtureDay` uses for the block calendar's cells.
+    private static func pumpFixturePostedAt(hour: Int) -> Date {
+        Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 17,
+                                                   hour: hour, minute: 40))!
     }
 
     private static let pumpFixtureSummary = PostSummary(
