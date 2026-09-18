@@ -747,7 +747,7 @@ struct StationCard: View {
     /// count yet, and the chip says so rather than printing a guess.
     var rackCount: Int?
     /// What `set_venue_rack_count` said, shown inside the popover where the
-    /// correction was made.
+    /// correction was made — which stays open until the count changes.
     var rackErrorText: String?
     var onSetRackCount: ((Int) -> Void)?
 
@@ -820,12 +820,28 @@ struct StationCard: View {
                          showsSkip: false,
                          errorText: rackErrorText,
                          onSave: { count in
-                             showRackAsk = false
-                             onSetRackCount?(count)
+                             // DISMISS ON SUCCESS ONLY (final review, blocking
+                             // 2). The save is async and may be refused
+                             // (`P0001`: no check-in at this venue inside 12
+                             // hours); `rackErrorText` is drawn HERE, so
+                             // closing first made the refusal invisible. An
+                             // unchanged number has nothing to save.
+                             if count == rackCount {
+                                 showRackAsk = false
+                             } else {
+                                 onSetRackCount?(count)
+                             }
                          })
                 .padding(16)
                 .frame(minWidth: 240)
                 .presentationCompactAdaptation(.popover)
+        }
+        // The count this card is handed changes only when the write landed
+        // (`SessionLiveView.saveRackCount` updates it after the RPC returns),
+        // so THAT is the dismissal; a refusal leaves the popover open with
+        // its message.
+        .onChange(of: rackCount) { _, _ in
+            showRackAsk = false
         }
     }
 
