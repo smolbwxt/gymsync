@@ -1,6 +1,11 @@
 -- The session's venue, and today's scale (owner decisions round,
 -- 2026-09-18, decisions 2 and 3). Two additive nullable columns and one
 -- function, each under its own header block below.
+--
+-- APPLIED: 2026-09-18 19:16:14 UTC (schema_migrations version
+-- 20260918191614). Verified live: sessions.venue_id uuid,
+-- session_participants.todays_scale jsonb, claim_session_venue SECURITY
+-- DEFINER.
 
 -- ── sessions.venue_id ────────────────────────────────────────────────────
 -- Decision 2, corrected against master: the brief's premise -- that
