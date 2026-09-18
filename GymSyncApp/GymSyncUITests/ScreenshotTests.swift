@@ -187,6 +187,26 @@ final class ScreenshotTests: XCTestCase {
         }
         app.launchEnvironment = env
         app.launch()
+        // ONE retry for the cold-start flake this suite has actually hit
+        // (`testActivityFeed`, alphabetically first — see the evidence block
+        // above the class-level `setUp()`): a launch that never reaches the
+        // tab bar within `launchTimeout`. This is the only launch site of the
+        // signed-in app; the class-level warm-up above is a SEPARATE,
+        // tolerant launch, and S8's catalog-launch retry (`launchCatalogApp`)
+        // never reaches this path at all. Silent on a first miss — this can't
+        // call `waitForTabBar`'s `XCTAssertTrue` for that check, because
+        // `continueAfterFailure = false` (`setUp()` below) would abort the
+        // test right here instead of allowing a retry. Terminate, relaunch
+        // with the SAME `launchArguments`/`launchEnvironment` already set on
+        // `app`, and wait again. A second miss changes nothing: the caller's
+        // own `waitForTabBar(app)` still runs its full wait and fails with
+        // today's exact message.
+        if !app.buttons["Home"].waitForExistence(timeout: launchTimeout) {
+            NSLog("[ScreenshotTests] \"Home\" button did not appear within \(launchTimeout)s — terminating and relaunching once")
+            app.terminate()
+            app.launch()
+            _ = app.buttons["Home"].waitForExistence(timeout: launchTimeout)
+        }
         return app
     }
 
