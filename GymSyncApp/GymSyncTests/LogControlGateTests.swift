@@ -73,3 +73,33 @@ final class LogFollowUpTests: XCTestCase {
         }
     }
 }
+
+/// `RoundWindow.openedAt(roundStartedAt:liftingStartedAt:)` — the client's
+/// mirror of `public.advance_round`'s own `COALESCE(round_started_at,
+/// lifting_started_at, '-infinity')` (ruling R-B23). Fix-forward
+/// `20260913000105` exists precisely so a warm-up set does not count toward
+/// round 1; a client that fell back to "logged this exercise at all" instead
+/// would tick a station card the server has not counted.
+final class RoundWindowTests: XCTestCase {
+
+    private let lifting = Date(timeIntervalSince1970: 1_000)
+    private let round2 = Date(timeIntervalSince1970: 2_000)
+
+    /// Once a round has closed, its own stamp is the window — the live server
+    /// value, not the session's start.
+    func testTheLiveRoundStampWins() {
+        XCTAssertEqual(RoundWindow.openedAt(roundStartedAt: round2, liftingStartedAt: lifting), round2)
+    }
+
+    /// Round 1 has no stamp of its own: the window opens when the crew began
+    /// lifting, which is the server's own second choice.
+    func testRoundOneFallsBackToLiftingStart() {
+        XCTAssertEqual(RoundWindow.openedAt(roundStartedAt: nil, liftingStartedAt: lifting), lifting)
+    }
+
+    /// Before lifting starts there is no round to be in, and the caller —
+    /// not this function — decides what to do with that.
+    func testNoWindowBeforeLifting() {
+        XCTAssertNil(RoundWindow.openedAt(roundStartedAt: nil, liftingStartedAt: nil))
+    }
+}

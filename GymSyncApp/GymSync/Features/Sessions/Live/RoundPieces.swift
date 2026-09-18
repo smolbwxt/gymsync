@@ -1005,6 +1005,26 @@ enum LogFollowUp {
     }
 }
 
+/// WHEN THE CURRENT ROUND OPENED (ruling R-B23) — the client's mirror of the
+/// server's own window, `COALESCE(round_started_at, lifting_started_at,
+/// '-infinity')` (`public.advance_round`, fix-forward `20260913000105`).
+///
+/// `sessions.round_started_at` is NULL until the FIRST round closes, and the
+/// round-1 window is not "whatever this lifter has done today" — it opens
+/// when the crew started lifting, which is precisely why `000105` exists: a
+/// warm-up set must not count toward the first round. Reading
+/// `lifting_started_at` second keeps the round-1 answer a FALLBACK to the
+/// server's own rule rather than a second rule of the client's own invention.
+///
+/// Both values arrive on the `sessions` UPDATE the realtime channel already
+/// carries (`SessionLiveService.onSessionChange` → `liveSession = updated`),
+/// so every caller reads the live server round, never a cached one.
+enum RoundWindow {
+    static func openedAt(roundStartedAt: Date?, liftingStartedAt: Date?) -> Date? {
+        roundStartedAt ?? liftingStartedAt
+    }
+}
+
 // MARK: - The rest card
 
 /// What the resting lifter is told (spec §2): how long they have been

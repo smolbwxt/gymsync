@@ -1952,6 +1952,12 @@ struct SessionLiveView: View {
         // in round 3 must not still be holding the crew off in round 4; the
         // once-per-exercise gate is deliberately NOT reset here, because a
         // minute is once per exercise and an exercise outlives a round.
+        // `liveSession.round` is the SERVER's round, arriving on the
+        // `sessions` UPDATE the realtime channel carries (or led by the log
+        // path's own `advance_round` return — ruling R-B22, which is what
+        // finally gives this handler something to fire on outside a crew
+        // skip). Ruling R-B23: the round wait reads that live value and
+        // nothing cached.
         .onChange(of: liveSession.round) { _, _ in
             minuteExtensionsThisRound = 0
         }
@@ -3355,12 +3361,24 @@ struct SessionLiveView: View {
     /// D3): a non-penalty `set_logs` row at or after `round_started_at`.
     ///
     /// Spelled the same way here as there so the tick on a station card and
-    /// the server's decision to close the round cannot disagree. Before the
-    /// first round closes `round_started_at` is NULL, and the honest stand-in
-    /// is "has logged this exercise at all" -- the same question, over the
-    /// only window that exists yet.
+    /// the server's decision to close the round cannot disagree. THE WINDOW
+    /// IS `RoundWindow.openedAt(...)` (ruling R-B23), the same
+    /// `COALESCE(round_started_at, lifting_started_at, ...)` the RPC itself
+    /// evaluates: `round_started_at` is NULL until the first round closes, and
+    /// round 1 opens when the crew started LIFTING — fix-forward
+    /// `20260913000105` was written precisely so a warm-up set does not count
+    /// toward it. Both values ride the `sessions` UPDATE the realtime channel
+    /// already delivers, so this reads the live server round.
+    ///
+    /// The old round-1 stand-in, "has logged this exercise at all", survives
+    /// as the LAST resort only — the server's own `'-infinity'` arm, reachable
+    /// only in a session with no lifting stamp, which is a session with no
+    /// round wait on screen. Until this fix it was the round-1 answer itself,
+    /// and it counted a warm-up set the server does not (final review,
+    /// finding 3).
     private func hasLoggedThisRound(_ userID: UUID) -> Bool {
-        guard let since = liveSession.roundStartedAt else {
+        guard let since = RoundWindow.openedAt(roundStartedAt: liveSession.roundStartedAt,
+                                               liftingStartedAt: liveSession.liftingStartedAt) else {
             return hasLoggedCurrentExercise(userID)
         }
         return allSessionSets.contains {
@@ -3852,8 +3870,14 @@ struct SessionLiveView: View {
 
     /// When the crew began waiting: the SECOND-TO-LAST log of the round, from
     /// `allSessionSets` and never from a view timer (`RoundHold`'s own law).
+    ///
+    /// The round's window is `RoundWindow.openedAt(...)` — the same live
+    /// server values `hasLoggedThisRound` reads (ruling R-B23), so the lifter
+    /// the crew is held on and the clock they are held by are measured over
+    /// one window, not two.
     private var holdStartedAt: Date? {
-        let since = liveSession.roundStartedAt
+        let since = RoundWindow.openedAt(roundStartedAt: liveSession.roundStartedAt,
+                                         liftingStartedAt: liveSession.liftingStartedAt)
         let times = presentRotation.compactMap { row -> Date? in
             allSessionSets
                 .filter { log in
