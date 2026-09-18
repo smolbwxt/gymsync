@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(16);
+SELECT plan(17);
 
 -- Migration under test: 20260918000202_session_venue_and_todays_scale.sql
 -- (sessions.venue_id, session_participants.todays_scale,
@@ -191,23 +191,24 @@ SELECT results_eq(
 --     sessions.venue_id = NULL through ON DELETE SET NULL, which arrives
 --     at the trigger as an UPDATE with NEW.venue_id NULL -- the guard's
 --     own NEW.venue_id IS NOT NULL check lets it through without raising.
---     One query does the delete and reads the result, so a raise here
---     (which would abort the assertion, not just fail it) is itself part
---     of what a green run demonstrates. This also drops A's check-in
---     (venue_checkins.venue_id ON DELETE CASCADE), which is fine: nothing
---     after this assertion depends on it.
+--     Two statements, not one: a data-modifying CTE and its outer SELECT
+--     share a snapshot (and the SET NULL action fires at statement end),
+--     so a single query reads the venue from before the delete. This also
+--     drops A's check-in (venue_checkins.venue_id ON DELETE CASCADE),
+--     which is fine: nothing after these assertions depends on it.
 SET LOCAL role postgres;
-SELECT results_eq(
-  $$WITH del AS (
-      DELETE FROM public.venues WHERE id = '00000000-0000-4000-e000-000000001610'
-      RETURNING id
-    )
-    SELECT s.venue_id FROM public.sessions s, del
-     WHERE s.id = '00000000-0000-4000-e000-000000001620'$$,
-  $$VALUES (NULL::uuid)$$,
-  'deleting the claimed venue cascades to venue_id = NULL without the guard raising');
+SELECT lives_ok(
+  $$DELETE FROM public.venues WHERE id = '00000000-0000-4000-e000-000000001610'$$,
+  'deleting the claimed venue does not raise through the guard');
 
--- 15. As A: an update to a column the guard does not own (scheduled_for)
+-- 15. ...and the session's venue is NULL afterwards.
+SELECT results_eq(
+  $$SELECT venue_id FROM public.sessions
+     WHERE id = '00000000-0000-4000-e000-000000001620'$$,
+  $$VALUES (NULL::uuid)$$,
+  'deleting the claimed venue leaves venue_id NULL');
+
+-- 16. As A: an update to a column the guard does not own (scheduled_for)
 --     still passes private.session_round_guard untouched -- the guard is
 --     narrow, not a blanket lock on every session write.
 SET LOCAL role authenticated;
@@ -217,7 +218,7 @@ SELECT lives_ok(
      WHERE id = '00000000-0000-4000-e000-000000001620'$$,
   'a column the guard does not own updates normally');
 
--- 16. anon holds no EXECUTE (review-data.md F4).
+-- 17. anon holds no EXECUTE (review-data.md F4).
 SELECT ok(
   NOT has_function_privilege('anon', 'public.claim_session_venue(uuid)', 'EXECUTE'),
   'anon cannot execute claim_session_venue');
