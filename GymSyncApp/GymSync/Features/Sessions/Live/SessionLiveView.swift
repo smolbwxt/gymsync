@@ -1716,55 +1716,37 @@ struct SessionLiveView: View {
             turnMicRail
             Color.clear.frame(height: 6)
 
-            // 3D pass (2026-08): the gs3D style owns the fill (accent face,
-            // or the theme's raised face for a failed set) + the 7pt lip;
-            // the failed look keeps its outline as a label overlay, landing
-            // exactly on the face rect. 57pt face + lip = the prior 64pt
-            // footprint.
-            Button { commitInlineLog() } label: {
-                ZStack {
-                    if logIsFailed {
-                        RoundedRectangle(cornerRadius: 16).strokeBorder(theme.text, lineWidth: 1.5)
-                    }
-                    VStack(spacing: 2) {
-                        if isLoggingSet {
-                            Text("LOGGING…")
-                                .font(GSFont.bold(17, relativeTo: .body))
-                                .tracking(0.9)
-                        } else {
-                            Text(logIsFailed ? "LOG FAIL & PASS" : "LOG SET & PASS")
-                                .font(GSFont.bold(17, relativeTo: .body))
-                                .tracking(0.9)
-                            Text(turnCTAReadback)
-                                .font(GSFont.bold(11, relativeTo: .caption2).monospacedDigit())
-                                .opacity(0.8)
-                        }
-                    }
-                    .foregroundStyle(logIsFailed ? theme.text : theme.bg)
-                    HStack {
-                        Spacer()
-                        Image(systemName: "arrow.right")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(logIsFailed ? theme.text : theme.bg)
-                            .padding(.trailing, 16)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 57)
-            }
-            .buttonStyle(.gs3D(face: logIsFailed ? theme.raised3DFace : theme.accent,
-                               lip: logIsFailed ? theme.raised3DLip : nil,
-                               cornerRadius: 16))
-            // `logControlIsMine` (plan task S5): in Rounds the CTA is the
-            // turn-holder's; in Freestyle and Together there is no turn to
-            // hold. The readback says which, so a dead button is never a
-            // silent one.
-            .disabled(isLoggingSet || !logControlIsMine
-                      || (leadingInt(logReps) == nil && !logIsFailed))
+            // `LogControlButton` (RoundPieces.swift, fix round 3 / F6):
+            // Together mounts the identical button in its own foot, both
+            // built from `logControlFoot` below, so the two mounts cannot
+            // draw two different buttons.
+            LogControlButton(
+                title: logControlFoot.title,
+                readback: logControlFoot.readback,
+                isFailed: logControlFoot.isFailed,
+                isDisabled: logControlFoot.isDisabled,
+                onTap: logControlFoot.onTap)
             .padding(.horizontal, 16)
             Color.clear.frame(height: 10)
         }
         .background(theme.bg)
+    }
+
+    /// The live log control's current state — shared by `turnChrome`
+    /// (Rounds/Freestyle) and `togetherScreen` (Together, fix round 3 /
+    /// F6, ruling R-B17). `logControlIsMine` (plan task S5) is what makes
+    /// mounting it unconditionally in Together safe: in Rounds the CTA is
+    /// the turn-holder's; in Freestyle and Together there is no turn to
+    /// hold, so it reads true for everyone. The readback says which, so a
+    /// dead button is never a silent one.
+    private var logControlFoot: LogControlFoot {
+        LogControlFoot(
+            title: isLoggingSet ? "LOGGING…" : (logIsFailed ? "LOG FAIL & PASS" : "LOG SET & PASS"),
+            readback: isLoggingSet ? nil : turnCTAReadback,
+            isFailed: logIsFailed,
+            isDisabled: isLoggingSet || !logControlIsMine
+                || (leadingInt(logReps) == nil && !logIsFailed),
+            onTap: { commitInlineLog() })
     }
 
     private var turnCTAReadback: String {
@@ -3805,12 +3787,16 @@ struct SessionLiveView: View {
     @MainActor
     private func receiveHeartRate(userID: UUID, bpm: Int, zone: String?) {
         let now = Date()
-        heartRates[userID] = (bpm, HeartRateZone(rawValue: zone ?? ""), now)
+        let parsedZone = HeartRateZone(rawValue: zone ?? "")
+        heartRates[userID] = (bpm, parsedZone, now)
         // Together's timeline (plan task S9): the last reading of each
         // interval, per lifter. A no-op for the other two styles, which draw
         // no timeline -- and free, because the sample is already here.
+        // The BROADCAST zone rides along (fix round 3 / F7) -- the same
+        // `parsedZone` the live pill above reads, never recomputed a
+        // second time from `bpm`.
         if style == .together, let position = togetherPosition {
-            togetherTrace.record(userID: userID, bpm: bpm, interval: position.index)
+            togetherTrace.record(userID: userID, bpm: bpm, zone: parsedZone, interval: position.index)
         }
         heartRateExpiryTasks[userID]?.cancel()
         heartRateExpiryTasks[userID] = Task { @MainActor in
@@ -4314,6 +4300,7 @@ struct SessionLiveView: View {
                                               count: intervals.count),
             dockNames: otherParticipantNames,
             voice: voiceFoot,
+            logControl: logControlFoot,
             onEnd: { showEndConfirmation = true })
     }
 

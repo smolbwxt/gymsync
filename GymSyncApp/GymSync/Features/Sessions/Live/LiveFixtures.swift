@@ -296,33 +296,74 @@ enum LiveFixtures {
     ]
 
     /// The live reading is the LAST recorded slot, and the zone is derived
-    /// from it — a lane cannot disagree with its own trace.
-    private static func lane(_ id: UUID, _ name: String, trace: [Int]) -> TogetherLane {
-        let bpm = trace.last(where: { $0 > 0 })
+    /// from it — a lane cannot disagree with its own trace. Every PAST
+    /// sample gets the same treatment (fix round 3 / F7): each bpm here is
+    /// a FIXTURE'S OWN invented number, so deriving its own zone the same
+    /// way is self-consistent — unlike live code, which never recomputes
+    /// another participant's broadcast zone, a fixture has no broadcast to
+    /// defer to in the first place.
+    private static func lane(_ id: UUID, _ name: String, trace rawTrace: [Int]) -> TogetherLane {
+        let bpm = rawTrace.last(where: { $0 > 0 })
+        let samples = rawTrace.map { value in
+            value > 0 ? TogetherTrace.Sample(bpm: value, zone: HeartRateZone.zone(bpm: value))
+                      : TogetherTrace.Sample.empty
+        }
         return TogetherLane(id: id, name: name, bpm: bpm,
                             zone: bpm.map { HeartRateZone.zone(bpm: $0) },
-                            trace: trace)
+                            trace: samples)
     }
 
-    /// `session-together-clock` (frame 140): interval 6 of 12, 18 s left of a
-    /// 40 s work interval, four hearts on one axis.
+    /// Twelve fixed intervals, one minute each, WORK (Z4) and RECOVER (Z2)
+    /// alternating — `TogetherIntervals.Interval.minutes` is WHOLE MINUTES
+    /// only (`cardio_minutes`), so a sub-minute "40s work / 20s rest"
+    /// scheme is not expressible and this fixture does not pretend
+    /// otherwise (fix round 3 / F8: the previous version's title, "HIIT ·
+    /// 40 / 20", described a shape `TogetherIntervals.plan` could never
+    /// produce). Fixed ids per constraint 11.
+    static let togetherIntervalPlan: [TogetherIntervals.Interval] = (0..<12).map { index in
+        let id = UUID(uuidString: "00000000-0000-0000-0000-0000000009\(String(format: "%02d", index))") ?? UUID()
+        let isWork = index % 2 == 1
+        return TogetherIntervals.Interval(id: id, name: isWork ? "Work" : "Recover",
+                                          zone: isWork ? 4 : 2, minutes: 1)
+    }
+
+    /// 5 whole intervals (300 s) + 42 s into the sixth — lands exactly on
+    /// interval index 5 (the sixth, "Work", Z4) with 18 s left of its 60 s
+    /// length, `0:18` on the clock.
+    static let togetherElapsed: TimeInterval = 5 * 60 + 42
+
+    /// `session-together-clock` (frame 140): interval 6 of 12, 18 s left,
+    /// four hearts on one axis.
     ///
-    /// The readout and the ring agree by construction — `0:18` left of 40 s
-    /// is `22/40` through it — because a frame whose numbers contradicted
-    /// each other would teach the wrong thing about the clock.
-    static let together = TogetherWorld(
-        kicker: "PUSH CREW · TOGETHER",
-        title: "HIIT · 40 / 20",
-        intervalKicker: RoundCopy.intervalKicker(index: 5, count: 12),
-        phase: "WORK",
-        phaseDetail: "Z4 · 1 min",
-        readout: RoundCopy.clock(18),
-        progress: 22.0 / 40.0,
-        nextLine: RoundCopy.nextInterval("Z2 · 1 min"),
-        lanes: togetherLanes,
-        axisStart: RoundCopy.intervalKicker(index: 0, count: 12),
-        axisEnd: RoundCopy.intervalKicker(index: 11, count: 12),
-        dockNames: dockNames)
+    /// EVERY NUMBER BELOW IS DERIVED from `togetherIntervalPlan` and
+    /// `togetherElapsed` through `TogetherIntervals.position(in:elapsed:)`
+    /// — the SAME pure law `SessionLiveView.togetherScreen(now:)` calls in
+    /// production — so this fixture cannot drift into the impossible
+    /// triple (interval length, elapsed and progress disagreeing) the
+    /// hand-typed version shipped (fix round 3 / F8). Nothing here is a
+    /// literal except the plan and the elapsed time themselves.
+    static let together: TogetherWorld = {
+        let position = TogetherIntervals.position(in: togetherIntervalPlan, elapsed: togetherElapsed)
+            ?? TogetherIntervals.Position(index: 0, elapsedInInterval: 0, remaining: 0, progress: 0)
+        let current = togetherIntervalPlan.indices.contains(position.index)
+            ? togetherIntervalPlan[position.index] : nil
+        let next = togetherIntervalPlan.indices.contains(position.index + 1)
+            ? togetherIntervalPlan[position.index + 1] : nil
+        return TogetherWorld(
+            kicker: "PUSH CREW · TOGETHER",
+            title: "HIIT",
+            intervalKicker: RoundCopy.intervalKicker(index: position.index, count: togetherIntervalPlan.count),
+            phase: (current?.name ?? TogetherIntervals.openIntervalName).uppercased(),
+            phaseDetail: current?.detail ?? "",
+            readout: RoundCopy.clock(position.remaining ?? position.elapsedInInterval),
+            progress: position.progress,
+            nextLine: RoundCopy.nextInterval(next.map { $0.detail.isEmpty ? $0.name : $0.detail }),
+            lanes: togetherLanes,
+            axisStart: RoundCopy.intervalKicker(index: 0, count: togetherIntervalPlan.count),
+            axisEnd: RoundCopy.intervalKicker(index: togetherIntervalPlan.count - 1,
+                                              count: togetherIntervalPlan.count),
+            dockNames: dockNames)
+    }()
 
     static let roundHold = RoundWaitWorld(
         kicker: RoundCopy.kicker(crew: crewName, round: 3),

@@ -904,6 +904,73 @@ struct RoundDoor: View {
     }
 }
 
+// MARK: - The live log control
+
+/// The inline "LOG SET & PASS" CTA — `SessionLiveView`'s `turnChrome` drew
+/// this verbatim before ruling R-B17 (fix round 3 / F6): Together mounts
+/// the SAME button in its own foot, above the dock, because
+/// `logControlIsMine` (plan task S5) reads true for every participant in
+/// `.together` — there is no turn to gate it on, and before this fix that
+/// left Together with no way to log a set at all (`bottomChrome` never
+/// renders `turnChrome` for `.together`). Lifted here, rather than
+/// duplicated, so the two mounts cannot draw two different buttons.
+struct LogControlButton: View {
+    @Environment(\.gsTheme) private var theme
+
+    let title: String
+    /// The small readback line under the title. Absent while `isLoggingSet`
+    /// — the original button showed `LOGGING…` alone, no second line.
+    var readback: String? = nil
+    var isFailed: Bool = false
+    var isDisabled: Bool = false
+    var onTap: () -> Void = {}
+
+    var body: some View {
+        Button(action: onTap) {
+            ZStack {
+                if isFailed {
+                    RoundedRectangle(cornerRadius: 16).strokeBorder(theme.text, lineWidth: 1.5)
+                }
+                VStack(spacing: 2) {
+                    Text(title)
+                        .font(GSFont.bold(17, relativeTo: .body))
+                        .tracking(0.9)
+                    if let readback {
+                        Text(readback)
+                            .font(GSFont.bold(11, relativeTo: .caption2).monospacedDigit())
+                            .opacity(0.8)
+                    }
+                }
+                .foregroundStyle(isFailed ? theme.text : theme.bg)
+                HStack {
+                    Spacer()
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(isFailed ? theme.text : theme.bg)
+                        .padding(.trailing, 16)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 57)
+        }
+        .buttonStyle(.gs3D(face: isFailed ? theme.raised3DFace : theme.accent,
+                           lip: isFailed ? theme.raised3DLip : nil,
+                           cornerRadius: 16))
+        .disabled(isDisabled)
+    }
+}
+
+/// The values `LogControlButton` needs, bundled the way `VoiceFoot` bundles
+/// the two voice notices (fix round 1 / F2's own precedent) — Together's
+/// foot takes one parameter instead of four.
+struct LogControlFoot {
+    var title: String = "LOG SET & PASS"
+    var readback: String? = nil
+    var isFailed: Bool = false
+    var isDisabled: Bool = false
+    var onTap: () -> Void = {}
+}
+
 // MARK: - The rest card
 
 /// What the resting lifter is told (spec §2): how long they have been

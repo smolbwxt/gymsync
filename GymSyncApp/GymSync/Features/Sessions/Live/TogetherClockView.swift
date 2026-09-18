@@ -119,27 +119,44 @@ enum TogetherIntervals {
 ///
 /// SESSION-LOCAL, BOUNDED, AND IT DIES WITH THE VIEW — the same category as
 /// `RecoveryBuffer`, which is what spec §6's "no new store" already blesses.
-/// Nothing is persisted, no repository is touched, and the size is one `Int`
-/// per lifter per interval. It exists because the broadcast carries readings
-/// as they happen and nothing else in the app remembers them: without it the
-/// crew's timeline could only ever draw one column.
+/// Nothing is persisted, no repository is touched, and the size is one
+/// `Sample` per lifter per interval. It exists because the broadcast carries
+/// readings as they happen and nothing else in the app remembers them:
+/// without it the crew's timeline could only ever draw one column.
 struct TogetherTrace: Equatable {
-    private(set) var byLifter: [UUID: [Int: Int]] = [:]
+    /// One reading: the bpm AND the zone it arrived with — carried
+    /// together (fix round 3 / F7) so a bar's colour and a bar's number
+    /// can never disagree about which zone the reading was in.
+    struct Sample: Equatable {
+        let bpm: Int
+        /// The BROADCAST zone, never recomputed from `bpm` here —
+        /// `HeartRateZone`'s own header forbids exactly that: zone
+        /// reflects the sharing lifter's own effort relative to THEIR OWN
+        /// max HR, which only their own device can compute. `nil` when
+        /// the broadcast carried no zone (an older sender, or a malformed
+        /// payload) — an absent zone stays absent, it is never guessed at.
+        let zone: HeartRateZone?
+
+        static let empty = Sample(bpm: 0, zone: nil)
+    }
+
+    private(set) var byLifter: [UUID: [Int: Sample]] = [:]
 
     /// Last writer wins within an interval: the bar says where a lifter's
     /// heart was by the END of it, which is the number a reader compares.
-    mutating func record(userID: UUID, bpm: Int, interval: Int) {
+    mutating func record(userID: UUID, bpm: Int, zone: HeartRateZone?, interval: Int) {
         guard bpm > 0, interval >= 0 else { return }
-        byLifter[userID, default: [:]][interval] = bpm
+        byLifter[userID, default: [:]][interval] = Sample(bpm: bpm, zone: zone)
     }
 
-    /// `count` slots, oldest first. A slot with no reading is `0`, which the
-    /// timeline draws as an empty slot rather than as a zero-height nothing —
-    /// the axis has to keep its shape or the lanes stop lining up.
-    func trace(for userID: UUID, count: Int) -> [Int] {
+    /// `count` slots, oldest first. A slot with no reading is `.empty`
+    /// (`bpm == 0`), which the timeline draws as an empty slot rather than
+    /// as a zero-height nothing — the axis has to keep its shape or the
+    /// lanes stop lining up.
+    func trace(for userID: UUID, count: Int) -> [Sample] {
         guard count > 0 else { return [] }
         let readings = byLifter[userID] ?? [:]
-        return (0..<count).map { readings[$0] ?? 0 }
+        return (0..<count).map { readings[$0] ?? .empty }
     }
 }
 
@@ -153,8 +170,10 @@ struct TogetherLane: Identifiable, Equatable {
     /// gate — and a stale reading is an em dash, never a last-known number.
     let bpm: Int?
     let zone: HeartRateZone?
-    /// One entry per interval, `0` where nothing was recorded.
-    let trace: [Int]
+    /// One `TogetherTrace.Sample` per interval, `.empty` where nothing was
+    /// recorded — each bar carries its OWN broadcast zone (fix round 3 /
+    /// F7), not one recomputed from `bpm`.
+    let trace: [TogetherTrace.Sample]
 }
 
 /// `session-together-clock` (frame 140).
@@ -167,6 +186,16 @@ struct TogetherLane: Identifiable, Equatable {
 /// ACCENT: the interval ring — the current item (rule 2). Everything else in
 /// the readouts is heart-rate data colour, which §4a exempts, and every one of
 /// them carries its zone word.
+///
+/// **KNOWN RULE-2 TENSION (fix round 3 / F6, ruling R-B17):** the log
+/// control (`LogControlButton`, mounted below) also paints `theme.accent` —
+/// it is `turnChrome`'s own button, unchanged, and the fix's whole point
+/// was that Together needed the SAME control Rounds and Freestyle already
+/// have, not a redrawn one. Before this fix Together had no way to log a
+/// set at all, which rule 2 does not have an opinion on; a second accent
+/// face is the smaller problem. Flagged for the controller, the same way
+/// the round wait's ring/`SkipOfferLine` tension was (review finding 7) —
+/// not resolved here.
 struct TogetherClockView: View {
     @Environment(\.gsTheme) private var theme
 
@@ -195,6 +224,13 @@ struct TogetherClockView: View {
 
     var dockNames: [String] = []
     var voice: VoiceFoot = VoiceFoot()
+    /// The live log control (fix round 3 / F6, ruling R-B17). Together has
+    /// no turn to gate it on — `logControlIsMine` reads true for every
+    /// participant here — so every lifter needs the SAME button
+    /// `turnChrome` draws for Rounds/Freestyle, mounted above the dock
+    /// rather than left unreachable (`bottomChrome` never renders
+    /// `turnChrome` for `.together`).
+    var logControl: LogControlFoot = LogControlFoot()
 
     var onEnd: () -> Void = {}
 
@@ -204,6 +240,12 @@ struct TogetherClockView: View {
             timelineCard
         } foot: {
             VoiceNotices(foot: voice)
+            LogControlButton(
+                title: logControl.title,
+                readback: logControl.readback,
+                isFailed: logControl.isFailed,
+                isDisabled: logControl.isDisabled,
+                onTap: logControl.onTap)
             PTTDockRow(otherParticipantNames: dockNames, compact: false)
             // The SHIPPED End control — the same confirmation the header's X
             // raises, reached from the foot because Together's page has no
@@ -298,8 +340,8 @@ struct TogetherClockView: View {
                 .lineLimit(1)
 
             HStack(alignment: .bottom, spacing: 3) {
-                ForEach(Array(lane.trace.enumerated()), id: \.offset) { _, value in
-                    bar(value)
+                ForEach(Array(lane.trace.enumerated()), id: \.offset) { _, sample in
+                    bar(sample)
                 }
             }
             .frame(height: 26)
@@ -334,12 +376,26 @@ struct TogetherClockView: View {
     /// An interval with no reading yet is an EMPTY SLOT on the axis, not a
     /// zero-height nothing — the axis has to keep its shape for the intervals
     /// still to come, or the lanes stop lining up.
-    private func bar(_ value: Int) -> some View {
-        let height: CGFloat = value <= 0 ? 4 : max(6, CGFloat(value - 90) * 0.24)
+    ///
+    /// INKED FROM THE SAMPLE'S OWN ZONE (fix round 3 / F7), never
+    /// recomputed from `bpm` against a fixed max-HR estimate — the same
+    /// "never recompute another participant's zone" rule the live
+    /// reading beside it already follows (`reading(_:)` above,
+    /// `HeartRateZone`'s own header). A reading with no zone (an older
+    /// sender, or a malformed payload) draws `neutral700` — present, but
+    /// deliberately not colour-coded to a zone nobody sent.
+    private func bar(_ sample: TogetherTrace.Sample) -> some View {
+        let height: CGFloat = sample.bpm <= 0 ? 4 : max(6, CGFloat(sample.bpm - 90) * 0.24)
+        let ink: Color
+        if sample.bpm <= 0 {
+            ink = theme.neutral300
+        } else if let zone = sample.zone {
+            ink = HeartRateZoneDisplay.ink(zone)
+        } else {
+            ink = theme.neutral700
+        }
         return RoundedRectangle(cornerRadius: 2)
-            .fill(value <= 0
-                  ? theme.neutral300
-                  : HeartRateZoneDisplay.ink(HeartRateZone.zone(bpm: value)))
+            .fill(ink)
             .frame(maxWidth: .infinity)
             .frame(height: height)
     }
